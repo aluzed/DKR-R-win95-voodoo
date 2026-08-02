@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(CTest)
+
 set(DKRPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "Root of the DKR Port repository")
 option(DKR_RUNTIME_BUILD_GENERATED "Compile N64Recomp-generated DKR CPU functions" ON)
 option(DKR_RUNTIME_BUILD_RT64 "Also configure and compile the pinned RT64 renderer" OFF)
@@ -253,3 +255,13 @@ foreach(config Debug Release RelWithDebInfo MinSizeRel)
         RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/bin/${config}"
     )
 endforeach()
+
+if(BUILD_TESTING)
+    add_executable(DKRPresentationPolicyTests
+        tests/presentation_policy_tests.cpp
+    )
+    target_include_directories(DKRPresentationPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRPresentationPolicy COMMAND DKRPresentationPolicyTests)
+endif()

@@ -113,6 +113,18 @@ std::filesystem::path LastRomPath() {
     return g_config_directory / "last-rom.txt";
 }
 
+bool ReplaceSettingsFile(const std::filesystem::path& temporary,
+                         const std::filesystem::path& destination) {
+#if defined(_WIN32)
+    return MoveFileExW(temporary.c_str(), destination.c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    std::error_code error;
+    std::filesystem::rename(temporary, destination, error);
+    return !error;
+#endif
+}
+
 void ApplyStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 0.0F;
@@ -209,41 +221,71 @@ void PopHeadingFont(bool title = false) {
 void SaveSettings() {
     std::error_code error;
     std::filesystem::create_directories(g_config_directory, error);
-    const auto& config = ultramodern::renderer::get_graphics_config();
-    std::ofstream output(SettingsPath(), std::ios::trunc);
-    if (!output) {
+    if (error) {
+        std::fprintf(stderr, "[boot][settings] failed to create settings directory: %s\n",
+                     error.message().c_str());
         return;
     }
-    output << "settings_version=3\n";
-    output << "presentation_profile="
-           << static_cast<int>(dkr::runtime::enhancements::presentation_profile()) << '\n';
-    output << "window_mode=" << static_cast<int>(config.wm_option) << '\n';
-    output << "resolution=" << static_cast<int>(config.res_option) << '\n';
-    output << "aspect=" << static_cast<int>(config.ar_option) << '\n';
-    output << "antialiasing=" << static_cast<int>(config.msaa_option) << '\n';
-    output << "high_precision_fb=" << static_cast<int>(config.hpfb_option) << '\n';
-    output << "refresh_rate=" << static_cast<int>(config.rr_option) << '\n';
-    output << "refresh_rate_target=" << std::clamp(config.rr_manual_value, 30, 500) << '\n';
-    output << "modern_refresh_rate=" << static_cast<int>(g_modern_refresh_mode) << '\n';
-    output << "modern_refresh_target=" << std::clamp(g_modern_refresh_target, 30, 500) << '\n';
-    output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
-    output << "maximum_detail="
-           << (dkr::runtime::enhancements::maximum_detail_enabled() ? 1 : 0) << '\n';
-    output << "memory_pak=" << (dkr::runtime::pak::enabled() ? 1 : 0) << '\n';
-    output << "rumble=" << (dkr::runtime::platform::rumble_enabled() ? 1 : 0) << '\n';
-    for (std::size_t index = 0; index < dkr::runtime::input::action_count(); ++index) {
-        const auto action = static_cast<dkr::runtime::input::Action>(index);
-        output << "keyboard_binding." << dkr::runtime::input::action_identifier(action)
-               << '=' << dkr::runtime::input::keyboard_binding(action) << '\n';
-        output << "controller_binding." << dkr::runtime::input::action_identifier(action)
-               << '=' << dkr::runtime::input::controller_binding(action) << '\n';
+    const auto& config = ultramodern::renderer::get_graphics_config();
+    const std::filesystem::path settings_path = SettingsPath();
+    const std::filesystem::path temporary_path = settings_path.string() + ".tmp";
+    {
+        std::ofstream output(temporary_path, std::ios::trunc);
+        if (!output) {
+            std::fprintf(stderr, "[boot][settings] failed to open temporary settings file\n");
+            return;
+        }
+        output << "settings_version=4\n";
+        output << "presentation_profile="
+               << static_cast<int>(dkr::runtime::enhancements::presentation_profile()) << '\n';
+        output << "window_mode=" << static_cast<int>(config.wm_option) << '\n';
+        output << "resolution=" << static_cast<int>(config.res_option) << '\n';
+        output << "aspect=" << static_cast<int>(config.ar_option) << '\n';
+        output << "antialiasing=" << static_cast<int>(config.msaa_option) << '\n';
+        output << "high_precision_fb=" << static_cast<int>(config.hpfb_option) << '\n';
+        output << "refresh_rate=" << static_cast<int>(config.rr_option) << '\n';
+        output << "refresh_rate_target="
+               << dkr::runtime::enhancements::clamp_presentation_rate(
+                      config.rr_manual_value) << '\n';
+        output << "modern_refresh_rate=" << static_cast<int>(g_modern_refresh_mode) << '\n';
+        output << "modern_refresh_target="
+               << dkr::runtime::enhancements::clamp_presentation_rate(
+                      g_modern_refresh_target) << '\n';
+        output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
+        output << "maximum_detail="
+               << (dkr::runtime::enhancements::maximum_detail_requested() ? 1 : 0) << '\n';
+        output << "memory_pak=" << (dkr::runtime::pak::enabled() ? 1 : 0) << '\n';
+        output << "rumble=" << (dkr::runtime::platform::rumble_enabled() ? 1 : 0) << '\n';
+        for (std::size_t index = 0; index < dkr::runtime::input::action_count(); ++index) {
+            const auto action = static_cast<dkr::runtime::input::Action>(index);
+            output << "keyboard_binding." << dkr::runtime::input::action_identifier(action)
+                   << '=' << dkr::runtime::input::keyboard_binding(action) << '\n';
+            output << "controller_binding." << dkr::runtime::input::action_identifier(action)
+                   << '=' << dkr::runtime::input::controller_binding(action) << '\n';
+        }
+        // This must be the final record. A truncated v4 file is never allowed
+        // to reactivate experimental presentation features.
+        output << "settings_complete=1\n";
+        output.flush();
+        if (!output) {
+            std::fprintf(stderr, "[boot][settings] failed while writing settings\n");
+            output.close();
+            std::filesystem::remove(temporary_path, error);
+            return;
+        }
+    }
+    if (!ReplaceSettingsFile(temporary_path, settings_path)) {
+        std::fprintf(stderr, "[boot][settings] failed to replace settings file\n");
+        std::filesystem::remove(temporary_path, error);
     }
 }
 
 void LoadSettings() {
     GraphicsConfig config = ultramodern::renderer::get_graphics_config();
     int settings_version = 0;
+    bool settings_complete = false;
     auto profile = dkr::runtime::enhancements::PresentationProfile::Accurate;
+    bool profile_value_valid = true;
     bool migrated = false;
     std::ifstream input(SettingsPath());
     std::string line;
@@ -258,8 +300,15 @@ void LoadSettings() {
             const int number = std::stoi(value);
             if (key == "settings_version") {
                 settings_version = number;
-            } else if (key == "presentation_profile" && number >= 0 && number < 2) {
-                profile = static_cast<dkr::runtime::enhancements::PresentationProfile>(number);
+            } else if (key == "settings_complete") {
+                settings_complete = number == 1;
+            } else if (key == "presentation_profile") {
+                profile = dkr::runtime::enhancements::normalise_presentation_profile(number);
+                profile_value_valid =
+                    number == static_cast<int>(
+                        dkr::runtime::enhancements::PresentationProfile::Accurate) ||
+                    number == static_cast<int>(
+                        dkr::runtime::enhancements::PresentationProfile::Modern);
             } else if (key == "window_mode" && number >= 0 && number < 2) {
                 config.wm_option = static_cast<WindowMode>(number);
             } else if (key == "resolution" && number >= 0 && number < 3) {
@@ -273,13 +322,15 @@ void LoadSettings() {
             } else if (key == "refresh_rate" && number >= 0 && number < 3) {
                 config.rr_option = static_cast<RefreshRate>(number);
             } else if (key == "refresh_rate_target") {
-                config.rr_manual_value = std::clamp(number, 30, 500);
+                config.rr_manual_value =
+                    dkr::runtime::enhancements::clamp_presentation_rate(number);
             } else if (key == "modern_refresh_rate" &&
                        number >= static_cast<int>(RefreshRate::Display) &&
                        number <= static_cast<int>(RefreshRate::Manual)) {
                 g_modern_refresh_mode = static_cast<RefreshRate>(number);
             } else if (key == "modern_refresh_target") {
-                g_modern_refresh_target = std::clamp(number, 30, 500);
+                g_modern_refresh_target =
+                    dkr::runtime::enhancements::clamp_presentation_rate(number);
             } else if (key == "master_volume") {
                 dkr::runtime::platform::set_master_volume(std::stof(value));
             } else if (key == "maximum_detail") {
@@ -319,18 +370,29 @@ void LoadSettings() {
         migrated = true;
         std::fprintf(stderr, "[boot][settings] migrated legacy MSAA 8x default to 2x\n");
     }
-    if (settings_version < 3) {
-        // Every pre-profile installation becomes Accurate. Preserve the old
-        // refresh preference as Modern's remembered value without activating
-        // interpolation during migration.
+    const auto resolved_profile =
+        dkr::runtime::enhancements::resolve_settings_profile(
+            settings_version, settings_complete, profile);
+    if (settings_version != 4 || !settings_complete || !profile_value_valid) {
+        // Every settings file from before the hardened profile boundary, and
+        // every truncated v4 write, becomes Accurate. Preserve the old refresh
+        // preference as Modern's remembered value without activating it.
         if (config.rr_option == RefreshRate::Display ||
             config.rr_option == RefreshRate::Manual) {
             g_modern_refresh_mode = config.rr_option;
-            g_modern_refresh_target = std::clamp(config.rr_manual_value, 30, 500);
+            g_modern_refresh_target =
+                dkr::runtime::enhancements::clamp_presentation_rate(
+                    config.rr_manual_value);
         }
-        profile = dkr::runtime::enhancements::PresentationProfile::Accurate;
+        profile = resolved_profile;
         migrated = true;
+        if (settings_version >= 4 && !settings_complete) {
+            std::fprintf(stderr,
+                         "[boot][settings] incomplete settings file; "
+                         "falling back to Accurate\n");
+        }
     }
+    profile = resolved_profile;
     dkr::runtime::enhancements::set_presentation_profile(profile);
     if (profile == dkr::runtime::enhancements::PresentationProfile::Modern) {
         config.rr_option = g_modern_refresh_mode;
@@ -809,7 +871,9 @@ bool DrawGraphicsSettings(bool live) {
             (config.rr_option == RefreshRate::Display ||
              config.rr_option == RefreshRate::Manual)) {
             g_modern_refresh_mode = config.rr_option;
-            g_modern_refresh_target = std::clamp(config.rr_manual_value, 30, 500);
+            g_modern_refresh_target =
+                dkr::runtime::enhancements::clamp_presentation_rate(
+                    config.rr_manual_value);
         }
         const auto next_profile =
             static_cast<dkr::runtime::enhancements::PresentationProfile>(profile);
@@ -877,7 +941,9 @@ bool DrawGraphicsSettings(bool live) {
             ImGui::SetNextItemWidth(setting_width);
             if (ImGui::SliderInt("##modern-refresh-target", &g_modern_refresh_target,
                                  30, 500, "%d FPS", ImGuiSliderFlags_AlwaysClamp)) {
-                g_modern_refresh_target = std::clamp(g_modern_refresh_target, 30, 500);
+                g_modern_refresh_target =
+                    dkr::runtime::enhancements::clamp_presentation_rate(
+                        g_modern_refresh_target);
                 config.rr_manual_value = g_modern_refresh_target;
                 changed = true;
             }
@@ -885,7 +951,7 @@ bool DrawGraphicsSettings(bool live) {
         config.rr_option = g_modern_refresh_mode;
         config.rr_manual_value = g_modern_refresh_target;
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Intermediate presentation frames are generated without advancing physics, AI, timers, input polling or the audio mixer. Manual targets are capped by the display and available GPU performance.");
+        ImGui::TextWrapped("Modern preserves the original simulation and audio cadence. High-refresh presentation activates only after its current scene passes interpolation validation; unsupported scenes fall back safely to 30 FPS.");
         ImGui::PopStyleColor();
     } else {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
@@ -913,14 +979,21 @@ bool DrawGraphicsSettings(bool live) {
     ImGui::TextWrapped("Graphics API: Automatic. Restart-time API selection is intentionally hidden until both backends complete release validation.");
     ImGui::PopStyleColor();
     ImGui::Spacing();
-    bool maximum_detail = dkr::runtime::enhancements::maximum_detail_enabled();
+    const bool modern_profile =
+        dkr::runtime::enhancements::modern_presentation_enabled();
+    bool maximum_detail =
+        dkr::runtime::enhancements::maximum_detail_requested();
+    ImGui::BeginDisabled(!modern_profile);
     if (ImGui::Checkbox("Maximum vehicle detail", &maximum_detail)) {
         dkr::runtime::enhancements::set_maximum_detail_enabled(maximum_detail);
         SaveSettings();
         changed = true;
     }
+    ImGui::EndDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped("Keeps racer vehicles on their highest available model. Time-trial ghosts and gameplay logic retain their original models. Off is original N64 behaviour.");
+    ImGui::TextWrapped(modern_profile
+        ? "Keeps racer vehicles on their highest available model. Time-trial ghosts and gameplay logic retain their original models."
+        : "Modern-only. Accurate always uses the original model-detail decisions.");
     ImGui::PopStyleColor();
     return changed;
 }

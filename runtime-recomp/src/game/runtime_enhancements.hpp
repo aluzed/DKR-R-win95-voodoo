@@ -1,15 +1,11 @@
 #pragma once
 
-#include <cstdint>
+#include "presentation_policy.hpp"
 
 namespace dkr::runtime::enhancements {
 
-enum class PresentationProfile : std::uint8_t {
-    Accurate = 0,
-    Modern = 1,
-};
-
 bool maximum_detail_enabled();
+bool maximum_detail_requested();
 void set_maximum_detail_enabled(bool enabled);
 
 PresentationProfile presentation_profile();

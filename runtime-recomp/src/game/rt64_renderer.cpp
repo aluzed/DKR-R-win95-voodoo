@@ -87,7 +87,7 @@ int DetectDisplayRate() {
         mode.refresh_rate <= 0) {
         return 60;
     }
-    return std::clamp(mode.refresh_rate, 30, 500);
+    return dkr::runtime::enhancements::clamp_presentation_rate(mode.refresh_rate);
 }
 
 void ApplyConfig(RT64::Application& application,
@@ -118,7 +118,8 @@ void ApplyConfig(RT64::Application& application,
         g_detected_display_rate = DetectDisplayRate();
         g_requested_refresh_target = config.rr_option ==
                 ultramodern::renderer::RefreshRate::Manual
-            ? std::clamp(config.rr_manual_value, 30, 500)
+            ? dkr::runtime::enhancements::clamp_presentation_rate(
+                  config.rr_manual_value)
             : g_detected_display_rate;
         if (kEnableExperimentalInterpolation) {
             g_effective_refresh_target = std::min(g_requested_refresh_target,

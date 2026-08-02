@@ -27,8 +27,13 @@ gpr RdramAddress(std::uint32_t address) {
 
 } // namespace
 
-bool dkr::runtime::enhancements::maximum_detail_enabled() {
+bool dkr::runtime::enhancements::maximum_detail_requested() {
     return g_maximum_detail_enabled.load(std::memory_order_acquire);
+}
+
+bool dkr::runtime::enhancements::maximum_detail_enabled() {
+    return maximum_detail_effective(presentation_profile(),
+                                    maximum_detail_requested());
 }
 
 void dkr::runtime::enhancements::set_maximum_detail_enabled(bool enabled) {
@@ -42,7 +47,8 @@ dkr::runtime::enhancements::presentation_profile() {
 
 void dkr::runtime::enhancements::set_presentation_profile(
     PresentationProfile profile) {
-    g_presentation_profile.store(profile, std::memory_order_release);
+    g_presentation_profile.store(normalise_presentation_profile(profile),
+                                 std::memory_order_release);
 }
 
 bool dkr::runtime::enhancements::modern_presentation_enabled() {
