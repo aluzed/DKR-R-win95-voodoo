@@ -81,6 +81,12 @@
   ],
   "functionHooks": [
     {
+      "function": "main_game_loop",
+      "beforeVram": "0x8006C60C",
+      "text": "extern void dkr_telemetry_simulation_tick(uint8_t*, recomp_context*); dkr_telemetry_simulation_tick(rdram, ctx);",
+      "reason": "Count authoritative game-loop ticks at the decompiled DKR simulation boundary so Modern presentation work can be proven independent from gameplay, input, and audio cadence."
+    },
+    {
       "function": "func_80065A80",
       "beforeVram": "0x80065A80",
       "text": "extern int dkr_audio_voice_guard(uint8_t*, recomp_context*); if (dkr_audio_voice_guard(rdram, ctx)) { return; }",

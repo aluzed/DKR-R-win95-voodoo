@@ -113,6 +113,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/runtime_input.cpp
         src/game/runtime_platform.cpp
         src/game/runtime_stubs.cpp
+        src/game/runtime_telemetry.cpp
         src/game/virtual_pak.cpp
         ${DKR_GENERATED_RSP}
     )

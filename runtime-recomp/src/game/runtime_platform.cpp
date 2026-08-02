@@ -1,5 +1,6 @@
 #include "runtime_platform.hpp"
 #include "runtime_input.hpp"
+#include "runtime_telemetry.hpp"
 #include "ultramodern/ultramodern.hpp"
 
 #if DKR_RUNTIME_HAS_RT64
@@ -384,6 +385,7 @@ void dkr::runtime::platform::inject_overlay_toggle_for_test() {
 
 void dkr::runtime::platform::queue_audio(std::int16_t* samples,
                                          std::size_t sample_count) {
+    dkr::runtime::telemetry::record_audio_buffer(sample_count);
     const auto index = ++g_audio_buffers;
     if (index <= 10) {
         std::fprintf(stderr, "[boot][audio] queue=%llu pointer=%p samples=%zu\n",
@@ -499,6 +501,7 @@ void dkr::runtime::platform::set_audio_frequency(std::uint32_t frequency) {
 }
 
 void dkr::runtime::platform::poll_input() {
+    dkr::runtime::telemetry::record_input_poll();
 #if DKR_RUNTIME_HAS_RT64
     std::scoped_lock lock(g_platform_mutex);
     SDL_GameControllerUpdate();

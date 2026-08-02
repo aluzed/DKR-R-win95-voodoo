@@ -2,6 +2,7 @@
 
 #include "game_registration.hpp"
 #include "runtime_enhancements.hpp"
+#include "runtime_telemetry.hpp"
 #include "runtime_platform.hpp"
 #include "runtime_ui.hpp"
 
@@ -302,6 +303,7 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
     if (application_ == nullptr || rdram_snapshot == nullptr) {
         return;
     }
+    dkr::runtime::telemetry::record_graphics_task();
 
     // A real RSP DMAs task inputs before notifying the CPU that it may recycle
     // them. DKR relies on that during scene transitions and can free texture
@@ -319,6 +321,8 @@ void dkr::runtime::RT64Renderer::update_screen() {
     if (application_ == nullptr) {
         return;
     }
+    dkr::runtime::telemetry::record_vi_present();
+    dkr::runtime::telemetry::report_if_due();
     ++present_count_;
     if (present_count_ == 1) {
         std::fprintf(stderr, "[boot] VI initialized; starting recompiled DKR entrypoint\n");
