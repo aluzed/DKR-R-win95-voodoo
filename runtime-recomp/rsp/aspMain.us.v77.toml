@@ -1,0 +1,19 @@
+# DKR NTSC-US v1.0 (game version 77) audio microcode.
+# ROM offset is derived from the matching decomp's .main ROM/VRAM mapping.
+text_offset = 0x000D8200
+text_size = 0x00000EC0
+# DKR's rspboot loads the 0xF80-byte ucode image at IMEM 0x1080 and jumps
+# there; unlike many later ABI revisions, aspMain is not based at 0x1000.
+text_address = 0x04001080
+rom_file_path = "../../extern/dkr-decomp/build/dkr.us.v77.z64"
+output_file_path = "../RecompiledRSP/aspMain.cpp"
+output_function_name = "dkrAspMain"
+
+# The ABI dispatcher reads these handlers from aspMainData's 16-entry
+# command table, so they are not discoverable from static branch analysis.
+extra_indirect_branch_targets = [
+    0x1118, 0x14A4, 0x11EC, 0x1BA0,
+    0x123C, 0x18D4, 0x1270, 0x12D4,
+    0x12F0, 0x132C, 0x1428, 0x12A4,
+    0x1E3C, 0x1390, 0x1758, 0x1480
+]

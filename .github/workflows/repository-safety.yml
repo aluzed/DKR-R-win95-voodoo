@@ -1,0 +1,15 @@
+name: Repository Safety
+on: [push, pull_request]
+jobs:
+  asset-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan for ROMs and generated assets
+        run: python3 scripts/scan_for_game_assets.py
+  dependency-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate dependency lock JSON
+        run: python3 -m json.tool dependencies.lock.json >/dev/null

@@ -1,0 +1,154 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "DKRPORT_BUILD_TESTS": "ON",
+        "DKRPORT_BUILD_NATIVE_UI": "OFF",
+        "DKRPORT_ENABLE_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "windows-msvc-debug",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "cacheVariables": {
+        "DKRPORT_BUILD_NATIVE_UI": "ON"
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "inherits": "windows-msvc-debug",
+      "cacheVariables": {
+        "DKRPORT_BUILD_NATIVE_UI": "ON"
+      }
+    },
+    {
+      "name": "linux-gcc-debug",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-gcc-release",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-clang-asan",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "DKRPORT_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    },
+    {
+      "name": "macos-arm64-release",
+      "inherits": "macos-arm64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    },
+    {
+      "name": "macos-x64-release",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-msvc-debug",
+      "configurePreset": "windows-msvc-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-gcc-debug",
+      "configurePreset": "linux-gcc-debug"
+    },
+    {
+      "name": "linux-gcc-release",
+      "configurePreset": "linux-gcc-release"
+    },
+    {
+      "name": "linux-clang-asan",
+      "configurePreset": "linux-clang-asan"
+    },
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug"
+    },
+    {
+      "name": "macos-arm64-release",
+      "configurePreset": "macos-arm64-release"
+    },
+    {
+      "name": "macos-x64-release",
+      "configurePreset": "macos-x64-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-gcc-debug",
+      "configurePreset": "linux-gcc-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-gcc-release",
+      "configurePreset": "linux-gcc-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-asan",
+      "configurePreset": "linux-clang-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

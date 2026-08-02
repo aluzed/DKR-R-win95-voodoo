@@ -1,0 +1,17 @@
+diff --git a/src/elf.cpp b/src/elf.cpp
+index 42b89a7..a3f73e9 100644
+--- a/src/elf.cpp
++++ b/src/elf.cpp
+@@ -61,8 +61,10 @@ bool read_symbols(N64Recomp::Context& context, const ELFIO::elfio& elf_file, EL
+ 
+         if (section_index < context.sections.size()) {
+             // Check if this symbol is the entrypoint
+-            // TODO this never fires, the check is broken due to signedness
+-            if (elf_config.has_entrypoint && value == elf_config.entrypoint_address && type == ELFIO::STT_FUNC) {
++            // Configured N64 VRAM addresses are stored in a signed int32_t. Compare their
++            // 32-bit bit pattern with the ELF address so KSEG0 functions are recognized.
++            const auto entrypoint_address = static_cast<ELFIO::Elf64_Addr>(static_cast<uint32_t>(elf_config.entrypoint_address));
++            if (elf_config.has_entrypoint && value == entrypoint_address && type == ELFIO::STT_FUNC) {
+                 if (found_entrypoint_func) {
+                     fmt::print(stderr, "Ambiguous entrypoint: {}\n", name);
+                     return false;

@@ -1,0 +1,27 @@
+name: Build Windows Native Launcher
+on: [push, pull_request]
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare pinned vcpkg
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch 2026.06.24 https://github.com/microsoft/vcpkg.git .deps/vcpkg
+          .\.deps\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+      - name: Configure native launcher
+        shell: pwsh
+        run: >-
+          cmake -S . -B build/windows-ci -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$pwd/.deps/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+          -DDKRPORT_BUILD_NATIVE_UI=ON
+          -DDKRPORT_BUILD_TESTS=ON
+          -DDKRPORT_ENABLE_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build/windows-ci --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build/windows-ci -C Release --output-on-failure
+      - name: Headless self-test
+        run: .\build\windows-ci\bin\Release\DKRPort.exe --headless-self-test --portable

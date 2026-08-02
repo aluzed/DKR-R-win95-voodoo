@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 1,
+  "functionSizes": [
+    {
+      "name": "sins_s16",
+      "size": "0x0000005C",
+      "reason": "The ELF exposes DKR's sine entry point four bytes inside coss_s16 with a zero symbol size. Recompile the shared lookup body from 0x80070830 through 0x8007088C so direct sine calls do not become an empty static function."
+    }
+  ],
+  "manualFunctions": [
+    {
+      "name": "__CSPVoiceHandler",
+      "section": ".main",
+      "vram": "0x80062408",
+      "size": "0x000005C4",
+      "reason": "Static compact-sequence player callback is invoked indirectly by libultra but omitted from the ELF symbol table."
+    },
+    {
+      "name": "__amMain",
+      "section": ".main",
+      "vram": "0x80002A98",
+      "size": "0x00000168",
+      "reason": "Static audio manager thread entry is referenced by osCreateThread but omitted from the ELF symbol table."
+    },
+    {
+      "name": "__amHandleFrameMsg",
+      "section": ".main",
+      "vram": "0x80002C00",
+      "size": "0x000001F8",
+      "reason": "Static audio manager function omitted from the ELF symbol table."
+    },
+    {
+      "name": "__amHandleDoneMsg",
+      "section": ".main",
+      "vram": "0x80002DF8",
+      "size": "0x00000040",
+      "reason": "Static audio manager function omitted from the ELF symbol table."
+    },
+    {
+      "name": "__amDMA",
+      "section": ".main",
+      "vram": "0x80002E38",
+      "size": "0x000001D0",
+      "reason": "Static audio DMA callback omitted from the ELF symbol table."
+    },
+    {
+      "name": "__amDmaNew",
+      "section": ".main",
+      "vram": "0x80003008",
+      "size": "0x00000038",
+      "reason": "Static audio DMA factory callback is invoked indirectly but omitted from the ELF symbol table."
+    },
+    {
+      "name": "__clearAudioDMA",
+      "section": ".main",
+      "vram": "0x80003040",
+      "size": "0x00000120",
+      "reason": "Static audio DMA maintenance function omitted from the ELF symbol table."
+    },
+    {
+      "name": "__scMain",
+      "section": ".main",
+      "vram": "0x800795AC",
+      "size": "0x000001B4",
+      "reason": "Static libultra scheduler thread entry is referenced by osCreateThread but omitted from the ELF symbol table."
+    },
+    {
+      "name": "__scHandleRSP",
+      "section": ".main",
+      "vram": "0x80079B44",
+      "size": "0x00000218",
+      "reason": "Static libultra RSP-completion handler requires a named Patch Pipeline boundary so host-late completion edges can be guarded safely."
+    },
+    {
+      "name": "__scHandleRDP",
+      "section": ".main",
+      "vram": "0x80079D5C",
+      "size": "0x000000E4",
+      "reason": "Static libultra RDP-completion handler requires a named Patch Pipeline boundary so host-late completion edges can be guarded safely."
+    }
+  ],
+  "functionHooks": [
+    {
+      "function": "func_80065A80",
+      "beforeVram": "0x80065A80",
+      "text": "extern int dkr_audio_voice_guard(uint8_t*, recomp_context*); if (dkr_audio_voice_guard(rdram, ctx)) { return; }",
+      "reason": "Reject invalid physical-voice pointers and normalize Rare's uninitialized aux-bus byte before routing a live mixer source."
+    },
+    {
+      "function": "alAuxBusParam",
+      "beforeVram": "0x800659D4",
+      "text": "extern int dkr_audio_bus_guard(uint8_t*, recomp_context*); if (dkr_audio_bus_guard(rdram, ctx)) { return; }",
+      "reason": "Validate Rare's uninitialized physical-voice auxiliary-bus selector before it becomes a host RDRAM pointer."
+    },
+    {
+      "function": "transition_render",
+      "beforeVram": "0x800C0634",
+      "text": "extern void dkr_transition_cover_begin(uint8_t*, recomp_context*); dkr_transition_cover_begin(rdram, ctx);",
+      "reason": "Uniformly zoom only the active 4:3 transition projection to cover wider expanded-aspect windows without stretching it or changing HUD geometry."
+    },
+    {
+      "function": "transition_render",
+      "beforeVram": "0x800C0640",
+      "text": "extern void dkr_transition_cover_end(uint8_t*, recomp_context*); dkr_transition_cover_end(rdram, ctx);",
+      "reason": "Restore the original orthographic matrix immediately after the transition matrix is emitted so menus, HUD elements, and later viewports retain their original scaling."
+    },
+    {
+      "function": "transition_render",
+      "beforeVram": "0x800C0708",
+      "text": "extern void dkr_transition_interpolation_end(uint8_t*, recomp_context*); dkr_transition_interpolation_end(rdram, ctx);",
+      "reason": "Close the transition-only Modern interpolation group after its effect geometry and before the normal viewport is restored, preventing the static background policy from leaking into world or HUD draws."
+    },
+    {
+      "function": "osPfsReFormat",
+      "beforeVram": "0x800CFF90",
+      "text": "extern int dkr_virtual_pak_reformat(uint8_t*, recomp_context*); ctx->r2 = dkr_virtual_pak_reformat(rdram, ctx); return;",
+      "reason": "Route Controller Pak formatting to the persistent host-backed virtual Pak instead of issuing raw SI block commands to unsupported hardware."
+    },
+    {
+      "function": "menu_character_select_init",
+      "beforeVram": "0x8008B164",
+      "text": "extern void dkr_character_select_music_unblock(uint8_t*, recomp_context*); dkr_character_select_music_unblock(rdram, ctx);",
+      "reason": "Clear a stale music-change lock exactly before character select starts its intended sequence, preventing intro music and character channel arrangements from layering on first entry."
+    },
+    {
+      "function": "menu_character_select_init",
+      "beforeVram": "0x8008B1B8",
+      "text": "extern void dkr_character_select_music_mask(uint8_t*, recomp_context*); dkr_character_select_music_mask(rdram, ctx);",
+      "reason": "Seed the asynchronously queued Choose Your Racer sequence with the selected character's dynamic channel mask after the original mute loop, so the new sequence cannot reactivate every character arrangement when it starts."
+    },
+    {
+      "function": "set_temp_model_transforms",
+      "beforeVram": "0x800132F4",
+      "text": "extern void dkr_apply_maximum_racer_detail(uint8_t*, recomp_context*); dkr_apply_maximum_racer_detail(rdram, ctx);",
+      "reason": "When the optional maximum-detail setting is enabled, select the first valid highest-detail racer model after DKR's original bounds checks while preserving the time-trial ghost model."
+    },
+    {
+      "function": "trackbg_render_gradient",
+      "beforeVram": "0x80028BE8",
+      "text": "extern void dkr_widen_gradient_sky(uint8_t*, recomp_context*); dkr_widen_gradient_sky(rdram, ctx);",
+      "reason": "Expand only the completed gradient-sky quad to cover wider viewports, preventing exposed side edges without changing the camera, world geometry, menus, or HUD."
+    },
+    {
+      "function": "skydome_render",
+      "beforeVram": "0x80028CA0",
+      "text": "extern void dkr_skybox_cover_begin(uint8_t*, recomp_context*); dkr_skybox_cover_begin(rdram, ctx);",
+      "reason": "Apply cover scaling only after mtx_world_origin has produced the current camera matrix and immediately before the skydome object builds its private draw matrices."
+    },
+    {
+      "function": "skydome_render",
+      "beforeVram": "0x80028CC0",
+      "text": "extern void dkr_skybox_cover_end(uint8_t*, recomp_context*); dkr_skybox_cover_end(rdram, ctx);",
+      "reason": "Restore the exact current-frame camera projection after the skydome draw so no stale or zoomed matrix can reach track geometry, racers, effects, decals, or HUD elements."
+    },
+    {
+      "function": "bgdraw_render",
+      "beforeVram": "0x80077DBC",
+      "text": "extern void dkr_background_fill_stretch_begin(uint8_t*, recomp_context*); dkr_background_fill_stretch_begin(rdram, ctx);",
+      "reason": "Stretch only the fallback level-colour rectangle for an extra-background viewport so the original 320x240 clear reaches expanded-aspect host edges."
+    },
+    {
+      "function": "bgdraw_render",
+      "beforeVram": "0x80077E0C",
+      "text": "extern void dkr_background_fill_stretch_end(uint8_t*, recomp_context*); dkr_background_fill_stretch_end(rdram, ctx);",
+      "reason": "End the extra-background colour-fill scope before viewport-local overlays; texture backgrounds, skydome, water, world geometry, effects, and HUD retain their normal aspect policy."
+    },
+    {
+      "function": "bgdraw_render",
+      "beforeVram": "0x80077F98",
+      "text": "extern void dkr_background_fill_stretch_begin(uint8_t*, recomp_context*); dkr_background_fill_stretch_begin(rdram, ctx);",
+      "reason": "Stretch only the normal gameplay fallback level-colour rectangle so its original 320x240 boundary reaches expanded-aspect host edges."
+    },
+    {
+      "function": "bgdraw_render",
+      "beforeVram": "0x80078024",
+      "text": "extern void dkr_background_fill_stretch_end(uint8_t*, recomp_context*); dkr_background_fill_stretch_end(rdram, ctx);",
+      "reason": "Restore world aspect handling immediately after the normal gameplay colour fill, before pipe sync and viewport scissor setup."
+    },
+    {
+      "function": "func_8008F618",
+      "beforeVram": "0x8008F948",
+      "text": "extern void dkr_track_select_background_cover(uint8_t*, recomp_context*); dkr_track_select_background_cover(rdram, ctx);",
+      "reason": "Widen only each Track Select background quad after its private vertex pointer is restored, avoiding all mutations of the shared orthographic and view-projection matrices."
+    },
+    {
+      "function": "__scHandleRSP",
+      "beforeVram": "0x80079D50",
+      "text": "extern void dkr_scheduler_sp_handled(uint8_t*, recomp_context*); dkr_scheduler_sp_handled(rdram, ctx);",
+      "reason": "Acknowledge SP completion only after DKR's scheduler has cleared and rescheduled the active task, preventing a fast host renderer from publishing DP before the emulated RSP handler finishes."
+    },
+    {
+      "function": "__scHandleRDP",
+      "beforeVram": "0x80079DDC",
+      "text": "extern void dkr_scheduler_dp_handled(uint8_t*, recomp_context*); dkr_scheduler_dp_handled(rdram, ctx);",
+      "reason": "Count completed DKR scheduler DP handlers for release-time watchdog diagnostics without introducing timing-sensitive per-task logging."
+    }
+  ],
+  "stubs": [
+    {
+      "name": "set_breakpoint",
+      "reason": "Writes COP0 WatchLo/WatchHi debug registers and has no required effect in the native runtime."
+    }
+  ],
+  "renamed": [
+    {
+      "name": "log",
+      "reason": "Avoids collision with the MSVC C runtime logarithm intrinsic."
+    },
+    {
+      "name": "_itoa",
+      "reason": "Avoids collision with the MSVC C runtime integer formatting function."
+    },
+    {
+      "name": "strcasecmp",
+      "reason": "Avoids collision with the POSIX libc case-insensitive string comparison function on Linux."
+    },
+    {
+      "name": "strncasecmp",
+      "reason": "Avoids collision with the POSIX libc bounded case-insensitive string comparison function on Linux."
+    }
+  ],
+  "instructionPatches": [
+    {
+      "function": "load_texture",
+      "vram": "0x8007AF98",
+      "value": "0x000B68C0",
+      "reason": "Reserve nine 16-byte command slots per uncompressed texture frame so CI palette commands do not overflow the texture heap allocation."
+    },
+    {
+      "function": "load_texture",
+      "vram": "0x8007AF9C",
+      "value": "0x01AB6821",
+      "reason": "Complete the patched 9x frame-command allocation multiplier for uncompressed textures."
+    },
+    {
+      "function": "load_texture",
+      "vram": "0x8007AFA8",
+      "value": "0x000D6900",
+      "reason": "Scale the uncompressed per-frame command reservation to 144 bytes, covering the original 96-byte texture list plus the 48-byte CI palette list."
+    },
+    {
+      "function": "load_texture",
+      "vram": "0x8007AFF0",
+      "value": "0x0011C0C0",
+      "reason": "Reserve nine 16-byte command slots per compressed texture frame so CI palette commands do not overflow the texture heap allocation."
+    },
+    {
+      "function": "load_texture",
+      "vram": "0x8007AFF4",
+      "value": "0x0311C021",
+      "reason": "Complete the patched 9x frame-command allocation multiplier for compressed textures."
+    },
+    {
+      "function": "load_texture",
+      "vram": "0x8007AFF8",
+      "value": "0x0018C100",
+      "reason": "Scale the compressed per-frame command reservation to 144 bytes, covering the original 96-byte texture list plus the 48-byte CI palette list."
+    },
+    {
+      "function": "render_scene",
+      "vram": "0x80024FB8",
+      "value": "0x3C0DAC29",
+      "reason": "Supply the expected CIC bootstrap instruction for the mirrored-tracks anti-tamper check instead of dereferencing uncached boot memory at 0xA0000200."
+    },
+    {
+      "function": "obj_loop_goldenballoon",
+      "vram": "0x8003B508",
+      "value": "0x3C19240B",
+      "reason": "Avoid dereferencing uncached boot memory at 0xA0000284 during the golden-balloon anti-tamper check."
+    },
+    {
+      "function": "obj_loop_goldenballoon",
+      "vram": "0x8003B514",
+      "value": "0x10000002",
+      "reason": "Treat the supported ROM's virtualized CIC bootstrap check as successful."
+    },
+    {
+      "function": "cam_init",
+      "vram": "0x80065FA4",
+      "value": "0x24020000",
+      "reason": "Report the PI controller as idle instead of dereferencing the PI_STATUS MMIO register at 0xA4600010 from host RDRAM."
+    },
+    {
+      "function": "cam_init",
+      "vram": "0x80065FCC",
+      "value": "0x240F8965",
+      "reason": "Supply the supported ROM revision's expected anti-tamper halfword instead of directly dereferencing cartridge address 0xB0000578."
+    },
+    {
+      "function": "race_check_finish",
+      "vram": "0x8001A52C",
+      "value": "0x24020000",
+      "reason": "Report the PI controller as idle during the race-completion anti-tamper check instead of dereferencing PI_STATUS at 0xA4600010 from host RDRAM."
+    },
+    {
+      "function": "race_check_finish",
+      "vram": "0x8001A554",
+      "value": "0x240F6C07",
+      "reason": "Supply the supported ROM revision's expected anti-tamper halfword instead of directly dereferencing cartridge address 0xB0000574."
+    },
+    {
+      "function": "render_3d_model",
+      "vram": "0x80012798",
+      "value": "0x240D17D7",
+      "reason": "Supply the supported CIC 6103 identifier so the original attachment-rendering anti-piracy gate emits racer wheels, propellers, hovercraft fans, and cargo display lists."
+    },
+    {
+      "function": "drm_validate_dmem",
+      "vram": "0x8006EFB8",
+      "value": "0x24020001",
+      "reason": "Return TRUE from the original RSP DMEM anti-tamper probe; the host runtime owns RSP DMEM outside the CPU RDRAM array."
+    },
+    {
+      "function": "drm_validate_dmem",
+      "vram": "0x8006EFBC",
+      "value": "0x03E00008",
+      "reason": "Return immediately after supplying the virtualized successful DMEM result."
+    },
+    {
+      "function": "drm_validate_dmem",
+      "vram": "0x8006EFC0",
+      "value": "0x00000000",
+      "reason": "Use a safe no-op return delay slot for the virtualized DMEM probe."
+    },
+    {
+      "function": "drm_validate_imem",
+      "vram": "0x8006F4EC",
+      "value": "0x24020001",
+      "reason": "Return TRUE from the original CIC 6103 anti-tamper probe; host RDRAM does not expose the cartridge/RSP IMEM MMIO aperture at 0xA4001000."
+    },
+    {
+      "function": "drm_validate_imem",
+      "vram": "0x8006F4F0",
+      "value": "0x03E00008",
+      "reason": "Return immediately after supplying the virtualized successful CIC result."
+    },
+    {
+      "function": "drm_validate_imem",
+      "vram": "0x8006F4F4",
+      "value": "0x00000000",
+      "reason": "Use a safe no-op return delay slot for the virtualized CIC probe."
+    }
+  ],
+  "ignored": [
+    {
+      "name": "aspMainTextStart",
+      "reason": "Audio RSP microcode blob marker; handled by the RSP pipeline, not CPU recompilation."
+    },
+    {
+      "name": "aspMainTextEnd",
+      "reason": "Audio RSP microcode blob boundary marker."
+    },
+    {
+      "name": "rspbootTextEnd",
+      "reason": "RSP boot microcode blob boundary marker."
+    },
+    {
+      "name": "rspF3DDKRDramStart",
+      "reason": "F3DDKR RSP microcode blob marker."
+    },
+    {
+      "name": "rspF3DDKRDramEnd",
+      "reason": "F3DDKR RSP microcode blob boundary marker."
+    },
+    {
+      "name": "rspF3DDKRFifoStart",
+      "reason": "F3DDKR RSP microcode blob marker."
+    },
+    {
+      "name": "rspF3DDKRFifoEnd",
+      "reason": "F3DDKR RSP microcode blob boundary marker."
+    },
+    {
+      "name": "rspF3DDKRXbusStart",
+      "reason": "F3DDKR RSP microcode blob marker."
+    },
+    {
+      "name": "rspF3DDKRXbusEnd",
+      "reason": "F3DDKR RSP microcode blob boundary marker."
+    },
+    {
+      "name": "rspUnknown2Start",
+      "reason": "Unclassified RSP microcode blob marker; retained for separate task inventory."
+    },
+    {
+      "name": "rspUnknown2End",
+      "reason": "Unclassified RSP microcode blob boundary marker."
+    },
+    {
+      "name": "aspMainDataStart",
+      "reason": "Audio RSP data blob marker."
+    },
+    {
+      "name": "aspMainDataEnd",
+      "reason": "Audio RSP data blob boundary marker."
+    },
+    {
+      "name": "rspF3DDKRDataDramStart",
+      "reason": "F3DDKR RSP data blob marker."
+    },
+    {
+      "name": "rspF3DDKRDataDramEnd",
+      "reason": "F3DDKR RSP data blob boundary marker."
+    },
+    {
+      "name": "rspF3DDKRDataFifoStart",
+      "reason": "F3DDKR RSP data blob marker."
+    },
+    {
+      "name": "rspF3DDKRDataFifoEnd",
+      "reason": "F3DDKR RSP data blob boundary marker."
+    },
+    {
+      "name": "rspF3DDKRDataXbusStart",
+      "reason": "F3DDKR RSP data blob marker."
+    },
+    {
+      "name": "rspF3DDKRDataXbusEnd",
+      "reason": "F3DDKR RSP data blob boundary marker."
+    },
+    {
+      "name": "rspUnknown2DataStart",
+      "reason": "Unclassified RSP data blob marker."
+    },
+    {
+      "name": "rspUnknown2DataEnd",
+      "reason": "Unclassified RSP data blob boundary marker."
+    }
+  ]
+}

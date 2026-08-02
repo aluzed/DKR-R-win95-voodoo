@@ -1,0 +1,1278 @@
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: DKRUI;
+    color: #f5f1e8;
+    background-color: #071019;
+}
+#app-shell {
+    width: 100%;
+    height: 100%;
+    padding: 32dp 44dp 24dp 44dp;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background-color: #071019;
+}
+.track-line {
+    position: absolute;
+    background-color: #102b38;
+    opacity: 0.55;
+}
+.track-line-one { width: 120%; height: 8dp; left: -10%; top: 19%; }
+.track-line-two { width: 120%; height: 2dp; left: -10%; top: 23%; }
+.track-line-three { width: 120%; height: 3dp; left: -10%; bottom: 14%; opacity: 0.3; }
+#top-bar, #bottom-bar, #main-content { position: relative; }
+#top-bar {
+    height: 62dp;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom-width: 1dp;
+    border-bottom-color: #1c3540;
+}
+.brand-small { display: flex; flex-direction: row; align-items: center; }
+.brand-mark {
+    width: 39dp;
+    height: 39dp;
+    margin-right: 13dp;
+    padding-top: 7dp;
+    text-align: center;
+    font-size: 21dp;
+    font-weight: bold;
+    color: #09131b;
+    background-color: #f0b52b;
+    border-radius: 6dp;
+}
+.brand-name { font-size: 17dp; font-weight: bold; letter-spacing: 2dp; }
+.build-label { margin-top: 2dp; color: #6e8994; font-size: 9dp; letter-spacing: 1.5dp; }
+.status-pill, .value-badge {
+    padding: 7dp 12dp;
+    border-width: 1dp;
+    border-radius: 18dp;
+    font-size: 9dp;
+    font-weight: bold;
+    letter-spacing: 1dp;
+}
+.status-neutral { color: #8ea5ae; border-color: #35505a; background-color: #0a1821; }
+.status-good { color: #92e4b2; border-color: #267a51; background-color: #0b271c; }
+#main-content { flex: 1; min-height: 0; }
+.page { width: 100%; height: 100%; }
+.page-main {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 36dp 28dp 28dp 28dp;
+}
+.hero-copy { width: 47%; padding-right: 34dp; }
+.eyebrow { color: #f0b52b; font-size: 10dp; font-weight: bold; letter-spacing: 2dp; }
+h1 { margin: 15dp 0 18dp 0; font-size: 51dp; line-height: 0.94; letter-spacing: -1dp; color: #f5f1e8; }
+h1 span { color: #f0b52b; }
+.hero-description { width: 92%; margin: 0; color: #9db0b8; font-size: 14dp; line-height: 1.55; }
+.legal-note {
+    width: 92%;
+    margin-top: 25dp;
+    padding: 13dp 15dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    color: #849aa3;
+    font-size: 10dp;
+    line-height: 1.4;
+    border-left-width: 3dp;
+    border-left-color: #f0b52b;
+    background-color: #0b1821;
+}
+.legal-icon { margin-right: 12dp; color: #f0b52b; font-size: 19dp; font-weight: bold; }
+.control-panel { width: 49%; max-width: 630dp; }
+.status-card {
+    min-height: 139dp;
+    padding: 20dp;
+    display: flex;
+    flex-direction: row;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 8dp;
+    background-color: #0a1821;
+}
+.status-card-good { border-color: #267a51; background-color: #0a1e18; }
+.status-orb {
+    width: 50dp;
+    height: 50dp;
+    flex-shrink: 0;
+    margin-right: 17dp;
+    padding-top: 10dp;
+    text-align: center;
+    font-size: 22dp;
+    font-weight: bold;
+    border-radius: 25dp;
+}
+.status-orb-neutral { color: #8297a0; border-width: 1dp; border-color: #3a535d; background-color: #10232c; }
+.status-orb-good { color: #082017; background-color: #62d793; }
+.status-copy { flex: 1; }
+.status-kicker { color: #7e98a2; font-size: 9dp; font-weight: bold; letter-spacing: 1.4dp; }
+.status-title { margin-top: 5dp; font-size: 19dp; font-weight: bold; }
+.status-description { margin-top: 6dp; color: #91a6ae; font-size: 10dp; line-height: 1.35; }
+.detail-grid {
+    margin-top: 13dp;
+    padding-top: 10dp;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-top-width: 1dp;
+    border-top-color: #24402f;
+}
+.detail-label { width: 18%; color: #658174; font-size: 8dp; letter-spacing: 1dp; }
+.detail-value { width: 32%; color: #c4d9cc; font-size: 9dp; }
+.detail-mono { font-size: 7.5dp; }
+.action-stack { margin-top: 13dp; }
+button {
+    tab-index: auto;
+    cursor: pointer;
+    font-family: DKRUI;
+    color: #e8eef0;
+    background-color: transparent;
+    border-width: 0;
+}
+.action {
+    width: 100%;
+    min-height: 58dp;
+    margin-bottom: 7dp;
+    padding: 10dp 15dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+    border-width: 1dp;
+    border-color: #223b46;
+    border-radius: 6dp;
+    background-color: #0b1821;
+}
+.action:hover, .action:focus { background-color: #112934; border-color: #568293; }
+.action-primary { color: #081119; border-color: #f0b52b; background-color: #f0b52b; }
+.action-primary:hover, .action-primary:focus { background-color: #ffd25b; border-color: #ffd25b; }
+.action-index { width: 37dp; font-size: 9dp; font-weight: bold; opacity: 0.55; }
+.action-content { flex: 1; display: flex; flex-direction: column; }
+.action-title { font-size: 12dp; font-weight: bold; letter-spacing: 0.7dp; }
+.action-subtitle { margin-top: 2dp; font-size: 8.5dp; opacity: 0.68; }
+.action-arrow { font-size: 24dp; font-weight: bold; }
+.action-lock { font-size: 8dp; font-weight: bold; letter-spacing: 1dp; color: #657983; }
+.action-disabled { color: #60727a; border-color: #1b2d35; background-color: #08141b; }
+.action-disabled:hover, .action-disabled:focus { border-color: #30424a; background-color: #0a1820; }
+.action-quiet { min-height: 48dp; background-color: transparent; }
+#bottom-bar {
+    height: 31dp;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-end;
+    color: #516b76;
+    font-size: 8dp;
+    letter-spacing: 0.8dp;
+}
+.input-hints span { margin-left: 17dp; color: #98abb2; }
+.subpage { padding: 30dp 42dp 24dp 42dp; }
+.subpage-heading { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+h2 { margin: 5dp 0 0 0; font-size: 34dp; letter-spacing: 1dp; }
+.compact-button {
+    tab-index: auto;
+    cursor: pointer;
+    min-width: 90dp;
+    padding: 10dp 15dp;
+    font-size: 9dp;
+    font-weight: bold;
+    letter-spacing: 1dp;
+    border-width: 1dp;
+    border-color: #3a5965;
+    border-radius: 5dp;
+    background-color: #0d2029;
+}
+.compact-button:hover, .compact-button:focus { border-color: #f0b52b; color: #f0b52b; }
+.compact-button.danger { border-color: #7a3e3b; color: #e89c96; }
+.diagnostic-layout { margin-top: 25dp; display: flex; flex-direction: row; flex-wrap: wrap; }
+.diagnostic-card { width: 48%; margin-right: 1%; margin-bottom: 14dp; min-height: 220dp; padding: 20dp; border-width: 1dp; border-color: #29424d; border-radius: 7dp; background-color: #0a1821; }
+.card-title { margin-bottom: 14dp; color: #f0b52b; font-size: 9dp; font-weight: bold; letter-spacing: 1.5dp; }
+.diagnostic-row { padding: 10dp 0; display: flex; flex-direction: row; justify-content: space-between; border-bottom-width: 1dp; border-bottom-color: #19303a; color: #8da2aa; font-size: 10dp; }
+.diagnostic-row strong { color: #c7d5da; font-size: 9dp; }
+.self-test-summary { padding: 11dp; color: #9bb0b8; font-size: 10dp; line-height: 1.4; background-color: #0e222c; }
+.self-test-list { margin-top: 11dp; color: #9fb1b8; font-size: 9dp; line-height: 1.55; }
+.diagnostic-actions { width: 100%; display: flex; flex-direction: row; }
+.tile-button { width: 23.5%; margin-right: 1%; min-height: 92dp; padding: 14dp; text-align: left; border-width: 1dp; border-color: #29424d; border-radius: 6dp; background-color: #0a1821; }
+.tile-button:hover, .tile-button:focus { border-color: #f0b52b; background-color: #102630; }
+.tile-title { display: block; color: #dfe8eb; font-size: 9dp; font-weight: bold; letter-spacing: 0.5dp; }
+.tile-subtitle { display: block; margin-top: 8dp; color: #78909a; font-size: 8dp; line-height: 1.35; }
+.settings-panel { margin-top: 27dp; border-width: 1dp; border-color: #29424d; border-radius: 8dp; background-color: #0a1821; }
+.setting-row { min-height: 105dp; padding: 22dp; display: flex; flex-direction: row; justify-content: space-between; align-items: center; border-bottom-width: 1dp; border-bottom-color: #1b333e; }
+.setting-title { font-size: 11dp; font-weight: bold; letter-spacing: 0.7dp; }
+.setting-row p { max-width: 730dp; margin: 7dp 0 0 0; color: #839aa3; font-size: 9dp; line-height: 1.4; }
+.value-badge { color: #8ee5b1; border-color: #267a51; background-color: #0a281c; }
+.value-badge.muted { color: #71868e; border-color: #344b54; background-color: #102029; }
+.muted-setting { opacity: 0.65; }
+.overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background-color: #02080ce0; }
+.modal { width: 520dp; padding: 34dp; text-align: center; border-width: 1dp; border-color: #3a5965; border-radius: 10dp; background-color: #0b1b24; }
+.modal h3 { margin: 8dp 0 10dp 0; font-size: 26dp; }
+.modal p { margin: 0; color: #93a8b0; font-size: 11dp; line-height: 1.5; }
+.spinner { height: 42dp; display: flex; flex-direction: row; justify-content: center; align-items: center; }
+.spinner div { width: 9dp; margin: 0 4dp; height: 9dp; border-radius: 5dp; background-color: #f0b52b; }
+.progress-track { height: 5dp; margin-top: 24dp; overflow: hidden; background-color: #18333f; }
+.progress-bar { width: 72%; height: 100%; background-color: #f0b52b; }
+.message-type { color: #7f98a1; font-size: 9dp; font-weight: bold; letter-spacing: 1.5dp; }
+.message-error { border-color: #934b45; }
+.message-error .message-type { color: #ef9289; }
+.modal-button { margin-top: 24dp; }
+.hidden { display: none; }
+
+.self-test-row { margin-bottom: 4dp; font-size: 9dp; }
+.test-pass { color: #92e4b2; }
+.test-fail { color: #ef9289; }
+.self-test-row span { color: #9fb1b8; margin-left: 6dp; }
+
+/* Milestone 0.3 — mappable controls and ROM-backed host */
+.action-ready { border-color: #32885a; background-color: #0b251a; }
+.action-ready:hover, .action-ready:focus { border-color: #72e3a5; background-color: #103523; }
+.compact-stack .action { min-height: 50dp; }
+.controls-page { overflow: hidden; }
+.controller-summary {
+    margin-top: 18dp;
+    min-height: 58dp;
+    padding: 13dp 16dp;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 6dp;
+    background-color: #0a1821;
+}
+.controller-summary p { margin: 5dp 0 0 0; color: #8ee5b1; font-size: 9dp; }
+.controller-note { max-width: 500dp; color: #78909a; font-size: 8.5dp; text-align: right; }
+.controls-layout { margin-top: 12dp; height: 465dp; display: flex; flex-direction: row; }
+.controls-list {
+    width: 68%;
+    height: 100%;
+    padding-right: 9dp;
+    overflow-y: auto;
+}
+.control-row {
+    min-height: 53dp;
+    margin-bottom: 5dp;
+    padding: 7dp 9dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-width: 1dp;
+    border-color: #203944;
+    border-radius: 5dp;
+    background-color: #091820;
+}
+.control-action-name { width: 25%; color: #c7d5da; font-size: 9dp; font-weight: bold; letter-spacing: 0.5dp; }
+.binding-button, .binding-readonly {
+    width: 35%;
+    min-height: 38dp;
+    margin-left: 6dp;
+    padding: 6dp 9dp;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: left;
+    border-width: 1dp;
+    border-color: #294650;
+    border-radius: 4dp;
+    background-color: #0d222b;
+}
+.binding-button:hover, .binding-button:focus { border-color: #f0b52b; background-color: #142e38; }
+.binding-readonly { opacity: 0.65; }
+.binding-type { color: #637d87; font-size: 6.8dp; font-weight: bold; letter-spacing: 0.9dp; }
+.binding-value { margin-top: 2dp; color: #d8e4e8; font-size: 8.8dp; }
+.control-options {
+    width: 31%;
+    height: 100%;
+    margin-left: 1%;
+    padding: 16dp;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 6dp;
+    background-color: #0a1821;
+}
+.control-option-row, .control-option-button {
+    width: 100%;
+    min-height: 49dp;
+    margin-bottom: 7dp;
+    padding: 9dp 10dp;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    color: #90a5ad;
+    font-size: 8.5dp;
+    border-width: 1dp;
+    border-color: #203944;
+    border-radius: 4dp;
+    background-color: #0c1d26;
+}
+.control-option-button:hover, .control-option-button:focus { border-color: #f0b52b; color: #f0b52b; }
+.control-option-row strong, .control-option-button strong { color: #d6e4e8; font-size: 8dp; }
+.mini-button { min-width: 24dp; margin: 0 7dp; padding: 4dp; border-width: 1dp; border-color: #3a5965; border-radius: 3dp; background-color: #102731; }
+.mini-button:hover, .mini-button:focus { color: #f0b52b; border-color: #f0b52b; }
+.danger-option { border-color: #603934; color: #d78c85; }
+.control-help { margin-top: 14dp; color: #67818b; font-size: 7.5dp; line-height: 1.45; }
+.game-page { padding: 28dp 40dp 22dp 40dp; }
+.game-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+.game-grid { margin-top: 20dp; height: 475dp; display: flex; flex-direction: row; flex-wrap: wrap; }
+.game-card {
+    width: 31%;
+    height: 225dp;
+    margin-right: 1.5%;
+    margin-bottom: 13dp;
+    padding: 17dp;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 7dp;
+    background-color: #091820;
+}
+.game-card-wide { width: 64%; height: 225dp; }
+.game-status { margin-bottom: 10dp; color: #8ee5b1; font-size: 10dp; line-height: 1.4; }
+.boot-step { min-height: 37dp; margin-top: 5dp; display: flex; flex-direction: row; align-items: center; }
+.boot-step > span { width: 28dp; height: 28dp; margin-right: 9dp; padding-top: 7dp; text-align: center; font-size: 7dp; font-weight: bold; border-radius: 14dp; }
+.boot-step strong { font-size: 8dp; letter-spacing: 0.6dp; }
+.boot-step p { margin: 2dp 0 0 0; color: #6f8790; font-size: 7.2dp; }
+.boot-step-complete > span { color: #092116; background-color: #62d793; }
+.boot-step-pending > span { color: #71858d; border-width: 1dp; border-color: #3a535d; background-color: #10232c; }
+.boot-step-pending { opacity: 0.70; }
+.game-controller-name { min-height: 24dp; color: #9de7bb; font-size: 8.5dp; }
+.stick-monitor { position: relative; width: 104dp; height: 104dp; margin: 9dp auto 4dp auto; border-width: 1dp; border-color: #34535f; border-radius: 52dp; background-color: #07131a; }
+.stick-cross-x { position: absolute; left: 12dp; top: 51dp; width: 80dp; height: 1dp; background-color: #233b45; }
+.stick-cross-y { position: absolute; left: 51dp; top: 12dp; width: 1dp; height: 80dp; background-color: #233b45; }
+.stick-dot { position: absolute; left: 48dp; top: 48dp; width: 9dp; height: 9dp; border-radius: 5dp; background-color: #f0b52b; }
+.stick-values { display: flex; flex-direction: row; justify-content: center; color: #71868e; font-size: 8dp; }
+.stick-values span { margin: 0 9dp; }
+.stick-values strong { color: #dce7ea; }
+.button-mask { margin-top: 9dp; padding: 7dp; text-align: center; color: #657c85; font-size: 7.5dp; border-width: 1dp; border-color: #203944; background-color: #0c2029; }
+.button-mask strong { margin-left: 7dp; color: #f0b52b; font-size: 9dp; }
+.game-actions { display: flex; flex-direction: row; justify-content: flex-end; }
+.game-actions .compact-button { margin-left: 9dp; }
+.capture-pulse { margin-top: 20dp; color: #f0b52b; font-size: 28dp; letter-spacing: 8dp; }
+
+/* -------------------------------------------------------------------------
+   Milestone 0.4 readability and layout pass
+   ------------------------------------------------------------------------- */
+#app-shell {
+    padding: 36dp 52dp 28dp 52dp;
+}
+#top-bar {
+    height: 78dp;
+}
+.brand-mark {
+    width: 54dp;
+    height: 46dp;
+    margin-right: 16dp;
+    padding-top: 13dp;
+    font-size: 14dp;
+    letter-spacing: 1dp;
+}
+.brand-name {
+    font-size: 20dp;
+    letter-spacing: 2.4dp;
+}
+.build-label {
+    margin-top: 6dp;
+    font-size: 11dp;
+    line-height: 1.25;
+    letter-spacing: 1dp;
+}
+.status-pill, .value-badge {
+    padding: 9dp 15dp;
+    font-size: 11dp;
+}
+.page-main {
+    padding: 42dp 24dp 34dp 24dp;
+}
+.hero-copy {
+    width: 47%;
+    padding-right: 50dp;
+}
+.eyebrow {
+    margin-bottom: 16dp;
+    font-size: 12dp;
+    line-height: 1.2;
+    letter-spacing: 2.3dp;
+}
+h1 {
+    margin: 0 0 28dp 0;
+    font-size: 58dp;
+    line-height: 1.02;
+    letter-spacing: -1.2dp;
+}
+.hero-description {
+    width: 94%;
+    margin: 0;
+    font-size: 16dp;
+    line-height: 1.62;
+}
+.legal-note {
+    width: 94%;
+    margin-top: 30dp;
+    padding: 16dp 18dp;
+    font-size: 12dp;
+    line-height: 1.48;
+}
+.legal-icon {
+    margin-right: 15dp;
+    font-size: 22dp;
+}
+.control-panel {
+    width: 50%;
+    max-width: 700dp;
+}
+.status-card {
+    min-height: 156dp;
+    padding: 24dp;
+}
+.status-orb {
+    width: 58dp;
+    height: 58dp;
+    margin-right: 20dp;
+    padding-top: 14dp;
+    font-size: 15dp;
+}
+.status-kicker {
+    margin-bottom: 8dp;
+    font-size: 11dp;
+}
+.status-title {
+    margin-bottom: 8dp;
+    font-size: 19dp;
+    line-height: 1.2;
+}
+.status-description {
+    font-size: 12dp;
+    line-height: 1.48;
+}
+.detail-grid {
+    margin-top: 14dp;
+    padding-top: 12dp;
+}
+.detail-label {
+    font-size: 9dp;
+}
+.detail-value {
+    font-size: 10dp;
+}
+.action-stack {
+    margin-top: 14dp;
+}
+.action {
+    min-height: 62dp;
+    margin-bottom: 9dp;
+    padding: 10dp 16dp;
+}
+.action-index {
+    width: 38dp;
+    font-size: 10dp;
+}
+.action-title {
+    font-size: 14dp;
+    line-height: 1.25;
+}
+.action-subtitle {
+    margin-top: 4dp;
+    font-size: 10.5dp;
+    line-height: 1.25;
+}
+.action-arrow, .action-lock {
+    font-size: 13dp;
+}
+#bottom-bar {
+    height: 38dp;
+    font-size: 10dp;
+}
+.input-hints span {
+    margin-left: 18dp;
+    font-size: 10dp;
+}
+
+.subpage {
+    padding: 30dp 24dp 22dp 24dp;
+}
+.subpage-heading {
+    min-height: 76dp;
+    margin-bottom: 20dp;
+}
+h2 {
+    margin-top: 4dp;
+    font-size: 38dp;
+    line-height: 1.05;
+}
+.compact-button {
+    min-width: 100dp;
+    min-height: 40dp;
+    padding: 10dp 17dp;
+    font-size: 11dp;
+}
+.card-title {
+    margin-bottom: 12dp;
+    font-size: 12dp;
+    letter-spacing: 1.5dp;
+}
+.diagnostic-layout {
+    gap: 16dp;
+}
+.diagnostic-card {
+    padding: 22dp;
+}
+.diagnostic-row {
+    min-height: 38dp;
+    padding: 9dp 0;
+    font-size: 11dp;
+}
+.diagnostic-row strong {
+    font-size: 10dp;
+}
+.self-test-summary {
+    margin-bottom: 12dp;
+    font-size: 12dp;
+    line-height: 1.45;
+}
+.self-test-row {
+    padding: 8dp 0;
+    font-size: 10dp;
+}
+.tile-button {
+    min-height: 72dp;
+    padding: 14dp 16dp;
+}
+.tile-title {
+    font-size: 12dp;
+}
+.tile-subtitle {
+    margin-top: 5dp;
+    font-size: 9.5dp;
+    line-height: 1.35;
+}
+.settings-panel {
+    max-width: 1180dp;
+    margin: 0 auto;
+}
+.setting-row {
+    min-height: 104dp;
+    padding: 20dp 22dp;
+}
+.setting-title {
+    font-size: 12dp;
+    letter-spacing: 1.1dp;
+}
+.setting-row p, .controller-summary p {
+    margin-top: 8dp;
+    font-size: 11dp;
+    line-height: 1.45;
+}
+
+/* The control screen is intentionally vertical: options across the top,
+   then one full-width binding table. This removes the cramped side panel. */
+.controls-page {
+    padding: 24dp 20dp 18dp 20dp;
+}
+.controller-summary {
+    min-height: 76dp;
+    margin-bottom: 14dp;
+    padding: 14dp 18dp;
+}
+.controller-note {
+    max-width: 48%;
+    font-size: 11dp;
+    line-height: 1.4;
+}
+.controls-layout {
+    height: 590dp;
+    display: flex;
+    flex-direction: column;
+}
+.control-options {
+    width: 100%;
+    min-height: 112dp;
+    margin-bottom: 14dp;
+    padding: 14dp 16dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 8dp;
+    background-color: #0a1821;
+}
+.control-options-copy {
+    width: 22%;
+    padding-right: 18dp;
+}
+.control-options-copy .card-title {
+    margin-bottom: 6dp;
+}
+.control-help {
+    margin: 0;
+    padding: 0;
+    color: #78909a;
+    font-size: 9.5dp;
+    line-height: 1.35;
+    border-width: 0;
+}
+.control-option-row,
+.control-option-button {
+    width: 15%;
+    min-height: 68dp;
+    margin: 0 0 0 8dp;
+    padding: 10dp 11dp;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    font-size: 10dp;
+    line-height: 1.25;
+    border-width: 1dp;
+    border-color: #2a4550;
+    border-radius: 6dp;
+    background-color: #0c2029;
+}
+.control-option-row > span,
+.control-option-button > span {
+    margin-bottom: 8dp;
+    color: #7f98a2;
+    font-size: 9dp;
+}
+.control-option-row > div {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+.control-option-row strong,
+.control-option-button strong {
+    color: #f5f1e8;
+    font-size: 11dp;
+}
+.mini-button {
+    width: 28dp;
+    height: 28dp;
+    padding: 3dp 0 0 0;
+    font-size: 15dp;
+}
+.controls-column-headings {
+    height: 34dp;
+    padding: 0 18dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    color: #6f8790;
+    font-size: 9dp;
+    font-weight: bold;
+    letter-spacing: 1.2dp;
+    border-bottom-width: 1dp;
+    border-bottom-color: #29424d;
+}
+.controls-heading-action { width: 25%; }
+.controls-heading-binding { width: 37.5%; }
+.controls-list {
+    width: 100%;
+    height: 420dp;
+    padding: 0 10dp 10dp 10dp;
+    overflow-y: auto;
+    border-width: 1dp;
+    border-top-width: 0;
+    border-color: #29424d;
+    border-radius: 0 0 8dp 8dp;
+    background-color: #081720;
+}
+.control-row {
+    min-height: 58dp;
+    padding: 8dp 8dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-bottom-width: 1dp;
+    border-bottom-color: #19313b;
+}
+.control-action-name {
+    width: 25%;
+    padding-right: 16dp;
+    font-size: 12dp;
+    line-height: 1.25;
+}
+.binding-button,
+.binding-readonly {
+    width: 36.5%;
+    min-height: 42dp;
+    margin-left: 8dp;
+    padding: 7dp 12dp;
+}
+.binding-type {
+    font-size: 8dp;
+    letter-spacing: 1dp;
+}
+.binding-value {
+    margin-top: 4dp;
+    font-size: 11dp;
+    line-height: 1.2;
+}
+
+.game-page {
+    padding: 26dp 22dp 18dp 22dp;
+}
+.game-header {
+    min-height: 76dp;
+    margin-bottom: 18dp;
+}
+.game-grid {
+    gap: 15dp;
+}
+.game-card {
+    padding: 20dp;
+}
+.game-status {
+    margin-bottom: 16dp;
+    font-size: 13dp;
+    line-height: 1.4;
+}
+.boot-step {
+    min-height: 66dp;
+    padding: 10dp 0;
+}
+.boot-step > span {
+    width: 34dp;
+    height: 34dp;
+    margin-right: 14dp;
+    padding-top: 9dp;
+    font-size: 9dp;
+}
+.boot-step strong {
+    font-size: 11dp;
+}
+.boot-step p {
+    margin-top: 5dp;
+    font-size: 9.5dp;
+    line-height: 1.35;
+}
+.game-controller-name {
+    min-height: 30dp;
+    font-size: 11dp;
+}
+.stick-values, .button-mask {
+    font-size: 9.5dp;
+}
+.button-mask strong {
+    font-size: 11dp;
+}
+.modal {
+    max-width: 620dp;
+    padding: 30dp;
+}
+.modal h3 {
+    margin: 10dp 0 16dp 0;
+    font-size: 30dp;
+}
+.modal p {
+    font-size: 13dp;
+    line-height: 1.5;
+}
+/* Milestone 0.4 readability and full-width controls override */
+#app-shell {
+    padding: 24dp 34dp 18dp 34dp;
+}
+#top-bar {
+    height: 76dp;
+}
+.brand-mark {
+    width: 48dp;
+    height: 48dp;
+    margin-right: 16dp;
+    padding-top: 11dp;
+    font-size: 22dp;
+}
+.brand-name {
+    font-size: 20dp;
+    letter-spacing: 2.4dp;
+}
+.build-label {
+    margin-top: 6dp;
+    font-size: 11dp;
+    line-height: 1.25;
+    letter-spacing: 1dp;
+}
+.status-pill, .value-badge {
+    padding: 9dp 15dp;
+    font-size: 11dp;
+}
+.page-main {
+    padding: 36dp 20dp 26dp 20dp;
+}
+.hero-copy {
+    width: 46%;
+    padding-right: 46dp;
+}
+.eyebrow {
+    margin-bottom: 14dp;
+    font-size: 12dp;
+    line-height: 1.2;
+    letter-spacing: 2.3dp;
+}
+h1 {
+    margin: 0 0 26dp 0;
+    font-size: 58dp;
+    line-height: 1.03;
+    letter-spacing: -1.2dp;
+}
+.hero-description {
+    width: 96%;
+    margin: 0;
+    font-size: 16dp;
+    line-height: 1.62;
+}
+.legal-note {
+    width: 96%;
+    margin-top: 30dp;
+    padding: 16dp 18dp;
+    font-size: 12dp;
+    line-height: 1.48;
+}
+.legal-icon {
+    margin-right: 15dp;
+    font-size: 22dp;
+}
+.control-panel {
+    width: 52%;
+    max-width: 740dp;
+}
+.status-card {
+    min-height: 150dp;
+    padding: 22dp;
+}
+.status-orb {
+    width: 58dp;
+    height: 58dp;
+    margin-right: 20dp;
+    padding-top: 14dp;
+    font-size: 15dp;
+}
+.status-kicker {
+    margin-bottom: 8dp;
+    font-size: 11dp;
+}
+.status-title {
+    margin-bottom: 8dp;
+    font-size: 19dp;
+    line-height: 1.2;
+}
+.status-description {
+    font-size: 12dp;
+    line-height: 1.48;
+}
+.detail-grid {
+    margin-top: 14dp;
+    padding-top: 12dp;
+}
+.detail-label { font-size: 9dp; }
+.detail-value { font-size: 10dp; }
+.action-stack { margin-top: 14dp; }
+.action {
+    min-height: 62dp;
+    margin-bottom: 9dp;
+    padding: 10dp 16dp;
+}
+.action-index {
+    width: 38dp;
+    font-size: 10dp;
+}
+.action-title {
+    font-size: 14dp;
+    line-height: 1.25;
+}
+.action-subtitle {
+    margin-top: 5dp;
+    font-size: 10.5dp;
+    line-height: 1.3;
+}
+.action-arrow, .action-lock { font-size: 13dp; }
+#bottom-bar {
+    height: 36dp;
+    font-size: 10dp;
+}
+.input-hints span {
+    margin-left: 18dp;
+    font-size: 10dp;
+}
+.subpage {
+    padding: 24dp 24dp 18dp 24dp;
+}
+.subpage-heading {
+    min-height: 68dp;
+    margin-bottom: 16dp;
+}
+h2 {
+    margin-top: 4dp;
+    font-size: 38dp;
+    line-height: 1.05;
+}
+.compact-button {
+    min-width: 104dp;
+    min-height: 42dp;
+    padding: 10dp 17dp;
+    font-size: 11dp;
+}
+.card-title {
+    margin-bottom: 12dp;
+    font-size: 12dp;
+    letter-spacing: 1.5dp;
+}
+.diagnostic-layout { gap: 16dp; }
+.diagnostic-card { padding: 22dp; }
+.diagnostic-row {
+    min-height: 38dp;
+    padding: 9dp 0;
+    font-size: 11dp;
+}
+.diagnostic-row strong { font-size: 10dp; }
+.self-test-summary {
+    margin-bottom: 12dp;
+    font-size: 12dp;
+    line-height: 1.45;
+}
+.self-test-row {
+    padding: 8dp 0;
+    font-size: 10dp;
+}
+.tile-button {
+    min-height: 76dp;
+    padding: 14dp 16dp;
+}
+.tile-title { font-size: 12dp; }
+.tile-subtitle {
+    margin-top: 6dp;
+    font-size: 10dp;
+    line-height: 1.4;
+}
+.settings-panel {
+    max-width: 1220dp;
+    margin: 0 auto;
+}
+.setting-row {
+    min-height: 104dp;
+    padding: 20dp 22dp;
+}
+.setting-title {
+    font-size: 12dp;
+    letter-spacing: 1.1dp;
+}
+.setting-row p, .controller-summary p {
+    margin-top: 8dp;
+    font-size: 11.5dp;
+    line-height: 1.48;
+}
+
+/* Controls use the full available page width. The outer page can scroll at
+   smaller window sizes while the binding list keeps its own predictable
+   vertical viewport. */
+.controls-page {
+    padding: 18dp 14dp 12dp 14dp;
+    overflow-y: auto;
+}
+.controls-page .subpage-heading {
+    margin-bottom: 12dp;
+}
+.controller-summary {
+    min-height: 72dp;
+    margin-bottom: 12dp;
+    padding: 13dp 18dp;
+}
+.controller-note {
+    max-width: 52%;
+    font-size: 11.5dp;
+    line-height: 1.45;
+}
+.controls-layout {
+    width: 100%;
+    min-height: 468dp;
+    display: flex;
+    flex-direction: column;
+}
+.control-options {
+    width: 100%;
+    min-height: 100dp;
+    margin-bottom: 12dp;
+    padding: 12dp 14dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 8dp;
+    background-color: #0a1821;
+}
+.control-options-copy {
+    width: 22%;
+    padding-right: 18dp;
+}
+.control-options-copy .card-title { margin-bottom: 7dp; }
+.control-help {
+    margin: 0;
+    padding: 0;
+    color: #839aa3;
+    font-size: 10.5dp;
+    line-height: 1.42;
+    border-width: 0;
+}
+.control-option-row,
+.control-option-button {
+    width: 15%;
+    min-height: 72dp;
+    margin: 0 0 0 9dp;
+    padding: 10dp 12dp;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    font-size: 10.5dp;
+    line-height: 1.3;
+    border-width: 1dp;
+    border-color: #2a4550;
+    border-radius: 6dp;
+    background-color: #0c2029;
+}
+.control-option-row > span,
+.control-option-button > span {
+    margin-bottom: 9dp;
+    color: #849aa3;
+    font-size: 10dp;
+}
+.control-option-row > div {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+.control-option-row strong,
+.control-option-button strong {
+    color: #f5f1e8;
+    font-size: 12dp;
+}
+.mini-button {
+    width: 30dp;
+    height: 30dp;
+    padding: 3dp 0 0 0;
+    font-size: 16dp;
+}
+.controls-column-headings {
+    height: 38dp;
+    padding: 0 18dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    color: #7d949d;
+    font-size: 10dp;
+    font-weight: bold;
+    letter-spacing: 1.2dp;
+    border-width: 1dp;
+    border-color: #29424d;
+    border-radius: 8dp 8dp 0 0;
+    background-color: #0a1821;
+}
+.controls-heading-action { width: 24%; }
+.controls-heading-binding { width: 38%; }
+.controls-list {
+    width: 100%;
+    height: 318dp;
+    padding: 0 10dp 10dp 10dp;
+    overflow-y: auto;
+    border-width: 1dp;
+    border-top-width: 0;
+    border-color: #29424d;
+    border-radius: 0 0 8dp 8dp;
+    background-color: #081720;
+}
+.control-row {
+    min-height: 62dp;
+    padding: 9dp 8dp;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-bottom-width: 1dp;
+    border-bottom-color: #19313b;
+}
+.control-action-name {
+    width: 24%;
+    padding-right: 18dp;
+    font-size: 13dp;
+    line-height: 1.3;
+}
+.binding-button,
+.binding-readonly {
+    width: 37%;
+    min-height: 44dp;
+    margin-left: 8dp;
+    padding: 8dp 12dp;
+}
+.binding-type {
+    font-size: 9dp;
+    letter-spacing: 1dp;
+}
+.binding-value {
+    margin-top: 5dp;
+    font-size: 12dp;
+    line-height: 1.25;
+}
+.game-page {
+    padding: 24dp 22dp 16dp 22dp;
+}
+.game-header {
+    min-height: 72dp;
+    margin-bottom: 16dp;
+}
+.game-grid { gap: 15dp; }
+.game-card { padding: 20dp; }
+.game-status {
+    margin-bottom: 16dp;
+    font-size: 13dp;
+    line-height: 1.45;
+}
+.boot-step {
+    min-height: 66dp;
+    padding: 10dp 0;
+}
+.boot-step > span {
+    width: 34dp;
+    height: 34dp;
+    margin-right: 14dp;
+    padding-top: 9dp;
+    font-size: 9dp;
+}
+.boot-step strong { font-size: 12dp; }
+.boot-step p {
+    margin-top: 6dp;
+    font-size: 10.5dp;
+    line-height: 1.42;
+}
+.game-controller-name {
+    min-height: 30dp;
+    font-size: 11.5dp;
+}
+.stick-values, .button-mask { font-size: 10dp; }
+.button-mask strong { font-size: 11.5dp; }
+.modal {
+    max-width: 640dp;
+    padding: 30dp;
+}
+.modal h3 {
+    margin: 10dp 0 16dp 0;
+    font-size: 30dp;
+}
+.modal p {
+    font-size: 13dp;
+    line-height: 1.5;
+}
+
+/* Milestone 0.4 final legibility pass. No primary body copy is smaller than
+   11dp at the minimum supported 1280x720 launcher size. */
+.build-label { font-size: 12dp; }
+.status-pill, .value-badge { font-size: 12dp; }
+.status-kicker { font-size: 12dp; }
+.status-title { font-size: 21dp; }
+.status-description { font-size: 13dp; }
+.detail-label { font-size: 10.5dp; }
+.detail-value { font-size: 11.5dp; }
+.detail-mono { font-size: 10.5dp; }
+.action-index { font-size: 11dp; }
+.action-title { font-size: 15dp; }
+.action-subtitle { margin-top: 6dp; font-size: 12dp; line-height: 1.35; }
+.action-lock { font-size: 11dp; }
+#bottom-bar, .input-hints span { font-size: 11dp; }
+.card-title { font-size: 13dp; }
+.diagnostic-row { font-size: 12dp; }
+.diagnostic-row strong { font-size: 11.5dp; }
+.self-test-summary { font-size: 12.5dp; }
+.self-test-row, .self-test-list { font-size: 11.5dp; }
+.tile-title { font-size: 12.5dp; }
+.tile-subtitle { font-size: 11.5dp; }
+.setting-title { font-size: 13dp; }
+.setting-row p, .controller-summary p { font-size: 12.5dp; }
+.controller-note { font-size: 12dp; }
+.control-help { font-size: 11.5dp; }
+.control-option-row, .control-option-button { font-size: 11.5dp; }
+.control-option-row > span, .control-option-button > span { font-size: 11dp; }
+.control-option-row strong, .control-option-button strong { font-size: 13dp; }
+.controls-column-headings { font-size: 11.5dp; }
+.control-action-name { font-size: 14dp; }
+.binding-type { font-size: 10.5dp; }
+.binding-value { font-size: 13.5dp; }
+.game-status { font-size: 14dp; }
+.boot-step strong { font-size: 13dp; }
+.boot-step p { font-size: 11.5dp; }
+.game-controller-name { font-size: 12.5dp; }
+.stick-values, .button-mask { font-size: 11.5dp; }
+.button-mask strong { font-size: 13dp; }
+.message-type { font-size: 11dp; }
+.modal p { font-size: 14dp; }
+
+/* Keep all three control columns spacious and aligned. */
+.controls-heading-action, .control-action-name { width: 22%; }
+.controls-heading-binding { width: 39%; }
+.binding-button, .binding-readonly { width: 38%; margin-left: 4dp; }
+.controls-list { height: 330dp; }
+.control-row { min-height: 68dp; }
+
+/* Milestone 0.4 readability correction after physical Windows testing.
+   RmlUi dp values map closely enough to pixels that 9-12dp body copy was too
+   small at 1600x900. These overrides intentionally favour readability. */
+.build-label { font-size: 14dp; }
+.status-pill, .value-badge { font-size: 14dp; }
+.eyebrow { font-size: 14dp; margin-bottom: 18dp; }
+h2 { font-size: 44dp; }
+.hero-description { font-size: 18dp; line-height: 1.65; }
+.legal-note { margin-top: 34dp; font-size: 14dp; line-height: 1.55; }
+.status-kicker { font-size: 14dp; }
+.status-title { margin-top: 9dp; margin-bottom: 10dp; font-size: 25dp; }
+.status-description { font-size: 16dp; line-height: 1.52; }
+.detail-label { font-size: 12dp; }
+.detail-value { font-size: 13dp; }
+.detail-mono { font-size: 11.5dp; }
+.action { min-height: 72dp; margin-bottom: 10dp; padding: 12dp 18dp; }
+.action-index { width: 42dp; font-size: 13dp; }
+.action-title { font-size: 18dp; }
+.action-subtitle { margin-top: 7dp; font-size: 14dp; line-height: 1.35; }
+.action-arrow { font-size: 24dp; }
+.action-lock { font-size: 13dp; }
+#bottom-bar, .input-hints span { font-size: 13dp; }
+.compact-button { min-height: 46dp; padding: 11dp 18dp; font-size: 13dp; }
+.card-title { font-size: 15dp; }
+.diagnostic-row { min-height: 43dp; font-size: 14dp; }
+.diagnostic-row strong { font-size: 13.5dp; }
+.self-test-summary { font-size: 14dp; }
+.self-test-row, .self-test-list { font-size: 13dp; }
+.tile-title { font-size: 14dp; }
+.tile-subtitle { margin-top: 7dp; font-size: 12.5dp; line-height: 1.42; }
+.setting-title { font-size: 15dp; }
+.setting-row p, .controller-summary p { font-size: 14dp; line-height: 1.5; }
+.controller-note { font-size: 13.5dp; line-height: 1.48; }
+.control-help { font-size: 13dp; line-height: 1.45; }
+.control-option-row, .control-option-button { min-height: 78dp; font-size: 13dp; }
+.control-option-row > span, .control-option-button > span { font-size: 12.5dp; }
+.control-option-row strong, .control-option-button strong { font-size: 14dp; }
+.controls-column-headings { height: 44dp; font-size: 13dp; }
+.controls-list { height: 365dp; }
+.control-row { min-height: 76dp; }
+.control-action-name { font-size: 16dp; }
+.binding-button, .binding-readonly { min-height: 56dp; padding: 9dp 14dp; }
+.binding-type { font-size: 12dp; }
+.binding-value { margin-top: 6dp; font-size: 15dp; }
+.game-status { font-size: 16dp; }
+.boot-step strong { font-size: 15dp; }
+.boot-step p { font-size: 13.5dp; line-height: 1.45; }
+.game-controller-name { font-size: 14dp; }
+.stick-values, .button-mask { font-size: 13dp; }
+.button-mask strong { font-size: 15dp; }
+.message-type { font-size: 13dp; }
+.modal p { font-size: 16dp; }

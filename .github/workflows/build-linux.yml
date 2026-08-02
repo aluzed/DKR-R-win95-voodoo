@@ -1,0 +1,19 @@
+name: Build Linux Core
+on: [push, pull_request]
+jobs:
+  linux-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure asset-free core
+        run: >-
+          cmake -S . -B build/linux-core -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DDKRPORT_BUILD_NATIVE_UI=OFF
+          -DDKRPORT_BUILD_TESTS=ON
+          -DDKRPORT_ENABLE_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build/linux-core --parallel
+      - name: Test
+        run: ctest --test-dir build/linux-core --output-on-failure
+      - name: Headless self-test
+        run: ./build/linux-core/bin/Release/DKRPort --headless-self-test --portable

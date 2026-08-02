@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=DKR Port
+GenericName=Diddy Kong Racing PC Port
+Comment=Faithful cross-platform recompilation of Diddy Kong Racing
+Exec=DKRPort
+Icon=dkr-port
+Terminal=false
+Categories=Game;ArcadeGame;
+StartupNotify=true
+StartupWMClass=DKR Port

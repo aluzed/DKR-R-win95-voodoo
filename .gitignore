@@ -1,0 +1,56 @@
+# Build output
+/build/
+/dist/
+/build-logs/
+/.deps/
+/out/
+/.vs/
+/.vscode/
+CMakeUserPresets.json
+
+# Runtime data
+/runtime/
+/runtime-recomp/run-data/
+/runtime-recomp/dump.toml
+/runtime-recomp/data_dump.toml
+/logs/
+/cache/
+/saves/
+/screenshots/
+mods/*
+!mods/.gitkeep
+
+# Dependencies fetched locally
+/extern/dkr-decomp/
+/extern/libultraship/
+/extern/torch/
+/extern/.resolved-dependencies.json
+/extern/.resolved-dkr-source.json
+
+# Copyrighted / ROM-derived data
+*.z64
+*.v64
+*.n64
+baserom*
+*.o2r
+*.otr
+/extracted/
+/roms/
+
+# Platform files
+.DS_Store
+Thumbs.db
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# DKR decomp/recomp working data generated locally
+extern/dkr-decomp/baseroms/
+extern/n64-modern-runtime/
+extern/rt64/
+runtime-recomp/RecompiledFuncs/
+runtime-recomp/dkr.us.v77.generated.toml
+runtime-recomp/resolved-runtime-dependencies.json
+runtime-recomp/applied-patches.json
+build/runtime-tools/

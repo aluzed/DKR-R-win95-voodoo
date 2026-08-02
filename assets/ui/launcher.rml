@@ -1,0 +1,242 @@
+<rml>
+<head>
+    <title>Diddy Kong Racing on Personal Computer</title>
+    <link type="text/rcss" href="launcher.rcss" />
+</head>
+<body>
+<div id="app-shell">
+    <div class="track-line track-line-one"></div>
+    <div class="track-line track-line-two"></div>
+    <div class="track-line track-line-three"></div>
+
+    <div id="top-bar">
+        <div class="brand-small">
+            <div class="brand-mark">DKR</div>
+            <div>
+                <div class="brand-name">DKR PC PORT</div>
+                <div class="build-label">Diddy Kong Racing - Native PC Port</div>
+            </div>
+        </div>
+        <div id="header-status" class="status-pill status-neutral">NO ROM LOADED</div>
+    </div>
+
+    <div id="main-content">
+        <div id="page-main" class="page page-main">
+            <div class="hero-copy">
+                <div class="eyebrow">A NATIVE PC PORT PROJECT</div>
+                <h1>DIDDY KONG RACING<br/><span>ON PC!?</span></h1>
+                <p class="hero-description">
+                    A cross-platform native port of Diddy Kong Racing with original gameplay,
+                    visuals, audio and timing preserved.
+                </p>
+                <div class="legal-note">
+                    <div class="legal-icon">!</div>
+                    <div>This project includes no original game assets. You must supply your own legally obtained ROM.</div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <div id="rom-status-card" class="status-card">
+                    <div id="rom-status-icon" class="status-orb status-orb-neutral">?</div>
+                    <div class="status-copy">
+                        <div id="rom-status-kicker" class="status-kicker">GAME DATA REQUIRED</div>
+                        <div id="rom-status-title" class="status-title">Select a supported ROM.</div>
+                        <div id="rom-status-description" class="status-description">
+                            Diddy Kong Racing US 1.0 is supported in .z64, .v64 and .n64 formats.
+                        </div>
+                        <div id="rom-detail-grid" class="detail-grid hidden">
+                            <div class="detail-label">VERSION</div><div id="rom-detail-version" class="detail-value">—</div>
+                            <div class="detail-label">FORMAT</div><div id="rom-detail-format" class="detail-value">—</div>
+                            <div class="detail-label">SHA-1</div><div id="rom-detail-sha" class="detail-value detail-mono">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-stack compact-stack">
+                    <button id="action-select-rom" class="action action-primary">
+                        <span class="action-index">01</span>
+                        <span class="action-content"><span id="select-rom-label" class="action-title">SELECT ROM</span><span class="action-subtitle">Choose your Diddy Kong Racing ROM.</span></span>
+                        <span class="action-arrow">›</span>
+                    </button>
+                    <button id="action-game" class="action action-disabled">
+                        <span class="action-index">02</span>
+                        <span class="action-content"><span class="action-title">START GAME</span><span id="game-action-subtitle" class="action-subtitle">A validated ROM is required.</span></span>
+                        <span id="game-action-lock" class="action-lock">LOCKED</span>
+                    </button>
+                    <button id="action-controls" class="action">
+                        <span class="action-index">03</span>
+                        <span class="action-content"><span class="action-title">CONTROLS</span><span class="action-subtitle">View the keyboard and gamepad layout.</span></span>
+                        <span class="action-arrow">›</span>
+                    </button>
+                    <button id="action-diagnostics" class="action">
+                        <span class="action-index">04</span>
+                        <span class="action-content"><span class="action-title">DIAGNOSTICS</span><span class="action-subtitle">See how the port is running.</span></span>
+                        <span class="action-arrow">›</span>
+                    </button>
+                    <button id="action-settings" class="action">
+                        <span class="action-index">05</span>
+                        <span class="action-content"><span class="action-title">SETTINGS</span><span class="action-subtitle">Configure the launcher and game options.</span></span>
+                        <span class="action-arrow">›</span>
+                    </button>
+                    <button id="action-exit" class="action action-quiet">
+                        <span class="action-index">06</span>
+                        <span class="action-content"><span class="action-title">EXIT</span><span class="action-subtitle">Close the launcher.</span></span>
+                        <span class="action-arrow">×</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-diagnostics" class="page subpage hidden">
+            <div class="subpage-heading">
+                <div><div class="eyebrow">DEVELOPMENT TOOLS</div><h2>DIAGNOSTICS</h2></div>
+                <button id="diagnostics-back" class="compact-button">BACK</button>
+            </div>
+            <div class="diagnostic-layout">
+                <div class="diagnostic-card">
+                    <div class="card-title">SYSTEM STATUS</div>
+                    <div class="diagnostic-row"><span>Data directory</span><strong id="diag-data">CHECKING</strong></div>
+                    <div class="diagnostic-row"><span>Validated ROM</span><strong id="diag-rom">NOT FOUND</strong></div>
+                    <div class="diagnostic-row"><span>ROM source file</span><strong id="diag-source">NOT FOUND</strong></div>
+                    <div class="diagnostic-row"><span>Local O2R manifest</span><strong id="diag-o2r">NOT FOUND</strong></div>
+                    <div class="diagnostic-row"><span>Controller</span><strong id="diag-controller">CHECKING</strong></div>
+                    <div class="diagnostic-row"><span>F3DDKR registry</span><strong id="diag-f3ddkr">CHECKING</strong></div>
+                    <div class="diagnostic-row"><span>Storage mode</span><strong id="diag-portable">CHECKING</strong></div>
+                </div>
+                <div class="diagnostic-card">
+                    <div class="card-title">SELF-TEST RESULTS</div>
+                    <div id="self-test-summary" class="self-test-summary">No self-test has been run during this launch.</div>
+                    <div id="self-test-list" class="self-test-list"></div>
+                </div>
+                <div class="diagnostic-actions">
+                    <button id="diagnostics-run" class="tile-button"><span class="tile-title">RUN SELF-TEST</span><span class="tile-subtitle">Validate hashing, ROM conversion, input config, ZIP writing and F3DDKR structure</span></button>
+                    <button id="diagnostics-renderer" class="tile-button"><span class="tile-title">WRITE RENDERER TEST</span><span class="tile-subtitle">Create the asset-free F3DDKR structural SVG test scene</span></button>
+                    <button id="diagnostics-copy" class="tile-button"><span class="tile-title">COPY DIAGNOSTICS</span><span class="tile-subtitle">Copy a concise report for an issue or support request</span></button>
+                    <button id="diagnostics-logs" class="tile-button"><span class="tile-title">OPEN LOG FOLDER</span><span class="tile-subtitle">Open the current log directory</span></button>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-settings" class="page subpage hidden">
+            <div class="subpage-heading">
+                <div><div class="eyebrow">LAUNCHER OPTIONS</div><h2>SETTINGS</h2></div>
+                <button id="settings-back" class="compact-button">BACK</button>
+            </div>
+            <div class="settings-panel">
+                <div class="setting-row">
+                    <div><span class="setting-title">PORTABLE DATA MODE</span><p>Configuration, generated data and logs stay beside the executable while portable.txt exists.</p></div>
+                    <div id="setting-portable" class="value-badge">ENABLED</div>
+                </div>
+                <div class="setting-row">
+                    <div><span class="setting-title">GAME DATA DIRECTORY</span><p id="setting-data-path">—</p></div>
+                    <button id="settings-open-data" class="compact-button">OPEN</button>
+                </div>
+                <div class="setting-row">
+                    <div><span class="setting-title">ROM SETUP</span><p>Remove the generated manifest and reconnect a different supported ROM.</p></div>
+                    <button id="settings-reset" class="compact-button danger">RESET</button>
+                </div>
+                <div class="setting-row muted-setting">
+                    <div><span class="setting-title">GRAPHICS, AUDIO AND GAMEPLAY</span><p>The bundled runtime automatically uses the validated settings required for accurate play.</p></div>
+                    <div class="value-badge muted">RUNTIME MANAGED</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-controls" class="page subpage controls-page hidden">
+            <div class="subpage-heading">
+                <div><div class="eyebrow">PLAYER ONE</div><h2>CONTROLS</h2></div>
+                <button id="controls-back" class="compact-button">BACK</button>
+            </div>
+            <div class="controller-summary">
+                <div><span class="setting-title">ACTIVE CONTROLLER</span><p id="controls-controller-name">No controller connected</p></div>
+                <div class="controller-note">Select any binding, then press the replacement key or controller input.</div>
+            </div>
+            <div class="controls-layout">
+                <div class="control-options">
+                    <div class="control-options-copy">
+                        <div class="card-title">ANALOGUE OPTIONS</div>
+                        <div class="control-help">Choose the stick, deadzone and axis direction used for Player One.</div>
+                    </div>
+                    <div class="control-option-row"><span>Deadzone</span><div><button id="controls-deadzone-minus" class="mini-button">−</button><strong id="controls-deadzone-value">18%</strong><button id="controls-deadzone-plus" class="mini-button">+</button></div></div>
+                    <button id="controls-stick" class="control-option-button"><span>Analogue source</span><strong id="controls-stick-value">Left stick</strong></button>
+                    <button id="controls-invert-x" class="control-option-button"><span>Invert X axis</span><strong id="controls-invert-x-value">OFF</strong></button>
+                    <button id="controls-invert-y" class="control-option-button"><span>Invert Y axis</span><strong id="controls-invert-y-value">OFF</strong></button>
+                    <button id="controls-reset" class="control-option-button danger-option"><span>Reset mappings</span><strong>DEFAULTS</strong></button>
+                </div>
+                <div class="controls-column-headings"><span class="controls-heading-action">ACTION</span><span class="controls-heading-binding">KEYBOARD</span><span class="controls-heading-binding">CONTROLLER</span></div>
+                <div id="controls-list" class="controls-list"></div>
+            </div>
+        </div>
+
+        <div id="page-game" class="page game-page hidden">
+            <div class="game-header">
+                <div><div class="eyebrow">NATIVE GAME RUNTIME</div><h2 id="game-internal-name">DIDDY KONG RACING</h2></div>
+                <div id="game-stage" class="status-pill status-good">HOST READY</div>
+            </div>
+            <div class="game-grid">
+                <div class="game-card game-card-wide">
+                    <div class="card-title">GAME BOOT PROGRESS</div>
+                    <div id="game-status" class="game-status">Preparing the native game runtime...</div>
+                    <div class="boot-step boot-step-complete"><span>01</span><div><strong>ROM IMAGE</strong><p>The validated source is reopened, normalised and checked again before use.</p></div></div>
+                    <div class="boot-step boot-step-complete"><span>02</span><div><strong>HOST MEMORY</strong><p>A 4 MiB RDRAM-compatible arena is allocated and cleared.</p></div></div>
+                    <div class="boot-step boot-step-complete"><span>03</span><div><strong>INPUT PACKETS</strong><p>Keyboard and controller mappings are emitted using the original N64 button mask.</p></div></div>
+                    <div class="boot-step boot-step-pending"><span>04</span><div><strong>GAME CODE + RCP</strong><p>The matching DKR ELF, generated CPU code, F3DDKR graphics tasks and audio microcode are the active integration boundary.</p></div></div>
+                </div>
+                <div class="game-card">
+                    <div class="card-title">ROM + MEMORY</div>
+                    <div class="diagnostic-row"><span>ROM size</span><strong id="game-rom-size">—</strong></div>
+                    <div class="diagnostic-row"><span>RDRAM arena</span><strong id="game-rdram-size">—</strong></div>
+                    <div class="diagnostic-row"><span>Entry point</span><strong id="game-entry">—</strong></div>
+                    <div class="diagnostic-row"><span>Header CRC</span><strong id="game-crc">—</strong></div>
+                    <div class="diagnostic-row"><span>Host tick</span><strong id="game-frame">0</strong></div>
+                </div>
+                <div class="game-card input-monitor-card">
+                    <div class="card-title">LIVE N64 INPUT</div>
+                    <div id="game-controller" class="game-controller-name">No controller connected</div>
+                    <div class="stick-monitor"><div class="stick-cross-x"></div><div class="stick-cross-y"></div><div id="game-stick-dot" class="stick-dot"></div></div>
+                    <div class="stick-values"><span>X <strong id="game-stick-x">0</strong></span><span>Y <strong id="game-stick-y">0</strong></span></div>
+                    <div class="button-mask">BUTTON MASK <strong id="game-buttons">0x0000</strong></div>
+                </div>
+            </div>
+            <div class="game-actions">
+                <button id="game-controls" class="compact-button">F1 — CONTROLS</button>
+                <button id="game-return" class="compact-button danger">ESC — RETURN TO LAUNCHER</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="bottom-bar">
+        <div>DKR PORT <span id="footer-version">1.0.0</span></div>
+        <div class="input-hints"><span>↑ ↓</span> NAVIGATE <span>ENTER / A</span> SELECT <span>ESC / B</span> BACK</div>
+    </div>
+</div>
+
+<div id="processing-overlay" class="overlay hidden">
+    <div class="modal processing-modal">
+        <div class="spinner"><div></div><div></div><div></div></div>
+        <div class="eyebrow">PLEASE WAIT</div>
+        <h3>VALIDATING ROM</h3>
+        <p>Normalising byte order, calculating SHA-1 and preparing the asset-free resource manifest.</p>
+        <div class="progress-track"><div class="progress-bar"></div></div>
+    </div>
+</div>
+
+<div id="capture-overlay" class="overlay hidden">
+    <div class="modal capture-modal">
+        <div class="message-type">WAITING FOR INPUT</div>
+        <h3 id="capture-title">A BUTTON</h3>
+        <p id="capture-instruction">Press a key or controller input.</p>
+        <div class="capture-pulse">•••</div>
+    </div>
+</div>
+
+<div id="message-overlay" class="overlay hidden">
+    <div id="message-modal" class="modal message-modal">
+        <div id="message-type" class="message-type">INFORMATION</div>
+        <h3 id="message-title">MESSAGE</h3>
+        <p id="message-body">—</p>
+        <button id="message-close" class="action action-primary modal-button"><span class="action-content"><span class="action-title">CONTINUE</span></span><span class="action-arrow">›</span></button>
+    </div>
+</div>
+</body>
+</rml>
