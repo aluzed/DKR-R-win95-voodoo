@@ -1,6 +1,7 @@
 #include "rt64_renderer.hpp"
 
 #include "game_registration.hpp"
+#include "renderer_snapshot.hpp"
 #include "runtime_enhancements.hpp"
 #include "runtime_telemetry.hpp"
 #include "runtime_platform.hpp"
@@ -25,8 +26,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#include <tuple>
+#include <utility>
 
 namespace {
+
+static_assert(
+    std::tuple_size_v<decltype(
+        std::declval<RT64::WorkloadQueue>().workloads)> >= 4,
+    "Modern presentation requires RT64's four-slot owned workload ring");
 
 std::array<std::uint8_t, 0x40> g_rom_header{};
 std::array<std::uint8_t, 0x1000> g_dmem{};
@@ -309,12 +317,10 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
     // them. DKR relies on that during scene transitions and can free texture
     // allocations while the host graphics queue is still pending. Parse this
     // task from the submission-time snapshot, then restore live RDRAM for VI.
-    std::uint8_t* live_rdram = application_->core.RDRAM;
-    application_->core.RDRAM = rdram_snapshot;
-    application_->state->RDRAM = rdram_snapshot;
+    RendererSnapshotScope snapshot_scope(application_->core.RDRAM,
+                                         application_->state->RDRAM,
+                                         rdram_snapshot);
     f3ddkr_.process(*application_, *task);
-    application_->state->RDRAM = live_rdram;
-    application_->core.RDRAM = live_rdram;
 }
 
 void dkr::runtime::RT64Renderer::update_screen() {
