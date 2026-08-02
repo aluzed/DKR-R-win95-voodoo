@@ -1,5 +1,8 @@
 #include "f3ddkr_rt64.hpp"
 
+#include "presentation_identity.hpp"
+#include "runtime_enhancements.hpp"
+
 #include "gbi/rt64_f3d.h"
 #include "gbi/rt64_gbi_f3d.h"
 #include "gbi/rt64_gbi_rdp.h"
@@ -258,6 +261,8 @@ struct dkr::runtime::F3DDKRRT64Bridge::StateData {
     std::uint32_t vertex_commands = 0;
     std::uint32_t triangle_commands = 0;
     std::uint32_t counted_commands = 0;
+    std::uint32_t semantic_matrix_hits = 0;
+    std::uint32_t semantic_matrix_misses = 0;
     std::uint32_t presentation_group_begins = 0;
     std::uint32_t presentation_group_ends = 0;
     bool presentation_group_active = false;
@@ -371,12 +376,15 @@ void dkr::runtime::F3DDKRRT64Bridge::process(RT64::Application& application,
         data_->task_count % 60 == 0) {
         std::fprintf(stderr,
                      "[boot][f3ddkr] task=%llu dl=0x%08X matrix-base=0x%06X "
-                     "vertex-base=0x%06X commands=%u/%u/%u/%u groups=%u/%u\n",
+                     "vertex-base=0x%06X commands=%u/%u/%u/%u groups=%u/%u "
+                     "semantic=%u/%u\n",
                      static_cast<unsigned long long>(data_->task_count), start,
                      data_->matrix_offset, data_->vertex_offset, data_->matrix_commands,
                      data_->vertex_commands, data_->triangle_commands,
                      data_->counted_commands, data_->presentation_group_begins,
-                     data_->presentation_group_ends);
+                     data_->presentation_group_ends,
+                     data_->semantic_matrix_hits,
+                     data_->semantic_matrix_misses);
         if (data_->task_count % 60 == 0) {
             std::fprintf(stderr,
                          "[boot][perf] tasks=%llu f3ddkr-avg-us=%llu max-us=%llu "
@@ -477,15 +485,22 @@ void dkr::runtime::F3DDKRRT64Bridge::Matrix(RT64::State* state,
             LogFloatMatrix("current-model", state->RDRAM, 0x00121060U);
         }
     }
+    data.current_matrix_group_id = G_EX_ID_IGNORE;
+    if (!data.presentation_group_active &&
+        dkr::runtime::enhancements::modern_presentation_enabled()) {
+        data.current_matrix_group_id =
+            dkr::runtime::presentation::matrix_identity(address);
+        if (data.current_matrix_group_id == G_EX_ID_IGNORE) {
+            ++data.semantic_matrix_misses;
+        } else {
+            ++data.semantic_matrix_hits;
+        }
+    }
+    SelectInterpolationGroup(rsp, data.presentation_group_active
+        ? G_EX_ID_IGNORE
+        : data.current_matrix_group_id);
     rsp.matrix(address, static_cast<std::uint8_t>(
         active_->gbi_->constants[F3DENUM::G_MTX_LOAD]));
-    if (!data.presentation_group_active) {
-        // Stable fallback: F3DDKR's combined matrices do not expose durable
-        // per-object identities. Never allow RT64's automatic matcher to pair
-        // unrelated transforms in the release rendering path.
-        data.current_matrix_group_id = G_EX_ID_IGNORE;
-        SelectInterpolationGroup(rsp, G_EX_ID_IGNORE);
-    }
     if (DeepTraceEnabled() && g_logged_matrices <= 32) {
         const auto& matrix = rsp.modelMatrixStack[index];
         std::fprintf(stderr,

@@ -87,6 +87,48 @@
       "reason": "Count authoritative game-loop ticks at the decompiled DKR simulation boundary so Modern presentation work can be proven independent from gameplay, input, and audio cadence."
     },
     {
+      "function": "main_game_loop",
+      "beforeVram": "0x8006C724",
+      "text": "extern void dkr_presentation_frame_begin(uint8_t*, recomp_context*); dkr_presentation_frame_begin(rdram, ctx);",
+      "reason": "Reset only the matrix-identity sidecar for the display-list buffer selected for the new authored frame, after DKR has submitted and toggled the previous buffer."
+    },
+    {
+      "function": "gfxtask_run_xbus",
+      "beforeVram": "0x80077450",
+      "text": "extern void dkr_presentation_task_submitted(uint8_t*, recomp_context*); dkr_presentation_task_submitted(rdram, ctx);",
+      "reason": "Freeze the completed frame's semantic matrix sidecar immediately before DKR builds and submits its graphics task, preserving exact FIFO ownership even when rendering is delayed beyond N64 double-buffer reuse."
+    },
+    {
+      "function": "level_load",
+      "beforeVram": "0x8006B250",
+      "text": "extern void dkr_presentation_scene_begin(uint8_t*, recomp_context*); dkr_presentation_scene_begin(rdram, ctx);",
+      "reason": "Advance the Modern scene generation at the decompiled level lifecycle boundary so no object or matrix history can cross a load, restart, warp, or cutscene level transition."
+    },
+    {
+      "function": "spawn_object",
+      "beforeVram": "0x8000F62C",
+      "text": "extern void dkr_presentation_object_spawned(uint8_t*, recomp_context*); dkr_presentation_object_spawned(rdram, ctx);",
+      "reason": "Assign a new host-side lifetime generation to each successfully spawned DKR object; null failure returns are ignored."
+    },
+    {
+      "function": "free_object",
+      "beforeVram": "0x8000FFB8",
+      "text": "extern void dkr_presentation_object_freed(uint8_t*, recomp_context*); dkr_presentation_object_freed(rdram, ctx);",
+      "reason": "Retire an object's interpolation lifetime before DKR queues it for destruction so reuse of the same heap address cannot revive old transform history."
+    },
+    {
+      "function": "render_object",
+      "beforeVram": "0x80012D84",
+      "text": "extern void dkr_presentation_object_begin(uint8_t*, recomp_context*); dkr_presentation_object_begin(rdram, ctx);",
+      "reason": "Capture the visible object's stable identity and first matrix pointer after DKR's invisible/shadow-only early return and before object-part rendering begins."
+    },
+    {
+      "function": "render_object",
+      "beforeVram": "0x80012DD0",
+      "text": "extern void dkr_presentation_object_end(uint8_t*, recomp_context*); dkr_presentation_object_end(rdram, ctx);",
+      "reason": "Bind the exact contiguous matrix range produced by this object to hierarchical per-matrix identities before DKR restores its caller-owned render pointers."
+    },
+    {
       "function": "func_80065A80",
       "beforeVram": "0x80065A80",
       "text": "extern int dkr_audio_voice_guard(uint8_t*, recomp_context*); if (dkr_audio_voice_guard(rdram, ctx)) { return; }",

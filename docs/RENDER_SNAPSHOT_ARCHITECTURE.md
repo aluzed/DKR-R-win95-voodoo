@@ -33,3 +33,27 @@ semantic IDs are written while F3DDKR records the current RT64 workload; RT64
 then pairs the two owned endpoint workloads. Missing history, scene changes,
 identity failures, discontinuities, queue pressure, or snapshot audit failures
 must present the newest authored endpoint without extrapolation.
+
+## Semantic transform sidecar
+
+DKR allocates object matrices from two fixed N64 frame heaps and reuses object
+addresses after destruction. A physical matrix address is therefore not a
+stable interpolation identity by itself. Patch Pipeline hooks at scene load,
+object spawn/free, and the decompiled `render_object` boundary construct IDs
+from the scene generation, object address, lifetime generation, object and
+behaviour IDs, plus the matrix ordinal within that object. Bodies, limbs,
+wheels, propellers, and other attachments consequently remain distinct.
+
+No extra commands are written into DKR's fixed 4,500-command display-list
+buffer. Instead, the host records address-to-ID bindings in a sidecar while the
+game authors the frame. A hook at `gfxtask_run_xbus` freezes that sidecar in
+the same FIFO order as the graphics task. `TaskIdentityScope` transfers the
+matching immutable map to the graphics worker for exactly one F3DDKR decode.
+This prevents a delayed worker from reading identities belonging to a newer
+frame that reused the same N64 matrix heap.
+
+Accurate mode never records or selects these IDs. Invalid object ranges,
+unbalanced nesting, task-order mismatches, queue overflow, and 32-bit hash
+collisions all resolve to `G_EX_ID_IGNORE`; a collision also removes bindings
+already authored by the first colliding owner. These are presentation-only
+fallbacks and never alter simulation memory.

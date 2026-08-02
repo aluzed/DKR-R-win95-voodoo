@@ -109,6 +109,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/game_main.cpp
         src/game/game_registration.cpp
         src/game/null_renderer.cpp
+        src/game/presentation_identity.cpp
         src/game/renderer_snapshot.cpp
         src/game/runtime_enhancements.cpp
         src/game/runtime_input.cpp
@@ -275,4 +276,12 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
     add_test(NAME DKRRendererSnapshot COMMAND DKRRendererSnapshotTests)
+
+    add_executable(DKRPresentationIdentityTests
+        tests/presentation_identity_tests.cpp
+    )
+    target_include_directories(DKRPresentationIdentityTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRPresentationIdentity COMMAND DKRPresentationIdentityTests)
 endif()

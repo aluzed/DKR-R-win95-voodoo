@@ -1,6 +1,7 @@
 #include "rt64_renderer.hpp"
 
 #include "game_registration.hpp"
+#include "presentation_identity.hpp"
 #include "renderer_snapshot.hpp"
 #include "runtime_enhancements.hpp"
 #include "runtime_telemetry.hpp"
@@ -320,6 +321,8 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
     RendererSnapshotScope snapshot_scope(application_->core.RDRAM,
                                          application_->state->RDRAM,
                                          rdram_snapshot);
+    dkr::runtime::presentation::TaskIdentityScope identity_scope(
+        task->t.data_ptr);
     f3ddkr_.process(*application_, *task);
 }
 
