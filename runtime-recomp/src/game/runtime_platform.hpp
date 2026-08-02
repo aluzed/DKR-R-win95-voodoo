@@ -13,6 +13,7 @@ void shutdown();
 
 #if DKR_RUNTIME_HAS_RT64
 ultramodern::renderer::WindowHandle create_window();
+ultramodern::renderer::WindowHandle prepare_window_for_game();
 void pump_window_events(void*);
 void* sdl_window();
 void update_ui_gamepad_navigation();

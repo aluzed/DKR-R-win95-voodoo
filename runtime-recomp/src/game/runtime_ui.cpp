@@ -1195,14 +1195,32 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
     }
 
     SDL_SetWindowTitle(window, "DKR Port - Diddy Kong Racing");
+    // SDL's accelerated Linux renderers can replace the native window state
+    // used by SDL_Vulkan_CreateSurface. That leaves the launcher visible but
+    // makes the window disappear as soon as RT64 takes over under Gamescope.
+    // The launcher is inexpensive 2D UI, so keep it on the software backend
+    // and reserve the Vulkan-capable window for the game renderer.
+#if defined(__linux__)
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+#else
     SDL_Renderer* renderer = SDL_CreateRenderer(
         window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer == nullptr) {
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     }
+#endif
     if (renderer == nullptr) {
         std::fprintf(stderr, "[boot][launcher] SDL renderer failed: %s\n", SDL_GetError());
         return result;
+    }
+    SDL_RendererInfo renderer_info{};
+    if (SDL_GetRendererInfo(renderer, &renderer_info) == 0) {
+        std::fprintf(stderr,
+                     "[boot][launcher] SDL renderer=%s accelerated=%s "
+                     "window-flags=0x%08X\n",
+                     renderer_info.name != nullptr ? renderer_info.name : "unknown",
+                     (renderer_info.flags & SDL_RENDERER_ACCELERATED) != 0 ? "yes" : "no",
+                     static_cast<unsigned>(SDL_GetWindowFlags(window)));
     }
 
     IMGUI_CHECKVERSION();
@@ -1474,6 +1492,9 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
     SDL_DestroyRenderer(renderer);
+    std::fprintf(stderr,
+                 "[boot][launcher] handoff complete window-flags=0x%08X\n",
+                 static_cast<unsigned>(SDL_GetWindowFlags(window)));
     return result;
 }
 

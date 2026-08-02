@@ -207,6 +207,49 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::create_window() {
 #endif
 }
 
+ultramodern::renderer::WindowHandle dkr::runtime::platform::prepare_window_for_game() {
+#if defined(__linux__)
+    if (g_window != nullptr) {
+        const Uint32 existing_flags = SDL_GetWindowFlags(g_window);
+        std::fprintf(stderr,
+                     "[boot][window] launcher handoff flags=0x%08X vulkan=%s\n",
+                     static_cast<unsigned>(existing_flags),
+                     (existing_flags & SDL_WINDOW_VULKAN) != 0 ? "yes" : "no");
+        if ((existing_flags & SDL_WINDOW_VULKAN) == 0) {
+            int x = SDL_WINDOWPOS_CENTERED;
+            int y = SDL_WINDOWPOS_CENTERED;
+            int width = 1440;
+            int height = 900;
+            SDL_GetWindowPosition(g_window, &x, &y);
+            SDL_GetWindowSize(g_window, &width, &height);
+            const bool was_hidden = (existing_flags & SDL_WINDOW_HIDDEN) != 0;
+            SDL_DestroyWindow(g_window);
+            g_window = nullptr;
+
+            Uint32 replacement_flags =
+                SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_VULKAN;
+            if (was_hidden) {
+                replacement_flags |= SDL_WINDOW_HIDDEN;
+            }
+            g_window = SDL_CreateWindow("DKR Port", x, y, width, height,
+                                        replacement_flags);
+            if (g_window == nullptr) {
+                std::fprintf(stderr,
+                             "[boot][window] Vulkan handoff recreation failed: %s\n",
+                             SDL_GetError());
+                return {};
+            }
+            SDL_SetWindowMinimumSize(g_window, 800, 600);
+            std::fprintf(stderr,
+                         "[boot][window] recreated Vulkan-capable game window "
+                         "flags=0x%08X\n",
+                         static_cast<unsigned>(SDL_GetWindowFlags(g_window)));
+        }
+    }
+#endif
+    return create_window();
+}
+
 void dkr::runtime::platform::pump_window_events(void*) {
     if (dkr::runtime::ui::consume_exit_request()) {
         ultramodern::quit();

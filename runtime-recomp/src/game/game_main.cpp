@@ -383,7 +383,7 @@ int DkrMain(int argc, char** argv) {
     dkr::runtime::RegisterGame(config_directory);
 #if DKR_RUNTIME_HAS_RT64
     dkr::runtime::ui::configure(config_directory);
-    const auto window_handle = dkr::runtime::platform::create_window();
+    auto window_handle = dkr::runtime::platform::create_window();
 #if defined(_WIN32)
     if (window_handle.window == nullptr) {
 #else
@@ -401,6 +401,17 @@ int DkrMain(int argc, char** argv) {
             return 0;
         }
         rom_path = startup.rom_path;
+        window_handle = dkr::runtime::platform::prepare_window_for_game();
+#if defined(_WIN32)
+        if (window_handle.window == nullptr) {
+#else
+        if (window_handle == nullptr) {
+#endif
+            std::fprintf(stderr,
+                         "[boot][window] failed to prepare the game renderer window\n");
+            dkr::runtime::platform::shutdown();
+            return 4;
+        }
     }
 #else
     const ultramodern::renderer::WindowHandle window_handle{};
