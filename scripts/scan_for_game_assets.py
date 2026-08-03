@@ -30,6 +30,9 @@ def should_skip(path: pathlib.Path) -> bool:
 
 
 def main() -> int:
+    if not ROOT.is_dir():
+        print(f"Asset scan FAILED: root is not a directory: {ROOT}", file=sys.stderr)
+        return 2
     failures: list[str] = []
     inspected = 0
     for path in ROOT.rglob("*"):
@@ -50,6 +53,8 @@ def main() -> int:
         if zipfile.is_zipfile(path) and path.suffix.lower() not in {".zip"}:
             failures.append(f"Unexpected ZIP-compatible binary archive: {relative}")
 
+    if inspected == 0:
+        failures.append("No repository files were inspected; refusing a fail-open result")
     if failures:
         print("Asset scan FAILED:", file=sys.stderr)
         for failure in failures:
