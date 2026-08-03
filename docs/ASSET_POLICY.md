@@ -4,7 +4,7 @@
 
 - Game ROMs in any byte order.
 - Generated `dkr.o2r` files containing original resources.
-- Extracted textures, palettes, models, maps, fonts, audio or cutscenes.
+- Extracted textures, palettes, models, maps, game fonts, audio or cutscenes.
 - Save files or Controller Pak dumps containing user data.
 - Patches that embed substantial original binary data.
 
@@ -14,6 +14,8 @@
 - Decomp source under its own applicable licence when integrated correctly.
 - Extraction schemas, offsets and declarative metadata.
 - Original port interface assets.
+- Independently supplied interface fonts only when their redistribution terms
+  are documented in `THIRD_PARTY.md` and permit the intended release.
 - Synthetic test geometry and data.
 - Checksums identifying supported user-supplied ROM revisions.
 

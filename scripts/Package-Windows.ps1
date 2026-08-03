@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0-rc2',
+    [string]$Version = '1.0.0-rc3',
     [string]$Configuration = 'Release',
     [string]$BuildDirectory = 'build\dkr-runtime-rt64'
 )

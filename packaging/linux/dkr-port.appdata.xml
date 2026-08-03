@@ -8,7 +8,7 @@
   <developer_name>DKR Port Team</developer_name>
   <description>
     <p>DKR Port runs a legally obtained supported Diddy Kong Racing ROM through a native cross-platform recompilation runtime.</p>
-    <p>No original game assets are included in the application.</p>
+    <p>No ROM or extracted game assets are included in the application.</p>
   </description>
   <launchable type="desktop-id">dkr-port.desktop</launchable>
   <provides>
@@ -16,6 +16,6 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.0.0" date="2026-08-01"/>
+    <release version="1.0.0-rc3" date="2026-08-03"/>
   </releases>
 </component>

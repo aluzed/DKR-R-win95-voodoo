@@ -6,7 +6,11 @@ import pathlib
 import sys
 import zipfile
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = (
+    pathlib.Path(sys.argv[1]).resolve()
+    if len(sys.argv) > 1
+    else pathlib.Path(__file__).resolve().parents[1]
+)
 SKIP_PARTS = {
     ".git", ".deps", "build", "build-logs", "dist", "runtime", "extern",
     "run-data", "__pycache__",

@@ -22,6 +22,15 @@ Cloned locally by `Build-DKR-Runtime.cmd`; not bundled in the clean repository Z
 | N64Recomp/N64ModernRuntime | libultra/runtime bridge for generated code | GPL-3.0 |
 | rt64/rt64 | Recommended RDP renderer for N64 recompilation projects | MIT |
 
+## Launcher typography
+
+The launcher heading typeface, Racing Banana, was supplied separately by the
+project owner and is not extracted from Diddy Kong Racing. The supplied font
+contains no embedded copyright or licence fields. A public distributor must
+confirm that it has permission to redistribute the font data before publishing
+a binary that embeds it. Its source-file SHA-256 is
+`AEADA6E5FF1388D27CC5D29DE9C67B74C0F6D851D6C772EE35376AF4E288C896`.
+
 A final executable linked with N64ModernRuntime must be distributed in compliance with GPL-3.0. See
 `runtime-recomp/COPYING-NOTICE.md`. Exact resolved commits are written locally by the preparation
 script so the experimental runtime build can be reproduced.

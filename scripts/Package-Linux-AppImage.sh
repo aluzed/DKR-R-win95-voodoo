@@ -5,7 +5,8 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIRECTORY="${DKR_LINUX_BUILD_DIR:-${PROJECT_ROOT}/build/dkr-runtime-linux}"
 BINARY="${BUILD_DIRECTORY}/bin/Release/DKRPort"
 APPDIR="${DKR_APPDIR:-${PROJECT_ROOT}/dist/DKRPort-Linux-x86_64.AppDir}"
-OUTPUT="${DKR_APPIMAGE_OUTPUT:-${PROJECT_ROOT}/dist/DKRPort-1.0.0-Linux-x86_64.AppImage}"
+VERSION="${DKR_RELEASE_VERSION:-1.0.0-rc3}"
+OUTPUT="${DKR_APPIMAGE_OUTPUT:-${PROJECT_ROOT}/dist/DKRPort-${VERSION}-Linux-x86_64.AppImage}"
 LINUXDEPLOY="${LINUXDEPLOY:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-x86_64.AppImage}"
 APPIMAGE_PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-plugin-appimage}"
 
@@ -24,9 +25,9 @@ install -m 0644 "${PROJECT_ROOT}/packaging/linux/dkr-port.appdata.xml" "${APPDIR
 
 export PATH="$(dirname "${APPIMAGE_PLUGIN}"):${PATH}"
 export OUTPUT
-export VERSION="1.0.0"
+export VERSION
 export LDAI_OUTPUT="${OUTPUT}"
-export LINUXDEPLOY_OUTPUT_VERSION="1.0.0"
+export LINUXDEPLOY_OUTPUT_VERSION="${VERSION}"
 export APPIMAGE_EXTRACT_AND_RUN=1
 # This local release has no public project homepage yet. appimagetool treats
 # that optional AppStream field as a fatal warning, so package the supplied
