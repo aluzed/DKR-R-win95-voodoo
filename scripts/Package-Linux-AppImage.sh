@@ -10,6 +10,34 @@ OUTPUT="${DKR_APPIMAGE_OUTPUT:-${PROJECT_ROOT}/dist/DKRPort-${VERSION}-Linux-x86
 LINUXDEPLOY="${LINUXDEPLOY:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-x86_64.AppImage}"
 APPIMAGE_PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-plugin-appimage}"
 
+validate_release_tree() {
+  local root="$1"
+  local file extension magic inspected=0
+  while IFS= read -r -d '' file; do
+    inspected=$((inspected + 1))
+    extension="${file##*.}"
+    extension="${extension,,}"
+    case "${extension}" in
+      z64|v64|n64|eep|mpk|o2r|otr)
+        echo "Release staging contains prohibited game data: ${file}" >&2
+        return 1
+        ;;
+    esac
+    magic="$(od -An -tx1 -N4 "${file}" 2>/dev/null | tr -d '[:space:]')"
+    case "${magic}" in
+      80371240|37804012|40123780)
+        echo "Release staging contains an N64 ROM header: ${file}" >&2
+        return 1
+        ;;
+    esac
+  done < <(find "${root}" -type f -print0)
+  [[ "${inspected}" -gt 0 ]] || {
+    echo "Release staging is empty: ${root}" >&2
+    return 1
+  }
+  echo "Release staging scan passed: ${inspected} files inspected"
+}
+
 [[ -x "${BINARY}" ]] || { echo "Missing Linux release binary: ${BINARY}" >&2; exit 1; }
 [[ -x "${LINUXDEPLOY}" ]] || { echo "Missing linuxdeploy: ${LINUXDEPLOY}" >&2; exit 1; }
 [[ -x "${APPIMAGE_PLUGIN}" ]] || { echo "Missing linuxdeploy AppImage plugin: ${APPIMAGE_PLUGIN}" >&2; exit 1; }
@@ -41,4 +69,7 @@ export LDAI_NO_APPSTREAM=1
   --icon-file "${PROJECT_ROOT}/packaging/linux/dkr-port.svg" \
   --output appimage
 
+validate_release_tree "${APPDIR}"
+[[ -s "${OUTPUT}" ]] || { echo "AppImage output is missing or empty: ${OUTPUT}" >&2; exit 1; }
 echo "Created ${OUTPUT}"
+sha256sum "${OUTPUT}"
