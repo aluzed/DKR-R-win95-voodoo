@@ -114,6 +114,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/runtime_enhancements.cpp
         src/game/runtime_input.cpp
         src/game/runtime_platform.cpp
+        src/game/save_manager.cpp
         src/game/runtime_stubs.cpp
         src/game/runtime_telemetry.cpp
         src/game/virtual_pak.cpp
@@ -292,6 +293,15 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
     add_test(NAME DKRMotionSteeringPolicy COMMAND DKRMotionSteeringPolicyTests)
+
+    add_executable(DKRSaveManagerTests
+        tests/save_manager_tests.cpp
+        src/game/save_manager.cpp
+    )
+    target_include_directories(DKRSaveManagerTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRSaveManager COMMAND DKRSaveManagerTests)
 
     add_executable(DKRRendererSnapshotTests
         tests/renderer_snapshot_tests.cpp

@@ -1,6 +1,7 @@
 #include "game_registration.hpp"
 #include "null_renderer.hpp"
 #include "runtime_platform.hpp"
+#include "save_manager.hpp"
 #include "virtual_pak.hpp"
 #if DKR_RUNTIME_HAS_RT64
 #include "rt64_renderer.hpp"
@@ -357,6 +358,7 @@ int DkrMain(int argc, char** argv) {
     const unsigned timeout_seconds = argc >= 4 ? static_cast<unsigned>(std::stoul(argv[3])) : 0U;
     std::filesystem::create_directories(config_directory);
     dkr::runtime::pak::configure(config_directory);
+    dkr::runtime::saves::configure(config_directory);
 
     if (!dkr::runtime::platform::initialise()) {
         return 4;

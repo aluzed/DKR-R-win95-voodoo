@@ -5,6 +5,7 @@
 #include "runtime_enhancements.hpp"
 #include "runtime_input.hpp"
 #include "runtime_platform.hpp"
+#include "save_manager.hpp"
 #include "virtual_pak.hpp"
 
 #if defined(_WIN32)
@@ -79,6 +80,7 @@ CaptureDevice g_capture_device = CaptureDevice::None;
 int g_capture_action = -1;
 bool g_capture_popup_pending = false;
 bool g_capture_finished = false;
+std::string g_save_manager_status;
 
 bool HandleInputCaptureEvent(SDL_Event* event);
 
@@ -714,6 +716,58 @@ bool SelectRomWithDialog(std::filesystem::path& selected, std::string& status) {
     return false;
 }
 
+bool ImportAdventureWithDialog() {
+    if (NFD_Init() != NFD_OKAY) {
+        g_save_manager_status = "The system file picker could not be initialized.";
+        return false;
+    }
+    nfdu8char_t* result = nullptr;
+    const nfdfilteritem_t filters[] = {{"DKR Adventure save", "bin"}};
+    const nfdresult_t dialog = NFD_OpenDialogU8(&result, filters, 1, nullptr);
+    bool imported = false;
+    if (dialog == NFD_OKAY) {
+        const auto source = std::filesystem::u8path(result);
+        NFD_FreePathU8(result);
+        std::string error;
+        imported = dkr::runtime::saves::import_adventure(source, error);
+        g_save_manager_status = imported
+            ? "Adventure save imported. The previous save was backed up first."
+            : error;
+    } else if (dialog == NFD_ERROR) {
+        g_save_manager_status = NFD_GetError();
+    }
+    NFD_Quit();
+    return imported;
+}
+
+bool ExportAdventureWithDialog() {
+    if (NFD_Init() != NFD_OKAY) {
+        g_save_manager_status = "The system file picker could not be initialized.";
+        return false;
+    }
+    nfdu8char_t* result = nullptr;
+    const nfdfilteritem_t filters[] = {{"DKR Adventure save", "bin"}};
+    const nfdresult_t dialog = NFD_SaveDialogU8(
+        &result, filters, 1, nullptr, "dkr-adventure-save.bin");
+    bool exported = false;
+    if (dialog == NFD_OKAY) {
+        auto destination = std::filesystem::u8path(result);
+        NFD_FreePathU8(result);
+        if (destination.extension().empty()) {
+            destination += ".bin";
+        }
+        std::string error;
+        exported = dkr::runtime::saves::export_adventure(destination, error);
+        g_save_manager_status = exported
+            ? "Adventure save exported successfully."
+            : error;
+    } else if (dialog == NFD_ERROR) {
+        g_save_manager_status = NFD_GetError();
+    }
+    NFD_Quit();
+    return exported;
+}
+
 void DrawRaceBadge(const char* label, const ImVec4& color, float width = 0.0F);
 
 void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
@@ -1191,6 +1245,119 @@ bool DrawGraphicsSettings(bool live) {
     return changed;
 }
 
+void DrawSaveManager() {
+    const auto info = dkr::runtime::saves::adventure_info();
+    const float width = std::max(ImGui::GetContentRegionAvail().x - 30.0F, 1.0F);
+    DrawRaceBadge(" T.T.'S SAVE GARAGE ", kAccent, width);
+    ImGui::Dummy({0.0F, 10.0F});
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
+    ImGui::BeginChild("adventure-save-card", {width, 190.0F}, true,
+                      ImGuiWindowFlags_NoScrollbar);
+    ImGui::SetCursorPos({18.0F, 16.0F});
+    ImGui::PushTextWrapPos(width - 18.0F);
+    ImGui::TextUnformatted("ADVENTURE PROGRESS");
+    if (!info.exists) {
+        ImGui::TextDisabled("No Adventure save yet. DKR will create one after your first save.");
+    } else if (!info.valid) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kRaceRed);
+        ImGui::TextWrapped("This save does not have DKR's expected 512-byte EEPROM size. Import a known-good backup before racing.");
+        ImGui::PopStyleColor();
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+        ImGui::TextUnformatted("READY - 512 BYTE EEPROM");
+        ImGui::PopStyleColor();
+    }
+    ImGui::TextDisabled("%s", PathUtf8(info.path).c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::Dummy({0.0F, 10.0F});
+
+    const float gap = ImGui::GetStyle().ItemSpacing.x;
+    const bool row = width >= 620.0F;
+    const float button_width = row ? (width - gap * 2.0F) / 3.0F : width;
+    ImGui::BeginDisabled(!info.valid);
+    if (ImGui::Button("MAKE SAFETY BACKUP", {button_width, 46.0F})) {
+        std::filesystem::path created;
+        std::string error;
+        if (dkr::runtime::saves::backup_adventure(created, error)) {
+            g_save_manager_status = "Safety backup parked in T.T.'s garage.";
+        } else {
+            g_save_manager_status = error;
+        }
+    }
+    if (row) ImGui::SameLine();
+    if (ImGui::Button("EXPORT SAVE", {button_width, 46.0F})) {
+        ExportAdventureWithDialog();
+    }
+    ImGui::EndDisabled();
+    if (row) ImGui::SameLine();
+    if (ImGui::Button("IMPORT SAVE", {button_width, 46.0F})) {
+        ImportAdventureWithDialog();
+    }
+
+    if (!g_save_manager_status.empty()) {
+        ImGui::Dummy({0.0F, 8.0F});
+        ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
+        ImGui::TextWrapped("%s", g_save_manager_status.c_str());
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::Dummy({0.0F, 18.0F});
+    ImGui::SeparatorText("Recent automatic backups");
+    const auto backups = dkr::runtime::saves::adventure_backups();
+    if (backups.empty()) {
+        ImGui::TextDisabled("No backups are parked here yet.");
+    } else {
+        const std::size_t shown = std::min<std::size_t>(backups.size(), 6U);
+        for (std::size_t index = 0; index < shown; ++index) {
+            ImGui::PushID(static_cast<int>(index));
+            const std::string filename = PathUtf8(backups[index].filename());
+            const float restore_width = std::min(190.0F, width * 0.33F);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(filename.c_str());
+            ImGui::SameLine(std::max(width - restore_width, 1.0F));
+            if (ImGui::Button("RESTORE", {restore_width, 38.0F})) {
+                std::string error;
+                if (dkr::runtime::saves::import_adventure(backups[index], error)) {
+                    g_save_manager_status = "Backup restored. The replaced save was backed up too.";
+                } else {
+                    g_save_manager_status = error;
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+
+    ImGui::Dummy({0.0F, 18.0F});
+    ImGui::PushStyleColor(ImGuiCol_Button, {0.45F, 0.09F, 0.10F, 1.0F});
+    if (ImGui::Button("START A FRESH ADVENTURE", {width, 44.0F})) {
+        ImGui::OpenPopup("Reset Adventure save?");
+    }
+    ImGui::PopStyleColor();
+    if (ImGui::BeginPopupModal("Reset Adventure save?", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Park the current save in a backup, then start fresh?");
+        ImGui::TextDisabled("The backup can be restored from this screen later.");
+        if (ImGui::Button("CANCEL", {130.0F, 40.0F})) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.45F, 0.09F, 0.10F, 1.0F});
+        if (ImGui::Button("START FRESH", {150.0F, 40.0F})) {
+            std::string error;
+            if (dkr::runtime::saves::reset_adventure(error)) {
+                g_save_manager_status = "Fresh Adventure save created; the previous journey is safe in backups.";
+            } else {
+                g_save_manager_status = error;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleColor();
+        ImGui::EndPopup();
+    }
+}
+
 void DrawControlsReference(bool live) {
     using dkr::runtime::input::Action;
     ImGui::TextUnformatted("DRIVER BINDINGS");
@@ -1588,7 +1755,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
     if (const char* test_page = std::getenv("DKR_TEST_STARTUP_PAGE")) {
         char* end = nullptr;
         const long parsed = std::strtol(test_page, &end, 10);
-        if (end != test_page && *end == '\0' && parsed >= 0 && parsed <= 2) {
+        if (end != test_page && *end == '\0' && parsed >= 0 && parsed <= 3) {
             page = static_cast<int>(parsed);
         }
     }
@@ -1614,10 +1781,10 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
                     RomBrowserBack();
                 } else if (!g_rom_browser.open &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
-                    page = (page + 2) % 3;
+                    page = (page + 3) % 4;
                 } else if (!g_rom_browser.open &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
-                    page = (page + 1) % 3;
+                    page = (page + 1) % 4;
                 } else if (!g_rom_browser.open && page == 0 && rom_ready &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
                     launch_requested = true;
@@ -1694,10 +1861,10 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         ImGui::BeginGroup();
         DrawRaceBadge(" WELCOME TO TIMBER'S ISLAND ", kRaceRed);
         ImGui::Dummy({0.0F, 12.0F});
-        const bool tabs_inline = right_inner_width >= 540.0F;
+        const bool tabs_inline = right_inner_width >= 680.0F;
         const float tab_gap = ImGui::GetStyle().ItemSpacing.x;
         const float tab_width = tabs_inline
-            ? (right_inner_width - tab_gap * 2.0F) / 3.0F
+            ? (right_inner_width - tab_gap * 3.0F) / 4.0F
             : right_inner_width;
         ImGui::PushStyleColor(ImGuiCol_Button, page == 0 ? kRaceRed : kRaceBlue);
         if (ImGui::Button("ADVENTURE", {tab_width, 46.0F})) page = 0;
@@ -1709,6 +1876,10 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         if (tabs_inline) ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, page == 2 ? kRaceRed : kRaceBlue);
         if (ImGui::Button("DRIVER GUIDE", {tab_width, 46.0F})) page = 2;
+        ImGui::PopStyleColor();
+        if (tabs_inline) ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, page == 3 ? kRaceRed : kRaceBlue);
+        if (ImGui::Button("SAVE GARAGE", {tab_width, 46.0F})) page = 3;
         ImGui::PopStyleColor();
         ImGui::Dummy({0.0F, 24.0F});
 
@@ -1797,13 +1968,20 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
                 dkr::runtime::platform::set_master_volume(volume_percent / 100.0F);
                 SaveSettings();
             }
-        } else {
+        } else if (page == 2) {
             PushHeadingFont();
             ImGui::TextUnformatted("TT DRIVER GUIDE");
             PopHeadingFont();
             ImGui::TextDisabled("Keyboard or gamepad - pick your machine and hit the track.");
             ImGui::Dummy({0.0F, 12.0F});
             DrawControlsReference(false);
+        } else {
+            PushHeadingFont();
+            ImGui::TextUnformatted("TT SAVE GARAGE");
+            PopHeadingFont();
+            ImGui::TextDisabled("Back up, import and export Adventure progress before the race begins.");
+            ImGui::Dummy({0.0F, 12.0F});
+            DrawSaveManager();
         }
         // Every scrollable tab ends with breathing room so its final control
         // never rests directly on the rounded card boundary.
