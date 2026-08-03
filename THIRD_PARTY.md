@@ -22,6 +22,22 @@ Cloned locally by `Build-DKR-Runtime.cmd`; not bundled in the clean repository Z
 | N64Recomp/N64ModernRuntime | libultra/runtime bridge for generated code | GPL-3.0 |
 | rt64/rt64 | Recommended RDP renderer for N64 recompilation projects | MIT |
 
+## Runtime components included in release binaries
+
+| Project | Purpose | Upstream licence |
+|---|---|---|
+| SDL2 | Runtime window, audio, input and controller access | Zlib |
+| Dear ImGui | In-game settings overlay | MIT |
+| DirectX Shader Compiler (`dxcompiler.dll`, `dxil.dll`, Windows only) | RT64 runtime shader compilation | University of Illinois/NCSA; see the packaged DXC notice and upstream third-party notices |
+| RT64 and its compiled contributors | N64 graphics translation and host rendering | MIT and the contributor licences retained in the corresponding source archive |
+| N64ModernRuntime | Recompilation host/runtime services | GPL-3.0 |
+| N64Recomp | Static translation support linked through the runtime | MIT |
+
+Windows packages place the immediately applicable notices in
+`ThirdPartyLicenses`. Linux packages place the core project notices in
+`usr/share/doc/dkr-port/licenses` and the deployed system-library notices in the
+Linux package directory described below.
+
 ## Launcher typography
 
 The launcher heading typeface, Racing Banana, was supplied separately by the

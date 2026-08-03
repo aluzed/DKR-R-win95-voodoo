@@ -40,6 +40,23 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\RELEASE-README.md') -D
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY.md') -Destination (Join-Path $stage 'THIRD_PARTY.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'runtime-recomp\COPYING-NOTICE.md') -Destination (Join-Path $stage 'COPYING-NOTICE.md')
+$noticeDirectory = Join-Path $stage 'ThirdPartyLicenses'
+New-Item -ItemType Directory -Path $noticeDirectory | Out-Null
+$noticeFiles = [ordered]@{
+    'RT64-LICENSE.txt' = 'extern\rt64\LICENSE'
+    'Dear-ImGui-LICENSE.txt' = 'extern\rt64\src\contrib\imgui\LICENSE.txt'
+    'SDL2-LICENSE.txt' = 'extern\rt64\src\contrib\mupen64plus-win32-deps\SDL2-2.26.3\COPYING.txt'
+    'N64ModernRuntime-COPYING.txt' = 'extern\n64-modern-runtime\COPYING'
+    'N64Recomp-LICENSE.txt' = 'extern\n64-modern-runtime\N64Recomp\LICENSE'
+    'DXC-NOTICE.md' = 'packaging\licenses\DXC-NOTICE.md'
+}
+foreach ($entry in $noticeFiles.GetEnumerator()) {
+    $source = Join-Path $projectRoot $entry.Value
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw "Missing third-party notice: $source"
+    }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $noticeDirectory $entry.Key)
+}
 
 $packagedFiles = Get-ChildItem -LiteralPath $stage -Recurse -File
 $denied = @($packagedFiles | Where-Object { $deniedExtensions -contains $_.Extension.ToLowerInvariant() })
