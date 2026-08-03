@@ -161,8 +161,18 @@ void ApplyConfig(RT64::Application& application,
                   config.rr_manual_value)
             : g_detected_display_rate;
         if (ExperimentalInterpolationEnabled()) {
-            g_effective_refresh_target = std::min(g_requested_refresh_target,
-                                                  g_detected_display_rate);
+            // Match Display follows the active monitor. A deliberately chosen
+            // manual rate remains deliberate, including rates above the
+            // monitor refresh for latency testing; it is still bounded by the
+            // public 30..500 FPS contract and RT64's paced presentation queue.
+            // Manual 60 and Match Display are unchanged from the accepted
+            // Modern-60 baseline.
+            g_effective_refresh_target =
+                dkr::runtime::enhancements::resolve_effective_presentation_rate(
+                    dkr::runtime::enhancements::PresentationProfile::Modern,
+                    config.rr_option ==
+                        ultramodern::renderer::RefreshRate::Manual,
+                    g_requested_refresh_target, g_detected_display_rate);
             application.userConfig.refreshRate =
                 RT64::UserConfiguration::RefreshRate::Manual;
             application.userConfig.refreshRateTarget = g_effective_refresh_target;
@@ -263,23 +273,52 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     application_config.appId = "dkr-port";
     application_config.useConfigurationFile = false;
     application_config.detectDataPath = true;
-    application_ = std::make_unique<RT64::Application>(core, application_config);
-    const auto& config = ultramodern::renderer::get_graphics_config();
-    ApplyConfig(*application_, config);
-    application_->userConfig.developerMode = developer_mode;
+    auto config = ultramodern::renderer::get_graphics_config();
+    const auto create_application = [&] {
+        application_ = std::make_unique<RT64::Application>(core, application_config);
+        ApplyConfig(*application_, config);
+        application_->userConfig.developerMode = developer_mode;
+        // DKR presents directly from its alternating rendered color buffers.
+        // SkipBuffering can select a stale VI-history entry before either buffer
+        // has been approved for interpolation, yielding an entirely black Modern
+        // frame. PresentEarly follows the current VI buffer and remains valid both
+        // before and after RT64 enables interpolation for that framebuffer.
+        application_->enhancementConfig.presentation.mode = PresentationMode();
+    };
+    create_application();
     // DKR presents directly from its alternating rendered color buffers.
     // SkipBuffering can select a stale VI-history entry before either buffer
     // has been approved for interpolation, yielding an entirely black Modern
     // frame. PresentEarly follows the current VI buffer and remains valid both
     // before and after RT64 enables interpolation for that framebuffer.
-    application_->enhancementConfig.presentation.mode = PresentationMode();
-
     std::uint32_t thread_id = 0;
 #if defined(_WIN32)
     thread_id = window_handle.thread_id;
 #endif
     setup_result = MapSetupResult(application_->setup(thread_id));
     chosen_api = MapGraphicsAPI(application_->chosenGraphicsAPI);
+    if (setup_result != ultramodern::renderer::SetupResult::Success &&
+        config.api_option != ultramodern::renderer::GraphicsApi::Auto) {
+        const auto failed_api = config.api_option;
+        const auto failed_result = setup_result;
+        std::fprintf(stderr,
+                     "[boot][rt64] requested api=%u failed result=%u; retrying Automatic\n",
+                     static_cast<unsigned>(failed_api),
+                     static_cast<unsigned>(failed_result));
+        // setup() can leave backend-owned objects partially initialised. A
+        // clean Application is the only safe retry boundary.
+        application_.reset();
+        config.api_option = ultramodern::renderer::GraphicsApi::Auto;
+        create_application();
+        setup_result = MapSetupResult(application_->setup(thread_id));
+        chosen_api = MapGraphicsAPI(application_->chosenGraphicsAPI);
+        if (setup_result == ultramodern::renderer::SetupResult::Success) {
+            dkr::runtime::ui::persist_graphics_api_fallback();
+            std::fprintf(stderr,
+                         "[boot][rt64] Automatic API recovery succeeded api=%u\n",
+                         static_cast<unsigned>(chosen_api));
+        }
+    }
     if (setup_result != ultramodern::renderer::SetupResult::Success) {
         std::fprintf(stderr, "[boot][rt64] setup failed result=%u\n",
                      static_cast<unsigned>(setup_result));

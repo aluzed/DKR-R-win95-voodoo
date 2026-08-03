@@ -221,12 +221,28 @@ int dkr::runtime::input::controller_binding(Action action) {
 
 void dkr::runtime::input::set_keyboard_binding(Action action, int scancode) {
     std::scoped_lock lock(g_binding_mutex);
-    g_bindings[Index(action)].keyboard = scancode;
+    const std::size_t target = Index(action);
+    if (scancode != kUnbound) {
+        for (std::size_t index = 0; index < g_bindings.size(); ++index) {
+            if (index != target && g_bindings[index].keyboard == scancode) {
+                g_bindings[index].keyboard = kUnbound;
+            }
+        }
+    }
+    g_bindings[target].keyboard = scancode;
 }
 
 void dkr::runtime::input::set_controller_binding(Action action, int source) {
     std::scoped_lock lock(g_binding_mutex);
-    g_bindings[Index(action)].controller = source;
+    const std::size_t target = Index(action);
+    if (source != kUnbound) {
+        for (std::size_t index = 0; index < g_bindings.size(); ++index) {
+            if (index != target && g_bindings[index].controller == source) {
+                g_bindings[index].controller = kUnbound;
+            }
+        }
+    }
+    g_bindings[target].controller = source;
 }
 
 void dkr::runtime::input::reset_defaults() {

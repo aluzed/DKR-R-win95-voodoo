@@ -54,6 +54,18 @@ constexpr bool graphics_api_selection_allowed(PresentationProfile profile) {
     return normalise_presentation_profile(profile) == PresentationProfile::Modern;
 }
 
+constexpr int resolve_effective_presentation_rate(PresentationProfile profile,
+                                                   bool manual_target,
+                                                   int requested_rate,
+                                                   int display_rate) {
+    if (!interpolation_allowed(profile)) {
+        return kMinimumPresentationRate;
+    }
+    return clamp_presentation_rate(manual_target
+        ? requested_rate
+        : display_rate);
+}
+
 constexpr PresentationProfile resolve_settings_profile(
     int settings_version, bool settings_complete,
     PresentationProfile requested_profile) {

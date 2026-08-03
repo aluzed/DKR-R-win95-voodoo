@@ -12,6 +12,7 @@ using dkr::runtime::enhancements::maximum_detail_effective;
 using dkr::runtime::enhancements::modern_options_visible;
 using dkr::runtime::enhancements::normalise_presentation_profile;
 using dkr::runtime::enhancements::resolve_settings_profile;
+using dkr::runtime::enhancements::resolve_effective_presentation_rate;
 
 static_assert(normalise_presentation_profile(-1) == PresentationProfile::Accurate);
 static_assert(normalise_presentation_profile(0) == PresentationProfile::Accurate);
@@ -31,6 +32,14 @@ static_assert(!fit_to_window_allowed(PresentationProfile::Accurate));
 static_assert(fit_to_window_allowed(PresentationProfile::Modern));
 static_assert(!graphics_api_selection_allowed(PresentationProfile::Accurate));
 static_assert(graphics_api_selection_allowed(PresentationProfile::Modern));
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Accurate, true, 500, 144) == 30);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, false, 500, 144) == 144);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 500, 60) == 500);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 20, 60) == 30);
 static_assert(kCurrentSettingsVersion == 6);
 static_assert(resolve_settings_profile(0, false, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);

@@ -11,9 +11,31 @@
 #include <sstream>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
+#endif
+
 namespace {
 
 constexpr std::size_t kAdventureSaveSize = 0x200U;
+constexpr std::size_t kControllerPakSize = 32U * 1024U;
+constexpr std::size_t kPakDirectoryOffset = 256U;
+constexpr std::size_t kPakDirectoryEntrySize = 64U;
+constexpr std::size_t kPakMaximumFiles = 16U;
+constexpr std::size_t kPakDataStart = 5U * 256U;
+constexpr std::array<std::uint8_t, 8> kPakMagic{
+    'D', 'K', 'R', 'M', 'P', 'K', '1', 0};
+constexpr std::array<std::uint8_t, 16> kBundleMagic{
+    'D', 'K', 'R', 'P', 'O', 'R', 'T', 'S', 'A', 'V', 'E', '1', 0, 0, 0, 0};
+constexpr std::uint32_t kBundleVersion = 1U;
+constexpr std::uint32_t kBundleAdventureKind = 1U;
+constexpr std::uint32_t kBundlePakKind = 2U;
+constexpr std::size_t kMaximumBundleSize =
+    64U + kAdventureSaveSize +
+    dkr::runtime::saves::kControllerPakCount * (32U + kControllerPakSize);
 std::filesystem::path g_config_directory;
 std::mutex g_save_manager_mutex;
 
@@ -21,15 +43,97 @@ std::filesystem::path AdventurePath() {
     return g_config_directory / "saves" / "dkr.us.v77.bin";
 }
 
-bool ReadAdventure(const std::filesystem::path& path,
-                   std::vector<std::uint8_t>& bytes) {
+std::filesystem::path ControllerPakPath(int channel) {
+    return g_config_directory /
+        ("controller-pak-" + std::to_string(channel + 1) + ".mpk");
+}
+
+bool ValidChannel(int channel) {
+    return channel >= 0 && channel < dkr::runtime::saves::kControllerPakCount;
+}
+
+std::uint32_t ReadLE32(const std::vector<std::uint8_t>& bytes,
+                       std::size_t offset) {
+    return static_cast<std::uint32_t>(bytes[offset + 0U]) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
+}
+
+void AppendLE32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>(value));
+    bytes.push_back(static_cast<std::uint8_t>(value >> 8U));
+    bytes.push_back(static_cast<std::uint8_t>(value >> 16U));
+    bytes.push_back(static_cast<std::uint8_t>(value >> 24U));
+}
+
+std::uint32_t ImageChecksum(const std::vector<std::uint8_t>& bytes,
+                            std::size_t clear_offset = SIZE_MAX) {
+    std::uint32_t hash = 2166136261U;
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        const std::uint8_t value = index >= clear_offset &&
+                index < clear_offset + 4U
+            ? 0U : bytes[index];
+        hash ^= value;
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+bool ReadFileBounded(const std::filesystem::path& path,
+                     std::size_t maximum_size,
+                     std::vector<std::uint8_t>& bytes) {
+    std::error_code error;
+    const auto size = std::filesystem::file_size(path, error);
+    if (error || size > maximum_size) {
+        return false;
+    }
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         return false;
     }
     bytes.assign(std::istreambuf_iterator<char>(input),
                  std::istreambuf_iterator<char>());
-    return input.eof() && bytes.size() == kAdventureSaveSize;
+    return !input.bad() && bytes.size() == size;
+}
+
+bool ReadAdventure(const std::filesystem::path& path,
+                   std::vector<std::uint8_t>& bytes) {
+    return ReadFileBounded(path, kAdventureSaveSize, bytes) &&
+           bytes.size() == kAdventureSaveSize;
+}
+
+bool ValidControllerPak(const std::vector<std::uint8_t>& bytes) {
+    if (bytes.size() != kControllerPakSize ||
+        !std::equal(kPakMagic.begin(), kPakMagic.end(), bytes.begin()) ||
+        ReadLE32(bytes, 8U) != 1U ||
+        ReadLE32(bytes, 16U) != ImageChecksum(bytes, 16U)) {
+        return false;
+    }
+    std::size_t total_reserved = 0U;
+    for (std::size_t index = 0; index < kPakMaximumFiles; ++index) {
+        const std::size_t entry =
+            kPakDirectoryOffset + index * kPakDirectoryEntrySize;
+        if (ReadLE32(bytes, entry) == 0U) {
+            continue;
+        }
+        const std::size_t size = ReadLE32(bytes, entry + 12U);
+        const std::size_t offset = ReadLE32(bytes, entry + 16U);
+        const std::size_t reserved = (size + 255U) & ~255U;
+        if (size == 0U || offset < kPakDataStart ||
+            offset > bytes.size() || size > bytes.size() - offset ||
+            reserved > bytes.size() - kPakDataStart - total_reserved) {
+            return false;
+        }
+        total_reserved += reserved;
+    }
+    return true;
+}
+
+bool ReadControllerPak(const std::filesystem::path& path,
+                       std::vector<std::uint8_t>& bytes) {
+    return ReadFileBounded(path, kControllerPakSize, bytes) &&
+           ValidControllerPak(bytes);
 }
 
 std::string Timestamp() {
@@ -49,8 +153,30 @@ std::string Timestamp() {
     return output.str();
 }
 
+using ImageValidator = bool (*)(const std::filesystem::path&,
+                                std::vector<std::uint8_t>&);
+
+bool ReplaceFileAtomic(const std::filesystem::path& temporary,
+                       const std::filesystem::path& destination,
+                       std::error_code& error) {
+#if defined(_WIN32)
+    if (MoveFileExW(temporary.c_str(), destination.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
+        error.clear();
+        return true;
+    }
+    error = std::error_code(static_cast<int>(GetLastError()),
+                            std::system_category());
+    return false;
+#else
+    std::filesystem::rename(temporary, destination, error);
+    return !error;
+#endif
+}
+
 bool WriteAtomic(const std::filesystem::path& destination,
-                 const std::vector<std::uint8_t>& bytes, std::string& error) {
+                 const std::vector<std::uint8_t>& bytes,
+                 ImageValidator validator, std::string& error) {
     std::error_code filesystem_error;
     std::filesystem::create_directories(destination.parent_path(), filesystem_error);
     if (filesystem_error) {
@@ -74,19 +200,37 @@ bool WriteAtomic(const std::filesystem::path& destination,
         }
     }
     std::vector<std::uint8_t> check;
-    if (!ReadAdventure(temporary, check)) {
+    if (!validator(temporary, check)) {
         error = "The temporary save failed validation.";
         std::filesystem::remove(temporary, filesystem_error);
         return false;
     }
-    std::filesystem::remove(destination, filesystem_error);
+    const std::filesystem::path rollback = destination.string() + ".rollback";
+    const bool had_destination = std::filesystem::exists(destination, filesystem_error);
     filesystem_error.clear();
-    std::filesystem::rename(temporary, destination, filesystem_error);
-    if (filesystem_error) {
+    if (had_destination) {
+        std::filesystem::copy_file(destination, rollback,
+            std::filesystem::copy_options::overwrite_existing, filesystem_error);
+        if (filesystem_error) {
+            error = "Could not create the import rollback copy: " +
+                    filesystem_error.message();
+            std::filesystem::remove(temporary, filesystem_error);
+            return false;
+        }
+    }
+    filesystem_error.clear();
+    if (!ReplaceFileAtomic(temporary, destination, filesystem_error)) {
         error = "Could not activate the imported save: " + filesystem_error.message();
+        if (had_destination) {
+            std::error_code recovery_error;
+            std::filesystem::copy_file(rollback, destination,
+                std::filesystem::copy_options::overwrite_existing, recovery_error);
+        }
         std::filesystem::remove(temporary, filesystem_error);
         return false;
     }
+    filesystem_error.clear();
+    std::filesystem::remove(rollback, filesystem_error);
     return true;
 }
 
@@ -113,6 +257,107 @@ bool BackupUnlocked(std::filesystem::path& created, std::string& error) {
         return false;
     }
     return true;
+}
+
+bool BackupPakUnlocked(int channel, std::filesystem::path& created,
+                       std::string& error) {
+    if (!ValidChannel(channel)) {
+        error = "That Controller Pak channel is outside the supported range.";
+        return false;
+    }
+    const auto source = ControllerPakPath(channel);
+    std::vector<std::uint8_t> bytes;
+    if (!ReadControllerPak(source, bytes)) {
+        error = "No valid Controller Pak image is available to back up.";
+        return false;
+    }
+    std::error_code filesystem_error;
+    const auto directory = g_config_directory / "save-backups";
+    std::filesystem::create_directories(directory, filesystem_error);
+    if (filesystem_error) {
+        error = "Could not create the backup garage: " + filesystem_error.message();
+        return false;
+    }
+    created = directory /
+        ("controller-pak-" + std::to_string(channel + 1) + "-" +
+         Timestamp() + ".mpk");
+    std::filesystem::copy_file(source, created,
+        std::filesystem::copy_options::overwrite_existing, filesystem_error);
+    if (filesystem_error) {
+        error = "Could not create the Controller Pak backup: " +
+                filesystem_error.message();
+        return false;
+    }
+    return true;
+}
+
+struct BundleEntry {
+    std::uint32_t kind = 0;
+    std::uint32_t channel = 0;
+    std::vector<std::uint8_t> bytes;
+};
+
+bool DecodeBundle(const std::filesystem::path& path,
+                  std::vector<BundleEntry>& entries) {
+    std::vector<std::uint8_t> bytes;
+    if (!ReadFileBounded(path, kMaximumBundleSize, bytes) || bytes.size() < 24U ||
+        !std::equal(kBundleMagic.begin(), kBundleMagic.end(), bytes.begin()) ||
+        ReadLE32(bytes, 16U) != kBundleVersion) {
+        return false;
+    }
+    const std::uint32_t count = ReadLE32(bytes, 20U);
+    if (count == 0U || count >
+            1U + static_cast<std::uint32_t>(dkr::runtime::saves::kControllerPakCount)) {
+        return false;
+    }
+    std::array<bool, 1U + dkr::runtime::saves::kControllerPakCount> seen{};
+    std::size_t cursor = 24U;
+    entries.clear();
+    for (std::uint32_t index = 0; index < count; ++index) {
+        if (cursor > bytes.size() || bytes.size() - cursor < 16U) {
+            return false;
+        }
+        BundleEntry entry{};
+        entry.kind = ReadLE32(bytes, cursor + 0U);
+        entry.channel = ReadLE32(bytes, cursor + 4U);
+        const std::uint32_t size = ReadLE32(bytes, cursor + 8U);
+        const std::uint32_t checksum = ReadLE32(bytes, cursor + 12U);
+        cursor += 16U;
+        if (size > bytes.size() - cursor) {
+            return false;
+        }
+        entry.bytes.assign(bytes.begin() + cursor, bytes.begin() + cursor + size);
+        cursor += size;
+        std::size_t seen_index = 0U;
+        if (entry.kind == kBundleAdventureKind) {
+            if (entry.channel != 0U || size != kAdventureSaveSize) {
+                return false;
+            }
+        } else if (entry.kind == kBundlePakKind) {
+            if (entry.channel >= dkr::runtime::saves::kControllerPakCount ||
+                size != kControllerPakSize || !ValidControllerPak(entry.bytes)) {
+                return false;
+            }
+            seen_index = 1U + entry.channel;
+        } else {
+            return false;
+        }
+        if (seen[seen_index] || checksum != ImageChecksum(entry.bytes)) {
+            return false;
+        }
+        seen[seen_index] = true;
+        entries.push_back(std::move(entry));
+    }
+    return cursor == bytes.size();
+}
+
+bool ReadBundle(const std::filesystem::path& path,
+                std::vector<std::uint8_t>& bytes) {
+    std::vector<BundleEntry> entries;
+    if (!DecodeBundle(path, entries)) {
+        return false;
+    }
+    return ReadFileBounded(path, kMaximumBundleSize, bytes);
 }
 
 } // namespace
@@ -181,7 +426,7 @@ bool dkr::runtime::saves::export_adventure(
         error = "No valid Adventure save is available to export.";
         return false;
     }
-    return WriteAtomic(destination, bytes, error);
+    return WriteAtomic(destination, bytes, ReadAdventure, error);
 }
 
 bool dkr::runtime::saves::import_adventure(
@@ -199,7 +444,7 @@ bool dkr::runtime::saves::import_adventure(
             return false;
         }
     }
-    return WriteAtomic(AdventurePath(), bytes, error);
+    return WriteAtomic(AdventurePath(), bytes, ReadAdventure, error);
 }
 
 bool dkr::runtime::saves::reset_adventure(std::string& error) {
@@ -212,5 +457,204 @@ bool dkr::runtime::saves::reset_adventure(std::string& error) {
         }
     }
     return WriteAtomic(AdventurePath(),
-                       std::vector<std::uint8_t>(kAdventureSaveSize, 0U), error);
+                       std::vector<std::uint8_t>(kAdventureSaveSize, 0U),
+                       ReadAdventure, error);
+}
+
+dkr::runtime::saves::SaveInfo dkr::runtime::saves::controller_pak_info(
+    int channel) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    SaveInfo info{};
+    if (!ValidChannel(channel)) {
+        return info;
+    }
+    info.path = ControllerPakPath(channel);
+    std::error_code filesystem_error;
+    info.exists = std::filesystem::exists(info.path, filesystem_error);
+    if (info.exists && !filesystem_error) {
+        info.size = std::filesystem::file_size(info.path, filesystem_error);
+        std::vector<std::uint8_t> bytes;
+        info.valid = !filesystem_error && ReadControllerPak(info.path, bytes);
+    }
+    return info;
+}
+
+std::vector<std::filesystem::path>
+dkr::runtime::saves::controller_pak_backups(int channel) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    std::vector<std::filesystem::path> result;
+    if (!ValidChannel(channel)) {
+        return result;
+    }
+    std::error_code error;
+    const auto directory = g_config_directory / "save-backups";
+    if (!std::filesystem::is_directory(directory, error)) {
+        return result;
+    }
+    const std::string prefix =
+        "controller-pak-" + std::to_string(channel + 1) + "-";
+    for (const auto& entry : std::filesystem::directory_iterator(
+             directory, std::filesystem::directory_options::skip_permission_denied,
+             error)) {
+        if (entry.is_regular_file(error) &&
+            entry.path().filename().string().rfind(prefix, 0) == 0 &&
+            entry.path().extension() == ".mpk") {
+            std::vector<std::uint8_t> bytes;
+            if (ReadControllerPak(entry.path(), bytes)) {
+                result.push_back(entry.path());
+            }
+        }
+        error.clear();
+    }
+    std::sort(result.begin(), result.end(), std::greater<>());
+    return result;
+}
+
+bool dkr::runtime::saves::backup_controller_pak(
+    int channel, std::filesystem::path& created, std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    return BackupPakUnlocked(channel, created, error);
+}
+
+bool dkr::runtime::saves::export_controller_pak(
+    int channel, const std::filesystem::path& destination, std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    if (!ValidChannel(channel)) {
+        error = "That Controller Pak channel is outside the supported range.";
+        return false;
+    }
+    std::vector<std::uint8_t> bytes;
+    if (!ReadControllerPak(ControllerPakPath(channel), bytes)) {
+        error = "No valid Controller Pak image is available to export.";
+        return false;
+    }
+    return WriteAtomic(destination, bytes, ReadControllerPak, error);
+}
+
+bool dkr::runtime::saves::import_controller_pak(
+    int channel, const std::filesystem::path& source, std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    if (!ValidChannel(channel)) {
+        error = "That Controller Pak channel is outside the supported range.";
+        return false;
+    }
+    std::vector<std::uint8_t> bytes;
+    if (!ReadControllerPak(source, bytes)) {
+        error = "That file is not a valid DKR Port Controller Pak image.";
+        return false;
+    }
+    std::error_code exists_error;
+    if (std::filesystem::exists(ControllerPakPath(channel), exists_error)) {
+        std::filesystem::path backup;
+        if (!BackupPakUnlocked(channel, backup, error)) {
+            return false;
+        }
+    }
+    return WriteAtomic(ControllerPakPath(channel), bytes, ReadControllerPak, error);
+}
+
+bool dkr::runtime::saves::export_bundle(
+    const std::filesystem::path& destination, std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    std::vector<BundleEntry> entries;
+    std::vector<std::uint8_t> image;
+    if (ReadAdventure(AdventurePath(), image)) {
+        entries.push_back({kBundleAdventureKind, 0U, image});
+    }
+    for (int channel = 0; channel < kControllerPakCount; ++channel) {
+        image.clear();
+        if (ReadControllerPak(ControllerPakPath(channel), image)) {
+            entries.push_back({kBundlePakKind,
+                static_cast<std::uint32_t>(channel), image});
+        }
+    }
+    if (entries.empty()) {
+        error = "No valid Adventure save or Controller Pak is available to export.";
+        return false;
+    }
+    std::vector<std::uint8_t> bundle(kBundleMagic.begin(), kBundleMagic.end());
+    AppendLE32(bundle, kBundleVersion);
+    AppendLE32(bundle, static_cast<std::uint32_t>(entries.size()));
+    for (const BundleEntry& entry : entries) {
+        AppendLE32(bundle, entry.kind);
+        AppendLE32(bundle, entry.channel);
+        AppendLE32(bundle, static_cast<std::uint32_t>(entry.bytes.size()));
+        AppendLE32(bundle, ImageChecksum(entry.bytes));
+        bundle.insert(bundle.end(), entry.bytes.begin(), entry.bytes.end());
+    }
+    return WriteAtomic(destination, bundle, ReadBundle, error);
+}
+
+bool dkr::runtime::saves::import_bundle(
+    const std::filesystem::path& source, std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    std::vector<BundleEntry> entries;
+    if (!DecodeBundle(source, entries)) {
+        error = "That file is not a valid DKR Port save bundle.";
+        return false;
+    }
+
+    struct OriginalImage {
+        std::filesystem::path destination;
+        std::vector<std::uint8_t> bytes;
+        ImageValidator validator = nullptr;
+        bool existed = false;
+    };
+    std::vector<OriginalImage> originals;
+    originals.reserve(entries.size());
+    for (const BundleEntry& entry : entries) {
+        OriginalImage original{};
+        original.destination = entry.kind == kBundleAdventureKind
+            ? AdventurePath()
+            : ControllerPakPath(static_cast<int>(entry.channel));
+        original.validator = entry.kind == kBundleAdventureKind
+            ? ReadAdventure : ReadControllerPak;
+        original.existed = original.validator(original.destination, original.bytes);
+        if (std::filesystem::exists(original.destination) && !original.existed) {
+            error = "A destination save exists but is corrupt; move it aside before importing.";
+            return false;
+        }
+        originals.push_back(std::move(original));
+    }
+
+    std::size_t committed = 0U;
+    for (; committed < entries.size(); ++committed) {
+        const BundleEntry& entry = entries[committed];
+        const OriginalImage& original = originals[committed];
+        if (original.existed) {
+            std::filesystem::path backup;
+            const bool backed_up = entry.kind == kBundleAdventureKind
+                ? BackupUnlocked(backup, error)
+                : BackupPakUnlocked(static_cast<int>(entry.channel), backup, error);
+            if (!backed_up) {
+                break;
+            }
+        }
+        if (!WriteAtomic(original.destination, entry.bytes, original.validator, error)) {
+            break;
+        }
+    }
+    if (committed == entries.size()) {
+        return true;
+    }
+
+    // Roll back every earlier replacement from its in-memory original. A file
+    // that did not exist before the transaction is removed instead.
+    for (std::size_t index = 0; index < committed; ++index) {
+        const OriginalImage& original = originals[index];
+        if (original.existed) {
+            std::string ignored;
+            WriteAtomic(original.destination, original.bytes,
+                        original.validator, ignored);
+        } else {
+            std::error_code remove_error;
+            std::filesystem::remove(original.destination, remove_error);
+        }
+    }
+    if (error.empty()) {
+        error = "The save bundle transaction was rolled back safely.";
+    } else {
+        error += " The transaction was rolled back safely.";
+    }
+    return false;
 }

@@ -17,6 +17,10 @@ struct StartupResult {
 };
 
 void configure(const std::filesystem::path& config_directory);
+// Called only after an explicitly selected renderer backend fails and RT64
+// successfully recovers with Automatic. Persist the recovered choice so the
+// next launch does not repeat the same failure loop.
+void persist_graphics_api_fallback();
 StartupResult run_startup_screen(SDL_Window* window);
 
 void attach(RT64::Application& application);

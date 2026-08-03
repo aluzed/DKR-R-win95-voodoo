@@ -338,4 +338,26 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
     add_test(NAME DKRPresentationIdentity COMMAND DKRPresentationIdentityTests)
+
+    # These executables intentionally use assert() as their zero-dependency
+    # test primitive. RelWithDebInfo normally defines NDEBUG, which used to turn
+    # every assertion into a no-op in the exact configuration shipped to users.
+    set(DKR_ASSERT_TEST_TARGETS
+        DKRPresentationPolicyTests
+        DKRModernCameraPolicyTests
+        DKRCharacterSelectAnimationPolicyTests
+        DKRMotionSteeringPolicyTests
+        DKRSaveManagerTests
+        DKRAudioEqualizerTests
+        DKRAudioMixPolicyTests
+        DKRRendererSnapshotTests
+        DKRPresentationIdentityTests
+    )
+    foreach(DKR_ASSERT_TEST_TARGET IN LISTS DKR_ASSERT_TEST_TARGETS)
+        if(MSVC)
+            target_compile_options(${DKR_ASSERT_TEST_TARGET} PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(${DKR_ASSERT_TEST_TARGET} PRIVATE -UNDEBUG)
+        endif()
+    endforeach()
 endif()

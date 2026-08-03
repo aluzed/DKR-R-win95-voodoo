@@ -811,6 +811,58 @@ bool ExportAdventureWithDialog() {
     return exported;
 }
 
+bool ImportSaveBundleWithDialog() {
+    if (NFD_Init() != NFD_OKAY) {
+        g_save_manager_status = "The system file picker could not be initialized.";
+        return false;
+    }
+    nfdchar_t* result = nullptr;
+    const nfdfilteritem_t filters[] = {{"DKR Port save bundle", "dkrsave"}};
+    const nfdresult_t dialog = NFD_OpenDialogU8(&result, filters, 1, nullptr);
+    bool imported = false;
+    if (dialog == NFD_OKAY) {
+        const auto source = std::filesystem::u8path(result);
+        NFD_FreePathU8(result);
+        std::string error;
+        imported = dkr::runtime::saves::import_bundle(source, error);
+        g_save_manager_status = imported
+            ? "Adventure and Controller Pak saves returned safely to T.T.'s garage."
+            : error;
+    } else if (dialog == NFD_ERROR) {
+        g_save_manager_status = NFD_GetError();
+    }
+    NFD_Quit();
+    return imported;
+}
+
+bool ExportSaveBundleWithDialog() {
+    if (NFD_Init() != NFD_OKAY) {
+        g_save_manager_status = "The system file picker could not be initialized.";
+        return false;
+    }
+    nfdchar_t* result = nullptr;
+    const nfdfilteritem_t filters[] = {{"DKR Port save bundle", "dkrsave"}};
+    const nfdresult_t dialog = NFD_SaveDialogU8(
+        &result, filters, 1, nullptr, "dkr-port-save-garage.dkrsave");
+    bool exported = false;
+    if (dialog == NFD_OKAY) {
+        auto destination = std::filesystem::u8path(result);
+        NFD_FreePathU8(result);
+        if (destination.extension().empty()) {
+            destination += ".dkrsave";
+        }
+        std::string error;
+        exported = dkr::runtime::saves::export_bundle(destination, error);
+        g_save_manager_status = exported
+            ? "Complete save garage exported successfully."
+            : error;
+    } else if (dialog == NFD_ERROR) {
+        g_save_manager_status = NFD_GetError();
+    }
+    NFD_Quit();
+    return exported;
+}
+
 void DrawRaceBadge(const char* label, const ImVec4& color, float width = 0.0F);
 
 void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
@@ -1188,6 +1240,9 @@ bool DrawGraphicsSettings(bool live) {
                 config.rr_manual_value = g_modern_refresh_target;
                 changed = true;
             }
+            ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+            ImGui::TextWrapped("Targets above the monitor refresh can reduce input-to-present latency, but cannot add visible refreshes and use more CPU/GPU power.");
+            ImGui::PopStyleColor();
         }
         config.rr_option = g_modern_refresh_mode;
         config.rr_manual_value = g_modern_refresh_target;
@@ -1301,11 +1356,24 @@ bool DrawGraphicsSettings(bool live) {
     return changed;
 }
 
-void DrawSaveManager() {
+void DrawSaveManager(bool live = false) {
     const auto info = dkr::runtime::saves::adventure_info();
     const float width = std::max(ImGui::GetContentRegionAvail().x - 30.0F, 1.0F);
     DrawRaceBadge(" T.T.'S SAVE GARAGE ", kAccent, width);
     ImGui::Dummy({0.0F, 10.0F});
+    if (live) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
+        ImGui::BeginChild("live-save-manager-lock", {width, 132.0F}, true,
+                          ImGuiWindowFlags_NoScrollbar);
+        ImGui::SetCursorPos({18.0F, 16.0F});
+        ImGui::PushTextWrapPos(width - 18.0F);
+        ImGui::TextUnformatted("PIT LANE SAFETY LOCK");
+        ImGui::TextWrapped("Save import, restore and reset are available before the game starts. Close the game and use Save Garage so DKR cannot write to the same EEPROM or Controller Pak during a transfer.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        return;
+    }
     ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
     ImGui::BeginChild("adventure-save-card", {width, 190.0F}, true,
                       ImGuiWindowFlags_NoScrollbar);
@@ -1352,6 +1420,48 @@ void DrawSaveManager() {
         ImportAdventureWithDialog();
     }
 
+    ImGui::Dummy({0.0F, 14.0F});
+    ImGui::SeparatorText("Complete garage transfer");
+    ImGui::TextWrapped("A single path-free bundle carries the Adventure EEPROM and every present virtual Controller Pak between Windows and Steam Deck.");
+    const float bundle_button_width = row ? (width - gap) * 0.5F : width;
+    if (ImGui::Button("EXPORT COMPLETE GARAGE", {bundle_button_width, 46.0F})) {
+        ExportSaveBundleWithDialog();
+    }
+    if (row) ImGui::SameLine();
+    if (ImGui::Button("IMPORT COMPLETE GARAGE", {bundle_button_width, 46.0F})) {
+        ImportSaveBundleWithDialog();
+    }
+
+    ImGui::Dummy({0.0F, 14.0F});
+    ImGui::SeparatorText("Virtual Controller Paks");
+    for (int channel = 0; channel < dkr::runtime::saves::kControllerPakCount;
+         ++channel) {
+        const auto pak_info = dkr::runtime::saves::controller_pak_info(channel);
+        ImGui::PushID(channel);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
+        ImGui::BeginChild("controller-pak-card", {width, 74.0F}, true,
+                          ImGuiWindowFlags_NoScrollbar);
+        ImGui::SetCursorPos({14.0F, 10.0F});
+        ImGui::Text("CONTROLLER %d", channel + 1);
+        ImGui::SameLine();
+        if (!pak_info.exists) {
+            ImGui::TextDisabled("Not created yet");
+        } else if (pak_info.valid) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+            ImGui::TextUnformatted("PAK READY");
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, kRaceRed);
+            ImGui::TextUnformatted("RECOVERY NEEDED");
+            ImGui::PopStyleColor();
+        }
+        ImGui::SetCursorPos({14.0F, 38.0F});
+        ImGui::TextDisabled("%s", PathUtf8(pak_info.path).c_str());
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::PopID();
+    }
+
     if (!g_save_manager_status.empty()) {
         ImGui::Dummy({0.0F, 8.0F});
         ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
@@ -1370,16 +1480,25 @@ void DrawSaveManager() {
             ImGui::PushID(static_cast<int>(index));
             const std::string filename = PathUtf8(backups[index].filename());
             const float restore_width = std::min(190.0F, width * 0.33F);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(filename.c_str());
-            ImGui::SameLine(std::max(width - restore_width, 1.0F));
-            if (ImGui::Button("RESTORE", {restore_width, 38.0F})) {
-                std::string error;
-                if (dkr::runtime::saves::import_adventure(backups[index], error)) {
-                    g_save_manager_status = "Backup restored. The replaced save was backed up too.";
-                } else {
-                    g_save_manager_status = error;
+            if (ImGui::BeginTable("backup-row", 2,
+                    ImGuiTableFlags_SizingStretchProp, {width, 0.0F})) {
+                ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("restore", ImGuiTableColumnFlags_WidthFixed,
+                                        restore_width);
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextWrapped("%s", filename.c_str());
+                ImGui::TableSetColumnIndex(1);
+                if (ImGui::Button("RESTORE", {-1.0F, 38.0F})) {
+                    std::string error;
+                    if (dkr::runtime::saves::import_adventure(backups[index], error)) {
+                        g_save_manager_status = "Backup restored. The replaced save was backed up too.";
+                    } else {
+                        g_save_manager_status = error;
+                    }
                 }
+                ImGui::EndTable();
             }
             ImGui::PopID();
         }
@@ -1501,7 +1620,7 @@ void DrawControlsReference(bool live) {
     ImGui::TextUnformatted("DRIVER BINDINGS");
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped("Select any binding, then press the key, button or stick direction you want. Interface navigation always keeps A, B, the D-pad and left stick as a safe recovery route.");
+    ImGui::TextWrapped("Select any binding, then press the key, button or stick direction you want. Reusing an input moves it to the new action so conflicts cannot stack. Interface navigation always keeps A, B, the D-pad and left stick as a safe recovery route.");
     ImGui::PopStyleColor();
     const auto begin_capture_button = [](Action action, std::size_t index,
                                          CaptureDevice device, float width) {
@@ -1886,6 +2005,16 @@ void dkr::runtime::ui::configure(const std::filesystem::path& config_directory) 
     LoadSettings();
 }
 
+void dkr::runtime::ui::persist_graphics_api_fallback() {
+    GraphicsConfig config = ultramodern::renderer::get_graphics_config();
+    config.api_option = GraphicsApi::Auto;
+    g_modern_graphics_api = GraphicsApi::Auto;
+    ultramodern::renderer::set_graphics_config(config);
+    SaveSettings();
+    std::fprintf(stderr,
+                 "[boot][settings] unavailable graphics API recovered to Automatic\n");
+}
+
 dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window* window) {
     StartupResult result{};
     if (window == nullptr) {
@@ -1945,6 +2074,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
     }
 
     int page = 0;
+    bool focus_selected_tab = true;
     if (const char* test_page = std::getenv("DKR_TEST_STARTUP_PAGE")) {
         char* end = nullptr;
         const long parsed = std::strtol(test_page, &end, 10);
@@ -1982,9 +2112,11 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
                 } else if (!g_rom_browser.open &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
                     page = (page + launcher_page_count - 1) % launcher_page_count;
+                    focus_selected_tab = true;
                 } else if (!g_rom_browser.open &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
                     page = (page + 1) % launcher_page_count;
+                    focus_selected_tab = true;
                 } else if (!g_rom_browser.open && page == 0 && rom_ready &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
                     launch_requested = true;
@@ -2066,24 +2198,44 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         const float tab_width = tabs_inline
             ? (right_inner_width - tab_gap * (launcher_page_count - 1)) /
                   static_cast<float>(launcher_page_count)
-            : right_inner_width;
+             : right_inner_width;
         ImGui::PushStyleColor(ImGuiCol_Button, page == 0 ? kRaceRed : kRaceBlue);
-        if (ImGui::Button("ADVENTURE", {tab_width, 46.0F})) page = 0;
+        if (focus_selected_tab && page == 0) ImGui::SetKeyboardFocusHere();
+        if (ImGui::Button("ADVENTURE", {tab_width, 46.0F})) {
+            page = 0;
+            focus_selected_tab = true;
+        }
         ImGui::PopStyleColor();
         if (tabs_inline) ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, page == 1 ? kRaceRed : kRaceBlue);
-        if (ImGui::Button("TAJ'S TUNE-UP", {tab_width, 46.0F})) page = 1;
+        if (focus_selected_tab && page == 1) ImGui::SetKeyboardFocusHere();
+        if (ImGui::Button("TAJ'S TUNE-UP", {tab_width, 46.0F})) {
+            page = 1;
+            focus_selected_tab = true;
+        }
         ImGui::PopStyleColor();
         if (tabs_inline) ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, page == 2 ? kRaceRed : kRaceBlue);
-        if (ImGui::Button("DRIVER GUIDE", {tab_width, 46.0F})) page = 2;
+        if (focus_selected_tab && page == 2) ImGui::SetKeyboardFocusHere();
+        if (ImGui::Button("DRIVER GUIDE", {tab_width, 46.0F})) {
+            page = 2;
+            focus_selected_tab = true;
+        }
         ImGui::PopStyleColor();
         if (modern_launcher) {
             if (tabs_inline) ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, page == 3 ? kRaceRed : kRaceBlue);
-            if (ImGui::Button("SAVE GARAGE", {tab_width, 46.0F})) page = 3;
+            if (focus_selected_tab && page == 3) ImGui::SetKeyboardFocusHere();
+            if (ImGui::Button("SAVE GARAGE", {tab_width, 46.0F})) {
+                page = 3;
+                focus_selected_tab = true;
+            }
             ImGui::PopStyleColor();
         }
+        // Keyboard/gamepad navigation now has an explicit landing target after
+        // a bumper tab switch. Do this once; continuously forcing focus would
+        // prevent the player from moving into the page's controls.
+        focus_selected_tab = false;
         ImGui::Dummy({0.0F, 24.0F});
 
         if (page == 0) {
@@ -2179,7 +2331,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
             PopHeadingFont();
             ImGui::TextDisabled("Back up, import and export Adventure progress before the race begins.");
             ImGui::Dummy({0.0F, 12.0F});
-            DrawSaveManager();
+            DrawSaveManager(false);
         }
         // Every scrollable tab ends with breathing room so its final control
         // never rests directly on the rounded card boundary.
@@ -2272,6 +2424,8 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     BeginMainWindow("DKR Port Overlay", ImGuiWindowFlags_NoBackground);
         bool request_quit_popup = false;
+        const bool focus_selected_page =
+            g_overlay_dirty.exchange(false, std::memory_order_acq_rel);
         const float overlay_margin = std::clamp(ImGui::GetWindowWidth() * 0.025F, 12.0F, 38.0F);
         const float overlay_gap = std::clamp(ImGui::GetWindowWidth() * 0.018F, 12.0F, 28.0F);
         const float minimum_sidebar = ImGui::GetWindowWidth() < 1000.0F ? 190.0F : 220.0F;
@@ -2292,10 +2446,15 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         ImGui::BeginGroup();
         BrandBlock(true);
         ImGui::Dummy({0.0F, 24.0F});
+        if (focus_selected_page && g_overlay_page == 0) ImGui::SetKeyboardFocusHere();
         SidebarButton("RETURN TO THE ISLAND", 0, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 1) ImGui::SetKeyboardFocusHere();
         SidebarButton("TAJ'S TUNE-UP", 1, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 2) ImGui::SetKeyboardFocusHere();
         SidebarButton("ISLAND SOUND", 2, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 3) ImGui::SetKeyboardFocusHere();
         SidebarButton("T.T.'S DRIVER GUIDE", 3, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 4) ImGui::SetKeyboardFocusHere();
         SidebarButton("ADVENTURE LOG", 4, nav_inner_width);
         ImGui::Dummy({0.0F, 24.0F});
         ImGui::PushStyleColor(ImGuiCol_Button, kRaceRed);
