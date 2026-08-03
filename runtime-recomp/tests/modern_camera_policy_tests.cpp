@@ -24,13 +24,19 @@ static_assert(frustum_horizontal_scale(PresentationProfile::Modern, false, true,
                                        32.0F / 9.0F, 0, 5) == 1.0F);
 
 int main() {
+    const float scale_4_3 = frustum_horizontal_scale(
+        PresentationProfile::Modern, true, true, 4.0F / 3.0F, 0, 5);
     const float scale_16_9 = frustum_horizontal_scale(
         PresentationProfile::Modern, true, true, 16.0F / 9.0F, 0, 5);
+    const float scale_21_9 = frustum_horizontal_scale(
+        PresentationProfile::Modern, true, true, 21.0F / 9.0F, 0, 5);
     const float scale_32_9 = frustum_horizontal_scale(
         PresentationProfile::Modern, true, true, 32.0F / 9.0F, 0, 5);
     const float scale_split = frustum_horizontal_scale(
         PresentationProfile::Modern, true, true, 16.0F / 9.0F, 1, 5);
-    if (std::abs(scale_16_9 - 1.4F) > 0.0001F ||
+    if (std::abs(scale_4_3 - 1.05F) > 0.0001F ||
+        std::abs(scale_16_9 - 1.4F) > 0.0001F ||
+        std::abs(scale_21_9 - 1.8375F) > 0.0001F ||
         std::abs(scale_32_9 - 2.8F) > 0.0001F ||
         std::abs(scale_split - 2.8F) > 0.0001F) {
         std::fputs("[test][modern-camera-policy] FAIL\n", stderr);

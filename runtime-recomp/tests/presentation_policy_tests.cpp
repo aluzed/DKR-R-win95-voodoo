@@ -40,6 +40,36 @@ static_assert(resolve_effective_presentation_rate(
                   PresentationProfile::Modern, true, 500, 60) == 500);
 static_assert(resolve_effective_presentation_rate(
                   PresentationProfile::Modern, true, 20, 60) == 30);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 30, 60) == 30);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 50, 60) == 50);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 60, 60) == 60);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 75, 60) == 75);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 90, 60) == 90);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 100, 60) == 100);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 120, 60) == 120);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 144, 60) == 144);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 165, 60) == 165);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 240, 60) == 240);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 360, 60) == 360);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 480, 60) == 480);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, true, 500, 60) == 500);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, false, 30, 59) == 59);
+static_assert(resolve_effective_presentation_rate(
+                  PresentationProfile::Modern, false, 30, 500) == 500);
 static_assert(kCurrentSettingsVersion == 6);
 static_assert(resolve_settings_profile(0, false, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);
