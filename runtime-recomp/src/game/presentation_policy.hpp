@@ -11,6 +11,7 @@ enum class PresentationProfile : std::uint8_t {
 
 inline constexpr int kMinimumPresentationRate = 30;
 inline constexpr int kMaximumPresentationRate = 500;
+inline constexpr int kCurrentSettingsVersion = 5;
 
 constexpr PresentationProfile normalise_presentation_profile(int value) {
     return value == static_cast<int>(PresentationProfile::Modern)
@@ -41,10 +42,22 @@ constexpr bool interpolation_allowed(PresentationProfile profile) {
     return normalise_presentation_profile(profile) == PresentationProfile::Modern;
 }
 
+constexpr bool modern_options_visible(PresentationProfile profile) {
+    return normalise_presentation_profile(profile) == PresentationProfile::Modern;
+}
+
+constexpr bool fit_to_window_allowed(PresentationProfile profile) {
+    return normalise_presentation_profile(profile) == PresentationProfile::Modern;
+}
+
+constexpr bool graphics_api_selection_allowed(PresentationProfile profile) {
+    return normalise_presentation_profile(profile) == PresentationProfile::Modern;
+}
+
 constexpr PresentationProfile resolve_settings_profile(
     int settings_version, bool settings_complete,
     PresentationProfile requested_profile) {
-    return settings_version == 4 && settings_complete
+    return settings_version == kCurrentSettingsVersion && settings_complete
         ? normalise_presentation_profile(requested_profile)
         : PresentationProfile::Accurate;
 }

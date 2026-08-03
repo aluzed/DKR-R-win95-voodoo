@@ -122,9 +122,16 @@ int DetectDisplayRate() {
 
 void ApplyConfig(RT64::Application& application,
                  const ultramodern::renderer::GraphicsConfig& config) {
-    application.userConfig.graphicsAPI = ToRT64(config.api_option);
+    const bool modern = dkr::runtime::enhancements::modern_presentation_enabled();
+    const auto effective_api = modern
+        ? config.api_option
+        : ultramodern::renderer::GraphicsApi::Auto;
+    const auto effective_aspect = modern
+        ? config.ar_option
+        : ultramodern::renderer::AspectRatio::Original;
+    application.userConfig.graphicsAPI = ToRT64(effective_api);
     application.userConfig.antialiasing = ToRT64(config.msaa_option);
-    application.userConfig.aspectRatio = ToRT64(config.ar_option);
+    application.userConfig.aspectRatio = ToRT64(effective_aspect);
     application.userConfig.extAspectRatio = RT64::UserConfiguration::AspectRatio::Original;
     application.userConfig.resolution =
         config.res_option == ultramodern::renderer::Resolution::Auto

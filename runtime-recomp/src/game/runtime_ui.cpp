@@ -45,6 +45,7 @@ namespace {
 
 using ultramodern::renderer::Antialiasing;
 using ultramodern::renderer::AspectRatio;
+using ultramodern::renderer::GraphicsApi;
 using ultramodern::renderer::GraphicsConfig;
 using ultramodern::renderer::HighPrecisionFramebuffer;
 using ultramodern::renderer::Resolution;
@@ -65,6 +66,12 @@ ImFont* g_font_heading = nullptr;
 ImFont* g_font_title = nullptr;
 RefreshRate g_modern_refresh_mode = RefreshRate::Display;
 int g_modern_refresh_target = 60;
+Resolution g_modern_resolution = Resolution::Auto;
+AspectRatio g_modern_aspect = AspectRatio::Expand;
+Antialiasing g_modern_antialiasing = Antialiasing::None;
+HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::On;
+GraphicsApi g_modern_graphics_api = GraphicsApi::Auto;
+int g_modern_downsample = 1;
 enum class CaptureDevice { None, Keyboard, Controller };
 CaptureDevice g_capture_device = CaptureDevice::None;
 int g_capture_action = -1;
@@ -223,6 +230,51 @@ void PopHeadingFont(bool title = false) {
     }
 }
 
+void RememberModernGraphics(const GraphicsConfig& config) {
+    g_modern_resolution = config.res_option;
+    g_modern_aspect = config.ar_option == AspectRatio::Original
+        ? AspectRatio::Original
+        : AspectRatio::Expand;
+    g_modern_antialiasing = config.msaa_option;
+    g_modern_high_precision_fb = config.hpfb_option;
+    g_modern_graphics_api = config.api_option;
+    g_modern_downsample = std::clamp(config.ds_option, 1, 8);
+    if (config.rr_option == RefreshRate::Display ||
+        config.rr_option == RefreshRate::Manual) {
+        g_modern_refresh_mode = config.rr_option;
+        g_modern_refresh_target =
+            dkr::runtime::enhancements::clamp_presentation_rate(
+                config.rr_manual_value);
+    }
+}
+
+void ApplyProfileGraphics(GraphicsConfig& config,
+                          dkr::runtime::enhancements::PresentationProfile profile) {
+    if (profile == dkr::runtime::enhancements::PresentationProfile::Modern) {
+        config.res_option = g_modern_resolution;
+        config.ar_option = g_modern_aspect;
+        config.msaa_option = g_modern_antialiasing;
+        config.hpfb_option = g_modern_high_precision_fb;
+        config.api_option = g_modern_graphics_api;
+        config.ds_option = g_modern_downsample;
+        config.rr_option = g_modern_refresh_mode;
+        config.rr_manual_value = g_modern_refresh_target;
+        return;
+    }
+
+    // Accurate is enforced again inside the renderer. These launcher values
+    // make the effective state explicit and ensure stale Modern preferences do
+    // not leak into a pre-launch configuration snapshot.
+    config.res_option = Resolution::Auto;
+    config.ar_option = AspectRatio::Original;
+    config.msaa_option = Antialiasing::None;
+    config.hpfb_option = HighPrecisionFramebuffer::Auto;
+    config.api_option = GraphicsApi::Auto;
+    config.ds_option = 1;
+    config.rr_option = RefreshRate::Original;
+    config.rr_manual_value = 30;
+}
+
 void SaveSettings() {
     std::error_code error;
     std::filesystem::create_directories(g_config_directory, error);
@@ -240,7 +292,8 @@ void SaveSettings() {
             std::fprintf(stderr, "[boot][settings] failed to open temporary settings file\n");
             return;
         }
-        output << "settings_version=4\n";
+        output << "settings_version="
+               << dkr::runtime::enhancements::kCurrentSettingsVersion << '\n';
         output << "presentation_profile="
                << static_cast<int>(dkr::runtime::enhancements::presentation_profile()) << '\n';
         output << "window_mode=" << static_cast<int>(config.wm_option) << '\n';
@@ -248,6 +301,7 @@ void SaveSettings() {
         output << "aspect=" << static_cast<int>(config.ar_option) << '\n';
         output << "antialiasing=" << static_cast<int>(config.msaa_option) << '\n';
         output << "high_precision_fb=" << static_cast<int>(config.hpfb_option) << '\n';
+        output << "graphics_api=" << static_cast<int>(config.api_option) << '\n';
         output << "refresh_rate=" << static_cast<int>(config.rr_option) << '\n';
         output << "refresh_rate_target="
                << dkr::runtime::enhancements::clamp_presentation_rate(
@@ -256,6 +310,15 @@ void SaveSettings() {
         output << "modern_refresh_target="
                << dkr::runtime::enhancements::clamp_presentation_rate(
                       g_modern_refresh_target) << '\n';
+        output << "modern_resolution=" << static_cast<int>(g_modern_resolution) << '\n';
+        output << "modern_aspect=" << static_cast<int>(g_modern_aspect) << '\n';
+        output << "modern_antialiasing="
+               << static_cast<int>(g_modern_antialiasing) << '\n';
+        output << "modern_high_precision_fb="
+               << static_cast<int>(g_modern_high_precision_fb) << '\n';
+        output << "modern_graphics_api="
+               << static_cast<int>(g_modern_graphics_api) << '\n';
+        output << "modern_downsample=" << g_modern_downsample << '\n';
         output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
         output << "maximum_detail="
                << (dkr::runtime::enhancements::maximum_detail_requested() ? 1 : 0) << '\n';
@@ -268,7 +331,7 @@ void SaveSettings() {
             output << "controller_binding." << dkr::runtime::input::action_identifier(action)
                    << '=' << dkr::runtime::input::controller_binding(action) << '\n';
         }
-        // This must be the final record. A truncated v4 file is never allowed
+        // This must be the final record. A truncated settings file is never allowed
         // to reactivate experimental presentation features.
         output << "settings_complete=1\n";
         output.flush();
@@ -324,6 +387,8 @@ void LoadSettings() {
                 config.msaa_option = static_cast<Antialiasing>(number);
             } else if (key == "high_precision_fb" && number >= 0 && number < 3) {
                 config.hpfb_option = static_cast<HighPrecisionFramebuffer>(number);
+            } else if (key == "graphics_api" && number >= 0 && number < 4) {
+                config.api_option = static_cast<GraphicsApi>(number);
             } else if (key == "refresh_rate" && number >= 0 && number < 3) {
                 config.rr_option = static_cast<RefreshRate>(number);
             } else if (key == "refresh_rate_target") {
@@ -336,6 +401,19 @@ void LoadSettings() {
             } else if (key == "modern_refresh_target") {
                 g_modern_refresh_target =
                     dkr::runtime::enhancements::clamp_presentation_rate(number);
+            } else if (key == "modern_resolution" && number >= 0 && number < 3) {
+                g_modern_resolution = static_cast<Resolution>(number);
+            } else if (key == "modern_aspect" && number >= 0 && number < 2) {
+                g_modern_aspect = static_cast<AspectRatio>(number);
+            } else if (key == "modern_antialiasing" && number >= 0 && number < 4) {
+                g_modern_antialiasing = static_cast<Antialiasing>(number);
+            } else if (key == "modern_high_precision_fb" && number >= 0 && number < 3) {
+                g_modern_high_precision_fb =
+                    static_cast<HighPrecisionFramebuffer>(number);
+            } else if (key == "modern_graphics_api" && number >= 0 && number < 4) {
+                g_modern_graphics_api = static_cast<GraphicsApi>(number);
+            } else if (key == "modern_downsample") {
+                g_modern_downsample = std::clamp(number, 1, 8);
             } else if (key == "master_volume") {
                 dkr::runtime::platform::set_master_volume(std::stof(value));
             } else if (key == "maximum_detail") {
@@ -382,7 +460,8 @@ void LoadSettings() {
     const auto resolved_profile =
         dkr::runtime::enhancements::resolve_settings_profile(
             settings_version, settings_complete, profile);
-    if (settings_version != 4 || !settings_complete || !profile_value_valid) {
+    if (settings_version != dkr::runtime::enhancements::kCurrentSettingsVersion ||
+        !settings_complete || !profile_value_valid) {
         // Every settings file from before the hardened profile boundary, and
         // every truncated v4 write, becomes Accurate. Preserve the old refresh
         // preference as Modern's remembered value without activating it.
@@ -393,6 +472,7 @@ void LoadSettings() {
                 dkr::runtime::enhancements::clamp_presentation_rate(
                     config.rr_manual_value);
         }
+        RememberModernGraphics(config);
         profile = resolved_profile;
         migrated = true;
         if (settings_version >= 4 && !settings_complete) {
@@ -403,13 +483,7 @@ void LoadSettings() {
     }
     profile = resolved_profile;
     dkr::runtime::enhancements::set_presentation_profile(profile);
-    if (profile == dkr::runtime::enhancements::PresentationProfile::Modern) {
-        config.rr_option = g_modern_refresh_mode;
-        config.rr_manual_value = g_modern_refresh_target;
-    } else {
-        config.rr_option = RefreshRate::Original;
-        config.rr_manual_value = 30;
-    }
+    ApplyProfileGraphics(config, profile);
     config.developer_mode = false;
     ultramodern::renderer::set_graphics_config(config);
     if (migrated) {
@@ -828,62 +902,69 @@ bool DrawGraphicsSettings(bool live) {
                                    "Accurate\0Modern\0");
     if (profile_changed) {
         const auto old_profile = dkr::runtime::enhancements::presentation_profile();
-        if (old_profile == dkr::runtime::enhancements::PresentationProfile::Modern &&
-            (config.rr_option == RefreshRate::Display ||
-             config.rr_option == RefreshRate::Manual)) {
-            g_modern_refresh_mode = config.rr_option;
-            g_modern_refresh_target =
-                dkr::runtime::enhancements::clamp_presentation_rate(
-                    config.rr_manual_value);
+        if (old_profile == dkr::runtime::enhancements::PresentationProfile::Modern) {
+            RememberModernGraphics(config);
         }
         const auto next_profile =
             static_cast<dkr::runtime::enhancements::PresentationProfile>(profile);
         dkr::runtime::enhancements::set_presentation_profile(next_profile);
-        if (next_profile == dkr::runtime::enhancements::PresentationProfile::Modern) {
-            config.rr_option = g_modern_refresh_mode;
-            config.rr_manual_value = g_modern_refresh_target;
-            config.res_option = Resolution::Auto;
-            config.ar_option = AspectRatio::Expand;
-            config.hpfb_option = HighPrecisionFramebuffer::On;
-            resolution = static_cast<int>(config.res_option);
-            aspect = static_cast<int>(config.ar_option);
-            hpfb = static_cast<int>(config.hpfb_option);
-            dkr::runtime::enhancements::set_maximum_detail_enabled(true);
-        } else {
-            config.rr_option = RefreshRate::Original;
-            config.rr_manual_value = 30;
-        }
+        ApplyProfileGraphics(config, next_profile);
+        resolution = static_cast<int>(config.res_option);
+        aspect = static_cast<int>(config.ar_option);
+        aa = static_cast<int>(config.msaa_option);
+        hpfb = static_cast<int>(config.hpfb_option);
         changed = true;
     }
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
     if (dkr::runtime::enhancements::modern_presentation_enabled()) {
         ImGui::TextWrapped("High-refresh presentation and maximum vehicle detail. Game logic, race timers and audio keep their original speed.");
     } else {
-        ImGui::TextWrapped("Original 30 FPS presentation with release-proven game and audio timing. Widescreen correctness fixes remain enabled.");
+        ImGui::TextWrapped("Original 4:3 and 30 FPS presentation with release-proven game and audio timing. Modern tune-up controls are safely parked.");
     }
     ImGui::PopStyleColor();
     ImGui::Spacing();
     ImGui::TextUnformatted("Window mode");
     ImGui::SetNextItemWidth(setting_width);
     changed |= ImGui::Combo("##window-mode", &window, "Windowed\0Fullscreen\0");
-    ImGui::TextUnformatted("Internal resolution");
-    ImGui::SetNextItemWidth(setting_width);
-    changed |= ImGui::Combo("##internal-resolution", &resolution,
-                            "Original (240p)\0Original 2x\0Automatic integer scale\0");
-    ImGui::TextUnformatted("Aspect ratio");
-    ImGui::SetNextItemWidth(setting_width);
-    changed |= ImGui::Combo("##aspect-ratio", &aspect, "Original 4:3\0Expand to window\0");
-    ImGui::TextUnformatted("Anti-aliasing");
-    ImGui::SetNextItemWidth(setting_width);
-    changed |= ImGui::Combo("##anti-aliasing", &aa, "None\0MSAA 2x\0MSAA 4x\0MSAA 8x\0");
-    ImGui::TextUnformatted("High precision framebuffer");
-    ImGui::SetNextItemWidth(setting_width);
-    changed |= ImGui::Combo("##high-precision-framebuffer", &hpfb, "Automatic\0On\0Off\0");
     config.wm_option = static_cast<WindowMode>(window);
-    config.res_option = static_cast<Resolution>(resolution);
-    config.ar_option = static_cast<AspectRatio>(aspect);
-    config.msaa_option = static_cast<Antialiasing>(aa);
-    config.hpfb_option = static_cast<HighPrecisionFramebuffer>(hpfb);
+    const bool modern_profile =
+        dkr::runtime::enhancements::modern_options_visible(
+            dkr::runtime::enhancements::presentation_profile());
+    if (modern_profile) {
+        ImGui::TextUnformatted("Internal resolution");
+        ImGui::SetNextItemWidth(setting_width);
+        changed |= ImGui::Combo("##internal-resolution", &resolution,
+                                "Original (240p)\0Original 2x\0Automatic integer scale\0");
+        ImGui::TextUnformatted("Aspect ratio");
+        ImGui::SetNextItemWidth(setting_width);
+        changed |= ImGui::Combo("##aspect-ratio", &aspect,
+                                "Original 4:3\0Fit to window\0");
+        ImGui::TextUnformatted("Anti-aliasing");
+        ImGui::SetNextItemWidth(setting_width);
+        changed |= ImGui::Combo("##anti-aliasing", &aa,
+                                "None\0MSAA 2x\0MSAA 4x\0MSAA 8x\0");
+        ImGui::TextUnformatted("High precision framebuffer");
+        ImGui::SetNextItemWidth(setting_width);
+        changed |= ImGui::Combo("##high-precision-framebuffer", &hpfb,
+                                "Automatic\0On\0Off\0");
+        config.res_option = static_cast<Resolution>(resolution);
+        config.ar_option = static_cast<AspectRatio>(aspect);
+        config.msaa_option = static_cast<Antialiasing>(aa);
+        config.hpfb_option = static_cast<HighPrecisionFramebuffer>(hpfb);
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
+        ImGui::BeginChild("accurate-aspect-lock", {setting_width, 88.0F}, true,
+                          ImGuiWindowFlags_NoScrollbar);
+        ImGui::SetCursorPos({16.0F, 12.0F});
+        ImGui::PushTextWrapPos(std::max(setting_width - 16.0F, 1.0F));
+        ImGui::TextUnformatted("Original 4:3 - Accurate");
+        ImGui::TextWrapped("Fit to Window, graphics tuning and maximum vehicle detail appear only in Modern.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ApplyProfileGraphics(config,
+                             dkr::runtime::enhancements::PresentationProfile::Accurate);
+    }
     ImGui::Spacing();
     ImGui::TextUnformatted("Presentation rate");
     if (dkr::runtime::enhancements::modern_presentation_enabled()) {
@@ -929,6 +1010,9 @@ bool DrawGraphicsSettings(bool live) {
         config.rr_manual_value = 30;
     }
     if (changed) {
+        if (modern_profile) {
+            RememberModernGraphics(config);
+        }
         ultramodern::renderer::set_graphics_config(config);
         SaveSettings();
     }
@@ -937,25 +1021,23 @@ bool DrawGraphicsSettings(bool live) {
     if (!live) {
         ImGui::TextWrapped("Changes made before launch are applied when the adventure begins.");
     }
-    ImGui::TextWrapped("Graphics API: Automatic. Restart-time API selection is intentionally hidden until both backends complete release validation.");
+    ImGui::TextWrapped(modern_profile
+        ? "Graphics API selection is applied at the next game launch. Automatic remains the recovery choice."
+        : "Graphics API: Automatic. Accurate always uses the release-proven platform choice.");
     ImGui::PopStyleColor();
     ImGui::Spacing();
-    const bool modern_profile =
-        dkr::runtime::enhancements::modern_presentation_enabled();
-    bool maximum_detail =
-        dkr::runtime::enhancements::maximum_detail_requested();
-    ImGui::BeginDisabled(!modern_profile);
-    if (ImGui::Checkbox("Maximum vehicle detail", &maximum_detail)) {
-        dkr::runtime::enhancements::set_maximum_detail_enabled(maximum_detail);
-        SaveSettings();
-        changed = true;
+    if (modern_profile) {
+        bool maximum_detail =
+            dkr::runtime::enhancements::maximum_detail_requested();
+        if (ImGui::Checkbox("Maximum vehicle detail", &maximum_detail)) {
+            dkr::runtime::enhancements::set_maximum_detail_enabled(maximum_detail);
+            SaveSettings();
+            changed = true;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Keeps racer vehicles on their highest available model. Time-trial ghosts and gameplay logic retain their original models.");
+        ImGui::PopStyleColor();
     }
-    ImGui::EndDisabled();
-    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped(modern_profile
-        ? "Keeps racer vehicles on their highest available model. Time-trial ghosts and gameplay logic retain their original models."
-        : "Modern-only. Accurate always uses the original model-detail decisions.");
-    ImGui::PopStyleColor();
     return changed;
 }
 

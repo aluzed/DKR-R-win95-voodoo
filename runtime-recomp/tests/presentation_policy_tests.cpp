@@ -5,7 +5,11 @@
 using dkr::runtime::enhancements::PresentationProfile;
 using dkr::runtime::enhancements::clamp_presentation_rate;
 using dkr::runtime::enhancements::interpolation_allowed;
+using dkr::runtime::enhancements::fit_to_window_allowed;
+using dkr::runtime::enhancements::graphics_api_selection_allowed;
+using dkr::runtime::enhancements::kCurrentSettingsVersion;
 using dkr::runtime::enhancements::maximum_detail_effective;
+using dkr::runtime::enhancements::modern_options_visible;
 using dkr::runtime::enhancements::normalise_presentation_profile;
 using dkr::runtime::enhancements::resolve_settings_profile;
 
@@ -21,16 +25,25 @@ static_assert(maximum_detail_effective(PresentationProfile::Modern, true));
 static_assert(!maximum_detail_effective(PresentationProfile::Modern, false));
 static_assert(!interpolation_allowed(PresentationProfile::Accurate));
 static_assert(interpolation_allowed(PresentationProfile::Modern));
+static_assert(!modern_options_visible(PresentationProfile::Accurate));
+static_assert(modern_options_visible(PresentationProfile::Modern));
+static_assert(!fit_to_window_allowed(PresentationProfile::Accurate));
+static_assert(fit_to_window_allowed(PresentationProfile::Modern));
+static_assert(!graphics_api_selection_allowed(PresentationProfile::Accurate));
+static_assert(graphics_api_selection_allowed(PresentationProfile::Modern));
+static_assert(kCurrentSettingsVersion == 5);
 static_assert(resolve_settings_profile(0, false, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);
 static_assert(resolve_settings_profile(3, true, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);
-static_assert(resolve_settings_profile(4, false, PresentationProfile::Modern) ==
-              PresentationProfile::Accurate);
 static_assert(resolve_settings_profile(4, true, PresentationProfile::Modern) ==
+              PresentationProfile::Accurate);
+static_assert(resolve_settings_profile(5, false, PresentationProfile::Modern) ==
+              PresentationProfile::Accurate);
+static_assert(resolve_settings_profile(5, true, PresentationProfile::Modern) ==
               PresentationProfile::Modern);
 static_assert(resolve_settings_profile(
-                  4, true, static_cast<PresentationProfile>(99)) ==
+                  5, true, static_cast<PresentationProfile>(99)) ==
               PresentationProfile::Accurate);
 
 int main() {
