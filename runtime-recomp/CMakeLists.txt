@@ -276,6 +276,15 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRModernCameraPolicy COMMAND DKRModernCameraPolicyTests)
 
+    add_executable(DKRCharacterSelectAnimationPolicyTests
+        tests/character_select_animation_policy_tests.cpp
+    )
+    target_include_directories(DKRCharacterSelectAnimationPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRCharacterSelectAnimationPolicy
+             COMMAND DKRCharacterSelectAnimationPolicyTests)
+
     add_executable(DKRRendererSnapshotTests
         tests/renderer_snapshot_tests.cpp
         src/game/renderer_snapshot.cpp

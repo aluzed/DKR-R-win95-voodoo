@@ -1,5 +1,6 @@
 #include "runtime_enhancements.hpp"
 
+#include "character_select_animation_policy.hpp"
 #include "modern_camera_policy.hpp"
 #include "runtime_platform.hpp"
 
@@ -27,6 +28,7 @@ std::atomic<bool> g_fit_to_window_enabled{false};
 constexpr std::uint32_t kBlockMusicChangeAddress = 0x800DC648U;
 constexpr std::uint32_t kDynamicMusicChannelMaskAddress = 0x80115F7CU;
 constexpr std::uint32_t kMenuCurrentCharacterAddress = 0x801263C0U;
+constexpr std::uint32_t kMusicTempoAddress = 0x80115D30U;
 constexpr std::uint16_t kTimeTrialGhostBehaviour = 0x003AU;
 constexpr std::uint32_t kFrustumReferenceAddress = 0x800DC8ACU;
 constexpr std::uint32_t kViewportLayoutAddress = 0x80120CE0U;
@@ -59,6 +61,8 @@ struct FrustumReferenceScope {
 thread_local FrustumReferenceScope g_frustum_scope;
 std::atomic<bool> g_logged_extended_frustum{false};
 std::atomic<int> g_last_logged_fov{-1};
+float g_character_select_animation_phase = 0.0F;
+bool g_character_select_animation_active = false;
 
 } // namespace
 
@@ -172,9 +176,34 @@ extern "C" void dkr_character_select_music_mask(std::uint8_t* rdram,
         }
     }
     MEM_W(0, RdramAddress(kDynamicMusicChannelMaskAddress)) = mask;
+    // Character-select models are authored to dance to the music beat. Reset
+    // the deterministic beat phase at the same sequence ownership boundary;
+    // the original audio clock continues running and the mix remains exact.
+    g_character_select_animation_phase = 0.0F;
+    g_character_select_animation_active = true;
     std::fprintf(stderr,
                  "[boot][audio] character-select pending channel mask=%04X selected=%u\n",
                  static_cast<unsigned>(mask), static_cast<unsigned>(selected));
+}
+
+extern "C" void dkr_character_select_animation_tick(std::uint8_t* rdram,
+                                                      recomp_context* context) {
+    if (!g_character_select_animation_active) {
+        return;
+    }
+    const int tempo = static_cast<std::int16_t>(
+        MEM_H(0, RdramAddress(kMusicTempoAddress)));
+    g_character_select_animation_phase =
+        dkr::runtime::enhancements::advance_character_select_phase(
+            g_character_select_animation_phase,
+            static_cast<std::int32_t>(context->r4), tempo);
+}
+
+extern "C" void dkr_character_select_animation_fraction(std::uint8_t*,
+                                                          recomp_context* context) {
+    if (g_character_select_animation_active) {
+        context->f0.fl = g_character_select_animation_phase;
+    }
 }
 
 extern "C" void dkr_apply_maximum_racer_detail(std::uint8_t* rdram,

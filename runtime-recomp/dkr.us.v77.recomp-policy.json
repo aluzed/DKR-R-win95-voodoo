@@ -201,6 +201,18 @@
       "reason": "Seed the asynchronously queued Choose Your Racer sequence with the selected character's dynamic channel mask after the original mute loop, so the new sequence cannot reactivate every character arrangement when it starts."
     },
     {
+      "function": "charselect_music_channels",
+      "beforeVram": "0x8008C168",
+      "text": "extern void dkr_character_select_animation_tick(uint8_t*, recomp_context*); dkr_character_select_animation_tick(rdram, ctx);",
+      "reason": "Advance the character-select dance beat exactly once from DKR's authored update rate and active music tempo, avoiding progressive wall-clock sampling jitter without changing audio playback."
+    },
+    {
+      "function": "obj_loop_char_select",
+      "beforeVram": "0x80038644",
+      "text": "extern void dkr_character_select_animation_fraction(uint8_t*, recomp_context*); dkr_character_select_animation_fraction(rdram, ctx);",
+      "reason": "Use the deterministic beat phase only for character-select model animation after the original audio clock bookkeeping, preserving every other music-synchronised effect."
+    },
+    {
       "function": "set_temp_model_transforms",
       "beforeVram": "0x800132F4",
       "text": "extern void dkr_apply_maximum_racer_detail(uint8_t*, recomp_context*); dkr_apply_maximum_racer_detail(rdram, ctx);",
