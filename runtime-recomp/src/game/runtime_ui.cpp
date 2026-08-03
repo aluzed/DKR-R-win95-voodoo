@@ -322,6 +322,15 @@ void SaveSettings() {
         output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
         output << "maximum_detail="
                << (dkr::runtime::enhancements::maximum_detail_requested() ? 1 : 0) << '\n';
+        output << "modern_fov_offset="
+               << dkr::runtime::enhancements::fov_offset() << '\n';
+        output << "modern_view_distance_multiplier="
+               << dkr::runtime::enhancements::view_distance_multiplier() << '\n';
+        output << "modern_extended_culling="
+               << (dkr::runtime::enhancements::extended_culling_requested() ? 1 : 0)
+               << '\n';
+        output << "modern_frustum_guard_percent="
+               << dkr::runtime::enhancements::frustum_guard_percent() << '\n';
         output << "memory_pak=" << (dkr::runtime::pak::enabled() ? 1 : 0) << '\n';
         output << "rumble=" << (dkr::runtime::platform::rumble_enabled() ? 1 : 0) << '\n';
         for (std::size_t index = 0; index < dkr::runtime::input::action_count(); ++index) {
@@ -418,6 +427,14 @@ void LoadSettings() {
                 dkr::runtime::platform::set_master_volume(std::stof(value));
             } else if (key == "maximum_detail") {
                 dkr::runtime::enhancements::set_maximum_detail_enabled(number != 0);
+            } else if (key == "modern_fov_offset") {
+                dkr::runtime::enhancements::set_fov_offset(number);
+            } else if (key == "modern_view_distance_multiplier") {
+                dkr::runtime::enhancements::set_view_distance_multiplier(number);
+            } else if (key == "modern_extended_culling") {
+                dkr::runtime::enhancements::set_extended_culling_enabled(number != 0);
+            } else if (key == "modern_frustum_guard_percent") {
+                dkr::runtime::enhancements::set_frustum_guard_percent(number);
             } else if (key == "memory_pak") {
                 dkr::runtime::pak::set_enabled(number != 0);
             } else if (key == "rumble") {
@@ -1036,6 +1053,54 @@ bool DrawGraphicsSettings(bool live) {
         }
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
         ImGui::TextWrapped("Keeps racer vehicles on their highest available model. Time-trial ghosts and gameplay logic retain their original models.");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::SeparatorText("Camera and scenery");
+        int fov_offset = dkr::runtime::enhancements::fov_offset();
+        ImGui::TextUnformatted("Gameplay field-of-view offset");
+        ImGui::SetNextItemWidth(setting_width);
+        if (ImGui::SliderInt("##modern-fov-offset", &fov_offset, -20, 40,
+                             "%+d degrees", ImGuiSliderFlags_AlwaysClamp)) {
+            dkr::runtime::enhancements::set_fov_offset(fov_offset);
+            SaveSettings();
+            changed = true;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Adjusts each gameplay level from its authored camera value. Menus, character select and cutscenes keep their original framing.");
+        ImGui::PopStyleColor();
+
+        int view_distance =
+            dkr::runtime::enhancements::view_distance_multiplier();
+        ImGui::TextUnformatted("Object view distance");
+        ImGui::SetNextItemWidth(setting_width);
+        if (ImGui::SliderInt("##modern-view-distance", &view_distance, 1, 6,
+                             "%dx", ImGuiSliderFlags_AlwaysClamp)) {
+            dkr::runtime::enhancements::set_view_distance_multiplier(view_distance);
+            SaveSettings();
+            changed = true;
+        }
+
+        bool extended_culling =
+            dkr::runtime::enhancements::extended_culling_requested();
+        if (ImGui::Checkbox("Ultrawide scenery guard", &extended_culling)) {
+            dkr::runtime::enhancements::set_extended_culling_enabled(
+                extended_culling);
+            SaveSettings();
+            changed = true;
+        }
+        if (extended_culling) {
+            int guard = dkr::runtime::enhancements::frustum_guard_percent();
+            ImGui::TextUnformatted("Culling safety margin");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ImGui::SliderInt("##modern-frustum-guard", &guard, 0, 20,
+                                 "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+                dkr::runtime::enhancements::set_frustum_guard_percent(guard);
+                SaveSettings();
+                changed = true;
+            }
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Expands DKR's original CPU visibility planes to the active viewport and adds a small guard band. Objects directly behind the camera still cull normally.");
         ImGui::PopStyleColor();
     }
     return changed;

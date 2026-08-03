@@ -105,6 +105,30 @@
       "reason": "Advance the Modern scene generation at the decompiled level lifecycle boundary so no object or matrix history can cross a load, restart, warp, or cutscene level transition."
     },
     {
+      "function": "level_load",
+      "beforeVram": "0x8006BCB0",
+      "text": "extern void dkr_apply_gameplay_fov(uint8_t*, recomp_context*); dkr_apply_gameplay_fov(rdram, ctx);",
+      "reason": "Apply the Modern gameplay FOV offset after reading the authored level value and before cam_set_fov, leaving character select, menus, cutscenes, simulation and Accurate mode unchanged."
+    },
+    {
+      "function": "func_8002A31C",
+      "beforeVram": "0x8002A31C",
+      "text": "extern void dkr_extended_frustum_begin(uint8_t*, recomp_context*); dkr_extended_frustum_begin(rdram, ctx);",
+      "reason": "Temporarily widen DKR's CPU side-plane reference points for the active expanded-aspect viewport so geometry remains visible across ultrawide displays."
+    },
+    {
+      "function": "func_8002A31C",
+      "beforeVram": "0x8002A5F0",
+      "text": "extern void dkr_extended_frustum_end(uint8_t*, recomp_context*); dkr_extended_frustum_end(rdram, ctx);",
+      "reason": "Restore the exact authored CPU frustum reference table before returning so Modern culling state cannot leak into another viewport, profile or frame."
+    },
+    {
+      "function": "check_if_in_draw_range",
+      "beforeVram": "0x8002A948",
+      "text": "extern void dkr_extend_object_draw_distance(uint8_t*, recomp_context*); dkr_extend_object_draw_distance(rdram, ctx);",
+      "reason": "Scale the local Modern object draw-distance value before DKR's original multiplayer reduction and fade calculation, preserving authored object data and Accurate behavior."
+    },
+    {
       "function": "spawn_object",
       "beforeVram": "0x8000F62C",
       "text": "extern void dkr_presentation_object_spawned(uint8_t*, recomp_context*); dkr_presentation_object_spawned(rdram, ctx);",

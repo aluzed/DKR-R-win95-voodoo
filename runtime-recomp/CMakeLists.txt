@@ -268,6 +268,14 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRPresentationPolicy COMMAND DKRPresentationPolicyTests)
 
+    add_executable(DKRModernCameraPolicyTests
+        tests/modern_camera_policy_tests.cpp
+    )
+    target_include_directories(DKRModernCameraPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRModernCameraPolicy COMMAND DKRModernCameraPolicyTests)
+
     add_executable(DKRRendererSnapshotTests
         tests/renderer_snapshot_tests.cpp
         src/game/renderer_snapshot.cpp

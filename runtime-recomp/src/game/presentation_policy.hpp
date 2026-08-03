@@ -11,7 +11,7 @@ enum class PresentationProfile : std::uint8_t {
 
 inline constexpr int kMinimumPresentationRate = 30;
 inline constexpr int kMaximumPresentationRate = 500;
-inline constexpr int kCurrentSettingsVersion = 5;
+inline constexpr int kCurrentSettingsVersion = 6;
 
 constexpr PresentationProfile normalise_presentation_profile(int value) {
     return value == static_cast<int>(PresentationProfile::Modern)

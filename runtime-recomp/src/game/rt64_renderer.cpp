@@ -129,6 +129,8 @@ void ApplyConfig(RT64::Application& application,
     const auto effective_aspect = modern
         ? config.ar_option
         : ultramodern::renderer::AspectRatio::Original;
+    dkr::runtime::enhancements::set_fit_to_window_enabled(
+        modern && effective_aspect == ultramodern::renderer::AspectRatio::Expand);
     application.userConfig.graphicsAPI = ToRT64(effective_api);
     application.userConfig.antialiasing = ToRT64(config.msaa_option);
     application.userConfig.aspectRatio = ToRT64(effective_aspect);

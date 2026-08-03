@@ -31,19 +31,21 @@ static_assert(!fit_to_window_allowed(PresentationProfile::Accurate));
 static_assert(fit_to_window_allowed(PresentationProfile::Modern));
 static_assert(!graphics_api_selection_allowed(PresentationProfile::Accurate));
 static_assert(graphics_api_selection_allowed(PresentationProfile::Modern));
-static_assert(kCurrentSettingsVersion == 5);
+static_assert(kCurrentSettingsVersion == 6);
 static_assert(resolve_settings_profile(0, false, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);
 static_assert(resolve_settings_profile(3, true, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);
 static_assert(resolve_settings_profile(4, true, PresentationProfile::Modern) ==
               PresentationProfile::Accurate);
-static_assert(resolve_settings_profile(5, false, PresentationProfile::Modern) ==
-              PresentationProfile::Accurate);
 static_assert(resolve_settings_profile(5, true, PresentationProfile::Modern) ==
+              PresentationProfile::Accurate);
+static_assert(resolve_settings_profile(6, false, PresentationProfile::Modern) ==
+              PresentationProfile::Accurate);
+static_assert(resolve_settings_profile(6, true, PresentationProfile::Modern) ==
               PresentationProfile::Modern);
 static_assert(resolve_settings_profile(
-                  5, true, static_cast<PresentationProfile>(99)) ==
+                  6, true, static_cast<PresentationProfile>(99)) ==
               PresentationProfile::Accurate);
 
 int main() {
