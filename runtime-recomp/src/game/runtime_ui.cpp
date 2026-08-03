@@ -48,6 +48,7 @@ using ultramodern::renderer::AspectRatio;
 using ultramodern::renderer::GraphicsApi;
 using ultramodern::renderer::GraphicsConfig;
 using ultramodern::renderer::HighPrecisionFramebuffer;
+using ultramodern::renderer::HUDRatioMode;
 using ultramodern::renderer::Resolution;
 using ultramodern::renderer::RefreshRate;
 using ultramodern::renderer::WindowMode;
@@ -71,6 +72,7 @@ AspectRatio g_modern_aspect = AspectRatio::Expand;
 Antialiasing g_modern_antialiasing = Antialiasing::None;
 HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::On;
 GraphicsApi g_modern_graphics_api = GraphicsApi::Auto;
+HUDRatioMode g_modern_hud_ratio = HUDRatioMode::Clamp16x9;
 int g_modern_downsample = 1;
 enum class CaptureDevice { None, Keyboard, Controller };
 CaptureDevice g_capture_device = CaptureDevice::None;
@@ -238,6 +240,11 @@ void RememberModernGraphics(const GraphicsConfig& config) {
     g_modern_antialiasing = config.msaa_option;
     g_modern_high_precision_fb = config.hpfb_option;
     g_modern_graphics_api = config.api_option;
+    g_modern_hud_ratio = config.hr_option == HUDRatioMode::Original
+        ? HUDRatioMode::Original
+        : config.hr_option == HUDRatioMode::Full
+            ? HUDRatioMode::Full
+            : HUDRatioMode::Clamp16x9;
     g_modern_downsample = std::clamp(config.ds_option, 1, 8);
     if (config.rr_option == RefreshRate::Display ||
         config.rr_option == RefreshRate::Manual) {
@@ -256,6 +263,7 @@ void ApplyProfileGraphics(GraphicsConfig& config,
         config.msaa_option = g_modern_antialiasing;
         config.hpfb_option = g_modern_high_precision_fb;
         config.api_option = g_modern_graphics_api;
+        config.hr_option = g_modern_hud_ratio;
         config.ds_option = g_modern_downsample;
         config.rr_option = g_modern_refresh_mode;
         config.rr_manual_value = g_modern_refresh_target;
@@ -270,6 +278,7 @@ void ApplyProfileGraphics(GraphicsConfig& config,
     config.msaa_option = Antialiasing::None;
     config.hpfb_option = HighPrecisionFramebuffer::Auto;
     config.api_option = GraphicsApi::Auto;
+    config.hr_option = HUDRatioMode::Original;
     config.ds_option = 1;
     config.rr_option = RefreshRate::Original;
     config.rr_manual_value = 30;
@@ -302,6 +311,7 @@ void SaveSettings() {
         output << "antialiasing=" << static_cast<int>(config.msaa_option) << '\n';
         output << "high_precision_fb=" << static_cast<int>(config.hpfb_option) << '\n';
         output << "graphics_api=" << static_cast<int>(config.api_option) << '\n';
+        output << "hud_ratio=" << static_cast<int>(config.hr_option) << '\n';
         output << "refresh_rate=" << static_cast<int>(config.rr_option) << '\n';
         output << "refresh_rate_target="
                << dkr::runtime::enhancements::clamp_presentation_rate(
@@ -318,6 +328,8 @@ void SaveSettings() {
                << static_cast<int>(g_modern_high_precision_fb) << '\n';
         output << "modern_graphics_api="
                << static_cast<int>(g_modern_graphics_api) << '\n';
+        output << "modern_hud_ratio="
+               << static_cast<int>(g_modern_hud_ratio) << '\n';
         output << "modern_downsample=" << g_modern_downsample << '\n';
         output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
         output << "maximum_detail="
@@ -398,6 +410,8 @@ void LoadSettings() {
                 config.hpfb_option = static_cast<HighPrecisionFramebuffer>(number);
             } else if (key == "graphics_api" && number >= 0 && number < 4) {
                 config.api_option = static_cast<GraphicsApi>(number);
+            } else if (key == "hud_ratio" && number >= 0 && number < 3) {
+                config.hr_option = static_cast<HUDRatioMode>(number);
             } else if (key == "refresh_rate" && number >= 0 && number < 3) {
                 config.rr_option = static_cast<RefreshRate>(number);
             } else if (key == "refresh_rate_target") {
@@ -421,6 +435,8 @@ void LoadSettings() {
                     static_cast<HighPrecisionFramebuffer>(number);
             } else if (key == "modern_graphics_api" && number >= 0 && number < 4) {
                 g_modern_graphics_api = static_cast<GraphicsApi>(number);
+            } else if (key == "modern_hud_ratio" && number >= 0 && number < 3) {
+                g_modern_hud_ratio = static_cast<HUDRatioMode>(number);
             } else if (key == "modern_downsample") {
                 g_modern_downsample = std::clamp(number, 1, 8);
             } else if (key == "master_volume") {
@@ -909,6 +925,8 @@ bool DrawGraphicsSettings(bool live) {
     int aspect = static_cast<int>(config.ar_option);
     int aa = static_cast<int>(config.msaa_option);
     int hpfb = static_cast<int>(config.hpfb_option);
+    int hud_ratio = static_cast<int>(config.hr_option);
+    int downsample = std::clamp(config.ds_option, 1, 4);
     const float available_width = std::max(ImGui::GetContentRegionAvail().x, 1.0F);
     const float setting_width = std::clamp(available_width * 0.92F,
                                            std::min(220.0F, available_width),
@@ -930,6 +948,8 @@ bool DrawGraphicsSettings(bool live) {
         aspect = static_cast<int>(config.ar_option);
         aa = static_cast<int>(config.msaa_option);
         hpfb = static_cast<int>(config.hpfb_option);
+        hud_ratio = static_cast<int>(config.hr_option);
+        downsample = std::clamp(config.ds_option, 1, 4);
         changed = true;
     }
     ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
@@ -964,10 +984,57 @@ bool DrawGraphicsSettings(bool live) {
         ImGui::SetNextItemWidth(setting_width);
         changed |= ImGui::Combo("##high-precision-framebuffer", &hpfb,
                                 "Automatic\0On\0Off\0");
+        ImGui::TextUnformatted("HUD placement");
+        ImGui::SetNextItemWidth(setting_width);
+        changed |= ImGui::Combo("##hud-ratio", &hud_ratio,
+                                "Original 4:3 positions\0Keep within 16:9\0Use full viewport\0");
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Only HUD placement changes. Transition masks and world rendering keep their dedicated widescreen rules.");
+        ImGui::PopStyleColor();
+        ImGui::TextUnformatted("Downsampling quality");
+        ImGui::SetNextItemWidth(setting_width);
+        if (ImGui::SliderInt("##downsample-quality", &downsample, 1, 4,
+                             downsample == 1 ? "Off" : "%dx", ImGuiSliderFlags_AlwaysClamp)) {
+            changed = true;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Renders extra pixels before the final image is reduced. Higher values are expensive; 1x is recommended for high refresh rates.");
+        ImGui::PopStyleColor();
+
+        ImGui::TextUnformatted("Graphics API");
+        ImGui::SetNextItemWidth(setting_width);
+#if defined(_WIN32)
+        int api_choice = config.api_option == GraphicsApi::D3D12
+            ? 1
+            : config.api_option == GraphicsApi::Vulkan ? 2 : 0;
+        if (ImGui::Combo("##graphics-api", &api_choice,
+                         "Automatic (recommended)\0Direct3D 12\0Vulkan\0")) {
+            config.api_option = api_choice == 1
+                ? GraphicsApi::D3D12
+                : api_choice == 2 ? GraphicsApi::Vulkan : GraphicsApi::Auto;
+            changed = true;
+        }
+#elif defined(__linux__)
+        int api_choice = config.api_option == GraphicsApi::Vulkan ? 1 : 0;
+        if (ImGui::Combo("##graphics-api", &api_choice,
+                         "Automatic (recommended)\0Vulkan\0")) {
+            config.api_option = api_choice == 1
+                ? GraphicsApi::Vulkan
+                : GraphicsApi::Auto;
+            changed = true;
+        }
+#else
+        int api_choice = 0;
+        ImGui::BeginDisabled();
+        ImGui::Combo("##graphics-api", &api_choice, "Automatic\0");
+        ImGui::EndDisabled();
+#endif
         config.res_option = static_cast<Resolution>(resolution);
         config.ar_option = static_cast<AspectRatio>(aspect);
         config.msaa_option = static_cast<Antialiasing>(aa);
         config.hpfb_option = static_cast<HighPrecisionFramebuffer>(hpfb);
+        config.hr_option = static_cast<HUDRatioMode>(hud_ratio);
+        config.ds_option = downsample;
     } else {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
         ImGui::BeginChild("accurate-aspect-lock", {setting_width, 88.0F}, true,
