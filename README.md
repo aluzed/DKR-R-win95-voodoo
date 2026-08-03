@@ -93,6 +93,7 @@ Release artifacts:
 
 - `dist/DKRPort-1.0.0-rc3-Windows-x64.zip`
 - `dist/DKRPort-1.0.0-rc3-Linux-x86_64.AppImage`
+- `dist/DKRPort-1.0.0-rc3-Source.zip`
 
 Every release artifact is scanned for prohibited N64 ROM extensions and ROM
 headers. See [BUILD-VALIDATION.md](BUILD-VALIDATION.md) for the exact build,
