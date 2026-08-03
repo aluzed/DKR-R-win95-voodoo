@@ -38,6 +38,40 @@ validate_release_tree() {
   echo "Release staging scan passed: ${inspected} files inspected"
 }
 
+collect_linux_dependency_notices() {
+  local root="$1"
+  local copyright_file package_directory
+  local notice_root="${root}/usr/share/doc/dkr-port/third-party/linux-packages"
+  local manifest="${notice_root}/PACKAGE-MANIFEST.txt"
+  local library_count copyright_count
+
+  mkdir -p "${notice_root}/common-licenses"
+  : > "${manifest}"
+  printf '%s\n' \
+    'Debian package notice directories deployed with the Linux dependencies:' \
+    >> "${manifest}"
+
+  while IFS= read -r -d '' copyright_file; do
+    package_directory="$(basename "$(dirname "${copyright_file}")")"
+    printf '%s\n' "${package_directory}" >> "${manifest}"
+  done < <(find "${root}/usr/share/doc" -mindepth 2 -maxdepth 2 \
+    -type f -name copyright -print0 | sort -z)
+
+  while IFS= read -r -d '' copyright_file; do
+    install -m 0644 "${copyright_file}" \
+      "${notice_root}/common-licenses/$(basename "${copyright_file}")"
+  done < <(find /usr/share/common-licenses -maxdepth 1 -type f -print0)
+
+  library_count="$(find "${root}/usr/lib" -maxdepth 1 -type f | wc -l)"
+  copyright_count="$(find "${root}/usr/share/doc" -mindepth 2 -maxdepth 2 \
+    -type f -name copyright | wc -l)"
+  if [[ "${library_count}" -eq 0 || "${copyright_count}" -eq 0 ]]; then
+    echo "Linux dependency deployment did not include libraries and copyright records." >&2
+    return 1
+  fi
+  echo "Collected ${copyright_count} dependency copyright records for ${library_count} bundled libraries"
+}
+
 [[ -x "${BINARY}" ]] || { echo "Missing Linux release binary: ${BINARY}" >&2; exit 1; }
 [[ -x "${LINUXDEPLOY}" ]] || { echo "Missing linuxdeploy: ${LINUXDEPLOY}" >&2; exit 1; }
 [[ -x "${APPIMAGE_PLUGIN}" ]] || { echo "Missing linuxdeploy AppImage plugin: ${APPIMAGE_PLUGIN}" >&2; exit 1; }
@@ -66,10 +100,11 @@ export LDAI_NO_APPSTREAM=1
   --appdir "${APPDIR}" \
   --executable "${BINARY}" \
   --desktop-file "${PROJECT_ROOT}/packaging/linux/dkr-port.desktop" \
-  --icon-file "${PROJECT_ROOT}/packaging/linux/dkr-port.svg" \
-  --output appimage
+  --icon-file "${PROJECT_ROOT}/packaging/linux/dkr-port.svg"
 
+collect_linux_dependency_notices "${APPDIR}"
 validate_release_tree "${APPDIR}"
+"${APPIMAGE_PLUGIN}" --appdir "${APPDIR}"
 [[ -s "${OUTPUT}" ]] || { echo "AppImage output is missing or empty: ${OUTPUT}" >&2; exit 1; }
 echo "Created ${OUTPUT}"
 sha256sum "${OUTPUT}"

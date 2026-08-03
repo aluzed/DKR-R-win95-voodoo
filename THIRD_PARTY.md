@@ -43,3 +43,10 @@ implements much of the N64 runtime boundary and supports RT64.
 
 Each dependency retains its own copyright and licence notices. Nintendo, Rare, Diddy Kong Racing and
 related names/assets belong to their respective owners.
+
+The Linux AppImage additionally carries the Debian copyright record for every
+shared library copied into the bundle, a library-to-package manifest, and the
+Debian common licence texts under
+`usr/share/doc/dkr-port/third-party/linux-packages`. These notices are collected
+before the AppImage is sealed, and packaging fails if any bundled library cannot
+be mapped to its notice.
