@@ -10,7 +10,10 @@ exact release revision and linked dependencies.
 Racing ROM or extracted game data is part of the source or binary package; the
 user supplies a supported Game Pak image locally.
 
-Dependency sources are fetched into the ignored `extern` work area by the
-preparation/build scripts. Their resolved revisions are recorded so a release
-source bundle can be reproduced without committing generated recompilation
-output or user-owned game data.
+The companion source archive contains the committed project integration source,
+build scripts, dependency lock, recomp policy and complete Patch Pipeline. The
+preparation scripts fetch the exact upstream source revisions into the ignored
+`extern` work area and apply the recorded patches to reconstruct the preferred
+source form used for the executable. Generated recompilation output and
+user-owned game data are deliberately excluded and are regenerated locally from
+the supported ROM.

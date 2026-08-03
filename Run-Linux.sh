@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
-exe="$PWD/build/linux-core-release/bin/Release/DKRPort"
-[[ -x "$exe" ]] || { echo "Core executable missing. Run ./Build-Linux.sh first." >&2; exit 1; }
-cat >&2 <<'MSG'
-This milestone's Linux helper builds the command-line core without the native launcher.
-Use commands such as:
-  --headless-self-test
-  --validate-rom /path/to/rom.z64
-The one-window RmlUi launcher is packaged through Build-Windows.cmd in this delivery.
-MSG
-exec "$exe" --help
+
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exe="${DKR_LINUX_BUILD_DIR:-${project_root}/build/dkr-runtime-linux}/bin/Release/DKRPort"
+[[ -x "${exe}" ]] || {
+  echo 'Linux runtime missing. Run ./Setup-Linux.sh and ./Build-Linux.sh first.' >&2
+  exit 1
+}
+exec "${exe}" "$@"

@@ -1,14 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
-for tool in cmake ninja c++; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Missing required tool: $tool" >&2
-    echo "Debian/Ubuntu: sudo apt install build-essential cmake ninja-build" >&2
-    echo "Fedora: sudo dnf install gcc-c++ cmake ninja-build" >&2
-    echo "Arch: sudo pacman -S base-devel cmake ninja" >&2
-    exit 1
+
+missing=0
+for tool in cmake ninja c++ git pkg-config python3; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    echo "Missing required tool: ${tool}" >&2
+    missing=1
   fi
 done
-cmake --version | head -n1
-c++ --version | head -n1
-echo "Linux setup checks passed. Run ./Build-Linux.sh."
+if [[ "${missing}" -ne 0 ]]; then
+  cat >&2 <<'MSG'
+Ubuntu 24.04 build prerequisites:
+  sudo apt install build-essential cmake ninja-build git pkg-config python3 \
+    libsdl2-dev libgtk-3-dev libvulkan-dev vulkan-tools \
+    libasound2-dev libpulse-dev libsamplerate0-dev \
+    libx11-dev libxext-dev libxrandr-dev libwayland-dev libxkbcommon-dev
+MSG
+  exit 1
+fi
+
+for package in sdl2 gtk+-3.0 vulkan; do
+  if ! pkg-config --exists "${package}"; then
+    echo "Missing development package exposed by pkg-config: ${package}" >&2
+    missing=1
+  fi
+done
+if [[ "${missing}" -ne 0 ]]; then
+  echo 'Install the Ubuntu development packages listed above, then rerun setup.' >&2
+  exit 1
+fi
+
+cmake --version | head -n 1
+c++ --version | head -n 1
+pkg-config --modversion sdl2 gtk+-3.0 vulkan
+echo 'Linux runtime prerequisites passed. Prepare generated code, then run ./Build-Linux.sh.'
