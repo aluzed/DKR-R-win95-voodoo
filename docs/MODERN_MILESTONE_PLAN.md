@@ -269,6 +269,22 @@ that baseline requires a targeted regression test and a new visible RTSS run.
 Rates above 60 remain a separate validation ladder; success at 60 is not used as
 evidence that 120-500 FPS is already release-qualified.
 
+### Paused execution and exact resume point (2026-08-03)
+
+Implementation is deliberately paused at the player's request. No QOL patch is
+in progress and the locked Modern/60 renderer is not being modified while this
+plan is reviewed.
+
+The next executable work item is the **Phase 8 preset-enforcement step followed
+immediately by 8A.1 read-only viewport/culling instrumentation**. This is the
+ultrawide culling/FOV task that was active when planning was requested; resume
+there when the player approves this plan. Do not repeat the completed
+frame-pacing work, do not change the accepted water/lower-horizon fixes, and do
+not start audio DSP or save migration early. The first visible test after
+resuming is the 4:3/16:9/21:9/32:9 culling capture matrix in 8A; it is not a
+hidden playtest. Close the newly reported character-select animation regression
+immediately after 8A and before adding further QOL features.
+
 ## Phase 7 — DKR-specific regression closure
 
 Run focused tests on historically fragile content:
@@ -276,6 +292,9 @@ Run focused tests on historically fragile content:
 - Nintendo/Rare and title sequences;
 - character-select music ownership: exactly the selected character layer plays,
   with no carried intro layer or accumulating voices;
+- character-select animation continuity: repeatedly moving forward and backward
+  through every racer must not make character, vehicle, camera, or menu motion
+  progressively more stuttery while the presentation counter remains stable;
 - track-select backgrounds;
 - every sky and lower-horizon variant;
 - every water map, shoreline, waterfall, and camera pitch/yaw case;
@@ -290,12 +309,114 @@ The Golden Balloon string is original presentation, not a Modern enhancement. If
 it is still absent, fix it through the patch pipeline in both presets before the
 Modern release candidate.
 
+### Character-select animation stutter and music-fix audit
+
+The progressive stutter occurs in both Accurate and Modern while the reported
+presentation FPS remains stable. Interpolation is therefore not the root cause.
+The leading hypothesis is uneven authored menu updates caused by accumulating
+audio channel/voice work, potentially as an indirect side effect of the
+character-select music ownership fix.
+
+The current Patch Pipeline fix has two one-shot hooks in
+`menu_character_select_init`: one clears a stale `gBlockMusicChange` immediately
+before `music_play`, and the second seeds `gDynamicMusicChannelMask` for the
+asynchronously starting Choose Your Racer sequence. Neither hook writes model,
+animation, camera, or render state, and neither runs on each cursor move. The
+mask does, however, determine the initial live sequence channels before DKR's
+original `charselect_music_channels` routine repeatedly crossfades old and new
+character channels. A channel/voice that fails to retire can increase audio RSP
+work and disturb authored menu cadence without reducing host-presented FPS.
+
+Investigation and fix order:
+
+1. Reproduce from a clean boot in Accurate and Modern with a scripted sequence
+   that moves through all racers, reverses direction, wraps the list, leaves
+   character select, returns, and repeats. Record host frame time separately
+   from DKR's `updateRate`, menu/animation phase, authored graphics-task cadence,
+   audio-task cadence/command count/time, queued audio, music channel mask,
+   pending dynamic mask, active compact-sequence voices, and physical voice
+   allocation.
+2. Build a diagnostic A/B matrix through the Patch Pipeline: original behavior
+   with both music hooks disabled, unblock-only, pending-mask-only, and the
+   current combined fix. Keep ROM, save, selected characters, inputs, and build
+   options identical. This may deliberately reproduce layered music in a
+   diagnostic build; it is never a release candidate.
+3. If stutter follows the pending-mask hook, trace every selection through
+   `gMenuCurrentCharacter`, `gMenuSelectedCharacter`, the outgoing
+   `D_801263B8` fade state, `gMusicPlayer->chanMask`, channel-on/off events, and
+   voice allocation/free events. Verify one selected arrangement plus shared
+   backing channels, at most one bounded outgoing crossfade, and no monotonically
+   growing voice/event queue.
+4. If stutter remains with both hooks disabled, keep the music fix and trace the
+   shared authored path: input-to-selection timing, `charselect_music_channels`,
+   menu object animation phase, graphics task submission, scheduler contention,
+   transient allocations, and cache/memory growth. Only after authored cadence
+   is proven smooth should renderer history be inspected as a secondary Modern-
+   only comparison.
+5. Replace the smallest causal behavior. Prefer DKR's own music mask/channel
+   operations at the correct sequence lifecycle over a continuously enforced
+   host mask. Preserve the stale-lock ownership correction if it is not causal,
+   allow the original crossfade state machine to own subsequent changes, and
+   explicitly retire any outgoing channels/voices once their fade completes.
+6. Add bounded counters and memory/queue-growth tests covering at least 500
+   selection changes, plus player-visible A/B captures at Accurate 30 and Modern
+   60. Remove high-frequency diagnostic logging from release builds.
+
+Acceptance gate: after 500 forward/back/wrap changes, animation smoothness and
+authored update spacing are unchanged from the first selection, audio work and
+voice/event storage return to a steady-state bound, exactly the selected
+character arrangement plays, no intro or prior-character layer accumulates, and
+both presets retain their accepted presentation cadence.
+
 Exit gate: no open P0/P1 visual, audio, timing, save, crash, or controller bugs.
 
 ## Phase 8 — Release-safe Modern quality-of-life options
 
-Implement the following work packages in order. Each option is Modern-only and
-independently toggleable where practical. Accurate remains the recovery path.
+Implement the following work packages in order. Modern enhancements are hidden,
+not merely greyed out, while Accurate is selected. Accurate remains the recovery
+path and exposes only the common controls required to select a ROM, launch or
+exit, remap baseline input, choose an audio device, and set the already-proven
+master volume.
+
+### Preset contract and configuration ownership
+
+`Accurate` is an enforceable runtime policy, not a collection of suggested UI
+defaults:
+
+- authored 30 FPS presentation and simulation timing;
+- renderer aspect mode forced to Original 4:3, with pillarboxing or letterboxing
+  as required by the window; Fit to Window is neither shown nor accepted from a
+  stale configuration file;
+- authored camera FOV, CPU frustum, view distances, LOD selection, audio mix,
+  and input behavior;
+- graphics API forced to Auto/the release-proven platform choice;
+- no interpolation, gyro steering, advanced EQ, save manager, maximum vehicle
+  detail, extended culling, or other Modern QOL controls.
+
+`Modern` owns a separate remembered preference block. It may expose Fit to
+Window, presentation rate, FOV, view distance, maximum vehicle detail, graphics
+API, gyro, advanced audio, save management, and the other packages below.
+Switching to Accurate changes the effective runtime policy immediately where
+safe and marks restart-required settings for the next launch, but does not erase
+the player's Modern preferences. Switching back to Modern restores those
+preferences only after validation.
+
+Configuration work precedes feature work:
+
+1. Bump the versioned settings schema and separate common, Accurate-effective,
+   and Modern-preference values.
+2. Treat missing, truncated, out-of-range, or future-version values as Accurate.
+3. Apply preset constraints again at the renderer/input/audio boundary so a
+   hand-edited settings file cannot bypass the UI contract.
+4. Label every control `Live`, `Scene reload`, `Game restart`, or `Launcher
+   restart` and save changes atomically.
+5. Add a one-action `Restore Accurate Defaults` recovery path before launch and
+   in the overlay.
+
+Acceptance gate: a table-driven test loads every legacy settings version and a
+set of malformed files. Accurate always resolves to 4:3/30 FPS/authored detail,
+while Modern preferences survive a round trip without becoming active in
+Accurate.
 
 ### 8A - Ultrawide culling, FOV, LOD, and view distance
 
@@ -313,8 +434,13 @@ conflated:
 
 Implementation order:
 
+- **8A.1 (current task):** add read-only diagnostics for active viewport size,
+  aspect, authored/effective vertical FOV, horizontal frustum coverage, segment
+  rejection reason, object draw-distance rejection, active LOD, and water-wave
+  residency. Capture the same fixed camera poses in 4:3, 16:9, 21:9, and 32:9
+  before changing any decisions.
 - Add a read-only host-presentation bridge that exposes the active viewport
-  aspect and Modern culling policy to project-owned patch hooks.
+  aspect and validated Modern culling policy to project-owned patch hooks.
 - Preserve DKR's near plane, BSP order, portal/segment bitfields, occlusion
   rules, and back-camera rejection. Widen only the horizontal CPU frustum to
   match the actual RT64 viewport.
@@ -330,13 +456,28 @@ Implementation order:
 - Extend the water-wave neighbourhood only enough to cover the wider frustum
   and selected distance multiplier; keep the accepted water angle, horizon,
   coverage, and z-order fixes unchanged.
-- Keep `Maximum model detail` as a separate toggle. It may select the highest
-  model/texture LOD but must not bypass segment, object, particle, or safety
-  culling.
-- Add a projection-aware FOV control with `Original`, `+5`, `+10`, `+15`, and a
-  conservative custom range. The displayed value must say whether it is
-  vertical or horizontal, and the CPU culling frustum must use the same result
-  as the renderer.
+- Keep `Maximum vehicle detail` as a Modern-only, separate toggle. It selects
+  the highest available vehicle model/attachment LOD, including wheels and
+  propellers, but must not bypass segment, object, particle, or safety culling.
+  A later `Maximum world detail` option may cover non-vehicle LODs only after a
+  memory and scene-load soak.
+- Add a continuous Modern `Field of view` slider. The neutral position is
+  `Original`; internally it is a bounded offset from each gameplay scene's
+  authored vertical FOV rather than a blanket replacement. Show both the
+  authored and effective vertical degrees plus the derived horizontal degrees
+  for the current aspect. Start with a conservative effective range of 40-100
+  vertical degrees and expand only after cutscene and split-screen tests.
+- Apply the FOV override only to driving/gameplay cameras. Title screens, menus,
+  character/track select, scripted cutscenes, and cameras that deliberately set
+  their own 40-degree projection retain their authored FOV unless individually
+  qualified later.
+- Feed the identical effective projection to RT64 and to DKR's CPU visibility
+  planes. A renderer-only FOV change is forbidden because it recreates edge
+  pop-in; a culling-only change is forbidden because it wastes work and can
+  disturb portal ordering.
+- Add a `Reset camera` action and an optional Modern camera-shake strength
+  control (0-100 percent, default 100) only after FOV is accepted. Camera shake
+  must scale visual offsets without modifying vehicle physics.
 
 Acceptance tests:
 
@@ -347,10 +488,15 @@ Acceptance tests:
   portal, or crossing a BSP boundary.
 - Hub, all water maps, dense races, boss arenas, and one-to-four-player layouts
   retain correct transparency order and stable 60 FPS frame pacing.
+- FOV changes do not move HUD elements, alter collision, change steering, expose
+  geometry behind the camera, or affect transition/lower-horizon coverage.
 - Accurate produces the same segment/object decisions as the frozen baseline.
 
 ### 8B - Display, HUD, and image-quality controls
 
+- Accurate always resolves to Original 4:3. Modern alone exposes `Fit to
+  Window`; switching presets while running requests a safe scene reload or game
+  restart rather than mutating projection state halfway through a frame.
 - HUD scale from 75 to 150 percent and independent horizontal/vertical safe
   areas, defaulting to the current accepted layout.
 - Internal render scale presets plus native-window and integer-scale choices.
@@ -363,6 +509,20 @@ Acceptance tests:
   block the UI without feedback.
 - Screenshot action that excludes launcher diagnostics and respects the game
   viewport.
+- Add a Modern-only graphics API selector populated from APIs compiled and
+  available on the current platform: Auto, Direct3D 12, and Vulkan on Windows;
+  Auto/Vulkan on Linux and SteamOS; Auto/Metal on macOS if that target is later
+  qualified. Never display a backend that the build cannot create.
+- Graphics API changes are game-restart-required. Before committing a choice,
+  probe API/device availability; on setup failure, restore the last-known-good
+  API and reopen the launcher with an actionable error. Keep shader caches
+  separated by API, adapter, driver, and renderer version.
+
+Acceptance gate: 4:3 remains canonical in Accurate at every window size. Modern
+survives window resize, monitor move, fullscreen transitions, Fit to Window,
+and API restart/fallback without losing preferences or producing a black frame.
+Windows must qualify D3D12 and Vulkan; Steam Deck/Linux must qualify Vulkan and
+the ROM-free AppImage.
 
 ### 8C - Controller-first launcher and in-game overlay
 
@@ -389,35 +549,144 @@ Acceptance tests:
   card padding. Validate the launcher at 720p, 1080p, 1440p, 4K, and Steam Deck
   1280x800.
 
-### 8D - Input, rumble, audio, and accessibility
+### 8D - Input, gyro, rumble, and accessibility
 
 - Per-controller deadzone, anti-deadzone, sensitivity curve, stick inversion,
   trigger threshold, and rumble strength with live test feedback.
 - Hotplug and reconnect without losing player assignment or launcher focus.
-- Master, music, voice, and effects controls only after the mixer buses are
-  identified precisely; otherwise retain the proven master-volume control.
-- Audio device selection, conservative latency presets, underrun counters, and
-  safe device-loss recovery without advancing or duplicating game audio.
+- Add Modern-only gyro steering using SDL controller sensor support. Initialise
+  the sensor subsystem, detect `SDL_GameControllerHasSensor` per assigned
+  controller, and hide gyro controls when no usable gyro is exposed. Do not
+  assume that every Steam Input virtual controller exposes a raw sensor.
+- Provide `Off` (default), `Add to stick`, and `Gyro only` modes, plus
+  sensitivity, steering axis, invert, deadzone, smoothing, maximum contribution,
+  and a one-button recenter action. Calibration measures stationary bias and
+  displays a live neutral/error preview before saving.
+- Sample gyro at the normal authored input poll, transform it into the final
+  N64 stick X value once per simulation tick, combine/clamp deterministically,
+  and never apply it again for interpolated presentation frames. Disconnect,
+  overlay focus, pause, and device reassignment must immediately zero stale
+  sensor input.
 - Toggle/hold choices for relevant inputs, readable controller glyphs, UI text
   scale, reduced-flash options for launcher transitions, and colour-independent
   focus/error/status communication.
 
-### 8E - Convenience and recovery
+Acceptance gate: keyboard, conventional controller, PlayStation/Switch-class
+gyro controllers, and Steam Deck are tested for calibration, recenter, hotplug,
+sleep/resume, overlay navigation, and 30/60 FPS equivalence. Gyro Off produces
+byte-for-byte identical controller samples to the accepted baseline.
+
+### 8E - Modern audio control and EQ
+
+Audio is already accepted and must remain timing-identical. The existing host
+callback receives only the final interleaved stereo mix, so it is suitable for
+master volume and EQ but cannot reliably identify music, vehicles, voices, or
+effects after mixing. Category controls therefore use named decomp symbols and
+patch-pipeline hooks before the N64 synth combines the voices.
+
+Implementation order:
+
+1. Record the existing mixer topology. DKR already has a dedicated music
+   player, Sound Player groups, spatial audio, and `audio_vehicle` call paths.
+   Produce a reviewed table mapping every slider to explicit players, group
+   IDs, sound IDs, or vehicle call sites. Do not classify audio by frequency or
+   by an undocumented numeric range.
+2. Preserve the current common `Master volume` control. Add Modern-only
+   `Music`, `Sound effects`, `Vehicle/engine`, `Character voices`,
+   `Environment/ambience`, and `UI/jingles` sliders only when every route in a
+   category is accounted for. Unmapped sounds remain at unity and are logged in
+   developer builds rather than being silently muted.
+3. Multiply the game's requested logical volume at the category boundary so
+   DKR's fades, ducking, character-select channel ownership, spatial pan,
+   pitch, priority, reverb, and voice limits continue to work. Ramp gain changes
+   over 10-20 ms to prevent clicks; perform no allocation, file I/O, or blocking
+   lock on the audio thread.
+4. Add a host post-mix three-band EQ: Bass low shelf, Mid peaking band, and
+   Treble high shelf, each defaulting to 0 dB and initially bounded to +/-12 dB.
+   Compute coefficients from the actual output sample rate, interpolate
+   coefficient changes, retain per-channel filter state, and bypass the entire
+   EQ path at 0/0/0 so neutral output is bit-identical to the accepted build.
+5. Reserve headroom for positive EQ gain and enable a transparent safety limiter
+   only when boosting could clip. The limiter and filters must never change
+   sample count, sequence tempo, pitch, AI buffer cadence, or the game's audio
+   clock.
+6. Add optional Modern dynamic-range presets (`Original`, `Night`, `Wide`), mono
+   downmix, stereo balance, and mute-on-focus-loss only after the six requested
+   buses and neutral EQ pass. These are lower priority than correctness.
+7. Retain audio device selection, conservative latency presets, underrun/queue
+   counters, and safe device-loss recovery without advancing or duplicating
+   game audio.
+
+Acceptance gate: a neutral null test produces identical PCM; each category mute
+is audited in title, character select, hub, car, hovercraft, plane, boss, menu,
+and cutscene scenes; EQ impulse/frequency-response tests meet their curves; and
+a two-hour soak shows zero additional underruns, drift, accumulating voices, or
+character-select layering.
+
+### 8F - Launcher save-file manager
+
+The current port stores a 4-Kbit EEPROM image at
+`saves/dkr.us.v77.bin` (512 bytes) and one 32 KiB
+`controller-pak-N.mpk` image per virtual Controller Pak. The manager treats
+these as user data and never bundles the ROM.
+
+- Show timestamp, size, checksum/health, source profile, and whether the entry
+  is EEPROM or Controller Pak. Adventure-slot names/progress may be shown only
+  after the decomp checksum/layout parser is covered by fixtures; the first
+  release does not edit individual slots.
+- `Back up now` creates a timestamped immutable copy. Automatic rolling backups
+  run before import, restore, destructive migration, and optionally after a
+  confirmed in-game save, with configurable retention and a `Keep forever`
+  flag.
+- `Export` creates a versioned `.dkr-save` archive containing a JSON manifest,
+  hashes, the EEPROM image, selected Pak images, port version, and supported ROM
+  revision identifier. It contains no ROM, game asset, absolute user path, or
+  machine identifier.
+- `Import` extracts into a temporary directory, rejects path traversal and
+  duplicate members, validates manifest/schema, exact sizes, hashes, EEPROM
+  checksum/layout, Pak filesystem integrity, and supported region/revision,
+  then creates a rollback backup before an atomic replace.
+- While the game owns save data, destructive actions are disabled. The launcher
+  may request pause plus save flush and wait for an explicit acknowledgement,
+  but a timeout fails closed. The initial release performs import/restore only
+  while the game is stopped; read-only listing remains safe.
+- `Restore` never deletes the current data until its backup and replacement are
+  both verified. Failed imports leave the current save untouched and present a
+  specific recovery action.
+- Provide `Open save folder`, raw EEPROM/Pak export for advanced users, backup
+  rename/notes, and a dry-run import report. All save-manager UI is Modern-only
+  and fully controller navigable.
+
+Acceptance gate: fixture and fault-injection tests cover empty, valid, corrupt,
+truncated, wrong-region, malicious-archive, interrupted-write, read-only-disk,
+and rollback cases on Windows and Linux. A save exported on Windows imports on
+Steam Deck and vice versa, then loads in both Accurate and Modern gameplay.
+
+### 8G - Convenience, diagnostics, and recovery
 
 - Optional skip-to-title for startup logos after the first successful boot,
   while preserving the unmodified default sequence.
 - Recent ROM/library entries, cache validation status, `Repair`, `Open Logs`,
   and `Copy Diagnostics` actions.
+- Optional auto-pause on focus loss, quick race restart behind a confirmation,
+  controller-profile export/import, screenshot hotkey, frame-time graph, and a
+  compact performance report that identifies CPU/GPU/queue limits without
+  relying on external overlays.
 - Per-setting labels for Live, Scene Reload, and Restart Required.
 - A single `Restore Accurate Defaults` action that works before game launch and
   from the overlay even if Modern settings are invalid.
 - Versioned atomic config migration, corruption recovery, and separate Accurate
   and Modern preferences.
 
+These convenience items ship only after their specific state-transition tests.
+Quick restart must use an existing safe game transition and must not directly
+rewrite race state. Diagnostics are read-only and disabled by default.
+
 Lower-priority post-release candidates include texture-pack support, a photo
-mode, speedrun tools, ghost export/import, randomizers, achievements, and mod
-APIs. These require their own compatibility and provenance design and are not
-part of the first Modern release.
+mode, speedrun tools, standalone ghost management, randomizers, achievements,
+online/cloud-save providers, HDR, and mod APIs. These require their own
+compatibility, security, and provenance design and are not part of the first
+Modern release.
 
 Ultrawide culling must expand the horizontal frustum and relevant spatial/portal
 selection. It must not simply disable every cull or force a nominal 200-degree
@@ -429,22 +698,56 @@ Gameplay-changing cheats, free camera/photo mode, speedrun tools, randomizers,
 and mod APIs belong in a later Enhancements or Tools section rather than the core
 Modern preset.
 
+### Phase 8 execution sequence
+
+1. Enforce the preset/configuration contract and add read-only diagnostics.
+2. Resume the current task: fix ultrawide culling/view distance, then qualify the
+   FOV slider and maximum vehicle detail in visible playtests.
+3. Reproduce and close the progressive character-select animation stutter using
+   the Phase 7 instrumentation and visible acceptance test.
+4. Finish controller-first launcher/overlay navigation and Modern-only UI
+   visibility before adding more settings.
+5. Add display/HUD controls and graphics API selection with last-known-good
+   fallback.
+6. Add gyro steering, calibration, hotplug, and Steam Deck qualification.
+7. Add the save manager and cross-platform fault-injection suite.
+8. Add category audio controls, then neutral-bypass EQ, with audio work last
+   because the accepted mixer is release-critical.
+9. Add only the convenience items that pass their state-transition tests, then
+   execute the Phase 9 matrix and Phase 10 release process.
+
+Each numbered item receives its own patch-pipeline change, tests, visible player
+check, and rollback point. Do not batch unrelated renderer, input, save, and
+audio changes into one build.
+
 ## Phase 9 — Verification matrix
 
 ### Automated
 
 - interpolation math, wraparound angles, camera cuts, and teleport thresholds;
 - stable-ID uniqueness, lifecycle reuse, and collision fail-closed behavior;
+- 500 forward/back/wrap character-select changes with bounded audio voices,
+  events, task cost, menu update spacing, renderer history, stable presentation
+  cadence, and no accumulating animation or music layers;
 - snapshot ownership, queue backpressure, and generation rollover;
-- config migration, persistence, defaults, and recovery;
+- config migration, preset visibility/enforcement, persistence, defaults, and
+  recovery, including Accurate's hard 4:3/30 FPS boundary;
 - 30/50/59.94/60/75/90/100/120/144/165/240/360/480/500 pacing;
 - long-run tick/audio equality and suspension rebasing;
 - endpoint image/state comparison and selected midpoint golden images;
 - aspect-derived CPU frustum planes at 4:3, 16:9, 21:9, and 32:9,
   including guard-band and behind-camera rejection cases;
-- view-distance fade thresholds, maximum-detail independence, and water-wave
-  residency bounds for every supported multiplier;
-- save/pak round trips and recovery;
+- authored/effective FOV agreement between game projection, RT64, CPU frustum,
+  HUD exclusion, gameplay-camera filtering, and split-screen cameras;
+- view-distance fade thresholds, maximum-vehicle-detail independence, and
+  water-wave residency bounds for every supported multiplier;
+- graphics API availability, last-known-good fallback, and cache isolation;
+- gyro neutral equivalence, calibration, recenter, combine/clamp, disconnect,
+  and deterministic authored-tick sampling;
+- neutral PCM null output, audio-category route coverage, gain ramps, EQ impulse
+  response, clipping/headroom, and underrun/drift monitoring;
+- EEPROM/Pak backup, export/import, archive hardening, atomic replacement, fault
+  injection, rollback, and Windows/Linux cross-import;
 - ROM/copyrighted-asset scan for every package.
 
 ### Manual, visible playtests
