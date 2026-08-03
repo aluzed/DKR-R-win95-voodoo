@@ -599,6 +599,17 @@ void dkr::runtime::platform::set_rumble_enabled(bool enabled) {
 #endif
 }
 
+bool dkr::runtime::platform::gyro_available() {
+#if DKR_RUNTIME_HAS_RT64
+    std::scoped_lock lock(g_platform_mutex);
+    SDL_GameController* controller = g_controllers[0];
+    return controller != nullptr &&
+           SDL_GameControllerHasSensor(controller, SDL_SENSOR_GYRO) == SDL_TRUE;
+#else
+    return false;
+#endif
+}
+
 ultramodern::input::connected_device_info_t
 dkr::runtime::platform::get_connected_device_info(int controller) {
     if (controller < 0 || controller >= static_cast<int>(kControllerCount)) {

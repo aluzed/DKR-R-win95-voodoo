@@ -31,6 +31,7 @@ bool get_input(int controller, std::uint16_t* buttons, float* x, float* y);
 void set_rumble(int controller, bool enabled);
 bool rumble_enabled();
 void set_rumble_enabled(bool enabled);
+bool gyro_available();
 ultramodern::input::connected_device_info_t get_connected_device_info(int controller);
 
 } // namespace dkr::runtime::platform

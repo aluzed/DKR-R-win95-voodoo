@@ -1,4 +1,6 @@
 #include "runtime_input.hpp"
+#include "motion_steering_policy.hpp"
+#include "runtime_enhancements.hpp"
 
 #if DKR_RUNTIME_HAS_RT64
 #include <SDL.h>
@@ -6,8 +8,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <mutex>
+#include <optional>
 
 namespace {
 
@@ -61,6 +65,17 @@ constexpr std::array<BindingPair, static_cast<std::size_t>(Action::Count)> kDefa
 
 std::array<BindingPair, static_cast<std::size_t>(Action::Count)> g_bindings = kDefaults;
 std::mutex g_binding_mutex;
+std::atomic<bool> g_gyro_enabled{false};
+std::atomic<float> g_gyro_sensitivity{100.0F};
+std::atomic<float> g_gyro_deadzone{2.0F};
+std::atomic<bool> g_gyro_inverted{false};
+std::atomic<dkr::runtime::input::GyroAxis> g_gyro_axis{
+    dkr::runtime::input::GyroAxis::Roll};
+std::atomic<float> g_gyro_bias{0.0F};
+std::atomic<float> g_gyro_calibration_sum{0.0F};
+std::atomic<int> g_gyro_calibration_samples{0};
+std::atomic<int> g_gyro_calibration_remaining{0};
+constexpr int kGyroCalibrationSampleCount = 90;
 
 constexpr std::array<const char*, static_cast<std::size_t>(Action::Count)> kIdentifiers{{
     "stick_up", "stick_down", "stick_left", "stick_right", "a", "b", "z",
@@ -110,6 +125,43 @@ float SourceValue(SDL_GameController* controller, int source) {
         controller, static_cast<SDL_GameControllerAxis>(axis)));
     return positive ? std::max(value, 0.0F) : std::max(-value, 0.0F);
 }
+
+std::optional<float> PollGyro(SDL_GameController* controller) {
+    using namespace dkr::runtime::input;
+    if (controller == nullptr || !gyro_enabled() ||
+        !dkr::runtime::enhancements::modern_presentation_enabled() ||
+        SDL_GameControllerHasSensor(controller, SDL_SENSOR_GYRO) != SDL_TRUE) {
+        return std::nullopt;
+    }
+    if (SDL_GameControllerIsSensorEnabled(controller, SDL_SENSOR_GYRO) != SDL_TRUE &&
+        SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_GYRO,
+                                           SDL_TRUE) != 0) {
+        return std::nullopt;
+    }
+    float sensor[3]{};
+    if (SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO,
+                                        sensor, 3) != 0) {
+        return std::nullopt;
+    }
+    const float raw = gyro_axis() == GyroAxis::Yaw ? sensor[1] : sensor[2];
+    const int remaining = g_gyro_calibration_remaining.load(
+        std::memory_order_acquire);
+    if (remaining > 0) {
+        const float sum = g_gyro_calibration_sum.fetch_add(
+            raw, std::memory_order_acq_rel) + raw;
+        const int samples = g_gyro_calibration_samples.fetch_add(
+            1, std::memory_order_acq_rel) + 1;
+        if (g_gyro_calibration_remaining.fetch_sub(
+                1, std::memory_order_acq_rel) == 1) {
+            g_gyro_bias.store(sum / static_cast<float>(samples),
+                              std::memory_order_release);
+        }
+        return 0.0F;
+    }
+    return gyro_steering_value(
+        raw, g_gyro_bias.load(std::memory_order_acquire),
+        gyro_deadzone(), gyro_sensitivity(), gyro_inverted());
+}
 #endif
 
 } // namespace
@@ -149,6 +201,67 @@ void dkr::runtime::input::set_controller_binding(Action action, int source) {
 void dkr::runtime::input::reset_defaults() {
     std::scoped_lock lock(g_binding_mutex);
     g_bindings = kDefaults;
+}
+
+bool dkr::runtime::input::gyro_enabled() {
+    return g_gyro_enabled.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::input::set_gyro_enabled(bool enabled) {
+    g_gyro_enabled.store(enabled, std::memory_order_release);
+}
+
+float dkr::runtime::input::gyro_sensitivity() {
+    return g_gyro_sensitivity.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::input::set_gyro_sensitivity(float percent) {
+    g_gyro_sensitivity.store(clamp_gyro_sensitivity(percent),
+                             std::memory_order_release);
+}
+
+float dkr::runtime::input::gyro_deadzone() {
+    return g_gyro_deadzone.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::input::set_gyro_deadzone(float degrees_per_second) {
+    g_gyro_deadzone.store(clamp_gyro_deadzone(degrees_per_second),
+                         std::memory_order_release);
+}
+
+bool dkr::runtime::input::gyro_inverted() {
+    return g_gyro_inverted.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::input::set_gyro_inverted(bool inverted) {
+    g_gyro_inverted.store(inverted, std::memory_order_release);
+}
+
+dkr::runtime::input::GyroAxis dkr::runtime::input::gyro_axis() {
+    return g_gyro_axis.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::input::set_gyro_axis(GyroAxis axis) {
+    g_gyro_axis.store(axis == GyroAxis::Yaw ? GyroAxis::Yaw : GyroAxis::Roll,
+                      std::memory_order_release);
+}
+
+void dkr::runtime::input::begin_gyro_calibration() {
+    g_gyro_calibration_sum.store(0.0F, std::memory_order_release);
+    g_gyro_calibration_samples.store(0, std::memory_order_release);
+    g_gyro_calibration_remaining.store(kGyroCalibrationSampleCount,
+                                       std::memory_order_release);
+}
+
+bool dkr::runtime::input::gyro_calibrating() {
+    return g_gyro_calibration_remaining.load(std::memory_order_acquire) > 0;
+}
+
+float dkr::runtime::input::gyro_calibration_progress() {
+    const int remaining = g_gyro_calibration_remaining.load(std::memory_order_acquire);
+    return std::clamp(1.0F - static_cast<float>(remaining) /
+                                 static_cast<float>(kGyroCalibrationSampleCount),
+                      0.0F, 1.0F);
 }
 
 int dkr::runtime::input::encode_controller_button(int button) {
@@ -212,6 +325,7 @@ dkr::runtime::input::State dkr::runtime::input::poll(
     SDL_GameController* controller, bool include_keyboard, bool blocked) {
     State state{};
 #if DKR_RUNTIME_HAS_RT64
+    const std::optional<float> gyro = PollGyro(controller);
     if (blocked) {
         return state;
     }
@@ -251,6 +365,9 @@ dkr::runtime::input::State dkr::runtime::input::poll(
     press(Action::CRight, kCRight);
     state.stick_x = std::clamp(value(Action::StickRight) - value(Action::StickLeft), -1.0F, 1.0F);
     state.stick_y = std::clamp(value(Action::StickUp) - value(Action::StickDown), -1.0F, 1.0F);
+    if (gyro.has_value()) {
+        state.stick_x = blend_gyro_steering(state.stick_x, *gyro);
+    }
 #else
     (void)controller;
     (void)include_keyboard;

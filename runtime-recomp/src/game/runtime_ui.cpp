@@ -345,6 +345,11 @@ void SaveSettings() {
                << dkr::runtime::enhancements::frustum_guard_percent() << '\n';
         output << "memory_pak=" << (dkr::runtime::pak::enabled() ? 1 : 0) << '\n';
         output << "rumble=" << (dkr::runtime::platform::rumble_enabled() ? 1 : 0) << '\n';
+        output << "gyro_enabled=" << (dkr::runtime::input::gyro_enabled() ? 1 : 0) << '\n';
+        output << "gyro_sensitivity=" << dkr::runtime::input::gyro_sensitivity() << '\n';
+        output << "gyro_deadzone=" << dkr::runtime::input::gyro_deadzone() << '\n';
+        output << "gyro_inverted=" << (dkr::runtime::input::gyro_inverted() ? 1 : 0) << '\n';
+        output << "gyro_axis=" << static_cast<int>(dkr::runtime::input::gyro_axis()) << '\n';
         for (std::size_t index = 0; index < dkr::runtime::input::action_count(); ++index) {
             const auto action = static_cast<dkr::runtime::input::Action>(index);
             output << "keyboard_binding." << dkr::runtime::input::action_identifier(action)
@@ -455,6 +460,19 @@ void LoadSettings() {
                 dkr::runtime::pak::set_enabled(number != 0);
             } else if (key == "rumble") {
                 dkr::runtime::platform::set_rumble_enabled(number != 0);
+            } else if (key == "gyro_enabled") {
+                dkr::runtime::input::set_gyro_enabled(number != 0);
+            } else if (key == "gyro_sensitivity") {
+                dkr::runtime::input::set_gyro_sensitivity(std::stof(value));
+            } else if (key == "gyro_deadzone") {
+                dkr::runtime::input::set_gyro_deadzone(std::stof(value));
+            } else if (key == "gyro_inverted") {
+                dkr::runtime::input::set_gyro_inverted(number != 0);
+            } else if (key == "gyro_axis") {
+                dkr::runtime::input::set_gyro_axis(
+                    number == static_cast<int>(dkr::runtime::input::GyroAxis::Yaw)
+                        ? dkr::runtime::input::GyroAxis::Yaw
+                        : dkr::runtime::input::GyroAxis::Roll);
             } else if (key.rfind("keyboard_binding.", 0) == 0 ||
                        key.rfind("controller_binding.", 0) == 0) {
                 const bool keyboard = key.rfind("keyboard_binding.", 0) == 0;
@@ -1173,7 +1191,7 @@ bool DrawGraphicsSettings(bool live) {
     return changed;
 }
 
-void DrawControlsReference() {
+void DrawControlsReference(bool live) {
     using dkr::runtime::input::Action;
     ImGui::TextUnformatted("DRIVER BINDINGS");
     ImGui::Separator();
@@ -1264,6 +1282,71 @@ void DrawControlsReference() {
     if (ImGui::Button("RESTORE T.T.'S DEFAULTS", {available_width, 44.0F})) {
         dkr::runtime::input::reset_defaults();
         SaveSettings();
+    }
+
+    if (dkr::runtime::enhancements::modern_options_visible(
+            dkr::runtime::enhancements::presentation_profile())) {
+        ImGui::Dummy({0.0F, 18.0F});
+        ImGui::SeparatorText("Motion steering");
+        bool gyro = dkr::runtime::input::gyro_enabled();
+        if (ImGui::Checkbox("Gyro steering", &gyro)) {
+            dkr::runtime::input::set_gyro_enabled(gyro);
+            SaveSettings();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Modern only. Motion steering blends with the left stick and never changes DKR's handling physics.");
+        ImGui::PopStyleColor();
+        if (gyro) {
+            int axis = static_cast<int>(dkr::runtime::input::gyro_axis());
+            ImGui::TextUnformatted("Motion style");
+            ImGui::SetNextItemWidth(available_width);
+            if (ImGui::Combo("##gyro-axis", &axis,
+                             "Roll controller like a wheel\0Yaw controller left and right\0")) {
+                dkr::runtime::input::set_gyro_axis(
+                    axis == 1 ? dkr::runtime::input::GyroAxis::Yaw
+                              : dkr::runtime::input::GyroAxis::Roll);
+                SaveSettings();
+            }
+            float sensitivity = dkr::runtime::input::gyro_sensitivity();
+            ImGui::TextUnformatted("Gyro sensitivity");
+            ImGui::SetNextItemWidth(available_width);
+            if (ImGui::SliderFloat("##gyro-sensitivity", &sensitivity,
+                                   25.0F, 300.0F, "%.0f%%",
+                                   ImGuiSliderFlags_AlwaysClamp)) {
+                dkr::runtime::input::set_gyro_sensitivity(sensitivity);
+                SaveSettings();
+            }
+            float deadzone = dkr::runtime::input::gyro_deadzone();
+            ImGui::TextUnformatted("Motion deadzone");
+            ImGui::SetNextItemWidth(available_width);
+            if (ImGui::SliderFloat("##gyro-deadzone", &deadzone,
+                                   0.0F, 12.0F, "%.1f deg/s",
+                                   ImGuiSliderFlags_AlwaysClamp)) {
+                dkr::runtime::input::set_gyro_deadzone(deadzone);
+                SaveSettings();
+            }
+            bool inverted = dkr::runtime::input::gyro_inverted();
+            if (ImGui::Checkbox("Invert gyro steering", &inverted)) {
+                dkr::runtime::input::set_gyro_inverted(inverted);
+                SaveSettings();
+            }
+            const bool available = dkr::runtime::platform::gyro_available();
+            ImGui::BeginDisabled(!live || !available ||
+                                 dkr::runtime::input::gyro_calibrating());
+            if (ImGui::Button("CALIBRATE CONTROLLER", {available_width, 44.0F})) {
+                dkr::runtime::input::begin_gyro_calibration();
+            }
+            ImGui::EndDisabled();
+            if (dkr::runtime::input::gyro_calibrating()) {
+                const float progress = dkr::runtime::input::gyro_calibration_progress();
+                ImGui::ProgressBar(progress, {available_width, 18.0F},
+                                   "Keep the controller still");
+            } else if (!live) {
+                ImGui::TextDisabled("Calibration is available from the in-game overlay.");
+            } else if (!available) {
+                ImGui::TextDisabled("No SDL gyro sensor was reported by Controller 1.");
+            }
+        }
     }
 
     constexpr const char* kCapturePopup = "CHOOSE A NEW CONTROL";
@@ -1420,7 +1503,7 @@ void DrawOverlayContent(float content_width) {
         ImGui::TextUnformatted("DRIVING CONTROLS");
         PopHeadingFont();
         ImGui::Separator();
-        DrawControlsReference();
+        DrawControlsReference(true);
     } else {
         DrawRaceBadge(" ADVENTURE LOG ", kRaceRed);
         ImGui::Dummy({0.0F, 8.0F});
@@ -1720,7 +1803,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
             PopHeadingFont();
             ImGui::TextDisabled("Keyboard or gamepad - pick your machine and hit the track.");
             ImGui::Dummy({0.0F, 12.0F});
-            DrawControlsReference();
+            DrawControlsReference(false);
         }
         // Every scrollable tab ends with breathing room so its final control
         // never rests directly on the rounded card boundary.

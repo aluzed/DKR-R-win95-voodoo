@@ -31,6 +31,11 @@ enum class Action : std::uint8_t {
     Count,
 };
 
+enum class GyroAxis : std::uint8_t {
+    Roll = 0,
+    Yaw = 1,
+};
+
 struct State {
     std::uint16_t buttons = 0;
     float stick_x = 0.0F;
@@ -48,6 +53,20 @@ int controller_binding(Action action);
 void set_keyboard_binding(Action action, int scancode);
 void set_controller_binding(Action action, int source);
 void reset_defaults();
+
+bool gyro_enabled();
+void set_gyro_enabled(bool enabled);
+float gyro_sensitivity();
+void set_gyro_sensitivity(float percent);
+float gyro_deadzone();
+void set_gyro_deadzone(float degrees_per_second);
+bool gyro_inverted();
+void set_gyro_inverted(bool inverted);
+GyroAxis gyro_axis();
+void set_gyro_axis(GyroAxis axis);
+void begin_gyro_calibration();
+bool gyro_calibrating();
+float gyro_calibration_progress();
 
 int encode_controller_button(int button);
 int encode_controller_axis(int axis, bool positive);

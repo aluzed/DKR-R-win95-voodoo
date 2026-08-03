@@ -285,6 +285,14 @@ if(BUILD_TESTING)
     add_test(NAME DKRCharacterSelectAnimationPolicy
              COMMAND DKRCharacterSelectAnimationPolicyTests)
 
+    add_executable(DKRMotionSteeringPolicyTests
+        tests/motion_steering_policy_tests.cpp
+    )
+    target_include_directories(DKRMotionSteeringPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRMotionSteeringPolicy COMMAND DKRMotionSteeringPolicyTests)
+
     add_executable(DKRRendererSnapshotTests
         tests/renderer_snapshot_tests.cpp
         src/game/renderer_snapshot.cpp
