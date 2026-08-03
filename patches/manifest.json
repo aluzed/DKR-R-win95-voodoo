@@ -82,6 +82,41 @@
           "sha256": "a3a60874019e1118453cfe9030b071ac22eb1fea41ea7b81b4a8d50e56bd3967"
         }
       ]
+    },
+    {
+      "name": "RT64",
+      "repositoryPath": "extern/rt64",
+      "expectedCommit": "6f1c2d99a4ea571c139f449c326fd176ba8f3496",
+      "patches": [
+        {
+          "path": "patches/rt64/0001-allow-skip-buffering-interpolation-targets.patch",
+          "sha256": "89e478b301bd1b827f1761b3c5e5a6ef8978e3aec3994aa9b567fbedce47e367"
+        },
+        {
+          "path": "patches/rt64/0002-count-interpolated-presentations.patch",
+          "sha256": "525ac0f8c7977c9baced1cc5e1292baaa3513be89c07dcf7471b2278a6ef2311"
+        },
+        {
+          "path": "patches/rt64/0003-bind-presents-to-workload-framebuffers.patch",
+          "sha256": "75f3debe4d07950aac138dcd41774264f156846a1848732c0626231617cd3f4d"
+        },
+        {
+          "path": "patches/rt64/0004-preapprove-exact-early-present-target.patch",
+          "sha256": "3b81609a61c031dc363bf4e21a950a33616af18e2a337189fe267c2cebcc8140"
+        },
+        {
+          "path": "patches/rt64/0005-allow-preapproved-workload-target-creation.patch",
+          "sha256": "1b2b2cf41d0529a81f4ad8760b7c6ad5ac543011c18b56f6b9e6b19800434632"
+        },
+        {
+          "path": "patches/rt64/0006-log-interpolation-phase-timings.patch",
+          "sha256": "dad447cfb18c8c55a5fde2243494fe4da699d8190428fbe865a78c1e2473dee9"
+        },
+        {
+          "path": "patches/rt64/0007-skip-disabled-look-at-call-matching.patch",
+          "sha256": "087d1d32311c7444d67f836ee6827e9a395df68272a37cd5ac78e022d51ffa64"
+        }
+      ]
     }
   ]
 }

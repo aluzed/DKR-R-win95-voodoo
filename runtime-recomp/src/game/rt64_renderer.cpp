@@ -47,8 +47,28 @@ int g_effective_refresh_target = 30;
 int g_detected_display_rate = 60;
 // High-refresh matching remains isolated until it has passed full visual
 // validation across menus, hubs, races and every vehicle type. The public
-// Modern profile currently falls back to the proven native cadence.
-constexpr bool kEnableExperimentalInterpolation = false;
+// Modern profile currently falls back to the proven native cadence; visible
+// development checkpoints opt in explicitly.
+bool ExperimentalInterpolationEnabled() {
+    // Accurate is the immutable 30 Hz baseline. Modern is the explicit user
+    // opt-in to RT64 presentation interpolation; its selected display/manual
+    // target must work from the launcher without a private environment flag.
+    return dkr::runtime::enhancements::modern_presentation_enabled();
+}
+
+bool ExperimentalSkipBufferingEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("DKR_INTERPOLATION_SKIP_BUFFERING");
+        return value != nullptr && value[0] != '\0' && value[0] != '0';
+    }();
+    return ExperimentalInterpolationEnabled() && enabled;
+}
+
+RT64::EnhancementConfiguration::Presentation::Mode PresentationMode() {
+    return ExperimentalSkipBufferingEnabled()
+        ? RT64::EnhancementConfiguration::Presentation::Mode::SkipBuffering
+        : RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
+}
 
 void CheckInterrupts() {}
 
@@ -131,7 +151,7 @@ void ApplyConfig(RT64::Application& application,
             ? dkr::runtime::enhancements::clamp_presentation_rate(
                   config.rr_manual_value)
             : g_detected_display_rate;
-        if (kEnableExperimentalInterpolation) {
+        if (ExperimentalInterpolationEnabled()) {
             g_effective_refresh_target = std::min(g_requested_refresh_target,
                                                   g_detected_display_rate);
             application.userConfig.refreshRate =
@@ -243,8 +263,7 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     // has been approved for interpolation, yielding an entirely black Modern
     // frame. PresentEarly follows the current VI buffer and remains valid both
     // before and after RT64 enables interpolation for that framebuffer.
-    application_->enhancementConfig.presentation.mode =
-        RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
+    application_->enhancementConfig.presentation.mode = PresentationMode();
 
     std::uint32_t thread_id = 0;
 #if defined(_WIN32)
@@ -301,8 +320,7 @@ bool dkr::runtime::RT64Renderer::update_config(
 
 void dkr::runtime::RT64Renderer::enable_instant_present() {
     if (application_ != nullptr) {
-        application_->enhancementConfig.presentation.mode =
-            RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
+        application_->enhancementConfig.presentation.mode = PresentationMode();
         application_->updateEnhancementConfig();
     }
 }
@@ -323,6 +341,16 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
                                          rdram_snapshot);
     dkr::runtime::presentation::TaskIdentityScope identity_scope(
         task->t.data_ptr);
+    // DKR authors a new visual state at 30 Hz. Deriving that source cadence
+    // from delayed VI history creates a positive feedback loop under load:
+    // one late workload is misread as 20/15 Hz, RT64 schedules three or four
+    // renders to catch up, and the extra work makes the next workload later.
+    // Modern interpolation must keep the source contract stable and may skip
+    // an optional intermediate when a scene exceeds its budget. Accurate mode
+    // retains RT64's original VI-history behaviour unchanged.
+    if (ExperimentalInterpolationEnabled()) {
+        application_->state->setRefreshRate(30);
+    }
     f3ddkr_.process(*application_, *task);
 }
 
@@ -331,6 +359,15 @@ void dkr::runtime::RT64Renderer::update_screen() {
         return;
     }
     dkr::runtime::telemetry::record_vi_present();
+    if (application_->sharedQueueResources != nullptr) {
+        const std::uint64_t total = application_->sharedQueueResources->
+            totalInterpolatedPresentations.load(std::memory_order_relaxed);
+        if (total >= interpolated_present_count_) {
+            dkr::runtime::telemetry::record_interpolated_presents(
+                total - interpolated_present_count_);
+        }
+        interpolated_present_count_ = total;
+    }
     dkr::runtime::telemetry::report_if_due();
     ++present_count_;
     if (present_count_ == 1) {

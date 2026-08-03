@@ -33,6 +33,7 @@ private:
     std::unique_ptr<RT64::Application> application_;
     F3DDKRRT64Bridge f3ddkr_;
     std::uint64_t present_count_ = 0;
+    std::uint64_t interpolated_present_count_ = 0;
 };
 
 std::unique_ptr<ultramodern::renderer::RendererContext> CreateRT64Renderer(

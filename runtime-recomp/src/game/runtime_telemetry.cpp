@@ -118,8 +118,13 @@ void dkr::runtime::telemetry::record_vi_present() {
 }
 
 void dkr::runtime::telemetry::record_interpolated_present() {
+    record_interpolated_presents(1U);
+}
+
+void dkr::runtime::telemetry::record_interpolated_presents(
+    std::uint64_t count) {
     if (enabled()) {
-        g_counters.interpolated_presents.fetch_add(1,
+        g_counters.interpolated_presents.fetch_add(count,
                                                    std::memory_order_relaxed);
     }
 }

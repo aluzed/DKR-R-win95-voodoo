@@ -20,6 +20,7 @@ void record_audio_buffer(std::size_t interleaved_sample_count);
 void record_graphics_task();
 void record_vi_present();
 void record_interpolated_present();
+void record_interpolated_presents(std::uint64_t count);
 void record_interpolation_fallback(InterpolationFallback reason);
 
 // Called from the presentation thread. Emits one aggregate record every five
@@ -27,4 +28,3 @@ void record_interpolation_fallback(InterpolationFallback reason);
 void report_if_due();
 
 } // namespace dkr::runtime::telemetry
-

@@ -244,6 +244,31 @@ to the non-interpolated authored frame, within documented renderer tolerances.
 Exit gate: no fan-spiking busy loop, no runaway queue, stable frame times, and
 identical gameplay/audio clocks at every target rate.
 
+### Current checkpoint - Modern 60 stable (2026-08-03)
+
+The 60 FPS implementation is now the locked Modern presentation baseline.
+
+- A player-visible race/hub test was confirmed buttery smooth.
+- The final 1,200 valid RTSS samples averaged 59.77 FPS with a 59.94 FPS
+  median. The game simulation remained at its authored 30 Hz and audio remained
+  on the Accurate clock.
+- RT64's generic call matcher previously produced 18-40 ms stalls in busy
+  repeated-material scenes. Patch-pipeline change
+  `0007-skip-disabled-look-at-call-matching.patch` reduced the worst sampled
+  matcher cost to 1.89 ms and the worst sampled complete interpolation workload
+  to 7.475 ms.
+- The visible test completed with no crash. Windows and Linux presentation
+  policy, renderer snapshot, and presentation identity tests all pass.
+- A ROM-free Linux checkpoint AppImage was produced as
+  `dist/DKRPort-Modern60-20260803-Linux-x86_64.AppImage`.
+
+Freeze rule: further QOL work may consume the interpolation output but must not
+change the authored 30 Hz simulation lock, the explicit linear identity policy,
+framebuffer ownership, or the disabled-component matcher fast path. A change to
+that baseline requires a targeted regression test and a new visible RTSS run.
+Rates above 60 remain a separate validation ladder; success at 60 is not used as
+evidence that 120-500 FPS is already release-qualified.
+
 ## Phase 7 — DKR-specific regression closure
 
 Run focused tests on historically fragile content:
@@ -269,20 +294,130 @@ Exit gate: no open P0/P1 visual, audio, timing, save, crash, or controller bugs.
 
 ## Phase 8 — Release-safe Modern quality-of-life options
 
-Add these behind Modern, independently toggleable where practical:
+Implement the following work packages in order. Each option is Modern-only and
+independently toggleable where practical. Accurate remains the recovery path.
 
-- maximum model detail / disable LOD substitution;
-- wider but still correct ultrawide culling;
-- view-distance multiplier, initially 1x through 6x;
-- projection-aware horizontal FOV options with a conservative default;
-- HUD safe-area and scale controls;
-- internal render scale/resolution;
-- MSAA, texture filtering, and anisotropic filtering where the RT64 backend
-  supports them safely;
-- borderless fullscreen and reliable monitor selection;
-- controller deadzone, sensitivity, rumble strength, and full remapping;
-- launcher and overlay navigation entirely by controller;
-- clear apply/revert countdown for display changes.
+### 8A - Ultrawide culling, FOV, LOD, and view distance
+
+The decomp source identifies three separate visibility gates that must not be
+conflated:
+
+1. `func_8002A31C` derives CPU visibility planes from DKR's original 4:3
+   projection. `block_visible` rejects level-segment bounding boxes against
+   those planes before RT64 receives their geometry. This is the primary source
+   of missing objects and geometry at 21:9 and 32:9.
+2. `check_if_in_draw_range` independently rejects objects using each object's
+   authored `drawDistance` and controls distance fading.
+3. `waves_visibility` and each level's `waveViewDist` independently choose the
+   resident water-wave tile neighbourhood.
+
+Implementation order:
+
+- Add a read-only host-presentation bridge that exposes the active viewport
+  aspect and Modern culling policy to project-owned patch hooks.
+- Preserve DKR's near plane, BSP order, portal/segment bitfields, occlusion
+  rules, and back-camera rejection. Widen only the horizontal CPU frustum to
+  match the actual RT64 viewport.
+- Derive horizontal coverage from vertical FOV and aspect using the perspective
+  relation `horizontal = 2 * atan(tan(vertical / 2) * aspect)`. Do not use a
+  fixed 200-degree perspective FOV; values at or above 180 degrees are invalid
+  for a conventional perspective projection.
+- Add a small configurable frustum guard band (default 5 percent) to prevent
+  pop-in at viewport edges and during interpolation, without making the entire
+  world resident.
+- Add a view-distance multiplier with 1x, 2x, 3x, 4x, and 6x choices. Apply it
+  to the distance comparison and fade start together so objects do not pop.
+- Extend the water-wave neighbourhood only enough to cover the wider frustum
+  and selected distance multiplier; keep the accepted water angle, horizon,
+  coverage, and z-order fixes unchanged.
+- Keep `Maximum model detail` as a separate toggle. It may select the highest
+  model/texture LOD but must not bypass segment, object, particle, or safety
+  culling.
+- Add a projection-aware FOV control with `Original`, `+5`, `+10`, `+15`, and a
+  conservative custom range. The displayed value must say whether it is
+  vertical or horizontal, and the CPU culling frustum must use the same result
+  as the renderer.
+
+Acceptance tests:
+
+- Reference captures at 4:3, 16:9, 21:9, and 32:9 from the same camera pose.
+- Every object visible inside any viewport edge remains drawn; geometry fully
+  behind the camera is still rejected.
+- No segment or object pops while steering, pitching, interpolating, entering a
+  portal, or crossing a BSP boundary.
+- Hub, all water maps, dense races, boss arenas, and one-to-four-player layouts
+  retain correct transparency order and stable 60 FPS frame pacing.
+- Accurate produces the same segment/object decisions as the frozen baseline.
+
+### 8B - Display, HUD, and image-quality controls
+
+- HUD scale from 75 to 150 percent and independent horizontal/vertical safe
+  areas, defaulting to the current accepted layout.
+- Internal render scale presets plus native-window and integer-scale choices.
+- MSAA, texture filtering, and anisotropic filtering only where RT64 supports
+  them without changing framebuffer effects or authored texture animation.
+- Borderless fullscreen, explicit monitor selection, reliable monitor hotplug,
+  VSync policy, and a 15-second apply/revert confirmation for risky display
+  changes.
+- Optional shader-cache warmup and a visible progress state; never busy-spin or
+  block the UI without feedback.
+- Screenshot action that excludes launcher diagnostics and respects the game
+  viewport.
+
+### 8C - Controller-first launcher and in-game overlay
+
+- Deterministic focus order for every tab, card, slider, combo, binding button,
+  modal, and scroll region. Decorative badges and labels remain non-focusable.
+- A high-contrast focus treatment that remains visible over both halves of the
+  blue-to-orange checker background.
+- Controller shoulder-button tab switching, D-pad/left-stick navigation,
+  confirm/back prompts, automatic scrolling to the focused item, and safe focus
+  restoration after closing a modal.
+- Full controller remapping with conflict detection, explicit unbind, restore
+  defaults, per-player controller assignment, and an always-available UI
+  recovery mapping.
+- A controller-navigable ROM browser or library screen. Reliance on the native
+  desktop file dialog alone does not satisfy controller-only operation.
+- Escape and a configurable controller chord open/close the overlay. Opening it
+  pauses or blocks game input according to the documented policy while the
+  transparent overlay continues to show the game beneath its cards.
+- `Resume`, `Apply`, `Restore Accurate Defaults`, and `Exit to Desktop` must all
+  work from keyboard and controller. Exit must signal runtime shutdown, drain
+  audio/render workers, save settings atomically, and terminate cleanly.
+- Retain the requested full checker background with horizontal blue-to-orange
+  colour progression, vertical start lights, right-side gutters, and bottom
+  card padding. Validate the launcher at 720p, 1080p, 1440p, 4K, and Steam Deck
+  1280x800.
+
+### 8D - Input, rumble, audio, and accessibility
+
+- Per-controller deadzone, anti-deadzone, sensitivity curve, stick inversion,
+  trigger threshold, and rumble strength with live test feedback.
+- Hotplug and reconnect without losing player assignment or launcher focus.
+- Master, music, voice, and effects controls only after the mixer buses are
+  identified precisely; otherwise retain the proven master-volume control.
+- Audio device selection, conservative latency presets, underrun counters, and
+  safe device-loss recovery without advancing or duplicating game audio.
+- Toggle/hold choices for relevant inputs, readable controller glyphs, UI text
+  scale, reduced-flash options for launcher transitions, and colour-independent
+  focus/error/status communication.
+
+### 8E - Convenience and recovery
+
+- Optional skip-to-title for startup logos after the first successful boot,
+  while preserving the unmodified default sequence.
+- Recent ROM/library entries, cache validation status, `Repair`, `Open Logs`,
+  and `Copy Diagnostics` actions.
+- Per-setting labels for Live, Scene Reload, and Restart Required.
+- A single `Restore Accurate Defaults` action that works before game launch and
+  from the overlay even if Modern settings are invalid.
+- Versioned atomic config migration, corruption recovery, and separate Accurate
+  and Modern preferences.
+
+Lower-priority post-release candidates include texture-pack support, a photo
+mode, speedrun tools, ghost export/import, randomizers, achievements, and mod
+APIs. These require their own compatibility and provenance design and are not
+part of the first Modern release.
 
 Ultrawide culling must expand the horizontal frustum and relevant spatial/portal
 selection. It must not simply disable every cull or force a nominal 200-degree
@@ -305,6 +440,10 @@ Modern preset.
 - 30/50/59.94/60/75/90/100/120/144/165/240/360/480/500 pacing;
 - long-run tick/audio equality and suspension rebasing;
 - endpoint image/state comparison and selected midpoint golden images;
+- aspect-derived CPU frustum planes at 4:3, 16:9, 21:9, and 32:9,
+  including guard-band and behind-camera rejection cases;
+- view-distance fade thresholds, maximum-detail independence, and water-wave
+  residency bounds for every supported multiplier;
 - save/pak round trips and recovery;
 - ROM/copyrighted-asset scan for every package.
 
@@ -353,4 +492,3 @@ The Modern milestone is complete only when:
   fallback;
 - both Windows and Linux AppImage packages pass automated and physical release
   qualification.
-

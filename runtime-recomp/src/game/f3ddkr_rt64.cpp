@@ -222,9 +222,13 @@ void SelectInterpolationGroup(RT64::RSP& rsp, std::uint32_t id) {
     const std::uint8_t transform_component = interpolation_disabled
         ? G_EX_COMPONENT_SKIP
         : G_EX_COMPONENT_INTERPOLATE;
-    const std::uint8_t tile_component = interpolation_disabled
-        ? G_EX_COMPONENT_SKIP
-        : G_EX_COMPONENT_AUTO;
+    // DKR's scrolling and animated textures are authored at the original
+    // cadence and already look correct without inferred tile motion. Asking
+    // RT64 to AUTO-match tiles makes repeated materials generate a large
+    // generic candidate set in busy races, even though object transforms have
+    // exact semantic identities. Keep texture animation faithful at 30 Hz and
+    // reserve Modern interpolation for camera/object geometry.
+    const std::uint8_t tile_component = G_EX_COMPONENT_SKIP;
     // F3DDKR submits an already-combined model/view/projection matrix through
     // its matrix command. It is not an affine model transform and cannot be
     // safely decomposed into a rigid body. Interpolate all matrix regions
@@ -236,7 +240,13 @@ void SelectInterpolationGroup(RT64::RSP& rsp, std::uint32_t id) {
                  transform_component,
                  G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP,
                  tile_component, G_EX_COMPONENT_SKIP,
-                 G_EX_ORDER_AUTO, G_EX_ASPECT_AUTO,
+                 // Every non-ignored ID is an immutable object-lifetime plus
+                 // matrix-ordinal identity captured by the decomp patch. Tell
+                 // RT64 to pair equal IDs directly and in submission order.
+                 // AUTO ordering discards that guarantee and falls back to a
+                 // geometric candidate search whose cost grows rapidly in
+                 // scenes with many repeated draw calls.
+                 G_EX_ORDER_LINEAR, G_EX_ASPECT_AUTO,
                  G_EX_EDIT_NONE, false, false);
 }
 

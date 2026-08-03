@@ -138,6 +138,7 @@ void ApplyStyle() {
     style.ItemSpacing = {12.0F, 13.0F};
     style.WindowBorderSize = 0.0F;
     style.ChildBorderSize = 2.0F;
+    style.FrameBorderSize = 1.0F;
     style.Colors[ImGuiCol_WindowBg] = kBackground;
     style.Colors[ImGuiCol_ChildBg] = kPanel;
     style.Colors[ImGuiCol_Border] = {0.16F, 0.42F, 0.44F, 1.0F};
@@ -156,6 +157,10 @@ void ApplyStyle() {
     style.Colors[ImGuiCol_HeaderHovered] = {0.98F, 0.43F, 0.08F, 1.0F};
     style.Colors[ImGuiCol_HeaderActive] = kRaceRed;
     style.Colors[ImGuiCol_Separator] = {0.95F, 0.55F, 0.08F, 0.75F};
+    // Controller navigation must read as a deliberate selection, even over
+    // the blue half of the racing backdrop. Warm yellow is shared with the
+    // start lights and remains distinct from every card and button colour.
+    style.Colors[ImGuiCol_NavHighlight] = {1.0F, 0.82F, 0.12F, 1.0F};
 }
 
 void LoadRacingFonts() {
@@ -361,6 +366,10 @@ void LoadSettings() {
             std::fprintf(stderr, "[boot][settings] ignored malformed setting %s\n", key.c_str());
         }
     }
+    // Windows cannot atomically replace the settings file while this reader
+    // still owns an open handle. Migration may call SaveSettings below, so
+    // release the read handle before attempting that replacement.
+    input.close();
     // Early launcher builds defaulted to 8x MSAA, which can turn busy races
     // GPU-bound at high desktop resolutions. Migrate that one legacy default
     // to 2x; users can still explicitly choose 4x or 8x afterwards.
@@ -696,122 +705,74 @@ bool BeginMainWindow(const char* name, ImGuiWindowFlags extra = 0) {
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | extra);
 }
 
-void DrawCheckeredBand(ImDrawList* draw, const ImVec2& origin, float width, float height,
-                       float cell_size, ImU32 light, ImU32 dark) {
-    const int columns = static_cast<int>(width / cell_size) + 1;
-    const int rows = static_cast<int>(height / cell_size) + 1;
-    for (int row = 0; row < rows; ++row) {
-        for (int column = 0; column < columns; ++column) {
-            const ImVec2 cell_min{origin.x + column * cell_size, origin.y + row * cell_size};
-            const ImVec2 cell_max{
-                std::min(cell_min.x + cell_size, origin.x + width),
-                std::min(cell_min.y + cell_size, origin.y + height)};
-            draw->AddRectFilled(cell_min, cell_max, ((column + row) & 1) ? dark : light);
-        }
-    }
+ImU32 MixCheckerColor(const ImVec4& left, const ImVec4& right, float amount,
+                      float brightness, float alpha) {
+    const auto mix = [&](float a, float b) {
+        return std::clamp((a + (b - a) * amount) * brightness, 0.0F, 1.0F);
+    };
+    return ImGui::ColorConvertFloat4ToU32(
+        {mix(left.x, right.x), mix(left.y, right.y), mix(left.z, right.z), alpha});
 }
 
 void DrawRaceBackdrop(bool overlay) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const ImVec2 origin = ImGui::GetWindowPos();
     const ImVec2 size = ImGui::GetWindowSize();
-    const ImVec2 bottom_right{origin.x + size.x, origin.y + size.y};
-    const float horizon = origin.y + size.y * 0.60F;
-    const ImU32 sky_top = overlay ? IM_COL32(5, 66, 132, 247) : IM_COL32(14, 128, 221, 255);
-    const ImU32 sky_horizon = overlay ? IM_COL32(19, 112, 152, 247) : IM_COL32(92, 205, 235, 255);
-    draw->AddRectFilledMultiColor(origin, {bottom_right.x, horizon},
-                                  sky_top, sky_top, sky_horizon, sky_horizon);
-    draw->AddRectFilledMultiColor({origin.x, horizon}, bottom_right,
-        overlay ? IM_COL32(150, 104, 25, 250) : IM_COL32(247, 190, 45, 255),
-        overlay ? IM_COL32(171, 118, 26, 250) : IM_COL32(255, 208, 66, 255),
-        overlay ? IM_COL32(105, 65, 14, 252) : IM_COL32(221, 135, 18, 255),
-        overlay ? IM_COL32(129, 78, 16, 252) : IM_COL32(242, 157, 24, 255));
-
-    // Timber's Island: layered green hills, jewel-bright trees and balloon
-    // markers establish the game's playful adventure-racing language without
-    // redistributing any original artwork.
-    for (int hill = -1; hill < 8; ++hill) {
-        const float x = origin.x + size.x * (0.04F + hill * 0.145F);
-        const float radius = size.x * (0.10F + ((hill & 1) ? 0.025F : 0.0F));
-        draw->AddCircleFilled({x, horizon + size.y * 0.03F}, radius,
-            overlay ? IM_COL32(24, 92, 40, 245) : IM_COL32(45, 165, 57, 255), 48);
-        draw->AddCircleFilled({x + radius * 0.30F, horizon - radius * 0.10F}, radius * 0.72F,
-            overlay ? IM_COL32(34, 116, 48, 245) : IM_COL32(78, 201, 67, 255), 40);
-    }
-
-    const float band_height = std::clamp(size.y * 0.025F, 16.0F, 24.0F);
-    const float cell = band_height * 0.75F;
-    DrawCheckeredBand(draw, origin, size.x, band_height, cell,
-                      IM_COL32(29, 117, 209, 255), IM_COL32(12, 67, 151, 255));
-    DrawCheckeredBand(draw, {origin.x, bottom_right.y - band_height}, size.x, band_height,
-                      cell, IM_COL32(255, 225, 64, 255), IM_COL32(228, 48, 35, 255));
-
-    // A broad track sweeps behind the panels to give the screen movement without
-    // depending on any original game artwork.
-    const ImVec2 road[] = {
-        {origin.x + size.x * 0.18F, bottom_right.y + size.y * 0.08F},
-        {origin.x + size.x * 0.47F, horizon - size.y * 0.03F},
-        {origin.x + size.x * 0.57F, horizon - size.y * 0.03F},
-        {origin.x + size.x * 0.83F, bottom_right.y + size.y * 0.08F},
-    };
-    draw->AddConvexPolyFilled(road, 4, overlay ? IM_COL32(78, 54, 30, 205) : IM_COL32(180, 112, 35, 235));
-    draw->AddLine(road[0], road[1], IM_COL32(240, 56, 39, 230), 10.0F);
-    draw->AddLine(road[3], road[2], IM_COL32(255, 230, 64, 230), 10.0F);
-
-    const float dash_count = 8.0F;
-    for (int i = 0; i < static_cast<int>(dash_count); ++i) {
-        const float t0 = (static_cast<float>(i) + 0.15F) / dash_count;
-        const float t1 = (static_cast<float>(i) + 0.62F) / dash_count;
-        const ImVec2 a{
-            road[0].x + (road[1].x - road[0].x) * t0 + size.x * 0.31F,
-            road[0].y + (road[1].y - road[0].y) * t0};
-        const ImVec2 b{
-            road[0].x + (road[1].x - road[0].x) * t1 + size.x * 0.31F,
-            road[0].y + (road[1].y - road[0].y) * t1};
-        draw->AddLine(a, b, IM_COL32(255, 239, 189, 210), 5.0F);
-    }
-
-    const ImVec2 balloon_anchor{bottom_right.x - size.x * 0.075F, origin.y + size.y * 0.13F};
-    const ImU32 balloon_colors[] = {
-        IM_COL32(238, 48, 38, 235), IM_COL32(255, 218, 47, 235),
-        IM_COL32(38, 108, 219, 235), IM_COL32(50, 190, 90, 235)};
-    for (int i = 0; i < 4; ++i) {
-        const ImVec2 centre{balloon_anchor.x + (i - 2) * 24.0F,
-                            balloon_anchor.y + (i & 1) * 18.0F};
-        draw->AddCircleFilled(centre, 14.0F, balloon_colors[i], 24);
-        draw->AddLine({centre.x, centre.y + 14.0F},
-                      {balloon_anchor.x, balloon_anchor.y + 88.0F},
-                      IM_COL32(255, 248, 215, 180), 1.5F);
+    const float cell = std::clamp(std::min(size.x, size.y) * 0.055F, 34.0F, 68.0F);
+    const int columns = static_cast<int>(size.x / cell) + 1;
+    const int rows = static_cast<int>(size.y / cell) + 1;
+    const ImVec4 blue{0.025F, 0.25F, 0.66F, 1.0F};
+    const ImVec4 orange{0.98F, 0.34F, 0.055F, 1.0F};
+    const float alpha = overlay ? 0.92F : 1.0F;
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            const ImVec2 cell_min{origin.x + column * cell,
+                                  origin.y + row * cell};
+            const ImVec2 cell_max{
+                std::min(cell_min.x + cell, origin.x + size.x),
+                std::min(cell_min.y + cell, origin.y + size.y)};
+            const float amount = std::clamp(
+                ((cell_min.x + cell_max.x) * 0.5F - origin.x) /
+                    std::max(size.x, 1.0F),
+                0.0F, 1.0F);
+            const float brightness = ((row + column) & 1) ? 0.72F : 1.0F;
+            draw->AddRectFilled(cell_min, cell_max,
+                MixCheckerColor(blue, orange, amount, brightness, alpha));
+        }
     }
 }
 
 void DrawRaceBadge(const char* label, const ImVec4& color, float width) {
-    ImGui::PushStyleColor(ImGuiCol_Button, color);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 18.0F);
-    if (width > 0.0F) {
-        ImGui::Button(label, {width, 30.0F});
-    } else {
-        ImGui::SmallButton(label);
-    }
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(3);
+    // Badges communicate status; they are deliberately not ImGui buttons so
+    // keyboard/gamepad navigation never wastes a stop on non-actions.
+    const ImVec2 text_size = ImGui::CalcTextSize(label);
+    const ImVec2 badge_size{
+        width > 0.0F ? width : text_size.x + 20.0F,
+        30.0F};
+    const ImVec2 position = ImGui::GetCursorScreenPos();
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(position,
+        {position.x + badge_size.x, position.y + badge_size.y},
+        ImGui::ColorConvertFloat4ToU32(color), 15.0F);
+    draw->AddText({position.x + std::max((badge_size.x - text_size.x) * 0.5F, 0.0F),
+                   position.y + std::max((badge_size.y - text_size.y) * 0.5F, 0.0F)},
+                  ImGui::GetColorU32(ImGuiCol_Text), label);
+    ImGui::Dummy(badge_size);
 }
 
 void DrawStartingLights(bool ready) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const ImVec2 cursor = ImGui::GetCursorScreenPos();
-    draw->AddRectFilled(cursor, {cursor.x + 112.0F, cursor.y + 34.0F},
-                        IM_COL32(12, 25, 34, 255), 17.0F);
+    draw->AddRectFilled(cursor, {cursor.x + 42.0F, cursor.y + 112.0F},
+                        IM_COL32(12, 25, 34, 255), 21.0F);
     const ImU32 off = IM_COL32(78, 91, 91, 255);
-    draw->AddCircleFilled({cursor.x + 24.0F, cursor.y + 17.0F}, 9.0F,
+    draw->AddCircleFilled({cursor.x + 21.0F, cursor.y + 24.0F}, 9.0F,
                           ready ? off : IM_COL32(236, 54, 39, 255));
-    draw->AddCircleFilled({cursor.x + 56.0F, cursor.y + 17.0F}, 9.0F,
+    draw->AddCircleFilled({cursor.x + 21.0F, cursor.y + 56.0F}, 9.0F,
                           ready ? off : IM_COL32(255, 174, 24, 255));
-    draw->AddCircleFilled({cursor.x + 88.0F, cursor.y + 17.0F}, 9.0F,
+    draw->AddCircleFilled({cursor.x + 21.0F, cursor.y + 88.0F}, 9.0F,
                           ready ? IM_COL32(32, 218, 129, 255) : off);
-    ImGui::Dummy({112.0F, 34.0F});
+    ImGui::Dummy({42.0F, 112.0F});
 }
 
 void BrandBlock(bool compact) {
@@ -1024,11 +985,17 @@ void DrawControlsReference() {
         }
     };
 
-    const float available_width = std::max(ImGui::GetContentRegionAvail().x, 1.0F);
+    // Keep a real gutter on the right at every width. Tables and full-width
+    // capture buttons otherwise consume the parent's last pixel and appear to
+    // collide with the card border/scrollbar.
+    constexpr float kControlsRightPadding = 30.0F;
+    const float available_width = std::max(
+        ImGui::GetContentRegionAvail().x - kControlsRightPadding, 1.0F);
     if (available_width >= 620.0F &&
         ImGui::BeginTable("controls", 3,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
-                          ImGuiTableFlags_SizingStretchProp)) {
+                          ImGuiTableFlags_SizingStretchProp,
+                          {available_width, 0.0F})) {
         const float label_width = std::clamp(available_width * 0.22F, 118.0F, 156.0F);
         ImGui::TableSetupColumn("N64 CONTROL", ImGuiTableColumnFlags_WidthFixed, label_width);
         ImGui::TableSetupColumn("KEYBOARD", ImGuiTableColumnFlags_WidthStretch, 1.0F);
@@ -1080,7 +1047,7 @@ void DrawControlsReference() {
         }
     }
     ImGui::Spacing();
-    if (ImGui::Button("RESTORE T.T.'S DEFAULTS", {-1.0F, 44.0F})) {
+    if (ImGui::Button("RESTORE T.T.'S DEFAULTS", {available_width, 44.0F})) {
         dkr::runtime::input::reset_defaults();
         SaveSettings();
     }
@@ -1129,6 +1096,7 @@ void DrawControlsReference() {
         }
         ImGui::EndPopup();
     }
+    ImGui::Dummy({0.0F, 44.0F});
 }
 
 bool HandleInputCaptureEvent(SDL_Event* event) {
@@ -1457,7 +1425,11 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
             ImGui::Dummy({0.0F, 16.0F});
             ImGui::PushStyleColor(ImGuiCol_ChildBg, kCream);
             ImGui::PushStyleColor(ImGuiCol_Border, rom_ready ? kAccent : kRaceRed);
-            ImGui::BeginChild("race-pass", {right_inner_width, 218.0F}, true);
+            // The vertical starting-light stack is 112 px tall. Reserve a
+            // complete second row for the selected path and Game Pak button,
+            // plus a comfortable bottom inset, instead of clipping the action
+            // against the old card height designed for horizontal lights.
+            ImGui::BeginChild("race-pass", {right_inner_width, 300.0F}, true);
             ImGui::SetCursorPos({24.0F, 20.0F});
             ImGui::BeginGroup();
             DrawStartingLights(rom_ready);
@@ -1536,6 +1508,9 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
             ImGui::Dummy({0.0F, 12.0F});
             DrawControlsReference();
         }
+        // Every scrollable tab ends with breathing room so its final control
+        // never rests directly on the rounded card boundary.
+        ImGui::Dummy({0.0F, 54.0F});
         ImGui::EndGroup();
         ImGui::PopTextWrapPos();
         ImGui::PopItemWidth();
