@@ -1,20 +1,31 @@
 # DKR Port
 
-**Release candidate 1.0.0 — playable Windows and Linux recompilation**
+**1.0.0 RC3 - Windows and Linux native recompilation**
 
-DKR Port is a faithful native recompilation of _Diddy Kong Racing_. The game boots, renders through RT64, plays original audio, accepts keyboard and controller input, saves progress, and has completed Adventure-mode race testing at the original 30 FPS gameplay cadence.
+DKR Port recompiles Diddy Kong Racing for modern desktop systems while keeping
+the original simulation, race timers, input cadence and audio timeline intact.
+The accepted Accurate preset runs the original 4:3, 30 FPS presentation;
+Modern adds widescreen and interpolated high-refresh presentation without
+speeding up the game.
 
-The repository and release packages contain no ROM, extracted texture, model, audio, font, or other original game asset. You must supply your own legally obtained copy of Diddy Kong Racing US v1.0.
+The repository and release packages contain no ROM or extracted texture,
+model, audio or other game data. Supply your own legally obtained Diddy Kong
+Racing US v1.0 Game Pak image.
 
 ## Play
 
-1. Launch `DKRPort.exe` on Windows or `DKRPort-1.0.0-Linux-x86_64.AppImage` on Linux.
-2. Select a supported `.z64`, `.v64`, or `.n64` ROM.
-3. After local validation succeeds, select **Start Diddy Kong Racing**.
+1. Launch `DKRPort.exe` or `DKRPort-1.0.0-rc3-Linux-x86_64.AppImage`.
+2. Choose a supported `.z64`, `.v64`, or `.n64` image with the in-window,
+   controller-friendly Game Pak finder.
+3. After local validation succeeds, select **Begin the Adventure**.
 
-The redesigned startup screen and RT64 game use one SDL window. Press **F1** or controller **Back / View** while the game is running to open the matching settings overlay. The overlay provides graphics, audio, controls, resume, and safe-quit surfaces without launching a second application.
+The launcher and RT64 game share one SDL window. Press **F1** or **Escape**, or
+controller **Back / View**, to open the transparent Taj's Tent overlay over the
+running game. It provides graphics, sound, controls, save information, resume
+and confirmed desktop-exit actions.
 
-The selected ROM path is remembered locally. ROM contents are not copied into either release package and are never uploaded.
+The selected ROM path stays local, is never copied into a release package and
+is never uploaded.
 
 ## Supported game
 
@@ -23,71 +34,86 @@ Diddy Kong Racing US 1.0 / v77
 SHA-1: 0cb115d8716dbbc2922fda38e533b9fe63bb9670
 ```
 
+## Presets
+
+Accurate is the release-safe default:
+
+- original 4:3 composition and 30 FPS presentation;
+- validated gameplay, audio and menu timing;
+- original FOV, visibility, model-detail and audio-mix policy;
+- Modern-only controls hidden and neutralised.
+
+Modern preserves that game timeline and adds:
+
+- fit-to-window widescreen, including ultrawide visibility expansion;
+- interpolated presentation from 30 through 500 FPS or Match Display;
+- gameplay FOV and view-distance controls;
+- maximum vehicle detail plus HUD scale and safe-area controls;
+- selectable graphics API with automatic failure recovery;
+- full keyboard/controller remapping and controller-response tuning;
+- optional calibrated gyro steering;
+- master, music, effects and vehicle volume plus three-band EQ;
+- T.T.'s Save Garage for checked backups and cross-platform `.dkrsave`
+  import/export.
+
 ## Default controls
 
 ```text
 Analogue: W A S D       A button: Space       B button: Shift
 Z trigger: Z            Start: Enter          L/R: Q / E
-C buttons: I J K L      D-pad: Arrow keys     Overlay: F1
+C buttons: I J K L      D-pad: Arrow keys     Overlay: F1 / Escape
 ```
 
-SDL game controllers are detected automatically. The left stick drives the N64 analogue stick, triggers/shoulders map to Z/L/R, the D-pad is direct, and the right stick supplies the C directions.
+SDL game controllers are detected automatically. Use the D-pad or left stick
+to navigate the launcher, A/Cross to select, B/Circle to return, LB/RB to change
+pages and Start/Options to begin once a Game Pak is ready.
 
-## Presentation policy
-
-The default presentation is accuracy-first:
-
-- original 4:3 composition and HUD;
-- automatic integer resolution scaling;
-- original 30 FPS game cadence;
-- automatic D3D12/Vulkan backend selection;
-- optional MSAA and high-precision framebuffer settings;
-- no simulation-speed or cadence controls in the release UI.
-
-The frame cadence remains deliberately fixed because the complete intro, races, Adventure mode, audio synchronization, wheels, propellers, and vehicle billboards have been validated against it.
-
-## Save and configuration locations
+## Saves and configuration
 
 - Windows: `%APPDATA%\DKRPort`
 - Linux: `$XDG_CONFIG_HOME/dkr-port`, or `~/.config/dkr-port`
 
-For a portable Windows installation, create an empty `portable.txt` beside `DKRPort.exe` before first launch. Data will then use the adjacent `dkr-runtime-data` directory.
+For a portable Windows installation, create an empty `portable.txt` beside
+`DKRPort.exe`. Data then uses the adjacent `dkr-runtime-data` directory.
 
-## Build the runtime
+## Build and package
 
-The runtime uses the pinned DKR decomp, N64Recomp, N64ModernRuntime, RT64, and the project Patch Pipeline.
+The runtime uses pinned DKR decomp, N64Recomp, N64ModernRuntime and RT64 sources
+with the project Patch Pipeline. Dependency submodules and generated recomp
+outputs are never edited by hand.
 
 ```text
 Build-DKR-Runtime.cmd
 Diagnose-DKR-Recompile.cmd
-```
-
-The project rules are strict: dependency submodules and generated recompilation output are never edited manually. DKR instruction hooks, hardware virtualization, and scheduler guards originate in `runtime-recomp/dkr.us.v77.recomp-policy.json`; dependency adjustments originate in `patches/manifest.json` and are applied reproducibly.
-
-Linux AppImage packaging is reproducible after the Linux Release build:
-
-```text
 scripts/Package-Windows.ps1
 scripts/Package-Linux-AppImage.sh
 ```
 
-## Release artifacts
+Release artifacts:
 
-- `dist/DKRPort-1.0.0-rc2-Windows-x64.zip`
-- `dist/DKRPort-1.0.0-rc2-Linux-x86_64.AppImage`
+- `dist/DKRPort-1.0.0-rc3-Windows-x64.zip`
+- `dist/DKRPort-1.0.0-rc3-Linux-x86_64.AppImage`
 
-Both are checked to contain no N64 ROM files. See [BUILD-VALIDATION.md](BUILD-VALIDATION.md) for the current validation record.
+Every release artifact is scanned for prohibited N64 ROM extensions and ROM
+headers. See [BUILD-VALIDATION.md](BUILD-VALIDATION.md) for the exact build,
+test and hash record.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Building](docs/BUILDING.md)
+- [Modern milestone plan](docs/MODERN_MILESTONE_PLAN.md)
 - [F3DDKR notes](docs/F3DDKR.md)
 - [ROM setup and privacy](docs/ROM_SETUP.md)
 - [Asset policy](docs/ASSET_POLICY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Runtime work area](runtime-recomp/README.md)
 
 ## Legal
 
-This is an unofficial porting project. It is not affiliated with, authorised by, or endorsed by Nintendo or Rare. Users must supply their own legally obtained game. Read [LICENSE.md](LICENSE.md), [THIRD_PARTY.md](THIRD_PARTY.md), and [runtime-recomp/COPYING-NOTICE.md](runtime-recomp/COPYING-NOTICE.md) before redistributing a build.
+This unofficial project is not affiliated with, authorised by or endorsed by
+Nintendo or Rare. Users must supply their own legally obtained game. The
+original project source is MIT licensed; distribution of the unified executable
+must also comply with N64ModernRuntime's GPL-3.0 terms. Read [LICENSE.md](LICENSE.md),
+[THIRD_PARTY.md](THIRD_PARTY.md) and
+[runtime-recomp/COPYING-NOTICE.md](runtime-recomp/COPYING-NOTICE.md) before
+redistributing a build.
