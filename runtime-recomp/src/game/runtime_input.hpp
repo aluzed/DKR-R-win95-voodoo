@@ -54,6 +54,21 @@ void set_keyboard_binding(Action action, int scancode);
 void set_controller_binding(Action action, int source);
 void reset_defaults();
 
+float stick_deadzone();
+void set_stick_deadzone(float percent);
+float stick_anti_deadzone();
+void set_stick_anti_deadzone(float percent);
+float stick_sensitivity();
+void set_stick_sensitivity(float percent);
+float stick_curve();
+void set_stick_curve(float exponent);
+bool stick_x_inverted();
+void set_stick_x_inverted(bool inverted);
+bool stick_y_inverted();
+void set_stick_y_inverted(bool inverted);
+float trigger_threshold();
+void set_trigger_threshold(float threshold);
+
 bool gyro_enabled();
 void set_gyro_enabled(bool enabled);
 float gyro_sensitivity();

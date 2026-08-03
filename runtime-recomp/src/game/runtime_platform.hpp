@@ -25,12 +25,20 @@ std::size_t audio_frames_remaining();
 void set_audio_frequency(std::uint32_t frequency);
 float master_volume();
 void set_master_volume(float volume);
+float bass_gain();
+void set_bass_gain(float decibels);
+float mid_gain();
+void set_mid_gain(float decibels);
+float treble_gain();
+void set_treble_gain(float decibels);
 
 void poll_input();
 bool get_input(int controller, std::uint16_t* buttons, float* x, float* y);
 void set_rumble(int controller, bool enabled);
 bool rumble_enabled();
 void set_rumble_enabled(bool enabled);
+float rumble_strength();
+void set_rumble_strength(float strength);
 bool gyro_available();
 ultramodern::input::connected_device_info_t get_connected_device_info(int controller);
 

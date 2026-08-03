@@ -76,6 +76,13 @@ std::atomic<float> g_gyro_calibration_sum{0.0F};
 std::atomic<int> g_gyro_calibration_samples{0};
 std::atomic<int> g_gyro_calibration_remaining{0};
 constexpr int kGyroCalibrationSampleCount = 90;
+std::atomic<float> g_stick_deadzone{23.95F};
+std::atomic<float> g_stick_anti_deadzone{0.0F};
+std::atomic<float> g_stick_sensitivity{100.0F};
+std::atomic<float> g_stick_curve{1.0F};
+std::atomic<bool> g_stick_x_inverted{false};
+std::atomic<bool> g_stick_y_inverted{false};
+std::atomic<float> g_trigger_threshold{0.5F};
 
 constexpr std::array<const char*, static_cast<std::size_t>(Action::Count)> kIdentifiers{{
     "stick_up", "stick_down", "stick_left", "stick_right", "a", "b", "z",
@@ -121,9 +128,33 @@ float SourceValue(SDL_GameController* controller, int source) {
         return 0.0F;
     }
     const bool positive = (encoded & 1) != 0;
+    const bool modern = dkr::runtime::enhancements::modern_presentation_enabled();
+    const Sint16 deadzone = modern
+        ? static_cast<Sint16>(std::lround(
+              std::clamp(g_stick_deadzone.load(std::memory_order_relaxed),
+                         0.0F, 35.0F) * 32767.0F / 100.0F))
+        : 7849;
     const float value = NormaliseAxis(SDL_GameControllerGetAxis(
-        controller, static_cast<SDL_GameControllerAxis>(axis)));
+        controller, static_cast<SDL_GameControllerAxis>(axis)), deadzone);
     return positive ? std::max(value, 0.0F) : std::max(-value, 0.0F);
+}
+
+float ShapeStick(float value, bool inverted) {
+    const float magnitude = std::fabs(value);
+    if (magnitude <= 0.0F) {
+        return 0.0F;
+    }
+    const float anti = std::clamp(
+        g_stick_anti_deadzone.load(std::memory_order_relaxed) / 100.0F,
+        0.0F, 0.5F);
+    const float curve = std::clamp(
+        g_stick_curve.load(std::memory_order_relaxed), 0.5F, 2.5F);
+    const float sensitivity = std::clamp(
+        g_stick_sensitivity.load(std::memory_order_relaxed) / 100.0F,
+        0.5F, 1.5F);
+    float shaped = anti + (1.0F - anti) * std::pow(magnitude, curve);
+    shaped = std::clamp(shaped * sensitivity, 0.0F, 1.0F);
+    return std::copysign(shaped, inverted ? -value : value);
 }
 
 std::optional<float> PollGyro(SDL_GameController* controller) {
@@ -201,6 +232,31 @@ void dkr::runtime::input::set_controller_binding(Action action, int source) {
 void dkr::runtime::input::reset_defaults() {
     std::scoped_lock lock(g_binding_mutex);
     g_bindings = kDefaults;
+}
+
+float dkr::runtime::input::stick_deadzone() { return g_stick_deadzone.load(); }
+void dkr::runtime::input::set_stick_deadzone(float value) {
+    g_stick_deadzone.store(std::clamp(value, 0.0F, 35.0F));
+}
+float dkr::runtime::input::stick_anti_deadzone() { return g_stick_anti_deadzone.load(); }
+void dkr::runtime::input::set_stick_anti_deadzone(float value) {
+    g_stick_anti_deadzone.store(std::clamp(value, 0.0F, 50.0F));
+}
+float dkr::runtime::input::stick_sensitivity() { return g_stick_sensitivity.load(); }
+void dkr::runtime::input::set_stick_sensitivity(float value) {
+    g_stick_sensitivity.store(std::clamp(value, 50.0F, 150.0F));
+}
+float dkr::runtime::input::stick_curve() { return g_stick_curve.load(); }
+void dkr::runtime::input::set_stick_curve(float value) {
+    g_stick_curve.store(std::clamp(value, 0.5F, 2.5F));
+}
+bool dkr::runtime::input::stick_x_inverted() { return g_stick_x_inverted.load(); }
+void dkr::runtime::input::set_stick_x_inverted(bool value) { g_stick_x_inverted.store(value); }
+bool dkr::runtime::input::stick_y_inverted() { return g_stick_y_inverted.load(); }
+void dkr::runtime::input::set_stick_y_inverted(bool value) { g_stick_y_inverted.store(value); }
+float dkr::runtime::input::trigger_threshold() { return g_trigger_threshold.load(); }
+void dkr::runtime::input::set_trigger_threshold(float value) {
+    g_trigger_threshold.store(std::clamp(value, 0.05F, 0.95F));
 }
 
 bool dkr::runtime::input::gyro_enabled() {
@@ -344,14 +400,16 @@ dkr::runtime::input::State dkr::runtime::input::poll(
         }
         return result;
     };
-    const auto press = [&](Action action, std::uint16_t mask) {
-        if (value(action) > 0.5F) {
+    const auto press = [&](Action action, std::uint16_t mask, float threshold = 0.5F) {
+        if (value(action) > threshold) {
             state.buttons |= mask;
         }
     };
     press(Action::A, kButtonA);
     press(Action::B, kButtonB);
-    press(Action::Z, kButtonZ);
+    press(Action::Z, kButtonZ,
+          dkr::runtime::enhancements::modern_presentation_enabled()
+              ? trigger_threshold() : 0.5F);
     press(Action::Start, kButtonStart);
     press(Action::DpadUp, kDpadUp);
     press(Action::DpadDown, kDpadDown);
@@ -365,6 +423,10 @@ dkr::runtime::input::State dkr::runtime::input::poll(
     press(Action::CRight, kCRight);
     state.stick_x = std::clamp(value(Action::StickRight) - value(Action::StickLeft), -1.0F, 1.0F);
     state.stick_y = std::clamp(value(Action::StickUp) - value(Action::StickDown), -1.0F, 1.0F);
+    if (dkr::runtime::enhancements::modern_presentation_enabled()) {
+        state.stick_x = ShapeStick(state.stick_x, stick_x_inverted());
+        state.stick_y = ShapeStick(state.stick_y, stick_y_inverted());
+    }
     if (gyro.has_value()) {
         state.stick_x = blend_gyro_steering(state.stick_x, *gyro);
     }

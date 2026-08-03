@@ -3,6 +3,7 @@
 #include "game_registration.hpp"
 #include "generated/racing_banana_font.h"
 #include "runtime_enhancements.hpp"
+#include "runtime_audio_controls.hpp"
 #include "runtime_input.hpp"
 #include "runtime_platform.hpp"
 #include "save_manager.hpp"
@@ -334,6 +335,12 @@ void SaveSettings() {
                << static_cast<int>(g_modern_hud_ratio) << '\n';
         output << "modern_downsample=" << g_modern_downsample << '\n';
         output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
+        output << "music_volume=" << dkr::runtime::audio::music_volume() << '\n';
+        output << "sound_effects_volume=" << dkr::runtime::audio::sound_effects_volume() << '\n';
+        output << "vehicle_volume=" << dkr::runtime::audio::vehicle_volume() << '\n';
+        output << "eq_bass=" << dkr::runtime::platform::bass_gain() << '\n';
+        output << "eq_mid=" << dkr::runtime::platform::mid_gain() << '\n';
+        output << "eq_treble=" << dkr::runtime::platform::treble_gain() << '\n';
         output << "maximum_detail="
                << (dkr::runtime::enhancements::maximum_detail_requested() ? 1 : 0) << '\n';
         output << "modern_fov_offset="
@@ -347,6 +354,14 @@ void SaveSettings() {
                << dkr::runtime::enhancements::frustum_guard_percent() << '\n';
         output << "memory_pak=" << (dkr::runtime::pak::enabled() ? 1 : 0) << '\n';
         output << "rumble=" << (dkr::runtime::platform::rumble_enabled() ? 1 : 0) << '\n';
+        output << "rumble_strength=" << dkr::runtime::platform::rumble_strength() << '\n';
+        output << "stick_deadzone=" << dkr::runtime::input::stick_deadzone() << '\n';
+        output << "stick_anti_deadzone=" << dkr::runtime::input::stick_anti_deadzone() << '\n';
+        output << "stick_sensitivity=" << dkr::runtime::input::stick_sensitivity() << '\n';
+        output << "stick_curve=" << dkr::runtime::input::stick_curve() << '\n';
+        output << "stick_x_inverted=" << (dkr::runtime::input::stick_x_inverted() ? 1 : 0) << '\n';
+        output << "stick_y_inverted=" << (dkr::runtime::input::stick_y_inverted() ? 1 : 0) << '\n';
+        output << "trigger_threshold=" << dkr::runtime::input::trigger_threshold() << '\n';
         output << "gyro_enabled=" << (dkr::runtime::input::gyro_enabled() ? 1 : 0) << '\n';
         output << "gyro_sensitivity=" << dkr::runtime::input::gyro_sensitivity() << '\n';
         output << "gyro_deadzone=" << dkr::runtime::input::gyro_deadzone() << '\n';
@@ -448,6 +463,18 @@ void LoadSettings() {
                 g_modern_downsample = std::clamp(number, 1, 8);
             } else if (key == "master_volume") {
                 dkr::runtime::platform::set_master_volume(std::stof(value));
+            } else if (key == "music_volume") {
+                dkr::runtime::audio::set_music_volume(std::stof(value));
+            } else if (key == "sound_effects_volume") {
+                dkr::runtime::audio::set_sound_effects_volume(std::stof(value));
+            } else if (key == "vehicle_volume") {
+                dkr::runtime::audio::set_vehicle_volume(std::stof(value));
+            } else if (key == "eq_bass") {
+                dkr::runtime::platform::set_bass_gain(std::stof(value));
+            } else if (key == "eq_mid") {
+                dkr::runtime::platform::set_mid_gain(std::stof(value));
+            } else if (key == "eq_treble") {
+                dkr::runtime::platform::set_treble_gain(std::stof(value));
             } else if (key == "maximum_detail") {
                 dkr::runtime::enhancements::set_maximum_detail_enabled(number != 0);
             } else if (key == "modern_fov_offset") {
@@ -462,6 +489,22 @@ void LoadSettings() {
                 dkr::runtime::pak::set_enabled(number != 0);
             } else if (key == "rumble") {
                 dkr::runtime::platform::set_rumble_enabled(number != 0);
+            } else if (key == "rumble_strength") {
+                dkr::runtime::platform::set_rumble_strength(std::stof(value));
+            } else if (key == "stick_deadzone") {
+                dkr::runtime::input::set_stick_deadzone(std::stof(value));
+            } else if (key == "stick_anti_deadzone") {
+                dkr::runtime::input::set_stick_anti_deadzone(std::stof(value));
+            } else if (key == "stick_sensitivity") {
+                dkr::runtime::input::set_stick_sensitivity(std::stof(value));
+            } else if (key == "stick_curve") {
+                dkr::runtime::input::set_stick_curve(std::stof(value));
+            } else if (key == "stick_x_inverted") {
+                dkr::runtime::input::set_stick_x_inverted(number != 0);
+            } else if (key == "stick_y_inverted") {
+                dkr::runtime::input::set_stick_y_inverted(number != 0);
+            } else if (key == "trigger_threshold") {
+                dkr::runtime::input::set_trigger_threshold(std::stof(value));
             } else if (key == "gyro_enabled") {
                 dkr::runtime::input::set_gyro_enabled(number != 0);
             } else if (key == "gyro_sensitivity") {
@@ -1242,6 +1285,19 @@ bool DrawGraphicsSettings(bool live) {
         ImGui::TextWrapped("Expands DKR's original CPU visibility planes to the active viewport and adds a small guard band. Objects directly behind the camera still cull normally.");
         ImGui::PopStyleColor();
     }
+    ImGui::Dummy({0.0F, 16.0F});
+    ImGui::BeginDisabled(!modern_profile);
+    if (ImGui::Button("RESTORE ACCURATE DEFAULTS", {setting_width, 46.0F})) {
+        RememberModernGraphics(config);
+        dkr::runtime::enhancements::set_presentation_profile(
+            dkr::runtime::enhancements::PresentationProfile::Accurate);
+        ApplyProfileGraphics(
+            config, dkr::runtime::enhancements::PresentationProfile::Accurate);
+        ultramodern::renderer::set_graphics_config(config);
+        SaveSettings();
+        changed = true;
+    }
+    ImGui::EndDisabled();
     return changed;
 }
 
@@ -1358,6 +1414,88 @@ void DrawSaveManager() {
     }
 }
 
+void DrawAudioSettings(float width) {
+    const float control_width = std::min(width, 720.0F);
+    float master = dkr::runtime::platform::master_volume() * 100.0F;
+    ImGui::TextUnformatted("Master volume");
+    ImGui::SetNextItemWidth(control_width);
+    if (ImGui::SliderFloat("##audio-master", &master, 0.0F, 100.0F,
+                           "%.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
+        dkr::runtime::platform::set_master_volume(master / 100.0F);
+        SaveSettings();
+    }
+    if (!dkr::runtime::enhancements::modern_options_visible(
+            dkr::runtime::enhancements::presentation_profile())) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
+        ImGui::BeginChild("accurate-audio-lock", {control_width, 92.0F}, true,
+                          ImGuiWindowFlags_NoScrollbar);
+        ImGui::SetCursorPos({16.0F, 12.0F});
+        ImGui::PushTextWrapPos(std::max(control_width - 16.0F, 1.0F));
+        ImGui::TextUnformatted("Original island mix - Accurate");
+        ImGui::TextWrapped("Music, effects, vehicles and EQ stay at their authored values. Master volume remains available.");
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        return;
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Island mix");
+    const auto volume_slider = [&](const char* label, const char* id,
+                                   float value, auto setter) {
+        float percent = value * 100.0F;
+        ImGui::TextUnformatted(label);
+        ImGui::SetNextItemWidth(control_width);
+        if (ImGui::SliderFloat(id, &percent, 0.0F, 100.0F, "%.0f%%",
+                               ImGuiSliderFlags_AlwaysClamp)) {
+            setter(percent / 100.0F);
+            SaveSettings();
+        }
+    };
+    volume_slider("Music", "##audio-music", dkr::runtime::audio::music_volume(),
+                  dkr::runtime::audio::set_music_volume);
+    volume_slider("Sound effects", "##audio-effects",
+                  dkr::runtime::audio::sound_effects_volume(),
+                  dkr::runtime::audio::set_sound_effects_volume);
+    volume_slider("Vehicle sounds", "##audio-vehicles",
+                  dkr::runtime::audio::vehicle_volume(),
+                  dkr::runtime::audio::set_vehicle_volume);
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::TextWrapped("Vehicle volume is applied within DKR's racer-audio update. Sound effects remain the parent mix, matching the original sound groups.");
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Three-band EQ");
+    const auto eq_slider = [&](const char* label, const char* id,
+                               float value, auto setter) {
+        ImGui::TextUnformatted(label);
+        ImGui::SetNextItemWidth(control_width);
+        if (ImGui::SliderFloat(id, &value, -12.0F, 12.0F, "%+.1f dB",
+                               ImGuiSliderFlags_AlwaysClamp)) {
+            setter(value);
+            SaveSettings();
+        }
+    };
+    eq_slider("Bass", "##audio-bass", dkr::runtime::platform::bass_gain(),
+              dkr::runtime::platform::set_bass_gain);
+    eq_slider("Mid", "##audio-mid", dkr::runtime::platform::mid_gain(),
+              dkr::runtime::platform::set_mid_gain);
+    eq_slider("Treble", "##audio-treble", dkr::runtime::platform::treble_gain(),
+              dkr::runtime::platform::set_treble_gain);
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::TextWrapped("At 0 dB the EQ is bypassed exactly, preserving the current release-proven samples and latency.");
+    ImGui::PopStyleColor();
+    if (ImGui::Button("RESTORE ORIGINAL MIX", {control_width, 44.0F})) {
+        dkr::runtime::audio::set_music_volume(1.0F);
+        dkr::runtime::audio::set_sound_effects_volume(1.0F);
+        dkr::runtime::audio::set_vehicle_volume(1.0F);
+        dkr::runtime::platform::set_bass_gain(0.0F);
+        dkr::runtime::platform::set_mid_gain(0.0F);
+        dkr::runtime::platform::set_treble_gain(0.0F);
+        SaveSettings();
+    }
+}
+
 void DrawControlsReference(bool live) {
     using dkr::runtime::input::Action;
     ImGui::TextUnformatted("DRIVER BINDINGS");
@@ -1448,11 +1586,60 @@ void DrawControlsReference(bool live) {
     ImGui::Spacing();
     if (ImGui::Button("RESTORE T.T.'S DEFAULTS", {available_width, 44.0F})) {
         dkr::runtime::input::reset_defaults();
+        dkr::runtime::input::set_stick_deadzone(23.95F);
+        dkr::runtime::input::set_stick_anti_deadzone(0.0F);
+        dkr::runtime::input::set_stick_sensitivity(100.0F);
+        dkr::runtime::input::set_stick_curve(1.0F);
+        dkr::runtime::input::set_stick_x_inverted(false);
+        dkr::runtime::input::set_stick_y_inverted(false);
+        dkr::runtime::input::set_trigger_threshold(0.5F);
         SaveSettings();
     }
 
     if (dkr::runtime::enhancements::modern_options_visible(
             dkr::runtime::enhancements::presentation_profile())) {
+        ImGui::Dummy({0.0F, 18.0F});
+        ImGui::SeparatorText("Controller feel");
+        const auto tune_slider = [&](const char* label, const char* id,
+                                     float value, float minimum, float maximum,
+                                     const char* format, auto setter) {
+            ImGui::TextUnformatted(label);
+            ImGui::SetNextItemWidth(available_width);
+            if (ImGui::SliderFloat(id, &value, minimum, maximum, format,
+                                   ImGuiSliderFlags_AlwaysClamp)) {
+                setter(value);
+                SaveSettings();
+            }
+        };
+        tune_slider("Stick deadzone", "##stick-deadzone",
+                    dkr::runtime::input::stick_deadzone(), 0.0F, 35.0F, "%.1f%%",
+                    dkr::runtime::input::set_stick_deadzone);
+        tune_slider("Stick anti-deadzone", "##stick-anti-deadzone",
+                    dkr::runtime::input::stick_anti_deadzone(), 0.0F, 50.0F, "%.1f%%",
+                    dkr::runtime::input::set_stick_anti_deadzone);
+        tune_slider("Stick sensitivity", "##stick-sensitivity",
+                    dkr::runtime::input::stick_sensitivity(), 50.0F, 150.0F, "%.0f%%",
+                    dkr::runtime::input::set_stick_sensitivity);
+        tune_slider("Response curve", "##stick-curve",
+                    dkr::runtime::input::stick_curve(), 0.5F, 2.5F, "%.2f",
+                    dkr::runtime::input::set_stick_curve);
+        tune_slider("Trigger threshold", "##trigger-threshold",
+                    dkr::runtime::input::trigger_threshold(), 0.05F, 0.95F, "%.2f",
+                    dkr::runtime::input::set_trigger_threshold);
+        bool invert_x = dkr::runtime::input::stick_x_inverted();
+        if (ImGui::Checkbox("Invert horizontal stick", &invert_x)) {
+            dkr::runtime::input::set_stick_x_inverted(invert_x);
+            SaveSettings();
+        }
+        bool invert_y = dkr::runtime::input::stick_y_inverted();
+        if (ImGui::Checkbox("Invert vertical stick", &invert_y)) {
+            dkr::runtime::input::set_stick_y_inverted(invert_y);
+            SaveSettings();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("These adjustments shape the final N64 stick sample once per authored game update. Accurate keeps the original response.");
+        ImGui::PopStyleColor();
+
         ImGui::Dummy({0.0F, 18.0F});
         ImGui::SeparatorText("Motion steering");
         bool gyro = dkr::runtime::input::gyro_enabled();
@@ -1638,13 +1825,7 @@ void DrawOverlayContent(float content_width) {
         ImGui::TextUnformatted("ISLAND SOUND");
         PopHeadingFont();
         ImGui::Separator();
-        float volume_percent = dkr::runtime::platform::master_volume() * 100.0F;
-        ImGui::TextUnformatted("Master volume");
-        ImGui::SetNextItemWidth(std::min(content_width, 720.0F));
-        if (ImGui::SliderFloat("##overlay-master-volume", &volume_percent, 0.0F, 100.0F, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
-            dkr::runtime::platform::set_master_volume(volume_percent / 100.0F);
-            SaveSettings();
-        }
+        DrawAudioSettings(content_width);
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
         ImGui::TextWrapped("Audio timing and buffer cadence remain controlled by the original game runtime.");
         ImGui::PopStyleColor();
@@ -1654,6 +1835,18 @@ void DrawOverlayContent(float content_width) {
         if (ImGui::Checkbox("Controller rumble", &rumble)) {
             dkr::runtime::platform::set_rumble_enabled(rumble);
             SaveSettings();
+        }
+        if (rumble && dkr::runtime::enhancements::modern_options_visible(
+                          dkr::runtime::enhancements::presentation_profile())) {
+            float rumble_percent = dkr::runtime::platform::rumble_strength() * 100.0F;
+            ImGui::TextUnformatted("Rumble strength");
+            ImGui::SetNextItemWidth(std::min(content_width, 720.0F));
+            if (ImGui::SliderFloat("##rumble-strength", &rumble_percent,
+                                   0.0F, 100.0F, "%.0f%%",
+                                   ImGuiSliderFlags_AlwaysClamp)) {
+                dkr::runtime::platform::set_rumble_strength(rumble_percent / 100.0F);
+                SaveSettings();
+            }
         }
         bool memory_pak = dkr::runtime::pak::enabled();
         if (ImGui::Checkbox("Virtual Memory Pak", &memory_pak)) {
@@ -1762,6 +1955,13 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
     bool running = true;
     bool launch_requested = false;
     while (running) {
+        const bool modern_launcher =
+            dkr::runtime::enhancements::modern_options_visible(
+                dkr::runtime::enhancements::presentation_profile());
+        const int launcher_page_count = modern_launcher ? 4 : 3;
+        if (page >= launcher_page_count) {
+            page = 0;
+        }
         SDL_Event event{};
         while (SDL_PollEvent(&event) != 0) {
             ImGui_ImplSDL2_ProcessEvent(&event);
@@ -1781,10 +1981,10 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
                     RomBrowserBack();
                 } else if (!g_rom_browser.open &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
-                    page = (page + 3) % 4;
+                    page = (page + launcher_page_count - 1) % launcher_page_count;
                 } else if (!g_rom_browser.open &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
-                    page = (page + 1) % 4;
+                    page = (page + 1) % launcher_page_count;
                 } else if (!g_rom_browser.open && page == 0 && rom_ready &&
                            event.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
                     launch_requested = true;
@@ -1861,10 +2061,11 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         ImGui::BeginGroup();
         DrawRaceBadge(" WELCOME TO TIMBER'S ISLAND ", kRaceRed);
         ImGui::Dummy({0.0F, 12.0F});
-        const bool tabs_inline = right_inner_width >= 680.0F;
+        const bool tabs_inline = right_inner_width >= (modern_launcher ? 680.0F : 540.0F);
         const float tab_gap = ImGui::GetStyle().ItemSpacing.x;
         const float tab_width = tabs_inline
-            ? (right_inner_width - tab_gap * 3.0F) / 4.0F
+            ? (right_inner_width - tab_gap * (launcher_page_count - 1)) /
+                  static_cast<float>(launcher_page_count)
             : right_inner_width;
         ImGui::PushStyleColor(ImGuiCol_Button, page == 0 ? kRaceRed : kRaceBlue);
         if (ImGui::Button("ADVENTURE", {tab_width, 46.0F})) page = 0;
@@ -1877,10 +2078,12 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         ImGui::PushStyleColor(ImGuiCol_Button, page == 2 ? kRaceRed : kRaceBlue);
         if (ImGui::Button("DRIVER GUIDE", {tab_width, 46.0F})) page = 2;
         ImGui::PopStyleColor();
-        if (tabs_inline) ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, page == 3 ? kRaceRed : kRaceBlue);
-        if (ImGui::Button("SAVE GARAGE", {tab_width, 46.0F})) page = 3;
-        ImGui::PopStyleColor();
+        if (modern_launcher) {
+            if (tabs_inline) ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, page == 3 ? kRaceRed : kRaceBlue);
+            if (ImGui::Button("SAVE GARAGE", {tab_width, 46.0F})) page = 3;
+            ImGui::PopStyleColor();
+        }
         ImGui::Dummy({0.0F, 24.0F});
 
         if (page == 0) {
@@ -1961,13 +2164,8 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
             ImGui::Dummy({0.0F, 18.0F});
             DrawGraphicsSettings(false);
             ImGui::Dummy({0.0F, 18.0F});
-            float volume_percent = dkr::runtime::platform::master_volume() * 100.0F;
-            ImGui::TextUnformatted("Master volume");
-            ImGui::SetNextItemWidth(std::min(right_inner_width, 720.0F));
-            if (ImGui::SliderFloat("##startup-master-volume", &volume_percent, 0.0F, 100.0F, "%.0f%%")) {
-                dkr::runtime::platform::set_master_volume(volume_percent / 100.0F);
-                SaveSettings();
-            }
+            ImGui::SeparatorText("Island sound");
+            DrawAudioSettings(right_inner_width);
         } else if (page == 2) {
             PushHeadingFont();
             ImGui::TextUnformatted("TT DRIVER GUIDE");

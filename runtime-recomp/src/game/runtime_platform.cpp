@@ -1,5 +1,7 @@
 #include "runtime_platform.hpp"
+#include "audio_equalizer.hpp"
 #include "runtime_input.hpp"
+#include "runtime_enhancements.hpp"
 #include "runtime_telemetry.hpp"
 #include "ultramodern/ultramodern.hpp"
 
@@ -34,7 +36,11 @@ std::array<std::atomic<std::uint16_t>, kControllerCount> g_buttons{};
 std::array<std::atomic<float>, kControllerCount> g_stick_x{};
 std::array<std::atomic<float>, kControllerCount> g_stick_y{};
 std::atomic<float> g_master_volume{1.0F};
+std::atomic<float> g_bass_gain{0.0F};
+std::atomic<float> g_mid_gain{0.0F};
+std::atomic<float> g_treble_gain{0.0F};
 std::atomic<bool> g_rumble_enabled{true};
+std::atomic<float> g_rumble_strength{1.0F};
 bool g_menu_test_enabled = false;
 int g_last_menu_test_pulse = -1;
 std::uint64_t g_menu_test_poll_count = 0;
@@ -50,6 +56,7 @@ std::array<SDL_GameController*, kControllerCount> g_controllers{};
 SDL_Window* g_window = nullptr;
 std::uint32_t g_audio_frequency = 0;
 std::vector<std::int16_t> g_audio_swap_buffer;
+dkr::runtime::audio::StereoEqualizer g_audio_equalizer;
 
 float NormaliseAxis(Sint16 value, Sint16 deadzone = 7849) {
     const int magnitude = std::abs(static_cast<int>(value));
@@ -404,15 +411,26 @@ void dkr::runtime::platform::queue_audio(std::int16_t* samples,
             return;
         }
         g_audio_swap_buffer.resize(sample_count);
+        g_audio_equalizer.configure(
+            g_audio_frequency,
+            dkr::runtime::enhancements::modern_presentation_enabled()
+                ? g_bass_gain.load(std::memory_order_relaxed) : 0.0F,
+            dkr::runtime::enhancements::modern_presentation_enabled()
+                ? g_mid_gain.load(std::memory_order_relaxed) : 0.0F,
+            dkr::runtime::enhancements::modern_presentation_enabled()
+                ? g_treble_gain.load(std::memory_order_relaxed) : 0.0F);
         for (std::size_t i = 0; i < sample_count; i += 2) {
             // RDRAM's 32-bit word swap leaves each native stereo pair in R,L
             // order. Restore conventional L,R order before sending it to SDL.
             const float volume = g_master_volume.load(std::memory_order_relaxed);
+            const auto filtered = g_audio_equalizer.process(
+                static_cast<float>(samples[i + 1]),
+                static_cast<float>(samples[i]));
             g_audio_swap_buffer[i] = static_cast<std::int16_t>(
-                std::clamp(std::lround(static_cast<float>(samples[i + 1]) * volume),
+                std::clamp(std::lround(filtered.first * volume),
                            -32768L, 32767L));
             g_audio_swap_buffer[i + 1] = static_cast<std::int16_t>(
-                std::clamp(std::lround(static_cast<float>(samples[i]) * volume),
+                std::clamp(std::lround(filtered.second * volume),
                            -32768L, 32767L));
         }
         const auto byte_count = static_cast<Uint32>(sample_count * sizeof(std::int16_t));
@@ -446,6 +464,33 @@ float dkr::runtime::platform::master_volume() {
 
 void dkr::runtime::platform::set_master_volume(float volume) {
     g_master_volume.store(std::clamp(volume, 0.0F, 1.0F), std::memory_order_release);
+}
+
+float dkr::runtime::platform::bass_gain() {
+    return g_bass_gain.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::platform::set_bass_gain(float decibels) {
+    g_bass_gain.store(dkr::runtime::audio::clamp_eq_gain(decibels),
+                      std::memory_order_release);
+}
+
+float dkr::runtime::platform::mid_gain() {
+    return g_mid_gain.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::platform::set_mid_gain(float decibels) {
+    g_mid_gain.store(dkr::runtime::audio::clamp_eq_gain(decibels),
+                     std::memory_order_release);
+}
+
+float dkr::runtime::platform::treble_gain() {
+    return g_treble_gain.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::platform::set_treble_gain(float decibels) {
+    g_treble_gain.store(dkr::runtime::audio::clamp_eq_gain(decibels),
+                        std::memory_order_release);
 }
 
 std::size_t dkr::runtime::platform::audio_frames_remaining() {
@@ -492,6 +537,7 @@ void dkr::runtime::platform::set_audio_frequency(std::uint32_t frequency) {
         return;
     }
     g_audio_frequency = static_cast<std::uint32_t>(obtained.freq);
+    g_audio_equalizer.reset();
     SDL_PauseAudioDevice(g_audio_device, 0);
     std::fprintf(stderr, "[boot][audio] device opened requested=%u actual=%d format=%04X channels=%u\n",
                  frequency, obtained.freq, obtained.format, obtained.channels);
@@ -571,7 +617,11 @@ void dkr::runtime::platform::set_rumble(int controller, bool enabled) {
     SDL_GameController* game_controller = g_controllers[static_cast<std::size_t>(controller)];
     if (game_controller != nullptr) {
         const bool active = enabled && g_rumble_enabled.load(std::memory_order_acquire);
-        const Uint16 strength = active ? 0xFFFFU : 0U;
+        const Uint16 strength = active
+            ? static_cast<Uint16>(std::lround(
+                  std::clamp(g_rumble_strength.load(std::memory_order_relaxed),
+                             0.0F, 1.0F) * 65535.0F))
+            : 0U;
         SDL_GameControllerRumble(game_controller, strength, strength,
                                  active ? SDL_HAPTIC_INFINITY : 0U);
     }
@@ -579,6 +629,15 @@ void dkr::runtime::platform::set_rumble(int controller, bool enabled) {
     (void)controller;
     (void)enabled;
 #endif
+}
+
+float dkr::runtime::platform::rumble_strength() {
+    return g_rumble_strength.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::platform::set_rumble_strength(float strength) {
+    g_rumble_strength.store(std::clamp(strength, 0.0F, 1.0F),
+                            std::memory_order_release);
 }
 
 bool dkr::runtime::platform::rumble_enabled() {

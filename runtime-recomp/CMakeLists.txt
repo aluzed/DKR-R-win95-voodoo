@@ -106,12 +106,14 @@ if(DKR_RUNTIME_BUILD_GENERATED)
             "Run Generate-DKR-RSP.cmd first.")
     endif()
     set(DKR_GAME_SOURCES
+        src/game/audio_equalizer.cpp
         src/game/game_main.cpp
         src/game/game_registration.cpp
         src/game/null_renderer.cpp
         src/game/presentation_identity.cpp
         src/game/renderer_snapshot.cpp
         src/game/runtime_enhancements.cpp
+        src/game/runtime_audio_controls.cpp
         src/game/runtime_input.cpp
         src/game/runtime_platform.cpp
         src/game/save_manager.cpp
@@ -302,6 +304,23 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
     add_test(NAME DKRSaveManager COMMAND DKRSaveManagerTests)
+
+    add_executable(DKRAudioEqualizerTests
+        tests/audio_equalizer_tests.cpp
+        src/game/audio_equalizer.cpp
+    )
+    target_include_directories(DKRAudioEqualizerTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRAudioEqualizer COMMAND DKRAudioEqualizerTests)
+
+    add_executable(DKRAudioMixPolicyTests
+        tests/audio_mix_policy_tests.cpp
+    )
+    target_include_directories(DKRAudioMixPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRAudioMixPolicy COMMAND DKRAudioMixPolicyTests)
 
     add_executable(DKRRendererSnapshotTests
         tests/renderer_snapshot_tests.cpp

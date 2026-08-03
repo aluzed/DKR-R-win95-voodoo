@@ -213,6 +213,42 @@
       "reason": "Use the deterministic beat phase only for character-select model animation after the original audio clock bookkeeping, preserving every other music-synchronised effect."
     },
     {
+      "function": "music_volume_set",
+      "beforeVram": "0x80001990",
+      "text": "extern void dkr_scale_music_volume(uint8_t*, recomp_context*); dkr_scale_music_volume(rdram, ctx);",
+      "reason": "Apply the user's music mix as a final attenuation of DKR's authored sequence volume. The default 100 percent path leaves the original value bit-exact."
+    },
+    {
+      "function": "sndp_set_param",
+      "beforeVram": "0x800049F8",
+      "text": "extern void dkr_scale_sound_effect_volume(uint8_t*, recomp_context*); dkr_scale_sound_effect_volume(rdram, ctx);",
+      "reason": "Attenuate only AL_SNDP_VOL_EVT values at DKR's central sound-player boundary, preserving pitch, pan, priority, timing and the bit-exact 100 percent path."
+    },
+    {
+      "function": "racer_sound_update",
+      "beforeVram": "0x800050D0",
+      "text": "extern void dkr_enter_vehicle_audio_scope(uint8_t*, recomp_context*); dkr_enter_vehicle_audio_scope(rdram, ctx);",
+      "reason": "Mark the authored player-vehicle audio update so its volume events can receive the independent vehicle attenuation."
+    },
+    {
+      "function": "racer_sound_update",
+      "beforeVram": "0x8000524C",
+      "text": "extern void dkr_leave_vehicle_audio_scope(uint8_t*, recomp_context*); dkr_leave_vehicle_audio_scope(rdram, ctx);",
+      "reason": "Close the player-vehicle audio scope immediately before the function's sole return."
+    },
+    {
+      "function": "racer_sound_update_all",
+      "beforeVram": "0x80006FC8",
+      "text": "extern void dkr_enter_vehicle_audio_scope(uint8_t*, recomp_context*); dkr_enter_vehicle_audio_scope(rdram, ctx);",
+      "reason": "Mark DKR's ambient and opponent vehicle audio update for independent attenuation."
+    },
+    {
+      "function": "racer_sound_update_all",
+      "beforeVram": "0x80007F70",
+      "text": "extern void dkr_leave_vehicle_audio_scope(uint8_t*, recomp_context*); dkr_leave_vehicle_audio_scope(rdram, ctx);",
+      "reason": "Close the all-vehicle audio scope immediately before its sole return while retaining a depth counter for nested calls."
+    },
+    {
       "function": "set_temp_model_transforms",
       "beforeVram": "0x800132F4",
       "text": "extern void dkr_apply_maximum_racer_detail(uint8_t*, recomp_context*); dkr_apply_maximum_racer_detail(rdram, ctx);",
