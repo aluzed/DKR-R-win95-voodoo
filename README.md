@@ -1,6 +1,6 @@
-# DKR Port
+# DKR-R (Diddy Kong Racing Recompiled)
 
-**1.0.0 RC3 - Windows and Linux native recompilation**
+**1.0.0 - Windows and Linux native recompilation Release**
 
 DKR-R recompiles Diddy Kong Racing for modern desktop systems while keeping
 the original simulation, race timers, input cadence and audio timeline intact.
