@@ -2,11 +2,11 @@
 
 **1.0.0 RC3 - Windows and Linux native recompilation**
 
-DKR Port recompiles Diddy Kong Racing for modern desktop systems while keeping
+DKR-R recompiles Diddy Kong Racing for modern desktop systems while keeping
 the original simulation, race timers, input cadence and audio timeline intact.
-The accepted Accurate preset runs the original 4:3, 30 FPS presentation;
+The Accurate preset runs the original 4:3, 30 FPS presentation;
 Modern adds widescreen and interpolated high-refresh presentation without
-speeding up the game.
+speeding up or gameplay.
 
 The repository and release packages contain no ROM or extracted texture,
 model, audio or other game data. Supply your own legally obtained Diddy Kong
@@ -14,18 +14,17 @@ Racing US v1.0 Game Pak image.
 
 ## Play
 
-1. Launch `DKRPort.exe` or `DKRPort-1.0.0-rc3-Linux-x86_64.AppImage`.
+1. Launch `DKR-R.exe` or `DKR-R-1.0.0-Linux-x86_64.AppImage`.
 2. Choose a supported `.z64`, `.v64`, or `.n64` image with the in-window,
    controller-friendly Game Pak finder.
 3. After local validation succeeds, select **Begin the Adventure**.
 
 The launcher and RT64 game share one SDL window. Press **F1** or **Escape**, or
-controller **Back / View**, to open the transparent Taj's Tent overlay over the
-running game. It provides graphics, sound, controls, save information, resume
+controller **Back / View**, to open the overlay over the running game. 
+It provides graphics, sound, controls, save information, resume
 and confirmed desktop-exit actions.
 
-The selected ROM path stays local, is never copied into a release package and
-is never uploaded.
+The selected ROM path stays local.
 
 ## Supported game
 
@@ -36,7 +35,7 @@ SHA-1: 0cb115d8716dbbc2922fda38e533b9fe63bb9670
 
 ## Presets
 
-Accurate is the release-safe default:
+Accurate is the default:
 
 - original 4:3 composition and 30 FPS presentation;
 - validated gameplay, audio and menu timing;
@@ -74,7 +73,7 @@ pages and Start/Options to begin once a Game Pak is ready.
 - Linux: `$XDG_CONFIG_HOME/dkr-port`, or `~/.config/dkr-port`
 
 For a portable Windows installation, create an empty `portable.txt` beside
-`DKRPort.exe`. Data then uses the adjacent `dkr-runtime-data` directory.
+`DKR-R.exe`. Data then uses the adjacent `dkr-runtime-data` directory.
 
 ## Build and package
 
@@ -91,9 +90,9 @@ scripts/Package-Linux-AppImage.sh
 
 Release artifacts:
 
-- `dist/DKRPort-1.0.0-rc3-Windows-x64.zip`
-- `dist/DKRPort-1.0.0-rc3-Linux-x86_64.AppImage`
-- `dist/DKRPort-1.0.0-rc3-Source.zip`
+- `dist/DKR-R.zip`
+- `dist/DKR-RLinux-x86_64.AppImage`
+- `dist/DKR-R.zip`
 
 Every release artifact is scanned for prohibited N64 ROM extensions and ROM
 headers. See [BUILD-VALIDATION.md](BUILD-VALIDATION.md) for the exact build,
