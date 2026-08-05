@@ -70,6 +70,27 @@ bool TaskTraceEnabled() {
     return enabled;
 }
 
+bool SpriteTraceEnabled() {
+    static const bool enabled = std::getenv("DKR_F3DDKR_SPRITE_TRACE") != nullptr;
+    return enabled;
+}
+
+std::FILE* SpriteTraceStream() {
+    static std::FILE* stream = []() -> std::FILE* {
+        const char* path = std::getenv("DKR_F3DDKR_SPRITE_TRACE_FILE");
+        if (path == nullptr || *path == '\0') {
+            return stderr;
+        }
+        std::FILE* file = std::fopen(path, "wb");
+        if (file == nullptr) {
+            return stderr;
+        }
+        std::setvbuf(file, nullptr, _IONBF, 0);
+        return file;
+    }();
+    return stream;
+}
+
 // The completed decomp shows every G_DMADL payload is either a two-command
 // material-mode block or a texture/TLUT upload produced by the libultra GBI
 // macros. In particular, framebuffer, depth-image and full-sync commands are
@@ -122,9 +143,13 @@ std::uint32_t ReadU32(const std::uint8_t* rdram, std::uint32_t address) {
 }
 
 void LogTextureContext(const std::uint8_t* rdram, std::uint32_t address,
-                       std::uint64_t task_count) {
-    if (!DeepTraceEnabled()) {
+                       std::uint64_t task_count, bool force = false,
+                       std::FILE* output = nullptr) {
+    if (!DeepTraceEnabled() && !force) {
         return;
+    }
+    if (output == nullptr) {
+        output = stderr;
     }
     if (g_logged_texture_contexts++ >= 24U) {
         return;
@@ -161,7 +186,7 @@ void LogTextureContext(const std::uint8_t* rdram, std::uint32_t address,
                 ReadU32(rdram, header + 0x0CU) & kRDRAMAddressMask;
             const std::uint32_t command_count = ReadU16(rdram, header + 0x0AU);
             if (command == address) {
-                std::fprintf(stderr,
+                std::fprintf(output,
                              "[boot][f3ddkr][texture-context] task=%llu "
                              "address=0x%06X cache-slot=%u id=0x%04X frame=%u "
                              "header=0x%06X size=%ux%u format=0x%02X "
@@ -185,7 +210,7 @@ void LogTextureContext(const std::uint8_t* rdram, std::uint32_t address,
         }
     }
 
-    std::fprintf(stderr,
+    std::fprintf(output,
                  "[boot][f3ddkr][texture-context] task=%llu address=0x%06X "
                  "no-command-owner nearest-id=0x%04X nearest-header=0x%06X "
                  "distance=0x%X cache=0x%06X count=%u\n",
@@ -277,6 +302,21 @@ struct dkr::runtime::F3DDKRRT64Bridge::StateData {
     std::uint32_t presentation_group_ends = 0;
     bool presentation_group_active = false;
     bool background_fill_stretch_active = false;
+    std::uint32_t current_material_address = 0;
+    std::uint32_t current_material_count = 0;
+    std::uint32_t current_texture_image = 0;
+    std::uint16_t current_texture_width = 0;
+    std::uint16_t current_load_uls = 0;
+    std::uint16_t current_load_ult = 0;
+    std::uint16_t current_load_lrs = 0;
+    std::uint16_t current_load_dxt = 0;
+    std::uint8_t current_texture_format = 0;
+    std::uint8_t current_texture_size = 0;
+    std::uint8_t current_load_tile = 0;
+    std::uint32_t last_vertex_source = 0;
+    std::uint32_t last_vertex_destination = 0;
+    std::uint32_t last_vertex_count = 0;
+    std::uint32_t traced_gold_knot_batches = 0;
     std::uint32_t current_matrix_group_id = G_EX_ID_IGNORE;
     std::array<RT64::DisplayList*, kMaxNestedDisplayLists> return_stack{};
     std::uint32_t return_depth = 0;
@@ -621,6 +661,9 @@ void dkr::runtime::F3DDKRRT64Bridge::Vertex(RT64::State* state,
                          vertex.color.b, vertex.color.a);
         }
     }
+    data.last_vertex_source = source;
+    data.last_vertex_destination = destination;
+    data.last_vertex_count = count;
     data.vertex_cursor += count;
     if (DeepTraceEnabled() && g_logged_vertices < 48) {
         ++g_logged_vertices;
@@ -695,6 +738,93 @@ void dkr::runtime::F3DDKRRT64Bridge::Triangle(RT64::State* state,
                              source, i, vertices[0], vertices[1], vertices[2]);
             }
             return;
+        }
+    }
+
+    // The Golden Balloon's third sprite tile is the original 12x3 blue
+    // knot/string tip. Identify it from the authored S10.5 UVs rather than the
+    // G_SETTIMG width (DKR deliberately uploads sprite load blocks at width 1).
+    // This is a bounded, opt-in diagnostic and does not alter rendering.
+    if (SpriteTraceEnabled() && data.billboard && count == 2U &&
+        data.traced_gold_knot_batches < 32U) {
+        const auto authored_uv_matches = [&](std::uint32_t triangle) {
+            const std::uint32_t address = source + triangle * 16U;
+            std::array<std::int16_t, 3> s{
+                ReadS16(state->RDRAM, address + 4U),
+                ReadS16(state->RDRAM, address + 8U),
+                ReadS16(state->RDRAM, address + 12U),
+            };
+            std::array<std::int16_t, 3> t{
+                ReadS16(state->RDRAM, address + 6U),
+                ReadS16(state->RDRAM, address + 10U),
+                ReadS16(state->RDRAM, address + 14U),
+            };
+            std::sort(s.begin(), s.end());
+            std::sort(t.begin(), t.end());
+            return s.front() == 1 && s.back() == 352 &&
+                   t.front() == 0 && t.back() == 64;
+        };
+        if (authored_uv_matches(0U) && authored_uv_matches(1U)) {
+            std::FILE* trace = SpriteTraceStream();
+            const std::uint32_t first_triangle = source;
+            const std::array<std::uint8_t, 6> indices{
+                ReadU8(state->RDRAM, first_triangle + 1U),
+                ReadU8(state->RDRAM, first_triangle + 2U),
+                ReadU8(state->RDRAM, first_triangle + 3U),
+                ReadU8(state->RDRAM, first_triangle + 17U),
+                ReadU8(state->RDRAM, first_triangle + 18U),
+                ReadU8(state->RDRAM, first_triangle + 19U),
+            };
+            std::fprintf(trace,
+                         "[test][f3ddkr-sprite] gold-knot task=%llu "
+                         "material=0x%06X image=0x%06X triangles=0x%06X "
+                         "texture=%u/%u/%u load=(tile=%u uls=%u ult=%u lrs=%u dxt=%u) "
+                         "vertices=0x%06X dst=%u count=%u "
+                         "indices=(%u,%u,%u)(%u,%u,%u)",
+                         static_cast<unsigned long long>(data.task_count),
+                         data.current_material_address,
+                         data.current_texture_image, source,
+                         data.current_texture_format,
+                         data.current_texture_size,
+                         data.current_texture_width,
+                         data.current_load_tile,
+                         data.current_load_uls,
+                         data.current_load_ult,
+                         data.current_load_lrs,
+                         data.current_load_dxt,
+                         data.last_vertex_source,
+                         data.last_vertex_destination,
+                         data.last_vertex_count,
+                         indices[0], indices[1], indices[2],
+                         indices[3], indices[4], indices[5]);
+            for (const std::uint8_t index : indices) {
+                if (index >= data.last_vertex_destination &&
+                    index < data.last_vertex_destination + data.last_vertex_count) {
+                    const std::uint32_t vertex_address = data.last_vertex_source +
+                        (index - data.last_vertex_destination) * 10U;
+                    std::fprintf(trace, " v%u=(%d,%d,%d)", index,
+                                 ReadS16(state->RDRAM, vertex_address + 0U),
+                                 ReadS16(state->RDRAM, vertex_address + 2U),
+                                 ReadS16(state->RDRAM, vertex_address + 4U));
+                }
+            }
+            std::fputc('\n', trace);
+            if (data.current_material_count != 0U &&
+                data.current_material_address <= kRDRAMSize -
+                    data.current_material_count * sizeof(RT64::DisplayList)) {
+                std::fprintf(trace, "[test][f3ddkr-sprite] material-commands");
+                for (std::uint32_t i = 0; i < data.current_material_count; ++i) {
+                    const auto* command = reinterpret_cast<const RT64::DisplayList*>(
+                        state->fromRDRAM(data.current_material_address)) + i;
+                    std::fprintf(trace, " %08X:%08X", command->w0, command->w1);
+                }
+                std::fputc('\n', trace);
+            }
+            std::fflush(trace);
+            LogTextureContext(state->RDRAM, data.current_material_address,
+                              data.task_count, true, trace);
+            std::fflush(trace);
+            ++data.traced_gold_knot_batches;
         }
     }
 
@@ -831,6 +961,8 @@ void dkr::runtime::F3DDKRRT64Bridge::CountedDisplayList(
     // prefix can poison TMEM/TLUT state and crash at the next full sync.
     const auto* commands = reinterpret_cast<const RT64::DisplayList*>(
         state->fromRDRAM(address));
+    data.current_material_address = address;
+    data.current_material_count = count;
     for (std::uint32_t i = 0; i < count; ++i) {
         const std::uint8_t opcode =
             static_cast<std::uint8_t>(commands[i].w0 >> 24U);
@@ -936,6 +1068,10 @@ void dkr::runtime::F3DDKRRT64Bridge::SetTextureImage(
         }
     }
     state->rdp->setTextureImage(format, size, width, address);
+    data.current_texture_image = address;
+    data.current_texture_format = format;
+    data.current_texture_size = size;
+    data.current_texture_width = width;
 }
 
 void dkr::runtime::F3DDKRRT64Bridge::LoadBlock(
@@ -947,6 +1083,11 @@ void dkr::runtime::F3DDKRRT64Bridge::LoadBlock(
     const std::uint16_t ult = static_cast<std::uint16_t>((*display_list)->p0(0, 12));
     const std::uint16_t lrs = static_cast<std::uint16_t>((*display_list)->p1(12, 12));
     const std::uint16_t dxt = static_cast<std::uint16_t>((*display_list)->p1(0, 12));
+    data.current_load_tile = tile;
+    data.current_load_uls = uls;
+    data.current_load_ult = ult;
+    data.current_load_lrs = lrs;
+    data.current_load_dxt = dxt;
     if (data.texture_offset != 0) {
         const std::uint32_t block_size = (((lrs >> 2U) + 1U) << 3U);
         if (block_size == 0 || (data.texture_shift % block_size) != 0) {

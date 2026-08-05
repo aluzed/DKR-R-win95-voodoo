@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.dkrport.DKRPort</id>
-  <name>DKR Port</name>
-  <summary>Faithful cross-platform recompilation of Diddy Kong Racing</summary>
+  <name>DKR-R</name>
+  <summary>Faithful and accurate cross-platform recompilation of Diddy Kong Racing</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
-  <developer_name>DKR Port Team</developer_name>
+  <developer_name>ThatGuyMcd</developer_name>
   <description>
-    <p>DKR Port runs a legally obtained supported Diddy Kong Racing ROM through a native cross-platform recompilation runtime.</p>
+    <p>DKR Recompiled runs a legally obtained supported Diddy Kong Racing ROM through a native cross-platform recompilation runtime.</p>
     <p>No ROM or extracted game assets are included in the application.</p>
   </description>
   <launchable type="desktop-id">dkr-port.desktop</launchable>
@@ -16,6 +16,6 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.0.0-rc3" date="2026-08-03"/>
+    <release version="1.0.0" date="2026-08-10"/>
   </releases>
 </component>
