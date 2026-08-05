@@ -9,6 +9,10 @@ VERSION="${DKR_RELEASE_VERSION:-1.0.0-rc3}"
 OUTPUT="${DKR_APPIMAGE_OUTPUT:-${PROJECT_ROOT}/dist/DKRPort-${VERSION}-Linux-x86_64.AppImage}"
 LINUXDEPLOY="${LINUXDEPLOY:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-x86_64.AppImage}"
 APPIMAGE_PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-plugin-appimage}"
+ICON_FILE="${DKR_LINUX_ICON_FILE:-${PROJECT_ROOT}/assets/ui/Icons/256x256.png}"
+ICON_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dkr-r-icon.XXXXXX")"
+BINARY_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dkr-r-binary.XXXXXX")"
+trap 'rm -rf -- "${ICON_STAGE}" "${BINARY_STAGE}"' EXIT
 
 validate_release_tree() {
   local root="$1"
@@ -75,11 +79,14 @@ collect_linux_dependency_notices() {
 [[ -x "${BINARY}" ]] || { echo "Missing Linux release binary: ${BINARY}" >&2; exit 1; }
 [[ -x "${LINUXDEPLOY}" ]] || { echo "Missing linuxdeploy: ${LINUXDEPLOY}" >&2; exit 1; }
 [[ -x "${APPIMAGE_PLUGIN}" ]] || { echo "Missing linuxdeploy AppImage plugin: ${APPIMAGE_PLUGIN}" >&2; exit 1; }
+[[ -f "${ICON_FILE}" ]] || { echo "Missing Linux application icon: ${ICON_FILE}" >&2; exit 1; }
 [[ ! -e "${APPDIR}" ]] || { echo "AppDir already exists; choose a fresh DKR_APPDIR: ${APPDIR}" >&2; exit 1; }
 [[ ! -e "${OUTPUT}" ]] || { echo "Output already exists; choose a fresh DKR_APPIMAGE_OUTPUT: ${OUTPUT}" >&2; exit 1; }
 
 mkdir -p "${APPDIR}/usr/share/doc/dkr-port/licenses" "$(dirname "${OUTPUT}")"
 mkdir -p "${APPDIR}/usr/share/metainfo"
+install -m 0644 "${ICON_FILE}" "${ICON_STAGE}/dkr-r.png"
+install -m 0755 "${BINARY}" "${BINARY_STAGE}/DKR-R"
 install -m 0644 "${PROJECT_ROOT}/LICENSE.md" "${APPDIR}/usr/share/doc/dkr-port/LICENSE.md"
 install -m 0644 "${PROJECT_ROOT}/THIRD_PARTY.md" "${APPDIR}/usr/share/doc/dkr-port/THIRD_PARTY.md"
 install -m 0644 "${PROJECT_ROOT}/runtime-recomp/COPYING-NOTICE.md" "${APPDIR}/usr/share/doc/dkr-port/COPYING-NOTICE.md"
@@ -103,9 +110,9 @@ export LDAI_NO_APPSTREAM=1
 
 "${LINUXDEPLOY}" --appimage-extract-and-run \
   --appdir "${APPDIR}" \
-  --executable "${BINARY}" \
+  --executable "${BINARY_STAGE}/DKR-R" \
   --desktop-file "${PROJECT_ROOT}/packaging/linux/dkr-port.desktop" \
-  --icon-file "${PROJECT_ROOT}/packaging/linux/dkr-port.svg"
+  --icon-file "${ICON_STAGE}/dkr-r.png"
 
 collect_linux_dependency_notices "${APPDIR}"
 validate_release_tree "${APPDIR}"
