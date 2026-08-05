@@ -279,6 +279,14 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRModernCameraPolicy COMMAND DKRModernCameraPolicyTests)
 
+    add_executable(DKRHudPlacementPolicyTests
+        tests/hud_placement_policy_tests.cpp
+    )
+    target_include_directories(DKRHudPlacementPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRHudPlacementPolicy COMMAND DKRHudPlacementPolicyTests)
+
     add_executable(DKRCharacterSelectAnimationPolicyTests
         tests/character_select_animation_policy_tests.cpp
     )
@@ -354,6 +362,7 @@ if(BUILD_TESTING)
     set(DKR_ASSERT_TEST_TARGETS
         DKRPresentationPolicyTests
         DKRModernCameraPolicyTests
+        DKRHudPlacementPolicyTests
         DKRCharacterSelectAnimationPolicyTests
         DKRMotionSteeringPolicyTests
         DKRSaveManagerTests

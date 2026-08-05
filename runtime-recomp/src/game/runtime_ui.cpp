@@ -57,7 +57,12 @@ using ultramodern::renderer::WindowMode;
 
 std::filesystem::path g_config_directory;
 std::atomic<bool> g_overlay_visible{false};
-std::atomic<bool> g_overlay_dirty{false};
+// This is a one-shot navigation request, not a redraw flag. The overlay is
+// drawn every presented frame while it is visible. Setting this for ordinary
+// SDL events forces ImGui back onto the selected sidebar button after every
+// mouse click or gamepad direction, which makes the content panel impossible
+// to operate once the RT64 inspector owns the in-game UI.
+std::atomic<bool> g_overlay_focus_requested{false};
 std::atomic<bool> g_logged_overlay_frame{false};
 std::atomic<bool> g_logged_exit_button_rect{false};
 std::atomic<bool> g_logged_exit_confirm_rect{false};
@@ -2411,7 +2416,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     }
     if (application.presentQueue->inspector == nullptr) {
         attach(application);
-        g_overlay_dirty.store(true, std::memory_order_release);
+        g_overlay_focus_requested.store(true, std::memory_order_release);
     }
     if (application.presentQueue->inspector == nullptr) {
         return;
@@ -2425,7 +2430,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     BeginMainWindow("DKR Port Overlay", ImGuiWindowFlags_NoBackground);
         bool request_quit_popup = false;
         const bool focus_selected_page =
-            g_overlay_dirty.exchange(false, std::memory_order_acq_rel);
+            g_overlay_focus_requested.exchange(false, std::memory_order_acq_rel);
         const float overlay_margin = std::clamp(ImGui::GetWindowWidth() * 0.025F, 12.0F, 38.0F);
         const float overlay_gap = std::clamp(ImGui::GetWindowWidth() * 0.018F, 12.0F, 28.0F);
         const float minimum_sidebar = ImGui::GetWindowWidth() < 1000.0F ? 190.0F : 220.0F;
@@ -2438,7 +2443,8 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         ImGui::SetCursorPos({overlay_margin, overlay_margin});
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.025F, 0.09F, 0.13F, 0.84F});
         ImGui::PushStyleColor(ImGuiCol_Border, kWarm);
-        ImGui::BeginChild("overlay-nav", {sidebar_width, overlay_height}, true);
+        ImGui::BeginChild("overlay-nav", {sidebar_width, overlay_height}, true,
+                          ImGuiWindowFlags_NavFlattened);
         const float nav_padding = sidebar_width < 220.0F ? 16.0F : 24.0F;
         ImGui::SetCursorPos({nav_padding, nav_padding});
         const float nav_inner_width = sidebar_width - nav_padding * 2.0F;
@@ -2490,7 +2496,8 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         ImGui::SetCursorPos({content_x, overlay_margin});
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.035F, 0.085F, 0.12F, 0.84F});
         ImGui::PushStyleColor(ImGuiCol_Border, kAccent);
-        ImGui::BeginChild("overlay-content", {content_panel_width, overlay_height}, true);
+        ImGui::BeginChild("overlay-content", {content_panel_width, overlay_height}, true,
+                          ImGuiWindowFlags_NavFlattened);
         const float content_padding = std::clamp(content_panel_width * 0.045F, 20.0F, 44.0F);
         const float content_inner_width = content_panel_width - content_padding * 2.0F;
         ImGui::SetCursorPos({content_padding, content_padding});
@@ -2565,13 +2572,13 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
         if (event->cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
             const int page = g_overlay_page.load(std::memory_order_relaxed);
             g_overlay_page.store((page + 4) % 5, std::memory_order_relaxed);
-            g_overlay_dirty.store(true, std::memory_order_release);
+            g_overlay_focus_requested.store(true, std::memory_order_release);
             return true;
         }
         if (event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
             const int page = g_overlay_page.load(std::memory_order_relaxed);
             g_overlay_page.store((page + 1) % 5, std::memory_order_relaxed);
-            g_overlay_dirty.store(true, std::memory_order_release);
+            g_overlay_focus_requested.store(true, std::memory_order_release);
             return true;
         }
     }
@@ -2580,9 +2587,11 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
         return false;
     }
     std::scoped_lock frame_lock(g_inspector->frameMutex);
-    const bool handled = g_inspector->handleSdlEvent(event);
-    g_overlay_dirty.store(true, std::memory_order_release);
-    return handled;
+    // RT64's ImGui backend owns normal pointer, keyboard and gamepad event
+    // delivery. Do not turn those events into page-focus requests: ImGui must
+    // be allowed to retain the item selected by the previous event so the
+    // player can move from the sidebar into sliders, combos and buttons.
+    return g_inspector->handleSdlEvent(event);
 }
 
 bool dkr::runtime::ui::input_capture_active() {
@@ -2593,7 +2602,7 @@ void dkr::runtime::ui::toggle_overlay() {
     const bool next = !g_overlay_visible.load(std::memory_order_acquire);
     g_overlay_page = 0;
     g_overlay_visible.store(next, std::memory_order_release);
-    g_overlay_dirty.store(true, std::memory_order_release);
+    g_overlay_focus_requested.store(next, std::memory_order_release);
 }
 
 bool dkr::runtime::ui::overlay_visible() {

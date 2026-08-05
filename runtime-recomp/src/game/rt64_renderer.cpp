@@ -134,7 +134,19 @@ void ApplyConfig(RT64::Application& application,
     application.userConfig.graphicsAPI = ToRT64(effective_api);
     application.userConfig.antialiasing = ToRT64(config.msaa_option);
     application.userConfig.aspectRatio = ToRT64(effective_aspect);
-    application.userConfig.extAspectRatio = RT64::UserConfiguration::AspectRatio::Original;
+    if (!modern || config.hr_option ==
+            ultramodern::renderer::HUDRatioMode::Original) {
+        application.userConfig.extAspectRatio =
+            RT64::UserConfiguration::AspectRatio::Original;
+    } else if (config.hr_option ==
+               ultramodern::renderer::HUDRatioMode::Clamp16x9) {
+        application.userConfig.extAspectRatio =
+            RT64::UserConfiguration::AspectRatio::Manual;
+        application.userConfig.extAspectTarget = 16.0 / 9.0;
+    } else {
+        application.userConfig.extAspectRatio =
+            RT64::UserConfiguration::AspectRatio::Expand;
+    }
     application.userConfig.resolution =
         config.res_option == ultramodern::renderer::Resolution::Auto
             ? RT64::UserConfiguration::Resolution::WindowIntegerScale
@@ -278,6 +290,12 @@ dkr::runtime::RT64Renderer::RT64Renderer(
         application_ = std::make_unique<RT64::Application>(core, application_config);
         ApplyConfig(*application_, config);
         application_->userConfig.developerMode = developer_mode;
+        // DKR renders a canonical 320x240 VI image. RT64's generic VI height
+        // heuristic adds and rounds guard rows (often inferring 244), which
+        // exposes the unused final rows as a thin bottom/right bar after Fit to
+        // Window scaling. Present the authored 320x240 extent exactly.
+        application_->enhancementConfig.presentation.removeBlackBorders = false;
+        application_->enhancementConfig.rect.fixRectLR = true;
         // DKR presents directly from its alternating rendered color buffers.
         // SkipBuffering can select a stale VI-history entry before either buffer
         // has been approved for interpolation, yielding an entirely black Modern

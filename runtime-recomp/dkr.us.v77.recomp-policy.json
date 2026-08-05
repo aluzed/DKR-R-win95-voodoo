@@ -81,6 +81,30 @@
   ],
   "functionHooks": [
     {
+      "function": "hud_element_render",
+      "beforeVram": "0x800AA7B8",
+      "text": "extern void dkr_hud_element_alignment_begin(uint8_t*, recomp_context*); dkr_hud_element_alignment_begin(rdram, ctx);",
+      "reason": "Apply the selected Modern HUD edge origin at the first instruction reached only after the element asset exists, beyond the asset-null branch delay slot and before DKR copies its display-list cursor."
+    },
+    {
+      "function": "hud_element_render",
+      "beforeVram": "0x800AAF90",
+      "text": "extern void dkr_hud_element_alignment_end(uint8_t*, recomp_context*); dkr_hud_element_alignment_end(rdram, ctx);",
+      "reason": "Restore neutral rectangle and viewport origins after the element draw and DKR's own bounce offsets have been restored, preventing HUD alignment from leaking into later world or overlay rendering."
+    },
+    {
+      "function": "hud_render_general",
+      "beforeVram": "0x800A9D1C",
+      "text": "extern void dkr_minimap_alignment_begin(uint8_t*, recomp_context*); dkr_minimap_alignment_begin(rdram, ctx);",
+      "reason": "Right-anchor DKR's directly rendered minimap plate in Modern HUD modes; its marker elements are aligned independently through hud_element_render."
+    },
+    {
+      "function": "hud_render_general",
+      "beforeVram": "0x800A9D24",
+      "text": "extern void dkr_minimap_alignment_end(uint8_t*, recomp_context*); dkr_minimap_alignment_end(rdram, ctx);",
+      "reason": "Restore neutral HUD origins immediately after the minimap plate draw so the setting cannot affect subsequent scene geometry."
+    },
+    {
       "function": "main_game_loop",
       "beforeVram": "0x8006C60C",
       "text": "extern void dkr_telemetry_simulation_tick(uint8_t*, recomp_context*); dkr_telemetry_simulation_tick(rdram, ctx);",

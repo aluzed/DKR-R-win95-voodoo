@@ -2,6 +2,7 @@
 
 #include "runtime_enhancements.hpp"
 #include "f3ddkr_rt64.hpp"
+#include "hud_placement_policy.hpp"
 #include "runtime_platform.hpp"
 
 #include "ultramodern/config.hpp"
@@ -45,6 +46,13 @@ constexpr std::uint32_t kWaveTileCountZAddress = 0x8012A0DCU;
 constexpr std::uint32_t kWaveSegmentCountAddress = 0x8012A0E0U;
 constexpr std::uint32_t kWaveValidRowsAddress = 0x8012A0E8U;
 constexpr std::uint32_t kWaveSelectionRecordsAddress = 0x8012A5E8U;
+constexpr std::uint32_t kCurrentHudAddress = 0x80126CDCU;
+constexpr std::uint32_t kAssetHudElementIdsAddress = 0x80126CF0U;
+constexpr std::uint32_t kHudDisplayListAddress = 0x80126CFCU;
+constexpr std::uint32_t kHudElementSize = 0x20U;
+constexpr std::uint32_t kHudElementCount = 59U;
+constexpr std::uint32_t kExtendedSetRectAlign = 0x64000006U;
+constexpr std::uint32_t kExtendedSetViewportAlign = 0x64000007U;
 constexpr int kWaveSelectionCapacity = 25;
 constexpr int kWaveSelectionRecordCount = 26;
 constexpr int kWaveSelectionRecordStride = 12;
@@ -69,6 +77,8 @@ float g_saved_transition_y = 1.0F;
 bool g_transition_cover_active = false;
 bool g_transition_interpolation_active = false;
 bool g_background_fill_stretch_active = false;
+bool g_hud_element_alignment_active = false;
+bool g_minimap_alignment_active = false;
 std::array<float, 8> g_saved_sky_projection_columns{};
 bool g_sky_cover_active = false;
 std::atomic<bool> g_logged_transition_cover{false};
@@ -78,6 +88,7 @@ std::atomic<bool> g_logged_sky_cover{false};
 std::atomic<bool> g_logged_wave_footprint{false};
 std::atomic<bool> g_logged_void_cover{false};
 std::atomic<bool> g_logged_background_fill_stretch{false};
+std::atomic<bool> g_logged_hud_alignment{false};
 
 float ExpandedCoverScale() {
     using ultramodern::renderer::AspectRatio;
@@ -131,6 +142,38 @@ bool AppendPresentationGroupCommand(std::uint8_t* rdram,
     return true;
 }
 
+bool HudPlacementEnabled() {
+    using ultramodern::renderer::HUDRatioMode;
+    return dkr::runtime::enhancements::modern_presentation_enabled() &&
+        ultramodern::renderer::get_graphics_config().hr_option !=
+            HUDRatioMode::Original;
+}
+
+bool AppendHudAlignment(std::uint8_t* rdram, gpr display_list_pointer,
+                        dkr::runtime::enhancements::HudAnchor anchor) {
+    if (display_list_pointer == 0) {
+        return false;
+    }
+    const std::uint32_t current = static_cast<std::uint32_t>(
+        MEM_W(0, display_list_pointer));
+    // Each alignment pair consumes four ordinary 8-byte Gfx entries.
+    if (current < 0x80000000U || current > 0x807FFFE0U) {
+        return false;
+    }
+    const auto origin = static_cast<std::uint32_t>(anchor);
+    const gpr command = RdramAddress(current);
+    MEM_W(0x00, command) = kExtendedSetRectAlign;
+    MEM_W(0x04, command) = origin | (origin << 12U);
+    MEM_W(0x08, command) = 0;
+    MEM_W(0x0C, command) = 0;
+    MEM_W(0x10, command) = kExtendedSetViewportAlign;
+    MEM_W(0x14, command) = origin;
+    MEM_W(0x18, command) = 0;
+    MEM_W(0x1C, command) = 0;
+    MEM_W(0, display_list_pointer) = current + 0x20U;
+    return true;
+}
+
 #endif
 
 std::atomic<std::uint64_t> g_scheduler_sp_handlers{0};
@@ -150,6 +193,110 @@ extern "C" void dkr_scheduler_sp_handled(std::uint8_t*, recomp_context*) {
 
 extern "C" void dkr_scheduler_dp_handled(std::uint8_t*, recomp_context*) {
     g_scheduler_dp_handlers.fetch_add(1, std::memory_order_relaxed);
+}
+
+extern "C" void dkr_hud_element_alignment_begin(std::uint8_t* rdram,
+                                                   recomp_context* context) {
+#if DKR_RUNTIME_HAS_RT64
+    g_hud_element_alignment_active = false;
+    if (!HudPlacementEnabled()) {
+        return;
+    }
+
+    const gpr hud = context->r16;
+    if (static_cast<std::uint32_t>(hud) < 0x80000000U ||
+        static_cast<std::uint32_t>(hud) > 0x807FFFE0U) {
+        return;
+    }
+    const int sprite_id = static_cast<std::int16_t>(MEM_H(0x06, hud));
+    if (sprite_id < 0 || sprite_id >= 256) {
+        return;
+    }
+
+    int element_index = -1;
+    const std::uint32_t current_hud = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kCurrentHudAddress)));
+    const std::uint32_t hud_address = static_cast<std::uint32_t>(hud);
+    const std::uint32_t hud_bytes = kHudElementSize * kHudElementCount;
+    if (current_hud >= 0x80000000U && current_hud <= 0x807FFFFCU &&
+        hud_address >= current_hud && hud_address < current_hud + hud_bytes &&
+        ((hud_address - current_hud) % kHudElementSize) == 0U) {
+        element_index = static_cast<int>(
+            (hud_address - current_hud) / kHudElementSize);
+    }
+
+    bool texture_rectangle = false;
+    const std::uint32_t asset_ids = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kAssetHudElementIdsAddress)));
+    if (asset_ids >= 0x80000000U && asset_ids <= 0x807FFFFEU) {
+        const auto asset = static_cast<std::uint16_t>(MEM_HU(
+            static_cast<gpr>(sprite_id * 2), RdramAddress(asset_ids)));
+        texture_rectangle = (asset & 0xC000U) == 0xC000U;
+    }
+
+    const float x = ReadRdramFloat(
+        rdram, hud_address + 0x0CU);
+    const auto anchor = dkr::runtime::enhancements::classify_hud_anchor(
+        element_index, sprite_id, texture_rectangle, x);
+    if (anchor == dkr::runtime::enhancements::HudAnchor::None) {
+        return;
+    }
+
+    const gpr display_list_pointer = MEM_W(0xB8, context->r29);
+    g_hud_element_alignment_active = AppendHudAlignment(
+        rdram, display_list_pointer, anchor);
+    if (g_hud_element_alignment_active &&
+        !g_logged_hud_alignment.exchange(true, std::memory_order_relaxed)) {
+        std::fprintf(stderr,
+                     "[boot][modern] extended HUD alignment active element=%d "
+                     "asset=%d anchor=%s\n",
+                     element_index, sprite_id,
+                     anchor == dkr::runtime::enhancements::HudAnchor::Left
+                         ? "left" : "right");
+    }
+#else
+    (void)rdram;
+    (void)context;
+#endif
+}
+
+extern "C" void dkr_hud_element_alignment_end(std::uint8_t* rdram,
+                                                 recomp_context*) {
+#if DKR_RUNTIME_HAS_RT64
+    if (g_hud_element_alignment_active) {
+        AppendHudAlignment(rdram, RdramAddress(kHudDisplayListAddress),
+                           dkr::runtime::enhancements::HudAnchor::None);
+        g_hud_element_alignment_active = false;
+    }
+#else
+    (void)rdram;
+#endif
+}
+
+extern "C" void dkr_minimap_alignment_begin(std::uint8_t* rdram,
+                                               recomp_context* context) {
+#if DKR_RUNTIME_HAS_RT64
+    g_minimap_alignment_active = HudPlacementEnabled() &&
+        AppendHudAlignment(rdram, context->r20,
+                           dkr::runtime::enhancements::HudAnchor::Right);
+#else
+    (void)rdram;
+    (void)context;
+#endif
+}
+
+extern "C" void dkr_minimap_alignment_end(std::uint8_t* rdram,
+                                             recomp_context* context) {
+#if DKR_RUNTIME_HAS_RT64
+    if (g_minimap_alignment_active) {
+        AppendHudAlignment(rdram, context->r20,
+                           dkr::runtime::enhancements::HudAnchor::None);
+        g_minimap_alignment_active = false;
+    }
+#else
+    (void)rdram;
+    (void)context;
+#endif
 }
 
 extern "C" std::uint64_t dkr_scheduler_sp_handler_count() {
