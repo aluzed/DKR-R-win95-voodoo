@@ -288,6 +288,15 @@ if(BUILD_TESTING)
     add_test(NAME DKRCharacterSelectAnimationPolicy
              COMMAND DKRCharacterSelectAnimationPolicyTests)
 
+    add_executable(DKRCharacterSelectMusicPolicyTests
+        tests/character_select_music_policy_tests.cpp
+    )
+    target_include_directories(DKRCharacterSelectMusicPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRCharacterSelectMusicPolicy
+             COMMAND DKRCharacterSelectMusicPolicyTests)
+
     add_executable(DKRMotionSteeringPolicyTests
         tests/motion_steering_policy_tests.cpp
     )

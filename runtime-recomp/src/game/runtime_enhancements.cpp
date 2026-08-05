@@ -1,6 +1,7 @@
 #include "runtime_enhancements.hpp"
 
 #include "character_select_animation_policy.hpp"
+#include "character_select_music_policy.hpp"
 #include "modern_camera_policy.hpp"
 #include "runtime_platform.hpp"
 
@@ -26,7 +27,9 @@ std::atomic<int> g_frustum_guard_percent{5};
 std::atomic<bool> g_fit_to_window_enabled{false};
 
 constexpr std::uint32_t kBlockMusicChangeAddress = 0x800DC648U;
+constexpr std::uint32_t kMusicNextSequenceAddress = 0x800DC65CU;
 constexpr std::uint32_t kDynamicMusicChannelMaskAddress = 0x80115F7CU;
+constexpr std::uint32_t kMenuSelectedCharacterAddress = 0x801263B4U;
 constexpr std::uint32_t kMenuCurrentCharacterAddress = 0x801263C0U;
 constexpr std::uint32_t kMusicTempoAddress = 0x80115D30U;
 constexpr std::uint16_t kTimeTrialGhostBehaviour = 0x003AU;
@@ -35,11 +38,6 @@ constexpr std::uint32_t kViewportLayoutAddress = 0x80120CE0U;
 constexpr std::array<std::uint32_t, 4> kSideReferenceOffsets = {
     48U, 60U, 84U, 96U,
 };
-constexpr std::uint8_t kCharacterChannels[10][2] = {
-    {0x0F, 0x64}, {0x0C, 0x07}, {0x09, 0x64}, {0x0A, 0x64}, {0x08, 0x64},
-    {0x0B, 0x64}, {0x0D, 0x64}, {0x0E, 0x64}, {0x05, 0x64}, {0x04, 0x64},
-};
-
 gpr RdramAddress(std::uint32_t address) {
     return static_cast<gpr>(static_cast<std::int32_t>(address));
 }
@@ -63,6 +61,28 @@ std::atomic<bool> g_logged_extended_frustum{false};
 std::atomic<int> g_last_logged_fov{-1};
 float g_character_select_animation_phase = 0.0F;
 bool g_character_select_animation_active = false;
+
+bool SeedCharacterMusicMask(std::uint8_t* rdram,
+                            std::uint32_t character_address,
+                            const char* owner) {
+    using namespace dkr::runtime::enhancements;
+
+    // A blocked music_play intentionally leaves the current sequence running.
+    // Do not leave a mask behind for an unrelated future sequence in that case.
+    if (MEM_BU(0, RdramAddress(kMusicNextSequenceAddress)) !=
+        kChooseYourRacerSequence) {
+        return false;
+    }
+
+    const int selected = static_cast<std::int8_t>(
+        MEM_BU(0, RdramAddress(character_address)));
+    const std::uint16_t mask = character_music_channel_mask(selected);
+    MEM_W(0, RdramAddress(kDynamicMusicChannelMaskAddress)) = mask;
+    std::fprintf(stderr,
+                 "[boot][audio] %s pending channel mask=%04X selected=%d\n",
+                 owner, static_cast<unsigned>(mask), selected);
+    return true;
+}
 
 } // namespace
 
@@ -158,32 +178,24 @@ extern "C" void dkr_character_select_music_mask(std::uint8_t* rdram,
     // the old sequence player. Seed the queued sequence explicitly so it
     // starts with only the shared backing channels and the selected racer's
     // arrangement. 0x64 is DKR's invalid/no-secondary-channel sentinel.
-    const std::uint8_t selected = MEM_BU(0, RdramAddress(kMenuCurrentCharacterAddress));
-    std::uint32_t mask = 0xFFFFU;
-    mask &= ~(1U << 6U);
-    for (const auto& channels : kCharacterChannels) {
-        for (const std::uint8_t channel : channels) {
-            if (channel < 16U) {
-                mask &= ~(1U << channel);
-            }
-        }
+    if (!SeedCharacterMusicMask(rdram, kMenuCurrentCharacterAddress,
+                                "character-select")) {
+        return;
     }
-    if (selected < 10U) {
-        for (const std::uint8_t channel : kCharacterChannels[selected]) {
-            if (channel < 16U) {
-                mask |= 1U << channel;
-            }
-        }
-    }
-    MEM_W(0, RdramAddress(kDynamicMusicChannelMaskAddress)) = mask;
     // Character-select models are authored to dance to the music beat. Reset
     // the deterministic beat phase at the same sequence ownership boundary;
     // the original audio clock continues running and the mix remains exact.
     g_character_select_animation_phase = 0.0F;
     g_character_select_animation_active = true;
-    std::fprintf(stderr,
-                 "[boot][audio] character-select pending channel mask=%04X selected=%u\n",
-                 static_cast<unsigned>(mask), static_cast<unsigned>(selected));
+}
+
+extern "C" void dkr_character_menu_music_mask(std::uint8_t* rdram,
+                                                recomp_context*) {
+    // Game Select and File Select can each restart Choose Your Racer after
+    // returning from another menu. Seed that queued sequence from the selected
+    // character, but do not reset the character-select model animation phase.
+    SeedCharacterMusicMask(rdram, kMenuSelectedCharacterAddress,
+                           "character-menu");
 }
 
 extern "C" void dkr_character_select_animation_tick(std::uint8_t* rdram,

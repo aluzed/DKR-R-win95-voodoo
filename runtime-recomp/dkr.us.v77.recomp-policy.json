@@ -201,6 +201,18 @@
       "reason": "Seed the asynchronously queued Choose Your Racer sequence with the selected character's dynamic channel mask after the original mute loop, so the new sequence cannot reactivate every character arrangement when it starts."
     },
     {
+      "function": "menu_game_select_init",
+      "beforeVram": "0x8008C5E8",
+      "text": "extern void dkr_character_menu_music_mask(uint8_t*, recomp_context*); dkr_character_menu_music_mask(rdram, ctx);",
+      "reason": "When Game Select actually queues Choose Your Racer after returning from Track Select, seed the replacement sequence after the original mute loop so only the selected character arrangement can become active."
+    },
+    {
+      "function": "menu_file_select_init",
+      "beforeVram": "0x8008CC00",
+      "text": "extern void dkr_character_menu_music_mask(uint8_t*, recomp_context*); dkr_character_menu_music_mask(rdram, ctx);",
+      "reason": "When File Select actually queues Choose Your Racer, seed the replacement sequence after the original mute loop without changing character animation timing or leaving a mask behind when music changes are blocked."
+    },
+    {
       "function": "charselect_music_channels",
       "beforeVram": "0x8008C168",
       "text": "extern void dkr_character_select_animation_tick(uint8_t*, recomp_context*); dkr_character_select_animation_tick(rdram, ctx);",
