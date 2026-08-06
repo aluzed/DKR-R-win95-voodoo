@@ -9,7 +9,7 @@ import sys
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT = ROOT / "dist" / "DKRPort-1.0.0-rc3-Source.zip"
+DEFAULT_OUTPUT = ROOT / "dist" / "DKR-R-1.0.0-rc4-Source.zip"
 DENIED_SUFFIXES = {".z64", ".v64", ".n64", ".o2r", ".otr", ".eep", ".mpk"}
 N64_HEADERS = {b"\x80\x37\x12\x40", b"\x37\x80\x40\x12", b"\x40\x12\x37\x80"}
 
@@ -50,7 +50,7 @@ def main() -> int:
     ).stdout.strip()
     subprocess.run(
         [
-            "git", "archive", "--format=zip", "--prefix=DKRPort/",
+            "git", "archive", "--format=zip", "--prefix=DKR-R/",
             f"--output={output}", revision,
         ],
         cwd=ROOT,

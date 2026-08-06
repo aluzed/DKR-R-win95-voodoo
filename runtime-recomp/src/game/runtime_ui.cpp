@@ -79,7 +79,6 @@ AspectRatio g_modern_aspect = AspectRatio::Expand;
 Antialiasing g_modern_antialiasing = Antialiasing::None;
 HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::On;
 GraphicsApi g_modern_graphics_api = GraphicsApi::Auto;
-HUDRatioMode g_modern_hud_ratio = HUDRatioMode::Clamp16x9;
 int g_modern_downsample = 1;
 enum class CaptureDevice { None, Keyboard, Controller };
 CaptureDevice g_capture_device = CaptureDevice::None;
@@ -248,11 +247,6 @@ void RememberModernGraphics(const GraphicsConfig& config) {
     g_modern_antialiasing = config.msaa_option;
     g_modern_high_precision_fb = config.hpfb_option;
     g_modern_graphics_api = config.api_option;
-    g_modern_hud_ratio = config.hr_option == HUDRatioMode::Original
-        ? HUDRatioMode::Original
-        : config.hr_option == HUDRatioMode::Full
-            ? HUDRatioMode::Full
-            : HUDRatioMode::Clamp16x9;
     g_modern_downsample = std::clamp(config.ds_option, 1, 8);
     if (config.rr_option == RefreshRate::Display ||
         config.rr_option == RefreshRate::Manual) {
@@ -271,7 +265,7 @@ void ApplyProfileGraphics(GraphicsConfig& config,
         config.msaa_option = g_modern_antialiasing;
         config.hpfb_option = g_modern_high_precision_fb;
         config.api_option = g_modern_graphics_api;
-        config.hr_option = g_modern_hud_ratio;
+        config.hr_option = HUDRatioMode::Original;
         config.ds_option = g_modern_downsample;
         config.rr_option = g_modern_refresh_mode;
         config.rr_manual_value = g_modern_refresh_target;
@@ -319,7 +313,6 @@ void SaveSettings() {
         output << "antialiasing=" << static_cast<int>(config.msaa_option) << '\n';
         output << "high_precision_fb=" << static_cast<int>(config.hpfb_option) << '\n';
         output << "graphics_api=" << static_cast<int>(config.api_option) << '\n';
-        output << "hud_ratio=" << static_cast<int>(config.hr_option) << '\n';
         output << "refresh_rate=" << static_cast<int>(config.rr_option) << '\n';
         output << "refresh_rate_target="
                << dkr::runtime::enhancements::clamp_presentation_rate(
@@ -336,8 +329,6 @@ void SaveSettings() {
                << static_cast<int>(g_modern_high_precision_fb) << '\n';
         output << "modern_graphics_api="
                << static_cast<int>(g_modern_graphics_api) << '\n';
-        output << "modern_hud_ratio="
-               << static_cast<int>(g_modern_hud_ratio) << '\n';
         output << "modern_downsample=" << g_modern_downsample << '\n';
         output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
         output << "music_volume=" << dkr::runtime::audio::music_volume() << '\n';
@@ -437,8 +428,6 @@ void LoadSettings() {
                 config.hpfb_option = static_cast<HighPrecisionFramebuffer>(number);
             } else if (key == "graphics_api" && number >= 0 && number < 4) {
                 config.api_option = static_cast<GraphicsApi>(number);
-            } else if (key == "hud_ratio" && number >= 0 && number < 3) {
-                config.hr_option = static_cast<HUDRatioMode>(number);
             } else if (key == "refresh_rate" && number >= 0 && number < 3) {
                 config.rr_option = static_cast<RefreshRate>(number);
             } else if (key == "refresh_rate_target") {
@@ -462,8 +451,6 @@ void LoadSettings() {
                     static_cast<HighPrecisionFramebuffer>(number);
             } else if (key == "modern_graphics_api" && number >= 0 && number < 4) {
                 g_modern_graphics_api = static_cast<GraphicsApi>(number);
-            } else if (key == "modern_hud_ratio" && number >= 0 && number < 3) {
-                g_modern_hud_ratio = static_cast<HUDRatioMode>(number);
             } else if (key == "modern_downsample") {
                 g_modern_downsample = std::clamp(number, 1, 8);
             } else if (key == "master_volume") {
@@ -822,7 +809,7 @@ bool ImportSaveBundleWithDialog() {
         return false;
     }
     nfdchar_t* result = nullptr;
-    const nfdfilteritem_t filters[] = {{"DKR Port save bundle", "dkrsave"}};
+    const nfdfilteritem_t filters[] = {{"DKR-R save bundle", "dkrsave"}};
     const nfdresult_t dialog = NFD_OpenDialogU8(&result, filters, 1, nullptr);
     bool imported = false;
     if (dialog == NFD_OKAY) {
@@ -846,7 +833,7 @@ bool ExportSaveBundleWithDialog() {
         return false;
     }
     nfdchar_t* result = nullptr;
-    const nfdfilteritem_t filters[] = {{"DKR Port save bundle", "dkrsave"}};
+    const nfdfilteritem_t filters[] = {{"DKR-R save bundle", "dkrsave"}};
     const nfdresult_t dialog = NFD_SaveDialogU8(
         &result, filters, 1, nullptr, "dkr-port-save-garage.dkrsave");
     bool exported = false;
@@ -1059,7 +1046,7 @@ void BrandBlock(bool compact) {
     ImGui::Dummy({0.0F, compact ? 8.0F : 14.0F});
     ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
     PushHeadingFont();
-    ImGui::TextUnformatted("DKR PORT");
+    ImGui::TextUnformatted("DKR-R");
     PopHeadingFont();
     ImGui::PopStyleColor();
     PushHeadingFont(true);
@@ -1097,7 +1084,6 @@ bool DrawGraphicsSettings(bool live) {
     int aspect = static_cast<int>(config.ar_option);
     int aa = static_cast<int>(config.msaa_option);
     int hpfb = static_cast<int>(config.hpfb_option);
-    int hud_ratio = static_cast<int>(config.hr_option);
     int downsample = std::clamp(config.ds_option, 1, 4);
     const float available_width = std::max(ImGui::GetContentRegionAvail().x, 1.0F);
     const float setting_width = std::clamp(available_width * 0.92F,
@@ -1120,7 +1106,6 @@ bool DrawGraphicsSettings(bool live) {
         aspect = static_cast<int>(config.ar_option);
         aa = static_cast<int>(config.msaa_option);
         hpfb = static_cast<int>(config.hpfb_option);
-        hud_ratio = static_cast<int>(config.hr_option);
         downsample = std::clamp(config.ds_option, 1, 4);
         changed = true;
     }
@@ -1156,13 +1141,6 @@ bool DrawGraphicsSettings(bool live) {
         ImGui::SetNextItemWidth(setting_width);
         changed |= ImGui::Combo("##high-precision-framebuffer", &hpfb,
                                 "Automatic\0On\0Off\0");
-        ImGui::TextUnformatted("HUD placement");
-        ImGui::SetNextItemWidth(setting_width);
-        changed |= ImGui::Combo("##hud-ratio", &hud_ratio,
-                                "Original 4:3 positions\0Keep within 16:9\0Use full viewport\0");
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Only HUD placement changes. Transition masks and world rendering keep their dedicated widescreen rules.");
-        ImGui::PopStyleColor();
         ImGui::TextUnformatted("Downsampling quality");
         ImGui::SetNextItemWidth(setting_width);
         if (ImGui::SliderInt("##downsample-quality", &downsample, 1, 4,
@@ -1205,7 +1183,7 @@ bool DrawGraphicsSettings(bool live) {
         config.ar_option = static_cast<AspectRatio>(aspect);
         config.msaa_option = static_cast<Antialiasing>(aa);
         config.hpfb_option = static_cast<HighPrecisionFramebuffer>(hpfb);
-        config.hr_option = static_cast<HUDRatioMode>(hud_ratio);
+        config.hr_option = HUDRatioMode::Original;
         config.ds_option = downsample;
     } else {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
@@ -1809,6 +1787,16 @@ void DrawControlsReference(bool live) {
                 SaveSettings();
             }
             const bool available = dkr::runtime::platform::gyro_available();
+            const float steering =
+                dkr::runtime::input::gyro_steering_position();
+            ImGui::ProgressBar((steering + 1.0F) * 0.5F,
+                               {available_width, 18.0F},
+                               "Steering position");
+            ImGui::BeginDisabled(!live || !available);
+            if (ImGui::Button("RECENTER STEERING", {available_width, 44.0F})) {
+                dkr::runtime::input::recenter_gyro();
+            }
+            ImGui::EndDisabled();
             ImGui::BeginDisabled(!live || !available ||
                                  dkr::runtime::input::gyro_calibrating());
             if (ImGui::Button("CALIBRATE CONTROLLER", {available_width, 44.0F})) {
@@ -1978,7 +1966,7 @@ void DrawOverlayContent(float content_width) {
             SaveSettings();
         }
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("T.T. keeps Controller Pak data safely in your DKR Port settings folder, with a recovery backup after every successful write.");
+        ImGui::TextWrapped("T.T. keeps Controller Pak data safely in your DKR-R settings folder, with a recovery backup after every successful write.");
         ImGui::PopStyleColor();
     } else if (g_overlay_page == 3) {
         DrawRaceBadge(" T.T.'S DRIVER GUIDE ", kRaceBlue);
@@ -1992,10 +1980,10 @@ void DrawOverlayContent(float content_width) {
         DrawRaceBadge(" ADVENTURE LOG ", kRaceRed);
         ImGui::Dummy({0.0F, 8.0F});
         PushHeadingFont();
-        ImGui::TextUnformatted("ABOUT DKR PORT");
+        ImGui::TextUnformatted("ABOUT DKR-R");
         PopHeadingFont();
         ImGui::Separator();
-        ImGui::TextWrapped("DKR Port 1.0.0\nA native recompilation of Diddy Kong Racing for Windows and Linux.");
+        ImGui::TextWrapped("DKR-R 1.0.0\nDiddy Kong Racing - Recompiled for Windows and Linux.");
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
         ImGui::TextWrapped("No copyrighted game data is distributed. A legally obtained supported Game Pak is required. Press F1, Escape or Back / View at any time to close this overlay.");
@@ -2026,7 +2014,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         return result;
     }
 
-    SDL_SetWindowTitle(window, "DKR Port - Diddy Kong Racing");
+    SDL_SetWindowTitle(window, "DKR-R - Diddy Kong Racing Recompiled");
     // SDL's accelerated Linux renderers can replace the native window state
     // used by SDL_Vulkan_CreateSurface. That leaves the launcher visible but
     // makes the window disappear as soon as RT64 takes over under Gamescope.
@@ -2140,7 +2128,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         ImGui_ImplSDL2_NewFrame();
         dkr::runtime::platform::update_ui_gamepad_navigation();
         ImGui::NewFrame();
-        BeginMainWindow("DKR Port Startup");
+        BeginMainWindow("DKR-R Startup");
         DrawRaceBackdrop(false);
         const ImVec2 available = ImGui::GetContentRegionAvail();
         const float outer_margin = std::clamp(available.x * 0.025F, 22.0F, 38.0F);
@@ -2427,7 +2415,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     ApplyStyle();
     ImGui::GetIO().ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-    BeginMainWindow("DKR Port Overlay", ImGuiWindowFlags_NoBackground);
+    BeginMainWindow("DKR-R Overlay", ImGuiWindowFlags_NoBackground);
         bool request_quit_popup = false;
         const bool focus_selected_page =
             g_overlay_focus_requested.exchange(false, std::memory_order_acq_rel);
@@ -2514,9 +2502,9 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
             // Open the modal in the same parent ID scope where it is rendered.
             // Opening it inside overlay-nav creates a different ImGui popup ID,
             // which made the Exit to Desktop button appear to do nothing.
-            ImGui::OpenPopup("Quit DKR Port?");
+            ImGui::OpenPopup("Quit DKR-R?");
         }
-        if (ImGui::BeginPopupModal("Quit DKR Port?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::BeginPopupModal("Quit DKR-R?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted("Leave Timber's Island and return to the desktop?");
             ImGui::TextDisabled("Progress since the last in-game save point may be lost.");
             if (ImGui::Button("CANCEL", {120.0F, 40.0F})) ImGui::CloseCurrentPopup();

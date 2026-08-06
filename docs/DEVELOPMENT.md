@@ -23,7 +23,7 @@ Before committing:
 cmake --preset linux-gcc-debug
 cmake --build --preset linux-gcc-debug --parallel
 ctest --preset linux-gcc-debug
-./build/linux-gcc-debug/bin/Debug/DKRPort --headless-self-test --portable
+./build/linux-gcc-debug/bin/Debug/DKR-R --headless-self-test --portable
 python scripts/scan_for_game_assets.py
 ```
 

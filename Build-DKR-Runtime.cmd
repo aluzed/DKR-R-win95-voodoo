@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo DKR Port - prepare and compile the first native runtime boundary
+echo DKR-R - prepare and compile the native recompilation runtime
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Prepare-DKR-Runtime.ps1" %*
 set "exitCode=%ERRORLEVEL%"
 if not "%exitCode%"=="0" (

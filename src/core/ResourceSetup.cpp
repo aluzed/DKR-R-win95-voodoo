@@ -40,7 +40,7 @@ bool WritePlaceholderResourceSet(const std::filesystem::path& gameDirectory, con
 
     const std::string manifest = BuildPlaceholderManifestJson(result, milestone);
     const std::string notice =
-        "DKR Port development manifest archive\n\n"
+        "DKR-R development manifest archive\n\n"
         "This ZIP-compatible O2R contains no original Diddy Kong Racing assets.\n"
         "It records only the locally validated ROM revision and resource schema.\n"
         "The source ROM path is stored separately in local configuration and is not included here.\n"

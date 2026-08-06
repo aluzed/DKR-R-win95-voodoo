@@ -1,73 +1,48 @@
-# DKR Port 1.0.0 RC3
+# DKR-R 1.0.0 Release Candidate 4
 
-DKR Port is a native Windows and Linux recompilation of Diddy Kong Racing. It
-ships without a ROM or extracted game data; you must supply your own legally
-obtained Diddy Kong Racing US v1.0 Game Pak image.
+DKR-R is a native Windows and Linux static recompilation of Diddy Kong Racing.
+It contains no ROM or extracted game data. Supply your own legally obtained
+Diddy Kong Racing US 1.0 Game Pak image.
 
 ## Start racing
 
-1. Launch `DKRPort.exe` on Windows or the DKR Port AppImage on Linux.
-2. Use the controller-friendly Game Pak finder to choose your `.z64`, `.v64`,
-   or `.n64` image.
-3. After validation succeeds, select **Begin the Adventure**.
+1. Launch `DKR-R.exe` on Windows or the DKR-R AppImage on Linux.
+2. Select your `.z64`, `.v64` or `.n64` image in the Game Pak finder.
+3. After validation succeeds, choose **Begin the Adventure**.
 
-The selected path stays on your computer and is remembered locally.
+Accurate is the default 4:3, 30 FPS reference experience. Modern adds
+fit-to-window widescreen, high-refresh interpolated presentation, FOV and
+visibility controls, maximum vehicle detail, graphics API selection, gyro
+steering, expanded sound controls and T.T.'s Save Garage. Both presets retain
+the original HUD placement and original gameplay/audio timeline.
 
-## Accurate and Modern
-
-**Accurate** is the safe default. It locks the original 4:3 composition and
-30 FPS presentation while preserving the accepted game and audio timing.
-
-**Modern** keeps simulation, race timers, input and audio on that same original
-timeline while enabling fit-to-window widescreen, high-refresh interpolated
-presentation, an FOV and view-distance tune-up, maximum vehicle detail, HUD
-scale and safe-area controls, graphics API selection, gyro steering, expanded
-audio controls and T.T.'s Save Garage.
-
-If a graphics backend cannot start, DKR Port automatically returns to the
-Automatic backend instead of trapping the next launch in a failure loop.
-
-## Taj's Tent overlay
-
-Press **F1** or **Escape**, or **Back / View** on a controller, while racing.
-The transparent overlay leaves the game visible underneath and provides
-graphics, sound, controls, save information, resume and confirmed exit actions.
-
-The launcher and overlay are controller-first:
-
-- D-pad or left stick: move
-- A / Cross: select
-- B / Circle: back
-- LB / RB: change pages
-- Start / Options: begin when a valid Game Pak is ready
-
-Keyboard defaults:
-
-- Analogue stick: W A S D
-- A / B / Z: Space / Shift / Z
-- Start: Enter
-- D-pad: Arrow keys
-- C buttons: I J K L
-- L / R: Q / E
-- Taj's Tent: F1 or Escape
-
-Controls can be rebound from the Controls page. Conflicting assignments are
-resolved by unbinding the old action, and Restore Defaults always remains
-available as a recovery path.
+Press **F1** or **Escape**, or controller **Back / View**, to open Taj's Tent
+over the live game. The launcher and overlay can be operated with mouse,
+keyboard or controller.
 
 ## Saves
 
-Windows stores settings and save data under `%APPDATA%\DKRPort`. Linux follows
-`$XDG_CONFIG_HOME/dkr-port`, or `~/.config/dkr-port` when `XDG_CONFIG_HOME` is
-not set.
+Settings and saves remain in the compatibility paths `%APPDATA%\DKRPort` on
+Windows and `$XDG_CONFIG_HOME/dkr-port` (or `~/.config/dkr-port`) on Linux.
+These legacy names intentionally preserve data created by earlier builds.
 
-T.T.'s Save Garage can back up, import and export the Adventure EEPROM plus all
-four virtual Controller Pak files as a validated `.dkrsave` bundle. Imports are
-verified completely and backed up before an atomic replacement.
+T.T.'s Save Garage can back up, import and export the Adventure EEPROM and all
+four virtual Controller Pak files in a validated `.dkrsave` bundle.
 
 For a portable Windows installation, create an empty `portable.txt` beside
-`DKRPort.exe` before first launch. Data will then use the adjacent
-`dkr-runtime-data` directory.
+`DKR-R.exe`; data then uses the adjacent `dkr-runtime-data` directory.
 
-See `LICENSE.md`, `COPYING-NOTICE.md`, and `THIRD_PARTY.md` before
-redistributing a build.
+## Controls
+
+- D-pad or left stick: move through the UI
+- A / Cross: select
+- B / Circle: back
+- LB / RB: change pages
+- Start / Options: launch when a valid Game Pak is ready
+- F1 / Escape or Back / View: toggle Taj's Tent
+
+Controls can be rebound from the Controls page. Restore Defaults always remains
+available as a recovery path.
+
+See `LICENSE.md`, `COPYING-NOTICE.md` and `THIRD_PARTY.md` before distributing
+this package.

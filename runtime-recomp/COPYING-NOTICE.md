@@ -1,6 +1,6 @@
 # Runtime licensing notice
 
-The original DKR Port source in this repository is MIT licensed. The unified
+The original DKR-R source in this repository is MIT licensed. The unified
 launcher/runtime executable links `N64ModernRuntime`, whose GPL-3.0 terms apply
 to distribution of that combined executable. A binary release therefore needs
 the GPL licence notice and complete corresponding source availability for the

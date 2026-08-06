@@ -131,6 +131,11 @@ if(DKR_RUNTIME_BUILD_GENERATED)
             "${DKR_RT64_SOURCE}/src/contrib/imgui/backends/imgui_impl_sdlrenderer2.cpp"
         )
     endif()
+    if(WIN32)
+        list(APPEND DKR_GAME_SOURCES
+            resources/dkr-r.rc
+        )
+    endif()
     add_executable(DKRPortGame ${DKR_GAME_SOURCES})
     target_include_directories(DKRPortGame PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
@@ -196,7 +201,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         target_link_libraries(DKRPortGame PRIVATE user32 dbghelp)
     endif()
     set_target_properties(DKRPortGame PROPERTIES
-        OUTPUT_NAME "DKRPort"
+        OUTPUT_NAME "DKR-R"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     if(WIN32)
@@ -279,13 +284,13 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRModernCameraPolicy COMMAND DKRModernCameraPolicyTests)
 
-    add_executable(DKRHudPlacementPolicyTests
-        tests/hud_placement_policy_tests.cpp
+    add_executable(DKRWidescreenPolicyTests
+        tests/widescreen_policy_tests.cpp
     )
-    target_include_directories(DKRHudPlacementPolicyTests PRIVATE
+    target_include_directories(DKRWidescreenPolicyTests PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
-    add_test(NAME DKRHudPlacementPolicy COMMAND DKRHudPlacementPolicyTests)
+    add_test(NAME DKRWidescreenPolicy COMMAND DKRWidescreenPolicyTests)
 
     add_executable(DKRCharacterSelectAnimationPolicyTests
         tests/character_select_animation_policy_tests.cpp
@@ -362,8 +367,9 @@ if(BUILD_TESTING)
     set(DKR_ASSERT_TEST_TARGETS
         DKRPresentationPolicyTests
         DKRModernCameraPolicyTests
-        DKRHudPlacementPolicyTests
+        DKRWidescreenPolicyTests
         DKRCharacterSelectAnimationPolicyTests
+        DKRCharacterSelectMusicPolicyTests
         DKRMotionSteeringPolicyTests
         DKRSaveManagerTests
         DKRAudioEqualizerTests

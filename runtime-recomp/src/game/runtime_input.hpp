@@ -80,6 +80,8 @@ void set_gyro_inverted(bool inverted);
 GyroAxis gyro_axis();
 void set_gyro_axis(GyroAxis axis);
 void begin_gyro_calibration();
+void recenter_gyro();
+float gyro_steering_position();
 bool gyro_calibrating();
 float gyro_calibration_progress();
 

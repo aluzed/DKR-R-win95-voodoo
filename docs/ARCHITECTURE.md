@@ -1,80 +1,73 @@
-# Architecture
+# DKR-R architecture
 
-## 1. Native launcher
+## What kind of port this is
 
-The shipping front end is one SDL3 window rendered with RmlUi. It handles ROM selection, validation,
-settings, diagnostics and mappable controls without a browser or local web server.
-
-```text
-SDL3 window/input/file picker
-        ↓
-RmlUi launcher and configuration pages
-        ↓
-ROM validation + local configuration + input profiles
-```
-
-## 2. Validated ROM boundary
-
-The launcher accepts `.z64`, `.v64` and `.n64`, normalises byte order in memory and checks the US 1.0
-SHA-1. Only the selected path and expected hash are stored locally. Each host/runtime start must reopen
-and revalidate the source.
-
-## 3. Existing ROM-backed host
-
-The current `BootSession` is an integration test harness. It provides:
-
-- N64 header parsing;
-- a cleared 4 MiB RDRAM compatibility arena;
-- fixed 60 Hz host ticks;
-- live N64-format buttons and analogue packets.
-
-It does not execute MIPS instructions or the decompiled game loop.
-
-## 4. Native DKR execution route
-
-Milestone 0.4 adopts a static-recompilation boundary for the original executable while retaining the
-DKR decomp as authoritative metadata, symbols, structure definitions and patch reference.
+DKR-R is a static recompilation port, not a conventional source-to-source
+decompilation port. The completed Diddy Kong Racing decompilation remains the
+authoritative readable reference for symbols, structures, algorithms and patch
+locations. The executable path is:
 
 ```text
 User-owned DKR US 1.0 ROM
         +
-Pinned DKR decomp → matching ELF and symbols
-        ↓
-N64Recomp → native C CPU functions
-        ↓
-N64ModernRuntime
-  ultramodern: threads, queues, timers, VI, controllers, audio, RSP task dispatch
-  librecomp: generated-code bridge, PI DMA, overlays and cartridge saves
-        ↓
-DKR-specific host callbacks and patches
-        ↓
-RSP recompilation
-  Rare F3DDKR graphics microcode
-  DKR audio microcode
-        ↓
-RT64 renderer + host audio + existing remappable input
+Pinned matching DKR decomp ELF and symbols
+        |
+N64Recomp-generated native CPU functions
+        |
+Project Patch Pipeline hooks and host policies
+        |
+N64ModernRuntime scheduling, saves, audio, input and RSP dispatch
+        |
+Recompiled Rare audio/F3DDKR microcode
+        |
+RT64 renderer in the shared SDL2 launcher/game window
 ```
 
-This route avoids manually porting every libultra call in the completed decomp before the first boot.
-The decomp remains essential because N64Recomp needs a matching ELF/metadata and because readable DKR
-source is the best reference for patches, graphics commands, audio tasks and gameplay validation.
+This approach preserves the original program and timing while allowing focused,
+readable host enhancements without manually rewriting the entire game.
 
-## 5. Runtime work area
+## Protected boundaries
 
-`runtime-recomp/` contains only source-controlled preparation code and documentation. Generated CPU
-functions, ROMs, extracted assets and dependency checkouts are ignored and excluded from release ZIPs.
+The following are generated or pinned dependency work areas and must never be
+edited directly:
 
-`Build-DKR-Runtime.cmd` creates the local working boundary and compiles `DKRRuntimeProbe`. That probe
-proves that generated CPU functions and N64ModernRuntime can share one Windows build; it is not itself
-the final game executable.
+- `runtime-recomp/RecompiledFuncs`
+- `runtime-recomp/RecompiledPatches`
+- `extern/rt64`
+- `extern/n64-modern-runtime`
+- `extern/n64-modern-runtime/N64Recomp`
 
-## 6. Next executable layer
+DKR instruction/function hooks belong in
+`runtime-recomp/dkr.us.v77.recomp-policy.json`. Dependency changes belong in
+`patches/manifest.json` and its referenced patches. Regeneration is performed
+by `Diagnose-DKR-Recompile.cmd`.
 
-The first real boot executable needs:
+## Runtime ownership
 
-- a `recomp::GameEntry` for DKR and the correct entrypoint;
-- ROM/PI, save, time, input and audio callbacks;
-- generated-function registration and patch libraries;
-- F3DDKR and audio RSP microcode output;
-- an RT64 render context registered with ultramodern;
-- launcher-to-runtime handoff and clean return/error handling.
+The project-owned `runtime-recomp/src/game` layer owns:
+
+- ROM validation and game registration;
+- one-window SDL platform integration;
+- controller, keyboard and angle-based gyro input;
+- virtual EEPROM and Controller Pak storage;
+- audio mix/EQ policy without altering the original audio clock;
+- Accurate/Modern presentation policy;
+- widescreen, interpolation, FOV, visibility and detail controls;
+- Taj's Tent startup/in-game UI and save manager;
+- F3DDKR command translation and DKR-specific renderer policy.
+
+## Preset boundary
+
+Accurate is the regression baseline: original 4:3, original 30 FPS cadence,
+original FOV/detail/visibility/audio mix and original HUD placement.
+
+Modern leaves simulation, race timing, input polling and audio on that original
+timeline. It changes only presentation and explicitly selected quality-of-life
+policies. High-refresh output is interpolation, not a faster game clock.
+
+## ROM and save boundary
+
+The selected Game Pak is validated locally and never copied into a release.
+Releases are scanned for ROM extensions and N64 ROM headers. EEPROM and four
+virtual Controller Pak files remain host files and can be managed through T.T.'s
+Save Garage.

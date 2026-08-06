@@ -540,7 +540,7 @@ bool dkr::runtime::saves::import_controller_pak(
     }
     std::vector<std::uint8_t> bytes;
     if (!ReadControllerPak(source, bytes)) {
-        error = "That file is not a valid DKR Port Controller Pak image.";
+        error = "That file is not a valid DKR-R Controller Pak image.";
         return false;
     }
     std::error_code exists_error;
@@ -590,7 +590,7 @@ bool dkr::runtime::saves::import_bundle(
     std::scoped_lock lock(g_save_manager_mutex);
     std::vector<BundleEntry> entries;
     if (!DecodeBundle(source, entries)) {
-        error = "That file is not a valid DKR Port save bundle.";
+        error = "That file is not a valid DKR-R save bundle.";
         return false;
     }
 

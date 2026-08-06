@@ -134,19 +134,11 @@ void ApplyConfig(RT64::Application& application,
     application.userConfig.graphicsAPI = ToRT64(effective_api);
     application.userConfig.antialiasing = ToRT64(config.msaa_option);
     application.userConfig.aspectRatio = ToRT64(effective_aspect);
-    if (!modern || config.hr_option ==
-            ultramodern::renderer::HUDRatioMode::Original) {
-        application.userConfig.extAspectRatio =
-            RT64::UserConfiguration::AspectRatio::Original;
-    } else if (config.hr_option ==
-               ultramodern::renderer::HUDRatioMode::Clamp16x9) {
-        application.userConfig.extAspectRatio =
-            RT64::UserConfiguration::AspectRatio::Manual;
-        application.userConfig.extAspectTarget = 16.0 / 9.0;
-    } else {
-        application.userConfig.extAspectRatio =
-            RT64::UserConfiguration::AspectRatio::Expand;
-    }
+    // HUD placement remains authored at its original 4:3 coordinates in both
+    // presets. Modern widescreen expands only qualified world/background
+    // passes; it never moves screen-space race information.
+    application.userConfig.extAspectRatio =
+        RT64::UserConfiguration::AspectRatio::Original;
     application.userConfig.resolution =
         config.res_option == ultramodern::renderer::Resolution::Auto
             ? RT64::UserConfiguration::Resolution::WindowIntegerScale

@@ -1,170 +1,88 @@
-# Troubleshooting
+# Troubleshooting DKR-R
 
-## Build-Windows.cmd closes or reports failure
+## The ROM is rejected
 
-Run it from an existing Command Prompt so the complete output remains visible:
-
-```bat
-cd C:\path\to\DKRPort
-Build-Windows.cmd -Clean
-```
-
-The final lines print a file under `build-logs`. That transcript is the most useful item to provide
-when diagnosing the failure.
-
-## winget is missing
-
-Install or update **App Installer** from the Microsoft Store. Alternatively install Git, CMake and
-Visual Studio 2022 Build Tools manually, then run:
-
-```bat
-Build-Windows.cmd -NoInstall
-```
-
-## Visual Studio exists but the C++ compiler is missing
-
-Open Visual Studio Installer, choose **Modify**, and install **Desktop development with C++**, MSVC
-v143 x64/x86 tools and a Windows 10/11 SDK.
-
-
-## CMake says "Could not create named generator Visual Studio 17 2022"
-
-This means a Unix/MSYS build of CMake was selected instead of native Windows CMake. Milestone 0.2.2
-checks generator capabilities and will ignore that executable automatically. It should then use or
-install the official Kitware CMake at:
+Only Diddy Kong Racing US 1.0/v77 is supported. The normalised SHA-1 must be:
 
 ```text
-C:\Program Files\CMake\bin\cmake.exe
+0cb115d8716dbbc2922fda38e533b9fe63bb9670
 ```
 
-Run the corrected package with:
+The `.z64`, `.v64` or `.n64` extension is only a picker filter; byte order is
+detected from the N64 header and normalised in memory. The original file is not
+modified or copied.
 
-```bat
-Build-Windows.cmd -Clean
-```
+## Existing saves or settings appear missing
 
-The log should show both `CMake executable:` and `CMake generator:` before configuration starts.
+DKR-R intentionally retains the earlier compatibility paths:
 
-## CMake configuration fails while installing libraries
+- Windows: `%APPDATA%\DKRPort`
+- Linux: `$XDG_CONFIG_HOME/dkr-port` or `~/.config/dkr-port`
 
-Check internet access to GitHub, then delete `.deps\vcpkg` and `build\windows-x64` or run:
+Do not move these directories merely because the executable was renamed.
 
-```bat
-Build-Windows.cmd -Clean
-```
+## Windows build selects the wrong CMake
 
-The first build is considerably larger because SDL3, RmlUi, FreeType and their dependencies are
-compiled. Later builds reuse the cache.
+If `cmake` cannot create the Visual Studio generator, an MSYS/devkitPro CMake
+may be ahead of native CMake in `PATH`. Use the Visual Studio-bundled executable
+or a native Kitware installation, then reconfigure the existing build tree.
 
-## The native window does not open
-
-Run `dist\DKRPort-Windows-x64\DKRPort.exe` from Command Prompt and inspect the newest file under its
-`runtime\logs` directory. Update the graphics driver and confirm Remote Desktop or virtual-machine
-graphics acceleration is available.
-
-## Text is missing
-
-The launcher loads a suitable system font at runtime rather than distributing a font. On Windows it
-tries Segoe UI and Arial. Repairing standard Windows fonts should correct this without rebuilding.
-
-## My ROM is rejected
-
-Only the canonical US 1.0 / v77 revision is supported in this milestone. A valid N64 header is not
-enough; the normalised SHA-1 must match. The error panel reports the calculated hash without saving
-the ROM.
-
-## Reset does not delete my ROM
-
-That is intentional. DKR Port never owns or copies the source ROM. Reset removes only the generated
-manifest and local manifest O2R from the port data directory.
-
-
-## `Cannot convert value "3.31.6-msvc6" to System.Version`
-
-This was a build-script bug fixed in Milestone 0.2.2. Visual Studio's bundled CMake may add an `-msvcN` vendor suffix. Use the 0.2.2 build script or replace `scripts\Build-Windows.ps1` with the corrected copy.
-
-## MSVC C2220 from `getenv` or an F3DDKR constant condition
-
-Milestone 0.2.5 fixes two warnings that Visual Studio correctly promoted to errors under `/WX`:
-
-- `Paths.cpp`: C4996 for `getenv`; Windows now uses `_dupenv_s`.
-- `F3DDKRRegistry.cpp`: C4127 for an always-constant condition; the invariant is now checked with `static_assert`.
-
-Use the 0.2.5 source package and rerun `Build-Windows.cmd` without `-Clean`; the configured vcpkg dependencies can be reused.
-
-
-## `Cannot open include file: SDL3/SDL_main.h`
-
-The header is supplied by SDL3, but Milestone 0.2.4 hid SDL3 behind a private static-library dependency. As a result, the executable linked SDL transitively but did not inherit SDL's include directory while compiling `main.cpp`.
-
-Milestone 0.2.5 makes SDL3 and RmlUi public usage requirements of the native UI target and links `DKRPort` directly to `SDL3::SDL3`. Rerun `Build-Windows.cmd` without `-Clean`; CMake will regenerate the Visual Studio project and reuse the existing vcpkg packages.
-
-## `wslpath` prints a path without backslashes
-
-Use the 0.4.1 or newer runtime-preparation script. Older scripts invoked the
-command through an intermediate WSL shell, which could transform
-`C:\DKRPort\extern\dkr-decomp` into `C:DKRPortexterndkr-decomp`.
-
-The corrected script uses `wsl.exe --exec wslpath` and passes the DKR source
-directory to Bash as a positional argument. Rerun `Build-DKR-Runtime.cmd`;
-there is no need to clean the native launcher build or delete the prepared
-decomp checkout.
-
-
-## `No module named splat` during DKR runtime preparation
-
-Milestone 0.4.4 validates the contents of the DKR Python virtual environment,
-not merely the presence of `.venv/bin/python3`. If an earlier interrupted
-setup left an incomplete virtual environment, the runtime script reruns
-`make setup` automatically before `make extract`.
-
-If setup still cannot provide `splat`, delete only:
+Typical Visual Studio path:
 
 ```text
-extern\dkr-decomp\.venv
+C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
 ```
 
-and rerun `Build-DKR-Runtime.cmd`. The decomp checkout and validated ROM can
-remain in place.
+## A recomp policy change has no effect
 
-## `: invalid option nameefail` during the WSL build
-
-This indicates that a Windows CRLF carriage return reached Bash in the
-`set -euo pipefail` line. Milestone 0.4.4 writes an explicit UTF-8, BOM-free,
-LF-only shell script into `build-logs` and executes it directly through WSL.
-Replace `scripts/Prepare-DKR-Runtime.ps1` with the 0.4.3 version and rerun
-`Build-DKR-Runtime.cmd -BuildRenderer`; no clean operation is required.
-
-## N64Recomp fails but the main transcript shows no diagnostic
-
-PowerShell transcripts do not reliably capture the output of native console
-programs. Milestone 0.4.4 runs N64Recomp with redirected stdout and stderr and
-writes both streams to:
+Do not edit generated functions. Run:
 
 ```text
-build-logs\n64recomp-<timestamp>.stdout.log
-build-logs\n64recomp-<timestamp>.stderr.log
+Diagnose-DKR-Recompile.cmd
 ```
 
-The script also prints the captured output into the console and includes the
-first non-empty diagnostic in the final error message. Rerun:
+That reapplies the project Patch Pipeline and regenerates the N64Recomp output.
+The newest stdout/stderr logs are written under `build-logs` if regeneration
+fails.
 
-```bat
-Build-DKR-Runtime.cmd -BuildRenderer -SkipApt
-```
+## Linux or SteamOS closes when gameplay starts
 
-Do not clean the repository. The matching DKR ELF, N64Recomp build and RT64
-checkout are reusable.
+The startup UI can appear before RT64 creates its Vulkan device. Confirm a
+working Vulkan driver with `vulkaninfo`, launch the AppImage from a terminal and
+inspect its output. On Steam Deck, use the native SteamOS session rather than a
+Remote Play/desktop environment that exposes only software Vulkan.
 
+An AppImage build succeeding under Ubuntu/WSL does not certify physical Steam
+Deck runtime behaviour; record that separately in `BUILD-VALIDATION.md`.
 
-## N64Recomp says `Could not find entrypoint function`
+## Modern high refresh stutters or runs too quickly
 
-The ROM header contains a processor start address, but N64Recomp requires the
-configured entrypoint to resolve to a function in the ELF metadata. DKR's
-matching ELF may represent the ROM bootstrap address as non-function startup
-code. The runtime scripts therefore inspect the ELF with the MIPS binutils,
-resolve the documented `mainproc` boot function, and enable `.mdebug` parsing
-when that metadata section is available.
+Reset the Modern presentation rate to 60 FPS and leave Match Display disabled
+while diagnosing. Accurate must remain at 4:3/30 FPS. The correct high-refresh
+path interpolates presentation only; simulation, audio and timers stay on the
+authored 30 FPS timeline.
 
-Run `Diagnose-DKR-Recompile.cmd` after applying this version. It refreshes the
-existing generated TOML without rebuilding the DKR ROM or toolchain.
+## The overlay will not open or cannot be navigated
+
+Press F1 or Escape, or controller Back/View. Use D-pad/left stick to navigate,
+A/Cross to select, B/Circle to go back and LB/RB to change pages. Mouse input
+must remain active while the overlay is visible. If a controller was connected
+after launch, close and reopen the overlay once so focus is restored.
+
+## Gyro steering drifts
+
+Place the controller still on a flat surface and choose **Calibrate**, then hold
+it at the desired steering angle. Use **Recenter Steering** whenever the neutral
+position changes. The Invert option should only be used for personal preference,
+not to correct the default polarity.
+
+## Graphics API recovery
+
+Modern can request Direct3D 12 or Vulkan where supported. If a requested backend
+cannot initialise, DKR-R records the failure and returns to Automatic on the
+next launch so an invalid setting cannot permanently trap startup.
+
+## Reset does not delete the ROM
+
+That is intentional. DKR-R never owns the source ROM. Reset removes only local
+generated metadata and settings controlled by the port.

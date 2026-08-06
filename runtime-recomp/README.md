@@ -1,46 +1,43 @@
-# DKR native runtime
+# DKR-R native recompilation runtime
 
-This directory contains the project-owned integration layer for the playable Diddy Kong Racing static recompilation.
+This directory contains the project-owned integration layer for the playable
+Diddy Kong Racing static recompilation.
 
-## Current boundary
+The runtime combines N64Recomp-generated DKR CPU functions, recompiled Rare
+audio/F3DDKR RSP microcode, N64ModernRuntime, the DKR-specific RT64 bridge and a
+shared SDL2 startup/in-game UI. It boots, renders, plays audio, accepts input,
+saves and supports both Accurate and Modern presentation profiles.
 
-`DKRPort` combines:
+## Reproducible patch boundary
 
-- N64Recomp-generated DKR CPU functions;
-- recompiled Rare audio and F3DDKR RSP microcode;
-- N64ModernRuntime scheduling, events, input, save, and audio interfaces;
-- the project F3DDKR-to-RT64 bridge;
-- SDL2 window, audio, controller, and keyboard hosting;
-- one startup/settings UI shared with the in-game RT64 overlay.
+Never edit `RecompiledFuncs`, `RecompiledPatches`, RT64, N64Recomp or
+N64ModernRuntime manually.
 
-The game boots, renders, plays audio, accepts input, saves, and has completed Adventure-mode race testing.
+- DKR hooks are declared in `dkr.us.v77.recomp-policy.json`.
+- dependency changes are declared by the repository Patch Pipeline.
+- `Diagnose-DKR-Recompile.cmd` regenerates the CPU output from the prepared ELF.
 
-## Reproducible patch boundaries
+## Build output
 
-Never edit `RecompiledFuncs`, `RecompiledPatches`, RT64, N64Recomp, or N64ModernRuntime manually.
+From the repository root run `Build-DKR-Runtime.cmd`, or run
+`Diagnose-DKR-Recompile.cmd` after a policy-only change.
 
-- DKR function boundaries, instruction patches, and function hooks are declared in `dkr.us.v77.recomp-policy.json`.
-- Dependency changes are declared under `patches/` and applied by `scripts/Apply-Dependency-Patches.ps1`.
-- `Diagnose-DKR-Recompile.cmd` regenerates the CPU output from the prepared ELF and policy.
-
-The policy includes virtualized cartridge/MMIO checks, texture command-space corrections, supported CIC values, the original vehicle-attachment path, audio pointer guards, and late host RSP/RDP completion guards.
-
-## Build
-
-From the repository root:
+Windows output:
 
 ```text
-Build-DKR-Runtime.cmd
+build/dkr-runtime-rt64/bin/Release/DKR-R.exe
 ```
 
-For an already prepared toolchain and ELF:
+Linux output:
 
 ```text
-Diagnose-DKR-Recompile.cmd
+build/dkr-runtime-linux/bin/Release/DKR-R
 ```
 
-The Windows Release target emits `build/dkr-runtime-rt64/bin/Release/DKRPort.exe`. The Linux Release target emits `build/dkr-runtime-linux/bin/Release/DKRPort` and can be packaged with `scripts/Package-Linux-AppImage.sh`.
+Every Linux release must also be packaged as an AppImage with `Build-Linux.sh`
+or `scripts/Package-Linux-AppImage.sh`.
 
 ## ROM policy
 
-The runtime accepts only the supported Diddy Kong Racing US v1.0/v77 revision. ROMs, built matching ROMs, extracted assets, saves, logs, and user configuration must not be added to source or release archives.
+Only Diddy Kong Racing US 1.0/v77 is supported. ROMs, extracted assets, saves,
+logs and local configuration must never enter source or release archives.

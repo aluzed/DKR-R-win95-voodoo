@@ -35,7 +35,7 @@ bool export_controller_pak(int channel,
 bool import_controller_pak(int channel, const std::filesystem::path& source,
                            std::string& error);
 
-// A DKR Port bundle contains only fixed, typed save-image records. It has no
+// A DKR-R bundle contains only fixed, typed save-image records. It has no
 // filenames or extraction paths, so importing cannot traverse outside the
 // configured save directory. Adventure EEPROM and all present Controller Paks
 // are validated before any live file is replaced.

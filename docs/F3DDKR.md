@@ -20,7 +20,7 @@ The renderer command creates an original SVG scene containing a polygon, checker
 matrix axes:
 
 ```bash
-DKRPort --renderer-test output.svg
+DKR-R --renderer-test output.svg
 ```
 
 This proves the test and reporting path, not the graphics implementation. Every command descriptor is

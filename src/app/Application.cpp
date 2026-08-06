@@ -103,19 +103,19 @@ bool Application::Initialise() {
     std::string error;
     m_paths = ResolveAppPaths(m_forcePortable, error);
     if (!error.empty() || m_paths.executable.empty()) {
-        std::cerr << "DKR Port could not resolve its application paths: " << error << '\n';
+        std::cerr << "DKR-R could not resolve its application paths: " << error << '\n';
         return false;
     }
     if (!EnsureAppDirectories(m_paths, error)) {
-        std::cerr << "DKR Port could not create its data directories: " << error << '\n';
+        std::cerr << "DKR-R could not create its data directories: " << error << '\n';
         return false;
     }
     if (!m_logger.Initialise(m_paths.logsDirectory, error)) {
-        std::cerr << "DKR Port could not initialise logging: " << error << '\n';
+        std::cerr << "DKR-R could not initialise logging: " << error << '\n';
         return false;
     }
 
-    m_logger.Info(std::string("DKR Port ") + DKRPORT_VERSION_STRING + " (" + DKRPORT_BUILD_MILESTONE + ")");
+    m_logger.Info(std::string("DKR-R ") + DKRPORT_VERSION_STRING + " (" + DKRPORT_BUILD_MILESTONE + ")");
     m_logger.Info("Data root: " + PathToUtf8(m_paths.dataRoot));
     m_logger.Info(m_paths.portable ? "Portable mode is enabled." : "Platform user-data mode is enabled.");
     LoadExistingStatus();
@@ -237,7 +237,7 @@ SelfTestSummary Application::ExecuteSelfTests() {
     std::filesystem::remove(inputProbePath, ignored);
 
     const auto probePath = m_paths.cacheDirectory / "self-test.zip";
-    const std::string probeText = "DKR Port ZIP self-test\n";
+    const std::string probeText = "DKR-R ZIP self-test\n";
     error.clear();
     const bool zipWritten = WriteStoredZip(probePath, {{"probe.txt", {probeText.begin(), probeText.end()}}}, error);
     std::vector<std::uint8_t> zipBytes;
@@ -276,7 +276,7 @@ int Application::RunSelfTest(bool jsonOutput) {
     if (jsonOutput) {
         std::cout << SelfTestJson(result) << '\n';
     } else {
-        std::cout << "DKR Port self-test\n";
+        std::cout << "DKR-R self-test\n";
         for (const auto& [name, passed] : result.checks) {
             std::cout << "  " << (passed ? "[PASS] " : "[FAIL] ") << name << '\n';
         }

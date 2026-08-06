@@ -12,7 +12,7 @@
   </description>
   <launchable type="desktop-id">dkr-port.desktop</launchable>
   <provides>
-    <binary>DKRPort</binary>
+    <binary>DKR-R</binary>
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>

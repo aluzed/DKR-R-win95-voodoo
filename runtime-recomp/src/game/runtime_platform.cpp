@@ -189,7 +189,7 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::create_window() {
 #if defined(__linux__)
         flags |= SDL_WINDOW_VULKAN;
 #endif
-        g_window = SDL_CreateWindow("DKR Port", SDL_WINDOWPOS_CENTERED,
+        g_window = SDL_CreateWindow("DKR-R - Diddy Kong Racing Recompiled", SDL_WINDOWPOS_CENTERED,
                                     SDL_WINDOWPOS_CENTERED,
                                     initial_width, initial_height, flags);
         if (g_window == nullptr) {
@@ -239,7 +239,7 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::prepare_window_for_g
             if (was_hidden) {
                 replacement_flags |= SDL_WINDOW_HIDDEN;
             }
-            g_window = SDL_CreateWindow("DKR Port", x, y, width, height,
+            g_window = SDL_CreateWindow("DKR-R - Diddy Kong Racing Recompiled", x, y, width, height,
                                         replacement_flags);
             if (g_window == nullptr) {
                 std::fprintf(stderr,

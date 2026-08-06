@@ -24,7 +24,7 @@ Expected size: 12 MiB
 
 1. Select **Choose ROM** in the native launcher.
 2. The operating system opens its own file-selection window.
-3. DKR Port rejects missing, oversized, truncated or non-N64 files.
+3. DKR-R rejects missing, oversized, truncated or non-N64 files.
 4. The ROM is normalised in memory without modifying the source file.
 5. SHA-1 is calculated on the canonical big-endian form.
 6. The revision is matched against the supported-ROM registry.

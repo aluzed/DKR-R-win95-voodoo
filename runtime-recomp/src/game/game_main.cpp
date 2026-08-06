@@ -344,7 +344,7 @@ int DkrMain(int argc, char** argv) {
 
     if (argc > 4) {
         std::fprintf(stderr,
-                     "Usage: DKRPortGame [rom.z64] [config-directory] [timeout-seconds]\n");
+                     "Usage: DKR-R [rom.z64] [config-directory] [timeout-seconds]\n");
         return 2;
     }
 
@@ -391,7 +391,7 @@ int DkrMain(int argc, char** argv) {
 #else
     if (window_handle == nullptr) {
 #endif
-        std::fprintf(stderr, "[boot][window] failed to create the DKR Port window\n");
+        std::fprintf(stderr, "[boot][window] failed to create the DKR-R window\n");
         dkr::runtime::platform::shutdown();
         return 4;
     }

@@ -12,15 +12,15 @@
 namespace {
 void PrintUsage() {
     std::cout
-        << "DKR Port " << DKRPORT_VERSION_STRING << " — " << DKRPORT_BUILD_MILESTONE << "\n\n"
+        << "DKR-R " << DKRPORT_VERSION_STRING << " — " << DKRPORT_BUILD_MILESTONE << "\n\n"
         << "Usage:\n"
-        << "  DKRPort [--portable]\n"
-        << "  DKRPort --validate-rom <path> [--portable]\n"
-        << "  DKRPort --self-test [--portable]\n"
-        << "  DKRPort --headless-self-test [--portable]\n"
-        << "  DKRPort --renderer-test [output.svg] [--portable]\n"
-        << "  DKRPort --version\n"
-        << "  DKRPort --help\n\n"
+        << "  DKR-R [--portable]\n"
+        << "  DKR-R --validate-rom <path> [--portable]\n"
+        << "  DKR-R --self-test [--portable]\n"
+        << "  DKR-R --headless-self-test [--portable]\n"
+        << "  DKR-R --renderer-test [output.svg] [--portable]\n"
+        << "  DKR-R --version\n"
+        << "  DKR-R --help\n\n"
         << "The default action opens the native SDL3/RmlUi launcher. No browser or local web server is used.\n";
 }
 } // namespace

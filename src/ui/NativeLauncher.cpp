@@ -108,7 +108,7 @@ std::string HexValue(std::uint64_t value, int width) {
 
 std::string BuildDiagnostics(const Application& application, const AppStatus& status) {
     std::ostringstream report;
-    report << "DKR Port " << DKRPORT_VERSION_STRING << " (" << DKRPORT_BUILD_MILESTONE << ")\n";
+    report << "DKR-R " << DKRPORT_VERSION_STRING << " (" << DKRPORT_BUILD_MILESTONE << ")\n";
     report << "Native launcher: SDL3 + RmlUi\n";
     report << "Portable mode: " << (status.portable ? "Yes" : "No") << "\n";
     report << "Data directory: " << PathToUtf8(application.Paths().dataRoot) << "\n";
@@ -143,13 +143,13 @@ int NativeLauncher::Run() {
     std::string error;
     if (!InitialiseWindow(error)) {
         m_application.Log().Error(error);
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKR Port could not start", error.c_str(), nullptr);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKR-R could not start", error.c_str(), nullptr);
         Shutdown();
         return 1;
     }
     if (!InitialiseUi(error)) {
         m_application.Log().Error(error);
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKR Port UI could not start", error.c_str(), m_window);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKR-R UI could not start", error.c_str(), m_window);
         Shutdown();
         return 1;
     }
@@ -170,7 +170,7 @@ int NativeLauncher::Run() {
 }
 
 bool NativeLauncher::InitialiseWindow(std::string& error) {
-    SDL_SetAppMetadata("DKR Port", DKRPORT_VERSION_STRING, "org.dkrport.launcher");
+    SDL_SetAppMetadata("DKR-R", DKRPORT_VERSION_STRING, "org.dkrport.launcher");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         error = std::string("SDL could not initialise: ") + SDL_GetError();
         return false;
@@ -179,7 +179,7 @@ bool NativeLauncher::InitialiseWindow(std::string& error) {
 
     const SDL_WindowFlags flags = static_cast<SDL_WindowFlags>(
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-    if (!SDL_CreateWindowAndRenderer("DKR Port — Native Launcher", 1600, 900, flags, &m_window, &m_renderer)) {
+    if (!SDL_CreateWindowAndRenderer("DKR-R — Native Launcher", 1600, 900, flags, &m_window, &m_renderer)) {
         error = std::string("SDL could not create the native launcher window: ") + SDL_GetError();
         return false;
     }
@@ -547,7 +547,7 @@ void NativeLauncher::UpdateGameRuntime() {
     SDL_DestroyProcess(m_gameProcess);
     m_gameProcess = nullptr;
     m_gameRunning = false;
-    SDL_SetWindowTitle(m_window, "DKR Port — Native Launcher");
+    SDL_SetWindowTitle(m_window, "DKR-R — Native Launcher");
     SDL_ShowWindow(m_window);
     SDL_RaiseWindow(m_window);
     RefreshStatus();
@@ -576,14 +576,14 @@ void NativeLauncher::StartGame() {
     if (m_gameProcess) return;
 
 #ifdef _WIN32
-    const std::filesystem::path runtimePath = m_application.Paths().executableDirectory / "DKRPortGame.exe";
+    const std::filesystem::path runtimePath = m_application.Paths().executableDirectory / "DKR-R.exe";
 #else
-    const std::filesystem::path runtimePath = m_application.Paths().executableDirectory / "DKRPortGame";
+    const std::filesystem::path runtimePath = m_application.Paths().executableDirectory / "DKR-R";
 #endif
     if (!std::filesystem::is_regular_file(runtimePath)) {
         ShowMessage("GAME RUNTIME NOT FOUND",
             "The launcher could not find the bundled game runtime at:\n\n" + PathToUtf8(runtimePath) +
-            "\n\nReinstall the complete DKR Port release package.", true);
+            "\n\nReinstall the complete DKR-R release package.", true);
         return;
     }
 
@@ -633,7 +633,7 @@ void NativeLauncher::StartGame() {
 
     m_gameRunning = true;
     m_application.Log().Info("Started DKR runtime: " + PathToUtf8(runtimePath));
-    SDL_SetWindowTitle(m_window, "DKR Port — Game Running");
+    SDL_SetWindowTitle(m_window, "DKR-R — Game Running");
     SDL_HideWindow(m_window);
 }
 
@@ -646,7 +646,7 @@ void NativeLauncher::StopGame() {
         return;
     }
     m_gameRunning = false;
-    SDL_SetWindowTitle(m_window, "DKR Port — Native Launcher");
+    SDL_SetWindowTitle(m_window, "DKR-R — Native Launcher");
     ShowPage("page-main");
 }
 
@@ -828,7 +828,7 @@ void NativeLauncher::RefreshStatus() {
         SetText("rom-status-kicker", status.romSourceAvailable ? "SUPPORTED GAME DATA" : "ROM SOURCE REQUIRED");
         SetText("rom-status-title", status.rom.displayName.empty() ? "Diddy Kong Racing US 1.0" : status.rom.displayName);
         SetText("rom-status-description", status.romSourceAvailable
-            ? "The ROM is validated and connected. DKR Port is ready to play."
+            ? "The ROM is validated and connected. DKR-R is ready to play."
             : "The validation manifest is present, but this version needs the original ROM path. Select the same ROM once to reconnect it.");
         SetText("rom-detail-version", status.rom.region + " " + status.rom.revision);
         SetText("rom-detail-format", status.rom.sourceOrderName);

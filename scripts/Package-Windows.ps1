@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0-rc3',
+    [string]$Version = '1.0.0-rc4',
     [string]$Configuration = 'Release',
     [string]$BuildDirectory = 'build\dkr-runtime-rt64'
 )
@@ -12,10 +12,10 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $distRoot = Join-Path $projectRoot 'dist'
 $resolvedBuild = Join-Path $projectRoot $BuildDirectory
-$stage = Join-Path $distRoot "DKRPort-$Version-Windows-x64"
+$stage = Join-Path $distRoot "DKR-R-$Version-Windows-x64"
 $zip = "$stage.zip"
 $deniedExtensions = @('.z64', '.v64', '.n64', '.eep', '.mpk', '.o2r', '.otr')
-$runtimeFiles = @('DKRPort.exe', 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll')
+$runtimeFiles = @('DKR-R.exe', 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll')
 
 if (Test-Path -LiteralPath $stage) {
     throw "Refusing to overwrite existing release directory: $stage"

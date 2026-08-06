@@ -161,7 +161,7 @@ function Refresh-DkrEntrypoint([string]$ElfPath, [string]$ConfigPath) {
 }
 
 try {
-    Write-Host 'DKR Port - rerun the prepared N64Recomp boundary'
+    Write-Host 'DKR-R - regenerate the prepared N64Recomp boundary'
     Write-Host "Project: $ProjectRoot"
     Write-Host ''
 

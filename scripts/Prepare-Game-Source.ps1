@@ -17,7 +17,7 @@ function Fail([string]$Message) {
 }
 
 try {
-    Write-Host 'DKR Port game-source preparation'
+    Write-Host 'DKR-R game-source preparation'
     Write-Host "Project: $ProjectRoot"
     Write-Host "Log: $LogPath"
     Write-Host ''

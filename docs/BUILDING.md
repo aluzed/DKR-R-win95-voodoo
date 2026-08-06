@@ -1,67 +1,40 @@
-# Building DKR Port 1.0.0 RC3
+# Building DKR-R 1.0.0 RC4
 
-DKR Port is built from project-owned integration source, a pinned Diddy Kong
-Racing decomp checkout, generated N64Recomp CPU/RSP output, N64ModernRuntime and
-RT64. The repository and build process do not provide a ROM. A legally obtained
-Diddy Kong Racing US v1.0/v77 Game Pak image is required locally to produce the
-matching ELF and generated translation.
+DKR-R combines project-owned integration code with pinned Diddy Kong Racing
+decomp, N64Recomp, N64ModernRuntime and RT64 revisions. A legally obtained
+Diddy Kong Racing US 1.0/v77 Game Pak image is required locally to build the
+matching decomp ELF and generated translation. No ROM is provided.
 
 ## Protected source boundaries
 
-Do not edit these generated or third-party trees directly:
+Never hand-edit `runtime-recomp/RecompiledFuncs`,
+`runtime-recomp/RecompiledPatches`, `extern/rt64`,
+`extern/n64-modern-runtime` or its `N64Recomp` submodule. Put DKR hooks in
+`runtime-recomp/dkr.us.v77.recomp-policy.json`, dependency patches under
+`patches/`, then regenerate through the Patch Pipeline.
 
-- `RecompiledFuncs`
-- `RecompiledPatches`
-- `extern/n64-modern-runtime`
-- `extern/n64-modern-runtime/N64Recomp`
-- `extern/rt64`
+## Windows prerequisites
 
-Game instruction/function changes belong in
-`runtime-recomp/dkr.us.v77.recomp-policy.json`. Dependency changes belong in
-`patches/manifest.json` and its referenced patch files. Apply them with the
-Patch Pipeline. Regenerate translated functions; never hand-edit generated
-output.
+- Windows 10/11 x64
+- Visual Studio 2022 Desktop development with C++ and a Windows SDK
+- Git and PowerShell 5.1+
+- native Windows CMake (the Visual Studio-bundled CMake is supported)
+- WSL2/Ubuntu 24.04 for the matching decomp build
+- a local DKR US 1.0/v77 ROM
 
-## Prerequisites
-
-Windows builds require:
-
-- Windows 10 or 11 x64;
-- Visual Studio 2022 with Desktop development with C++ and a Windows SDK;
-- Git, CMake and PowerShell 5.1 or newer;
-- WSL2 with Ubuntu 24.04 for the matching decomp build;
-- a locally supplied DKR US v1.0/v77 ROM.
-
-Linux builds require a modern x86-64 distribution, CMake, Ninja, GCC/G++, SDL2,
-GTK3 development files and Vulkan development/runtime support. Ubuntu 24.04 is
-the qualified build environment; SteamOS/Steam Deck is the target AppImage
-environment.
-
-## Prepare dependencies and generated code
-
-From the repository root on Windows:
+Prepare dependencies, the matching ELF and generated functions:
 
 ```text
 Build-DKR-Runtime.cmd -BuildRenderer
 ```
 
-The preparation script validates the supported ROM revision, builds the
-matching decomp ELF under WSL, resolves the exact dependency revisions, applies
-the Patch Pipeline, builds the pinned N64Recomp tools and generates the DKR CPU
-translation. The resolved revisions are recorded in
-`runtime-recomp/resolved-runtime-dependencies.json`; release pins also live in
-`dependencies.lock.json` and `patches/manifest.json`.
-
-After a policy change, regenerate from the prepared ELF with:
+After changing the recomp policy, regenerate before compiling:
 
 ```text
 Diagnose-DKR-Recompile.cmd
 ```
 
-## Windows runtime
-
-Configure and build the full renderer-enabled runtime from a Visual Studio
-developer shell:
+Configure and build the shipping runtime:
 
 ```text
 cmake -S runtime-recomp -B build/dkr-runtime-rt64 ^
@@ -70,85 +43,72 @@ cmake -S runtime-recomp -B build/dkr-runtime-rt64 ^
   -DDKR_RUNTIME_BUILD_GENERATED=ON ^
   -DDKR_RUNTIME_BUILD_RT64=ON
 cmake --build build/dkr-runtime-rt64 --config Release --parallel
+ctest --test-dir build/dkr-runtime-rt64 -C Release --output-on-failure
 ```
 
-The executable and required runtime DLLs are emitted under:
+Output: `build/dkr-runtime-rt64/bin/Release/DKR-R.exe`.
+
+Run the storage self-test with a disposable directory:
 
 ```text
-build/dkr-runtime-rt64/bin/Release
+build\dkr-runtime-rt64\bin\Release\DKR-R.exe --self-test-pak build\pak-self-test
 ```
 
-Run the test executables generated under
-`build/dkr-runtime-rt64/Release`. The release record lists the exact suite and
-results. The Pak storage test can also be run directly:
+## Linux and AppImage
 
-```text
-build\dkr-runtime-rt64\bin\Release\DKRPort.exe --self-test-pak build\pak-self-test
-```
+Ubuntu 24.04 x86-64 is the qualified Linux build environment. Install CMake,
+Ninja, GCC/G++, SDL2, GTK3 and Vulkan development/runtime packages after the
+generated translation has been prepared.
 
-## Linux runtime
-
-After the dependencies and generated translation have been prepared, build in
-WSL2/Ubuntu 24.04 or a native Ubuntu 24.04 environment:
+The complete build, test and mandatory AppImage step is:
 
 ```bash
-cmake -S runtime-recomp -B build/dkr-runtime-linux -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DDKRPORT_ROOT="$PWD" \
-  -DDKR_RUNTIME_BUILD_GENERATED=ON \
-  -DDKR_RUNTIME_BUILD_RT64=ON
-cmake --build build/dkr-runtime-linux --parallel
-ctest --test-dir build/dkr-runtime-linux --output-on-failure
+DKR_RELEASE_VERSION=1.0.0-rc4 ./Build-Linux.sh
 ```
 
-The renderer-enabled executable is:
+This emits:
 
 ```text
-build/dkr-runtime-linux/bin/Release/DKRPort
+build/dkr-runtime-linux/bin/Release/DKR-R
+dist/DKR-R-1.0.0-rc4-Linux-x86_64.AppImage
 ```
 
-Linux and SteamOS use RT64's Vulkan backend. The launcher uses SDL2's software
-2D renderer before handing the same window to the Vulkan-capable game runtime.
+Linux/SteamOS uses RT64's Vulkan backend. Vulkan availability is required to
+run the game, but the AppImage still needs testing on physical Steam Deck
+hardware before that platform is certified.
 
-## Release packages
-
-Build a fresh Windows ZIP from the Release tree:
+## Packages
 
 ```powershell
-scripts\Package-Windows.ps1 -Version 1.0.0-rc3
+scripts\Package-Windows.ps1 -Version 1.0.0-rc4
 ```
-
-Build the Linux AppImage from Ubuntu/WSL:
 
 ```bash
-DKR_RELEASE_VERSION=1.0.0-rc3 ./scripts/Package-Linux-AppImage.sh
+DKR_RELEASE_VERSION=1.0.0-rc4 ./scripts/Package-Linux-AppImage.sh
 ```
 
-Build the committed project-source archive only after the final release commit:
+After the final release commit:
 
 ```text
 python scripts/package_source.py
 ```
 
-The packagers refuse to overwrite an existing output. Use a fresh version or
-remove an obsolete local preflight artifact deliberately. Every staging tree
-and archive is scanned for prohibited game-data extensions and N64 ROM headers.
-The AppImage additionally carries the dependency package copyright records and
-common licence texts deployed from the qualified Ubuntu environment.
-
-Expected public artifacts:
+Expected artifacts:
 
 ```text
-dist/DKRPort-1.0.0-rc3-Windows-x64.zip
-dist/DKRPort-1.0.0-rc3-Linux-x86_64.AppImage
-dist/DKRPort-1.0.0-rc3-Source.zip
+dist/DKR-R-1.0.0-rc4-Windows-x64.zip
+dist/DKR-R-1.0.0-rc4-Linux-x86_64.AppImage
+dist/DKR-R-1.0.0-rc4-Source.zip
 ```
 
-## Release discipline
+Packagers refuse to overwrite existing outputs and scan staging trees for ROM
+extensions and N64 ROM headers.
 
-Keep the accepted Accurate preset at original 4:3/30 FPS. Treat Modern frame
-pacing as a locked, separately tested presentation layer. Every renderer or
-microcode change must be tested in a visible build at Accurate 4:3 and Modern
-16:9, 21:9 and 32:9 before packaging. Record the final commit, dependency
-commits, tests, hashes and physical-controller/Steam Deck results in
+## Release checks
+
+Keep Accurate fixed at 4:3/30 FPS. Visually validate Accurate 4:3 and Modern at
+16:9, 21:9 and 32:9. Exercise launcher and in-game overlay navigation with a
+mouse and controller, gyro recentering, a post-race results screen, intro to
+character-select audio, save import/export and clean Exit to Desktop. Record
+automated results, dependency revisions, hashes and physical-hardware tests in
 `BUILD-VALIDATION.md`.

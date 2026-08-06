@@ -206,7 +206,7 @@
     </div>
 
     <div id="bottom-bar">
-        <div>DKR PORT <span id="footer-version">1.0.0</span></div>
+        <div>DKR-R <span id="footer-version">1.0.0</span></div>
         <div class="input-hints"><span>↑ ↓</span> NAVIGATE <span>ENTER / A</span> SELECT <span>ESC / B</span> BACK</div>
     </div>
 </div>

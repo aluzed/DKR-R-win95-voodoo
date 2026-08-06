@@ -1,5 +1,10 @@
 # Modern Presentation Milestone
 
+> Implementation note (6 August 2026): the release-candidate Modern feature
+> set is implemented. HUD placement/scale controls described in the original
+> roadmap below were deliberately removed before RC4; both presets retain the
+> authored HUD layout. Remaining roadmap entries are post-1.0 candidates.
+
 ## Objective
 
 Add an opt-in Modern preset that can present smooth motion from 30 FPS through
@@ -497,8 +502,8 @@ Acceptance tests:
 - Accurate always resolves to Original 4:3. Modern alone exposes `Fit to
   Window`; switching presets while running requests a safe scene reload or game
   restart rather than mutating projection state halfway through a frame.
-- HUD scale from 75 to 150 percent and independent horizontal/vertical safe
-  areas, defaulting to the current accepted layout.
+- Keep the original HUD layout in both presets. Any future HUD scaling or safe
+  area work requires a separate renderer-layer design and regression pass.
 - Internal render scale presets plus native-window and integer-scale choices.
 - MSAA, texture filtering, and anisotropic filtering only where RT64 supports
   them without changing framebuffer effects or authored texture animation.

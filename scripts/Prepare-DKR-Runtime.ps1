@@ -302,7 +302,7 @@ function Clone-Or-Update([string]$Name, [string]$Repository, [string]$Destinatio
 }
 
 try {
-    Write-Host 'DKR Port - decomp ELF and static-recompilation preparation'
+    Write-Host 'DKR-R - decomp ELF and static-recompilation preparation'
     Write-Host "Project: $ProjectRoot"
     Write-Host "Log: $LogPath"
     Write-Host ''

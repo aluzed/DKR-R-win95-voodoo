@@ -362,10 +362,6 @@ void dkr::runtime::F3DDKRRT64Bridge::process(RT64::Application& application,
     RT64::State* state = application.state.get();
     RT64::RSP& rsp = *state->rsp;
     rsp.reset();
-    // Patch-pipeline HUD draws use RT64's standard extended alignment
-    // commands. F3DDKR predates the extension handshake, so register the
-    // otherwise-unused 0x64 opcode explicitly for each freshly reset task.
-    state->enableExtendedGBI(0x64U);
     application.interpreter->hleGBI = gbi_;
     application.interpreter->UCode.textAddress = task.t.ucode & 0x00FFFFF8U;
     application.interpreter->UCode.dataAddress = task.t.ucode_data & 0x00FFFFF8U;

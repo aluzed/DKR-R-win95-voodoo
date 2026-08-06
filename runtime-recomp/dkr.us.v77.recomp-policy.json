@@ -81,30 +81,6 @@
   ],
   "functionHooks": [
     {
-      "function": "hud_element_render",
-      "beforeVram": "0x800AA7B8",
-      "text": "extern void dkr_hud_element_alignment_begin(uint8_t*, recomp_context*); dkr_hud_element_alignment_begin(rdram, ctx);",
-      "reason": "Apply the selected Modern HUD edge origin at the first instruction reached only after the element asset exists, beyond the asset-null branch delay slot and before DKR copies its display-list cursor."
-    },
-    {
-      "function": "hud_element_render",
-      "beforeVram": "0x800AAF90",
-      "text": "extern void dkr_hud_element_alignment_end(uint8_t*, recomp_context*); dkr_hud_element_alignment_end(rdram, ctx);",
-      "reason": "Restore neutral rectangle and viewport origins after the element draw and DKR's own bounce offsets have been restored, preventing HUD alignment from leaking into later world or overlay rendering."
-    },
-    {
-      "function": "hud_render_general",
-      "beforeVram": "0x800A9D1C",
-      "text": "extern void dkr_minimap_alignment_begin(uint8_t*, recomp_context*); dkr_minimap_alignment_begin(rdram, ctx);",
-      "reason": "Right-anchor DKR's directly rendered minimap plate in Modern HUD modes; its marker elements are aligned independently through hud_element_render."
-    },
-    {
-      "function": "hud_render_general",
-      "beforeVram": "0x800A9D24",
-      "text": "extern void dkr_minimap_alignment_end(uint8_t*, recomp_context*); dkr_minimap_alignment_end(rdram, ctx);",
-      "reason": "Restore neutral HUD origins immediately after the minimap plate draw so the setting cannot affect subsequent scene geometry."
-    },
-    {
       "function": "main_game_loop",
       "beforeVram": "0x8006C60C",
       "text": "extern void dkr_telemetry_simulation_tick(uint8_t*, recomp_context*); dkr_telemetry_simulation_tick(rdram, ctx);",
@@ -337,6 +313,18 @@
       "beforeVram": "0x8008F948",
       "text": "extern void dkr_track_select_background_cover(uint8_t*, recomp_context*); dkr_track_select_background_cover(rdram, ctx);",
       "reason": "Widen only each Track Select background quad after its private vertex pointer is restored, avoiding all mutations of the shared orthographic and view-projection matrices."
+    },
+    {
+      "function": "postrace_viewport",
+      "beforeVram": "0x80094F38",
+      "text": "extern void dkr_expand_postrace_viewport(uint8_t*, recomp_context*); dkr_expand_postrace_viewport(rdram, ctx);",
+      "reason": "Expand the animated one-player post-race camera viewport horizontally into Modern Fit-to-Window space immediately before DKR submits its viewport coordinates, leaving results and HUD coordinates authored."
+    },
+    {
+      "function": "menu_postrace",
+      "beforeVram": "0x80095A04",
+      "text": "extern void dkr_expand_postrace_viewport(uint8_t*, recomp_context*); dkr_expand_postrace_viewport(rdram, ctx);",
+      "reason": "Expand the settled one-player post-race camera viewport horizontally in Modern Fit-to-Window so the results sequence does not expose a central 4:3 boundary."
     },
     {
       "function": "__scHandleRSP",

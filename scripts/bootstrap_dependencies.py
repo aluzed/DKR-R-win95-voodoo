@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clone and verify the exact external revisions used by DKR Port.
+"""Clone and verify the exact external revisions used by DKR-R.
 
 Milestone 0 itself has no external runtime dependencies. This script prepares the
 research/porting dependencies for the next milestone without relying on source ZIP

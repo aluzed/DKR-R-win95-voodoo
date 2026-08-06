@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-echo DKR Port - rerun the prepared N64Recomp boundary
+echo DKR-R - regenerate the prepared N64Recomp boundary
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Diagnose-DKR-Recompile.ps1"
 set "EXIT_CODE=%ERRORLEVEL%"
 
