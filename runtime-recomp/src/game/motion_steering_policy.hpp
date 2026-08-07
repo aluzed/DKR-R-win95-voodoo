@@ -7,6 +7,10 @@ namespace dkr::runtime::input {
 
 inline constexpr float kRadiansPerDegree = 0.01745329251994329577F;
 
+constexpr bool owns_gyro_accumulator(bool primary_player) {
+    return primary_player;
+}
+
 constexpr float clamp_gyro_sensitivity(float percent) {
     return std::clamp(percent, 25.0F, 300.0F);
 }

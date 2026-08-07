@@ -435,10 +435,18 @@ dkr::runtime::input::State dkr::runtime::input::poll(
     State state{};
 #if DKR_RUNTIME_HAS_RT64
     if (blocked) {
-        recenter_gyro();
+        if (owns_gyro_accumulator(include_keyboard)) {
+            recenter_gyro();
+        }
         return state;
     }
-    const std::optional<float> gyro = PollGyro(controller);
+    // Motion steering belongs to Controller 1. Polling the shared gyro
+    // accumulator for the empty Controller 2-4 slots used to recenter it three
+    // times after every valid sample, leaving every subsequent Player 1 sample
+    // with a zero delta and therefore no steering output.
+    const std::optional<float> gyro = owns_gyro_accumulator(include_keyboard)
+        ? PollGyro(controller)
+        : std::nullopt;
     std::array<BindingPair, static_cast<std::size_t>(Action::Count)> bindings;
     {
         std::scoped_lock lock(g_binding_mutex);

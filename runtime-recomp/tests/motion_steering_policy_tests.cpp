@@ -7,6 +7,8 @@
 using namespace dkr::runtime::input;
 
 int main() {
+    static_assert(owns_gyro_accumulator(true));
+    static_assert(!owns_gyro_accumulator(false));
     static_assert(clamp_gyro_sensitivity(0.0F) == 25.0F);
     static_assert(clamp_gyro_sensitivity(100.0F) == 100.0F);
     static_assert(clamp_gyro_sensitivity(500.0F) == 300.0F);

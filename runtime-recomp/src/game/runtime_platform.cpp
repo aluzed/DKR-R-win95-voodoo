@@ -98,6 +98,18 @@ void RefreshControllers() {
             const auto player = static_cast<std::size_t>(empty - g_controllers.begin());
             std::fprintf(stderr, "[boot][input] player=%zu controller=%s\n", player + 1U,
                          SDL_GameControllerName(*empty));
+            if (player == 0U &&
+                SDL_GameControllerHasSensor(*empty, SDL_SENSOR_GYRO) == SDL_TRUE) {
+                if (SDL_GameControllerSetSensorEnabled(
+                        *empty, SDL_SENSOR_GYRO, SDL_TRUE) == 0) {
+                    std::fprintf(stderr,
+                                 "[boot][input] player=1 gyro sensor enabled\n");
+                } else {
+                    std::fprintf(stderr,
+                                 "[boot][input] player=1 gyro enable failed: %s\n",
+                                 SDL_GetError());
+                }
+            }
         }
     }
 }
@@ -107,7 +119,8 @@ void RefreshControllers() {
 
 bool dkr::runtime::platform::initialise() {
 #if DKR_RUNTIME_HAS_RT64
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER |
+                 SDL_INIT_HAPTIC | SDL_INIT_SENSOR) != 0) {
         std::fprintf(stderr, "[boot][platform] SDL initialization failed: %s\n", SDL_GetError());
         return false;
     }
