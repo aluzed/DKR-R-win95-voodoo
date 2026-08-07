@@ -1,7 +1,6 @@
 # DKR-R (Diddy Kong Racing - Recompiled)
 
-<img width="912" height="607" alt="DKR-R 3" src="https://github.com/user-attachments/assets/bb46fcfa-c100-4aeb-9100-5a7834918780" />
-
+<img width="1254" height="1254" alt="DKR5" src="https://github.com/user-attachments/assets/24662b25-0853-44f5-87c4-02addadba7cc" />
 
 **1.0.0 release candidate - native Windows and Linux static recompilation**
 
