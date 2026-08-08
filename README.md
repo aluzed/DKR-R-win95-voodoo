@@ -1,5 +1,7 @@
 # DKR-R (Diddy Kong Racing - Recompiled)
 
+<img width="1254" height="1254" alt="DKR5" src="https://github.com/user-attachments/assets/24662b25-0853-44f5-87c4-02addadba7cc" />
+
 **1.0.0 release candidate - native Windows and Linux static recompilation**
 
 DKR-R recompiles the original Diddy Kong Racing executable for modern desktop
