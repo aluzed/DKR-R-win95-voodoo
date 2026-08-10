@@ -81,16 +81,112 @@
   ],
   "functionHooks": [
     {
+      "function": "__scHandleRSP",
+      "beforeVram": "0x80079B44",
+      "text": "extern int dkr_scheduler_sp_event_valid(uint8_t*, recomp_context*); if (!dkr_scheduler_sp_event_valid(rdram, ctx)) { return; }",
+      "reason": "Drop and acknowledge only a null or out-of-RDRAM late host SP completion before libultra clears and unconditionally dereferences scheduler->curRSPTask; valid retail tasks continue through the original handler unchanged."
+    },
+    {
       "function": "main_game_loop",
       "beforeVram": "0x8006C60C",
-      "text": "extern void dkr_telemetry_simulation_tick(uint8_t*, recomp_context*); dkr_telemetry_simulation_tick(rdram, ctx);",
-      "reason": "Count authoritative game-loop ticks at the decompiled DKR simulation boundary so Modern presentation work can be proven independent from gameplay, input, and audio cadence."
+      "text": "extern void dkr_apply_launch_magic_codes(uint8_t*, recomp_context*); extern void dkr_telemetry_simulation_tick(uint8_t*, recomp_context*); dkr_apply_launch_magic_codes(rdram, ctx); dkr_telemetry_simulation_tick(rdram, ctx);",
+      "reason": "At the first authoritative DKR game-loop boundary, apply launcher-selected retail Magic Codes exactly once after save initialization, then count the simulation tick. This preserves progression-owned T.T. and Drumstick bits and leaves subsequent retail menu behaviour authoritative."
+    },
+    {
+      "function": "waves_init",
+      "beforeVram": "0x800B8304",
+      "text": "extern void dkr_maximise_persistent_water_detail(uint8_t*, recomp_context*); dkr_maximise_persistent_water_detail(rdram, ctx);",
+      "reason": "When Modern scenery persistence is requested, promote the authored wave window to DKR's largest safe 5x5 layout after header parsing and before waves_alloc sizes its fixed selector and vertex pools."
+    },
+    {
+      "function": "initialise_player_viewport_vars",
+      "beforeVram": "0x80028DD8",
+      "text": "extern void dkr_presentation_viewport_camera_mode(uint8_t*, recomp_context*); dkr_presentation_viewport_camera_mode(rdram, ctx);",
+      "reason": "Classify every submitted viewport from gSceneActiveCamera->mode after the active camera is established. Fixed challenge/race spectator tasks are excluded from interpolation even while the unrelated post-race viewport flag remains clear."
+    },
+    {
+      "function": "initialise_player_viewport_vars",
+      "beforeVram": "0x80028EDC",
+      "text": "extern void dkr_anchor_persistent_water_to_camera(uint8_t*, recomp_context*); dkr_anchor_persistent_water_to_camera(rdram, ctx);",
+      "reason": "Keep the maximum safe HQ water window centred on the active view when scenery persistence is enabled, while the existing BSP policy preserves all water-bearing level segments at extended distances."
+    },
+    {
+      "function": "waves_visibility",
+      "beforeVram": "0x800B91F8",
+      "text": "extern void dkr_stabilise_persistent_water_transition(uint8_t*, recomp_context*); dkr_stabilise_persistent_water_transition(rdram, ctx);",
+      "reason": "After DKR updates its per-viewport wave fades, make newly selected cells fully visible when Modern scenery persistence is enabled. This closes the one-frame gap between the authored flat fallback and the fixed 5x5 HQ wave pool without resizing any retail allocation."
+    },
+    {
+      "function": "mode_game",
+      "beforeVram": "0x8006D070",
+      "text": "extern void dkr_quick_restart_poll(uint8_t*, recomp_context*); dkr_quick_restart_poll(rdram, ctx);",
+      "reason": "Consume the optional Modern quick-restart chord at the exact boundary before the retail pause-result switch, and inject the same L+Z transition used by PAUSE_RESET only when the current course exposes a retail restart option."
     },
     {
       "function": "main_game_loop",
       "beforeVram": "0x8006C724",
       "text": "extern void dkr_presentation_frame_begin(uint8_t*, recomp_context*); dkr_presentation_frame_begin(rdram, ctx);",
       "reason": "Reset only the matrix-identity sidecar for the display-list buffer selected for the new authored frame, after DKR has submitted and toggled the previous buffer."
+    },
+    {
+      "function": "mtx_perspective",
+      "beforeVram": "0x80068108",
+      "text": "extern void dkr_presentation_perspective_matrix(uint8_t*, recomp_context*); dkr_presentation_perspective_matrix(rdram, ctx);",
+      "reason": "Bind the completed perspective root matrix to the active scene and camera before DKR advances its matrix pointer, allowing static level geometry to share smooth camera motion without changing authored camera math."
+    },
+    {
+      "function": "mtx_world_origin",
+      "beforeVram": "0x800684D8",
+      "text": "extern void dkr_presentation_world_origin_matrix(uint8_t*, recomp_context*); dkr_presentation_world_origin_matrix(rdram, ctx);",
+      "reason": "Bind each completed world-origin root matrix to the active scene and camera while its Mtx pointer is still available, so terrain, cliffs, foliage and procedural water interpolate as one stable world."
+    },
+    {
+      "function": "update_player_camera",
+      "beforeVram": "0x80057B70",
+      "text": "extern void dkr_presentation_finish_camera_enter(uint8_t*, recomp_context*); dkr_presentation_finish_camera_enter(rdram, ctx);",
+      "reason": "Disable semantic interpolation for the complete authored finish-camera task before the retail post-race flag is committed, preventing incompatible spectator display-list topology from pairing while leaving gameplay interpolation untouched."
+    },
+    {
+      "function": "waves_render",
+      "beforeVram": "0x800BA8E4",
+      "text": "extern void dkr_presentation_wave_begin(uint8_t*, recomp_context*); dkr_presentation_wave_begin(rdram, ctx);",
+      "reason": "Mark the exact HQ-wave render lifetime and viewport before its alternating procedural buffers and per-tile matrices are emitted."
+    },
+    {
+      "function": "waves_render",
+      "beforeVram": "0x800BB2A4",
+      "text": "extern void dkr_presentation_wave_end(uint8_t*, recomp_context*); dkr_presentation_wave_end(rdram, ctx);",
+      "reason": "Close HQ-wave matrix capture at the common epilogue so unrelated mtx_cam_push users retain their existing interpolation policy."
+    },
+    {
+      "function": "waves_render",
+      "beforeVram": "0x800BAE30",
+      "text": "extern void dkr_presentation_wave_block(uint8_t*, recomp_context*); dkr_presentation_wave_block(rdram, ctx);",
+      "reason": "Capture the stable WaveBlockModel entry before waves_render branches to its normal- or double-density path. This prevents adjacent Whale Bay water cells with compatible transforms from sharing an interpolation identity while the high-detail selection window moves across their seam."
+    },
+    {
+      "function": "waves_render",
+      "beforeVram": "0x800BAE7C",
+      "text": "extern void dkr_presentation_wave_selection(uint8_t*, recomp_context*); dkr_presentation_wave_selection(rdram, ctx);",
+      "reason": "Capture the current packed 0..9 wave-grid selector from waves_render's own sp104 local immediately before the high-density mtx_cam_push call; the callee stack cannot recover this caller-owned value safely."
+    },
+    {
+      "function": "waves_render",
+      "beforeVram": "0x800BB0D4",
+      "text": "extern void dkr_presentation_wave_selection(uint8_t*, recomp_context*); dkr_presentation_wave_selection(rdram, ctx);",
+      "reason": "Capture the current packed 0..9 wave-grid selector from waves_render's own sp104 local immediately before the normal-density mtx_cam_push call; the callee consumes it once when assigning the matrix identity."
+    },
+    {
+      "function": "mtx_cam_push",
+      "beforeVram": "0x80069484",
+      "text": "extern void dkr_presentation_wave_matrix(uint8_t*, recomp_context*); dkr_presentation_wave_matrix(rdram, ctx);",
+      "reason": "While waves_render is active, consume the validated caller-captured grid selector and bind each tile allocation to its stable scene, viewport and exact topology. This prevents unrelated vertex/UV grids from being paired without reading caller locals through the callee stack."
+    },
+    {
+      "function": "menu_title_screen_loop",
+      "beforeVram": "0x80083B8C",
+      "text": "extern void dkr_title_intro_audio_tail(uint8_t*, recomp_context*); dkr_title_intro_audio_tail(rdram, ctx);",
+      "reason": "Hold only the completed first title cinematic for 30 NTSC update units so its final audio tail finishes before the original demo transition proceeds."
     },
     {
       "function": "gfxtask_run_xbus",
@@ -129,6 +225,30 @@
       "reason": "Scale the local Modern object draw-distance value before DKR's original multiplayer reduction and fade calculation, preserving authored object data and Accurate behavior."
     },
     {
+      "function": "add_segment_to_order",
+      "beforeVram": "0x80029D78",
+      "text": "extern void dkr_extend_hub_segment_bitfield(uint8_t*, recomp_context*); dkr_extend_hub_segment_bitfield(rdram, ctx);",
+      "reason": "Let Modern hub scenery follow the render-distance control and let the explicit scenery-persistence option relax authored regional visibility across playable hubs, tracks, bosses and minigames."
+    },
+    {
+      "function": "add_segment_to_order",
+      "beforeVram": "0x80029D9C",
+      "text": "extern void dkr_keep_hub_segment_visible(uint8_t*, recomp_context*); dkr_keep_hub_segment_visible(rdram, ctx);",
+      "reason": "When the explicit Modern scenery-persistence option is enabled, preserve every playable hub, track, boss and minigame BSP segment after the original block visibility result and before it is tested."
+    },
+    {
+      "function": "render_level_segment",
+      "beforeVram": "0x80029814",
+      "text": "extern void dkr_surface_interpolation_begin(uint8_t*, recomp_context*); dkr_surface_interpolation_begin(rdram, ctx);",
+      "reason": "Give each accepted authored RENDER_WATER fallback batch an exact scene-and-batch interpolation identity before material state and vertices are emitted. This keeps distant flat water stable while the bounded HQ wave window moves."
+    },
+    {
+      "function": "render_level_segment",
+      "beforeVram": "0x80029AB8",
+      "text": "extern void dkr_surface_interpolation_end(uint8_t*, recomp_context*); dkr_surface_interpolation_end(rdram, ctx);",
+      "reason": "Close the dynamic water scope at the common post-draw convergence point so subsequent terrain, decals and objects cannot inherit its UV/tile interpolation identity."
+    },
+    {
       "function": "spawn_object",
       "beforeVram": "0x8000F62C",
       "text": "extern void dkr_presentation_object_spawned(uint8_t*, recomp_context*); dkr_presentation_object_spawned(rdram, ctx);",
@@ -151,6 +271,36 @@
       "beforeVram": "0x80012DD0",
       "text": "extern void dkr_presentation_object_end(uint8_t*, recomp_context*); dkr_presentation_object_end(rdram, ctx);",
       "reason": "Bind the exact contiguous matrix range produced by this object to hierarchical per-matrix identities before DKR restores its caller-owned render pointers."
+    },
+    {
+      "function": "shadow_render",
+      "beforeVram": "0x8002D3E8",
+      "text": "extern void dkr_shadow_interpolation_begin(uint8_t*, recomp_context*); dkr_shadow_interpolation_begin(rdram, ctx);",
+      "reason": "Begin a stable per-object interpolation scope only after DKR has confirmed this shadow has a valid mesh and shadows are enabled, preventing its world-space vertices from inheriting the preceding object's transform identity."
+    },
+    {
+      "function": "shadow_render",
+      "beforeVram": "0x8002D640",
+      "text": "extern void dkr_shadow_interpolation_end(uint8_t*, recomp_context*); dkr_shadow_interpolation_end(rdram, ctx);",
+      "reason": "Close the per-object shadow scope after its final polygon and colour restore so the following vehicle model receives its own semantic matrix identity."
+    },
+    {
+      "function": "render_sprite_billboard",
+      "beforeVram": "0x800687B4",
+      "text": "extern void dkr_vehicle_part_matrix_identity(uint8_t*, recomp_context*); dkr_vehicle_part_matrix_identity(rdram, ctx);",
+      "reason": "Capture a wheel, propeller, fan or steering-wheel matrix using its stable attachment transform while s0 still holds that transform. The following instruction overwrites s0 with DKR's shared scratch matrix, and the attachment's allocation ordinal can shift when a directional branch changes."
+    },
+    {
+      "function": "render_sprite_billboard",
+      "beforeVram": "0x8006892C",
+      "text": "extern void dkr_billboard_interpolation_begin(uint8_t*, recomp_context*); dkr_billboard_interpolation_begin(rdram, ctx);",
+      "reason": "Give registered ordinary 3D billboards a stable object-and-sprite presentation identity immediately before their world-space anchor vertex is submitted, allowing position and camera-facing transforms to interpolate while animated texture frames remain discrete."
+    },
+    {
+      "function": "render_sprite_billboard",
+      "beforeVram": "0x80068BD0",
+      "text": "extern void dkr_vehicle_part_interpolation_end(uint8_t*, recomp_context*); dkr_vehicle_part_interpolation_end(rdram, ctx);",
+      "reason": "Restore the owning world-object interpolation identity after an ordinary registered billboard display list, matrix selection and billboard reset have all been emitted. Inline vehicle attachments remain on their parent object's already-captured private matrix identity."
     },
     {
       "function": "func_80065A80",
@@ -225,10 +375,16 @@
       "reason": "Use the deterministic beat phase only for character-select model animation after the original audio clock bookkeeping, preserving every other music-synchronised effect."
     },
     {
-      "function": "music_volume_set",
-      "beforeVram": "0x80001990",
-      "text": "extern void dkr_scale_music_volume(uint8_t*, recomp_context*); dkr_scale_music_volume(rdram, ctx);",
-      "reason": "Apply the user's music mix as a final attenuation of DKR's authored sequence volume. The default 100 percent path leaves the original value bit-exact."
+      "function": "alCSPSetVol",
+      "beforeVram": "0x800C7850",
+      "text": "extern void dkr_scale_sequence_player_volume(uint8_t*, recomp_context*); dkr_scale_sequence_player_volume(rdram, ctx);",
+      "reason": "Attenuate the music sequence at its final player boundary without modifying DKR's authored base, slider or fade state. The 100 percent path remains bit-exact."
+    },
+    {
+      "function": "sound_update_queue",
+      "beforeVram": "0x80000FBC",
+      "text": "extern void dkr_audio_mix_tick(uint8_t*, recomp_context*); dkr_audio_mix_tick(rdram, ctx);",
+      "reason": "Advance click-free live music gain ramps once per authored audio update and resubmit the current authored mix so launcher changes no longer wait for a new map."
     },
     {
       "function": "sndp_set_param",
@@ -259,6 +415,18 @@
       "beforeVram": "0x80007F70",
       "text": "extern void dkr_leave_vehicle_audio_scope(uint8_t*, recomp_context*); dkr_leave_vehicle_audio_scope(rdram, ctx);",
       "reason": "Close the all-vehicle audio scope immediately before its sole return while retaining a depth counter for nested calls."
+    },
+    {
+      "function": "audspat_update_all",
+      "beforeVram": "0x80008438",
+      "text": "extern void dkr_enter_nature_audio_scope(uint8_t*, recomp_context*); dkr_enter_nature_audio_scope(rdram, ctx);",
+      "reason": "Classify DKR's spatial ambient emitters, including birds and environmental loops, as the independent Nature bus."
+    },
+    {
+      "function": "audspat_update_all",
+      "beforeVram": "0x80009074",
+      "text": "extern void dkr_leave_nature_audio_scope(uint8_t*, recomp_context*); dkr_leave_nature_audio_scope(rdram, ctx);",
+      "reason": "Close the ambient Nature scope at the common function epilogue; nested racer scopes continue to take precedence."
     },
     {
       "function": "set_temp_model_transforms",
@@ -315,16 +483,28 @@
       "reason": "Widen only each Track Select background quad after its private vertex pointer is restored, avoiding all mutations of the shared orthographic and view-projection matrices."
     },
     {
-      "function": "postrace_viewport",
-      "beforeVram": "0x80094F38",
-      "text": "extern void dkr_expand_postrace_viewport(uint8_t*, recomp_context*); dkr_expand_postrace_viewport(rdram, ctx);",
-      "reason": "Expand the animated one-player post-race camera viewport horizontally into Modern Fit-to-Window space immediately before DKR submits its viewport coordinates, leaving results and HUD coordinates authored."
+      "function": "bgdraw_texture",
+      "beforeVram": "0x80078190",
+      "text": "extern void dkr_postrace_background_stretch_begin(uint8_t*, recomp_context*); dkr_postrace_background_stretch_begin(rdram, ctx);",
+      "reason": "Begin host-width coverage at the dedicated post-race mosaic entry so only its repeating background tiles use the expanded canvas."
     },
     {
-      "function": "menu_postrace",
-      "beforeVram": "0x80095A04",
-      "text": "extern void dkr_expand_postrace_viewport(uint8_t*, recomp_context*); dkr_expand_postrace_viewport(rdram, ctx);",
-      "reason": "Expand the settled one-player post-race camera viewport horizontally in Modern Fit-to-Window so the results sequence does not expose a central 4:3 boundary."
+      "function": "bgdraw_texture",
+      "beforeVram": "0x80078748",
+      "text": "extern void dkr_postrace_background_stretch_end(uint8_t*, recomp_context*); dkr_postrace_background_stretch_end(rdram, ctx);",
+      "reason": "Restore normal aspect handling only after bgdraw_texture has appended its final pipe sync; ending before that instruction reused a stale display-list cursor and overwrote the scope terminator, leaking stretch into the framed replay."
+    },
+    {
+      "function": "bgdraw_chequer",
+      "beforeVram": "0x800787FC",
+      "text": "extern void dkr_chequer_background_stretch_begin(uint8_t*, recomp_context*); dkr_chequer_background_stretch_begin(rdram, ctx);",
+      "reason": "Battle and challenge results use the dedicated chequer background instead of the ordinary post-race mosaic; stretch only that background layer to retain Modern Fit-to-Window."
+    },
+    {
+      "function": "bgdraw_chequer",
+      "beforeVram": "0x80078A9C",
+      "text": "extern void dkr_chequer_background_stretch_end(uint8_t*, recomp_context*); dkr_chequer_background_stretch_end(rdram, ctx);",
+      "reason": "Restore normal world presentation after the chequer background's final pipe sync so framed replay and menu geometry keep their authored layout."
     },
     {
       "function": "__scHandleRSP",

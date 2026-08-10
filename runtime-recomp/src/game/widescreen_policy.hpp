@@ -23,13 +23,4 @@ constexpr float sky_vertical_cover_scale(float horizontal_cover) {
         cover;
 }
 
-constexpr int expanded_postrace_left(float horizontal_cover) {
-    const float cover = std::max(horizontal_cover, 1.0F);
-    return -static_cast<int>(160.0F * (cover - 1.0F));
-}
-
-constexpr int expanded_postrace_right(float horizontal_cover) {
-    return 320 - expanded_postrace_left(horizontal_cover);
-}
-
 } // namespace dkr::runtime::enhancements

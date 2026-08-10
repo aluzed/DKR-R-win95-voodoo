@@ -9,10 +9,6 @@ using namespace dkr::runtime::enhancements;
 int main() {
     static_assert(sky_vertical_cover_scale(1.0F) == 1.0F);
     static_assert(sky_vertical_cover_scale(4.0F / 3.0F) == 4.0F / 3.0F);
-    static_assert(expanded_postrace_left(1.0F) == 0);
-    static_assert(expanded_postrace_right(1.0F) == 320);
-    static_assert(expanded_postrace_left(4.0F / 3.0F) == -53);
-    static_assert(expanded_postrace_right(4.0F / 3.0F) == 373);
 
     assert(std::fabs(sky_vertical_cover_scale(7.0F / 4.0F) -
                      7.0F / 4.0F) < 0.0001F);
