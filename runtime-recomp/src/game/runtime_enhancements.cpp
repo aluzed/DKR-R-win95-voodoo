@@ -14,6 +14,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 namespace {
 
@@ -22,9 +23,11 @@ std::atomic<dkr::runtime::enhancements::PresentationProfile> g_presentation_prof
     dkr::runtime::enhancements::PresentationProfile::Accurate};
 std::atomic<int> g_fov_offset{0};
 std::atomic<int> g_view_distance_multiplier{2};
+std::atomic<bool> g_keep_hub_scenery_enabled{false};
 std::atomic<bool> g_extended_culling_enabled{true};
 std::atomic<int> g_frustum_guard_percent{5};
 std::atomic<bool> g_fit_to_window_enabled{false};
+std::atomic<int> g_anisotropy_level{16};
 
 constexpr std::uint32_t kBlockMusicChangeAddress = 0x800DC648U;
 constexpr std::uint32_t kMusicNextSequenceAddress = 0x800DC65CU;
@@ -35,6 +38,20 @@ constexpr std::uint32_t kMusicTempoAddress = 0x80115D30U;
 constexpr std::uint16_t kTimeTrialGhostBehaviour = 0x003AU;
 constexpr std::uint32_t kFrustumReferenceAddress = 0x800DC8ACU;
 constexpr std::uint32_t kViewportLayoutAddress = 0x80120CE0U;
+constexpr std::uint32_t kCurrentMapIdAddress = 0x80121164U;
+constexpr std::uint32_t kCurrentLevelHeaderAddress = 0x80121168U;
+constexpr std::uint32_t kLevelHeaderRaceTypeOffset = 0x4CU;
+constexpr std::uint32_t kSceneActiveCameraAddress = 0x8011B0B0U;
+constexpr std::uint32_t kCameraModeOffset = 0x36U;
+constexpr std::uint32_t kWaveControllerAddress = 0x80129FC8U;
+constexpr std::uint32_t kWaveViewDistanceOffset = 0x24U;
+constexpr std::uint32_t kWaveSelectionMapAddress = 0x800E30D4U;
+constexpr std::uint32_t kWaveModelAddress = 0x800E30D8U;
+constexpr std::uint32_t kNumberOfLevelSegmentsAddress = 0x8012A0E0U;
+constexpr std::uint32_t kWaveModelStride = 0x1CU;
+constexpr std::uint32_t kWaveModelSelectionOffset = 0x0CU;
+constexpr std::uint32_t kWaveModelFadeOffset = 0x14U;
+constexpr std::uint32_t kWaveModelFadeBytes = 8U;
 constexpr std::array<std::uint32_t, 4> kSideReferenceOffsets = {
     48U, 60U, 84U, 96U,
 };
@@ -51,6 +68,16 @@ void WriteRdramFloat(std::uint8_t* rdram, std::uint32_t address, float value) {
     MEM_W(0, RdramAddress(address)) = std::bit_cast<std::uint32_t>(value);
 }
 
+int CurrentLevelRaceType(std::uint8_t* rdram) {
+    const std::uint32_t header_address = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kCurrentLevelHeaderAddress)));
+    if (header_address < 0x80000000U || header_address >= 0x80800000U) {
+        return -1;
+    }
+    return static_cast<std::int8_t>(
+        MEM_BU(kLevelHeaderRaceTypeOffset, RdramAddress(header_address)));
+}
+
 struct FrustumReferenceScope {
     std::array<float, kSideReferenceOffsets.size()> saved{};
     bool active = false;
@@ -63,8 +90,7 @@ float g_character_select_animation_phase = 0.0F;
 bool g_character_select_animation_active = false;
 
 bool SeedCharacterMusicMask(std::uint8_t* rdram,
-                            std::uint32_t character_address,
-                            const char* owner) {
+                            std::uint32_t character_address) {
     using namespace dkr::runtime::enhancements;
 
     // A blocked music_play intentionally leaves the current sequence running.
@@ -78,9 +104,6 @@ bool SeedCharacterMusicMask(std::uint8_t* rdram,
         MEM_BU(0, RdramAddress(character_address)));
     const std::uint16_t mask = character_music_channel_mask(selected);
     MEM_W(0, RdramAddress(kDynamicMusicChannelMaskAddress)) = mask;
-    std::fprintf(stderr,
-                 "[boot][audio] %s pending channel mask=%04X selected=%d\n",
-                 owner, static_cast<unsigned>(mask), selected);
     return true;
 }
 
@@ -131,6 +154,18 @@ void dkr::runtime::enhancements::set_view_distance_multiplier(int multiplier) {
         clamp_view_distance_multiplier(multiplier), std::memory_order_release);
 }
 
+bool dkr::runtime::enhancements::keep_hub_scenery_requested() {
+    return g_keep_hub_scenery_enabled.load(std::memory_order_acquire);
+}
+
+bool dkr::runtime::enhancements::keep_hub_scenery_enabled() {
+    return modern_presentation_enabled() && keep_hub_scenery_requested();
+}
+
+void dkr::runtime::enhancements::set_keep_hub_scenery_enabled(bool enabled) {
+    g_keep_hub_scenery_enabled.store(enabled, std::memory_order_release);
+}
+
 bool dkr::runtime::enhancements::extended_culling_requested() {
     return g_extended_culling_enabled.load(std::memory_order_acquire);
 }
@@ -160,15 +195,29 @@ void dkr::runtime::enhancements::set_fit_to_window_enabled(bool enabled) {
     g_fit_to_window_enabled.store(enabled, std::memory_order_release);
 }
 
+int dkr::runtime::enhancements::anisotropy_level() {
+    return modern_presentation_enabled()
+        ? g_anisotropy_level.load(std::memory_order_acquire)
+        : 16;
+}
+
+void dkr::runtime::enhancements::set_anisotropy_level(int level) {
+    constexpr std::array<int, 5> supported{1, 2, 4, 8, 16};
+    int closest = supported.front();
+    for (const int candidate : supported) {
+        if (std::abs(candidate - level) < std::abs(closest - level)) {
+            closest = candidate;
+        }
+    }
+    g_anisotropy_level.store(closest, std::memory_order_release);
+}
+
 extern "C" void dkr_character_select_music_unblock(std::uint8_t* rdram,
                                                     recomp_context*) {
     // The character-select initializer immediately starts its own sequence and
     // then restores DKR's music-change lock. Clear a stale lock only at that
     // ownership boundary so the intended sequence can replace intro/menu music.
-    const std::uint32_t previous = MEM_W(0, RdramAddress(kBlockMusicChangeAddress));
     MEM_W(0, RdramAddress(kBlockMusicChangeAddress)) = 0;
-    std::fprintf(stderr, "[boot][audio] character-select music ownership (previous lock=%u)\n",
-                 previous);
 }
 
 extern "C" void dkr_character_select_music_mask(std::uint8_t* rdram,
@@ -178,8 +227,7 @@ extern "C" void dkr_character_select_music_mask(std::uint8_t* rdram,
     // the old sequence player. Seed the queued sequence explicitly so it
     // starts with only the shared backing channels and the selected racer's
     // arrangement. 0x64 is DKR's invalid/no-secondary-channel sentinel.
-    if (!SeedCharacterMusicMask(rdram, kMenuCurrentCharacterAddress,
-                                "character-select")) {
+    if (!SeedCharacterMusicMask(rdram, kMenuCurrentCharacterAddress)) {
         return;
     }
     // Character-select models are authored to dance to the music beat. Reset
@@ -194,8 +242,7 @@ extern "C" void dkr_character_menu_music_mask(std::uint8_t* rdram,
     // Game Select and File Select can each restart Choose Your Racer after
     // returning from another menu. Seed that queued sequence from the selected
     // character, but do not reset the character-select model animation phase.
-    SeedCharacterMusicMask(rdram, kMenuSelectedCharacterAddress,
-                           "character-menu");
+    SeedCharacterMusicMask(rdram, kMenuSelectedCharacterAddress);
 }
 
 extern "C" void dkr_character_select_animation_tick(std::uint8_t* rdram,
@@ -262,6 +309,141 @@ extern "C" void dkr_extend_object_draw_distance(std::uint8_t*,
             dkr::runtime::enhancements::view_distance_multiplier()));
 }
 
+extern "C" void dkr_maximise_persistent_water_detail(
+    std::uint8_t* rdram, recomp_context*) {
+    const int authored = static_cast<std::int32_t>(
+        MEM_W(kWaveViewDistanceOffset, RdramAddress(kWaveControllerAddress)));
+    const int effective =
+        dkr::runtime::enhancements::effective_wave_view_distance(
+            dkr::runtime::enhancements::presentation_profile(),
+            dkr::runtime::enhancements::keep_hub_scenery_requested(),
+            CurrentLevelRaceType(rdram),
+            authored);
+    MEM_W(kWaveViewDistanceOffset, RdramAddress(kWaveControllerAddress)) =
+        static_cast<gpr>(effective);
+}
+
+extern "C" void dkr_anchor_persistent_water_to_camera(
+    std::uint8_t* rdram, recomp_context* context) {
+    if (!dkr::runtime::enhancements::persistent_water_override_enabled(
+            dkr::runtime::enhancements::presentation_profile(),
+            dkr::runtime::enhancements::keep_hub_scenery_requested(),
+            CurrentLevelRaceType(rdram))) {
+        return;
+    }
+    const std::uint32_t camera = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kSceneActiveCameraAddress)));
+    if (camera < 0x80000000U || camera > 0x807FFFE8U) {
+        return;
+    }
+
+    // Keep DKR's maximum safe 5x5 HQ wave cache centred on what the player can
+    // actually see. All BSP water segments remain in the render list through
+    // the existing scenery hook, while the authored low-detail fallback can no
+    // longer replace water immediately around an offset or spectator camera.
+    context->r4 = static_cast<gpr>(static_cast<std::int32_t>(
+        ReadRdramFloat(rdram, camera + 0x0CU)));
+    context->r5 = static_cast<gpr>(static_cast<std::int32_t>(
+        ReadRdramFloat(rdram, camera + 0x10U)));
+    context->r6 = static_cast<gpr>(static_cast<std::int32_t>(
+        ReadRdramFloat(rdram, camera + 0x14U)));
+}
+
+extern "C" void dkr_stabilise_persistent_water_transition(
+    std::uint8_t* rdram, recomp_context*) {
+    using namespace dkr::runtime::enhancements;
+    if (!persistent_water_override_enabled(
+            presentation_profile(), keep_hub_scenery_requested(),
+            CurrentLevelRaceType(rdram))) {
+        return;
+    }
+
+    const std::uint32_t selections = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kWaveSelectionMapAddress)));
+    const std::uint32_t models = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kWaveModelAddress)));
+    const int segment_count = static_cast<std::int32_t>(
+        MEM_W(0, RdramAddress(kNumberOfLevelSegmentsAddress)));
+    if (selections < 0x80000000U || selections >= 0x80800000U ||
+        models < 0x80000000U || models >= 0x80800000U ||
+        segment_count <= 0 || segment_count > 512 ||
+        models > 0x80800000U -
+            static_cast<std::uint32_t>(segment_count) * kWaveModelStride) {
+        return;
+    }
+
+    // Retail fades a newly selected procedural block in after immediately
+    // suppressing its flat fallback batch. On a persistent widescreen scene
+    // that exposes a one-frame hole/pop at the moving 5x5 HQ boundary. Keep
+    // the fixed, safely allocated 5x5 pool, but make every selected cell fully
+    // visible at the hand-off. Both viewport fade banks are initialised so a
+    // later split-screen view cannot inherit a stale transition.
+    for (int segment = 0; segment < segment_count; ++segment) {
+        const std::uint32_t model = models +
+            static_cast<std::uint32_t>(segment) * kWaveModelStride;
+        const std::uint32_t selector_index = static_cast<std::uint32_t>(
+            MEM_W(kWaveModelSelectionOffset, RdramAddress(model)));
+        if (selector_index >= static_cast<std::uint32_t>(segment_count)) {
+            continue;
+        }
+        const std::uint32_t selection = static_cast<std::uint32_t>(
+            MEM_W(selector_index * sizeof(std::uint32_t),
+                  RdramAddress(selections)));
+        if (persistent_water_hq_fade(presentation_profile(), true,
+                                     selection != 0U, 0x80) != 0) {
+            continue;
+        }
+        for (std::uint32_t offset = 0U; offset < kWaveModelFadeBytes;
+             ++offset) {
+            MEM_B(kWaveModelFadeOffset + offset, RdramAddress(model)) = 0;
+        }
+    }
+}
+
+extern "C" void dkr_extend_hub_segment_bitfield(std::uint8_t* rdram,
+                                                  recomp_context* context) {
+    const int level_id = static_cast<std::int32_t>(
+        MEM_W(0, RdramAddress(kCurrentMapIdAddress)));
+    const int race_type = CurrentLevelRaceType(rdram);
+    if (dkr::runtime::enhancements::relax_scenery_segment_bitfield(
+            dkr::runtime::enhancements::presentation_profile(), level_id,
+            race_type,
+            dkr::runtime::enhancements::view_distance_multiplier(),
+            dkr::runtime::enhancements::keep_hub_scenery_requested())) {
+        // At 0x80029D78 r12 is the original per-region bitfield result.
+        // block_visible still performs the ordinary camera-plane test unless
+        // the explicit all-scenery persistence toggle is enabled below.
+        context->r12 = 1;
+    }
+}
+
+extern "C" void dkr_keep_hub_segment_visible(std::uint8_t* rdram,
+                                               recomp_context* context) {
+    const std::uint32_t camera = static_cast<std::uint32_t>(
+        MEM_W(0, RdramAddress(kSceneActiveCameraAddress)));
+    if (camera >= 0x80000000U && camera <= 0x807FFFBCU) {
+        const int camera_mode = static_cast<std::int16_t>(
+            MEM_H(kCameraModeOffset, RdramAddress(camera)));
+        if (dkr::runtime::enhancements::is_finish_camera_mode(camera_mode)) {
+            // A fixed finish shot must retain DKR's ordinary camera-plane
+            // rejection. Forcing behind-camera BSP segments here can exceed
+            // the authored task's display-list/matrix budget and was the root
+            // of the cross-track race-end vertex explosions.
+            return;
+        }
+    }
+    const int race_type = CurrentLevelRaceType(rdram);
+    if (dkr::runtime::enhancements::force_scenery_segment_visible(
+            dkr::runtime::enhancements::presentation_profile(), race_type,
+            dkr::runtime::enhancements::keep_hub_scenery_requested())) {
+        // This hook runs after block_visible returns and before its result is
+        // tested. The explicit toggle therefore keeps every BSP segment in a
+        // hub, track, boss race or minigame render list, including segments
+        // behind the camera. Frontend and cutscene race types remain authored.
+        context->r2 = 1;
+    }
+}
+
 extern "C" void dkr_extended_frustum_begin(std::uint8_t* rdram,
                                             recomp_context*) {
     // Defensive recovery for an interrupted/nested scope. DKR normally calls
@@ -289,12 +471,17 @@ extern "C" void dkr_extended_frustum_begin(std::uint8_t* rdram,
     }
     const int layout = static_cast<std::int32_t>(
         MEM_W(0, RdramAddress(kViewportLayoutAddress)));
-    const float scale = dkr::runtime::enhancements::frustum_horizontal_scale(
+    float scale = dkr::runtime::enhancements::frustum_horizontal_scale(
         dkr::runtime::enhancements::presentation_profile(),
         dkr::runtime::enhancements::fit_to_window_enabled(),
         dkr::runtime::enhancements::extended_culling_enabled(),
         static_cast<float>(width) / static_cast<float>(height), layout,
         dkr::runtime::enhancements::frustum_guard_percent());
+    const int level_id = static_cast<std::int32_t>(
+        MEM_W(0, RdramAddress(kCurrentMapIdAddress)));
+    scale *= dkr::runtime::enhancements::hub_segment_frustum_scale(
+        dkr::runtime::enhancements::presentation_profile(), level_id,
+        dkr::runtime::enhancements::view_distance_multiplier());
     if (scale <= 1.0001F) {
         return;
     }

@@ -7,70 +7,31 @@
       "commit": "06cf09bab2e0a5f210d2a14a25cdf22c3c5b18c6",
       "destination": "extern/dkr-decomp",
       "recursive": false,
-      "purpose": "Pinned completed Diddy Kong Racing matching decomp baseline"
-    },
-    {
-      "name": "libultraship",
-      "repository": "https://github.com/Kenix3/libultraship.git",
-      "commit": "f5c3843fe937320b64ff754fa6bf71b13ff5e7a1",
-      "destination": "extern/libultraship",
-      "recursive": true,
-      "purpose": "Target native libultra replacement, resource and platform runtime"
-    },
-    {
-      "name": "torch",
-      "repository": "https://github.com/HarbourMasters/Torch.git",
-      "commit": "2d474ddb8da8b213fbdbb49d0273ce31fa955f35",
-      "destination": "extern/torch",
-      "recursive": true,
-      "purpose": "Target user-side ROM resource conversion tooling"
-    },
-    {
-      "name": "n64recomp",
-      "repository": "https://github.com/N64Recomp/N64Recomp.git",
-      "destination": "extern/n64-modern-runtime/N64Recomp",
-      "managedBy": "n64-modern-runtime git submodule",
-      "expectedCommitAtMilestone": "81213c1831fab2521a6a5459c67b63437d67e253",
-      "pinPolicy": "use the exact submodule revision selected by N64ModernRuntime",
-      "purpose": "Translate the matching DKR ELF into native C functions without runtime/tool API drift"
+      "purpose": "Matching Diddy Kong Racing US 1.0 source and ELF baseline"
     },
     {
       "name": "n64-modern-runtime",
       "repository": "https://github.com/N64Recomp/N64ModernRuntime.git",
-      "ref": "main",
+      "commit": "ae1ffbb909d9f93c88c41830deb539f7feef5ed2",
       "destination": "extern/n64-modern-runtime",
       "recursive": true,
-      "pinPolicy": "resolved and recorded by Prepare-DKR-Runtime.cmd",
-      "purpose": "libultra-compatible threads, audio, controller, VI and PI runtime for the recompiled game"
+      "purpose": "N64-compatible scheduling, audio, input, storage and host runtime"
+    },
+    {
+      "name": "n64recomp",
+      "repository": "https://github.com/N64Recomp/N64Recomp.git",
+      "commit": "81213c1831fab2521a6a5459c67b63437d67e253",
+      "destination": "extern/n64-modern-runtime/N64Recomp",
+      "managedBy": "n64-modern-runtime git submodule",
+      "purpose": "Static translation of the matching game ELF and RSP microcode"
     },
     {
       "name": "rt64",
       "repository": "https://github.com/rt64/rt64.git",
-      "ref": "main",
+      "commit": "6f1c2d99a4ea571c139f449c326fd176ba8f3496",
       "destination": "extern/rt64",
       "recursive": true,
-      "pinPolicy": "resolved and recorded by Prepare-DKR-Runtime.cmd",
-      "purpose": "RDP renderer target for DKR graphics tasks"
+      "purpose": "Cross-platform RDP renderer and presentation backend"
     }
-  ],
-  "launcherToolchain": {
-    "vcpkgTag": "2026.06.24",
-    "triplet": "x64-windows-static-md",
-    "manifest": "vcpkg.json",
-    "packages": [
-      {
-        "name": "sdl3",
-        "purpose": "Native window, rendering, input and controller layer",
-        "versionAtPinnedRegistry": "3.4.10#1"
-      },
-      {
-        "name": "rmlui",
-        "versionAtPinnedRegistry": "6.2",
-        "features": [
-          "freetype"
-        ],
-        "purpose": "Native in-window launcher UI"
-      }
-    ]
-  }
+  ]
 }

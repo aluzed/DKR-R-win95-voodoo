@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
-exe="$PWD/build/macos-core-release/bin/Release/DKRPort"
-[[ -x "$exe" ]] || { echo "Core executable missing. Run ./Build-macOS.sh first." >&2; exit 1; }
-cat >&2 <<'MSG'
-This milestone's macOS helper builds the command-line core without the native launcher.
-Use commands such as:
-  --headless-self-test
-  --validate-rom /path/to/rom.z64
-The one-window RmlUi launcher is packaged through Build-Windows.cmd in this delivery.
-MSG
-exec "$exe" --help
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+app=""
+while IFS= read -r candidate; do
+  app="${candidate}"
+  break
+done < <(find "${project_root}/build/dkr-runtime-macos/bin" -type d -name 'DKR-R.app' -print)
+[[ -n "${app}" && -d "${app}" ]] || {
+  echo 'DKR-R.app is missing. Run ./Build-macOS.sh first.' >&2
+  exit 1
+}
+open "${app}"

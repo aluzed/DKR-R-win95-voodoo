@@ -8,5 +8,7 @@ float sound_effects_volume();
 void set_sound_effects_volume(float volume);
 float vehicle_volume();
 void set_vehicle_volume(float volume);
+float nature_volume();
+void set_nature_volume(float volume);
 
 } // namespace dkr::runtime::audio

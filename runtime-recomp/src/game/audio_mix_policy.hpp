@@ -21,4 +21,13 @@ inline std::uint32_t scale_authored_volume(std::uint32_t value, float volume) {
         0LL, static_cast<long long>(std::numeric_limits<std::uint32_t>::max())));
 }
 
+constexpr float advance_mix_volume(float current, float target,
+                                   float maximum_step = 0.08F) {
+    current = clamp_mix_volume(current);
+    target = clamp_mix_volume(target);
+    maximum_step = std::max(maximum_step, 0.0F);
+    return target > current ? std::min(current + maximum_step, target)
+                            : std::max(current - maximum_step, target);
+}
+
 } // namespace dkr::runtime::audio

@@ -1,22 +1,19 @@
-name: Build macOS Core
+name: macOS policy tests
 on: [push, pull_request]
 jobs:
-  macos-core:
+  macos:
     strategy:
       matrix:
         runner: [macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - name: Configure asset-free core
-        run: >-
-          cmake -S . -B build/macos-core -G Ninja -DCMAKE_BUILD_TYPE=Release
-          -DDKRPORT_BUILD_NATIVE_UI=OFF
-          -DDKRPORT_BUILD_TESTS=ON
-          -DDKRPORT_ENABLE_WARNINGS_AS_ERRORS=ON
-      - name: Build
-        run: cmake --build build/macos-core --parallel
-      - name: Test
-        run: ctest --test-dir build/macos-core --output-on-failure
-      - name: Headless self-test
-        run: ./build/macos-core/bin/Release/DKRPort --headless-self-test --portable
+      - uses: actions/checkout@v4
+      - name: Prepare pinned runtime dependencies
+        run: |
+          python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64
+          bash scripts/apply-dependency-patches.sh
+      - name: Configure, build and test
+        run: |
+          cmake -S runtime-recomp -B build/policy-macos -G Ninja -DCMAKE_BUILD_TYPE=Release -DDKRPORT_ROOT="$PWD" -DDKR_RUNTIME_BUILD_GENERATED=OFF -DDKR_RUNTIME_BUILD_RT64=OFF
+          cmake --build build/policy-macos --parallel
+          ctest --test-dir build/policy-macos --output-on-failure -R '^DKR'

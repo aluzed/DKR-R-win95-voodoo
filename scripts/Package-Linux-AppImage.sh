@@ -4,15 +4,16 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIRECTORY="${DKR_LINUX_BUILD_DIR:-${PROJECT_ROOT}/build/dkr-runtime-linux}"
 BINARY="${BUILD_DIRECTORY}/bin/Release/DKR-R"
-APPDIR="${DKR_APPDIR:-${PROJECT_ROOT}/dist/DKR-R-Linux-x86_64.AppDir}"
-VERSION="${DKR_RELEASE_VERSION:-1.0.0-rc4}"
+VERSION="${DKR_RELEASE_VERSION:-$(tr -d '\r\n' < "${PROJECT_ROOT}/VERSION")}"
+APPDIR="${DKR_APPDIR:-${PROJECT_ROOT}/dist/DKR-R-${VERSION}-Linux-x86_64.AppDir}"
 OUTPUT="${DKR_APPIMAGE_OUTPUT:-${PROJECT_ROOT}/dist/DKR-R-${VERSION}-Linux-x86_64.AppImage}"
 LINUXDEPLOY="${LINUXDEPLOY:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-x86_64.AppImage}"
 APPIMAGE_PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-${PROJECT_ROOT}/.deps/tools/linuxdeploy-plugin-appimage}"
 ICON_FILE="${DKR_LINUX_ICON_FILE:-${PROJECT_ROOT}/assets/ui/Icons/256x256.png}"
 ICON_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dkr-r-icon.XXXXXX")"
 BINARY_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dkr-r-binary.XXXXXX")"
-trap 'rm -rf -- "${ICON_STAGE}" "${BINARY_STAGE}"' EXIT
+PAK_TEST="$(mktemp -d "${TMPDIR:-/tmp}/dkr-r-appimage-pak.XXXXXX")"
+trap 'rm -rf -- "${ICON_STAGE}" "${BINARY_STAGE}" "${PAK_TEST}"' EXIT
 
 validate_release_tree() {
   local root="$1"
@@ -22,7 +23,7 @@ validate_release_tree() {
     extension="${file##*.}"
     extension="${extension,,}"
     case "${extension}" in
-      z64|v64|n64|eep|mpk|o2r|otr)
+      z64|v64|n64|eep|mpk|sra|fla|o2r|otr)
         echo "Release staging contains prohibited game data: ${file}" >&2
         return 1
         ;;
@@ -95,6 +96,8 @@ install -m 0644 "${PROJECT_ROOT}/extern/rt64/src/contrib/imgui/LICENSE.txt" "${A
 install -m 0644 "${PROJECT_ROOT}/extern/rt64/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/COPYING.txt" "${APPDIR}/usr/share/doc/dkr-port/licenses/SDL2-LICENSE.txt"
 install -m 0644 "${PROJECT_ROOT}/extern/n64-modern-runtime/COPYING" "${APPDIR}/usr/share/doc/dkr-port/licenses/N64ModernRuntime-COPYING.txt"
 install -m 0644 "${PROJECT_ROOT}/extern/n64-modern-runtime/N64Recomp/LICENSE" "${APPDIR}/usr/share/doc/dkr-port/licenses/N64Recomp-LICENSE.txt"
+install -m 0644 "${PROJECT_ROOT}/packaging/licenses/Jumpman-LICENSE.txt" "${APPDIR}/usr/share/doc/dkr-port/licenses/Jumpman-LICENSE.txt"
+install -m 0644 "${PROJECT_ROOT}/packaging/licenses/CRT-FILTERS-NOTICE.md" "${APPDIR}/usr/share/doc/dkr-port/licenses/CRT-FILTERS-NOTICE.md"
 install -m 0644 "${PROJECT_ROOT}/packaging/linux/dkr-port.appdata.xml" "${APPDIR}/usr/share/metainfo/dkr-port.appdata.xml"
 
 export PATH="$(dirname "${APPIMAGE_PLUGIN}"):${PATH}"
@@ -114,9 +117,17 @@ export LDAI_NO_APPSTREAM=1
   --desktop-file "${PROJECT_ROOT}/packaging/linux/dkr-port.desktop" \
   --icon-file "${ICON_STAGE}/dkr-r.png"
 
+mkdir -p "${APPDIR}/usr/bin/assets/ui/Icons"
+install -m 0644 "${PROJECT_ROOT}/assets/ui/Icons/DKR-R8.bmp" \
+  "${APPDIR}/usr/bin/assets/ui/Icons/DKR-R8.bmp"
+mkdir -p "${APPDIR}/usr/bin/assets/filters"
+install -m 0644 "${PROJECT_ROOT}"/assets/filters/*.png \
+  "${APPDIR}/usr/bin/assets/filters/"
+
 collect_linux_dependency_notices "${APPDIR}"
 validate_release_tree "${APPDIR}"
 "${APPIMAGE_PLUGIN}" --appdir "${APPDIR}"
 [[ -s "${OUTPUT}" ]] || { echo "AppImage output is missing or empty: ${OUTPUT}" >&2; exit 1; }
+APPIMAGE_EXTRACT_AND_RUN=1 "${OUTPUT}" --self-test-pak "${PAK_TEST}"
 echo "Created ${OUTPUT}"
 sha256sum "${OUTPUT}"

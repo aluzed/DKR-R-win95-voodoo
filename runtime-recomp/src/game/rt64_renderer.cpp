@@ -5,6 +5,8 @@
 #include "renderer_snapshot.hpp"
 #include "runtime_enhancements.hpp"
 #include "runtime_telemetry.hpp"
+#include "runtime_texture_packs.hpp"
+#include "vi_presentation_policy.hpp"
 #include "runtime_platform.hpp"
 #include "runtime_ui.hpp"
 
@@ -17,6 +19,7 @@
 #include "common/rt64_user_configuration.h"
 #include "hle/rt64_application.h"
 #include "hle/rt64_state.h"
+#include "render/rt64_shader_library.h"
 #include "librecomp/game.hpp"
 #include "ultramodern/ultramodern.hpp"
 
@@ -24,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -31,6 +35,57 @@
 #include <utility>
 
 namespace {
+
+class CanonicalViPresentationScope {
+public:
+    explicit CanonicalViPresentationScope(RT64::Application& application)
+        : v_start_(application.core.VI_V_START_REG) {
+        const auto* width = application.core.VI_WIDTH_REG;
+        const auto* y_scale = application.core.VI_Y_SCALE_REG;
+        if (v_start_ == nullptr || width == nullptr || y_scale == nullptr ||
+            *width != dkr::runtime::presentation::kCanonicalViWidth) {
+            return;
+        }
+
+        original_v_start_ = *v_start_;
+        canonical_v_start_ =
+            dkr::runtime::presentation::canonicalise_dkr_v_region(
+                original_v_start_, *y_scale);
+        if (canonical_v_start_ == original_v_start_) {
+            return;
+        }
+
+        *v_start_ = canonical_v_start_;
+        active_ = true;
+        if (!logged_.exchange(true, std::memory_order_relaxed)) {
+            std::fprintf(stderr,
+                         "[boot][vi] canonical present 320x240 v-start=%08X->%08X "
+                         "inferred=%u->%u\n",
+                         original_v_start_, canonical_v_start_,
+                         dkr::runtime::presentation::inferred_vi_height(
+                             original_v_start_, *y_scale),
+                         dkr::runtime::presentation::inferred_vi_height(
+                             canonical_v_start_, *y_scale));
+        }
+    }
+
+    ~CanonicalViPresentationScope() {
+        if (active_) {
+            *v_start_ = original_v_start_;
+        }
+    }
+
+    CanonicalViPresentationScope(const CanonicalViPresentationScope&) = delete;
+    CanonicalViPresentationScope& operator=(
+        const CanonicalViPresentationScope&) = delete;
+
+private:
+    inline static std::atomic<bool> logged_{false};
+    std::uint32_t* v_start_ = nullptr;
+    std::uint32_t original_v_start_ = 0U;
+    std::uint32_t canonical_v_start_ = 0U;
+    bool active_ = false;
+};
 
 static_assert(
     std::tuple_size_v<decltype(
@@ -56,18 +111,8 @@ bool ExperimentalInterpolationEnabled() {
     return dkr::runtime::enhancements::modern_presentation_enabled();
 }
 
-bool ExperimentalSkipBufferingEnabled() {
-    static const bool enabled = [] {
-        const char* value = std::getenv("DKR_INTERPOLATION_SKIP_BUFFERING");
-        return value != nullptr && value[0] != '\0' && value[0] != '0';
-    }();
-    return ExperimentalInterpolationEnabled() && enabled;
-}
-
 RT64::EnhancementConfiguration::Presentation::Mode PresentationMode() {
-    return ExperimentalSkipBufferingEnabled()
-        ? RT64::EnhancementConfiguration::Presentation::Mode::SkipBuffering
-        : RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
+    return RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
 }
 
 void CheckInterrupts() {}
@@ -278,6 +323,9 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     application_config.useConfigurationFile = false;
     application_config.detectDataPath = true;
     auto config = ultramodern::renderer::get_graphics_config();
+    RT64::setDefaultSamplerAnisotropy(
+        static_cast<std::uint32_t>(
+            dkr::runtime::enhancements::anisotropy_level()));
     const auto create_application = [&] {
         application_ = std::make_unique<RT64::Application>(core, application_config);
         ApplyConfig(*application_, config);
@@ -286,7 +334,10 @@ dkr::runtime::RT64Renderer::RT64Renderer(
         // heuristic adds and rounds guard rows (often inferring 244), which
         // exposes the unused final rows as a thin bottom/right bar after Fit to
         // Window scaling. Present the authored 320x240 extent exactly.
-        application_->enhancementConfig.presentation.removeBlackBorders = false;
+        // Present the actual VI extent after the DKR-owned scoped normalizer
+        // removes RT64's inferred guard rows. This applies equally to Accurate
+        // and Modern and affects only the final source image sampling.
+        application_->enhancementConfig.presentation.removeBlackBorders = true;
         application_->enhancementConfig.rect.fixRectLR = true;
         // DKR presents directly from its alternating rendered color buffers.
         // SkipBuffering can select a stale VI-history entry before either buffer
@@ -368,10 +419,40 @@ bool dkr::runtime::RT64Renderer::update_config(
         application_->setFullScreen(
             new_config.wm_option == ultramodern::renderer::WindowMode::Fullscreen);
     }
+    const bool resolution_or_aspect_changed =
+        old_config.res_option != new_config.res_option ||
+        old_config.ar_option != new_config.ar_option ||
+        old_config.ds_option != new_config.ds_option;
+    const bool multisampling_changed =
+        old_config.msaa_option != new_config.msaa_option;
     ApplyConfig(*application_, new_config);
-    application_->updateUserConfig(true);
-    if (old_config.msaa_option != new_config.msaa_option) {
+    // RT64's multisample resources (shader cache, render targets and frame
+    // buffers) must be rebuilt while the new sample count is staged locally,
+    // before that configuration is published to the present queues. Publishing
+    // first allowed an in-flight frame to observe the new sample count while it
+    // still owned old-sample resources, which is why changing AA live could
+    // intermittently crash. This mirrors RT64's own inspector transaction.
+    if (multisampling_changed) {
         application_->updateMultisampling();
+    }
+    // updateMultisampling() already waits for both RT64 queues, destroys every
+    // sample-count-dependent framebuffer/render target and rebuilds the shader
+    // pipelines. Publishing an AA-only change with discardFBs=true requested a
+    // second framebuffer teardown after those new resources became visible.
+    // That was usually tolerated between 2x/4x/8x, but crossing the 1-sample
+    // boundary (None <-> MSAA) could tear down the newly selected resolve path
+    // while the next presentation acquired it. RT64's own Inspector publishes
+    // the completed AA transaction with discardFBs=false; mirror that here and
+    // reserve the discard flag for changes that really alter framebuffer size
+    // or aspect.
+    application_->updateUserConfig(resolution_or_aspect_changed);
+    if (multisampling_changed) {
+        std::fprintf(stderr,
+                     "[graphics][aa] live transition %u->%u complete; "
+                     "framebuffer-discard=%u\n",
+                     static_cast<unsigned>(old_config.msaa_option),
+                     static_cast<unsigned>(new_config.msaa_option),
+                     resolution_or_aspect_changed ? 1U : 0U);
     }
     return true;
 }
@@ -420,98 +501,36 @@ void dkr::runtime::RT64Renderer::update_screen() {
     if (application_->sharedQueueResources != nullptr) {
         const std::uint64_t total = application_->sharedQueueResources->
             totalInterpolatedPresentations.load(std::memory_order_relaxed);
+        std::uint64_t interpolated_delta = 0;
         if (total >= interpolated_present_count_) {
+            interpolated_delta = total - interpolated_present_count_;
             dkr::runtime::telemetry::record_interpolated_presents(
-                total - interpolated_present_count_);
+                interpolated_delta);
         }
+        dkr::runtime::telemetry::record_presented_frames(
+            1U + interpolated_delta);
         interpolated_present_count_ = total;
+    } else {
+        dkr::runtime::telemetry::record_presented_frames(1U);
     }
-    dkr::runtime::telemetry::report_if_due();
     ++present_count_;
     if (present_count_ == 1) {
         std::fprintf(stderr, "[boot] VI initialized; starting recompiled DKR entrypoint\n");
         recomp::start_game(kGameId);
     }
-    application_->updateScreen();
+    // Replacement changes are consumed on RT64's presentation thread. This
+    // keeps pack hot-swaps transactional with texture streaming and prevents
+    // the settings UI from mutating renderer-owned caches concurrently.
+    dkr::runtime::texture_packs::apply_pending(
+        *application_, dkr::runtime::enhancements::modern_presentation_enabled());
+    {
+        CanonicalViPresentationScope vi_scope(*application_);
+        application_->updateScreen();
+    }
     // Preserve DKR's proven VI/DP scheduling path exactly; constructing the
     // next overlay frame after the game present keeps UI work out of the
     // original graphics-completion critical section.
     dkr::runtime::ui::draw(*application_);
-    if (present_count_ <= 10 || present_count_ % 60 == 0) {
-        std::fprintf(stderr, "[boot][vi] present=%llu\n",
-                     static_cast<unsigned long long>(present_count_));
-        if (present_count_ % 60 == 0 && application_->sharedQueueResources != nullptr) {
-            auto& shared = *application_->sharedQueueResources;
-            std::uint32_t original_rate = 0;
-            std::uint32_t target_rate = 0;
-            {
-                std::scoped_lock configuration_lock(shared.configurationMutex);
-                original_rate = shared.viOriginalRate;
-                target_rate = shared.targetRate;
-            }
-            std::uint32_t interpolation_count = 0;
-            std::uint32_t interpolation_available = 0;
-            std::uint32_t interpolation_presented = 0;
-            bool interpolation_skipped = false;
-            std::uint32_t interpolation_bank = 0;
-            std::uint32_t interpolation_counts[2]{};
-            std::uint32_t interpolation_availables[2]{};
-            std::uint32_t interpolation_presenteds[2]{};
-            {
-                std::scoped_lock interpolation_lock(shared.interpolatedMutex);
-                interpolation_bank = shared.interpolatedFramesIndex;
-                const auto& counters =
-                    shared.interpolatedFrames[interpolation_bank];
-                interpolation_count = counters.count;
-                interpolation_available = counters.available;
-                interpolation_presented = counters.presented;
-                interpolation_skipped = counters.skipped;
-                for (std::size_t bank = 0; bank < 2; ++bank) {
-                    interpolation_counts[bank] =
-                        shared.interpolatedFrames[bank].count;
-                    interpolation_availables[bank] =
-                        shared.interpolatedFrames[bank].available;
-                    interpolation_presenteds[bank] =
-                        shared.interpolatedFrames[bank].presented;
-                }
-            }
-            std::uint32_t first_color_image = 0;
-            std::size_t color_image_count = 0;
-            std::uint32_t interpolation_eligible_count = 0;
-            {
-                std::scoped_lock manager_lock(shared.managerMutex);
-                color_image_count = shared.colorImageAddressVector.size();
-                if (!shared.colorImageAddressVector.empty()) {
-                    first_color_image = shared.colorImageAddressVector.front();
-                }
-                for (const std::uint32_t color_address :
-                     shared.colorImageAddressVector) {
-                    const RT64::Framebuffer* framebuffer =
-                        shared.framebufferManager.find(color_address);
-                    if (framebuffer != nullptr && framebuffer->interpolationEnabled) {
-                        ++interpolation_eligible_count;
-                    }
-                }
-            }
-            const std::uint32_t vi_origin = application_->core.VI_ORIGIN_REG != nullptr
-                ? (*application_->core.VI_ORIGIN_REG & 0x00FFFFFFU)
-                : 0U;
-            std::fprintf(stderr,
-                         "[boot][interpolation] original=%u target=%u count=%u "
-                         "available=%u presented=%u skipped=%u targets=%zu "
-                         "bank=%u banks=%u/%u/%u,%u/%u/%u "
-                         "color-images=%zu eligible=%u first-color=0x%06X vi=0x%06X\n",
-                         original_rate, target_rate, interpolation_count,
-                         interpolation_available, interpolation_presented,
-                         interpolation_skipped ? 1U : 0U,
-                         shared.interpolatedColorTargets.size(), interpolation_bank,
-                         interpolation_counts[0], interpolation_availables[0],
-                         interpolation_presenteds[0], interpolation_counts[1],
-                         interpolation_availables[1], interpolation_presenteds[1],
-                         color_image_count, interpolation_eligible_count,
-                         first_color_image, vi_origin);
-        }
-    }
 }
 
 void dkr::runtime::RT64Renderer::shutdown() {

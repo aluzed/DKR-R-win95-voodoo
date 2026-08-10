@@ -1,0 +1,139 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 154592d..a50d6a1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -453,8 +453,10 @@ add_subdirectory(src/tools/texture_packer)
+ if (APPLE)
+     add_subdirectory(src/tools/spirv_cross_msl)
+ 
++    target_compile_definitions(rt64 PRIVATE IMGUI_IMPL_METAL_CPP)
+     target_sources(rt64 PRIVATE
+         "${PROJECT_SOURCE_DIR}/src/apple/rt64_apple.mm"
++        "${PROJECT_SOURCE_DIR}/src/contrib/imgui/backends/imgui_impl_metal.mm"
+     )
+     target_include_directories(rt64 PRIVATE "${PROJECT_SOURCE_DIR}/src/contrib/metal-cpp")
+     target_link_libraries(rt64 "-framework Metal -framework QuartzCore -framework CoreGraphics -framework IOKit")
+diff --git a/src/gui/rt64_inspector.cpp b/src/gui/rt64_inspector.cpp
+index f1e1d3a..57c1b9e 100644
+--- a/src/gui/rt64_inspector.cpp
++++ b/src/gui/rt64_inspector.cpp
+@@ -22,6 +22,11 @@
+ #   include "utf8conv/utf8conv.h"
+ #endif
+ 
++#if defined(__APPLE__)
++#   include "plume_metal.h"
++#   include "imgui/backends/imgui_impl_metal.h"
++#endif
++
+ #if defined(_WIN32)
+ #   include "plume_d3d12.h"
+ #endif
+@@ -74,7 +79,13 @@ namespace RT64 {
+         ImGui::StyleColorsDark();
+ 
+         if (sdlWindow != nullptr) {
+-            ImGui_ImplSDL2_InitForOther(sdlWindow);
++#       if defined(__APPLE__)
++            if (graphicsAPI == UserConfiguration::GraphicsAPI::Metal) {
++                ImGui_ImplSDL2_InitForMetal(sdlWindow);
++            }
++            else
++#       endif
++            ImGui_ImplSDL2_InitForOther(sdlWindow);
+         }
+         else {
+ #       ifdef _WIN32
+@@ -143,6 +154,22 @@ namespace RT64 {
+             ImGui_ImplVulkan_Init(&initInfo);
+             break;
+         }
++        case UserConfiguration::GraphicsAPI::Metal: {
++#       if defined(__APPLE__)
++            MetalDevice *interfaceDevice = static_cast<MetalDevice *>(device);
++            const MetalSwapChain *interfaceSwapChain = static_cast<const MetalSwapChain *>(swapChain);
++            metalFrameTexture = device->createTexture(RenderTextureDesc::ColorTarget(
++                1, 1, interfaceSwapChain->desc.format));
++            if (metalFrameTexture == nullptr || !ImGui_ImplMetal_Init(interfaceDevice->mtl)) {
++                assert(false && "Unable to initialize the Metal Inspector backend.");
++                return;
++            }
++#       else
++            assert(false && "Unsupported Graphics API.");
++            return;
++#       endif
++            break;
++        }
+         default:
+             assert(false && "Unknown Graphics API.");
+             return;
+@@ -163,6 +190,15 @@ namespace RT64 {
+             vulkanContext.reset(nullptr);
+             break;
+         }
++        case UserConfiguration::GraphicsAPI::Metal: {
++#       if defined(__APPLE__)
++            ImGui_ImplMetal_Shutdown();
++            metalFrameTexture.reset();
++#       else
++            assert(false && "Unsupported Graphics API.");
++#       endif
++            break;
++        }
+         default:
+             assert(false && "Unknown Graphics API.");
+             break;
+@@ -208,6 +242,21 @@ namespace RT64 {
+             ImGui_ImplVulkan_NewFrame();
+             break;
+         }
++        case UserConfiguration::GraphicsAPI::Metal: {
++#       if defined(__APPLE__)
++            MetalTexture *interfaceTexture = static_cast<MetalTexture *>(metalFrameTexture.get());
++            MTL::RenderPassDescriptor *descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
++            MTL::RenderPassColorAttachmentDescriptor *attachment =
++                descriptor->colorAttachments()->object(0);
++            attachment->setTexture(interfaceTexture->mtl);
++            attachment->setLoadAction(MTL::LoadActionLoad);
++            attachment->setStoreAction(MTL::StoreActionStore);
++            ImGui_ImplMetal_NewFrame(descriptor);
++#       else
++            assert(false && "Unsupported Graphics API.");
++#       endif
++            break;
++        }
+         default:
+             assert(false && "Unknown Graphics API.");
+             break;
+@@ -254,6 +303,19 @@ namespace RT64 {
+                 ImGui_ImplVulkan_RenderDrawData(drawData, interfaceCommandList->vk);
+                 break;
+             }
++            case UserConfiguration::GraphicsAPI::Metal: {
++#           if defined(__APPLE__)
++                MetalCommandList *interfaceCommandList =
++                    static_cast<MetalCommandList *>(commandList);
++                interfaceCommandList->checkActiveRenderEncoder();
++                ImGui_ImplMetal_RenderDrawData(
++                    drawData, interfaceCommandList->mtl,
++                    interfaceCommandList->activeRenderEncoder);
++#           else
++                assert(false && "Unsupported Graphics API.");
++#           endif
++                break;
++            }
+             default:
+                 assert(false && "Unknown Graphics API.");
+                 break;
+diff --git a/src/gui/rt64_inspector.h b/src/gui/rt64_inspector.h
+index f90ca0f..2b5fbe5 100644
+--- a/src/gui/rt64_inspector.h
++++ b/src/gui/rt64_inspector.h
+@@ -28,6 +28,7 @@ namespace RT64 {
+         SDL_Window *sdlWindow = nullptr;
+         std::unique_ptr<RenderDescriptorSet> descriptorSet;
+         std::unique_ptr<VulkanContext> vulkanContext;
++        std::unique_ptr<RenderTexture> metalFrameTexture;
+         std::mutex frameMutex;
+ 
+         Inspector(RenderDevice *device, const RenderSwapChain *swapChain, UserConfiguration::GraphicsAPI graphicsAPI, SDL_Window *sdlWindow);

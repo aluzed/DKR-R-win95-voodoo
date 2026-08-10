@@ -14,6 +14,10 @@ CMakeUserPresets.json
 /runtime-recomp/run-data/
 /runtime-recomp/dump.toml
 /runtime-recomp/data_dump.toml
+/runtime-recomp/applied-patches.json
+/runtime-recomp/resolved-runtime-dependencies.json
+/runtime-recomp/dkr.us.v77.generated.toml
+/imgui.ini
 /logs/
 /cache/
 /saves/
@@ -23,8 +27,6 @@ mods/*
 
 # Dependencies fetched locally
 /extern/dkr-decomp/
-/extern/libultraship/
-/extern/torch/
 /extern/.resolved-dependencies.json
 /extern/.resolved-dkr-source.json
 
@@ -32,6 +34,10 @@ mods/*
 *.z64
 *.v64
 *.n64
+*.eep
+*.mpk
+*.sra
+*.fla
 baserom*
 *.o2r
 *.otr
@@ -51,7 +57,4 @@ extern/dkr-decomp/baseroms/
 extern/n64-modern-runtime/
 extern/rt64/
 runtime-recomp/RecompiledFuncs/
-runtime-recomp/dkr.us.v77.generated.toml
-runtime-recomp/resolved-runtime-dependencies.json
-runtime-recomp/applied-patches.json
 build/runtime-tools/

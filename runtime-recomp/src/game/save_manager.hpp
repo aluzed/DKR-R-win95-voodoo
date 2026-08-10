@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "dkr_save_codec.hpp"
+
 namespace dkr::runtime::saves {
 
 struct SaveInfo {
@@ -24,6 +26,8 @@ bool backup_adventure(std::filesystem::path& created, std::string& error);
 bool export_adventure(const std::filesystem::path& destination, std::string& error);
 bool import_adventure(const std::filesystem::path& source, std::string& error);
 bool reset_adventure(std::string& error);
+bool load_adventure(codec::SaveImage& image, std::string& error);
+bool commit_adventure(const codec::SaveImage& image, std::string& error);
 
 SaveInfo controller_pak_info(int channel);
 std::vector<std::filesystem::path> controller_pak_backups(int channel);

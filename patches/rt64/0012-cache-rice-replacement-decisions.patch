@@ -1,0 +1,108 @@
+diff --git a/src/hle/rt64_rdp_tmem.cpp b/src/hle/rt64_rdp_tmem.cpp
+index 5ca2b55..7590353 100644
+--- a/src/hle/rt64_rdp_tmem.cpp
++++ b/src/hle/rt64_rdp_tmem.cpp
+@@ -262,15 +262,28 @@ namespace RT64 {
+     uint64_t TextureManager::uploadTexture(State *state, const LoadTile &loadTile, TextureCache *textureCache, uint64_t creationFrame, uint16_t width, uint16_t height, uint32_t tlut) {
+         const uint8_t *TMEM = reinterpret_cast<const uint8_t *>(state->rdp->TMEM);
+         const uint64_t nativeHash = TMEMHasher::hash(TMEM, loadTile, width, height, tlut, TMEMHasher::CurrentHashVersion);
+-        auto aliasIt = riceAliasMap.find(nativeHash);
+-        if (aliasIt == riceAliasMap.end()) {
+-            uint64_t riceAlias = 0;
+-            calculateRiceAlias(state, loadTile, tlut, riceAlias);
+-            aliasIt = riceAliasMap.emplace(nativeHash, riceAlias).first;
++        const uint64_t replacementGeneration = textureCache->getReplacementGeneration();
++        if (riceReplacementGeneration != replacementGeneration) {
++            riceSelectedHashMap.clear();
++            riceReplacementGeneration = replacementGeneration;
++        }
++        auto selectedIt = riceSelectedHashMap.find(nativeHash);
++        uint64_t hash = 0;
++        if (selectedIt != riceSelectedHashMap.end()) {
++            hash = selectedIt->second;
++        }
++        else {
++            auto aliasIt = riceAliasMap.find(nativeHash);
++            if (aliasIt == riceAliasMap.end()) {
++                uint64_t riceAlias = 0;
++                calculateRiceAlias(state, loadTile, tlut, riceAlias);
++                aliasIt = riceAliasMap.emplace(nativeHash, riceAlias).first;
++            }
++            hash = (aliasIt->second != 0 &&
++                textureCache->hasReplacement(aliasIt->second))
++                ? aliasIt->second : nativeHash;
++            riceSelectedHashMap.emplace(nativeHash, hash);
+         }
+-        const uint64_t hash = (aliasIt->second != 0 &&
+-            textureCache->hasReplacement(aliasIt->second))
+-            ? aliasIt->second : nativeHash;
+         if (hashSet.find(hash) == hashSet.end()) {
+             hashSet.insert(hash);
+             textureCache->queueGPUUploadTMEM(hash, creationFrame, TMEM, RDP_TMEM_BYTES, width, height, tlut, loadTile, true);
+diff --git a/src/hle/rt64_rdp_tmem.h b/src/hle/rt64_rdp_tmem.h
+index a817af9..b594845 100644
+--- a/src/hle/rt64_rdp_tmem.h
++++ b/src/hle/rt64_rdp_tmem.h
+@@ -17,6 +17,8 @@ namespace RT64 {
+         std::set<uint64_t> hashSet;
+         std::set<uint64_t> dumpedSet;
+         std::unordered_map<uint64_t, uint64_t> riceAliasMap;
++        std::unordered_map<uint64_t, uint64_t> riceSelectedHashMap;
++        uint64_t riceReplacementGeneration = 0;
+ 
+         void uploadEmpty(State *state, TextureCache *textureCache, uint64_t creationFrame, uint16_t width, uint16_t height, uint64_t replacementHash);
+         uint64_t uploadTMEM(State *state, const LoadTile &loadTile, TextureCache *textureCache, uint64_t creationFrame, uint16_t byteOffset, uint16_t byteCount, uint16_t width, uint16_t height, uint32_t tlut);
+diff --git a/src/render/rt64_texture_cache.cpp b/src/render/rt64_texture_cache.cpp
+index 0848f3e..67bc66b 100644
+--- a/src/render/rt64_texture_cache.cpp
++++ b/src/render/rt64_texture_cache.cpp
+@@ -1406,6 +1406,10 @@ namespace RT64 {
+         return false;
+     }
+ 
++    uint64_t TextureCache::getReplacementGeneration() const {
++        return replacementGeneration.load(std::memory_order_acquire);
++    }
++
+     void TextureCache::clearReplacementDirectories() {
+         // Wait for the streaming threads to be finished.
+         waitForAllStreamThreads(true);
+@@ -1585,6 +1589,11 @@ namespace RT64 {
+ 
+         reloadReplacements(true);
+ 
++        // Readers can cache replacement decisions until this value changes.
++        // Publish only after the new maps are fully installed and resident
++        // textures have been re-resolved.
++        replacementGeneration.fetch_add(1, std::memory_order_release);
++
+         return true;
+     }
+ 
+diff --git a/src/render/rt64_texture_cache.h b/src/render/rt64_texture_cache.h
+index 9131697..32f4b21 100644
+--- a/src/render/rt64_texture_cache.h
++++ b/src/render/rt64_texture_cache.h
+@@ -220,6 +220,7 @@ namespace RT64 {
+         uint64_t streamLoadCount = 0;
+         TextureMap textureMap;
+         std::mutex textureMapMutex;
++        std::atomic<uint64_t> replacementGeneration = 1;
+         RenderWorker *directWorker;
+         RenderWorker *copyWorker;
+         std::unique_ptr<RenderCommandList> loaderCommandList;
+@@ -240,6 +241,7 @@ namespace RT64 {
+         bool useTexture(uint64_t hash, uint64_t submissionFrame, uint32_t &textureIndex);
+         bool addReplacement(uint64_t hash, const std::string &relativePath, ReplacementShift shift);
+         bool hasReplacement(uint64_t hash);
++        uint64_t getReplacementGeneration() const;
+         void clearReplacementDirectories();
+         void reloadReplacements(bool clearQueue, uint64_t exclusiveDbHash = 0);
+         bool loadReplacementDirectory(const ReplacementDirectory &replacementDirectory);
+@@ -265,4 +267,4 @@ namespace RT64 {
+         static bool setLowMipCache(RenderDevice *device, RenderCommandList *commandList, const uint8_t *bytes, size_t byteCount, std::unique_ptr<RenderBuffer> &dstUploadResource, std::unordered_map<std::string, LowMipCacheTexture> &dstTextureMap, uint64_t &totalMemory);
+         static Texture *loadTextureFromBytes(RenderDevice *device, RenderCommandList *commandList, const std::vector<uint8_t> &fileBytes, std::unique_ptr<RenderBuffer> &dstUploadResource, RenderPool *resourcePool = nullptr, std::mutex *uploadResourcePoolMutex = nullptr);
+     };
+-};
+\ No newline at end of file
++};

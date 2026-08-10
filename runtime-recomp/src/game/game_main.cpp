@@ -5,6 +5,7 @@
 #include "virtual_pak.hpp"
 #if DKR_RUNTIME_HAS_RT64
 #include "rt64_renderer.hpp"
+#include "runtime_texture_packs.hpp"
 #include "runtime_ui.hpp"
 #endif
 
@@ -24,147 +25,23 @@
 #include <string_view>
 #include <thread>
 
+#ifndef _WIN32
+#include <cerrno>
+#include <unistd.h>
+#endif
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <DbgHelp.h>
-#include <TlHelp32.h>
 #endif
 
 extern RspUcodeFunc dkrAspMain;
-extern "C" std::uint64_t dkr_scheduler_sp_handler_count();
-extern "C" std::uint64_t dkr_scheduler_dp_handler_count();
 
 namespace {
 
-std::atomic_flag g_logged_rsp_bootstrap = ATOMIC_FLAG_INIT;
-std::atomic<std::uint64_t> g_audio_rsp_tasks{0};
 #ifdef _WIN32
 std::atomic_flag g_crash_filter_active = ATOMIC_FLAG_INIT;
-
-std::string ThreadDescription(HANDLE thread) {
-    PWSTR wide_description = nullptr;
-    if (GetThreadDescription(thread, &wide_description) != S_OK ||
-        wide_description == nullptr) {
-        return {};
-    }
-    const int required = WideCharToMultiByte(CP_UTF8, 0, wide_description, -1,
-                                             nullptr, 0, nullptr, nullptr);
-    std::string description;
-    if (required > 1) {
-        description.resize(static_cast<std::size_t>(required));
-        WideCharToMultiByte(CP_UTF8, 0, wide_description, -1,
-                            description.data(), required, nullptr, nullptr);
-        description.pop_back();
-    }
-    LocalFree(wide_description);
-    return description;
-}
-
-std::uint64_t FileTimeValue(const FILETIME& value) {
-    ULARGE_INTEGER converted{};
-    converted.LowPart = value.dwLowDateTime;
-    converted.HighPart = value.dwHighDateTime;
-    return converted.QuadPart;
-}
-
-void DumpWatchdogThreadStacks() {
-    HANDLE process = GetCurrentProcess();
-    const DWORD64 module_base =
-        reinterpret_cast<DWORD64>(GetModuleHandleW(nullptr));
-    std::fprintf(stderr, "[boot][watchdog][stack-base] module=0x%016llX\n",
-                 static_cast<unsigned long long>(module_base));
-    SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME | SYMOPT_LOAD_LINES);
-    SymInitialize(process, nullptr, TRUE);
-    const DWORD process_id = GetCurrentProcessId();
-    const DWORD current_thread_id = GetCurrentThreadId();
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snapshot == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    THREADENTRY32 entry{};
-    entry.dwSize = sizeof(entry);
-    for (BOOL more = Thread32First(snapshot, &entry); more;
-         more = Thread32Next(snapshot, &entry)) {
-        if (entry.th32OwnerProcessID != process_id ||
-            entry.th32ThreadID == current_thread_id) {
-            continue;
-        }
-        HANDLE thread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT |
-                                       THREAD_SUSPEND_RESUME,
-                                   FALSE, entry.th32ThreadID);
-        if (thread == nullptr) {
-            continue;
-        }
-        FILETIME created{}, exited_time{}, kernel{}, user{};
-        const bool have_times = GetThreadTimes(thread, &created, &exited_time,
-                                               &kernel, &user) != FALSE;
-        const std::uint64_t cpu_ms = have_times
-            ? (FileTimeValue(kernel) + FileTimeValue(user)) / 10000ULL
-            : 0ULL;
-        const std::string description = ThreadDescription(thread);
-        const bool is_dkr_thread = description.rfind("DKR-", 0) == 0;
-        if (!is_dkr_thread && cpu_ms < 250ULL) {
-            CloseHandle(thread);
-            continue;
-        }
-
-        std::fprintf(stderr, "[boot][watchdog][thread] id=%lu name=%s cpu-ms=%llu\n",
-                     entry.th32ThreadID,
-                     description.empty() ? "(unnamed)" : description.c_str(),
-                     static_cast<unsigned long long>(cpu_ms));
-        if (SuspendThread(thread) == static_cast<DWORD>(-1)) {
-            CloseHandle(thread);
-            continue;
-        }
-        CONTEXT context{};
-        context.ContextFlags = CONTEXT_FULL;
-        if (GetThreadContext(thread, &context) != FALSE) {
-            STACKFRAME64 frame{};
-            frame.AddrPC.Offset = context.Rip;
-            frame.AddrPC.Mode = AddrModeFlat;
-            frame.AddrStack.Offset = context.Rsp;
-            frame.AddrStack.Mode = AddrModeFlat;
-            frame.AddrFrame.Offset = context.Rbp;
-            frame.AddrFrame.Mode = AddrModeFlat;
-            std::array<unsigned char, sizeof(SYMBOL_INFO) + MAX_SYM_NAME> storage{};
-            auto* symbol = reinterpret_cast<SYMBOL_INFO*>(storage.data());
-            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
-            symbol->MaxNameLen = MAX_SYM_NAME;
-            for (unsigned index = 0; index < 16; ++index) {
-                if (index != 0 &&
-                    !StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame,
-                                 &context, nullptr, SymFunctionTableAccess64,
-                                 SymGetModuleBase64, nullptr)) {
-                    break;
-                }
-                if (frame.AddrPC.Offset == 0) {
-                    break;
-                }
-                DWORD64 displacement = 0;
-                if (SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol)) {
-                    std::fprintf(stderr,
-                                 "[boot][watchdog][stack] id=%lu #%u %s+0x%llX\n",
-                                 entry.th32ThreadID, index, symbol->Name,
-                                 static_cast<unsigned long long>(displacement));
-                } else {
-                    std::fprintf(stderr,
-                                 "[boot][watchdog][stack] id=%lu #%u 0x%016llX "
-                                 "rva=0x%llX\n",
-                                 entry.th32ThreadID, index,
-                                 static_cast<unsigned long long>(frame.AddrPC.Offset),
-                                 static_cast<unsigned long long>(
-                                     frame.AddrPC.Offset - module_base));
-                }
-            }
-        }
-        ResumeThread(thread);
-        CloseHandle(thread);
-    }
-    CloseHandle(snapshot);
-    SymCleanup(process);
-}
 #endif
 
 std::filesystem::path DefaultConfigDirectory(const char* executable_argument) {
@@ -199,13 +76,6 @@ RspExitReason EmptyAudioTask(std::uint8_t*, std::uint32_t) {
 
 RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
     if (task->t.type == M_AUDTASK && task->t.ucode == 0x800D7600U) {
-        const auto task_index = ++g_audio_rsp_tasks;
-        if (task_index <= 20 || task->t.data_size == 0) {
-            std::fprintf(stderr,
-                         "[boot][rsp] audio-task=%llu data=0x%08X size=%u output=0x%08X output-size=%u\n",
-                         static_cast<unsigned long long>(task_index), task->t.data_ptr,
-                         task->t.data_size, task->t.output_buff, task->t.output_buff_size);
-        }
         // DKR can submit a zero-command audio frame when the host-reported AI
         // queue already satisfies the synthesizer's requested frame size. The
         // original scheduler treats that as completed work; entering the ABI
@@ -214,24 +84,6 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
             return EmptyAudioTask;
         }
         return +[](std::uint8_t* rdram, std::uint32_t ucode_address) {
-            if (!g_logged_rsp_bootstrap.test_and_set()) {
-                const std::uint32_t data_address = RSP_MEM_W_LOAD(0x30, 0xFC0);
-                std::fprintf(stderr,
-                             "[boot][rsp] asp DMEM table=%04X,%04X,%04X,%04X "
-                             "RDRAM table=%04X,%04X,%04X,%04X "
-                             "commands@%08X=%08X,%08X,%08X,%08X\n",
-                             RSP_MEM_HU_LOAD(0, 0x10), RSP_MEM_HU_LOAD(0, 0x12),
-                             RSP_MEM_HU_LOAD(0, 0x14), RSP_MEM_HU_LOAD(0, 0x16),
-                             static_cast<unsigned>(MEM_HU(0x10, 0xFFFFFFFF800E98D0ULL)),
-                             static_cast<unsigned>(MEM_HU(0x12, 0xFFFFFFFF800E98D0ULL)),
-                             static_cast<unsigned>(MEM_HU(0x14, 0xFFFFFFFF800E98D0ULL)),
-                             static_cast<unsigned>(MEM_HU(0x16, 0xFFFFFFFF800E98D0ULL)),
-                             data_address,
-                             static_cast<unsigned>(MEM_W(0x00, static_cast<gpr>(static_cast<std::int32_t>(data_address)))),
-                             static_cast<unsigned>(MEM_W(0x04, static_cast<gpr>(static_cast<std::int32_t>(data_address)))),
-                             static_cast<unsigned>(MEM_W(0x08, static_cast<gpr>(static_cast<std::int32_t>(data_address)))),
-                             static_cast<unsigned>(MEM_W(0x0C, static_cast<gpr>(static_cast<std::int32_t>(data_address)))));
-            }
             return dkrAspMain(rdram, ucode_address);
         };
     }
@@ -266,6 +118,18 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
     std::fprintf(stderr, "[boot][crash] exception=0x%08lX address=0x%016llX\n",
                  exception->ExceptionRecord->ExceptionCode,
                  static_cast<unsigned long long>(fault_address));
+    if (exception->ExceptionRecord->NumberParameters >= 2U) {
+        const ULONG_PTR operation = exception->ExceptionRecord->ExceptionInformation[0];
+        const char* operation_name = operation == 0U ? "read" :
+            operation == 1U ? "write" : operation == 8U ? "execute" : "unknown";
+        std::fprintf(stderr,
+                     "[boot][crash] memory-operation=%s(%llu) "
+                     "memory-address=0x%016llX\n",
+                     operation_name,
+                     static_cast<unsigned long long>(operation),
+                     static_cast<unsigned long long>(
+                         exception->ExceptionRecord->ExceptionInformation[1]));
+    }
     std::fprintf(stderr, "[boot][crash] module-base=0x%016llX rva=0x%llX\n",
                  static_cast<unsigned long long>(module_base),
                  static_cast<unsigned long long>(fault_address - module_base));
@@ -277,6 +141,25 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
                  static_cast<unsigned long long>(exception->ContextRecord->R8),
                  static_cast<unsigned long long>(exception->ContextRecord->R9),
                  static_cast<unsigned long long>(exception->ContextRecord->Rsp));
+    std::fprintf(stderr,
+                 "[boot][crash] registers rax=0x%016llX rbx=0x%016llX "
+                 "rbp=0x%016llX rsi=0x%016llX rdi=0x%016llX\n",
+                 static_cast<unsigned long long>(exception->ContextRecord->Rax),
+                 static_cast<unsigned long long>(exception->ContextRecord->Rbx),
+                 static_cast<unsigned long long>(exception->ContextRecord->Rbp),
+                 static_cast<unsigned long long>(exception->ContextRecord->Rsi),
+                 static_cast<unsigned long long>(exception->ContextRecord->Rdi));
+    std::fprintf(stderr,
+                 "[boot][crash] registers r10=0x%016llX r11=0x%016llX "
+                 "r12=0x%016llX r13=0x%016llX r14=0x%016llX "
+                 "r15=0x%016llX rip=0x%016llX\n",
+                 static_cast<unsigned long long>(exception->ContextRecord->R10),
+                 static_cast<unsigned long long>(exception->ContextRecord->R11),
+                 static_cast<unsigned long long>(exception->ContextRecord->R12),
+                 static_cast<unsigned long long>(exception->ContextRecord->R13),
+                 static_cast<unsigned long long>(exception->ContextRecord->R14),
+                 static_cast<unsigned long long>(exception->ContextRecord->R15),
+                 static_cast<unsigned long long>(exception->ContextRecord->Rip));
 
     CONTEXT context = *exception->ContextRecord;
     STACKFRAME64 frame{};
@@ -322,6 +205,40 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
 
 } // namespace
 
+bool RelaunchApplication(int argc, char** argv) {
+#ifdef _WIN32
+    (void)argc;
+    (void)argv;
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    std::wstring command_line = GetCommandLineW();
+    if (command_line.empty() ||
+        !CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, FALSE,
+                        0, nullptr, nullptr, &startup, &process)) {
+        std::fprintf(stderr, "[boot][restart] CreateProcessW failed: %lu\n",
+                     static_cast<unsigned long>(GetLastError()));
+        return false;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return true;
+#else
+    if (argc <= 0 || argv == nullptr || argv[0] == nullptr) {
+        return false;
+    }
+    std::error_code error;
+    const std::filesystem::path executable =
+        std::filesystem::absolute(std::filesystem::u8path(argv[0]), error);
+    const std::string executable_utf8 = error
+        ? std::string(argv[0])
+        : executable.string();
+    execv(executable_utf8.c_str(), argv);
+    std::fprintf(stderr, "[boot][restart] execv failed: errno=%d\n", errno);
+    return false;
+#endif
+}
+
 int DkrMain(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
@@ -341,6 +258,54 @@ int DkrMain(int argc, char** argv) {
         std::fprintf(stderr, "[test][pak] PASS: round-trip and backup recovery\n");
         return 0;
     }
+
+#if DKR_RUNTIME_HAS_RT64
+    if (argc == 4 && std::string_view(argv[1]) == "--self-test-rice-pack") {
+        const std::filesystem::path source = std::filesystem::u8path(argv[2]);
+        const std::filesystem::path test_directory = std::filesystem::u8path(argv[3]);
+        dkr::runtime::texture_packs::configure(test_directory);
+        std::string status;
+        if (!dkr::runtime::texture_packs::import_archive(source, status)) {
+            std::fprintf(stderr, "[test][rice] FAILED: %s\n", status.c_str());
+            return 1;
+        }
+        const auto packs = dkr::runtime::texture_packs::snapshot();
+        if (packs.size() != 1 || !packs.front().compatible ||
+            packs.front().format != dkr::runtime::texture_packs::Format::RiceRt64) {
+            std::fprintf(stderr, "[test][rice] FAILED: converted pack did not validate natively.\n");
+            return 1;
+        }
+        const std::string pack_id = packs.front().id;
+        const std::filesystem::path managed_path = packs.front().path;
+        if (!dkr::runtime::texture_packs::set_hidden(pack_id, true, status) ||
+            !dkr::runtime::texture_packs::snapshot().empty()) {
+            std::fprintf(stderr, "[test][rice] FAILED: hide-from-list lifecycle failed: %s\n",
+                         status.c_str());
+            return 1;
+        }
+        const auto hidden_packs = dkr::runtime::texture_packs::snapshot(true);
+        if (hidden_packs.size() != 1 || !hidden_packs.front().hidden) {
+            std::fprintf(stderr, "[test][rice] FAILED: hidden pack was not retained for restoration.\n");
+            return 1;
+        }
+        if (!dkr::runtime::texture_packs::set_hidden(pack_id, false, status) ||
+            dkr::runtime::texture_packs::snapshot().size() != 1) {
+            std::fprintf(stderr, "[test][rice] FAILED: restore-to-list lifecycle failed: %s\n",
+                         status.c_str());
+            return 1;
+        }
+        if (!dkr::runtime::texture_packs::delete_managed(pack_id, status) ||
+            !dkr::runtime::texture_packs::snapshot(true).empty() ||
+            std::filesystem::exists(managed_path)) {
+            std::fprintf(stderr, "[test][rice] FAILED: permanent managed deletion failed: %s\n",
+                         status.c_str());
+            return 1;
+        }
+        std::fprintf(stderr,
+                     "[test][rice] PASS: import, hide, restore and permanent deletion\n");
+        return 0;
+    }
+#endif
 
     if (argc > 4) {
         std::fprintf(stderr,
@@ -385,6 +350,7 @@ int DkrMain(int argc, char** argv) {
     dkr::runtime::RegisterGame(config_directory);
 #if DKR_RUNTIME_HAS_RT64
     dkr::runtime::ui::configure(config_directory);
+    dkr::runtime::ui::reset_lifecycle_request();
     auto window_handle = dkr::runtime::platform::create_window();
 #if defined(_WIN32)
     if (window_handle.window == nullptr) {
@@ -400,6 +366,10 @@ int DkrMain(int argc, char** argv) {
             static_cast<SDL_Window*>(dkr::runtime::platform::sdl_window()));
         if (!startup.start_game) {
             dkr::runtime::platform::shutdown();
+            if (startup.lifecycle_request ==
+                dkr::runtime::ui::LifecycleRequest::Restart) {
+                return RelaunchApplication(argc, argv) ? 0 : 6;
+            }
             return 0;
         }
         rom_path = startup.rom_path;
@@ -461,7 +431,8 @@ int DkrMain(int argc, char** argv) {
     const ultramodern::threads::callbacks_t thread_callbacks{.get_game_thread_name = GetThreadName};
 
     const recomp::Configuration configuration{
-        .project_version = {.major = 1, .minor = 0, .patch = 0, .suffix = ""},
+        .project_version = {.major = 1, .minor = 0, .patch = 0,
+                            .suffix = DKR_RELEASE_VERSION},
         .window_handle = window_handle,
         .rsp_callbacks = rsp_callbacks,
         .renderer_callbacks = renderer_callbacks,
@@ -494,85 +465,20 @@ int DkrMain(int argc, char** argv) {
 
     const auto runtime_started_at = std::chrono::steady_clock::now();
     bool timeout_requested = false;
-#if DKR_RUNTIME_HAS_RT64
-    const bool ui_smoke_test = std::getenv("DKR_UI_SMOKE_TEST") != nullptr;
-    const bool ui_smoke_hold_open =
-        std::getenv("DKR_UI_SMOKE_HOLD_OPEN") != nullptr;
-    bool ui_toggle_injected = false;
-    bool ui_open_observed = false;
-    bool ui_close_injected = false;
-    bool ui_test_quit_requested = false;
-#endif
     while (!runtime_finished.load(std::memory_order_acquire)) {
 #if DKR_RUNTIME_HAS_RT64
         // The SDL video subsystem and native window were created on this
         // thread. Keep all window/input event pumping here for Windows, X11
         // and Wayland compatibility while the recompiler owns its worker.
         dkr::runtime::platform::pump_window_events(nullptr);
-        const auto ui_test_elapsed = std::chrono::steady_clock::now() - runtime_started_at;
-        if (ui_smoke_test && !ui_toggle_injected &&
-            ui_test_elapsed >= std::chrono::seconds(3)) {
-            dkr::runtime::platform::inject_overlay_toggle_for_test();
-            ui_toggle_injected = true;
-        }
-        if (ui_smoke_test && ui_toggle_injected && !ui_open_observed &&
-            dkr::runtime::ui::overlay_visible()) {
-            ui_open_observed = true;
-            std::fprintf(stderr, "[test][ui] PASS: Escape opened the overlay\n");
-        }
-        if (ui_smoke_test && !ui_smoke_hold_open && ui_open_observed && !ui_close_injected &&
-            ui_test_elapsed >= std::chrono::seconds(5)) {
-            dkr::runtime::platform::inject_overlay_toggle_for_test();
-            ui_close_injected = true;
-        }
-        if (ui_smoke_test && ui_close_injected && !ui_test_quit_requested &&
-            !dkr::runtime::ui::overlay_visible()) {
-            std::fprintf(stderr, "[test][ui] PASS: Escape closed the overlay\n");
-            ui_test_quit_requested = true;
-            ultramodern::quit();
-        }
 #endif
         if (!timeout_requested && timeout_seconds != 0 &&
             std::chrono::steady_clock::now() - runtime_started_at >=
                 std::chrono::seconds(timeout_seconds)) {
-#ifdef _WIN32
-            if (std::getenv("DKR_WATCHDOG_STACKS") != nullptr) {
-                DumpWatchdogThreadStacks();
-            }
-#endif
 #if DKR_RUNTIME_HAS_RT64
-            const auto event_diagnostics = ultramodern::get_event_diagnostics();
-            const auto message_diagnostics = ultramodern::get_message_diagnostics();
             std::fprintf(stderr, "[boot][watchdog] completed-f3ddkr-tasks=%llu\n",
                          static_cast<unsigned long long>(
                              dkr::runtime::completed_f3ddkr_task_count()));
-            std::fprintf(stderr,
-                         "[boot][watchdog] gfx-submitted=%llu gfx-dequeued=%llu "
-                         "non-gfx-submitted=%llu sp-started=%llu sp-acked=%llu "
-                         "dp-published=%llu\n",
-                         static_cast<unsigned long long>(event_diagnostics.gfx_tasks_submitted),
-                         static_cast<unsigned long long>(event_diagnostics.gfx_tasks_dequeued),
-                         static_cast<unsigned long long>(event_diagnostics.non_gfx_tasks_submitted),
-                         static_cast<unsigned long long>(event_diagnostics.sp_completions_started),
-                         static_cast<unsigned long long>(event_diagnostics.sp_completions_acknowledged),
-                         static_cast<unsigned long long>(event_diagnostics.dp_completions_published));
-            std::fprintf(stderr,
-                         "[boot][watchdog] scheduler-sp-handled=%llu "
-                         "scheduler-dp-handled=%llu\n",
-                         static_cast<unsigned long long>(dkr_scheduler_sp_handler_count()),
-                         static_cast<unsigned long long>(dkr_scheduler_dp_handler_count()));
-            std::fprintf(stderr,
-                         "[boot][watchdog] dp-enqueue-requests=%llu "
-                         "dp-enqueued-with-queue=%llu dp-enqueue-successes=%llu "
-                         "dp-send-attempts=%llu dp-send-blocked=%llu dp-sent=%llu "
-                         "external-queue-depth=%llu\n",
-                         static_cast<unsigned long long>(message_diagnostics.dp_enqueue_requests),
-                         static_cast<unsigned long long>(message_diagnostics.dp_enqueued_with_queue),
-                         static_cast<unsigned long long>(message_diagnostics.dp_enqueue_successes),
-                         static_cast<unsigned long long>(message_diagnostics.dp_send_attempts),
-                         static_cast<unsigned long long>(message_diagnostics.dp_send_blocked),
-                         static_cast<unsigned long long>(message_diagnostics.dp_sent),
-                         static_cast<unsigned long long>(message_diagnostics.external_queue_depth));
 #endif
             std::fprintf(stderr, "[boot][watchdog] stopping after %u seconds\n",
                          timeout_seconds);
@@ -582,6 +488,9 @@ int DkrMain(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     runtime_thread.join();
+#if DKR_RUNTIME_HAS_RT64
+    const auto lifecycle_request = dkr::runtime::ui::lifecycle_request();
+#endif
     dkr::runtime::platform::shutdown();
     if (runtime_failure != nullptr) {
         try {
@@ -593,6 +502,12 @@ int DkrMain(int argc, char** argv) {
         }
         return 5;
     }
+#if DKR_RUNTIME_HAS_RT64
+    if (lifecycle_request == dkr::runtime::ui::LifecycleRequest::Restart) {
+        std::fprintf(stderr, "[boot][restart] relaunching DKR-R\n");
+        return RelaunchApplication(argc, argv) ? 0 : 6;
+    }
+#endif
     std::fprintf(stderr, "[boot] runtime stopped cleanly\n");
     return 0;
 }

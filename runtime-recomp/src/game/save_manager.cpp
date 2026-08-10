@@ -1,4 +1,5 @@
 #include "save_manager.hpp"
+#include "dkr_save_codec.hpp"
 
 #include <algorithm>
 #include <array>
@@ -100,7 +101,7 @@ bool ReadFileBounded(const std::filesystem::path& path,
 bool ReadAdventure(const std::filesystem::path& path,
                    std::vector<std::uint8_t>& bytes) {
     return ReadFileBounded(path, kAdventureSaveSize, bytes) &&
-           bytes.size() == kAdventureSaveSize;
+           dkr::runtime::saves::codec::validate(bytes);
 }
 
 bool ValidControllerPak(const std::vector<std::uint8_t>& bytes) {
@@ -456,9 +457,42 @@ bool dkr::runtime::saves::reset_adventure(std::string& error) {
             return false;
         }
     }
-    return WriteAtomic(AdventurePath(),
-                       std::vector<std::uint8_t>(kAdventureSaveSize, 0U),
+    return WriteAtomic(AdventurePath(), codec::blank_bytes(),
                        ReadAdventure, error);
+}
+
+bool dkr::runtime::saves::load_adventure(codec::SaveImage& image,
+                                         std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    std::vector<std::uint8_t> bytes;
+    if (!ReadAdventure(AdventurePath(), bytes)) {
+        error = "No checksum-valid Adventure EEPROM is available to edit.";
+        return false;
+    }
+    return codec::decode(bytes, image, &error);
+}
+
+bool dkr::runtime::saves::commit_adventure(const codec::SaveImage& image,
+                                           std::string& error) {
+    std::scoped_lock lock(g_save_manager_mutex);
+    if (!codec::validate_editable_ranges(image, &error)) {
+        error = "The edited Adventure save is outside DKR's retail limits: " +
+            error;
+        return false;
+    }
+    const std::vector<std::uint8_t> bytes = codec::encode(image);
+    if (!codec::validate(bytes, &error)) {
+        error = "The edited Adventure save could not be encoded safely: " + error;
+        return false;
+    }
+    std::error_code exists_error;
+    if (std::filesystem::exists(AdventurePath(), exists_error)) {
+        std::filesystem::path backup;
+        if (!BackupUnlocked(backup, error)) {
+            return false;
+        }
+    }
+    return WriteAtomic(AdventurePath(), bytes, ReadAdventure, error);
 }
 
 dkr::runtime::saves::SaveInfo dkr::runtime::saves::controller_pak_info(

@@ -9,6 +9,8 @@ typedef struct _SDL_GameController SDL_GameController;
 
 namespace dkr::runtime::input {
 
+constexpr int kUnbound = -1;
+
 enum class Action : std::uint8_t {
     StickUp,
     StickDown,
@@ -42,7 +44,10 @@ struct State {
     float stick_y = 0.0F;
 };
 
-constexpr int kUnbound = -1;
+struct ShortcutBinding {
+    int primary = kUnbound;
+    int secondary = kUnbound;
+};
 
 std::size_t action_count();
 const char* action_identifier(Action action);
@@ -53,6 +58,14 @@ int controller_binding(Action action);
 void set_keyboard_binding(Action action, int scancode);
 void set_controller_binding(Action action, int source);
 void reset_defaults();
+
+bool quick_restart_enabled();
+void set_quick_restart_enabled(bool enabled);
+ShortcutBinding quick_restart_keyboard_binding();
+ShortcutBinding quick_restart_controller_binding();
+void set_quick_restart_keyboard_binding(ShortcutBinding binding);
+void set_quick_restart_controller_binding(ShortcutBinding binding);
+bool consume_quick_restart_request();
 
 float stick_deadzone();
 void set_stick_deadzone(float percent);
@@ -73,15 +86,20 @@ bool gyro_enabled();
 void set_gyro_enabled(bool enabled);
 float gyro_sensitivity();
 void set_gyro_sensitivity(float percent);
+float gyro_y_sensitivity();
+void set_gyro_y_sensitivity(float percent);
 float gyro_deadzone();
 void set_gyro_deadzone(float degrees_per_second);
 bool gyro_inverted();
 void set_gyro_inverted(bool inverted);
+bool gyro_y_inverted();
+void set_gyro_y_inverted(bool inverted);
 GyroAxis gyro_axis();
 void set_gyro_axis(GyroAxis axis);
 void begin_gyro_calibration();
 void recenter_gyro();
 float gyro_steering_position();
+float gyro_steering_y_position();
 bool gyro_calibrating();
 float gyro_calibration_progress();
 
@@ -90,6 +108,8 @@ int encode_controller_axis(int axis, bool positive);
 std::string keyboard_binding_name(int scancode);
 std::string controller_binding_name(int source);
 
-State poll(SDL_GameController* controller, bool include_keyboard, bool blocked);
+State poll(SDL_GameController* controller,
+           SDL_GameController* gyro_controller,
+           bool include_keyboard, bool blocked);
 
 } // namespace dkr::runtime::input

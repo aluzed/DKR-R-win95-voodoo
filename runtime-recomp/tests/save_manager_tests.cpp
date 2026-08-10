@@ -78,9 +78,40 @@ int main() {
     assert(dkr::runtime::saves::export_adventure(exported, error));
     assert(dkr::runtime::saves::import_adventure(exported, error));
 
+    // Retail saves can contain a never-used 0xFF adventure slot. It is valid
+    // game data and must remain importable/editable even though it is not the
+    // canonical checksummed blank emitted by the Save Builder.
+    auto erased_slot_adventure = dkr::runtime::saves::codec::blank_bytes();
+    std::fill(erased_slot_adventure.begin() + 0x28U,
+              erased_slot_adventure.begin() + 0x50U, 0xFFU);
+    const auto erased_slot = root / "retail-erased-slot.bin";
+    write_bytes(erased_slot, erased_slot_adventure);
+    assert(dkr::runtime::saves::import_adventure(erased_slot, error));
+    assert(dkr::runtime::saves::adventure_info().valid);
+    dkr::runtime::saves::codec::SaveImage erased_slot_image{};
+    assert(dkr::runtime::saves::load_adventure(erased_slot_image, error));
+    assert(erased_slot_image.slots[1].name.empty());
+
     const auto invalid = root / "invalid.bin";
     std::ofstream(invalid, std::ios::binary).put('x');
     assert(!dkr::runtime::saves::import_adventure(invalid, error));
+    const auto bad_checksum = root / "bad-checksum.bin";
+    auto corrupt_adventure = dkr::runtime::saves::codec::blank_bytes();
+    corrupt_adventure[12] ^= 1U;
+    write_bytes(bad_checksum, corrupt_adventure);
+    assert(!dkr::runtime::saves::import_adventure(bad_checksum, error));
+
+    dkr::runtime::saves::codec::SaveImage editable{};
+    assert(dkr::runtime::saves::load_adventure(editable, error));
+    editable.slots[0].name = "DKR";
+    editable.slots[0].balloons = {47, 8, 8, 8, 8, 8};
+    assert(dkr::runtime::saves::commit_adventure(editable, error));
+    dkr::runtime::saves::codec::SaveImage reloaded{};
+    assert(dkr::runtime::saves::load_adventure(reloaded, error));
+    assert(reloaded.slots[0].name == "DKR");
+    assert(reloaded.slots[0].balloons[0] == 47);
+    editable.slots[0].balloons[1] = 9;
+    assert(!dkr::runtime::saves::commit_adventure(editable, error));
 
     std::fputs("[test][save-manager] controller pak lifecycle\n", stderr);
     const auto pak_source = root / "source.mpk";

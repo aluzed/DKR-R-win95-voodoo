@@ -265,7 +265,8 @@ function Convert-ToCanonicalRom([string]$SourcePath, [string]$DestinationPath) {
     return $bytes
 }
 
-function Clone-Or-Update([string]$Name, [string]$Repository, [string]$Destination, [switch]$Recursive) {
+function Clone-Or-Update([string]$Name, [string]$Repository, [string]$Destination,
+                         [string]$Commit, [switch]$Recursive) {
     $git = (Get-Command git.exe -ErrorAction SilentlyContinue)
     if (-not $git) { $git = Get-Command git -ErrorAction SilentlyContinue }
     if (-not $git) { Fail 'Git was not found. Run Build-Windows.cmd first.' }
@@ -284,13 +285,11 @@ function Clone-Or-Update([string]$Name, [string]$Repository, [string]$Destinatio
             & $git.Source -C $Destination clean -fd
             if ($LASTEXITCODE -ne 0) { Fail "Could not clean $Name." }
         }
-        & $git.Source -C $Destination fetch origin
+        & $git.Source -C $Destination fetch origin $Commit
         if ($LASTEXITCODE -ne 0) { Fail "Could not update $Name." }
-        & $git.Source -C $Destination checkout main
-        if ($LASTEXITCODE -ne 0) { Fail "Could not select the main branch for $Name." }
-        & $git.Source -C $Destination pull --ff-only
-        if ($LASTEXITCODE -ne 0) { Fail "Could not fast-forward $Name." }
     }
+    & $git.Source -C $Destination checkout --detach $Commit
+    if ($LASTEXITCODE -ne 0) { Fail "Could not select pinned $Name commit $Commit." }
     if ($Recursive) {
         & $git.Source -C $Destination submodule update --init --recursive
         if ($LASTEXITCODE -ne 0) { Fail "Could not initialise $Name submodules." }
@@ -405,11 +404,19 @@ try {
     $n64RecompPath = Join-Path $modernRuntimePath 'N64Recomp'
     $rt64Path = Join-Path $ProjectRoot 'extern\rt64'
     $resolved = [ordered]@{}
+    $patchManifest = Get-Content -LiteralPath (Join-Path $ProjectRoot 'patches\manifest.json') -Raw |
+        ConvertFrom-Json
+    $modernRuntimeCommit = [string](
+        $patchManifest.dependencies | Where-Object name -eq 'N64ModernRuntime' |
+        Select-Object -ExpandProperty expectedCommit)
+    $rt64Commit = [string](
+        $patchManifest.dependencies | Where-Object name -eq 'RT64' |
+        Select-Object -ExpandProperty expectedCommit)
 
     # N64ModernRuntime pins the N64Recomp revision it is compatible with as a
     # git submodule. Always build that copy instead of independently selecting
     # a potentially incompatible N64Recomp main branch.
-    $resolved.n64ModernRuntime = Clone-Or-Update 'N64ModernRuntime' 'https://github.com/N64Recomp/N64ModernRuntime.git' $modernRuntimePath -Recursive
+    $resolved.n64ModernRuntime = Clone-Or-Update 'N64ModernRuntime' 'https://github.com/N64Recomp/N64ModernRuntime.git' $modernRuntimePath $modernRuntimeCommit -Recursive
     if (-not (Test-Path -LiteralPath (Join-Path $n64RecompPath 'CMakeLists.txt') -PathType Leaf)) {
         Fail "N64ModernRuntime was prepared, but its pinned N64Recomp submodule is missing at: $n64RecompPath"
     }
@@ -421,17 +428,17 @@ try {
     }
     Write-Host "[OK] N64Recomp (runtime-pinned submodule): $($resolved.n64recomp)" -ForegroundColor Green
 
-    Write-Step 'Applying pinned dependency patches'
-    $patchScript = Join-Path $ProjectRoot 'scripts\Apply-Dependency-Patches.ps1'
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $patchScript
-    if ($LASTEXITCODE -ne 0) { Fail 'The pinned dependency patch pipeline failed.' }
-
     if ($BuildRenderer) {
-        $resolved.rt64 = Clone-Or-Update 'RT64' 'https://github.com/rt64/rt64.git' $rt64Path -Recursive
+        $resolved.rt64 = Clone-Or-Update 'RT64' 'https://github.com/rt64/rt64.git' $rt64Path $rt64Commit -Recursive
     } else {
         $resolved.rt64 = 'not requested'
         Write-Host '[INFO] RT64 checkout skipped. Add -BuildRenderer when the CPU/runtime probe is ready for renderer integration.' -ForegroundColor DarkGray
     }
+
+    Write-Step 'Applying pinned dependency patches'
+    $patchScript = Join-Path $ProjectRoot 'scripts\Apply-Dependency-Patches.ps1'
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $patchScript
+    if ($LASTEXITCODE -ne 0) { Fail 'The pinned dependency patch pipeline failed.' }
 
     $cmake = Get-NativeCMake
     $toolBuild = Join-Path $ProjectRoot 'build\runtime-tools\n64recomp'

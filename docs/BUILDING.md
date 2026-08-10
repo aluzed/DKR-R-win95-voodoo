@@ -1,114 +1,77 @@
-# Building DKR-R 1.0.0 RC4
+# Building DKR-R 1.0.0
 
-DKR-R combines project-owned integration code with pinned Diddy Kong Racing
-decomp, N64Recomp, N64ModernRuntime and RT64 revisions. A legally obtained
-Diddy Kong Racing US 1.0/v77 Game Pak image is required locally to build the
-matching decomp ELF and generated translation. No ROM is provided.
+## Requirements
 
-## Protected source boundaries
+Windows preparation requires Visual Studio 2022 with Desktop development with
+C++, Git, Python 3, PowerShell and WSL2/Ubuntu. Linux requires CMake 3.24+, Ninja,
+Clang or GCC, SDL2 development files, Vulkan development files and AppImage
+packaging dependencies. You must supply a supported US 1.0 ROM locally.
 
-Never hand-edit `runtime-recomp/RecompiledFuncs`,
-`runtime-recomp/RecompiledPatches`, `extern/rt64`,
-`extern/n64-modern-runtime` or its `N64Recomp` submodule. Put DKR hooks in
-`runtime-recomp/dkr.us.v77.recomp-policy.json`, dependency patches under
-`patches/`, then regenerate through the Patch Pipeline.
+## Prepare generated game code and dependencies
 
-## Windows prerequisites
-
-- Windows 10/11 x64
-- Visual Studio 2022 Desktop development with C++ and a Windows SDK
-- Git and PowerShell 5.1+
-- native Windows CMake (the Visual Studio-bundled CMake is supported)
-- WSL2/Ubuntu 24.04 for the matching decomp build
-- a local DKR US 1.0/v77 ROM
-
-Prepare dependencies, the matching ELF and generated functions:
+From a Windows terminal at the repository root:
 
 ```text
-Build-DKR-Runtime.cmd -BuildRenderer
+Build-DKR-Runtime.cmd
 ```
 
-After changing the recomp policy, regenerate before compiling:
+This validates the ROM, builds the matching decomp ELF, checks out the exact
+dependency commits, applies `patches/manifest.json`, generates CPU/RSP sources
+and runs the runtime probe. Generated and dependency worktrees are ignored and
+must not be edited.
+
+After a recomp policy change use:
 
 ```text
 Diagnose-DKR-Recompile.cmd
 ```
 
-Configure and build the shipping runtime:
+## Windows release
 
-```text
-cmake -S runtime-recomp -B build/dkr-runtime-rt64 ^
-  -G "Visual Studio 17 2022" -A x64 ^
-  -DDKRPORT_ROOT=C:/DKRPort ^
-  -DDKR_RUNTIME_BUILD_GENERATED=ON ^
-  -DDKR_RUNTIME_BUILD_RT64=ON
-cmake --build build/dkr-runtime-rt64 --config Release --parallel
-ctest --test-dir build/dkr-runtime-rt64 -C Release --output-on-failure
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build-DKR-R-Windows.ps1 -Clean -Package
 ```
 
-Output: `build/dkr-runtime-rt64/bin/Release/DKR-R.exe`.
-
-Run the storage self-test with a disposable directory:
+This configures a native Visual Studio x64 Release build, compiles the runtime,
+runs the complete DKR-R CTest suite, executes the Controller Pak self-test,
+scans the staged package and creates:
 
 ```text
-build\dkr-runtime-rt64\bin\Release\DKR-R.exe --self-test-pak build\pak-self-test
+dist/DKR-R-1.0.0-Windows-x64.zip
 ```
 
 ## Linux and AppImage
 
-Ubuntu 24.04 x86-64 is the qualified Linux build environment. Install CMake,
-Ninja, GCC/G++, SDL2, GTK3 and Vulkan development/runtime packages after the
-generated translation has been prepared.
-
-The complete build, test and mandatory AppImage step is:
+On Ubuntu or another supported build host:
 
 ```bash
-DKR_RELEASE_VERSION=1.0.0-rc4 ./Build-Linux.sh
+./Setup-Linux.sh
+./Build-Linux.sh
 ```
 
-This emits:
+The build uses Vulkan through RT64, runs the complete DKR-R CTest suite and the
+packaged Controller Pak self-test, then creates:
 
 ```text
-build/dkr-runtime-linux/bin/Release/DKR-R
-dist/DKR-R-1.0.0-rc4-Linux-x86_64.AppImage
+dist/DKR-R-1.0.0-Linux-x86_64.AppImage
 ```
 
-Linux/SteamOS uses RT64's Vulkan backend. Vulkan availability is required to
-run the game, but the AppImage still needs testing on physical Steam Deck
-hardware before that platform is certified.
+An unpackaged Linux binary is not a complete release deliverable.
 
-## Packages
+## macOS
 
-```powershell
-scripts\Package-Windows.ps1 -Version 1.0.0-rc4
-```
+On an Apple host with Xcode command-line tools, CMake and Ninja:
 
 ```bash
-DKR_RELEASE_VERSION=1.0.0-rc4 ./scripts/Package-Linux-AppImage.sh
+./Setup-macOS.sh
+./Build-macOS.sh
 ```
 
-After the final release commit:
+RT64 uses Metal on macOS. See `packaging/MACOS-BUILD-README.md` for the handoff
+and validation checklist.
 
-```text
-python scripts/package_source.py
-```
+## Release safety
 
-Expected artifacts:
-
-```text
-dist/DKR-R-1.0.0-rc4-Windows-x64.zip
-dist/DKR-R-1.0.0-rc4-Linux-x86_64.AppImage
-dist/DKR-R-1.0.0-rc4-Source.zip
-```
-
-Packagers refuse to overwrite existing outputs and scan staging trees for ROM
-extensions and N64 ROM headers.
-
-## Release checks
-
-Keep Accurate fixed at 4:3/30 FPS. Visually validate Accurate 4:3 and Modern at
-16:9, 21:9 and 32:9. Exercise launcher and in-game overlay navigation with a
-mouse and controller, gyro recentering, a post-race results screen, intro to
-character-select audio, save import/export and clean Exit to Desktop. Record
-automated results, dependency revisions, hashes and physical-hardware tests in
-`BUILD-VALIDATION.md`.
+Run `python scripts/scan_for_game_assets.py` before packaging. No ROM, save,
+Controller Pak, extracted asset, log, build cache or local configuration may be
+included. Release archives are scanned again by their packaging scripts.

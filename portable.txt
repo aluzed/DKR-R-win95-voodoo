@@ -1,1 +1,0 @@
-This file makes development builds store generated data inside the repository runtime folder.

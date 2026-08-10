@@ -1,19 +1,18 @@
-name: Build Linux Core
+name: Linux policy tests
 on: [push, pull_request]
 jobs:
-  linux-core:
+  linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - name: Configure asset-free core
-        run: >-
-          cmake -S . -B build/linux-core -G Ninja -DCMAKE_BUILD_TYPE=Release
-          -DDKRPORT_BUILD_NATIVE_UI=OFF
-          -DDKRPORT_BUILD_TESTS=ON
-          -DDKRPORT_ENABLE_WARNINGS_AS_ERRORS=ON
-      - name: Build
-        run: cmake --build build/linux-core --parallel
-      - name: Test
-        run: ctest --test-dir build/linux-core --output-on-failure
-      - name: Headless self-test
-        run: ./build/linux-core/bin/Release/DKRPort --headless-self-test --portable
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Prepare pinned runtime dependencies
+        run: |
+          python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64
+          bash scripts/apply-dependency-patches.sh
+      - name: Configure, build and test
+        run: |
+          cmake -S runtime-recomp -B build/policy-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DDKRPORT_ROOT="$PWD" -DDKR_RUNTIME_BUILD_GENERATED=OFF -DDKR_RUNTIME_BUILD_RT64=OFF
+          cmake --build build/policy-linux --parallel
+          ctest --test-dir build/policy-linux --output-on-failure -R '^DKR'

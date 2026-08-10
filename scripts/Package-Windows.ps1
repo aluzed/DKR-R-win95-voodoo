@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0-rc4',
+    [string]$Version = '',
     [string]$Configuration = 'Release',
     [string]$BuildDirectory = 'build\dkr-runtime-rt64'
 )
@@ -10,11 +10,14 @@ Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
+}
 $distRoot = Join-Path $projectRoot 'dist'
 $resolvedBuild = Join-Path $projectRoot $BuildDirectory
 $stage = Join-Path $distRoot "DKR-R-$Version-Windows-x64"
 $zip = "$stage.zip"
-$deniedExtensions = @('.z64', '.v64', '.n64', '.eep', '.mpk', '.o2r', '.otr')
+$deniedExtensions = @('.z64', '.v64', '.n64', '.eep', '.mpk', '.sra', '.fla', '.o2r', '.otr')
 $runtimeFiles = @('DKR-R.exe', 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll')
 
 if (Test-Path -LiteralPath $stage) {
@@ -36,6 +39,14 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 foreach ($name in $runtimeFiles) {
     Copy-Item -LiteralPath (Join-Path $bin $name) -Destination (Join-Path $stage $name)
 }
+$logoDirectory = Join-Path $stage 'assets\ui\Icons'
+New-Item -ItemType Directory -Path $logoDirectory -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'assets\ui\Icons\DKR-R8.bmp') `
+    -Destination (Join-Path $logoDirectory 'DKR-R8.bmp')
+$filterDirectory = Join-Path $stage 'assets\filters'
+New-Item -ItemType Directory -Path $filterDirectory -Force | Out-Null
+Copy-Item -Path (Join-Path $projectRoot 'assets\filters\*.png') `
+    -Destination $filterDirectory -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\RELEASE-README.md') -Destination (Join-Path $stage 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY.md') -Destination (Join-Path $stage 'THIRD_PARTY.md')
@@ -49,6 +60,8 @@ $noticeFiles = [ordered]@{
     'N64ModernRuntime-COPYING.txt' = 'extern\n64-modern-runtime\COPYING'
     'N64Recomp-LICENSE.txt' = 'extern\n64-modern-runtime\N64Recomp\LICENSE'
     'DXC-NOTICE.md' = 'packaging\licenses\DXC-NOTICE.md'
+    'Jumpman-LICENSE.txt' = 'packaging\licenses\Jumpman-LICENSE.txt'
+    'CRT-FILTERS-NOTICE.md' = 'packaging\licenses\CRT-FILTERS-NOTICE.md'
 }
 foreach ($entry in $noticeFiles.GetEnumerator()) {
     $source = Join-Path $projectRoot $entry.Value
@@ -56,6 +69,29 @@ foreach ($entry in $noticeFiles.GetEnumerator()) {
         throw "Missing third-party notice: $source"
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $noticeDirectory $entry.Key)
+}
+
+# Exercise the binary from the exact staged package, not only from the build
+# tree. This catches a missing DLL or packaging-path regression before ZIP
+# creation while keeping all test data outside the release directory.
+$pakTest = Join-Path ([IO.Path]::GetTempPath()) `
+    ("dkr-r-packaged-pak-" + [Guid]::NewGuid().ToString('N'))
+try {
+    $stagedRuntime = Join-Path $stage 'DKR-R.exe'
+    $selfTestInfo = [Diagnostics.ProcessStartInfo]::new()
+    $selfTestInfo.FileName = $stagedRuntime
+    $selfTestInfo.Arguments = "--self-test-pak `"$pakTest`""
+    $selfTestInfo.UseShellExecute = $false
+    $selfTestInfo.CreateNoWindow = $true
+    $selfTestProcess = [Diagnostics.Process]::Start($selfTestInfo)
+    $selfTestProcess.WaitForExit()
+    if ($selfTestProcess.ExitCode -ne 0) {
+        throw "The staged Windows runtime failed its Controller Pak self-test with exit code $($selfTestProcess.ExitCode)."
+    }
+} finally {
+    if (Test-Path -LiteralPath $pakTest) {
+        Remove-Item -LiteralPath $pakTest -Recurse -Force
+    }
 }
 
 $packagedFiles = Get-ChildItem -LiteralPath $stage -Recurse -File

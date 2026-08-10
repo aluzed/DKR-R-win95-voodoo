@@ -1,4 +1,0 @@
-# Dependency directories are intentionally empty in source ZIPs.
-# scripts/bootstrap_dependencies.py clones the exact revisions recorded in dependencies.lock.json.
-# When converting this scaffold into the long-lived Git repository, these directories may be
-# replaced with normal Git submodules while retaining dependencies.lock.json as the auditable lock.

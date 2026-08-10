@@ -16,8 +16,9 @@ ultramodern::renderer::WindowHandle create_window();
 ultramodern::renderer::WindowHandle prepare_window_for_game();
 void pump_window_events(void*);
 void* sdl_window();
+bool handle_window_shortcut(const void* event, bool renderer_active);
+void update_fullscreen_cursor(const void* event = nullptr);
 void update_ui_gamepad_navigation();
-void inject_overlay_toggle_for_test();
 #endif
 
 void queue_audio(std::int16_t* samples, std::size_t sample_count);

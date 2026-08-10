@@ -53,7 +53,7 @@ The project-owned `runtime-recomp/src/game` layer owns:
 - audio mix/EQ policy without altering the original audio clock;
 - Accurate/Modern presentation policy;
 - widescreen, interpolation, FOV, visibility and detail controls;
-- Taj's Tent startup/in-game UI and save manager;
+- shared controller-first startup/in-game DKR-R UI and Save Manager;
 - F3DDKR command translation and DKR-specific renderer policy.
 
 ## Preset boundary
@@ -70,4 +70,4 @@ policies. High-refresh output is interpolation, not a faster game clock.
 The selected Game Pak is validated locally and never copied into a release.
 Releases are scanned for ROM extensions and N64 ROM headers. EEPROM and four
 virtual Controller Pak files remain host files and can be managed through T.T.'s
-Save Garage.
+Save Manager.

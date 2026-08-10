@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 
 struct SDL_Window;
 typedef union SDL_Event SDL_Event;
@@ -11,12 +12,20 @@ struct Application;
 
 namespace dkr::runtime::ui {
 
+enum class LifecycleRequest : std::uint8_t {
+    None = 0,
+    Exit,
+    Restart,
+};
+
 struct StartupResult {
     bool start_game = false;
+    LifecycleRequest lifecycle_request = LifecycleRequest::None;
     std::filesystem::path rom_path;
 };
 
 void configure(const std::filesystem::path& config_directory);
+void persist_settings();
 // Called only after an explicitly selected renderer backend fails and RT64
 // successfully recovers with Automatic. Persist the recovered choice so the
 // next launch does not repeat the same failure loop.
@@ -30,6 +39,7 @@ bool handle_runtime_event(SDL_Event* event);
 bool input_capture_active();
 void toggle_overlay();
 bool overlay_visible();
-bool consume_exit_request();
+LifecycleRequest lifecycle_request();
+void reset_lifecycle_request();
 
 } // namespace dkr::runtime::ui

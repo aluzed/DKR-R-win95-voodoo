@@ -1,123 +1,95 @@
-# DKR-R (Diddy Kong Racing - Recompiled)
+# DKR-R — Diddy Kong Racing Recompiled
 
-<img width="1254" height="1254" alt="DKR5" src="https://github.com/user-attachments/assets/24662b25-0853-44f5-87c4-02addadba7cc" />
+DKR-R 1.0.0 is a cross-platform static recompilation of Diddy Kong Racing for
+Windows and Linux. It runs the original game from a locally selected, legally
+obtained US 1.0 Game Pak image; no ROM or extracted Nintendo/Rare assets are
+included.
 
-**1.0.0 release candidate - native Windows and Linux static recompilation**
+## Version 1 highlights
 
-DKR-R recompiles the original Diddy Kong Racing executable for modern desktop
-systems. It is a static recompilation port: the completed decompilation supplies
-readable reference source, symbols, structures and patch locations, while
-N64Recomp translates the matching original program and the project Patch
-Pipeline applies host-side fixes. N64ModernRuntime and RT64 provide the modern
-runtime, audio, input and graphics boundary.
+- Accurate presentation: original 4:3 composition, 30 FPS cadence, audio,
+  object detail and game behaviour.
+- Modern presentation: widescreen, interpolated high-refresh output, FOV,
+  extended scenery distance, maximum vehicle detail and anisotropic filtering.
+- Controller-first launcher and transparent in-game settings overlay.
+- Keyboard/controller remapping, quick race restart and two-axis gyro steering.
+- Independent live master, music, effects, vehicle and ambience levels, plus EQ.
+- Save import/export/backups, checksum-safe Save Builder and launch-time Magic Codes.
+- Optional performance overlay, CRT masks and hot-swappable RT64/Rice texture packs.
+- Native virtual EEPROM and four Controller Paks.
 
-No ROM, extracted textures, models, music or other copyrighted game data is
-included. Players must provide their own legally obtained Diddy Kong Racing US
-1.0 Game Pak image.
+Game simulation, race timers, AI, input polling and audio remain on the original
+timeline when Modern interpolation is enabled.
 
-## Play
+## Playing
 
-1. Launch `DKR-R.exe` on Windows or the DKR-R AppImage on Linux.
-2. Select a supported `.z64`, `.v64` or `.n64` image with the in-window,
-   controller-friendly Game Pak finder.
-3. After local validation succeeds, choose **Begin the Adventure**.
+1. Download the package for your platform.
+2. Start `DKR-R.exe` on Windows or the `.AppImage` on Linux.
+3. Select your own Diddy Kong Racing US 1.0 ROM when prompted.
+4. Choose Accurate or Modern and select **START Diddy Kong Racing - Recompiled**.
 
-The launcher and game share one window. Press **F1** or **Escape**, or
-controller **Back / View**, to open Taj's Tent over the running game. The
-overlay supports mouse, keyboard and controller navigation.
-
-Supported revision:
-
-```text
-Diddy Kong Racing US 1.0 / v77
-SHA-1: 0cb115d8716dbbc2922fda38e533b9fe63bb9670
-```
-
-## Presets
-
-Accurate is the stable reference preset:
-
-- original 4:3 presentation and 30 FPS cadence;
-- original FOV, visibility, model detail and audio mix;
-- original HUD placement;
-- Modern-only controls hidden and neutralised.
-
-Modern keeps simulation, timers, input and audio on the original timeline and
-adds:
-
-- fit-to-window widescreen and ultrawide presentation;
-- interpolated presentation from 30 to 500 FPS or Match Display;
-- FOV, view-distance and culling expansion controls;
-- optional full-detail vehicle models;
-- Direct3D 12 or Vulkan selection with automatic fallback;
-- complete keyboard/controller remapping and controller-response tuning;
-- calibrated angle-based gyro steering with recentering;
-- master, music, effects and vehicle volume plus three-band EQ;
-- T.T.'s Save Garage for validated backup, import and export bundles.
-
-The HUD always retains its original authored layout. A configurable HUD
-placement control is deliberately not part of this release candidate.
-
-## Default controls
+Supported ROM SHA-1 after byte-order normalisation:
 
 ```text
-Analogue: W A S D       A button: Space       B button: Shift
-Z trigger: Z            Start: Enter          L/R: Q / E
-C buttons: I J K L      D-pad: Arrow keys     Overlay: F1 / Escape
+0cb115d8716dbbc2922fda38e533b9fe63bb9670
 ```
 
-SDL game controllers are detected automatically. Use the D-pad or left stick
-to move, A/Cross to select, B/Circle to return, LB/RB to change pages and
-Start/Options to launch after a valid Game Pak is selected.
+Open the in-game overlay with Escape, F1, or controller Back/View. Alt+Enter and
+F11 toggle fullscreen.
 
-## Saves and compatibility paths
+## Release files
 
-- Windows: `%APPDATA%\DKRPort`
-- Linux: `$XDG_CONFIG_HOME/dkr-port`, or `~/.config/dkr-port`
+```text
+dist/DKR-R-1.0.0-Windows-x64.zip
+dist/DKR-R-1.0.0-Linux-x86_64.AppImage
+```
 
-Those legacy directory names are intentionally retained so the DKR-R rename
-does not strand existing settings or Adventure saves. For a portable Windows
-installation, create an empty `portable.txt` beside `DKR-R.exe`; data then uses
-the adjacent `dkr-runtime-data` directory.
+The Linux release is always distributed as an AppImage. macOS is supported by
+the source/build kit and requires an Apple host for signing and final testing.
 
-## Build and package
+## Building
 
-Protected dependency submodules and generated recompilation output are never
-edited by hand. Game hooks live in
-`runtime-recomp/dkr.us.v77.recomp-policy.json`; dependency changes live in the
-project Patch Pipeline.
+See [docs/BUILDING.md](docs/BUILDING.md). The short Windows path is:
 
 ```text
 Build-DKR-Runtime.cmd
-Diagnose-DKR-Recompile.cmd
-scripts/Package-Windows.ps1
-Build-Linux.sh
+Build-Windows.cmd
 ```
 
-Expected release artifacts:
+The Linux build uses the already generated recompilation sources:
 
-```text
-dist/DKR-R-1.0.0-rc4-Windows-x64.zip
-dist/DKR-R-1.0.0-rc4-Linux-x86_64.AppImage
-dist/DKR-R-1.0.0-rc4-Source.zip
+```bash
+./Setup-Linux.sh
+./Build-Linux.sh
 ```
 
-Every release artifact is scanned for prohibited N64 ROM extensions and ROM
-headers. See [BUILD-VALIDATION.md](BUILD-VALIDATION.md) for the exact current
-build and test record.
+Dependency revisions are pinned in `dependencies.lock.json`; all dependency
+changes are reproducible patches listed in `patches/manifest.json`.
 
-## Documentation
+## Repository rules
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Building](docs/BUILDING.md)
-- [Modern feature plan](docs/MODERN_MILESTONE_PLAN.md)
-- [F3DDKR integration](docs/F3DDKR.md)
-- [ROM setup and privacy](docs/ROM_SETUP.md)
-- [Troubleshooting](docs/TROUBLESHOOTING.md)
+Never edit dependency worktrees, `runtime-recomp/RecompiledFuncs`, or
+`runtime-recomp/RecompiledPatches` directly. DKR hooks belong in
+`runtime-recomp/dkr.us.v77.recomp-policy.json`; dependency changes belong in the
+Patch Pipeline.
 
-## Legal
+Before distribution, run:
 
-This unofficial project is not affiliated with, authorised by or endorsed by
-Nintendo or Rare. Read [LICENSE.md](LICENSE.md), [THIRD_PARTY.md](THIRD_PARTY.md)
-and [runtime-recomp/COPYING-NOTICE.md](runtime-recomp/COPYING-NOTICE.md) before
-redistributing a build.
+```bash
+python scripts/scan_for_game_assets.py
+```
+
+See [docs/ASSET_POLICY.md](docs/ASSET_POLICY.md),
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[docs/TEXTURE_PACKS.md](docs/TEXTURE_PACKS.md), and
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+## Credits and licensing
+
+DKR-R was created by ThatGuyMcd with contributions from the DKR-R project.
+The runtime uses N64Recomp, N64ModernRuntime, RT64, SDL2 and Dear ImGui; exact
+credits and licences are in [THIRD_PARTY.md](THIRD_PARTY.md).
+
+DKR-R does not include or grant rights to Diddy Kong Racing, its ROM, or its
+assets. Diddy Kong Racing and related properties belong to their respective
+owners.

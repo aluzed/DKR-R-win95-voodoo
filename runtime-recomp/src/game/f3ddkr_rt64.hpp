@@ -34,6 +34,7 @@ private:
 
     static void PresentationGroup(RT64::State* state,
                                   RT64::DisplayList** display_list);
+    static void MoveMem(RT64::State* state, RT64::DisplayList** display_list);
     static void Matrix(RT64::State* state, RT64::DisplayList** display_list);
     static void FillRect(RT64::State* state, RT64::DisplayList** display_list);
     static void TextureOffset(RT64::State* state, RT64::DisplayList** display_list);

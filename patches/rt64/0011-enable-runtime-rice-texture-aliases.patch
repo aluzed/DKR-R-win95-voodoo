@@ -1,0 +1,289 @@
+diff --git a/src/hle/rt64_rdp_tmem.cpp b/src/hle/rt64_rdp_tmem.cpp
+index 6051f4e..5ca2b55 100644
+--- a/src/hle/rt64_rdp_tmem.cpp
++++ b/src/hle/rt64_rdp_tmem.cpp
+@@ -6,6 +6,8 @@
+ 
+ #include <cassert>
+ #include <cinttypes>
++#include <cstdio>
++#include <cstring>
+ 
+ #include "xxHash/xxh3.h"
+ 
+@@ -14,6 +16,214 @@
+ #include "rt64_state.h"
+ 
+ namespace RT64 {
++    namespace {
++        uint32_t calculateDXT(uint32_t txl2words) {
++            return (txl2words == 0) ? 1U : (2048U + txl2words - 1U) / txl2words;
++        }
++
++        uint32_t txl2Words(uint32_t width, uint32_t size) {
++            static constexpr uint32_t SizeBytes[4] = { 0, 1, 2, 4 };
++            return (size == 0) ? std::max(1U, width / 16U)
++                               : std::max(1U, width * SizeBytes[size] / 8U);
++        }
++
++        int reverseDXT(uint32_t value, uint32_t width, uint32_t size) {
++            if (value == 0x800) return 1;
++            if (value <= 1) return 1;
++            int low = 2047 / value;
++            if (calculateDXT(low) > value) low++;
++            const int high = 2047 / (value - 1);
++            if (low == high) return low;
++            for (int candidate = low; candidate <= high; candidate++) {
++                if (txl2Words(width, size) == uint32_t(candidate)) return candidate;
++            }
++            return (low + high) / 2;
++        }
++
++        uint32_t riceCRC32(const uint8_t *source, int width, int height,
++                           int size, int rowStride) {
++            uint32_t result = 0;
++            const int bytesPerLine = width << size >> 1;
++            for (int y = height - 1; y >= 0; y--) {
++                uint32_t value = 0;
++                for (int x = bytesPerLine - 4; x >= 0; x -= 4) {
++                    std::memcpy(&value, source + x, sizeof(value));
++                    value ^= uint32_t(x);
++                    result = (result << 4) + ((result >> 28) & 15);
++                    result += value;
++                }
++                value ^= uint32_t(y);
++                result += value;
++                source += rowStride;
++            }
++            return result;
++        }
++
++        uint8_t maxCI8(const uint8_t *source, uint32_t width, uint32_t height,
++                       uint32_t rowStride) {
++            uint8_t result = 0;
++            for (uint32_t y = 0; y < height; y++) {
++                const uint8_t *row = source + rowStride * y;
++                for (uint32_t x = 0; x < width; x++) {
++                    result = std::max(result, row[x]);
++                    if (result == 0xFF) return result;
++                }
++            }
++            return result;
++        }
++
++        uint8_t maxCI4(const uint8_t *source, uint32_t width, uint32_t height,
++                       uint32_t rowStride) {
++            uint8_t result = 0;
++            width >>= 1;
++            for (uint32_t y = 0; y < height; y++) {
++                const uint8_t *row = source + rowStride * y;
++                for (uint32_t x = 0; x < width; x++) {
++                    result = std::max(result, uint8_t(row[x] >> 4));
++                    result = std::max(result, uint8_t(row[x] & 0xF));
++                    if (result == 0xF) return result;
++                }
++            }
++            return result;
++        }
++
++        uint64_t riceNativeAlias(const std::string &identity) {
++            constexpr uint64_t Offset = 14695981039346656037ULL;
++            constexpr uint64_t Prime = 1099511628211ULL;
++            constexpr char Domain[] = "dkr-r:rice:";
++            uint64_t hash = Offset;
++            for (const char *character = Domain; *character != '\0'; character++) {
++                hash = (hash ^ uint8_t(*character)) * Prime;
++            }
++            for (const unsigned char character : identity) {
++                const unsigned char lower = (character >= 'A' && character <= 'Z')
++                    ? static_cast<unsigned char>(character - 'A' + 'a') : character;
++                hash = (hash ^ lower) * Prime;
++            }
++            hash ^= hash >> 33;
++            hash *= 0xff51afd7ed558ccdULL;
++            hash ^= hash >> 33;
++            hash *= 0xc4ceb9fe1a85ec53ULL;
++            hash ^= hash >> 33;
++            return hash;
++        }
++
++        bool calculateRiceAlias(State *state, const LoadTile &drawTile,
++                                uint32_t tlut, uint64_t &alias) {
++            const LoadOperation &loadOp = state->rdp->rice.lastLoadOpByTMEM[drawTile.tmem];
++            int bytesPerRow = 0;
++            int width = 0;
++            int height = 0;
++            if (loadOp.type == LoadOperation::Type::Tile) {
++                uint16_t tileWidth = (std::max((loadOp.tile.lrs >> 2) -
++                    (loadOp.tile.uls >> 2), 0) + 1) & 0x03FF;
++                const uint16_t tileHeight = (std::max((loadOp.tile.lrt >> 2) -
++                    (loadOp.tile.ult >> 2), 0) + 1) & 0x03FF;
++                if (loadOp.tile.masks != 0) {
++                    tileWidth = std::min(tileWidth, uint16_t(1U << loadOp.tile.masks));
++                }
++                bytesPerRow = loadOp.texture.width << loadOp.texture.siz >> 1;
++                width = std::min(tileWidth, loadOp.texture.width);
++                if (loadOp.tile.siz > drawTile.siz) {
++                    width <<= loadOp.tile.siz - drawTile.siz;
++                }
++                height = (loadOp.tile.maskt != 0)
++                    ? std::min(tileHeight, uint16_t(1U << loadOp.tile.maskt))
++                    : tileHeight;
++            }
++            else if (loadOp.type == LoadOperation::Type::Block) {
++                const int tileWidth = std::max((drawTile.lrs >> 2) -
++                    (drawTile.uls >> 2), 0) + 1;
++                const int tileHeight = std::max((drawTile.lrt >> 2) -
++                    (drawTile.ult >> 2), 0) + 1;
++                const int maskWidth = (drawTile.masks == 0)
++                    ? tileWidth : (1 << drawTile.masks);
++                const int maskHeight = (drawTile.maskt == 0)
++                    ? tileHeight : (1 << drawTile.maskt);
++                const bool clampS = (drawTile.masks == 0) || (drawTile.cms & G_TX_CLAMP);
++                const bool clampT = (drawTile.maskt == 0) || (drawTile.cmt & G_TX_CLAMP);
++                width = (clampS && tileWidth <= 256)
++                    ? std::min(maskWidth, tileWidth) : maskWidth;
++                height = ((clampT && tileHeight <= 256) || maskHeight > 256)
++                    ? std::min(maskHeight, tileHeight) : maskHeight;
++                if (drawTile.siz == G_IM_SIZ_32b) {
++                    bytesPerRow = drawTile.line << 4;
++                }
++                else if (loadOp.tile.lrt == 0) {
++                    bytesPerRow = drawTile.line << 3;
++                }
++                else {
++                    uint32_t dxt = loadOp.tile.lrt;
++                    if (dxt > 1) dxt = reverseDXT(dxt, loadOp.texture.width, loadOp.texture.siz);
++                    bytesPerRow = dxt << 3;
++                }
++            }
++            else {
++                return false;
++            }
++
++            if (width <= 0 || height <= 0 || bytesPerRow <= 0) return false;
++            const uint32_t commonOffset = (loadOp.tile.uls >> 2) <<
++                loadOp.texture.siz >> 1;
++            const uint32_t commonBytesPerRow = loadOp.texture.width <<
++                loadOp.texture.siz >> 1;
++            uint32_t rdramStart = 0;
++            if (loadOp.type == LoadOperation::Type::Block) {
++                rdramStart = loadOp.texture.address + commonOffset +
++                    commonBytesPerRow * loadOp.tile.ult;
++            }
++            else {
++                rdramStart = loadOp.texture.address + commonOffset +
++                    commonBytesPerRow * (loadOp.tile.ult >> 2);
++            }
++            const uint64_t expectedSize = uint64_t(height - 1) * bytesPerRow +
++                uint64_t(width << drawTile.siz >> 1);
++            constexpr uint64_t RdramBytes = uint64_t(RDRAMSize) + 1ULL;
++            if (expectedSize == 0 || rdramStart >= RdramBytes ||
++                expectedSize > RdramBytes - rdramStart) {
++                return false;
++            }
++
++            const uint8_t *textureBytes = state->RDRAM + rdramStart;
++            const uint32_t textureCRC = riceCRC32(textureBytes, width, height,
++                                                   drawTile.siz, bytesPerRow);
++            char identityBuffer[64];
++            int identityLength = std::snprintf(identityBuffer, sizeof(identityBuffer),
++                "%08x#%u#%u", textureCRC, drawTile.fmt, drawTile.siz);
++            if (identityLength <= 0 || identityLength >= int(sizeof(identityBuffer))) return false;
++
++            if (tlut > 0) {
++                const bool ci4 = drawTile.siz == G_IM_SIZ_4b;
++                const int32_t paletteTMEM = (RDP_TMEM_WORDS >> 1) +
++                    (ci4 ? (drawTile.palette << 4) : 0);
++                const LoadOperation &paletteLoadOp =
++                    state->rdp->rice.lastLoadOpByTMEM[paletteTMEM];
++                if (paletteLoadOp.type != LoadOperation::Type::Tile) return false;
++                const uint32_t paletteOffset = (paletteLoadOp.tile.uls >> 2) <<
++                    paletteLoadOp.texture.siz >> 1;
++                const uint32_t paletteBytesPerRow = paletteLoadOp.texture.width <<
++                    paletteLoadOp.texture.siz >> 1;
++                const uint32_t paletteStart = paletteLoadOp.texture.address +
++                    paletteOffset + paletteBytesPerRow * (paletteLoadOp.tile.ult >> 2);
++                const uint8_t maximumIndex = ci4
++                    ? maxCI4(textureBytes, width, height, bytesPerRow)
++                    : maxCI8(textureBytes, width, height, bytesPerRow);
++                const uint32_t paletteByteCount = (uint32_t(maximumIndex) + 1U) * 2U;
++                if (paletteStart >= RdramBytes || paletteByteCount > RdramBytes - paletteStart) {
++                    return false;
++                }
++                const uint32_t paletteCRC = riceCRC32(state->RDRAM + paletteStart,
++                    maximumIndex + 1, 1, 2, ci4 ? 32 : 512);
++                const int appended = std::snprintf(identityBuffer + identityLength,
++                    sizeof(identityBuffer) - identityLength, "#%08x", paletteCRC);
++                if (appended <= 0 || identityLength + appended >= int(sizeof(identityBuffer))) return false;
++            }
++
++            alias = riceNativeAlias(identityBuffer);
++            return true;
++        }
++    }
++
+     // TextureManager
+ 
+     void TextureManager::uploadEmpty(State *state, TextureCache *textureCache, uint64_t creationFrame, uint16_t width, uint16_t height, uint64_t replacementHash) {
+@@ -51,7 +261,16 @@ namespace RT64 {
+ 
+     uint64_t TextureManager::uploadTexture(State *state, const LoadTile &loadTile, TextureCache *textureCache, uint64_t creationFrame, uint16_t width, uint16_t height, uint32_t tlut) {
+         const uint8_t *TMEM = reinterpret_cast<const uint8_t *>(state->rdp->TMEM);
+-        uint64_t hash = TMEMHasher::hash(TMEM, loadTile, width, height, tlut, TMEMHasher::CurrentHashVersion);
++        const uint64_t nativeHash = TMEMHasher::hash(TMEM, loadTile, width, height, tlut, TMEMHasher::CurrentHashVersion);
++        auto aliasIt = riceAliasMap.find(nativeHash);
++        if (aliasIt == riceAliasMap.end()) {
++            uint64_t riceAlias = 0;
++            calculateRiceAlias(state, loadTile, tlut, riceAlias);
++            aliasIt = riceAliasMap.emplace(nativeHash, riceAlias).first;
++        }
++        const uint64_t hash = (aliasIt->second != 0 &&
++            textureCache->hasReplacement(aliasIt->second))
++            ? aliasIt->second : nativeHash;
+         if (hashSet.find(hash) == hashSet.end()) {
+             hashSet.insert(hash);
+             textureCache->queueGPUUploadTMEM(hash, creationFrame, TMEM, RDP_TMEM_BYTES, width, height, tlut, loadTile, true);
+@@ -59,7 +278,7 @@ namespace RT64 {
+ 
+         // Dump memory contents into a file if the process is active.
+         if (!state->dumpingTexturesDirectory.empty()) {
+-            dumpTexture(hash, state, loadTile, width, height, tlut);
++            dumpTexture(nativeHash, state, loadTile, width, height, tlut);
+         }
+ 
+         return hash;
+@@ -194,4 +413,4 @@ namespace RT64 {
+             hashSet.erase(hash);
+         }
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_rdp_tmem.h b/src/hle/rt64_rdp_tmem.h
+index 3708220..a817af9 100644
+--- a/src/hle/rt64_rdp_tmem.h
++++ b/src/hle/rt64_rdp_tmem.h
+@@ -5,6 +5,7 @@
+ #pragma once
+ 
+ #include <set>
++#include <unordered_map>
+ 
+ #include "hle/rt64_draw_call.h"
+ #include "render/rt64_texture_cache.h"
+@@ -15,6 +16,7 @@ namespace RT64 {
+     struct TextureManager {
+         std::set<uint64_t> hashSet;
+         std::set<uint64_t> dumpedSet;
++        std::unordered_map<uint64_t, uint64_t> riceAliasMap;
+ 
+         void uploadEmpty(State *state, TextureCache *textureCache, uint64_t creationFrame, uint16_t width, uint16_t height, uint64_t replacementHash);
+         uint64_t uploadTMEM(State *state, const LoadTile &loadTile, TextureCache *textureCache, uint64_t creationFrame, uint16_t byteOffset, uint16_t byteCount, uint16_t width, uint16_t height, uint32_t tlut);
+@@ -22,4 +24,4 @@ namespace RT64 {
+         void dumpTexture(uint64_t hash, State *state, const LoadTile &loadTile, uint16_t width, uint16_t height, uint32_t tlut);
+         void removeHashes(const std::vector<uint64_t> &hashes);
+     };
+-};
+\ No newline at end of file
++};

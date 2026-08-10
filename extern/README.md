@@ -1,7 +1,9 @@
 # External dependencies
 
-This directory is deliberately empty in the distributed source ZIP.
+Dependency worktrees are created locally and are intentionally absent from
+source archives. Exact repositories and commits are recorded in
+`dependencies.lock.json`; project changes are applied only through the
+checksummed Patch Pipeline in `patches/manifest.json`.
 
-Run `python scripts/bootstrap_dependencies.py` to clone the exact revisions recorded in
-`dependencies.lock.json`. Milestone 0 does not link these dependencies yet, so the standalone
-launcher, ROM validator and tests build without downloading them.
+Use `Build-DKR-Runtime.cmd` for a complete prepared checkout. Do not edit,
+commit or distribute dependency worktrees from this directory.

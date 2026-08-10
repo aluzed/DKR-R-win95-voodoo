@@ -2,6 +2,27 @@ cmake_minimum_required(VERSION 3.24)
 
 project(DKRRuntimePreparation LANGUAGES C CXX)
 
+set(DKR_RELEASE_VERSION "" CACHE STRING "Public DKR-R release version")
+if(DKR_RELEASE_VERSION STREQUAL "")
+    file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../VERSION" DKR_RELEASE_VERSION
+         LIMIT_COUNT 1)
+endif()
+if(DKR_RELEASE_VERSION STREQUAL "")
+    set(DKR_RELEASE_VERSION "development")
+endif()
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" DKR_RELEASE_VERSION_NUMERIC
+       "${DKR_RELEASE_VERSION}")
+if(DKR_RELEASE_VERSION_NUMERIC STREQUAL "")
+    set(DKR_RELEASE_VERSION_NUMERIC "1.0.0")
+endif()
+string(REGEX MATCH "-rc([0-9]+)$" DKR_RELEASE_RC_MATCH
+       "${DKR_RELEASE_VERSION}")
+if(DKR_RELEASE_RC_MATCH)
+    set(DKR_RELEASE_BUILD_NUMBER "${CMAKE_MATCH_1}")
+else()
+    set(DKR_RELEASE_BUILD_NUMBER "1")
+endif()
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -107,6 +128,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     endif()
     set(DKR_GAME_SOURCES
         src/game/audio_equalizer.cpp
+        src/game/dkr_save_codec.cpp
         src/game/game_main.cpp
         src/game/game_registration.cpp
         src/game/null_renderer.cpp
@@ -115,7 +137,9 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/runtime_enhancements.cpp
         src/game/runtime_audio_controls.cpp
         src/game/runtime_input.cpp
+        src/game/runtime_magic_codes.cpp
         src/game/runtime_platform.cpp
+        src/game/runtime_quick_restart.cpp
         src/game/save_manager.cpp
         src/game/runtime_stubs.cpp
         src/game/runtime_telemetry.cpp
@@ -125,8 +149,12 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     if(DKR_RUNTIME_BUILD_RT64)
         list(APPEND DKR_GAME_SOURCES
             src/game/f3ddkr_rt64.cpp
+            src/game/generated/jumpman_font.c
             src/game/generated/racing_banana_font.c
             src/game/rt64_renderer.cpp
+            src/game/runtime_crt_overlay.cpp
+            src/game/runtime_rice_texture_import.cpp
+            src/game/runtime_texture_packs.cpp
             src/game/runtime_ui.cpp
             "${DKR_RT64_SOURCE}/src/contrib/imgui/backends/imgui_impl_sdlrenderer2.cpp"
         )
@@ -148,6 +176,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     )
     target_compile_definitions(DKRPortGame PRIVATE
         DKR_RUNTIME_HAS_RT64=$<BOOL:${DKR_RUNTIME_BUILD_RT64}>
+        DKR_RELEASE_VERSION="${DKR_RELEASE_VERSION}"
         NOMINMAX
     )
     if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
@@ -171,6 +200,11 @@ if(DKR_RUNTIME_BUILD_GENERATED)
             "${CMAKE_BINARY_DIR}/src"
         )
         target_link_libraries(DKRPortGame PRIVATE rt64)
+        if(APPLE)
+            target_include_directories(DKRPortGame PRIVATE
+                "${DKR_RT64_SOURCE}/src/contrib/metal-cpp"
+            )
+        endif()
         if(WIN32)
             target_include_directories(DKRPortGame PRIVATE
                 "${DKR_RT64_SOURCE}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include"
@@ -196,6 +230,20 @@ if(DKR_RUNTIME_BUILD_GENERATED)
             target_include_directories(DKRPortGame PRIVATE ${SDL2_INCLUDE_DIRS})
             target_link_libraries(DKRPortGame PRIVATE ${SDL2_LIBRARIES})
         endif()
+        add_custom_command(TARGET DKRPortGame POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "$<TARGET_FILE_DIR:DKRPortGame>/assets/ui/Icons"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_CURRENT_LIST_DIR}/../assets/ui/Icons/DKR-R8.bmp"
+                "$<TARGET_FILE_DIR:DKRPortGame>/assets/ui/Icons/DKR-R8.bmp"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "$<TARGET_FILE_DIR:DKRPortGame>/assets/filters"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${CMAKE_CURRENT_LIST_DIR}/../assets/filters"
+                "$<TARGET_FILE_DIR:DKRPortGame>/assets/filters"
+            COMMENT "Staging the DKR-R launcher and graphics assets"
+            VERBATIM
+        )
     endif()
     if(WIN32)
         target_link_libraries(DKRPortGame PRIVATE user32 dbghelp)
@@ -204,6 +252,22 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         OUTPUT_NAME "DKR-R"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
+    if(APPLE)
+        # CMake supplies the platform Info.plist and places the executable in
+        # Contents/MacOS. RT64 selects its native Metal backend on Apple
+        # platforms; the release packager adds artwork and notices before
+        # applying an ad-hoc signature for local testing.
+        set_target_properties(DKRPortGame PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_BUNDLE_NAME "DKR-R"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.thatguymcd.dkr-r"
+            MACOSX_BUNDLE_INFO_STRING "Diddy Kong Racing - Recompiled"
+            MACOSX_BUNDLE_LONG_VERSION_STRING "${DKR_RELEASE_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${DKR_RELEASE_VERSION_NUMERIC}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${DKR_RELEASE_BUILD_NUMBER}"
+            MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 ThatGuyMcd and DKR-R contributors"
+        )
+    endif()
     if(WIN32)
         set_target_properties(DKRPortGame PROPERTIES WIN32_EXECUTABLE TRUE)
     endif()
@@ -292,6 +356,30 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRWidescreenPolicy COMMAND DKRWidescreenPolicyTests)
 
+    add_executable(DKRViPresentationPolicyTests
+        tests/vi_presentation_policy_tests.cpp
+    )
+    target_include_directories(DKRViPresentationPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRViPresentationPolicy COMMAND DKRViPresentationPolicyTests)
+
+    add_executable(DKRMagicCodePolicyTests
+        tests/magic_code_policy_tests.cpp
+    )
+    target_include_directories(DKRMagicCodePolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRMagicCodePolicy COMMAND DKRMagicCodePolicyTests)
+
+    add_executable(DKRQuickRestartPolicyTests
+        tests/quick_restart_policy_tests.cpp
+    )
+    target_include_directories(DKRQuickRestartPolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRQuickRestartPolicy COMMAND DKRQuickRestartPolicyTests)
+
     add_executable(DKRCharacterSelectAnimationPolicyTests
         tests/character_select_animation_policy_tests.cpp
     )
@@ -320,12 +408,22 @@ if(BUILD_TESTING)
 
     add_executable(DKRSaveManagerTests
         tests/save_manager_tests.cpp
+        src/game/dkr_save_codec.cpp
         src/game/save_manager.cpp
     )
     target_include_directories(DKRSaveManagerTests PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
     add_test(NAME DKRSaveManager COMMAND DKRSaveManagerTests)
+
+    add_executable(DKRSaveCodecTests
+        tests/dkr_save_codec_tests.cpp
+        src/game/dkr_save_codec.cpp
+    )
+    target_include_directories(DKRSaveCodecTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRSaveCodec COMMAND DKRSaveCodecTests)
 
     add_executable(DKRAudioEqualizerTests
         tests/audio_equalizer_tests.cpp
@@ -344,6 +442,7 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRAudioMixPolicy COMMAND DKRAudioMixPolicyTests)
 
+
     add_executable(DKRRendererSnapshotTests
         tests/renderer_snapshot_tests.cpp
         src/game/renderer_snapshot.cpp
@@ -361,6 +460,32 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRPresentationIdentity COMMAND DKRPresentationIdentityTests)
 
+    add_executable(DKRInterpolationStatePolicyTests
+        tests/interpolation_state_policy_tests.cpp
+    )
+    target_include_directories(DKRInterpolationStatePolicyTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRInterpolationStatePolicy
+          COMMAND DKRInterpolationStatePolicyTests)
+
+      add_executable(DKRRiceTexturePackPolicyTests
+          tests/rice_texture_pack_policy_tests.cpp
+      )
+      target_include_directories(DKRRiceTexturePackPolicyTests PRIVATE
+          "${CMAKE_CURRENT_LIST_DIR}/src/game"
+      )
+      add_test(NAME DKRRiceTexturePackPolicy
+          COMMAND DKRRiceTexturePackPolicyTests)
+
+      add_executable(DKRIntroTailPolicyTests
+          tests/intro_tail_policy_tests.cpp
+      )
+      target_include_directories(DKRIntroTailPolicyTests PRIVATE
+          "${CMAKE_CURRENT_LIST_DIR}/src/game"
+      )
+      add_test(NAME DKRIntroTailPolicy COMMAND DKRIntroTailPolicyTests)
+
     # These executables intentionally use assert() as their zero-dependency
     # test primitive. RelWithDebInfo normally defines NDEBUG, which used to turn
     # every assertion into a no-op in the exact configuration shipped to users.
@@ -368,14 +493,21 @@ if(BUILD_TESTING)
         DKRPresentationPolicyTests
         DKRModernCameraPolicyTests
         DKRWidescreenPolicyTests
+        DKRViPresentationPolicyTests
+        DKRMagicCodePolicyTests
+        DKRQuickRestartPolicyTests
         DKRCharacterSelectAnimationPolicyTests
         DKRCharacterSelectMusicPolicyTests
         DKRMotionSteeringPolicyTests
         DKRSaveManagerTests
+        DKRSaveCodecTests
         DKRAudioEqualizerTests
         DKRAudioMixPolicyTests
         DKRRendererSnapshotTests
         DKRPresentationIdentityTests
+        DKRInterpolationStatePolicyTests
+        DKRRiceTexturePackPolicyTests
+        DKRIntroTailPolicyTests
     )
     foreach(DKR_ASSERT_TEST_TARGET IN LISTS DKR_ASSERT_TEST_TARGETS)
         if(MSVC)

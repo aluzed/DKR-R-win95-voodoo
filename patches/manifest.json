@@ -55,20 +55,8 @@
           "sha256": "67590b66b1739b9d5e2d24117480fc8a49523a9a99cf32a88575400f8521638c"
         },
         {
-          "path": "patches/n64-modern-runtime/0013-add-event-stage-diagnostics.patch",
-          "sha256": "e0e5db862c6e2f4bf71d0307425cb5e61c4145fdcef6d74d927ab5412a377c28"
-        },
-        {
-          "path": "patches/n64-modern-runtime/0014-add-dp-message-diagnostics.patch",
-          "sha256": "28734331747cf8466bfe87409e3f646bfeaf9cadcbb13d09e5b5ca3042fc92e1"
-        },
-        {
-          "path": "patches/n64-modern-runtime/0015-track-external-queue-depth.patch",
-          "sha256": "50e1dcf03b8eef37f0633ed3411b252a3d5c118b0d33987968e0f1415a6bd2b9"
-        },
-        {
-          "path": "patches/n64-modern-runtime/0016-use-reliable-external-message-fifo.patch",
-          "sha256": "5f77df05248c0c16e90fc7852f7cc33cdbba23d789ab65005e93614fdb18f149"
+          "path": "patches/n64-modern-runtime/0013-use-reliable-external-message-fifo.patch",
+          "sha256": "61712c2e214a2604b5460bcfa3c9a6dc1735859a53fd0f0e9e9f0b138a12cc08"
         }
       ]
     },
@@ -109,12 +97,28 @@
           "sha256": "1b2b2cf41d0529a81f4ad8760b7c6ad5ac543011c18b56f6b9e6b19800434632"
         },
         {
-          "path": "patches/rt64/0006-log-interpolation-phase-timings.patch",
-          "sha256": "dad447cfb18c8c55a5fde2243494fe4da699d8190428fbe865a78c1e2473dee9"
-        },
-        {
           "path": "patches/rt64/0007-skip-disabled-look-at-call-matching.patch",
           "sha256": "087d1d32311c7444d67f836ee6827e9a395df68272a37cd5ac78e022d51ffa64"
+        },
+        {
+          "path": "patches/rt64/0008-configurable-default-anisotropy.patch",
+          "sha256": "b80da1484f0acef5e052e2d93e9f393a1d02b47ccce6d9a162c8c82a5c37f837"
+        },
+        {
+          "path": "patches/rt64/0009-expand-inspector-texture-pool.patch",
+          "sha256": "79e94b0bd1a43e06fca038ff99e3f0c6e4155efc2cb9bf6b672bdf0a8acfdd28"
+        },
+        {
+          "path": "patches/rt64/0010-enable-metal-inspector.patch",
+          "sha256": "7a262abae46ccb35fd672702cbf6645d3df9b399553cf0757bf3bfbd74bfb33e"
+        },
+        {
+          "path": "patches/rt64/0011-enable-runtime-rice-texture-aliases.patch",
+          "sha256": "d9bebaee21bc54ea87428d3c1bcdc2657ec8644c3e61178c2d09e2d54c0d341a"
+        },
+        {
+          "path": "patches/rt64/0012-cache-rice-replacement-decisions.patch",
+          "sha256": "edefb089502f69e8eb1cd99e47307dcb307c973c22ab2838da7acf380f1bb53e"
         }
       ]
     }

@@ -1,68 +1,43 @@
-# Third-party sources
+# Third-party software and assets
 
-## Native launcher libraries
+DKR-R project code is distributed under `LICENSE.md`. A runtime linked with
+N64ModernRuntime must also satisfy GPL-3.0; see
+`runtime-recomp/COPYING-NOTICE.md`.
 
-Resolved by the pinned vcpkg checkout during the launcher build:
+## Build and runtime components
 
-| Project | Purpose | Upstream licence |
+| Project | Purpose | Licence |
 |---|---|---|
-| SDL3 | Window, renderer, input, controllers and native file picker | Zlib |
-| RmlUi 6.2 | Native in-window launcher layout and styling | MIT |
-| FreeType | Runtime font rendering used by RmlUi | FreeType/GPL dual licence |
-| vcpkg | C/C++ dependency installation | MIT |
+| DavidSM64/Diddy-Kong-Racing | Matching source, ELF symbols and structures | See upstream `LICENSE.md` |
+| N64Recomp | Static CPU and RSP translation | MIT |
+| N64ModernRuntime | libultra-compatible host services | GPL-3.0 |
+| RT64 | RDP rendering and presentation | MIT |
+| SDL2 | Window, audio, input and controllers | Zlib |
+| Dear ImGui | Launcher and in-game settings UI | MIT |
+| DirectX Shader Compiler | Windows shader compilation | University of Illinois/NCSA and bundled notices |
 
-## DKR runtime preparation sources
+Exact dependency commits are recorded in `dependencies.lock.json`. Windows
+packages include applicable notices in `ThirdPartyLicenses`. Linux AppImages
+include project notices plus the copyright records and common licences for each
+deployed system library under `usr/share/doc/dkr-port`.
 
-Cloned locally by `Build-DKR-Runtime.cmd`; not bundled in the clean repository ZIP:
+## Fonts
 
-| Project | Purpose | Upstream licence |
-|---|---|---|
-| DavidSM64/Diddy-Kong-Racing | Matching DKR decomp, ELF metadata, headers and source reference | See upstream `LICENSE.md` |
-| N64Recomp/N64Recomp | Static translation of the N64 executable/RSP code to native C; consumed through N64ModernRuntime's pinned submodule | MIT |
-| N64Recomp/N64ModernRuntime | libultra/runtime bridge for generated code | GPL-3.0 |
-| rt64/rt64 | Recommended RDP renderer for N64 recompilation projects | MIT |
-
-## Runtime components included in release binaries
-
-| Project | Purpose | Upstream licence |
-|---|---|---|
-| SDL2 | Runtime window, audio, input and controller access | Zlib |
-| Dear ImGui | In-game settings overlay | MIT |
-| DirectX Shader Compiler (`dxcompiler.dll`, `dxil.dll`, Windows only) | RT64 runtime shader compilation | University of Illinois/NCSA; see the packaged DXC notice and upstream third-party notices |
-| RT64 and its compiled contributors | N64 graphics translation and host rendering | MIT and the contributor licences retained in the corresponding source archive |
-| N64ModernRuntime | Recompilation host/runtime services | GPL-3.0 |
-| N64Recomp | Static translation support linked through the runtime | MIT |
-
-Windows packages place the immediately applicable notices in
-`ThirdPartyLicenses`. Linux packages place the core project notices in
-`usr/share/doc/dkr-port/licenses` and the deployed system-library notices in the
-Linux package directory described below.
-
-## Launcher typography
-
-The launcher heading typeface, Racing Banana, was supplied separately by the
-project owner and is not extracted from Diddy Kong Racing. The supplied font
-contains no embedded copyright or licence fields. A public distributor must
-confirm that it has permission to redistribute the font data before publishing
-a binary that embeds it. Its source-file SHA-256 is
+Racing Banana is the launcher body font supplied by the project owner. It is not
+extracted from Diddy Kong Racing. Its supplied source SHA-256 is
 `AEADA6E5FF1388D27CC5D29DE9C67B74C0F6D851D6C772EE35376AF4E288C896`.
+Public distributors are responsible for confirming redistribution permission.
 
-A final executable linked with N64ModernRuntime must be distributed in compliance with GPL-3.0. See
-`runtime-recomp/COPYING-NOTICE.md`. Exact resolved commits are written locally by the preparation
-script so the experimental runtime build can be reproduced.
+Jumpman by Neale Davidson / Pixel Sagas is used for headings and the performance
+overlay. Its supplied licence is packaged as `Jumpman-LICENSE.txt`; source
+SHA-256 is
+`36D473DF3E85F93AEECB619EF06432F4F6DCC572773AAB668D09C8AD9A04C334`.
 
-## Earlier researched alternatives
+## CRT masks
 
-`libultraship` and Harbour Masters' Torch remain recorded references for decomp-source port and asset
-pipelines. Milestone 0.4 uses N64Recomp/N64ModernRuntime for the earliest boot path because it already
-implements much of the N64 runtime boundary and supports RT64.
+Six optional PNG display masks are included for Modern presentation. They are
+not game assets. Provenance, hashes and redistribution notes are in
+`assets/filters/README.md` and `packaging/licenses/CRT-FILTERS-NOTICE.md`.
 
-Each dependency retains its own copyright and licence notices. Nintendo, Rare, Diddy Kong Racing and
-related names/assets belong to their respective owners.
-
-The Linux AppImage additionally carries the Debian copyright record for every
-shared library copied into the bundle, a library-to-package manifest, and the
-Debian common licence texts under
-`usr/share/doc/dkr-port/third-party/linux-packages`. These notices are collected
-before the AppImage is sealed, and packaging fails if any bundled library cannot
-be mapped to its notice.
+Nintendo, Rare, Diddy Kong Racing and related names and assets belong to their
+respective owners. DKR-R includes no game ROM or extracted game assets.

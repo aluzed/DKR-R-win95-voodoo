@@ -16,6 +16,9 @@ int fov_offset();
 void set_fov_offset(int offset);
 int view_distance_multiplier();
 void set_view_distance_multiplier(int multiplier);
+bool keep_hub_scenery_requested();
+bool keep_hub_scenery_enabled();
+void set_keep_hub_scenery_enabled(bool enabled);
 bool extended_culling_requested();
 bool extended_culling_enabled();
 void set_extended_culling_enabled(bool enabled);
@@ -23,5 +26,7 @@ int frustum_guard_percent();
 void set_frustum_guard_percent(int percent);
 bool fit_to_window_enabled();
 void set_fit_to_window_enabled(bool enabled);
+int anisotropy_level();
+void set_anisotropy_level(int level);
 
 } // namespace dkr::runtime::enhancements

@@ -1,11 +1,18 @@
 #include "runtime_ui.hpp"
 
 #include "game_registration.hpp"
+#include "generated/jumpman_font.h"
 #include "generated/racing_banana_font.h"
+#include "magic_code_policy.hpp"
+#include "modern_camera_policy.hpp"
 #include "runtime_enhancements.hpp"
 #include "runtime_audio_controls.hpp"
+#include "runtime_crt_overlay.hpp"
 #include "runtime_input.hpp"
+#include "runtime_magic_codes.hpp"
 #include "runtime_platform.hpp"
+#include "runtime_telemetry.hpp"
+#include "runtime_texture_packs.hpp"
 #include "save_manager.hpp"
 #include "virtual_pak.hpp"
 
@@ -32,7 +39,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <array>
+#include <chrono>
+#include <cfloat>
 #include <cctype>
+#include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
@@ -63,15 +75,16 @@ std::atomic<bool> g_overlay_visible{false};
 // mouse click or gamepad direction, which makes the content panel impossible
 // to operate once the RT64 inspector owns the in-game UI.
 std::atomic<bool> g_overlay_focus_requested{false};
-std::atomic<bool> g_logged_overlay_frame{false};
-std::atomic<bool> g_logged_exit_button_rect{false};
-std::atomic<bool> g_logged_exit_confirm_rect{false};
-std::atomic<bool> g_exit_requested{false};
+std::atomic<dkr::runtime::ui::LifecycleRequest> g_lifecycle_request{
+    dkr::runtime::ui::LifecycleRequest::None};
 std::mutex g_inspector_guard;
 RT64::Inspector* g_inspector = nullptr;
 std::atomic<int> g_overlay_page{0};
 ImFont* g_font_heading = nullptr;
 ImFont* g_font_title = nullptr;
+ImFont* g_font_controls = nullptr;
+ImFont* g_font_fps = nullptr;
+int g_brand_logo_rect = -1;
 RefreshRate g_modern_refresh_mode = RefreshRate::Display;
 int g_modern_refresh_target = 60;
 Resolution g_modern_resolution = Resolution::Auto;
@@ -80,12 +93,65 @@ Antialiasing g_modern_antialiasing = Antialiasing::None;
 HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::On;
 GraphicsApi g_modern_graphics_api = GraphicsApi::Auto;
 int g_modern_downsample = 1;
+bool g_fps_overlay_enabled = false;
+int g_fps_overlay_position = 1;
+int g_fps_overlay_detail = 1;
+bool g_fps_overlay_single_row = false;
+bool g_fps_custom_frame_time = true;
+bool g_fps_custom_simulation = true;
+bool g_fps_custom_graphics = false;
+bool g_fps_custom_vi = false;
+bool g_fps_custom_interpolation = false;
+bool g_fps_custom_audio = false;
+bool g_fps_custom_target = true;
+bool g_fps_custom_resolution = false;
+ImVec4 g_fps_fill_colour{0.96F, 0.18F, 0.10F, 1.0F};
+ImVec4 g_fps_outline_colour{1.0F, 0.58F, 0.04F, 1.0F};
+int g_fps_font_size = 24;
+bool g_crt_enabled = false;
+int g_crt_filter_index = 0;
+int g_crt_scale_mode = 0;
+float g_crt_strength = 0.35F;
+std::string g_crt_status;
+std::string g_texture_pack_status;
+bool g_show_hidden_texture_packs = false;
+std::string g_texture_pack_remove_id;
+std::string g_texture_pack_remove_name;
+
+constexpr int kPagePlay = 0;
+constexpr int kPageGraphics = 1;
+constexpr int kPageSound = 2;
+constexpr int kPageControls = 3;
+constexpr int kPageSaveManager = 4;
+constexpr int kPageOnlineMp = 5;
+constexpr int kPageModsHacks = 6;
+constexpr int kPageAbout = 7;
+constexpr int kMenuPageCount = 8;
+
+struct CrtFilterEntry {
+    std::string label;
+    std::filesystem::path path;
+    bool built_in = false;
+};
+
+std::vector<CrtFilterEntry> g_crt_filters;
+
+#ifndef DKR_RELEASE_VERSION
+#define DKR_RELEASE_VERSION "development"
+#endif
 enum class CaptureDevice { None, Keyboard, Controller };
 CaptureDevice g_capture_device = CaptureDevice::None;
 int g_capture_action = -1;
 bool g_capture_popup_pending = false;
 bool g_capture_finished = false;
+constexpr int kShortcutCaptureAction = -2;
+std::array<int, 2> g_shortcut_capture_sources{
+    dkr::runtime::input::kUnbound, dkr::runtime::input::kUnbound};
+int g_shortcut_capture_count = 0;
+std::chrono::steady_clock::time_point g_shortcut_capture_deadline{};
 std::string g_save_manager_status;
+std::optional<dkr::runtime::saves::codec::SaveImage> g_save_builder_image;
+int g_save_builder_slot = 0;
 
 bool HandleInputCaptureEvent(SDL_Event* event);
 
@@ -119,6 +185,135 @@ constexpr ImVec4 kCream{1.0F, 0.94F, 0.76F, 1.0F};
 std::string PathUtf8(const std::filesystem::path& path) {
     const auto value = path.u8string();
     return {value.begin(), value.end()};
+}
+
+std::filesystem::path RuntimeAssetPath(const std::filesystem::path& relative) {
+    if (char* base = SDL_GetBasePath(); base != nullptr) {
+        const std::filesystem::path candidate =
+            std::filesystem::path(base) / relative;
+        SDL_free(base);
+        std::error_code error;
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+    }
+    const std::filesystem::path candidate =
+        std::filesystem::current_path() / relative;
+    std::error_code error;
+    return std::filesystem::is_regular_file(candidate, error)
+        ? candidate : std::filesystem::path{};
+}
+
+std::filesystem::path BrandLogoPath() {
+    return RuntimeAssetPath("assets/ui/Icons/DKR-R8.bmp");
+}
+
+void RefreshCrtFilters() {
+    static constexpr std::array<std::pair<const char*, const char*>, 6>
+        built_ins{{
+            {"Soft scanlines", "scanlines-soft.png"},
+            {"Shadow mask", "shadow-mask.png"},
+            {"Aperture grille", "aperture-grille.png"},
+            {"Perfect CRT 240p Bright", "Perfect_CRT-240p-BRT.png"},
+            {"Perfect CRT 240p", "Perfect_CRT-240p.png"},
+            {"Perfect CRT", "Perfect_CRT.png"},
+        }};
+    g_crt_filters.clear();
+    for (const auto& [label, file] : built_ins) {
+        g_crt_filters.push_back(
+            {label, RuntimeAssetPath(std::filesystem::path("assets/filters") / file),
+             true});
+    }
+
+    const std::filesystem::path custom_directory =
+        g_config_directory / "filters";
+    std::error_code error;
+    std::filesystem::create_directories(custom_directory, error);
+    std::vector<std::filesystem::path> custom_paths;
+    if (!error) {
+        for (const auto& entry :
+             std::filesystem::directory_iterator(custom_directory, error)) {
+            if (error) break;
+            if (!entry.is_regular_file(error)) continue;
+            std::string extension = entry.path().extension().string();
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char value) {
+                               return static_cast<char>(std::tolower(value));
+                           });
+            if (extension == ".png") custom_paths.push_back(entry.path());
+        }
+    }
+    std::sort(custom_paths.begin(), custom_paths.end());
+    for (const auto& path : custom_paths) {
+        g_crt_filters.push_back({path.stem().string() + " (Custom)", path, false});
+    }
+    if (g_crt_filters.empty()) {
+        g_crt_filter_index = 0;
+    } else {
+        g_crt_filter_index = std::clamp(
+            g_crt_filter_index, 0, static_cast<int>(g_crt_filters.size()) - 1);
+    }
+}
+
+bool CrtFilterGetter(void* data, int index, const char** output) {
+    const auto* filters = static_cast<const std::vector<CrtFilterEntry>*>(data);
+    if (filters == nullptr || index < 0 ||
+        index >= static_cast<int>(filters->size())) {
+        return false;
+    }
+    *output = (*filters)[static_cast<std::size_t>(index)].label.c_str();
+    return true;
+}
+
+void LoadBrandLogoIntoAtlas() {
+    g_brand_logo_rect = -1;
+    const std::filesystem::path path = BrandLogoPath();
+    if (path.empty()) {
+        std::fprintf(stderr,
+                     "[boot][ui] DKR-R8 launcher logo was not found beside the runtime\n");
+        return;
+    }
+    SDL_Surface* source = SDL_LoadBMP(PathUtf8(path).c_str());
+    if (source == nullptr) {
+        std::fprintf(stderr, "[boot][ui] launcher logo could not be loaded: %s\n",
+                     SDL_GetError());
+        return;
+    }
+    SDL_Surface* rgba = SDL_ConvertSurfaceFormat(
+        source, SDL_PIXELFORMAT_RGBA32, 0);
+    SDL_FreeSurface(source);
+    if (rgba == nullptr || rgba->w <= 0 || rgba->h <= 0) {
+        std::fprintf(stderr, "[boot][ui] launcher logo conversion failed: %s\n",
+                     SDL_GetError());
+        if (rgba != nullptr) SDL_FreeSurface(rgba);
+        return;
+    }
+
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    const int rect_index = atlas->AddCustomRectRegular(rgba->w, rgba->h);
+    unsigned char* pixels = nullptr;
+    int atlas_width = 0;
+    int atlas_height = 0;
+    atlas->GetTexDataAsRGBA32(&pixels, &atlas_width, &atlas_height);
+    ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(rect_index);
+    if (pixels == nullptr || rect == nullptr || !rect->IsPacked() ||
+        rect->X + rect->Width > atlas_width ||
+        rect->Y + rect->Height > atlas_height) {
+        std::fprintf(stderr, "[boot][ui] launcher logo would not fit the font atlas\n");
+        SDL_FreeSurface(rgba);
+        return;
+    }
+    for (int row = 0; row < rgba->h; ++row) {
+        const auto* source_row = static_cast<const unsigned char*>(rgba->pixels) +
+            static_cast<std::size_t>(row) * rgba->pitch;
+        auto* destination_row = pixels +
+            (static_cast<std::size_t>(rect->Y + row) * atlas_width + rect->X) * 4U;
+        std::memcpy(destination_row, source_row,
+                    static_cast<std::size_t>(rgba->w) * 4U);
+    }
+    atlas->TexPixelsUseColors = true;
+    g_brand_logo_rect = rect_index;
+    SDL_FreeSurface(rgba);
 }
 
 std::filesystem::path SettingsPath() {
@@ -179,51 +374,183 @@ void ApplyStyle() {
     style.Colors[ImGuiCol_NavHighlight] = {1.0F, 0.82F, 0.12F, 1.0F};
 }
 
-void LoadRacingFonts() {
+void LoadLauncherFonts() {
     ImGuiIO& io = ImGui::GetIO();
-    ImFontConfig body_config{};
-    body_config.SizePixels = 17.0F;
-    ImFont* body_font = io.Fonts->AddFontDefault(&body_config);
-    io.FontDefault = body_font;
-    static constexpr ImWchar kPunctuationRanges[] = {
-        0x0021, 0x002F, // ! " # $ % & ' ( ) * + , - . /
-        0x003A, 0x0040, // : ; < = > ? @
-        0x005B, 0x0060, // [ \ ] ^ _ `
-        0x007B, 0x007E, // { | } ~
-        0x00A3, 0x00A3, // Pound sign
+    static constexpr ImWchar kLauncherGlyphRanges[] = {
+        0x0020, 0x00FF, // Basic Latin and Latin-1 Supplement.
         0,
     };
-    const auto add_racing_font = [&](float size) {
-        ImFontConfig racing_config{};
-        racing_config.FontDataOwnedByAtlas = false;
-        racing_config.OversampleH = 2;
-        racing_config.OversampleV = 2;
-        ImFont* racing_font = io.Fonts->AddFontFromMemoryTTF(
-            const_cast<char*>(dkr_racing_banana_font),
-            static_cast<int>(dkr_racing_banana_font_size), size, &racing_config);
-        if (racing_font != nullptr) {
-            // Racing Banana intentionally contains a small display alphabet.
-            // Merge ImGui's embedded cross-platform font only for punctuation
-            // it lacks, at the same pixel height and increased raster weight.
-            ImFontConfig fallback_config{};
-            fallback_config.MergeMode = true;
-            fallback_config.PixelSnapH = true;
-            fallback_config.OversampleH = 1;
-            fallback_config.OversampleV = 1;
-            fallback_config.SizePixels = size;
-            fallback_config.RasterizerMultiply = 1.35F;
-            fallback_config.GlyphRanges = kPunctuationRanges;
-            io.Fonts->AddFontDefault(&fallback_config);
-        }
-        return racing_font;
+
+    const auto merge_fallback = [&](float size) {
+        ImFontConfig fallback_config{};
+        fallback_config.MergeMode = true;
+        fallback_config.PixelSnapH = true;
+        fallback_config.OversampleH = 1;
+        fallback_config.OversampleV = 1;
+        fallback_config.SizePixels = size;
+        fallback_config.RasterizerMultiply = 1.35F;
+        fallback_config.GlyphRanges = kLauncherGlyphRanges;
+        io.Fonts->AddFontDefault(&fallback_config);
     };
-    g_font_heading = add_racing_font(28.0F);
-    g_font_title = add_racing_font(48.0F);
+    const auto add_racing_font = [&](float size) -> ImFont* {
+        ImFontConfig config{};
+        config.FontDataOwnedByAtlas = false;
+        config.OversampleH = 2;
+        config.OversampleV = 2;
+        config.GlyphRanges = kLauncherGlyphRanges;
+        ImFont* font = io.Fonts->AddFontFromMemoryTTF(
+            const_cast<char*>(dkr_racing_banana_font),
+            static_cast<int>(dkr_racing_banana_font_size), size, &config,
+            kLauncherGlyphRanges);
+        if (font != nullptr) {
+            merge_fallback(size);
+        }
+        return font;
+    };
+
+    // Numeric and selectable controls use one coherent sans face. Racing
+    // Banana deliberately remains the launcher's body font, but its missing
+    // digits otherwise force ImGui to mix fallback glyphs of a different
+    // apparent size inside sliders and combo previews.
+    ImFontConfig control_config{};
+    control_config.SizePixels = 21.0F;
+    control_config.OversampleH = 2;
+    control_config.OversampleV = 2;
+    control_config.PixelSnapH = true;
+    control_config.RasterizerMultiply = 1.20F;
+    control_config.GlyphRanges = kLauncherGlyphRanges;
+    g_font_controls = io.Fonts->AddFontDefault(&control_config);
+
+    ImFont* body_font = add_racing_font(19.0F);
+    if (body_font == nullptr) {
+        ImFontConfig fallback_config{};
+        fallback_config.SizePixels = 19.0F;
+        body_font = io.Fonts->AddFontDefault(&fallback_config);
+        std::fprintf(stderr,
+                     "[boot][ui] Racing Banana body font could not be loaded; using fallback\n");
+    }
+    io.FontDefault = body_font;
+    if (g_font_controls == nullptr) {
+        g_font_controls = body_font;
+    }
+
+    const auto add_jumpman_font = [&](float size) -> ImFont* {
+        ImFontConfig config{};
+        config.FontDataOwnedByAtlas = false;
+        config.OversampleH = 2;
+        config.OversampleV = 2;
+        config.GlyphRanges = kLauncherGlyphRanges;
+        ImFont* font = io.Fonts->AddFontFromMemoryTTF(
+            const_cast<unsigned char*>(dkr_jumpman_font),
+            static_cast<int>(dkr_jumpman_font_size), size, &config,
+            kLauncherGlyphRanges);
+        if (font != nullptr) {
+            merge_fallback(size);
+        }
+        return font;
+    };
+    g_font_heading = add_jumpman_font(52.0F);
+    g_font_title = add_jumpman_font(68.0F);
+    g_font_fps = add_jumpman_font(24.0F);
     if (g_font_heading == nullptr || g_font_title == nullptr) {
-        std::fprintf(stderr, "[boot][ui] Racing Banana font could not be loaded; using fallback\n");
+        std::fprintf(stderr,
+                     "[boot][ui] Jumpman heading font could not be loaded; using body font\n");
         g_font_heading = body_font;
         g_font_title = body_font;
     }
+    if (g_font_fps == nullptr) {
+        g_font_fps = g_font_controls != nullptr ? g_font_controls : body_font;
+    }
+    LoadBrandLogoIntoAtlas();
+}
+
+class ControlFontScope {
+public:
+    explicit ControlFontScope(bool pad_popup = false)
+        : font_pushed_(g_font_controls != nullptr),
+          padding_pushed_(pad_popup) {
+        if (font_pushed_) {
+            ImGui::PushFont(g_font_controls);
+        }
+        if (padding_pushed_) {
+            // WindowPadding is sampled when BeginCombo creates its popup; it
+            // does not disturb the already-open launcher card. This leaves a
+            // comfortable cap above the first row and below the last row.
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                                ImVec2(16.0F, 12.0F));
+        }
+    }
+
+    ~ControlFontScope() {
+        if (padding_pushed_) {
+            ImGui::PopStyleVar();
+        }
+        if (font_pushed_) {
+            ImGui::PopFont();
+        }
+    }
+
+    ControlFontScope(const ControlFontScope&) = delete;
+    ControlFontScope& operator=(const ControlFontScope&) = delete;
+
+private:
+    bool font_pushed_ = false;
+    bool padding_pushed_ = false;
+};
+
+bool ControlCombo(const char* label, int* current_item,
+                  const char* items_separated_by_zeros,
+                  int popup_max_height_in_items = -1) {
+    const ControlFontScope scope(true);
+    return ImGui::Combo(label, current_item, items_separated_by_zeros,
+                        popup_max_height_in_items);
+}
+
+bool ControlCombo(const char* label, int* current_item,
+                  bool (*items_getter)(void*, int, const char**), void* data,
+                  int items_count, int popup_max_height_in_items = -1) {
+    const ControlFontScope scope(true);
+    return ImGui::Combo(label, current_item, items_getter, data, items_count,
+                        popup_max_height_in_items);
+}
+
+bool ControlSliderInt(const char* label, int* value, int minimum, int maximum,
+                      const char* format = "%d",
+                      ImGuiSliderFlags flags = ImGuiSliderFlags_None) {
+    const ControlFontScope scope;
+    return ImGui::SliderInt(label, value, minimum, maximum, format, flags);
+}
+
+bool ControlSliderFloat(const char* label, float* value, float minimum,
+                        float maximum, const char* format = "%.3f",
+                        ImGuiSliderFlags flags = ImGuiSliderFlags_None) {
+    const ControlFontScope scope;
+    return ImGui::SliderFloat(label, value, minimum, maximum, format, flags);
+}
+
+bool DrawColourPickerButton(const char* label, const char* popup_id,
+                            ImVec4& colour, float width) {
+    bool changed = false;
+    ImGui::TextUnformatted(label);
+    const ControlFontScope scope;
+    if (ImGui::ColorButton(popup_id, colour,
+                           ImGuiColorEditFlags_AlphaPreviewHalf,
+                           ImVec2(width, 34.0F))) {
+        ImGui::OpenPopup(popup_id);
+    }
+    if (ImGui::BeginPopup(popup_id)) {
+        ImGui::TextUnformatted(label);
+        if (ImGui::ColorPicker4(
+                "##colour-picker", &colour.x,
+                ImGuiColorEditFlags_AlphaBar |
+                    ImGuiColorEditFlags_AlphaPreviewHalf |
+                    ImGuiColorEditFlags_NoInputs |
+                    ImGuiColorEditFlags_NoSidePreview)) {
+            changed = true;
+        }
+        ImGui::EndPopup();
+    }
+    return changed;
 }
 
 void PushHeadingFont(bool title = false) {
@@ -237,6 +564,27 @@ void PopHeadingFont(bool title = false) {
     if ((title ? g_font_title : g_font_heading) != nullptr) {
         ImGui::PopFont();
     }
+}
+
+void DrawPageHeading(const char* text, bool title = false) {
+    ImFont* font = title ? g_font_title : g_font_heading;
+    if (font == nullptr || text == nullptr) {
+        ImGui::TextUnformatted(text != nullptr ? text : "");
+        return;
+    }
+    const ImVec2 position = ImGui::GetCursorScreenPos();
+    const float size = font->FontSize;
+    const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0F, text);
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    constexpr float outline = 2.0F;
+    const ImU32 orange = ImGui::ColorConvertFloat4ToU32(kWarm);
+    const ImU32 red = ImGui::ColorConvertFloat4ToU32(kRaceRed);
+    draw->AddText(font, size, {position.x - outline, position.y}, orange, text);
+    draw->AddText(font, size, {position.x + outline, position.y}, orange, text);
+    draw->AddText(font, size, {position.x, position.y - outline}, orange, text);
+    draw->AddText(font, size, {position.x, position.y + outline}, orange, text);
+    draw->AddText(font, size, position, red, text);
+    ImGui::Dummy({extent.x, extent.y + 2.0F});
 }
 
 void RememberModernGraphics(const GraphicsConfig& config) {
@@ -330,10 +678,41 @@ void SaveSettings() {
         output << "modern_graphics_api="
                << static_cast<int>(g_modern_graphics_api) << '\n';
         output << "modern_downsample=" << g_modern_downsample << '\n';
+        output << "modern_anisotropy="
+               << dkr::runtime::enhancements::anisotropy_level() << '\n';
+        output << "fps_overlay_enabled=" << (g_fps_overlay_enabled ? 1 : 0) << '\n';
+        output << "fps_overlay_position=" << g_fps_overlay_position << '\n';
+        output << "fps_overlay_detail=" << g_fps_overlay_detail << '\n';
+        output << "fps_overlay_single_row=" << (g_fps_overlay_single_row ? 1 : 0) << '\n';
+        output << "fps_custom_frame_time=" << (g_fps_custom_frame_time ? 1 : 0) << '\n';
+        output << "fps_custom_simulation=" << (g_fps_custom_simulation ? 1 : 0) << '\n';
+        output << "fps_custom_graphics=" << (g_fps_custom_graphics ? 1 : 0) << '\n';
+        output << "fps_custom_vi=" << (g_fps_custom_vi ? 1 : 0) << '\n';
+        output << "fps_custom_interpolation=" << (g_fps_custom_interpolation ? 1 : 0) << '\n';
+        output << "fps_custom_audio=" << (g_fps_custom_audio ? 1 : 0) << '\n';
+        output << "fps_custom_target=" << (g_fps_custom_target ? 1 : 0) << '\n';
+        output << "fps_custom_resolution=" << (g_fps_custom_resolution ? 1 : 0) << '\n';
+        output << "fps_font_size=" << g_fps_font_size << '\n';
+        output << "fps_fill_r=" << static_cast<int>(g_fps_fill_colour.x * 255.0F) << '\n';
+        output << "fps_fill_g=" << static_cast<int>(g_fps_fill_colour.y * 255.0F) << '\n';
+        output << "fps_fill_b=" << static_cast<int>(g_fps_fill_colour.z * 255.0F) << '\n';
+        output << "fps_fill_a=" << static_cast<int>(g_fps_fill_colour.w * 255.0F) << '\n';
+        output << "fps_outline_r=" << static_cast<int>(g_fps_outline_colour.x * 255.0F) << '\n';
+        output << "fps_outline_g=" << static_cast<int>(g_fps_outline_colour.y * 255.0F) << '\n';
+        output << "fps_outline_b=" << static_cast<int>(g_fps_outline_colour.z * 255.0F) << '\n';
+        output << "fps_outline_a=" << static_cast<int>(g_fps_outline_colour.w * 255.0F) << '\n';
+        output << "crt_enabled=" << (g_crt_enabled ? 1 : 0) << '\n';
+        output << "crt_filter_index=" << g_crt_filter_index << '\n';
+        output << "crt_scale_mode=" << g_crt_scale_mode << '\n';
+        output << "crt_strength="
+               << static_cast<int>(std::clamp(g_crt_strength, 0.0F, 1.0F) *
+                                   1000.0F)
+               << '\n';
         output << "master_volume=" << dkr::runtime::platform::master_volume() << '\n';
         output << "music_volume=" << dkr::runtime::audio::music_volume() << '\n';
         output << "sound_effects_volume=" << dkr::runtime::audio::sound_effects_volume() << '\n';
         output << "vehicle_volume=" << dkr::runtime::audio::vehicle_volume() << '\n';
+        output << "nature_volume=" << dkr::runtime::audio::nature_volume() << '\n';
         output << "eq_bass=" << dkr::runtime::platform::bass_gain() << '\n';
         output << "eq_mid=" << dkr::runtime::platform::mid_gain() << '\n';
         output << "eq_treble=" << dkr::runtime::platform::treble_gain() << '\n';
@@ -341,8 +720,13 @@ void SaveSettings() {
                << (dkr::runtime::enhancements::maximum_detail_requested() ? 1 : 0) << '\n';
         output << "modern_fov_offset="
                << dkr::runtime::enhancements::fov_offset() << '\n';
+        output << "magic_codes_persistent="
+               << dkr::runtime::magic_codes::persistent_mask() << '\n';
         output << "modern_view_distance_multiplier="
                << dkr::runtime::enhancements::view_distance_multiplier() << '\n';
+        output << "modern_keep_hub_scenery="
+               << (dkr::runtime::enhancements::keep_hub_scenery_requested() ? 1 : 0)
+               << '\n';
         output << "modern_extended_culling="
                << (dkr::runtime::enhancements::extended_culling_requested() ? 1 : 0)
                << '\n';
@@ -358,10 +742,22 @@ void SaveSettings() {
         output << "stick_x_inverted=" << (dkr::runtime::input::stick_x_inverted() ? 1 : 0) << '\n';
         output << "stick_y_inverted=" << (dkr::runtime::input::stick_y_inverted() ? 1 : 0) << '\n';
         output << "trigger_threshold=" << dkr::runtime::input::trigger_threshold() << '\n';
+        const auto quick_keyboard =
+            dkr::runtime::input::quick_restart_keyboard_binding();
+        const auto quick_controller =
+            dkr::runtime::input::quick_restart_controller_binding();
+        output << "quick_restart_enabled="
+               << (dkr::runtime::input::quick_restart_enabled() ? 1 : 0) << '\n';
+        output << "quick_restart_keyboard_primary=" << quick_keyboard.primary << '\n';
+        output << "quick_restart_keyboard_secondary=" << quick_keyboard.secondary << '\n';
+        output << "quick_restart_controller_primary=" << quick_controller.primary << '\n';
+        output << "quick_restart_controller_secondary=" << quick_controller.secondary << '\n';
         output << "gyro_enabled=" << (dkr::runtime::input::gyro_enabled() ? 1 : 0) << '\n';
         output << "gyro_sensitivity=" << dkr::runtime::input::gyro_sensitivity() << '\n';
+        output << "gyro_y_sensitivity=" << dkr::runtime::input::gyro_y_sensitivity() << '\n';
         output << "gyro_deadzone=" << dkr::runtime::input::gyro_deadzone() << '\n';
         output << "gyro_inverted=" << (dkr::runtime::input::gyro_inverted() ? 1 : 0) << '\n';
+        output << "gyro_y_inverted=" << (dkr::runtime::input::gyro_y_inverted() ? 1 : 0) << '\n';
         output << "gyro_axis=" << static_cast<int>(dkr::runtime::input::gyro_axis()) << '\n';
         for (std::size_t index = 0; index < dkr::runtime::input::action_count(); ++index) {
             const auto action = static_cast<dkr::runtime::input::Action>(index);
@@ -394,6 +790,8 @@ void LoadSettings() {
     auto profile = dkr::runtime::enhancements::PresentationProfile::Accurate;
     bool profile_value_valid = true;
     bool migrated = false;
+    auto quick_keyboard = dkr::runtime::input::quick_restart_keyboard_binding();
+    auto quick_controller = dkr::runtime::input::quick_restart_controller_binding();
     std::ifstream input(SettingsPath());
     std::string line;
     while (std::getline(input, line)) {
@@ -453,6 +851,58 @@ void LoadSettings() {
                 g_modern_graphics_api = static_cast<GraphicsApi>(number);
             } else if (key == "modern_downsample") {
                 g_modern_downsample = std::clamp(number, 1, 8);
+            } else if (key == "modern_anisotropy") {
+                dkr::runtime::enhancements::set_anisotropy_level(number);
+            } else if (key == "fps_overlay_enabled") {
+                g_fps_overlay_enabled = number != 0;
+            } else if (key == "fps_overlay_position") {
+                g_fps_overlay_position = std::clamp(number, 0, 3);
+            } else if (key == "fps_overlay_detail") {
+                g_fps_overlay_detail = std::clamp(number, 0, 3);
+            } else if (key == "fps_overlay_single_row") {
+                g_fps_overlay_single_row = number != 0;
+            } else if (key == "fps_custom_frame_time") {
+                g_fps_custom_frame_time = number != 0;
+            } else if (key == "fps_custom_simulation") {
+                g_fps_custom_simulation = number != 0;
+            } else if (key == "fps_custom_graphics") {
+                g_fps_custom_graphics = number != 0;
+            } else if (key == "fps_custom_vi") {
+                g_fps_custom_vi = number != 0;
+            } else if (key == "fps_custom_interpolation") {
+                g_fps_custom_interpolation = number != 0;
+            } else if (key == "fps_custom_audio") {
+                g_fps_custom_audio = number != 0;
+            } else if (key == "fps_custom_target") {
+                g_fps_custom_target = number != 0;
+            } else if (key == "fps_custom_resolution") {
+                g_fps_custom_resolution = number != 0;
+            } else if (key == "fps_font_size") {
+                g_fps_font_size = std::clamp(number, 16, 64);
+            } else if (key == "fps_fill_r") {
+                g_fps_fill_colour.x = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_fill_g") {
+                g_fps_fill_colour.y = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_fill_b") {
+                g_fps_fill_colour.z = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_fill_a") {
+                g_fps_fill_colour.w = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_outline_r") {
+                g_fps_outline_colour.x = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_outline_g") {
+                g_fps_outline_colour.y = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_outline_b") {
+                g_fps_outline_colour.z = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "fps_outline_a") {
+                g_fps_outline_colour.w = std::clamp(number, 0, 255) / 255.0F;
+            } else if (key == "crt_enabled") {
+                g_crt_enabled = number != 0;
+            } else if (key == "crt_filter_index") {
+                g_crt_filter_index = std::max(number, 0);
+            } else if (key == "crt_scale_mode") {
+                g_crt_scale_mode = std::clamp(number, 0, 1);
+            } else if (key == "crt_strength") {
+                g_crt_strength = std::clamp(number, 0, 1000) / 1000.0F;
             } else if (key == "master_volume") {
                 dkr::runtime::platform::set_master_volume(std::stof(value));
             } else if (key == "music_volume") {
@@ -461,6 +911,8 @@ void LoadSettings() {
                 dkr::runtime::audio::set_sound_effects_volume(std::stof(value));
             } else if (key == "vehicle_volume") {
                 dkr::runtime::audio::set_vehicle_volume(std::stof(value));
+            } else if (key == "nature_volume") {
+                dkr::runtime::audio::set_nature_volume(std::stof(value));
             } else if (key == "eq_bass") {
                 dkr::runtime::platform::set_bass_gain(std::stof(value));
             } else if (key == "eq_mid") {
@@ -471,8 +923,13 @@ void LoadSettings() {
                 dkr::runtime::enhancements::set_maximum_detail_enabled(number != 0);
             } else if (key == "modern_fov_offset") {
                 dkr::runtime::enhancements::set_fov_offset(number);
+            } else if (key == "magic_codes_persistent") {
+                dkr::runtime::magic_codes::set_persistent_mask(
+                    static_cast<std::uint32_t>(std::max(number, 0)));
             } else if (key == "modern_view_distance_multiplier") {
                 dkr::runtime::enhancements::set_view_distance_multiplier(number);
+            } else if (key == "modern_keep_hub_scenery") {
+                dkr::runtime::enhancements::set_keep_hub_scenery_enabled(number != 0);
             } else if (key == "modern_extended_culling") {
                 dkr::runtime::enhancements::set_extended_culling_enabled(number != 0);
             } else if (key == "modern_frustum_guard_percent") {
@@ -497,14 +954,28 @@ void LoadSettings() {
                 dkr::runtime::input::set_stick_y_inverted(number != 0);
             } else if (key == "trigger_threshold") {
                 dkr::runtime::input::set_trigger_threshold(std::stof(value));
+            } else if (key == "quick_restart_enabled") {
+                dkr::runtime::input::set_quick_restart_enabled(number != 0);
+            } else if (key == "quick_restart_keyboard_primary") {
+                quick_keyboard.primary = number;
+            } else if (key == "quick_restart_keyboard_secondary") {
+                quick_keyboard.secondary = number;
+            } else if (key == "quick_restart_controller_primary") {
+                quick_controller.primary = number;
+            } else if (key == "quick_restart_controller_secondary") {
+                quick_controller.secondary = number;
             } else if (key == "gyro_enabled") {
                 dkr::runtime::input::set_gyro_enabled(number != 0);
             } else if (key == "gyro_sensitivity") {
                 dkr::runtime::input::set_gyro_sensitivity(std::stof(value));
+            } else if (key == "gyro_y_sensitivity") {
+                dkr::runtime::input::set_gyro_y_sensitivity(std::stof(value));
             } else if (key == "gyro_deadzone") {
                 dkr::runtime::input::set_gyro_deadzone(std::stof(value));
             } else if (key == "gyro_inverted") {
                 dkr::runtime::input::set_gyro_inverted(number != 0);
+            } else if (key == "gyro_y_inverted") {
+                dkr::runtime::input::set_gyro_y_inverted(number != 0);
             } else if (key == "gyro_axis") {
                 dkr::runtime::input::set_gyro_axis(
                     number == static_cast<int>(dkr::runtime::input::GyroAxis::Yaw)
@@ -536,6 +1007,8 @@ void LoadSettings() {
     // still owns an open handle. Migration may call SaveSettings below, so
     // release the read handle before attempting that replacement.
     input.close();
+    dkr::runtime::input::set_quick_restart_keyboard_binding(quick_keyboard);
+    dkr::runtime::input::set_quick_restart_controller_binding(quick_controller);
     // Early launcher builds defaulted to 8x MSAA, which can turn busy races
     // GPU-bound at high desktop resolutions. Migrate that one legacy default
     // to 2x; users can still explicitly choose 4x or 8x afterwards.
@@ -548,7 +1021,9 @@ void LoadSettings() {
     const auto resolved_profile =
         dkr::runtime::enhancements::resolve_settings_profile(
             settings_version, settings_complete, profile);
-    if (settings_version != dkr::runtime::enhancements::kCurrentSettingsVersion ||
+    if (settings_version <
+            dkr::runtime::enhancements::kOldestCompatibleSettingsVersion ||
+        settings_version > dkr::runtime::enhancements::kCurrentSettingsVersion ||
         !settings_complete || !profile_value_valid) {
         // Every settings file from before the hardened profile boundary, and
         // every truncated v4 write, becomes Accurate. Preserve the old refresh
@@ -568,6 +1043,12 @@ void LoadSettings() {
                          "[boot][settings] incomplete settings file; "
                          "falling back to Accurate\n");
         }
+    }
+    if (settings_version == 6 && settings_complete && profile_value_valid) {
+        // Version 7 adds only opt-in controls. Preserve the proven v6 profile
+        // and initialise the new shortcut as disabled.
+        dkr::runtime::input::set_quick_restart_enabled(false);
+        migrated = true;
     }
     profile = resolved_profile;
     dkr::runtime::enhancements::set_presentation_profile(profile);
@@ -751,6 +1232,100 @@ bool SelectRomWithDialog(std::filesystem::path& selected, std::string& status) {
     return false;
 }
 
+bool ImportCrtFilterWithDialog() {
+    // The Vulkan Inspector pool reserves one descriptor for the font atlas and
+    // provides 63 image descriptors. Six are used by the built-in masks, so
+    // cap the imported catalogue before a live session can exhaust the pool.
+    // Uploaded masks are deliberately retained until renderer shutdown to
+    // avoid freeing an image that an in-flight presentation still references.
+    constexpr std::size_t maximum_crt_filters = 63;
+    if (g_crt_filters.size() >= maximum_crt_filters) {
+        g_crt_status =
+            "The CRT filter library is full. Remove a custom filter from the "
+            "local filters folder before importing another.";
+        return false;
+    }
+    if (NFD_Init() != NFD_OKAY) {
+        g_crt_status = "The system file picker could not be initialized.";
+        return false;
+    }
+    nfdu8char_t* result = nullptr;
+    const nfdfilteritem_t filters[] = {{"PNG image", "png"}};
+    const nfdresult_t dialog = NFD_OpenDialogU8(&result, filters, 1, nullptr);
+    if (dialog != NFD_OKAY) {
+        if (dialog == NFD_ERROR) g_crt_status = NFD_GetError();
+        NFD_Quit();
+        return false;
+    }
+    const std::filesystem::path source = std::filesystem::u8path(result);
+    NFD_FreePathU8(result);
+    NFD_Quit();
+
+    std::error_code error;
+    constexpr std::uintmax_t maximum_filter_bytes = 64U * 1024U * 1024U;
+    const std::uintmax_t size = std::filesystem::file_size(source, error);
+    if (error || size == 0 || size > maximum_filter_bytes) {
+        g_crt_status = "Choose a valid PNG filter no larger than 64 MB.";
+        return false;
+    }
+    const std::filesystem::path custom_directory = g_config_directory / "filters";
+    std::filesystem::create_directories(custom_directory, error);
+    if (error) {
+        g_crt_status = "The custom filter folder could not be created.";
+        return false;
+    }
+    std::string stem = source.stem().string();
+    if (stem.empty()) stem = "custom-filter";
+    std::filesystem::path destination = custom_directory / (stem + ".png");
+    for (int suffix = 2; std::filesystem::exists(destination, error) && suffix < 1000;
+         ++suffix) {
+        destination = custom_directory /
+            (stem + "-" + std::to_string(suffix) + ".png");
+    }
+    std::filesystem::copy_file(source, destination,
+                               std::filesystem::copy_options::none, error);
+    if (error) {
+        g_crt_status = "The custom filter could not be imported: " + error.message();
+        return false;
+    }
+    RefreshCrtFilters();
+    for (std::size_t index = 0; index < g_crt_filters.size(); ++index) {
+        if (g_crt_filters[index].path == destination) {
+            g_crt_filter_index = static_cast<int>(index);
+            break;
+        }
+    }
+    g_crt_enabled = true;
+    g_crt_status = "Imported " + destination.filename().string() + ".";
+    SaveSettings();
+    return true;
+}
+
+bool ImportTexturePackWithDialog() {
+    if (NFD_Init() != NFD_OKAY) {
+        g_texture_pack_status = "The system file picker could not be initialized.";
+        return false;
+    }
+    nfdu8char_t* result = nullptr;
+    const nfdfilteritem_t filters[] = {
+        {"Texture-pack archive", "zip,rtz"},
+    };
+    const nfdresult_t dialog = NFD_OpenDialogU8(&result, filters, 1, nullptr);
+    if (dialog != NFD_OKAY) {
+        if (dialog == NFD_ERROR) g_texture_pack_status = NFD_GetError();
+        NFD_Quit();
+        return false;
+    }
+    const std::filesystem::path source = std::filesystem::u8path(result);
+    NFD_FreePathU8(result);
+    NFD_Quit();
+    std::string status;
+    const bool imported =
+        dkr::runtime::texture_packs::import_archive(source, status);
+    g_texture_pack_status = status;
+    return imported;
+}
+
 bool ImportAdventureWithDialog() {
     if (NFD_Init() != NFD_OKAY) {
         g_save_manager_status = "The system file picker could not be initialized.";
@@ -765,6 +1340,9 @@ bool ImportAdventureWithDialog() {
         NFD_FreePathU8(result);
         std::string error;
         imported = dkr::runtime::saves::import_adventure(source, error);
+        if (imported) {
+            g_save_builder_image.reset();
+        }
         g_save_manager_status = imported
             ? "Adventure save imported. The previous save was backed up first."
             : error;
@@ -817,6 +1395,9 @@ bool ImportSaveBundleWithDialog() {
         NFD_FreePathU8(result);
         std::string error;
         imported = dkr::runtime::saves::import_bundle(source, error);
+        if (imported) {
+            g_save_builder_image.reset();
+        }
         g_save_manager_status = imported
             ? "Adventure and Controller Pak saves returned safely to T.T.'s garage."
             : error;
@@ -857,9 +1438,27 @@ bool ExportSaveBundleWithDialog() {
 
 void DrawRaceBadge(const char* label, const ImVec4& color, float width = 0.0F);
 
+bool BeginPaddedChild(const char* id, const ImVec2& size, bool border = true,
+                      ImGuiWindowFlags flags = 0,
+                      const ImVec2& padding = {18.0F, 16.0F}) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+    const bool visible = ImGui::BeginChild(id, size, border, flags);
+    ImGui::PopStyleVar();
+    return visible;
+}
+
+bool BeginPaddedModal(const char* name, ImGuiWindowFlags flags = 0,
+                      const ImVec2& padding = {26.0F, 24.0F}) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 18.0F);
+    const bool visible = ImGui::BeginPopupModal(name, nullptr, flags);
+    ImGui::PopStyleVar(2);
+    return visible;
+}
+
 void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
                     bool& rom_ready) {
-    constexpr const char* kPopupName = "Choose Your Game Pak";
+    constexpr const char* kPopupName = "Select Diddy Kong Racing ROM";
     if (g_rom_browser.open && !ImGui::IsPopupOpen(kPopupName)) {
         ImGui::OpenPopup(kPopupName);
     }
@@ -868,10 +1467,8 @@ void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
         {std::clamp(viewport->Size.x * 0.72F, 680.0F, 1040.0F),
          std::clamp(viewport->Size.y * 0.78F, 560.0F, 760.0F)},
         ImGuiCond_Appearing);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {26.0F, 24.0F});
-    const bool popup_visible = ImGui::BeginPopupModal(
-        kPopupName, nullptr, ImGuiWindowFlags_NoSavedSettings);
-    ImGui::PopStyleVar();
+    const bool popup_visible = BeginPaddedModal(
+        kPopupName, ImGuiWindowFlags_NoSavedSettings);
     if (!popup_visible) {
         return;
     }
@@ -883,10 +1480,8 @@ void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
         return;
     }
 
-    DrawRaceBadge(" T.T.'S GAME PAK FINDER ", kRaceRed);
-    ImGui::Dummy({0.0F, 8.0F});
     PushHeadingFont();
-    ImGui::TextUnformatted("CHOOSE YOUR GAME PAK");
+    ImGui::TextUnformatted("SELECT DIDDY KONG RACING ROM");
     PopHeadingFont();
     ImGui::TextDisabled("Folders first, then .z64, .v64 and .n64 files. Nothing leaves this PC.");
     ImGui::Dummy({0.0F, 8.0F});
@@ -894,7 +1489,7 @@ void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
     const std::string location = g_rom_browser.directory.empty()
         ? "This PC"
         : PathUtf8(g_rom_browser.directory);
-    ImGui::TextWrapped("Current stop: %s", location.c_str());
+    ImGui::TextWrapped("Current folder: %s", location.c_str());
     if (ImGui::Button("UP ONE LEVEL", {170.0F, 42.0F})) {
         RomBrowserBack();
     }
@@ -905,8 +1500,8 @@ void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
     }
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.02F, 0.12F, 0.23F, 0.98F});
-    ImGui::BeginChild("game-pak-files", {0.0F, -118.0F}, true,
-                      ImGuiWindowFlags_NavFlattened);
+    BeginPaddedChild("game-pak-files", {0.0F, -118.0F}, true,
+                     ImGuiWindowFlags_NavFlattened, {14.0F, 12.0F});
     if (!g_rom_browser.message.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
         ImGui::TextWrapped("%s", g_rom_browser.message.c_str());
@@ -914,7 +1509,7 @@ void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
         ImGui::Separator();
     }
     if (g_rom_browser.entries.empty() && g_rom_browser.message.empty()) {
-        ImGui::TextDisabled("No race-ready Game Paks or folders were found here.");
+        ImGui::TextDisabled("No supported ROM files or folders were found here.");
     }
     for (std::size_t index = 0; index < g_rom_browser.entries.size(); ++index) {
         const BrowserEntry& entry = g_rom_browser.entries[index];
@@ -923,8 +1518,8 @@ void DrawRomBrowser(std::filesystem::path& selected, std::string& status,
             name = PathUtf8(entry.path);
         }
         const std::string label = entry.directory
-            ? "[ISLAND PATH]  " + name
-            : "[GAME PAK]     " + name;
+            ? "[FOLDER]  " + name
+            : "[ROM]     " + name;
         if (ImGui::Selectable(label.c_str(), false,
                               ImGuiSelectableFlags_SpanAllColumns, {0.0F, 38.0F})) {
             if (entry.directory) {
@@ -1041,22 +1636,52 @@ void DrawStartingLights(bool ready) {
     ImGui::Dummy({42.0F, 112.0F});
 }
 
-void BrandBlock(bool compact) {
-    DrawRaceBadge(compact ? " TAJ'S TRAVELLING TENT " : " WELCOME TO TIMBER'S ISLAND ", kRaceRed);
-    ImGui::Dummy({0.0F, compact ? 8.0F : 14.0F});
+void BrandBlock(float available_width, float maximum_size = 230.0F) {
+    if (g_brand_logo_rect >= 0) {
+        ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+        const ImFontAtlasCustomRect* rect =
+            atlas->GetCustomRectByIndex(g_brand_logo_rect);
+        if (rect != nullptr && rect->IsPacked() && atlas->TexID != nullptr &&
+            atlas->TexWidth > 0 && atlas->TexHeight > 0) {
+            constexpr float kContainerPadding = 8.0F;
+            const float container_width = std::min(available_width, maximum_size);
+            const float width = std::max(container_width - kContainerPadding * 2.0F, 1.0F);
+            const float height = width * static_cast<float>(rect->Height) /
+                static_cast<float>(rect->Width);
+            const float container_height = height + kContainerPadding * 2.0F;
+            const float indent = std::max((available_width - container_width) * 0.5F, 0.0F);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+            const ImVec2 container_min = ImGui::GetCursorScreenPos();
+            const ImVec2 container_max{container_min.x + container_width,
+                                       container_min.y + container_height};
+            ImVec2 uv_min{};
+            ImVec2 uv_max{};
+            atlas->CalcCustomRectUV(rect, &uv_min, &uv_max);
+            ImDrawList* draw = ImGui::GetWindowDrawList();
+            draw->AddRectFilled(container_min, container_max,
+                                IM_COL32(3, 29, 44, 238), 20.0F);
+            draw->AddRect(container_min, container_max,
+                          ImGui::ColorConvertFloat4ToU32(kWarm), 20.0F, 0, 2.0F);
+            const ImVec2 image_min{container_min.x + kContainerPadding,
+                                   container_min.y + kContainerPadding};
+            const ImVec2 image_max{image_min.x + width, image_min.y + height};
+            draw->AddImageRounded(atlas->TexID, image_min, image_max, uv_min, uv_max,
+                                  IM_COL32_WHITE, 13.0F);
+            ImGui::Dummy({container_width, container_height});
+            return;
+        }
+    }
+
+    // Keep startup usable when a development tree has not staged its visual
+    // assets yet; packaged builds always carry DKR-R8.bmp beside the runtime.
     ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
     PushHeadingFont();
     ImGui::TextUnformatted("DKR-R");
     PopHeadingFont();
     ImGui::PopStyleColor();
     PushHeadingFont(true);
-    ImGui::TextUnformatted("DIDDY KONG\nRACING");
+    ImGui::TextWrapped("DIDDY KONG RACING RECOMPILED");
     PopHeadingFont(true);
-    ImGui::PushStyleColor(ImGuiCol_Text, kCream);
-    ImGui::TextWrapped(compact
-        ? "A little genie magic for your journey."
-        : "Cars, hovercrafts and planes await. Gather the Golden Balloons and send Wizpig packing!");
-    ImGui::PopStyleColor();
 }
 
 bool SidebarButton(const char* label, int page, float width = -1.0F) {
@@ -1071,6 +1696,98 @@ bool SidebarButton(const char* label, int page, float width = -1.0F) {
         g_overlay_page = page;
     }
     return pressed;
+}
+
+bool LauncherSidebarButton(const char* label, int target_page, int& page,
+                           bool focus_selected, float width) {
+    if (page == target_page) {
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              target_page == 0 ? kAccent : kRaceRed);
+    }
+    if (focus_selected && page == target_page) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    const bool pressed = ImGui::Button(label, {width, 46.0F});
+    if (page == target_page) {
+        ImGui::PopStyleColor();
+    }
+    if (pressed) {
+        page = target_page;
+    }
+    return pressed;
+}
+
+void DrawSidebarNote(float width) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.075F, 0.165F, 0.20F, 0.94F});
+    BeginPaddedChild("sidebar-note", {width, 154.0F}, true,
+                     ImGuiWindowFlags_NoScrollbar, {18.0F, 16.0F});
+    ImGui::PushTextWrapPos(width - 18.0F);
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
+    ImGui::TextUnformatted("NOTE");
+    ImGui::PopStyleColor();
+    ImGui::TextWrapped("Bring your own legally obtained Game Pak. It stays on this PC and is never uploaded.");
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+void DrawAboutDkrR(float width) {
+    DrawPageHeading("ABOUT DKR-R");
+    ImGui::TextDisabled("Diddy Kong Racing - Recompiled");
+    ImGui::Dummy({0.0F, 14.0F});
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
+    BeginPaddedChild("about-dkr-r-card", {width, 360.0F}, true,
+                     ImGuiWindowFlags_NoScrollbar, {22.0F, 20.0F});
+    ImGui::PushTextWrapPos(width - 20.0F);
+    ImGui::TextWrapped("Wizpig has invaded DKR-R. Race across land, water and sky, collect Golden Balloons and help Diddy and his friends send the intergalactic pig wizard packing.");
+    ImGui::Dummy({0.0F, 10.0F});
+    ImGui::TextWrapped("DKR-R runs the original game logic through a native PC runtime. Accurate preserves the original presentation; Modern adds carefully isolated PC quality-of-life options.");
+    ImGui::Dummy({0.0F, 14.0F});
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
+    ImGui::TextWrapped("CREATED BY THATGUYMCD");
+    ImGui::PopStyleColor();
+    ImGui::TextWrapped("If you did not download DKR-R from ThatGuyMcd's GitHub repository, this build may have been modified or tampered with.");
+    ImGui::TextDisabled("Official source: github.com/ThatGuyMcd/DKR-R");
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::Dummy({0.0F, 16.0F});
+    ImGui::SeparatorText("Release information");
+    ImGui::TextWrapped("DKR-R %s\nWindows, Linux and macOS builds",
+                       DKR_RELEASE_VERSION);
+    ImGui::Dummy({0.0F, 8.0F});
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::TextWrapped("No copyrighted game data is distributed. A legally obtained supported Diddy Kong Racing Game Pak is required.");
+    ImGui::PopStyleColor();
+}
+
+void DrawComingSoonPage(const char* heading, const char* card_id,
+                        const char* description, const char* workshop_note,
+                        float width) {
+    DrawPageHeading(heading);
+    ImGui::TextDisabled("A new route is being prepared for DKR-R.");
+    ImGui::Dummy({0.0F, 16.0F});
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
+    BeginPaddedChild(card_id, {width, 286.0F}, true,
+                     ImGuiWindowFlags_NoScrollbar, {24.0F, 22.0F});
+    ImGui::PushTextWrapPos(std::max(width - 24.0F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
+    PushHeadingFont(true);
+    ImGui::TextUnformatted("COMING SOON");
+    PopHeadingFont(true);
+    ImGui::PopStyleColor();
+    ImGui::Dummy({0.0F, 10.0F});
+    ImGui::TextWrapped("%s", description);
+    ImGui::Dummy({0.0F, 14.0F});
+    ImGui::Separator();
+    ImGui::Dummy({0.0F, 10.0F});
+    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+    ImGui::TextWrapped("%s", workshop_note);
+    ImGui::TextWrapped("This feature is not finished cooking yet, so it stays safely parked for this release.");
+    ImGui::PopStyleColor();
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
 }
 
 bool DrawGraphicsSettings(bool live) {
@@ -1089,9 +1806,9 @@ bool DrawGraphicsSettings(bool live) {
     const float setting_width = std::clamp(available_width * 0.92F,
                                            std::min(220.0F, available_width),
                                            std::min(920.0F, available_width));
-    ImGui::TextUnformatted("Race style");
+    ImGui::TextUnformatted("PRESENTATION STYLE");
     ImGui::SetNextItemWidth(setting_width);
-    profile_changed = ImGui::Combo("##presentation-profile", &profile,
+    profile_changed = ControlCombo("##presentation-profile", &profile,
                                    "Accurate\0Modern\0");
     if (profile_changed) {
         const auto old_profile = dkr::runtime::enhancements::presentation_profile();
@@ -1109,17 +1826,10 @@ bool DrawGraphicsSettings(bool live) {
         downsample = std::clamp(config.ds_option, 1, 4);
         changed = true;
     }
-    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    if (dkr::runtime::enhancements::modern_presentation_enabled()) {
-        ImGui::TextWrapped("High-refresh presentation and maximum vehicle detail. Game logic, race timers and audio keep their original speed.");
-    } else {
-        ImGui::TextWrapped("Original 4:3 and 30 FPS presentation with release-proven game and audio timing. Modern tune-up controls are safely parked.");
-    }
-    ImGui::PopStyleColor();
     ImGui::Spacing();
     ImGui::TextUnformatted("Window mode");
     ImGui::SetNextItemWidth(setting_width);
-    changed |= ImGui::Combo("##window-mode", &window, "Windowed\0Fullscreen\0");
+    changed |= ControlCombo("##window-mode", &window, "Windowed\0Fullscreen\0");
     config.wm_option = static_cast<WindowMode>(window);
     const bool modern_profile =
         dkr::runtime::enhancements::modern_options_visible(
@@ -1127,23 +1837,44 @@ bool DrawGraphicsSettings(bool live) {
     if (modern_profile) {
         ImGui::TextUnformatted("Internal resolution");
         ImGui::SetNextItemWidth(setting_width);
-        changed |= ImGui::Combo("##internal-resolution", &resolution,
+        changed |= ControlCombo("##internal-resolution", &resolution,
                                 "Original (240p)\0Original 2x\0Automatic integer scale\0");
         ImGui::TextUnformatted("Aspect ratio");
         ImGui::SetNextItemWidth(setting_width);
-        changed |= ImGui::Combo("##aspect-ratio", &aspect,
+        changed |= ControlCombo("##aspect-ratio", &aspect,
                                 "Original 4:3\0Fit to window\0");
         ImGui::TextUnformatted("Anti-aliasing");
         ImGui::SetNextItemWidth(setting_width);
-        changed |= ImGui::Combo("##anti-aliasing", &aa,
+        changed |= ControlCombo("##anti-aliasing", &aa,
                                 "None\0MSAA 2x\0MSAA 4x\0MSAA 8x\0");
+        constexpr std::array<int, 5> kAnisotropyLevels{1, 2, 4, 8, 16};
+        int anisotropy_index = 0;
+        const int anisotropy =
+            dkr::runtime::enhancements::anisotropy_level();
+        for (std::size_t index = 0; index < kAnisotropyLevels.size(); ++index) {
+            if (kAnisotropyLevels[index] == anisotropy) {
+                anisotropy_index = static_cast<int>(index);
+                break;
+            }
+        }
+        ImGui::TextUnformatted("Anisotropic filtering");
+        ImGui::SetNextItemWidth(setting_width);
+        if (ControlCombo("##anisotropic-filtering", &anisotropy_index,
+                         "1x (off)\0" "2x\0" "4x\0" "8x\0" "16x\0")) {
+            dkr::runtime::enhancements::set_anisotropy_level(
+                kAnisotropyLevels[static_cast<std::size_t>(anisotropy_index)]);
+            changed = true;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("Improves angled track textures. Samplers are rebuilt on the next game launch.");
+        ImGui::PopStyleColor();
         ImGui::TextUnformatted("High precision framebuffer");
         ImGui::SetNextItemWidth(setting_width);
-        changed |= ImGui::Combo("##high-precision-framebuffer", &hpfb,
+        changed |= ControlCombo("##high-precision-framebuffer", &hpfb,
                                 "Automatic\0On\0Off\0");
         ImGui::TextUnformatted("Downsampling quality");
         ImGui::SetNextItemWidth(setting_width);
-        if (ImGui::SliderInt("##downsample-quality", &downsample, 1, 4,
+        if (ControlSliderInt("##downsample-quality", &downsample, 1, 4,
                              downsample == 1 ? "Off" : "%dx", ImGuiSliderFlags_AlwaysClamp)) {
             changed = true;
         }
@@ -1157,7 +1888,7 @@ bool DrawGraphicsSettings(bool live) {
         int api_choice = config.api_option == GraphicsApi::D3D12
             ? 1
             : config.api_option == GraphicsApi::Vulkan ? 2 : 0;
-        if (ImGui::Combo("##graphics-api", &api_choice,
+        if (ControlCombo("##graphics-api", &api_choice,
                          "Automatic (recommended)\0Direct3D 12\0Vulkan\0")) {
             config.api_option = api_choice == 1
                 ? GraphicsApi::D3D12
@@ -1166,17 +1897,23 @@ bool DrawGraphicsSettings(bool live) {
         }
 #elif defined(__linux__)
         int api_choice = config.api_option == GraphicsApi::Vulkan ? 1 : 0;
-        if (ImGui::Combo("##graphics-api", &api_choice,
+        if (ControlCombo("##graphics-api", &api_choice,
                          "Automatic (recommended)\0Vulkan\0")) {
             config.api_option = api_choice == 1
                 ? GraphicsApi::Vulkan
                 : GraphicsApi::Auto;
             changed = true;
         }
+#elif defined(__APPLE__)
+        int api_choice = 0;
+        ImGui::BeginDisabled();
+        ControlCombo("##graphics-api", &api_choice,
+                     "Metal (automatic)\0");
+        ImGui::EndDisabled();
 #else
         int api_choice = 0;
         ImGui::BeginDisabled();
-        ImGui::Combo("##graphics-api", &api_choice, "Automatic\0");
+        ControlCombo("##graphics-api", &api_choice, "Automatic\0");
         ImGui::EndDisabled();
 #endif
         config.res_option = static_cast<Resolution>(resolution);
@@ -1187,10 +1924,9 @@ bool DrawGraphicsSettings(bool live) {
         config.ds_option = downsample;
     } else {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
-        ImGui::BeginChild("accurate-aspect-lock", {setting_width, 88.0F}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({16.0F, 12.0F});
-        ImGui::PushTextWrapPos(std::max(setting_width - 16.0F, 1.0F));
+        BeginPaddedChild("accurate-aspect-lock", {setting_width, 96.0F}, true,
+                         ImGuiWindowFlags_NoScrollbar, {18.0F, 15.0F});
+        ImGui::PushTextWrapPos(std::max(setting_width - 18.0F, 1.0F));
         ImGui::TextUnformatted("Original 4:3 - Accurate");
         ImGui::TextWrapped("Fit to Window, graphics tuning and maximum vehicle detail appear only in Modern.");
         ImGui::PopTextWrapPos();
@@ -1204,7 +1940,7 @@ bool DrawGraphicsSettings(bool live) {
     if (dkr::runtime::enhancements::modern_presentation_enabled()) {
         int refresh_mode = g_modern_refresh_mode == RefreshRate::Manual ? 1 : 0;
         ImGui::SetNextItemWidth(setting_width);
-        if (ImGui::Combo("##modern-refresh-mode", &refresh_mode,
+        if (ControlCombo("##modern-refresh-mode", &refresh_mode,
                          "Match display\0Manual target\0")) {
             g_modern_refresh_mode = refresh_mode == 0
                 ? RefreshRate::Display
@@ -1215,7 +1951,7 @@ bool DrawGraphicsSettings(bool live) {
         if (g_modern_refresh_mode == RefreshRate::Manual) {
             ImGui::TextUnformatted("Frame-rate target");
             ImGui::SetNextItemWidth(setting_width);
-            if (ImGui::SliderInt("##modern-refresh-target", &g_modern_refresh_target,
+            if (ControlSliderInt("##modern-refresh-target", &g_modern_refresh_target,
                                  30, 500, "%d FPS", ImGuiSliderFlags_AlwaysClamp)) {
                 g_modern_refresh_target =
                     dkr::runtime::enhancements::clamp_presentation_rate(
@@ -1229,15 +1965,11 @@ bool DrawGraphicsSettings(bool live) {
         }
         config.rr_option = g_modern_refresh_mode;
         config.rr_manual_value = g_modern_refresh_target;
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Modern preserves the original simulation and audio cadence. High-refresh presentation activates only after its current scene passes interpolation validation; unsupported scenes fall back safely to 30 FPS.");
-        ImGui::PopStyleColor();
     } else {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
-        ImGui::BeginChild("accurate-presentation-rate", {setting_width, 88.0F}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({16.0F, 12.0F});
-        ImGui::PushTextWrapPos(std::max(setting_width - 16.0F, 1.0F));
+        BeginPaddedChild("accurate-presentation-rate", {setting_width, 96.0F}, true,
+                         ImGuiWindowFlags_NoScrollbar, {18.0F, 15.0F});
+        ImGui::PushTextWrapPos(std::max(setting_width - 18.0F, 1.0F));
         ImGui::TextUnformatted("Original 30 FPS - Accurate");
         ImGui::TextWrapped("Interpolation is locked off. Game, audio and presentation use the proven original cadence.");
         ImGui::PopTextWrapPos();
@@ -1264,6 +1996,278 @@ bool DrawGraphicsSettings(bool live) {
     ImGui::PopStyleColor();
     ImGui::Spacing();
     if (modern_profile) {
+        ImGui::SeparatorText("Race telemetry");
+        bool fps_overlay = g_fps_overlay_enabled;
+        if (ImGui::Checkbox("Show DKR-R performance overlay", &fps_overlay)) {
+            g_fps_overlay_enabled = fps_overlay;
+            SaveSettings();
+            changed = true;
+        }
+        if (g_fps_overlay_enabled) {
+            ImGui::TextUnformatted("Overlay position");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ControlCombo("##fps-overlay-position", &g_fps_overlay_position,
+                             "Top left\0Top right\0Bottom left\0Bottom right\0")) {
+                SaveSettings();
+            }
+            ImGui::TextUnformatted("Detail preset");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ControlCombo("##fps-overlay-detail", &g_fps_overlay_detail,
+                             "FPS only\0Standard\0Detailed\0Custom\0")) {
+                SaveSettings();
+            }
+            int fps_layout = g_fps_overlay_single_row ? 1 : 0;
+            ImGui::TextUnformatted("Metric layout");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ControlCombo("##fps-overlay-layout", &fps_layout,
+                             "Stacked\0Single row\0")) {
+                g_fps_overlay_single_row = fps_layout == 1;
+                SaveSettings();
+            }
+            if (g_fps_overlay_detail == 3) {
+                bool custom_changed = false;
+                custom_changed |= ImGui::Checkbox(
+                    "Frame time", &g_fps_custom_frame_time);
+                custom_changed |= ImGui::Checkbox(
+                    "Simulation rate", &g_fps_custom_simulation);
+                custom_changed |= ImGui::Checkbox(
+                    "Graphics task rate", &g_fps_custom_graphics);
+                custom_changed |= ImGui::Checkbox(
+                    "VI rate", &g_fps_custom_vi);
+                custom_changed |= ImGui::Checkbox(
+                    "Interpolated frame rate", &g_fps_custom_interpolation);
+                custom_changed |= ImGui::Checkbox(
+                    "Audio sample rate", &g_fps_custom_audio);
+                custom_changed |= ImGui::Checkbox(
+                    "Presentation target", &g_fps_custom_target);
+                custom_changed |= ImGui::Checkbox(
+                    "Viewport resolution", &g_fps_custom_resolution);
+                if (custom_changed) SaveSettings();
+            }
+            ImGui::TextUnformatted("Font size");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ControlSliderInt("##fps-font-size", &g_fps_font_size,
+                                 16, 64, "%d px")) {
+                SaveSettings();
+            }
+            if (DrawColourPickerButton("Font fill colour", "##fps-fill-picker",
+                                       g_fps_fill_colour, setting_width)) {
+                SaveSettings();
+            }
+            if (DrawColourPickerButton("Font outline colour",
+                                       "##fps-outline-picker",
+                                       g_fps_outline_colour, setting_width)) {
+                SaveSettings();
+            }
+        }
+        ImGui::Spacing();
+        ImGui::SeparatorText("CRT display filter");
+        bool crt_enabled = g_crt_enabled;
+        if (ImGui::Checkbox("Enable CRT overlay", &crt_enabled)) {
+            g_crt_enabled = crt_enabled;
+            SaveSettings();
+            changed = true;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped(
+            "Applied only to the game image. DKR-R's settings and performance "
+            "overlays always remain clear and readable above it.");
+        ImGui::PopStyleColor();
+        if (g_crt_enabled) {
+            ImGui::TextUnformatted("Filter image");
+            ImGui::SetNextItemWidth(setting_width);
+            if (!g_crt_filters.empty() &&
+                ControlCombo("##crt-filter", &g_crt_filter_index,
+                             CrtFilterGetter, &g_crt_filters,
+                             static_cast<int>(g_crt_filters.size()), 10)) {
+                SaveSettings();
+                changed = true;
+            }
+            ImGui::TextUnformatted("Scaling");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ControlCombo("##crt-scaling", &g_crt_scale_mode,
+                             "Stretch to viewport\0Tile at native size\0")) {
+                SaveSettings();
+                changed = true;
+            }
+            int density = static_cast<int>(
+                std::round(std::clamp(g_crt_strength, 0.0F, 1.0F) * 100.0F));
+            ImGui::TextUnformatted("Filter density");
+            ImGui::SetNextItemWidth(setting_width);
+            if (ControlSliderInt("##crt-density", &density, 0, 100, "%d %%")) {
+                g_crt_strength = density / 100.0F;
+                SaveSettings();
+                changed = true;
+            }
+        }
+        if (ImGui::Button("IMPORT CUSTOM CRT FILTER", {setting_width, 42.0F})) {
+            ImportCrtFilterWithDialog();
+            changed = true;
+        }
+        if (!g_crt_status.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+            ImGui::TextWrapped("%s", g_crt_status.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+        ImGui::SeparatorText("Custom texture packs");
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped(
+            "Native RT64 and Rice PNG packs can be toggled while racing. Rice "
+            "archives are converted into a managed RT64 cache, including exact "
+            "RGB/alpha reconstruction. Jabo packs are unsupported.");
+        ImGui::PopStyleColor();
+        const float texture_button_gap = ImGui::GetStyle().ItemSpacing.x;
+        const float texture_button_width =
+            std::max(120.0F, (setting_width - texture_button_gap) * 0.5F);
+        if (ImGui::Button("IMPORT TEXTURE PACK",
+                          {texture_button_width, 42.0F})) {
+            ImportTexturePackWithDialog();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("REFRESH PACKS", {texture_button_width, 42.0F})) {
+            dkr::runtime::texture_packs::refresh();
+        }
+        const auto texture_packs = dkr::runtime::texture_packs::snapshot(true);
+        const std::size_t hidden_pack_count = static_cast<std::size_t>(
+            std::count_if(texture_packs.begin(), texture_packs.end(),
+                [](const auto& pack) { return pack.hidden; }));
+        if (hidden_pack_count > 0) {
+            if (ImGui::Checkbox("SHOW HIDDEN PACKS", &g_show_hidden_texture_packs)) {
+                changed = true;
+            }
+        } else {
+            g_show_hidden_texture_packs = false;
+        }
+        const std::size_t shown_pack_count = static_cast<std::size_t>(
+            std::count_if(texture_packs.begin(), texture_packs.end(),
+                [](const auto& pack) {
+                    return !pack.hidden || g_show_hidden_texture_packs;
+                }));
+        if (shown_pack_count == 0) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+            ImGui::TextWrapped(hidden_pack_count > 0
+                ? "All imported texture packs are hidden. Enable SHOW HIDDEN PACKS to manage them."
+                : "No texture packs imported yet.");
+            ImGui::PopStyleColor();
+        }
+        bool request_remove_modal = false;
+        for (const auto& pack : texture_packs) {
+            if (pack.hidden && !g_show_hidden_texture_packs) continue;
+            ImGui::PushID(pack.id.c_str());
+            const float texture_card_width = available_width;
+            const float detail_width =
+                std::max(100.0F, texture_card_width - 36.0F);
+            const float detail_height = ImGui::CalcTextSize(
+                pack.detail.c_str(), nullptr, false, detail_width).y;
+            const float card_height = 124.0F + detail_height;
+            if (BeginPaddedChild("texture-pack-card",
+                                 {texture_card_width, card_height},
+                                 true, ImGuiWindowFlags_NoScrollbar)) {
+                if (pack.hidden) {
+                    ImGui::TextUnformatted(pack.name.c_str());
+                    ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
+                    ImGui::TextUnformatted("HIDDEN - MANAGED FILES RETAINED");
+                    ImGui::PopStyleColor();
+                } else {
+                    bool enabled = pack.enabled;
+                    ImGui::BeginDisabled(!pack.compatible);
+                    if (ImGui::Checkbox(pack.name.c_str(), &enabled)) {
+                        dkr::runtime::texture_packs::set_enabled(pack.id, enabled);
+                        changed = true;
+                    }
+                    ImGui::EndDisabled();
+                }
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    pack.compatible ? kAccent : kWarm);
+                const std::string format_label =
+                    std::string(dkr::runtime::texture_packs::format_name(pack.format)) +
+                    (pack.format == dkr::runtime::texture_packs::Format::LegacyJabo
+                        ? " - UNSUPPORTED" : "");
+                ImGui::TextUnformatted(format_label.c_str());
+                ImGui::PopStyleColor();
+                ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+                ImGui::TextWrapped("%s", pack.detail.c_str());
+                ImGui::PopStyleColor();
+                const float action_gap = ImGui::GetStyle().ItemSpacing.x;
+                const float action_width = std::max(
+                    (ImGui::GetContentRegionAvail().x - action_gap) * 0.5F, 1.0F);
+                if (pack.hidden) {
+                    if (ImGui::Button("RESTORE TO LIST", {action_width, 42.0F})) {
+                        dkr::runtime::texture_packs::set_hidden(
+                            pack.id, false, g_texture_pack_status);
+                        changed = true;
+                    }
+                    ImGui::SameLine(0.0F, action_gap);
+                    if (ImGui::Button("DELETE PACK...", {action_width, 42.0F})) {
+                        g_texture_pack_remove_id = pack.id;
+                        g_texture_pack_remove_name = pack.name;
+                        request_remove_modal = true;
+                    }
+                } else if (ImGui::Button("REMOVE PACK...",
+                                         {ImGui::GetContentRegionAvail().x, 42.0F})) {
+                    g_texture_pack_remove_id = pack.id;
+                    g_texture_pack_remove_name = pack.name;
+                    request_remove_modal = true;
+                }
+            }
+            ImGui::EndChild();
+            ImGui::PopID();
+        }
+        if (request_remove_modal) {
+            ImGui::OpenPopup("Remove texture pack?");
+        }
+        ImGui::SetNextWindowSizeConstraints({480.0F, 0.0F}, {680.0F, FLT_MAX});
+        if (BeginPaddedModal("Remove texture pack?",
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("REMOVE TEXTURE PACK?");
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", g_texture_pack_remove_name.c_str());
+            ImGui::Dummy({0.0F, 6.0F});
+            ImGui::TextWrapped(
+                "HIDE FROM LIST keeps DKR-R's managed copy on disk. You can restore it later with SHOW HIDDEN PACKS.");
+            ImGui::Dummy({0.0F, 8.0F});
+            ImGui::PushStyleColor(ImGuiCol_Text, kRaceRed);
+            ImGui::TextUnformatted("WARNING - PERMANENT DELETION CANNOT BE UNDONE");
+            ImGui::PopStyleColor();
+            ImGui::TextWrapped(
+                "DELETE COMPLETELY permanently removes DKR-R's managed archive or converted texture cache. Your original source archive outside DKR-R is never touched.");
+            ImGui::Dummy({0.0F, 12.0F});
+            if (ImGui::Button("CANCEL", {130.0F, 44.0F})) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("HIDE FROM LIST", {190.0F, 44.0F})) {
+                dkr::runtime::texture_packs::set_hidden(
+                    g_texture_pack_remove_id, true, g_texture_pack_status);
+                changed = true;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, {0.45F, 0.09F, 0.10F, 1.0F});
+            if (ImGui::Button("DELETE COMPLETELY", {210.0F, 44.0F})) {
+                dkr::runtime::texture_packs::delete_managed(
+                    g_texture_pack_remove_id, g_texture_pack_status);
+                changed = true;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor();
+            ImGui::EndPopup();
+        }
+        if (!g_texture_pack_status.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+            ImGui::TextWrapped("%s", g_texture_pack_status.c_str());
+            ImGui::PopStyleColor();
+        }
+        const std::string texture_status =
+            dkr::runtime::texture_packs::status();
+        if (!texture_status.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+            ImGui::TextWrapped("%s", texture_status.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+        ImGui::SeparatorText("Camera and scenery");
         bool maximum_detail =
             dkr::runtime::enhancements::maximum_detail_requested();
         if (ImGui::Checkbox("Maximum vehicle detail", &maximum_detail)) {
@@ -1272,14 +2276,15 @@ bool DrawGraphicsSettings(bool live) {
             changed = true;
         }
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Keeps racer vehicles on their highest available model. Time-trial ghosts and gameplay logic retain their original models.");
+        ImGui::TextWrapped("KEEPS RACERS ON THEIR HIGHEST LOD MODEL");
         ImGui::PopStyleColor();
         ImGui::Spacing();
-        ImGui::SeparatorText("Camera and scenery");
         int fov_offset = dkr::runtime::enhancements::fov_offset();
         ImGui::TextUnformatted("Gameplay field-of-view offset");
         ImGui::SetNextItemWidth(setting_width);
-        if (ImGui::SliderInt("##modern-fov-offset", &fov_offset, -20, 40,
+        if (ControlSliderInt("##modern-fov-offset", &fov_offset,
+                             dkr::runtime::enhancements::kMinimumFovOffset,
+                             dkr::runtime::enhancements::kMaximumFovOffset,
                              "%+d degrees", ImGuiSliderFlags_AlwaysClamp)) {
             dkr::runtime::enhancements::set_fov_offset(fov_offset);
             SaveSettings();
@@ -1291,14 +2296,27 @@ bool DrawGraphicsSettings(bool live) {
 
         int view_distance =
             dkr::runtime::enhancements::view_distance_multiplier();
-        ImGui::TextUnformatted("Object view distance");
+        ImGui::TextUnformatted("Scenery and object view distance");
         ImGui::SetNextItemWidth(setting_width);
-        if (ImGui::SliderInt("##modern-view-distance", &view_distance, 1, 6,
+        if (ControlSliderInt("##modern-view-distance", &view_distance,
+                             dkr::runtime::enhancements::kMinimumViewDistanceMultiplier,
+                             dkr::runtime::enhancements::kMaximumViewDistanceMultiplier,
                              "%dx", ImGuiSliderFlags_AlwaysClamp)) {
             dkr::runtime::enhancements::set_view_distance_multiplier(view_distance);
             SaveSettings();
             changed = true;
         }
+        bool keep_hub_scenery =
+            dkr::runtime::enhancements::keep_hub_scenery_requested();
+        if (ImGui::Checkbox("Keep all scenery rendered", &keep_hub_scenery)) {
+            dkr::runtime::enhancements::set_keep_hub_scenery_enabled(
+                keep_hub_scenery);
+            SaveSettings();
+            changed = true;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        ImGui::TextWrapped("This can increase CPU and GPU load on handheld systems.");
+        ImGui::PopStyleColor();
 
         bool extended_culling =
             dkr::runtime::enhancements::extended_culling_requested();
@@ -1312,7 +2330,7 @@ bool DrawGraphicsSettings(bool live) {
             int guard = dkr::runtime::enhancements::frustum_guard_percent();
             ImGui::TextUnformatted("Culling safety margin");
             ImGui::SetNextItemWidth(setting_width);
-            if (ImGui::SliderInt("##modern-frustum-guard", &guard, 0, 20,
+            if (ControlSliderInt("##modern-frustum-guard", &guard, 0, 20,
                                  "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
                 dkr::runtime::enhancements::set_frustum_guard_percent(guard);
                 SaveSettings();
@@ -1339,35 +2357,556 @@ bool DrawGraphicsSettings(bool live) {
     return changed;
 }
 
+void DrawFpsOverlay(RT64::Application&) {
+    if (!g_fps_overlay_enabled ||
+        !dkr::runtime::enhancements::modern_presentation_enabled()) {
+        return;
+    }
+    const auto measured = dkr::runtime::telemetry::metrics();
+    std::vector<std::string> fields;
+    char buffer[128]{};
+    std::snprintf(buffer, sizeof(buffer), "%.0f FPS", measured.presented_fps);
+    fields.emplace_back(buffer);
+
+    bool frame_time = false;
+    bool simulation = false;
+    bool graphics = false;
+    bool vi = false;
+    bool interpolation = false;
+    bool audio = false;
+    bool target = false;
+    bool resolution = false;
+    if (g_fps_overlay_detail == 1) {
+        frame_time = simulation = target = true;
+    } else if (g_fps_overlay_detail == 2) {
+        frame_time = simulation = graphics = vi = interpolation = audio =
+            target = resolution = true;
+    } else if (g_fps_overlay_detail == 3) {
+        frame_time = g_fps_custom_frame_time;
+        simulation = g_fps_custom_simulation;
+        graphics = g_fps_custom_graphics;
+        vi = g_fps_custom_vi;
+        interpolation = g_fps_custom_interpolation;
+        audio = g_fps_custom_audio;
+        target = g_fps_custom_target;
+        resolution = g_fps_custom_resolution;
+    }
+    const auto add_rate = [&](bool enabled, const char* format, double value) {
+        if (!enabled) return;
+        std::snprintf(buffer, sizeof(buffer), format, value);
+        fields.emplace_back(buffer);
+    };
+    add_rate(frame_time, "%.2f MS", measured.frame_time_ms);
+    add_rate(simulation, "SIM %.1f HZ", measured.simulation_hz);
+    add_rate(graphics, "GFX %.1f HZ", measured.graphics_hz);
+    add_rate(vi, "VI %.1f HZ", measured.vi_hz);
+    add_rate(interpolation, "INTERP %.1f HZ", measured.interpolated_hz);
+    add_rate(audio, "AUDIO %.0f HZ", measured.audio_frames_per_second);
+    if (target) {
+        const auto& config = ultramodern::renderer::get_graphics_config();
+        const int rate = config.rr_option == RefreshRate::Manual
+            ? config.rr_manual_value
+            : static_cast<int>(ultramodern::get_display_refresh_rate());
+        std::snprintf(buffer, sizeof(buffer), "TARGET %d FPS", rate);
+        fields.emplace_back(buffer);
+    }
+    if (resolution) {
+        int width = 0;
+        int height = 0;
+        if (auto* window = static_cast<SDL_Window*>(
+                dkr::runtime::platform::sdl_window()); window != nullptr) {
+            SDL_GetWindowSize(window, &width, &height);
+        }
+        std::snprintf(buffer, sizeof(buffer), "%d X %d", width, height);
+        fields.emplace_back(buffer);
+    }
+    if (g_fps_overlay_single_row && fields.size() > 1U) {
+        std::string row = fields.front();
+        for (std::size_t index = 1; index < fields.size(); ++index) {
+            row += "  |  ";
+            row += fields[index];
+        }
+        fields.assign(1U, std::move(row));
+    }
+
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    constexpr float margin = 18.0F;
+    ImVec2 position{margin, margin};
+    ImVec2 pivot{0.0F, 0.0F};
+    if (g_fps_overlay_position == 1 || g_fps_overlay_position == 3) {
+        position.x = display.x - margin;
+        pivot.x = 1.0F;
+    }
+    if (g_fps_overlay_position >= 2) {
+        position.y = display.y - margin;
+        pivot.y = 1.0F;
+    }
+    ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
+    ImGui::SetNextWindowBgAlpha(0.70F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {14.0F, 10.0F});
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, {0.025F, 0.08F, 0.12F, 0.82F});
+    ImGui::PushStyleColor(ImGuiCol_Border, kWarm);
+    if (ImGui::Begin("##dkr-r-fps-overlay", nullptr,
+                     ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoSavedSettings)) {
+        ImFont* font = g_font_fps != nullptr ? g_font_fps : ImGui::GetFont();
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImU32 fill = ImGui::ColorConvertFloat4ToU32(g_fps_fill_colour);
+        const ImU32 outline =
+            ImGui::ColorConvertFloat4ToU32(g_fps_outline_colour);
+        const float font_size = static_cast<float>(
+            std::clamp(g_fps_font_size, 16, 64));
+        const float edge = std::clamp(font_size * 0.0625F, 1.0F, 4.0F);
+        for (const std::string& field : fields) {
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            const ImVec2 extent = font->CalcTextSizeA(
+                font_size, FLT_MAX, 0.0F, field.c_str());
+            draw->AddText(font, font_size, {at.x - edge, at.y}, outline,
+                          field.c_str());
+            draw->AddText(font, font_size, {at.x + edge, at.y}, outline,
+                          field.c_str());
+            draw->AddText(font, font_size, {at.x, at.y - edge}, outline,
+                          field.c_str());
+            draw->AddText(font, font_size, {at.x, at.y + edge}, outline,
+                          field.c_str());
+            draw->AddText(font, font_size, at, fill, field.c_str());
+            ImGui::Dummy({extent.x, extent.y + 2.0F});
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void DrawSaveNameEditor(const char* label, std::string& value, float width) {
+    using dkr::runtime::saves::codec::sanitise_name;
+    constexpr std::array<const char*, 29> choices{{
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        ".", "?", "SPACE"}};
+    std::string padded = sanitise_name(value);
+    padded.resize(3U, ' ');
+    ImGui::TextUnformatted(label);
+    if (ImGui::BeginTable("name-characters", 3,
+                          ImGuiTableFlags_SizingStretchSame, {width, 0.0F})) {
+        for (int character = 0; character < 3; ++character) {
+            ImGui::TableNextColumn();
+            ImGui::PushID(character);
+            int selected = 28;
+            if (padded[character] >= 'A' && padded[character] <= 'Z') {
+                selected = padded[character] - 'A';
+            } else if (padded[character] == '.') {
+                selected = 26;
+            } else if (padded[character] == '?') {
+                selected = 27;
+            }
+            ImGui::SetNextItemWidth(-1.0F);
+            if (ControlCombo("##character", &selected,
+                             [](void* data, int index, const char** output) {
+                                 const auto* items = static_cast<
+                                     const std::array<const char*, 29>*>(data);
+                                 if (index < 0 || index >= static_cast<int>(items->size())) {
+                                     return false;
+                                 }
+                                 *output = (*items)[static_cast<std::size_t>(index)];
+                                 return true;
+                             }, const_cast<void*>(static_cast<const void*>(&choices)),
+                             static_cast<int>(choices.size()))) {
+                padded[character] = selected < 26 ? static_cast<char>('A' + selected)
+                    : selected == 26 ? '.' : selected == 27 ? '?' : ' ';
+                value = sanitise_name(padded);
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+}
+
+bool DrawLabeledSliderInt(const char* label, const char* id, int* value,
+                          int minimum, int maximum, const char* format,
+                          float width) {
+    ImGui::TextWrapped("%s", label);
+    ImGui::SetNextItemWidth(width);
+    return ControlSliderInt(id, value, minimum, maximum, format,
+                            ImGuiSliderFlags_AlwaysClamp);
+}
+
+bool DrawWrappedCheckbox(const char* label, const char* id, bool* value) {
+    const bool changed = ImGui::Checkbox(id, value);
+    ImGui::SameLine();
+    ImGui::TextWrapped("%s", label);
+    return changed;
+}
+
+float ScrollbarSafeControlWidth(float requested_width) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float available = ImGui::GetContentRegionAvail().x;
+    // Save Builder pages are nested inside a scrolling card. Leave a full
+    // scrollbar gutter plus some breathing room on both sides so combo boxes
+    // and their popups never sit underneath the bar at narrow window sizes.
+    // The cap also keeps long controls readable on ultrawide launchers.
+    constexpr float kComfortableSaveControlWidth = 620.0F;
+    const float scrollbar_gutter = style.ScrollbarSize +
+        (style.ItemSpacing.x * 2.0F);
+    return std::max(std::min({requested_width, available,
+                              kComfortableSaveControlWidth}) -
+                        scrollbar_gutter,
+                    1.0F);
+}
+
+void DrawMagicCodes(float width) {
+    using namespace dkr::runtime::magic_codes;
+
+    const float control_width = ScrollbarSafeControlWidth(width);
+    static bool expanded = false;
+    if (ImGui::Button(expanded ? "MAGIC CODES  -  CLOSE"
+                               : "MAGIC CODES  -  OPEN",
+                      {control_width, 42.0F})) {
+        expanded = !expanded;
+    }
+    if (!expanded) {
+        return;
+    }
+    bool diagnostics_heading_drawn = false;
+    for (const auto& definition : kMagicCodeDefinitions) {
+        if (definition.diagnostic && !diagnostics_heading_drawn) {
+            ImGui::SeparatorText("Diagnostics - use with care");
+            diagnostics_heading_drawn = true;
+        }
+        ImGui::PushID(static_cast<int>(definition.internal_index));
+        bool enabled = magic_code_enabled(selected_mask(),
+                                          definition.internal_index);
+        const std::string label = std::string(definition.phrase) +
+            (definition.one_shot ? " - NEXT LAUNCH" : "");
+        if (ImGui::Checkbox(label.c_str(), &enabled)) {
+            std::string error;
+            if (set_enabled(definition.internal_index, enabled, error)) {
+                SaveSettings();
+                g_save_manager_status = enabled
+                    ? std::string(definition.phrase) +
+                        (definition.one_shot
+                            ? " queued for the next game launch."
+                            : " will be active on launch.")
+                    : std::string(definition.phrase) + " disabled.";
+            } else {
+                g_save_manager_status = error;
+            }
+        }
+        ImGui::Indent(28.0F);
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() +
+                              std::max(width - 28.0F, 1.0F));
+        if (definition.diagnostic) {
+            ImGui::PushStyleColor(ImGuiCol_Text, kRaceRed);
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
+        }
+        ImGui::TextWrapped("%s", definition.effect);
+        ImGui::PopStyleColor();
+        ImGui::PopTextWrapPos();
+        ImGui::Unindent(28.0F);
+        ImGui::PopID();
+    }
+
+    ImGui::Dummy({0.0F, 6.0F});
+    if (ImGui::Button("CLEAR ALL MAGIC CODES", {control_width, 42.0F})) {
+        std::string error;
+        if (clear_all(error)) {
+            SaveSettings();
+            g_save_manager_status = "All launch Magic Codes cleared.";
+        } else {
+            g_save_manager_status = error;
+        }
+    }
+}
+
+std::string FormatRecordTime(std::uint16_t frames) {
+    if (frames == 0U) {
+        return "No personal record yet";
+    }
+    const unsigned minutes = frames / (60U * 60U);
+    const unsigned remainder = frames % (60U * 60U);
+    const unsigned seconds = remainder / 60U;
+    const unsigned hundredths = ((remainder % 60U) * 100U) / 60U;
+    char result[32]{};
+    std::snprintf(result, sizeof(result), "%02u:%02u:%02u",
+                  minutes, seconds, hundredths);
+    return result;
+}
+
+void DrawAdventureBuilder(float width) {
+    using namespace dkr::runtime::saves;
+    using namespace dkr::runtime::saves::codec;
+
+    ImGui::TextWrapped("Edit DKR's native EEPROM fields. Applying always creates a dated safety backup, rebuilds every checksum, validates a temporary image and atomically swaps it into T.T.'s garage.");
+    if (ImGui::Button(g_save_builder_image ? "RELOAD LIVE SAVE" : "OPEN SAVE BUILDER",
+                      {width, 46.0F})) {
+        SaveImage image{};
+        std::string error;
+        if (load_adventure(image, error)) {
+            normalise_editable_fields(image);
+            g_save_builder_image = std::move(image);
+            g_save_manager_status = "Adventure EEPROM loaded into the builder.";
+        } else {
+            g_save_manager_status = error;
+        }
+    }
+    if (!g_save_builder_image) {
+        return;
+    }
+
+    SaveImage& image = *g_save_builder_image;
+    ImGui::Dummy({0.0F, 8.0F});
+    if (ImGui::BeginTabBar("save-builder-sections",
+                           ImGuiTabBarFlags_FittingPolicyScroll)) {
+        for (int slot_index = 0; slot_index < static_cast<int>(kAdventureSlotCount);
+             ++slot_index) {
+            const std::string label = "ADVENTURE " + std::to_string(slot_index + 1);
+            if (ImGui::BeginTabItem(label.c_str())) {
+                g_save_builder_slot = slot_index;
+                AdventureSlot& slot = image.slots[static_cast<std::size_t>(slot_index)];
+                ImGui::PushID(slot_index);
+                const float control_width = ScrollbarSafeControlWidth(width);
+                DrawSaveNameEditor("Racer initials", slot.name, control_width);
+
+                ImGui::SeparatorText("Golden Balloons");
+                ImGui::TextWrapped("The total is calculated automatically. DKR-R's central island region contains seven balloons; each racing world contains eight.");
+                unsigned racing_world_total = 0U;
+                for (std::size_t world = 1U; world < kWorldCount; ++world) {
+                    racing_world_total += slot.balloons[world];
+                }
+                int hub_balloons = slot.balloons[0] > racing_world_total
+                    ? static_cast<int>(std::min<unsigned>(
+                          slot.balloons[0] - racing_world_total,
+                          kMaximumHubBalloons))
+                    : 0;
+                char total_label[24]{};
+                std::snprintf(total_label, sizeof(total_label), "%u / %u",
+                              slot.balloons[0], kMaximumTotalBalloons);
+                ImGui::TextUnformatted("Total Golden Balloons (calculated)");
+                ImGui::ProgressBar(
+                    static_cast<float>(slot.balloons[0]) /
+                        static_cast<float>(kMaximumTotalBalloons),
+                    {control_width, 0.0F}, total_label);
+
+                constexpr std::array<const char*, kWorldCount> area_names{{
+                    "DKR-R", "Dino Domain", "Sherbet Island",
+                    "Snowflake Mountain", "Dragon Forest", "Future Fun Land"}};
+                for (std::size_t area = 0; area < kWorldCount; ++area) {
+                    int value = area == 0U ? hub_balloons : slot.balloons[area];
+                    const int maximum = area == 0U
+                        ? kMaximumHubBalloons : kMaximumWorldBalloons;
+                    ImGui::PushID(static_cast<int>(area));
+                    if (DrawLabeledSliderInt(area_names[area], "##balloons",
+                                             &value, 0, maximum, "%d",
+                                             control_width)) {
+                        if (area == 0U) {
+                            hub_balloons = value;
+                        } else {
+                            slot.balloons[area] =
+                                static_cast<std::uint8_t>(value);
+                        }
+                        unsigned new_total = static_cast<unsigned>(hub_balloons);
+                        for (std::size_t world = 1U; world < kWorldCount; ++world) {
+                            new_total += slot.balloons[world];
+                        }
+                        slot.balloons[0] = static_cast<std::uint8_t>(
+                            std::min<unsigned>(new_total, kMaximumTotalBalloons));
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::SeparatorText("Amulets and keys");
+                int tt_amulet = slot.tt_amulet;
+                int wizpig_amulet = slot.wizpig_amulet;
+                if (DrawLabeledSliderInt("T.T. amulet pieces", "##tt-amulet",
+                                         &tt_amulet, 0, kMaximumAmuletPieces,
+                                         "%d", control_width)) {
+                    slot.tt_amulet = static_cast<std::uint8_t>(tt_amulet);
+                }
+                if (DrawLabeledSliderInt("Wizpig amulet pieces",
+                                         "##wizpig-amulet", &wizpig_amulet,
+                                         0, kMaximumAmuletPieces, "%d", control_width)) {
+                    slot.wizpig_amulet = static_cast<std::uint8_t>(wizpig_amulet);
+                }
+                constexpr std::array<const char*, 4> key_names{{
+                    "Dino Domain key", "Snowflake Mountain key",
+                    "Sherbet Island key", "Dragon Forest key"}};
+                constexpr std::array<unsigned, 4> key_bits{{1U, 2U, 3U, 4U}};
+                for (std::size_t key = 0; key < key_bits.size(); ++key) {
+                    const auto mask = static_cast<std::uint8_t>(1U << key_bits[key]);
+                    bool value = (slot.keys & mask) != 0U;
+                    const char* key_label = key_names[key];
+                    ImGui::PushID(static_cast<int>(key));
+                    if (DrawWrappedCheckbox(key_label, "##key", &value)) {
+                        if (value) slot.keys |= mask;
+                        else slot.keys &= static_cast<std::uint8_t>(~mask);
+                    }
+                    ImGui::PopID();
+                }
+
+                static std::array<bool, kAdventureSlotCount>
+                    course_progress_expanded{{true, true, true}};
+                bool& progress_expanded = course_progress_expanded[
+                    static_cast<std::size_t>(slot_index)];
+                if (ImGui::Button(progress_expanded
+                                      ? "COURSE PROGRESS  -  CLOSE"
+                                      : "COURSE PROGRESS  -  OPEN",
+                                  {control_width, 42.0F})) {
+                    progress_expanded = !progress_expanded;
+                }
+                if (progress_expanded) {
+                    constexpr const char* statuses =
+                        "Not started\0Race won\0Silver Coins won\0Complete\0";
+                    const auto& names = course_names();
+                    for (std::size_t course = 0; course < kCourseCount; ++course) {
+                        ImGui::PushID(static_cast<int>(course));
+                        int status = slot.course_status[course];
+                        ImGui::TextUnformatted(names[course]);
+                        ImGui::SetNextItemWidth(control_width);
+                        if (ControlCombo("##course-status", &status, statuses)) {
+                            slot.course_status[course] = static_cast<std::uint8_t>(status);
+                        }
+                        ImGui::PopID();
+                    }
+                }
+
+                if (ImGui::Button("MAX OUT THIS ADVENTURE",
+                                  {control_width, 42.0F})) {
+                    std::fill(slot.course_status.begin(), slot.course_status.end(), 3U);
+                    slot.taj_flags = 0x3F;
+                    slot.trophies = 0x3FF;
+                    slot.bosses = 0xFFF;
+                    slot.balloons = {47, 8, 8, 8, 8, 8};
+                    slot.tt_amulet = 4;
+                    slot.wizpig_amulet = 4;
+                    slot.world_flags.fill(0xFFFF);
+                    slot.keys = 0x1E;
+                }
+                ImGui::PopID();
+                ImGui::EndTabItem();
+            }
+        }
+
+        if (ImGui::BeginTabItem("UNLOCKS")) {
+            constexpr std::array<const char*, 20> tt_trial_names{{
+                "Ancient Lake", "Fossil Canyon", "Jungle Falls",
+                "Hot Top Volcano", "Whale Bay", "Crescent Island",
+                "Pirate Lagoon", "Treasure Caves", "Everfrost Peak",
+                "Walrus Cove", "Snowball Valley", "Frosty Village",
+                "Boulder Canyon", "Greenwood Village", "Windmill Plains",
+                "Haunted Woods", "Spacedust Alley", "Darkmoon Caverns",
+                "Star City", "Spaceport Alpha"}};
+            ImGui::Checkbox("Adventure Two", &image.settings.adventure_two);
+            ImGui::Checkbox("Drumstick", &image.settings.drumstick);
+            ImGui::Checkbox("Subtitles", &image.settings.subtitles);
+            int language = image.settings.language;
+            ImGui::TextUnformatted("Language");
+            ImGui::SetNextItemWidth(width);
+            if (ControlCombo("##save-language", &language,
+                             "English\0German\0French\0Japanese\0")) {
+                image.settings.language = static_cast<std::uint8_t>(language);
+            }
+            ImGui::SeparatorText("T.T. time-trial victories");
+            for (std::size_t trial = 0; trial < image.settings.tt_trials.size(); ++trial) {
+                ImGui::PushID(static_cast<int>(trial));
+                ImGui::Checkbox(tt_trial_names[trial], &image.settings.tt_trials[trial]);
+                ImGui::PopID();
+            }
+            if (ImGui::Button("UNLOCK ALL RACERS AND MODES", {width, 42.0F})) {
+                image.settings.adventure_two = true;
+                image.settings.drumstick = true;
+                image.settings.tt_trials.fill(true);
+            }
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("T.T. RECORDS")) {
+            ImGui::TextWrapped("Personal records are view-only. Race in Time Trial mode to set or improve them.");
+            const auto draw_records = [&](const char* heading,
+                                          const std::array<Record, kRecordCount>& records) {
+                if (!ImGui::CollapsingHeader(heading)) return;
+                for (std::size_t index = 0; index < records.size(); ++index) {
+                    ImGui::PushID(static_cast<int>(index));
+                    ImGui::Separator();
+                    ImGui::TextWrapped("%s", record_names()[index]);
+                    const std::string time = FormatRecordTime(records[index].time);
+                    ImGui::TextDisabled("Time: %s", time.c_str());
+                    if (records[index].time != 0U) {
+                        const std::string initials = records[index].initials.empty()
+                            ? "---" : records[index].initials;
+                        ImGui::TextDisabled("Racer: %s", initials.c_str());
+                    }
+                    ImGui::PopID();
+                }
+            };
+            draw_records("Fastest laps", image.fastest_laps);
+            draw_records("Course times", image.course_times);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    ImGui::Dummy({0.0F, 12.0F});
+    ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
+    if (ImGui::Button("BACK UP AND APPLY CHECKSUM-SAFE SAVE", {width, 52.0F})) {
+        ImGui::OpenPopup("Apply Save Builder changes?");
+    }
+    ImGui::PopStyleColor();
+    if (BeginPaddedModal("Apply Save Builder changes?",
+                         ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Replace the live Adventure EEPROM after creating a dated backup?");
+        if (ImGui::Button("CANCEL", {140.0F, 42.0F})) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("BACK UP AND APPLY", {220.0F, 42.0F})) {
+            std::string error;
+            if (commit_adventure(image, error)) {
+                g_save_manager_status = "Save Builder changes applied. Checksums verified and the previous EEPROM is backed up.";
+            } else {
+                g_save_manager_status = error;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void DrawSaveManager(bool live = false) {
     const auto info = dkr::runtime::saves::adventure_info();
     const float width = std::max(ImGui::GetContentRegionAvail().x - 30.0F, 1.0F);
-    DrawRaceBadge(" T.T.'S SAVE GARAGE ", kAccent, width);
-    ImGui::Dummy({0.0F, 10.0F});
+    ImGui::Dummy({0.0F, 4.0F});
     if (live) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
-        ImGui::BeginChild("live-save-manager-lock", {width, 132.0F}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({18.0F, 16.0F});
+        BeginPaddedChild("live-save-manager-lock", {width, 148.0F}, true,
+                         ImGuiWindowFlags_NoScrollbar, {20.0F, 18.0F});
         ImGui::PushTextWrapPos(width - 18.0F);
         ImGui::TextUnformatted("PIT LANE SAFETY LOCK");
-        ImGui::TextWrapped("Save import, restore and reset are available before the game starts. Close the game and use Save Garage so DKR cannot write to the same EEPROM or Controller Pak during a transfer.");
+        ImGui::TextWrapped("Save import, restore and reset are available before the game starts. Close the game and use Save Manager so DKR cannot write to the same EEPROM or Controller Pak during a transfer.");
         ImGui::PopTextWrapPos();
         ImGui::EndChild();
         ImGui::PopStyleColor();
         return;
     }
     ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
-    ImGui::BeginChild("adventure-save-card", {width, 190.0F}, true,
-                      ImGuiWindowFlags_NoScrollbar);
-    ImGui::SetCursorPos({18.0F, 16.0F});
+    BeginPaddedChild("adventure-save-card", {width, 206.0F}, true,
+                     ImGuiWindowFlags_NoScrollbar, {20.0F, 18.0F});
     ImGui::PushTextWrapPos(width - 18.0F);
     ImGui::TextUnformatted("ADVENTURE PROGRESS");
     if (!info.exists) {
         ImGui::TextDisabled("No Adventure save yet. DKR will create one after your first save.");
+    } else if (info.size != dkr::runtime::saves::codec::kImageSize) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kRaceRed);
+        ImGui::TextWrapped("This file is %llu bytes; DKR Adventure EEPROMs must be exactly 512 bytes. Import a known-good backup before racing.",
+                           static_cast<unsigned long long>(info.size));
+        ImGui::PopStyleColor();
     } else if (!info.valid) {
         ImGui::PushStyleColor(ImGuiCol_Text, kRaceRed);
-        ImGui::TextWrapped("This save does not have DKR's expected 512-byte EEPROM size. Import a known-good backup before racing.");
+        ImGui::TextWrapped("This 512-byte EEPROM has invalid DKR checksums. Import a known-good backup before editing it.");
         ImGui::PopStyleColor();
     } else {
         ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
@@ -1403,6 +2942,12 @@ void DrawSaveManager(bool live = false) {
         ImportAdventureWithDialog();
     }
 
+    ImGui::Dummy({0.0F, 18.0F});
+    DrawAdventureBuilder(width);
+
+    ImGui::Dummy({0.0F, 18.0F});
+    DrawMagicCodes(width);
+
     ImGui::Dummy({0.0F, 14.0F});
     ImGui::SeparatorText("Complete garage transfer");
     ImGui::TextWrapped("A single path-free bundle carries the Adventure EEPROM and every present virtual Controller Pak between Windows and Steam Deck.");
@@ -1422,9 +2967,8 @@ void DrawSaveManager(bool live = false) {
         const auto pak_info = dkr::runtime::saves::controller_pak_info(channel);
         ImGui::PushID(channel);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.96F});
-        ImGui::BeginChild("controller-pak-card", {width, 74.0F}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({14.0F, 10.0F});
+        BeginPaddedChild("controller-pak-card", {width, 94.0F}, true,
+                         ImGuiWindowFlags_NoScrollbar, {16.0F, 14.0F});
         ImGui::Text("CONTROLLER %d", channel + 1);
         ImGui::SameLine();
         if (!pak_info.exists) {
@@ -1438,7 +2982,7 @@ void DrawSaveManager(bool live = false) {
             ImGui::TextUnformatted("RECOVERY NEEDED");
             ImGui::PopStyleColor();
         }
-        ImGui::SetCursorPos({14.0F, 38.0F});
+        ImGui::SetCursorPosX(16.0F);
         ImGui::TextDisabled("%s", PathUtf8(pak_info.path).c_str());
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -1476,6 +3020,7 @@ void DrawSaveManager(bool live = false) {
                 if (ImGui::Button("RESTORE", {-1.0F, 38.0F})) {
                     std::string error;
                     if (dkr::runtime::saves::import_adventure(backups[index], error)) {
+                        g_save_builder_image.reset();
                         g_save_manager_status = "Backup restored. The replaced save was backed up too.";
                     } else {
                         g_save_manager_status = error;
@@ -1493,8 +3038,8 @@ void DrawSaveManager(bool live = false) {
         ImGui::OpenPopup("Reset Adventure save?");
     }
     ImGui::PopStyleColor();
-    if (ImGui::BeginPopupModal("Reset Adventure save?", nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (BeginPaddedModal("Reset Adventure save?",
+                         ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Park the current save in a backup, then start fresh?");
         ImGui::TextDisabled("The backup can be restored from this screen later.");
         if (ImGui::Button("CANCEL", {130.0F, 40.0F})) {
@@ -1505,6 +3050,7 @@ void DrawSaveManager(bool live = false) {
         if (ImGui::Button("START FRESH", {150.0F, 40.0F})) {
             std::string error;
             if (dkr::runtime::saves::reset_adventure(error)) {
+                g_save_builder_image.reset();
                 g_save_manager_status = "Fresh Adventure save created; the previous journey is safe in backups.";
             } else {
                 g_save_manager_status = error;
@@ -1521,7 +3067,7 @@ void DrawAudioSettings(float width) {
     float master = dkr::runtime::platform::master_volume() * 100.0F;
     ImGui::TextUnformatted("Master volume");
     ImGui::SetNextItemWidth(control_width);
-    if (ImGui::SliderFloat("##audio-master", &master, 0.0F, 100.0F,
+    if (ControlSliderFloat("##audio-master", &master, 0.0F, 100.0F,
                            "%.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
         dkr::runtime::platform::set_master_volume(master / 100.0F);
         SaveSettings();
@@ -1529,10 +3075,9 @@ void DrawAudioSettings(float width) {
     if (!dkr::runtime::enhancements::modern_options_visible(
             dkr::runtime::enhancements::presentation_profile())) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.055F, 0.19F, 0.29F, 1.0F});
-        ImGui::BeginChild("accurate-audio-lock", {control_width, 92.0F}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({16.0F, 12.0F});
-        ImGui::PushTextWrapPos(std::max(control_width - 16.0F, 1.0F));
+        BeginPaddedChild("accurate-audio-lock", {control_width, 104.0F}, true,
+                         ImGuiWindowFlags_NoScrollbar, {18.0F, 15.0F});
+        ImGui::PushTextWrapPos(std::max(control_width - 18.0F, 1.0F));
         ImGui::TextUnformatted("Original island mix - Accurate");
         ImGui::TextWrapped("Music, effects, vehicles and EQ stay at their authored values. Master volume remains available.");
         ImGui::PopTextWrapPos();
@@ -1548,7 +3093,7 @@ void DrawAudioSettings(float width) {
         float percent = value * 100.0F;
         ImGui::TextUnformatted(label);
         ImGui::SetNextItemWidth(control_width);
-        if (ImGui::SliderFloat(id, &percent, 0.0F, 100.0F, "%.0f%%",
+        if (ControlSliderFloat(id, &percent, 0.0F, 100.0F, "%.0f%%",
                                ImGuiSliderFlags_AlwaysClamp)) {
             setter(percent / 100.0F);
             SaveSettings();
@@ -1562,9 +3107,9 @@ void DrawAudioSettings(float width) {
     volume_slider("Vehicle sounds", "##audio-vehicles",
                   dkr::runtime::audio::vehicle_volume(),
                   dkr::runtime::audio::set_vehicle_volume);
-    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped("Vehicle volume is applied within DKR's racer-audio update. Sound effects remain the parent mix, matching the original sound groups.");
-    ImGui::PopStyleColor();
+    volume_slider("Nature and ambience", "##audio-nature",
+                  dkr::runtime::audio::nature_volume(),
+                  dkr::runtime::audio::set_nature_volume);
 
     ImGui::Spacing();
     ImGui::SeparatorText("Three-band EQ");
@@ -1572,7 +3117,7 @@ void DrawAudioSettings(float width) {
                                float value, auto setter) {
         ImGui::TextUnformatted(label);
         ImGui::SetNextItemWidth(control_width);
-        if (ImGui::SliderFloat(id, &value, -12.0F, 12.0F, "%+.1f dB",
+        if (ControlSliderFloat(id, &value, -12.0F, 12.0F, "%+.1f dB",
                                ImGuiSliderFlags_AlwaysClamp)) {
             setter(value);
             SaveSettings();
@@ -1584,13 +3129,11 @@ void DrawAudioSettings(float width) {
               dkr::runtime::platform::set_mid_gain);
     eq_slider("Treble", "##audio-treble", dkr::runtime::platform::treble_gain(),
               dkr::runtime::platform::set_treble_gain);
-    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped("At 0 dB the EQ is bypassed exactly, preserving the current release-proven samples and latency.");
-    ImGui::PopStyleColor();
     if (ImGui::Button("RESTORE ORIGINAL MIX", {control_width, 44.0F})) {
         dkr::runtime::audio::set_music_volume(1.0F);
         dkr::runtime::audio::set_sound_effects_volume(1.0F);
         dkr::runtime::audio::set_vehicle_volume(1.0F);
+        dkr::runtime::audio::set_nature_volume(1.0F);
         dkr::runtime::platform::set_bass_gain(0.0F);
         dkr::runtime::platform::set_mid_gain(0.0F);
         dkr::runtime::platform::set_treble_gain(0.0F);
@@ -1598,13 +3141,54 @@ void DrawAudioSettings(float width) {
     }
 }
 
+std::string ShortcutBindingName(CaptureDevice device,
+                                dkr::runtime::input::ShortcutBinding binding) {
+    const auto source_name = [device](int source) {
+        return device == CaptureDevice::Keyboard
+            ? dkr::runtime::input::keyboard_binding_name(source)
+            : dkr::runtime::input::controller_binding_name(source);
+    };
+    if (binding.primary == dkr::runtime::input::kUnbound) {
+        return "Unbound";
+    }
+    std::string name = source_name(binding.primary);
+    if (binding.secondary != dkr::runtime::input::kUnbound) {
+        name += " + ";
+        name += source_name(binding.secondary);
+    }
+    return name;
+}
+
+void CommitShortcutCapture() {
+    dkr::runtime::input::ShortcutBinding binding{
+        g_shortcut_capture_sources[0],
+        g_shortcut_capture_count > 1
+            ? g_shortcut_capture_sources[1]
+            : dkr::runtime::input::kUnbound};
+    if (g_capture_device == CaptureDevice::Keyboard) {
+        dkr::runtime::input::set_quick_restart_keyboard_binding(binding);
+    } else if (g_capture_device == CaptureDevice::Controller) {
+        dkr::runtime::input::set_quick_restart_controller_binding(binding);
+    }
+    SaveSettings();
+    g_capture_finished = true;
+}
+
+void BeginShortcutCapture(CaptureDevice device) {
+    g_capture_action = kShortcutCaptureAction;
+    g_capture_device = device;
+    g_capture_popup_pending = true;
+    g_capture_finished = false;
+    g_shortcut_capture_sources = {
+        dkr::runtime::input::kUnbound, dkr::runtime::input::kUnbound};
+    g_shortcut_capture_count = 0;
+    g_shortcut_capture_deadline = {};
+}
+
 void DrawControlsReference(bool live) {
     using dkr::runtime::input::Action;
     ImGui::TextUnformatted("DRIVER BINDINGS");
     ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped("Select any binding, then press the key, button or stick direction you want. Reusing an input moves it to the new action so conflicts cannot stack. Interface navigation always keeps A, B, the D-pad and left stick as a safe recovery route.");
-    ImGui::PopStyleColor();
     const auto begin_capture_button = [](Action action, std::size_t index,
                                          CaptureDevice device, float width) {
         const std::string binding_name = device == CaptureDevice::Keyboard
@@ -1635,7 +3219,7 @@ void DrawControlsReference(bool live) {
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
                           ImGuiTableFlags_SizingStretchProp,
                           {available_width, 0.0F})) {
-        const float label_width = std::clamp(available_width * 0.22F, 118.0F, 156.0F);
+        const float label_width = std::clamp(available_width * 0.30F, 180.0F, 260.0F);
         ImGui::TableSetupColumn("N64 CONTROL", ImGuiTableColumnFlags_WidthFixed, label_width);
         ImGui::TableSetupColumn("KEYBOARD", ImGuiTableColumnFlags_WidthStretch, 1.0F);
         ImGui::TableSetupColumn("GAMEPAD", ImGuiTableColumnFlags_WidthStretch, 1.0F);
@@ -1661,15 +3245,14 @@ void DrawControlsReference(bool live) {
             const auto action = static_cast<Action>(index);
             ImGui::PushID(static_cast<int>(index));
             ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.045F, 0.18F, 0.25F, 0.92F});
-            const float card_height = side_by_side ? 96.0F : 146.0F;
-            ImGui::BeginChild("binding-card", {available_width, card_height}, true,
-                              ImGuiWindowFlags_NoScrollbar);
-            ImGui::SetCursorPos({12.0F, 10.0F});
-            ImGui::PushTextWrapPos(available_width - 12.0F);
+            const float card_height = side_by_side ? 112.0F : 166.0F;
+            BeginPaddedChild("binding-card", {available_width, card_height}, true,
+                             ImGuiWindowFlags_NoScrollbar, {16.0F, 14.0F});
+            ImGui::PushTextWrapPos(available_width - 16.0F);
             ImGui::TextUnformatted(dkr::runtime::input::action_label(action));
             ImGui::PopTextWrapPos();
-            ImGui::SetCursorPosX(12.0F);
-            const float inner_width = std::max(available_width - 24.0F, 1.0F);
+            ImGui::SetCursorPosX(16.0F);
+            const float inner_width = std::max(available_width - 32.0F, 1.0F);
             const float button_width = side_by_side
                 ? std::max((inner_width - gap) * 0.5F, 1.0F)
                 : inner_width;
@@ -1677,7 +3260,7 @@ void DrawControlsReference(bool live) {
             if (side_by_side) {
                 ImGui::SameLine(0.0F, gap);
             } else {
-                ImGui::SetCursorPosX(12.0F);
+                ImGui::SetCursorPosX(16.0F);
             }
             begin_capture_button(action, index, CaptureDevice::Controller, button_width);
             ImGui::EndChild();
@@ -1700,6 +3283,11 @@ void DrawControlsReference(bool live) {
 
     if (dkr::runtime::enhancements::modern_options_visible(
             dkr::runtime::enhancements::presentation_profile())) {
+        if (g_capture_action == kShortcutCaptureAction &&
+            g_shortcut_capture_count == 1 &&
+            std::chrono::steady_clock::now() >= g_shortcut_capture_deadline) {
+            CommitShortcutCapture();
+        }
         ImGui::Dummy({0.0F, 18.0F});
         ImGui::SeparatorText("Controller feel");
         const auto tune_slider = [&](const char* label, const char* id,
@@ -1707,7 +3295,7 @@ void DrawControlsReference(bool live) {
                                      const char* format, auto setter) {
             ImGui::TextUnformatted(label);
             ImGui::SetNextItemWidth(available_width);
-            if (ImGui::SliderFloat(id, &value, minimum, maximum, format,
+            if (ControlSliderFloat(id, &value, minimum, maximum, format,
                                    ImGuiSliderFlags_AlwaysClamp)) {
                 setter(value);
                 SaveSettings();
@@ -1743,20 +3331,48 @@ void DrawControlsReference(bool live) {
         ImGui::PopStyleColor();
 
         ImGui::Dummy({0.0F, 18.0F});
+        ImGui::SeparatorText("Quick restart");
+        bool quick_restart = dkr::runtime::input::quick_restart_enabled();
+        if (ImGui::Checkbox("Enable quick race restart", &quick_restart)) {
+            dkr::runtime::input::set_quick_restart_enabled(quick_restart);
+            SaveSettings();
+        }
+        if (quick_restart) {
+            const float shortcut_gap = ImGui::GetStyle().ItemSpacing.x;
+            const float shortcut_width = std::max(
+                (available_width - shortcut_gap) * 0.5F, 1.0F);
+            const auto keyboard =
+                dkr::runtime::input::quick_restart_keyboard_binding();
+            const auto controller =
+                dkr::runtime::input::quick_restart_controller_binding();
+            ImGui::TextUnformatted("Keyboard shortcut");
+            ImGui::SameLine(shortcut_width + shortcut_gap);
+            ImGui::TextUnformatted("Controller shortcut");
+            if (ImGui::Button(
+                    ShortcutBindingName(CaptureDevice::Keyboard, keyboard).c_str(),
+                    {shortcut_width, 42.0F})) {
+                BeginShortcutCapture(CaptureDevice::Keyboard);
+            }
+            ImGui::SameLine(0.0F, shortcut_gap);
+            if (ImGui::Button(
+                    ShortcutBindingName(CaptureDevice::Controller, controller).c_str(),
+                    {shortcut_width, 42.0F})) {
+                BeginShortcutCapture(CaptureDevice::Controller);
+            }
+        }
+
+        ImGui::Dummy({0.0F, 18.0F});
         ImGui::SeparatorText("Motion steering");
         bool gyro = dkr::runtime::input::gyro_enabled();
         if (ImGui::Checkbox("Gyro steering", &gyro)) {
             dkr::runtime::input::set_gyro_enabled(gyro);
             SaveSettings();
         }
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Modern only. Motion steering blends with the left stick and never changes DKR's handling physics.");
-        ImGui::PopStyleColor();
         if (gyro) {
             int axis = static_cast<int>(dkr::runtime::input::gyro_axis());
             ImGui::TextUnformatted("Motion style");
             ImGui::SetNextItemWidth(available_width);
-            if (ImGui::Combo("##gyro-axis", &axis,
+            if (ControlCombo("##gyro-axis", &axis,
                              "Roll controller like a wheel\0Yaw controller left and right\0")) {
                 dkr::runtime::input::set_gyro_axis(
                     axis == 1 ? dkr::runtime::input::GyroAxis::Yaw
@@ -1764,26 +3380,40 @@ void DrawControlsReference(bool live) {
                 SaveSettings();
             }
             float sensitivity = dkr::runtime::input::gyro_sensitivity();
-            ImGui::TextUnformatted("Gyro sensitivity");
+            ImGui::TextUnformatted("Horizontal gyro sensitivity");
             ImGui::SetNextItemWidth(available_width);
-            if (ImGui::SliderFloat("##gyro-sensitivity", &sensitivity,
+            if (ControlSliderFloat("##gyro-x-sensitivity", &sensitivity,
                                    25.0F, 300.0F, "%.0f%%",
                                    ImGuiSliderFlags_AlwaysClamp)) {
                 dkr::runtime::input::set_gyro_sensitivity(sensitivity);
                 SaveSettings();
             }
+            float y_sensitivity = dkr::runtime::input::gyro_y_sensitivity();
+            ImGui::TextUnformatted("Vertical gyro sensitivity");
+            ImGui::SetNextItemWidth(available_width);
+            if (ControlSliderFloat("##gyro-y-sensitivity", &y_sensitivity,
+                                   25.0F, 300.0F, "%.0f%%",
+                                   ImGuiSliderFlags_AlwaysClamp)) {
+                dkr::runtime::input::set_gyro_y_sensitivity(y_sensitivity);
+                SaveSettings();
+            }
             float deadzone = dkr::runtime::input::gyro_deadzone();
             ImGui::TextUnformatted("Motion deadzone");
             ImGui::SetNextItemWidth(available_width);
-            if (ImGui::SliderFloat("##gyro-deadzone", &deadzone,
+            if (ControlSliderFloat("##gyro-deadzone", &deadzone,
                                    0.0F, 12.0F, "%.1f deg/s",
                                    ImGuiSliderFlags_AlwaysClamp)) {
                 dkr::runtime::input::set_gyro_deadzone(deadzone);
                 SaveSettings();
             }
             bool inverted = dkr::runtime::input::gyro_inverted();
-            if (ImGui::Checkbox("Invert gyro steering", &inverted)) {
+            if (ImGui::Checkbox("Invert horizontal gyro", &inverted)) {
                 dkr::runtime::input::set_gyro_inverted(inverted);
+                SaveSettings();
+            }
+            bool y_inverted = dkr::runtime::input::gyro_y_inverted();
+            if (ImGui::Checkbox("Invert vertical gyro", &y_inverted)) {
+                dkr::runtime::input::set_gyro_y_inverted(y_inverted);
                 SaveSettings();
             }
             const bool available = dkr::runtime::platform::gyro_available();
@@ -1791,7 +3421,12 @@ void DrawControlsReference(bool live) {
                 dkr::runtime::input::gyro_steering_position();
             ImGui::ProgressBar((steering + 1.0F) * 0.5F,
                                {available_width, 18.0F},
-                               "Steering position");
+                               "Horizontal steering");
+            const float vertical =
+                dkr::runtime::input::gyro_steering_y_position();
+            ImGui::ProgressBar((vertical + 1.0F) * 0.5F,
+                               {available_width, 18.0F},
+                               "Vertical steering");
             ImGui::BeginDisabled(!live || !available);
             if (ImGui::Button("RECENTER STEERING", {available_width, 44.0F})) {
                 dkr::runtime::input::recenter_gyro();
@@ -1822,8 +3457,8 @@ void DrawControlsReference(bool live) {
     }
     ImGui::SetNextWindowSize({std::min(520.0F, ImGui::GetIO().DisplaySize.x - 32.0F), 230.0F},
                              ImGuiCond_Appearing);
-    if (ImGui::BeginPopupModal(kCapturePopup, nullptr,
-                               ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) {
+    if (BeginPaddedModal(kCapturePopup,
+                         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) {
         if (g_capture_action >= 0) {
             const auto action = static_cast<Action>(g_capture_action);
             PushHeadingFont();
@@ -1832,17 +3467,42 @@ void DrawControlsReference(bool live) {
             ImGui::TextWrapped(g_capture_device == CaptureDevice::Keyboard
                 ? "Press a keyboard key. Escape cancels."
                 : "Press a gamepad button or move an axis firmly. Escape cancels.");
+        } else if (g_capture_action == kShortcutCaptureAction) {
+            PushHeadingFont();
+            ImGui::TextUnformatted("QUICK RESTART");
+            PopHeadingFont();
+            ImGui::TextWrapped(g_capture_device == CaptureDevice::Keyboard
+                ? "Press one key, or hold the first and press a second. The chord is saved automatically. Escape cancels."
+                : "Press one controller button, or hold the first and press a second. The chord is saved automatically. Escape cancels.");
+            if (g_shortcut_capture_count == 1) {
+                const auto pending = dkr::runtime::input::ShortcutBinding{
+                    g_shortcut_capture_sources[0],
+                    dkr::runtime::input::kUnbound};
+                ImGui::Text("Captured: %s",
+                            ShortcutBindingName(g_capture_device, pending).c_str());
+            }
         }
         ImGui::Dummy({0.0F, 12.0F});
         const float popup_gap = ImGui::GetStyle().ItemSpacing.x;
         const float popup_button_width = std::max(
             (ImGui::GetContentRegionAvail().x - popup_gap) * 0.5F, 1.0F);
-        if (ImGui::Button("UNBIND", {popup_button_width, 44.0F}) && g_capture_action >= 0) {
-            const auto action = static_cast<Action>(g_capture_action);
-            if (g_capture_device == CaptureDevice::Keyboard) {
-                dkr::runtime::input::set_keyboard_binding(action, dkr::runtime::input::kUnbound);
-            } else {
-                dkr::runtime::input::set_controller_binding(action, dkr::runtime::input::kUnbound);
+        if (ImGui::Button("UNBIND", {popup_button_width, 44.0F})) {
+            if (g_capture_action >= 0) {
+                const auto action = static_cast<Action>(g_capture_action);
+                if (g_capture_device == CaptureDevice::Keyboard) {
+                    dkr::runtime::input::set_keyboard_binding(
+                        action, dkr::runtime::input::kUnbound);
+                } else {
+                    dkr::runtime::input::set_controller_binding(
+                        action, dkr::runtime::input::kUnbound);
+                }
+            } else if (g_capture_action == kShortcutCaptureAction) {
+                const dkr::runtime::input::ShortcutBinding unbound{};
+                if (g_capture_device == CaptureDevice::Keyboard) {
+                    dkr::runtime::input::set_quick_restart_keyboard_binding(unbound);
+                } else {
+                    dkr::runtime::input::set_quick_restart_controller_binding(unbound);
+                }
             }
             SaveSettings();
             g_capture_finished = true;
@@ -1863,7 +3523,37 @@ void DrawControlsReference(bool live) {
 }
 
 bool HandleInputCaptureEvent(SDL_Event* event) {
-    if (event == nullptr || g_capture_action < 0 || g_capture_finished) {
+    if (event == nullptr || g_capture_action == -1 || g_capture_finished) {
+        return false;
+    }
+    if (g_capture_action == kShortcutCaptureAction) {
+        if (event->type == SDL_KEYDOWN && event->key.repeat == 0 &&
+            event->key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+            g_capture_finished = true;
+            return true;
+        }
+        int source = dkr::runtime::input::kUnbound;
+        if (g_capture_device == CaptureDevice::Keyboard &&
+            event->type == SDL_KEYDOWN && event->key.repeat == 0) {
+            source = static_cast<int>(event->key.keysym.scancode);
+        } else if (g_capture_device == CaptureDevice::Controller &&
+                   event->type == SDL_CONTROLLERBUTTONDOWN) {
+            source = dkr::runtime::input::encode_controller_button(
+                event->cbutton.button);
+        }
+        if (source != dkr::runtime::input::kUnbound &&
+            (g_shortcut_capture_count == 0 ||
+             source != g_shortcut_capture_sources[0])) {
+            g_shortcut_capture_sources[g_shortcut_capture_count++] = source;
+            if (g_shortcut_capture_count >= 2) {
+                CommitShortcutCapture();
+            } else {
+                g_shortcut_capture_deadline =
+                    std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(800);
+            }
+            return true;
+        }
         return false;
     }
     using dkr::runtime::input::Action;
@@ -1902,47 +3592,35 @@ bool HandleInputCaptureEvent(SDL_Event* event) {
 }
 
 void DrawOverlayContent(float content_width) {
-    if (g_overlay_page == 0) {
-        DrawRaceBadge(" TIMBER'S ISLAND PAUSED ", kRaceRed);
-        ImGui::Dummy({0.0F, 10.0F});
-        PushHeadingFont();
-        ImGui::TextUnformatted("TAJ TRAVELLING TENT");
-        PopHeadingFont();
+    if (g_overlay_page == kPagePlay) {
+        DrawPageHeading("PLAY");
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Taj has paused the adventure while you adjust your journey. Racing controls wait safely until you return.");
+        ImGui::TextWrapped("Taj has paused the race. The island is waiting whenever you are ready.");
         ImGui::PopStyleColor();
         ImGui::Dummy({0.0F, 18.0F});
+        DrawStartingLights(true);
+        ImGui::Dummy({0.0F, 12.0F});
         ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kWarm);
-        if (ImGui::Button("RETURN TO TIMBER'S ISLAND", {content_width, 64.0F})) {
+        if (ImGui::Button("RETURN TO THE RACE", {content_width, 64.0F})) {
             g_overlay_visible.store(false, std::memory_order_release);
         }
         ImGui::PopStyleColor(2);
-        ImGui::Dummy({0.0F, 12.0F});
-        ImGui::PushStyleColor(ImGuiCol_Text, kCream);
-        ImGui::TextWrapped("RACE RULE: Gameplay and audio always keep the original timing. Higher frame-rate choices only make the journey look smoother.");
-        ImGui::PopStyleColor();
-    } else if (g_overlay_page == 1) {
-        DrawRaceBadge(" TAJ'S TUNE-UP ", kRaceBlue);
-        ImGui::Dummy({0.0F, 8.0F});
-        PushHeadingFont();
-        ImGui::TextUnformatted("VISUAL TUNE-UP");
-        PopHeadingFont();
+    } else if (g_overlay_page == kPageGraphics) {
+        DrawPageHeading("GRAPHICS");
         ImGui::Separator();
         DrawGraphicsSettings(true);
-    } else if (g_overlay_page == 2) {
-        DrawRaceBadge(" ISLAND SOUND ", kRaceBlue);
-        ImGui::Dummy({0.0F, 8.0F});
-        PushHeadingFont();
-        ImGui::TextUnformatted("ISLAND SOUND");
-        PopHeadingFont();
-        ImGui::Separator();
+    } else if (g_overlay_page == kPageSound) {
+        DrawPageHeading("SOUND");
+        ImGui::TextDisabled("Mix DKR-R in real time without changing game timing.");
+        ImGui::Dummy({0.0F, 20.0F});
         DrawAudioSettings(content_width);
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("Audio timing and buffer cadence remain controlled by the original game runtime.");
-        ImGui::PopStyleColor();
-        ImGui::Spacing();
+    } else if (g_overlay_page == kPageControls) {
+        DrawPageHeading("CONTROLS");
         ImGui::Separator();
+        DrawControlsReference(true);
+        ImGui::Spacing();
+        ImGui::SeparatorText("Controller and Pak");
         bool rumble = dkr::runtime::platform::rumble_enabled();
         if (ImGui::Checkbox("Controller rumble", &rumble)) {
             dkr::runtime::platform::set_rumble_enabled(rumble);
@@ -1953,7 +3631,7 @@ void DrawOverlayContent(float content_width) {
             float rumble_percent = dkr::runtime::platform::rumble_strength() * 100.0F;
             ImGui::TextUnformatted("Rumble strength");
             ImGui::SetNextItemWidth(std::min(content_width, 720.0F));
-            if (ImGui::SliderFloat("##rumble-strength", &rumble_percent,
+            if (ControlSliderFloat("##rumble-strength", &rumble_percent,
                                    0.0F, 100.0F, "%.0f%%",
                                    ImGuiSliderFlags_AlwaysClamp)) {
                 dkr::runtime::platform::set_rumble_strength(rumble_percent / 100.0F);
@@ -1968,34 +3646,45 @@ void DrawOverlayContent(float content_width) {
         ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
         ImGui::TextWrapped("T.T. keeps Controller Pak data safely in your DKR-R settings folder, with a recovery backup after every successful write.");
         ImGui::PopStyleColor();
-    } else if (g_overlay_page == 3) {
-        DrawRaceBadge(" T.T.'S DRIVER GUIDE ", kRaceBlue);
-        ImGui::Dummy({0.0F, 8.0F});
-        PushHeadingFont();
-        ImGui::TextUnformatted("DRIVING CONTROLS");
-        PopHeadingFont();
-        ImGui::Separator();
-        DrawControlsReference(true);
-    } else {
-        DrawRaceBadge(" ADVENTURE LOG ", kRaceRed);
-        ImGui::Dummy({0.0F, 8.0F});
-        PushHeadingFont();
-        ImGui::TextUnformatted("ABOUT DKR-R");
-        PopHeadingFont();
-        ImGui::Separator();
-        ImGui::TextWrapped("DKR-R 1.0.0\nDiddy Kong Racing - Recompiled for Windows and Linux.");
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-        ImGui::TextWrapped("No copyrighted game data is distributed. A legally obtained supported Game Pak is required. Press F1, Escape or Back / View at any time to close this overlay.");
-        ImGui::PopStyleColor();
+    } else if (g_overlay_page == kPageSaveManager) {
+        DrawPageHeading("SAVE MANAGER");
+        ImGui::TextDisabled("Save transfers are locked while the game owns the EEPROM.");
+        ImGui::Dummy({0.0F, 12.0F});
+        DrawSaveManager(true);
+    } else if (g_overlay_page == kPageOnlineMp) {
+        DrawComingSoonPage(
+            "ONLINE MP", "online-mp-coming-soon",
+            "Online multiplayer will let racers meet beyond the shores of DKR-R.",
+            "Taj is still tuning the network karts and testing every shortcut.",
+            content_width);
+    } else if (g_overlay_page == kPageModsHacks) {
+        DrawComingSoonPage(
+            "MODS / HACKS", "mods-hacks-coming-soon",
+            "A dedicated garage for community mods and game hacks is planned for DKR-R.",
+            "T.T. is still checking every part before the mod garage opens.",
+            content_width);
+    } else if (g_overlay_page == kPageAbout) {
+        DrawAboutDkrR(content_width);
     }
+    ImGui::Dummy({0.0F, 44.0F});
 }
 
 } // namespace
 
 void dkr::runtime::ui::configure(const std::filesystem::path& config_directory) {
     g_config_directory = config_directory;
+    dkr::runtime::magic_codes::configure(config_directory);
+    dkr::runtime::texture_packs::configure(config_directory);
+    RefreshCrtFilters();
     LoadSettings();
+    if (!g_crt_filters.empty()) {
+        g_crt_filter_index = std::clamp(
+            g_crt_filter_index, 0, static_cast<int>(g_crt_filters.size()) - 1);
+    }
+}
+
+void dkr::runtime::ui::persist_settings() {
+    SaveSettings();
 }
 
 void dkr::runtime::ui::persist_graphics_api_fallback() {
@@ -2047,7 +3736,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
     ImGui::CreateContext();
     ImGui::GetIO().ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-    LoadRacingFonts();
+    LoadLauncherFonts();
     ApplyStyle();
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer2_Init(renderer);
@@ -2068,27 +3757,23 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
 
     int page = 0;
     bool focus_selected_tab = true;
-    if (const char* test_page = std::getenv("DKR_TEST_STARTUP_PAGE")) {
-        char* end = nullptr;
-        const long parsed = std::strtol(test_page, &end, 10);
-        if (end != test_page && *end == '\0' && parsed >= 0 && parsed <= 3) {
-            page = static_cast<int>(parsed);
-        }
-    }
     bool running = true;
     bool launch_requested = false;
     while (running) {
-        const bool modern_launcher =
-            dkr::runtime::enhancements::modern_options_visible(
-                dkr::runtime::enhancements::presentation_profile());
-        const int launcher_page_count = modern_launcher ? 4 : 3;
+        bool request_quit_popup = false;
+        bool request_restart_popup = false;
+        constexpr int launcher_page_count = kMenuPageCount;
         if (page >= launcher_page_count) {
             page = 0;
         }
         SDL_Event event{};
         while (SDL_PollEvent(&event) != 0) {
+            dkr::runtime::platform::update_fullscreen_cursor(&event);
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (HandleInputCaptureEvent(&event)) {
+                continue;
+            }
+            if (dkr::runtime::platform::handle_window_shortcut(&event, false)) {
                 continue;
             }
             if (event.type == SDL_QUIT ||
@@ -2116,6 +3801,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
                 }
             }
         }
+        dkr::runtime::platform::update_fullscreen_cursor();
 
         if (launch_requested) {
             result.start_game = true;
@@ -2131,122 +3817,87 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
         BeginMainWindow("DKR-R Startup");
         DrawRaceBackdrop(false);
         const ImVec2 available = ImGui::GetContentRegionAvail();
-        const float outer_margin = std::clamp(available.x * 0.025F, 22.0F, 38.0F);
+        const float outer_margin = std::clamp(available.x * 0.022F, 16.0F, 34.0F);
         const float content_height = available.y - outer_margin * 2.0F;
-        const bool compact_layout = available.x < 1040.0F;
-        const float hero_width = compact_layout
-            ? 0.0F
-            : std::clamp(available.x * 0.34F, 320.0F, 470.0F);
-        const float right_width = compact_layout
-            ? available.x - outer_margin * 2.0F
-            : available.x - hero_width - outer_margin * 3.0F;
-        const float panel_padding = std::clamp(right_width * 0.05F, 18.0F, 46.0F);
+        const float panel_gap = std::clamp(available.x * 0.018F, 14.0F, 28.0F);
+        const float minimum_sidebar = available.x < 980.0F ? 190.0F : 230.0F;
+        const float sidebar_width = std::clamp(
+            available.x * 0.235F, minimum_sidebar,
+            std::min(340.0F, available.x * 0.34F));
+        const float right_width = std::max(
+            available.x - outer_margin * 2.0F - sidebar_width - panel_gap,
+            320.0F);
+        const float panel_padding = std::clamp(right_width * 0.045F, 20.0F, 44.0F);
         const float right_inner_width = std::max(right_width - panel_padding * 2.0F, 1.0F);
         ImGui::SetCursorPos({outer_margin, outer_margin});
-        if (!compact_layout) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.025F, 0.105F, 0.15F, 0.96F});
         ImGui::PushStyleColor(ImGuiCol_Border, {1.0F, 0.67F, 0.08F, 0.92F});
-        ImGui::BeginChild("race-hero", {hero_width, content_height}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({38.0F, 38.0F});
-        ImGui::PushTextWrapPos(hero_width - 38.0F);
+        ImGui::BeginChild("launcher-nav", {sidebar_width, content_height}, true,
+                          ImGuiWindowFlags_NavFlattened);
+        const float nav_padding = sidebar_width < 220.0F ? 16.0F : 24.0F;
+        const float nav_inner_width = sidebar_width - nav_padding * 2.0F;
+        ImGui::SetCursorPos({nav_padding, nav_padding});
+        ImGui::PushTextWrapPos(sidebar_width - nav_padding);
         ImGui::BeginGroup();
-        DrawStartingLights(rom_ready);
+        BrandBlock(nav_inner_width, content_height < 760.0F ? 170.0F : 218.0F);
         ImGui::Dummy({0.0F, 18.0F});
-        BrandBlock(false);
-        ImGui::Dummy({0.0F, 26.0F});
-        ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
-        ImGui::TextUnformatted("FAITHFUL. FAST. READY TO RACE.");
+        LauncherSidebarButton("PLAY", 0, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("GRAPHICS", 1, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("SOUND", 2, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("CONTROLS", 3, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("SAVE MANAGER", 4, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("ONLINE MP", 5, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("MODS / HACKS", 6, page, focus_selected_tab,
+                              nav_inner_width);
+        LauncherSidebarButton("ABOUT DKR-R", 7, page, focus_selected_tab,
+                              nav_inner_width);
+        focus_selected_tab = false;
+        ImGui::Dummy({0.0F, 18.0F});
+        DrawSidebarNote(nav_inner_width);
+        ImGui::Dummy({0.0F, 16.0F});
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.92F, 0.43F, 0.06F, 1.0F});
+        if (ImGui::Button("RESTART DKR-R", {nav_inner_width, 44.0F})) {
+            request_restart_popup = true;
+        }
         ImGui::PopStyleColor();
-        ImGui::Dummy({0.0F, 12.0F});
-        ImGui::TextWrapped("Original timing, graphics and audio preserved - with a modern PC pit crew under the hood.");
+        ImGui::Dummy({0.0F, 8.0F});
+        ImGui::PushStyleColor(ImGuiCol_Button, kRaceRed);
+        if (ImGui::Button("EXIT DKR-R", {nav_inner_width, 44.0F})) {
+            request_quit_popup = true;
+        }
+        ImGui::PopStyleColor();
         ImGui::EndGroup();
         ImGui::PopTextWrapPos();
-        ImGui::SetCursorPos({38.0F, std::max(450.0F, content_height - 150.0F)});
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.075F, 0.165F, 0.20F, 0.94F});
-        ImGui::BeginChild("paddock-pass", {hero_width - 76.0F, 112.0F}, true,
-                          ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos({18.0F, 15.0F});
-        ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
-        ImGui::TextUnformatted("TIMBER'S ISLAND NOTE");
-        ImGui::PopStyleColor();
-        ImGui::TextWrapped("Bring your own legally obtained Game Pak. It stays on this PC and is never uploaded.");
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
         ImGui::EndChild();
         ImGui::PopStyleColor(2);
-        ImGui::SameLine(0.0F, outer_margin);
-        }
+        ImGui::SameLine(0.0F, panel_gap);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, {0.035F, 0.085F, 0.12F, 0.98F});
         ImGui::PushStyleColor(ImGuiCol_Border, {0.12F, 0.62F, 0.58F, 0.88F});
-        ImGui::BeginChild("pit-garage", {right_width, content_height}, true);
-        ImGui::SetCursorPos({panel_padding, 30.0F});
+        ImGui::BeginChild("launcher-content", {right_width, content_height}, true,
+                          ImGuiWindowFlags_NavFlattened);
+        ImGui::SetCursorPos({panel_padding, panel_padding});
         ImGui::PushItemWidth(right_inner_width);
         ImGui::PushTextWrapPos(panel_padding + right_inner_width);
         ImGui::BeginGroup();
-        DrawRaceBadge(" WELCOME TO TIMBER'S ISLAND ", kRaceRed);
-        ImGui::Dummy({0.0F, 12.0F});
-        const bool tabs_inline = right_inner_width >= (modern_launcher ? 680.0F : 540.0F);
-        const float tab_gap = ImGui::GetStyle().ItemSpacing.x;
-        const float tab_width = tabs_inline
-            ? (right_inner_width - tab_gap * (launcher_page_count - 1)) /
-                  static_cast<float>(launcher_page_count)
-             : right_inner_width;
-        ImGui::PushStyleColor(ImGuiCol_Button, page == 0 ? kRaceRed : kRaceBlue);
-        if (focus_selected_tab && page == 0) ImGui::SetKeyboardFocusHere();
-        if (ImGui::Button("ADVENTURE", {tab_width, 46.0F})) {
-            page = 0;
-            focus_selected_tab = true;
-        }
-        ImGui::PopStyleColor();
-        if (tabs_inline) ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, page == 1 ? kRaceRed : kRaceBlue);
-        if (focus_selected_tab && page == 1) ImGui::SetKeyboardFocusHere();
-        if (ImGui::Button("TAJ'S TUNE-UP", {tab_width, 46.0F})) {
-            page = 1;
-            focus_selected_tab = true;
-        }
-        ImGui::PopStyleColor();
-        if (tabs_inline) ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, page == 2 ? kRaceRed : kRaceBlue);
-        if (focus_selected_tab && page == 2) ImGui::SetKeyboardFocusHere();
-        if (ImGui::Button("DRIVER GUIDE", {tab_width, 46.0F})) {
-            page = 2;
-            focus_selected_tab = true;
-        }
-        ImGui::PopStyleColor();
-        if (modern_launcher) {
-            if (tabs_inline) ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Button, page == 3 ? kRaceRed : kRaceBlue);
-            if (focus_selected_tab && page == 3) ImGui::SetKeyboardFocusHere();
-            if (ImGui::Button("SAVE GARAGE", {tab_width, 46.0F})) {
-                page = 3;
-                focus_selected_tab = true;
-            }
-            ImGui::PopStyleColor();
-        }
-        // Keyboard/gamepad navigation now has an explicit landing target after
-        // a bumper tab switch. Do this once; continuously forcing focus would
-        // prevent the player from moving into the page's controls.
-        focus_selected_tab = false;
-        ImGui::Dummy({0.0F, 24.0F});
-
         if (page == 0) {
-            PushHeadingFont();
-            ImGui::TextUnformatted(rom_ready ? "GAME PAK READY!" : "ADVENTURE PAK REQUIRED");
-            PopHeadingFont();
+            DrawPageHeading("PLAY");
             ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-            ImGui::TextWrapped("Choose your Game Pak once and T.T. will remember where it is for your next visit.");
+            ImGui::TextWrapped(rom_ready
+                ? "The starting lights are green. DKR-R is ready."
+                : "Choose your legally obtained Game Pak and join the race to stop Wizpig.");
             ImGui::PopStyleColor();
             ImGui::Dummy({0.0F, 16.0F});
             ImGui::PushStyleColor(ImGuiCol_ChildBg, kCream);
             ImGui::PushStyleColor(ImGuiCol_Border, rom_ready ? kAccent : kRaceRed);
-            // The vertical starting-light stack is 112 px tall. Reserve a
-            // complete second row for the selected path and Game Pak button,
-            // plus a comfortable bottom inset, instead of clipping the action
-            // against the old card height designed for horizontal lights.
-            ImGui::BeginChild("race-pass", {right_inner_width, 300.0F}, true);
-            ImGui::SetCursorPos({24.0F, 20.0F});
+            BeginPaddedChild("race-pass", {right_inner_width, 316.0F}, true, 0,
+                             {24.0F, 20.0F});
+            ImGui::PushTextWrapPos(right_inner_width - 24.0F);
             ImGui::BeginGroup();
             DrawStartingLights(rom_ready);
             ImGui::SameLine(0.0F, 18.0F);
@@ -2270,81 +3921,98 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(SDL_Window*
                 OpenRomBrowser(selected_rom);
             }
             ImGui::EndGroup();
+            ImGui::PopTextWrapPos();
             ImGui::EndChild();
             ImGui::PopStyleColor(2);
             ImGui::Dummy({0.0F, 20.0F});
             ImGui::BeginDisabled(!rom_ready);
             ImGui::PushStyleColor(ImGuiCol_Button, kRaceRed);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kWarm);
-            if (ImGui::Button("BEGIN THE ADVENTURE!", {right_inner_width, 68.0F})) {
+            if (ImGui::Button("START Diddy Kong Racing - Recompiled",
+                              {right_inner_width, 68.0F})) {
                 result.start_game = true;
                 result.rom_path = selected_rom;
                 running = false;
             }
             ImGui::PopStyleColor(2);
             ImGui::EndDisabled();
-            ImGui::Dummy({0.0F, 16.0F});
-            ImGui::PushStyleColor(ImGuiCol_Text, kWarm);
-            ImGui::TextUnformatted("T.T.'S RACE-DAY PROMISES");
-            ImGui::PopStyleColor();
-            ImGui::Dummy({0.0F, 3.0F});
-            const float promise_gap = 10.0F;
-            const float promise_width = (right_inner_width - promise_gap * 2.0F) / 3.0F;
-            if (promise_width >= 190.0F) {
-                DrawRaceBadge(" GAME PAK STAYS LOCAL ", kRaceBlue, promise_width);
-                ImGui::SameLine(0.0F, promise_gap);
-                DrawRaceBadge(" ORIGINAL TIMING ", kRaceRed, promise_width);
-                ImGui::SameLine(0.0F, promise_gap);
-                DrawRaceBadge(" F1 / ESC TAJ'S TENT ", kAccent, promise_width);
-            } else {
-                DrawRaceBadge(" GAME PAK STAYS LOCAL ", kRaceBlue, right_inner_width);
-                DrawRaceBadge(" ORIGINAL TIMING ", kRaceRed, right_inner_width);
-                DrawRaceBadge(" F1 / ESC TAJ'S TENT ", kAccent, right_inner_width);
-            }
         } else if (page == 1) {
-            PushHeadingFont();
-            ImGui::TextUnformatted("TAJ TUNE UP");
-            PopHeadingFont();
-            ImGui::TextDisabled("Polish the presentation without changing how the original race feels.");
+            DrawPageHeading("GRAPHICS");
+            ImGui::TextDisabled("Tune the view and presentation for your machine.");
             ImGui::Dummy({0.0F, 18.0F});
             DrawGraphicsSettings(false);
-            ImGui::Dummy({0.0F, 18.0F});
-            ImGui::SeparatorText("Island sound");
-            DrawAudioSettings(right_inner_width);
         } else if (page == 2) {
-            PushHeadingFont();
-            ImGui::TextUnformatted("TT DRIVER GUIDE");
-            PopHeadingFont();
+            DrawPageHeading("SOUND");
+            ImGui::TextDisabled("Balance music, vehicles, effects and island ambience.");
+            ImGui::Dummy({0.0F, 18.0F});
+            DrawAudioSettings(right_inner_width);
+        } else if (page == 3) {
+            DrawPageHeading("CONTROLS");
             ImGui::TextDisabled("Keyboard or gamepad - pick your machine and hit the track.");
             ImGui::Dummy({0.0F, 12.0F});
             DrawControlsReference(false);
-        } else {
-            PushHeadingFont();
-            ImGui::TextUnformatted("TT SAVE GARAGE");
-            PopHeadingFont();
-            ImGui::TextDisabled("Back up, import and export Adventure progress before the race begins.");
+        } else if (page == 4) {
+            DrawPageHeading("SAVE MANAGER");
+            ImGui::TextDisabled("Back up, import, export or build Adventure progress before racing.");
             ImGui::Dummy({0.0F, 12.0F});
             DrawSaveManager(false);
+        } else if (page == kPageOnlineMp) {
+            DrawComingSoonPage(
+                "ONLINE MP", "launcher-online-mp-coming-soon",
+                "Online multiplayer will let racers meet beyond the shores of DKR-R.",
+                "Taj is still tuning the network karts and testing every shortcut.",
+                right_inner_width);
+        } else if (page == kPageModsHacks) {
+            DrawComingSoonPage(
+                "MODS / HACKS", "launcher-mods-hacks-coming-soon",
+                "A dedicated garage for community mods and game hacks is planned for DKR-R.",
+                "T.T. is still checking every part before the mod garage opens.",
+                right_inner_width);
+        } else {
+            DrawAboutDkrR(right_inner_width);
         }
-        // Every scrollable tab ends with breathing room so its final control
-        // never rests directly on the rounded card boundary.
         ImGui::Dummy({0.0F, 54.0F});
         ImGui::EndGroup();
         ImGui::PopTextWrapPos();
         ImGui::PopItemWidth();
-        // The Tune-Up page is intentionally scrollable. A fixed legend here
-        // used to paint over its last combo/card at 900p and narrower heights.
-        // Keep the start hint only on the short Adventure page, where it has a
-        // guaranteed reserved strip and cannot overlap settings or bindings.
-        if (page == 0 && content_height >= 720.0F) {
-            ImGui::SetCursorPos({panel_padding, content_height - 44.0F});
-            ImGui::PushTextWrapPos(panel_padding + right_inner_width);
-            ImGui::TextDisabled("A SELECT   B BACK   LB/RB TABS   START BEGIN");
-            ImGui::PopTextWrapPos();
-        }
         ImGui::EndChild();
         ImGui::PopStyleColor(2);
         DrawRomBrowser(selected_rom, rom_status, rom_ready);
+        if (request_restart_popup) {
+            ImGui::OpenPopup("Restart DKR-R?");
+        }
+        if (request_quit_popup) {
+            ImGui::OpenPopup("Quit DKR-R?");
+        }
+        if (BeginPaddedModal("Restart DKR-R?", ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Restart DKR-R and reload the launcher?");
+            ImGui::TextDisabled("Your selected Game Pak and settings will be preserved.");
+            if (ImGui::Button("CANCEL", {120.0F, 40.0F})) ImGui::CloseCurrentPopup();
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, {0.92F, 0.43F, 0.06F, 1.0F});
+            if (ImGui::Button("RESTART DKR-R", {170.0F, 40.0F})) {
+                SaveSettings();
+                result.lifecycle_request = LifecycleRequest::Restart;
+                running = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor();
+            ImGui::EndPopup();
+        }
+        if (BeginPaddedModal("Quit DKR-R?", ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Exit DKR-R and return to the desktop?");
+            if (ImGui::Button("CANCEL", {120.0F, 40.0F})) ImGui::CloseCurrentPopup();
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, {0.45F, 0.09F, 0.10F, 1.0F});
+            if (ImGui::Button("EXIT DKR-R", {140.0F, 40.0F})) {
+                SaveSettings();
+                result.lifecycle_request = LifecycleRequest::Exit;
+                running = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor();
+            ImGui::EndPopup();
+        }
         ImGui::End();
 
         ImGui::Render();
@@ -2379,7 +4047,7 @@ void dkr::runtime::ui::attach(RT64::Application& application) {
     g_inspector = application.presentQueue->inspector.get();
     ImGui::GetIO().ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-    LoadRacingFonts();
+    LoadLauncherFonts();
     std::fprintf(stderr, "[boot][ui] in-game overlay attached (F1/Escape/Back)\n");
 }
 
@@ -2388,6 +4056,7 @@ void dkr::runtime::ui::detach(RT64::Application& application) {
     g_inspector = nullptr;
     if (application.presentQueue != nullptr) {
         std::scoped_lock present_lock(application.presentQueue->inspectorMutex);
+        dkr::runtime::crt::release();
         application.presentQueue->inspector.reset();
     }
 }
@@ -2396,7 +4065,15 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     if (application.presentQueue == nullptr || application.framebufferGraphicsWorker == nullptr) {
         return;
     }
-    if (!g_overlay_visible.load(std::memory_order_acquire)) {
+    const bool show_overlay =
+        g_overlay_visible.load(std::memory_order_acquire);
+    const bool show_fps = g_fps_overlay_enabled &&
+        dkr::runtime::enhancements::modern_presentation_enabled();
+    const bool show_crt = g_crt_enabled && g_crt_strength > 0.0F &&
+        dkr::runtime::enhancements::modern_presentation_enabled() &&
+        g_crt_filter_index >= 0 &&
+        g_crt_filter_index < static_cast<int>(g_crt_filters.size());
+    if (!show_overlay && !show_fps && !show_crt) {
         if (application.presentQueue->inspector != nullptr) {
             detach(application);
         }
@@ -2404,19 +4081,34 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     }
     if (application.presentQueue->inspector == nullptr) {
         attach(application);
-        g_overlay_focus_requested.store(true, std::memory_order_release);
+        if (show_overlay) {
+            g_overlay_focus_requested.store(true, std::memory_order_release);
+        }
     }
     if (application.presentQueue->inspector == nullptr) {
         return;
     }
-    dkr::runtime::platform::update_ui_gamepad_navigation();
+    if (show_overlay) {
+        dkr::runtime::platform::update_ui_gamepad_navigation();
+    }
     RT64::Inspector* inspector = application.presentQueue->inspector.get();
     inspector->newFrame(application.framebufferGraphicsWorker.get());
     ApplyStyle();
     ImGui::GetIO().ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+    if (show_crt) {
+        const CrtFilterEntry& filter =
+            g_crt_filters[static_cast<std::size_t>(g_crt_filter_index)];
+        dkr::runtime::crt::draw(
+            application, filter.path,
+            g_crt_scale_mode == 1 ? dkr::runtime::crt::ScaleMode::Tile
+                                  : dkr::runtime::crt::ScaleMode::Stretch,
+            g_crt_strength, g_crt_status);
+    }
+    if (show_overlay) {
     BeginMainWindow("DKR-R Overlay", ImGuiWindowFlags_NoBackground);
         bool request_quit_popup = false;
+        bool request_restart_popup = false;
         const bool focus_selected_page =
             g_overlay_focus_requested.exchange(false, std::memory_order_acq_rel);
         const float overlay_margin = std::clamp(ImGui::GetWindowWidth() * 0.025F, 12.0F, 38.0F);
@@ -2438,41 +4130,36 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         const float nav_inner_width = sidebar_width - nav_padding * 2.0F;
         ImGui::PushTextWrapPos(sidebar_width - nav_padding);
         ImGui::BeginGroup();
-        BrandBlock(true);
-        ImGui::Dummy({0.0F, 24.0F});
+        BrandBlock(nav_inner_width, overlay_height < 800.0F ? 150.0F : 190.0F);
+        ImGui::Dummy({0.0F, 18.0F});
         if (focus_selected_page && g_overlay_page == 0) ImGui::SetKeyboardFocusHere();
-        SidebarButton("RETURN TO THE ISLAND", 0, nav_inner_width);
+        SidebarButton("PLAY", 0, nav_inner_width);
         if (focus_selected_page && g_overlay_page == 1) ImGui::SetKeyboardFocusHere();
-        SidebarButton("TAJ'S TUNE-UP", 1, nav_inner_width);
+        SidebarButton("GRAPHICS", 1, nav_inner_width);
         if (focus_selected_page && g_overlay_page == 2) ImGui::SetKeyboardFocusHere();
-        SidebarButton("ISLAND SOUND", 2, nav_inner_width);
+        SidebarButton("SOUND", 2, nav_inner_width);
         if (focus_selected_page && g_overlay_page == 3) ImGui::SetKeyboardFocusHere();
-        SidebarButton("T.T.'S DRIVER GUIDE", 3, nav_inner_width);
+        SidebarButton("CONTROLS", 3, nav_inner_width);
         if (focus_selected_page && g_overlay_page == 4) ImGui::SetKeyboardFocusHere();
-        SidebarButton("ADVENTURE LOG", 4, nav_inner_width);
-        ImGui::Dummy({0.0F, 24.0F});
+        SidebarButton("SAVE MANAGER", 4, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 5) ImGui::SetKeyboardFocusHere();
+        SidebarButton("ONLINE MP", 5, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 6) ImGui::SetKeyboardFocusHere();
+        SidebarButton("MODS / HACKS", 6, nav_inner_width);
+        if (focus_selected_page && g_overlay_page == 7) ImGui::SetKeyboardFocusHere();
+        SidebarButton("ABOUT DKR-R", 7, nav_inner_width);
+        ImGui::Dummy({0.0F, 16.0F});
+        DrawSidebarNote(nav_inner_width);
+        ImGui::Dummy({0.0F, 16.0F});
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.92F, 0.43F, 0.06F, 1.0F});
+        if (ImGui::Button("RESTART DKR-R", {nav_inner_width, 44.0F})) {
+            request_restart_popup = true;
+        }
+        ImGui::PopStyleColor();
+        ImGui::Dummy({0.0F, 8.0F});
         ImGui::PushStyleColor(ImGuiCol_Button, kRaceRed);
         const bool leave_island_pressed =
-            ImGui::Button("LEAVE TIMBER'S ISLAND", {nav_inner_width, 44.0F});
-        if (std::getenv("DKR_INPUT_TRACE") != nullptr &&
-            !g_logged_exit_button_rect.exchange(true, std::memory_order_relaxed)) {
-            const ImVec2 item_min = ImGui::GetItemRectMin();
-            const ImVec2 item_max = ImGui::GetItemRectMax();
-            std::fprintf(stderr,
-                         "[test][input] leave-button rect=(%.0f,%.0f)-(%.0f,%.0f)\n",
-                         item_min.x, item_min.y, item_max.x, item_max.y);
-        }
-        if (std::getenv("DKR_INPUT_TRACE") != nullptr &&
-            (leave_island_pressed || ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
-             ImGui::IsMouseReleased(ImGuiMouseButton_Left))) {
-            std::fprintf(stderr,
-                         "[test][input] leave-button pressed=%d hovered=%d mouse-down=%d clicked=%d released=%d\n",
-                         leave_island_pressed ? 1 : 0,
-                         ImGui::IsItemHovered() ? 1 : 0,
-                         ImGui::IsMouseDown(ImGuiMouseButton_Left) ? 1 : 0,
-                         ImGui::IsMouseClicked(ImGuiMouseButton_Left) ? 1 : 0,
-                         ImGui::IsMouseReleased(ImGuiMouseButton_Left) ? 1 : 0);
-        }
+            ImGui::Button("EXIT DKR-R", {nav_inner_width, 44.0F});
         if (leave_island_pressed) {
             request_quit_popup = true;
         }
@@ -2504,23 +4191,39 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
             // which made the Exit to Desktop button appear to do nothing.
             ImGui::OpenPopup("Quit DKR-R?");
         }
-        if (ImGui::BeginPopupModal("Quit DKR-R?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextUnformatted("Leave Timber's Island and return to the desktop?");
+        if (request_restart_popup) {
+            ImGui::OpenPopup("Restart DKR-R?");
+        }
+        if (BeginPaddedModal("Restart DKR-R?", ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Restart DKR-R and return to the launcher?");
+            ImGui::TextDisabled("Progress since the last in-game save point may be lost.");
+            if (ImGui::Button("CANCEL", {120.0F, 40.0F})) ImGui::CloseCurrentPopup();
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, {0.92F, 0.43F, 0.06F, 1.0F});
+            if (ImGui::Button("RESTART DKR-R", {170.0F, 40.0F})) {
+                SaveSettings();
+                g_lifecycle_request.store(
+                    dkr::runtime::ui::LifecycleRequest::Restart,
+                    std::memory_order_release);
+                g_overlay_visible.store(false, std::memory_order_release);
+                ultramodern::quit();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor();
+            ImGui::EndPopup();
+        }
+        if (BeginPaddedModal("Quit DKR-R?", ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Exit DKR-R and return to the desktop?");
             ImGui::TextDisabled("Progress since the last in-game save point may be lost.");
             if (ImGui::Button("CANCEL", {120.0F, 40.0F})) ImGui::CloseCurrentPopup();
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, {0.45F, 0.09F, 0.10F, 1.0F});
-            const bool confirm_leave_pressed = ImGui::Button("LEAVE", {120.0F, 40.0F});
-            if (std::getenv("DKR_INPUT_TRACE") != nullptr &&
-                !g_logged_exit_confirm_rect.exchange(true, std::memory_order_relaxed)) {
-                const ImVec2 item_min = ImGui::GetItemRectMin();
-                const ImVec2 item_max = ImGui::GetItemRectMax();
-                std::fprintf(stderr,
-                             "[test][input] confirm-leave rect=(%.0f,%.0f)-(%.0f,%.0f)\n",
-                             item_min.x, item_min.y, item_max.x, item_max.y);
-            }
+            const bool confirm_leave_pressed = ImGui::Button("EXIT DKR-R", {140.0F, 40.0F});
             if (confirm_leave_pressed) {
-                g_exit_requested.store(true, std::memory_order_release);
+                SaveSettings();
+                g_lifecycle_request.store(
+                    dkr::runtime::ui::LifecycleRequest::Exit,
+                    std::memory_order_release);
                 g_overlay_visible.store(false, std::memory_order_release);
                 ultramodern::quit();
                 ImGui::CloseCurrentPopup();
@@ -2529,18 +4232,9 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
             ImGui::EndPopup();
         }
     ImGui::End();
-    inspector->endFrame();
-    if (!g_logged_overlay_frame.exchange(true, std::memory_order_relaxed)) {
-        const ImDrawData* draw_data = ImGui::GetDrawData();
-        const ImGuiIO& io = ImGui::GetIO();
-        std::fprintf(stderr,
-                     "[boot][ui] overlay frame display=%.0fx%.0f cmd-lists=%d "
-                     "vertices=%d indices=%d\n",
-                     io.DisplaySize.x, io.DisplaySize.y,
-                     draw_data != nullptr ? draw_data->CmdListsCount : 0,
-                     draw_data != nullptr ? draw_data->TotalVtxCount : 0,
-                     draw_data != nullptr ? draw_data->TotalIdxCount : 0);
     }
+    DrawFpsOverlay(application);
+    inspector->endFrame();
 }
 
 bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
@@ -2559,13 +4253,15 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
         event->type == SDL_CONTROLLERBUTTONDOWN) {
         if (event->cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
             const int page = g_overlay_page.load(std::memory_order_relaxed);
-            g_overlay_page.store((page + 4) % 5, std::memory_order_relaxed);
+            g_overlay_page.store((page + kMenuPageCount - 1) % kMenuPageCount,
+                                 std::memory_order_relaxed);
             g_overlay_focus_requested.store(true, std::memory_order_release);
             return true;
         }
         if (event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
             const int page = g_overlay_page.load(std::memory_order_relaxed);
-            g_overlay_page.store((page + 1) % 5, std::memory_order_relaxed);
+            g_overlay_page.store((page + 1) % kMenuPageCount,
+                                 std::memory_order_relaxed);
             g_overlay_focus_requested.store(true, std::memory_order_release);
             return true;
         }
@@ -2583,7 +4279,7 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
 }
 
 bool dkr::runtime::ui::input_capture_active() {
-    return g_capture_action >= 0 && !g_capture_finished;
+    return g_capture_action != -1 && !g_capture_finished;
 }
 
 void dkr::runtime::ui::toggle_overlay() {
@@ -2597,6 +4293,10 @@ bool dkr::runtime::ui::overlay_visible() {
     return g_overlay_visible.load(std::memory_order_acquire);
 }
 
-bool dkr::runtime::ui::consume_exit_request() {
-    return g_exit_requested.exchange(false, std::memory_order_acq_rel);
+dkr::runtime::ui::LifecycleRequest dkr::runtime::ui::lifecycle_request() {
+    return g_lifecycle_request.load(std::memory_order_acquire);
+}
+
+void dkr::runtime::ui::reset_lifecycle_request() {
+    g_lifecycle_request.store(LifecycleRequest::None, std::memory_order_release);
 }
