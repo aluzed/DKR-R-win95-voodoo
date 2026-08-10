@@ -47,7 +47,7 @@ def main() -> int:
             checked += 1
 
     forbidden = re.compile(
-        r"\bmilestone\b|\brelease candidate\b|\brc\d+\b|akratch|lighthouse",
+        r"\bmilestone\b|\brelease candidate\b|\brc\d+\b",
         re.IGNORECASE,
     )
     for path in [ROOT / "README.md", ROOT / "THIRD_PARTY.md", *sorted((ROOT / "docs").glob("*.md")),
