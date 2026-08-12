@@ -5,9 +5,32 @@
 | **Épic** | E07 — Réduction de périmètre |
 | **Statut** | TODO |
 | **Priorité** | P1 |
-| **Estimation** | M |
+| **Estimation** | ~~M~~ **S** |
 | **Dépend de** | E06-S05 |
 | **Bloque** | E07-S03 |
+
+## État au 2026-08-12 — l'essentiel est déjà fait par un interrupteur existant
+
+[E00-S01](../E00-cadrage/E00-S01-inventaire-dependances-incompatibles.md) a
+constaté que `runtime-recomp/CMakeLists.txt` place déjà ces composants derrière
+`DKR_RUNTIME_BUILD_RT64`, dont la valeur par défaut est **`OFF`** :
+`runtime_ui.cpp` (ImGui), `runtime_texture_packs.cpp`,
+`runtime_rice_texture_import.cpp`, `runtime_crt_overlay.cpp`, `f3ddkr_rt64.cpp`,
+`rt64_renderer.cpp` et le pont ImGui/SDL.
+
+Conséquences chiffrées :
+
+- **1 054 des 1 089 références ImGui** (97 %) sont dans `runtime_ui.cpp`, déjà exclu ;
+- **139 des 299 usages de `std::filesystem`** (46 %) disparaissent avec eux.
+
+Il n'y a donc **rien à supprimer** — ce qui préserve la cible moderne, qui
+continue d'allumer l'interrupteur.
+
+Reste le seul vrai travail : `runtime_platform.cpp` contient **31 références
+ImGui non gardées** (lignes 418-458), qui recopient l'état de la manette dans
+`ImGuiIO`. Ce fichier fait partie du socle et doit être découplé.
+
+La télémétrie (`runtime_telemetry.cpp`) n'est, elle, pas sous garde : à traiter.
 
 ## Contexte
 

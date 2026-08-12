@@ -9,6 +9,32 @@
 | **Dépend de** | E00-S01, E00-S02, E01-S01 |
 | **Bloque** | E02-S01, E02-S02, E04-S01 |
 
+## État au 2026-08-12 — la question de départ était mal posée
+
+[E00-S01](../E00-cadrage/E00-S01-inventaire-dependances-incompatibles.md) a
+mesuré, et le postulat de ce ticket ne tient pas : **il n'y a pas de
+sous-ensemble C++ à imposer.** GCC 13 cible i686 PE32 et implémente tout C++20 ;
+concepts, `<ranges>`, `<span>`, `consteval` et `operator<=>` ne coûtent rien à
+l'exécution et ne bloquent rien.
+
+Ce qui bloque, ce sont des **facilités de bibliothèque**, mesurées par table
+d'imports :
+
+| Facilité | API absentes de Win95 |
+|---|---:|
+| `printf`, `std::atomic` | **0** |
+| `std::chrono` | 2 |
+| `std::mutex`, `condition_variable` | 6 |
+| `std::thread` | 7 |
+| `std::filesystem` | **13** |
+
+Le ticket doit donc être reformulé : non pas « quel dialecte s'interdire », mais
+**« quelles facilités de bibliothèque remplacer »** — en pratique
+`std::filesystem` (400 sites d'appel, dont 139 disparaissent avec RT64 éteint) et
+la couche threads (E02-S01).
+
+Détail : [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
+
 ## Contexte
 
 L'ADR de E00-S02 fixe la norme C++ disponible. Deux issues très différentes :

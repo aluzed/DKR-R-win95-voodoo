@@ -9,6 +9,24 @@
 | **Dépend de** | E01-S03 |
 | **Bloque** | E09-S05 |
 
+## État au 2026-08-12 — l'outil existe, il reste à le brancher
+
+[E00-S01](../E00-cadrage/E00-S01-inventaire-dependances-incompatibles.md) avait
+besoin de ce contrôle pour ses propres mesures, et l'a donc écrit :
+
+- `tools/win95/pe_symbols.py` — tables d'exports et d'imports d'un PE32, sans
+  dépendance ;
+- `tools/win95/check-win95-imports.sh` — compare les imports d'un binaire à la
+  référence, et **renvoie un code de retour non nul** s'il en manque.
+
+La référence n'est pas une liste écrite à la main : `--refresh` l'extrait des six
+DLL de `C:\WINDOWS\SYSTEM` de la machine de test (2 754 symboles). Le script
+signale aussi séparément les imports `...W` de KERNEL32, qui passent le contrôle
+mais sont des stubs inopérants sous 9x.
+
+Reste à faire : l'appeler depuis CMake en post-build, et décider si un manque
+casse le build ou se contente d'avertir.
+
 ## Contexte
 
 Sous Windows 95, un import manquant est une erreur de chargement : le processus

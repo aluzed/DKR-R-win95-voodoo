@@ -5,9 +5,31 @@
 | **Épic** | E02 — Substrat système Windows 95 |
 | **Statut** | TODO |
 | **Priorité** | P0 |
-| **Estimation** | L |
+| **Estimation** | ~~L~~ **M** |
 | **Dépend de** | E01-S02, E01-S03 |
 | **Bloque** | E02-S02, E02-S03, E06-S03 |
+
+## État au 2026-08-12 — périmètre réduit par la mesure
+
+[E00-S01](../E00-cadrage/E00-S01-inventaire-dependances-incompatibles.md) a
+chiffré ce ticket, et il est plus petit que prévu :
+
+- **`ultramodern` n'a que 6 fichiers concernés**, 12 `std::thread` et 5
+  `std::mutex` au total. Il se patche ; il ne se réécrit pas.
+- Le manque tient en **six fonctions** : `TryEnterCriticalSection`, `GetThreadId`
+  et les quatre variables de condition de Vista.
+- **Choisir le modèle de threads `posix` (winpthreads)** plutôt que `win32` :
+  même nombre de bloquants, mais superficiels — `IsDebuggerPresent` renvoie faux,
+  `SetProcessAffinityMask` ne fait rien, `GetTickCount64` s'enveloppe autour de
+  `GetTickCount`, les gestionnaires vectorisés se rabattent sur
+  `SetUnhandledExceptionFilter`, qui existe. Reproduire les variables de
+  condition de Vista est nettement plus délicat.
+- La livraison visée est une **petite bibliothèque de compatibilité** placée
+  avant `libkernel32.a` dans l'ordre de résolution du lieur, pas une couche
+  d'abstraction dans `ultramodern`.
+- `std::atomic` est acquis : vérifié à l'exécution sur le Pentium II émulé.
+
+Détail et chiffres : [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
 
 ## Contexte
 

@@ -9,6 +9,32 @@
 | **Dépend de** | E00-S01 |
 | **Bloque** | E01-S05, E02-S04, E08-S04 |
 
+## État au 2026-08-12 — les plafonds sont mesurés, l'ADR peut être écrite
+
+[E00-S01](E00-S01-inventaire-dependances-incompatibles.md) a mesuré sur la
+machine cible ce que le code source ne pouvait pas dire :
+
+| Grandeur | Mesure |
+|---|---:|
+| RAM physique / disponible | 63 Mio / 47 Mio |
+| Espace d'adressage virtuel | 2 044 Mio |
+| Granularité d'allocation | 65 536 |
+| **Réservation maximale** | **1 024 Mio** |
+| **Validation en lecture-écriture maximale** | **256 Mio** |
+| Schéma réserve+valide+protège de `librecomp` à 8 Mio | **OK** |
+
+Et un défaut à corriger, dans `librecomp/include/librecomp/addresses.hpp` :
+
+- `allocation_size = 4096ULL * 1024ULL * 1024ULL` **vaut 0** une fois tronqué
+  dans un `size_t` de 32 bits. GCC ne le signale que par un avertissement ; le
+  jeu compile, se lie, puis meurt sur « Failed to allocate memory ».
+- `mem_size = 512 Mio` **échouerait aussi** même sans la troncature : le plafond
+  de validation mesuré est de 256 Mio.
+
+Le mécanisme de `librecomp` n'est pas en cause — il fonctionne à 8 Mio, soit
+exactement la RDRAM d'une N64 avec Expansion Pak. L'ADR porte donc sur le choix
+des deux constantes selon la cible, pas sur un changement d'approche.
+
 ## Contexte
 
 Le runtime moderne dépense la mémoire sans compter, parce qu'il n'a aucune raison

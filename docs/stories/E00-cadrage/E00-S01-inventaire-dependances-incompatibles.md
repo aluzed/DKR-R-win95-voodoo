@@ -3,11 +3,43 @@
 | | |
 |---|---|
 | **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | — |
 | **Bloque** | E00-S02, E01-S02, E02-S01, E07-S03 |
+
+## État au 2026-08-12 — inventaire fait
+
+Résultats complets : [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
+
+| Constat | Mesure |
+|---|---|
+| API Win32 appelées directement par le projet | 20, **toutes présentes** sous Win95 OSR2 |
+| Variantes `...W` utilisées | 5, **toutes des stubs** (`ERROR_CALL_NOT_IMPLEMENTED`, vérifié au désassemblage) |
+| `std::atomic` (y compris 64 bits) | **0 bloquant**, exécuté sur la machine réelle |
+| `std::mutex` / `condition_variable` / `thread` | **6 bloquants** (variables de condition Vista) |
+| `std::filesystem` | **13 bloquants** |
+| `ultramodern` | **6 fichiers** concernés, 12 `std::thread`, 5 `std::mutex` |
+| `allocation_size` de `librecomp` en 32 bits | **0** — troncature silencieuse, le jeu meurt au démarrage |
+| Plafond réel de la cible | 1 Gio réservés, **256 Mio validés** (`mem_size` en demande 512) |
+| SSE hors chemins déjà traités | aucun |
+
+**Trois conclusions changent le plan :**
+
+1. **La prémisse « C++20 exclut les compilateurs capables de cibler Win95 » est
+   fausse.** GCC 13 cible i686 PE32 et implémente tout C++20. Le problème est la
+   *bibliothèque*, pas le langage — ce qui déplace E01-S02 d'une question de
+   dialecte vers une question de couche d'hébergement.
+2. **`ultramodern` se patche, il ne se réécrit pas** (6 fichiers). E02-S01 était
+   dimensionné sur l'hypothèse inverse et doit être réduit.
+3. **Une part de E07-S02 est déjà faite** : ImGui, les texture packs et
+   `runtime_ui.cpp` sont déjà exclus par `DKR_RUNTIME_BUILD_RT64=OFF`. Reste un
+   résidu ImGui non gardé dans `runtime_platform.cpp` (31 références).
+
+Le risque annoncé par ce ticket — « conclure que tout est à jeter » — ne s'est
+pas matérialisé : le code recompilé, le microcode audio, `std::atomic` et les 20
+API appelées passent sans modification.
 
 ## Contexte
 
