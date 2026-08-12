@@ -71,15 +71,13 @@ cmake --build "${build_dir}" --parallel
 witness="${build_dir}/bin/WITNESS.EXE"
 [[ -f "${witness}" ]] || fail "témoin absent après compilation : ${witness}"
 
-if [[ -f "${prefix}/win95-exports.txt" ]]; then
-  say "Contrôle des imports contre les exports réels de Windows 95"
-  "${project_root}/tools/win95/check-win95-imports.sh" "${witness}" \
-    || fail "le témoin réclame des symboles absents de Windows 95."
-else
-  printf '\033[1;33m   référence d'\''exports absente — contrôle des imports ignoré.\033[0m\n'
-  printf '   Construisez-la depuis la machine de test :\n'
-  printf '     tools/win95/check-win95-imports.sh --refresh\n'
-fi
+# Les deux contrôles sont déjà passés en étape post-lien de chaque cible ; on les
+# rejoue ici sur le binaire final, parce que c'est celui-là qui sera copié sur la
+# machine et que le script doit pouvoir être lancé sur un build existant.
+say "Contrôle des imports contre les exports réels de Windows 95"
+python3 "${project_root}/tools/win95/check_imports.py" \
+        --objects "${build_dir}" "${witness}" \
+  || fail "le témoin réclame des symboles absents de Windows 95."
 
 printf '\n\033[1;32mCible Windows 95 construite.\033[0m\n'
 printf 'Témoin : %s\n' "${witness}"

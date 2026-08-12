@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "Exceptions au controle des imports. Chaque entree doit porter une",
+    "justification ecrite d'au moins vingt caracteres : l'outil refuse de",
+    "demarrer si une entree n'en a pas. Sans cette regle, cette liste devient",
+    "l'endroit ou l'on fait taire le controle plutot que de corriger le code.",
+    "",
+    "Une exception se justifie quand le symbole est fourni autrement que par",
+    "l'OS — par le pont win95compat, par exemple. Elle ne se justifie jamais",
+    "par « ca a l'air de marcher »."
+  ],
+  "exceptions": []
+}

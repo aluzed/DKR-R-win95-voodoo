@@ -9,7 +9,68 @@
 | **Dépend de** | E01-S03 |
 | **Bloque** | E09-S05 |
 
-## État au 2026-08-12 — l'outil existe, il reste à le brancher
+## État au 2026-08-12 — livré
+
+| Livrable | Fichier |
+|---|---|
+| Base d'exports versionnée | `tools/win95/exports/*.txt` — **3 201 symboles, 14 DLL** |
+| Provenance | `tools/win95/exports/PROVENANCE.md` |
+| Exceptions | `tools/win95/exports/exceptions.json` |
+| Outil | `tools/win95/check_imports.py` |
+| Branchement | post-build bloquant, `cmake/win95-target.cmake` |
+
+**Trois catégories de DLL, et la distinction est le cœur de l'outil :**
+
+| Catégorie | Traitement | Vérifié |
+|---|---|---|
+| Système | chaque symbole confronté à la base | ✅ bloquant |
+| Pilote (`glide2x`, `glide3x`) | signalée, non vérifiable ici | ✅ testé par bibliothèque d'import fabriquée |
+| Inconnue | **erreur** | ✅ testé avec `winspool.drv` |
+
+La troisième catégorie est celle qui compte : sans elle, une nouvelle dépendance
+passerait inaperçue.
+
+**Le rapport nomme l'objet fautif.** La table d'imports du PE ne conserve pas
+cette information — elle est perdue au lien. `--objects` la reconstitue en
+relisant les objets avec `nm`. Sur l'épreuve :
+
+```
+ABSENT  KERNEL32.DLL:InitializeConditionVariable  <- import_canary.c.obj
+```
+
+**Le contrôle est éprouvé par injection, à deux niveaux**, comme celui du jeu
+d'instructions : `--self-test` compile un binaire important `GetTickCount64` et
+vérifie qu'il est refusé ; `-DDKR_WIN95_SELFTEST_IMPORT=ON` ajoute une unité de
+compilation au témoin et **le build échoue**.
+
+Détail instructif : la première version du canari importait `GetTickCount64` et
+le build passait — parce que `win95compat` la fournit, et que le lieur résolvait
+l'import vers le pont plutôt que vers KERNEL32. L'épreuve échouait à échouer, ce
+qui était en soi la démonstration que le pont intercepte correctement. Le canari
+importe désormais `InitializeConditionVariable`, que le pont ne couvre pas.
+
+**Une base unique.** L'outil de E00-S01 tenait sa référence dans
+`$DKR_WIN95_PREFIX/win95-exports.txt`, hors du dépôt.
+`tools/win95/check-win95-imports.sh` est devenu une enveloppe vers le nouvel
+outil : deux bases qui divergent seraient pires qu'une seule imparfaite.
+
+**Deux constats versés au passage :**
+
+- **`MSVCRT.DLL` n'est pas d'origine** — datée du 3 novembre 1997 quand tout le
+  reste porte le 24 août 1996. Elle arrive avec une mise à jour, et un
+  Windows 95 de première génération ne l'a pas. C'est ce qui justifie la liaison
+  statique du CRT (ADR 0001).
+- **DirectInput est absent.** L'installation porte DirectX 2 — `DDRAW`, `DSOUND`,
+  `D3DIM`, `D3DRM` — mais aucun `DINPUT.DLL`. La lecture de manette
+  ([E06-S02](../E06-plateforme/E06-S02-entrees-clavier-manette.md)) doit passer
+  par `joyGetPosEx` de `WINMM`, ou le paquet doit embarquer une mise à jour de
+  DirectX.
+
+**Reste à faire :** le point 7 du ticket — le même contrôle à l'étape de
+packaging — attend [E09-S05](../E09-qa/E09-S05-packaging-distribution.md), qui
+n'existe pas encore. L'outil est prêt à y être appelé tel quel.
+
+## État antérieur — l'outil de E00-S01
 
 [E00-S01](../E00-cadrage/E00-S01-inventaire-dependances-incompatibles.md) avait
 besoin de ce contrôle pour ses propres mesures, et l'a donc écrit :

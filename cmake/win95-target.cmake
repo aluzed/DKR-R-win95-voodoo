@@ -28,6 +28,10 @@ endif()
 
 set(DKR_WIN95_TOOLS "${DKRPORT_ROOT}/tools/win95")
 
+# Le contrôle des imports est écrit en Python et n'a aucune dépendance : il lit
+# la table d'imports du PE lui-même.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 message(STATUS "Cible Windows 95 : ${CMAKE_C_COMPILER}")
 message(STATUS "  jeu d'instructions : Pentium II, sans SSE, virgule flottante x87")
 message(STATUS "  API : _WIN32_WINNT=0x0400")
@@ -61,6 +65,21 @@ function(dkr_win95_verify target)
         COMMAND "${DKR_WIN95_TOOLS}/check-instruction-set.sh" "$<TARGET_FILE:${target}>"
         COMMENT "Vérification du jeu d'instructions Pentium II : ${target}"
         VERBATIM)
+
+    # Second garde-fou, celui des symboles (E01-S04). Sous Windows 95, le
+    # chargeur résout tous les imports au démarrage : un symbole absent empêche
+    # le processus de démarrer, même si la fonction n'est jamais appelée. Rien
+    # ne le signale au lien, et la découverte coûte un aller-retour vers la
+    # machine de test.
+    #
+    # `--objects` sur le répertoire de build permet de nommer l'objet fautif :
+    # la table d'imports du PE ne conserve pas cette information, elle est
+    # perdue au lien.
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check_imports.py"
+                --objects "${CMAKE_BINARY_DIR}" "$<TARGET_FILE:${target}>"
+        COMMENT "Vérification des imports contre les exports de Windows 95 : ${target}"
+        VERBATIM)
 endfunction()
 
 # --- Témoin ------------------------------------------------------------------
@@ -82,6 +101,17 @@ if(DKR_WIN95_SELFTEST_SSE)
     set_source_files_properties("${DKR_WIN95_TOOLS}/witnesses/sse_canary.c"
         PROPERTIES COMPILE_OPTIONS "-msse;-mfpmath=sse")
     message(WARNING "DKR_WIN95_SELFTEST_SSE actif : le build DOIT échouer au contrôle post-lien")
+endif()
+
+# Épreuve du contrôle des imports, symétrique de la précédente. Cette unité de
+# compilation importe `GetTickCount64`, qui est de Vista : le contrôle post-lien
+# doit faire échouer le build en la nommant, et en nommant l'objet fautif.
+#
+#   cmake ... -DDKR_WIN95_SELFTEST_IMPORT=ON && cmake --build ...   # doit échouer
+option(DKR_WIN95_SELFTEST_IMPORT "Importer une API de Vista pour éprouver le contrôle" OFF)
+if(DKR_WIN95_SELFTEST_IMPORT)
+    list(APPEND DKR_WIN95_WITNESS_SOURCES "${DKR_WIN95_TOOLS}/witnesses/import_canary.c")
+    message(WARNING "DKR_WIN95_SELFTEST_IMPORT actif : le build DOIT échouer au contrôle des imports")
 endif()
 
 add_executable(DKRWin95Witness ${DKR_WIN95_WITNESS_SOURCES})
