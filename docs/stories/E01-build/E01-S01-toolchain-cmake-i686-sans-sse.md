@@ -3,11 +3,69 @@
 | | |
 |---|---|
 | **Épic** | E01 — Chaîne de build 32 bits Windows 95 |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E00-S02 |
 | **Bloque** | E01-S02, E01-S03, E01-S05, E02-S01 |
+
+## État au 2026-08-12 — livré
+
+```
+./Build-Win95.sh
+  -> build/win95/bin/WITNESS.EXE
+     PE32 executable (console) Intel 80386, for MS Windows
+     aucune instruction hors Pentium II
+     aucun symbole absent de Windows 95
+```
+
+| Livrable | Fichier |
+|---|---|
+| Toolchain | `cmake/toolchain-win95.cmake` |
+| Cible CMake | `cmake/win95-target.cmake`, option `DKR_RUNTIME_TARGET_WIN95` |
+| Vérificateur | `tools/win95/check-instruction-set.sh` |
+| Script de build | `Build-Win95.sh` |
+
+**Les cibles existantes sont inchangées, et c'est prouvé** : configuré avant et
+après la modification, `build.ninja` est **identique octet pour octet**. La seule
+différence du cache CMake est l'entrée `DKR_RUNTIME_TARGET_WIN95:BOOL=OFF`, qui
+est inerte. La modification du `CMakeLists.txt` tient en un `if()` faux suivi
+d'un `return()` : tout le reste vit dans `cmake/win95-target.cmake`.
+
+**Le vérificateur est éprouvé par injection, pas supposé.** Deux niveaux :
+`--self-test` compile un objet SSE et vérifie qu'il est refusé ;
+`-DDKR_WIN95_SELFTEST_SSE=ON` ajoute une unité de compilation en SSE au témoin,
+et le build **échoue** au contrôle post-lien en nommant les instructions
+(`movss`, `mulss`, `divss`…). `Build-Win95.sh` exécute l'auto-test avant de
+compiler quoi que ce soit.
+
+Il détecte par les **registres** `xmm`/`ymm`/`zmm` plutôt que par une liste de
+mnémoniques à tenir à jour, complétée par les instructions post-Pentium II qui
+n'en nomment pas (barrières mémoire, `prefetch*`, 3DNow!). Le contrôle porte sur
+le **binaire lié**, donc sur le CRT et la bibliothèque standard — c'est là que le
+SSE se glisse, pas dans nos sources.
+
+**Deux découvertes en chemin :**
+
+1. **`_WIN32_WINNT=0x0400` masque bien les API récentes** — vérifié :
+   `InitializeConditionVariable` disparaît de la sortie du préprocesseur. Mais en
+   C, GCC 13 n'émet qu'un *avertissement* pour une fonction non déclarée : sans
+   `-Werror=implicit-function-declaration`, une API de Vista passerait la
+   compilation pour échouer au chargement. Le drapeau est dans la toolchain.
+2. **Une injection de SSE peut être inerte.** La première version de la sonde
+   utilisait des `double` avec `-msse` : GCC est retombé sur x87, puisque la
+   double précision exige SSE2. L'épreuve passait donc pour concluante alors
+   qu'elle ne testait rien. Corrigée en `float`.
+
+**Non fait, et assumé :** `WITNESS.EXE` n'a pas été exécuté sur la machine de
+test. Son unique source est le témoin T3b de E00-S02, qui y affiche 1000/1000 —
+seul le niveau d'optimisation diffère (`-O3` au lieu de `-O2`). Le critère
+d'acceptation demandait la compilation et l'édition de liens en PE 32 bits, ce
+qui est établi.
+
+Le risque de `-mfpmath=387` — arrondis x87 en 80 bits contre IEEE strict —
+reste entier et non mesuré. Il se manifestera en E01-S05 et se mesurera contre
+l'oracle en E09-S02.
 
 ## Contexte
 

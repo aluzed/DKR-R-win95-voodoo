@@ -35,8 +35,19 @@ include(CTest)
 set(DKRPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "Root of the DKR Port repository")
 option(DKR_RUNTIME_BUILD_GENERATED "Compile N64Recomp-generated DKR CPU functions" ON)
 option(DKR_RUNTIME_BUILD_RT64 "Also configure and compile the pinned RT64 renderer" OFF)
+option(DKR_RUNTIME_TARGET_WIN95 "Cross-compile the Windows 95 / 3dfx target" OFF)
 
 get_filename_component(DKRPORT_ROOT "${DKRPORT_ROOT}" ABSOLUTE)
+
+# The Windows 95 target diverges too early to share this file: ultramodern and
+# librecomp do not compile for it yet (E01-S02, E01-S03), and RT64 and SDL2 have
+# no place on it at all. It therefore lives in its own file and returns here,
+# so the Windows, Linux and macOS targets cross a single false `if()` and are
+# unchanged by construction. See docs/adr/0004-strategie-depot.md.
+if(DKR_RUNTIME_TARGET_WIN95)
+    include("${DKRPORT_ROOT}/cmake/win95-target.cmake")
+    return()
+endif()
 set(DKR_MODERN_RUNTIME_SOURCE "${DKRPORT_ROOT}/extern/n64-modern-runtime")
 set(DKR_RECOMP_SOURCE "${DKR_MODERN_RUNTIME_SOURCE}/N64Recomp")
 set(DKR_RT64_SOURCE "${DKRPORT_ROOT}/extern/rt64")
