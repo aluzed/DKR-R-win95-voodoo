@@ -3,11 +3,35 @@
 | | |
 |---|---|
 | **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P1 |
 | **Estimation** | S |
 | **Dépend de** | — |
 | **Bloque** | E07-S01, E09-S02, E09-S03 |
+
+## État au 2026-08-12 — tranché
+
+ADR écrite : [`docs/adr/0004-strategie-depot.md`](../../adr/0004-strategie-depot.md).
+
+| Point | Décision |
+|---|---|
+| Chemin moderne | **conservé dans le même arbre**, comme oracle, jusqu'à la validation de E09-S02 |
+| Interrupteur | `DKR_RUNTIME_BUILD_RT64`, défaut `OFF` — **vérifié suffisant** pour RT64 et ImGui, pas encore pour SDL2 (4 références) |
+| Amont | **gel** au commit `e5d1bbb` de `ThatGuyMcd/DKR-R` ; reprise manuelle des seules corrections de justesse et de pipeline |
+| Patch / fork | pipeline `patches/manifest.json` **confirmé sans exception** ; limite écrite ; premier candidat au fork nommé (système de mods de `librecomp`) |
+| Tests | **les 18 suites conservées** — 12 portables sur les deux cibles, 6 réservées à l'hôte |
+
+Deux constats ont porté la décision, tous deux issus du dépouillement des
+directives du préprocesseur :
+
+- la séparation « chemin moderne / socle portable » **existe déjà** et est
+  appliquée par le build — 0 référence RT64 ou ImGui hors garde ;
+- les 18 suites de tests sont **sous `BUILD_TESTING` et non sous RT64**, et
+  aucune ne dépend de SDL, d'ImGui ni de RT64. Douze compilent pour la cible
+  sans rien écrire, ce qui offre à E09-S03 une base gratuite.
+
+Conséquence à répercuter : **E07-S01** ne supprime pas les politiques modernes,
+il les exclut de la cible Win95. Le ticket doit être reformulé.
 
 ## Contexte
 

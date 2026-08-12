@@ -33,9 +33,10 @@ Résultats complets : [`docs/research/win95-blockers.md`](../../research/win95-b
    dialecte vers une question de couche d'hébergement.
 2. **`ultramodern` se patche, il ne se réécrit pas** (6 fichiers). E02-S01 était
    dimensionné sur l'hypothèse inverse et doit être réduit.
-3. **Une part de E07-S02 est déjà faite** : ImGui, les texture packs et
-   `runtime_ui.cpp` sont déjà exclus par `DKR_RUNTIME_BUILD_RT64=OFF`. Reste un
-   résidu ImGui non gardé dans `runtime_platform.cpp` (31 références).
+3. **E07-S02 est déjà faite, ou presque** : ImGui, les texture packs et
+   `runtime_ui.cpp` sont exclus par `DKR_RUNTIME_BUILD_RT64=OFF`, et le
+   dépouillement des gardes du préprocesseur ne trouve **aucune référence ImGui
+   hors garde**. Il ne reste que quatre références SDL2 dans deux fichiers.
 
 Le risque annoncé par ce ticket — « conclure que tout est à jeter » — ne s'est
 pas matérialisé : le code recompilé, le microcode audio, `std::atomic` et les 20

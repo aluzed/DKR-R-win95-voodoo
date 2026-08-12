@@ -321,24 +321,34 @@ Voodoo ne parle que Glide. Il n'est pas question de le porter — seulement de n
 pas l'allumer. C'est aussi ce qui protège la cible moderne : elle continue de
 l'allumer, sans rien savoir du travail Win95.
 
-### Dear ImGui — **retirer**, et c'est presque gratuit
+### Dear ImGui — **retirer**, et c'est déjà fait
 
 1 089 références, dont **1 054 dans le seul `runtime_ui.cpp`** (97 %), déjà exclu
-quand RT64 est éteint.
+quand RT64 est éteint. Le reste — 26 lignes dans `runtime_platform.cpp`, qui
+recopient l'état de la manette dans `ImGuiIO` — est **entièrement sous
+`#if DKR_RUNTIME_HAS_RT64`**, inclusion de `imgui.h` comprise.
 
-Reste un résidu qui n'est *pas* sous garde : `runtime_platform.cpp` contient 31
-références ImGui, non conditionnées, qui recopient l'état de la manette dans
-`ImGuiIO` (lignes 418-458). Ce fichier fait partie du socle. C'est le seul
-véritable travail de découplage d'ImGui, et il est petit.
+Vérifié en suivant l'imbrication des directives du préprocesseur ligne à ligne,
+et non par une recherche de motif : **0 référence ImGui hors garde**. Il n'y a
+rien à découpler.
 
-### SDL2 — **remplacer**
+### SDL2 — **remplacer**, mais le périmètre est minuscule
 
-343 références dans 10 fichiers, dont 94 % dans trois : `runtime_platform.cpp`
-(177), `runtime_input.cpp` (81), `runtime_ui.cpp` (66, déjà exclu). SDL2 n'a
-plus de portage Windows 95 depuis longtemps, et le projet n'en utilise que la
-fenêtre, le clavier, la manette et l'audio — soit exactement ce que E06 prévoit
-de réécrire en Win32 nu. La concentration en trois fichiers rend l'opération
-franche.
+343 références dans 10 fichiers, dont `runtime_platform.cpp` (177),
+`runtime_input.cpp` (81) et `runtime_ui.cpp` (66). Le même dépouillement des
+gardes montre que **quatre références seulement** échappent à
+`DKR_RUNTIME_HAS_RT64` :
+
+| Emplacement | Nature |
+|---|---|
+| `runtime_input.cpp:571-572` | `SDL_GameController*` dans la **signature publique** de `input::poll` |
+| `runtime_enhancements.cpp:10` | `#include <SDL.h>` inconditionnel |
+| `runtime_enhancements.cpp:461,468` | `SDL_Window*` et `SDL_GetWindowSize` |
+
+SDL2 n'a plus de portage Windows 95, et le projet n'en utilise que la fenêtre, le
+clavier, la manette et l'audio — soit exactement ce que E06 prévoit de réécrire
+en Win32 nu. Mais le découplage à faire tient en **deux fichiers**, parce que le
+gros du travail a déjà été fait par l'interrupteur RT64.
 
 ## 6. Ce qui survit sans modification
 

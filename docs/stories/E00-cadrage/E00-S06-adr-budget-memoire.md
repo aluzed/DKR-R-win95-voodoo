@@ -3,13 +3,50 @@
 | | |
 |---|---|
 | **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E00-S01 |
 | **Bloque** | E01-S05, E02-S04, E08-S04 |
 
-## État au 2026-08-12 — les plafonds sont mesurés, l'ADR peut être écrite
+## État au 2026-08-12 — ADR écrite
+
+[`docs/adr/0003-budget-memoire.md`](../../adr/0003-budget-memoire.md).
+
+| Poste | Décision | Budget |
+|---|---|---:|
+| RDRAM validée | **4 Mio** — borne réelle du pool de DKR (`RAM_END`, `EXPANSION_PAK_SUPPORT 0`) | 4 Mio |
+| Espace réservé | 8 Mio + garde, au lieu de 4 Gio | 8 Mio |
+| Instantané RDRAM | **4 Mio, une seule tâche en vol** | 4 Mio |
+| Code recompilé | **mesuré** : 3,85 Mio, contre 10-40 Mio estimés | 3,85 Mio |
+| ROM | **lecture à la demande** au lieu de 12 Mio résidents | 0,06 Mio |
+| Pile 3dfx | **mesurée** : 872 Kio seulement | 0,85 Mio |
+| Réserves runtime + textures | déclarées, à vérifier | 12 Mio |
+| **Total / disponible mesuré** | | **32,8 / 47,0 Mio** |
+
+Deux mesures ont porté les décisions :
+
+- **la mémoire disponible pilote 3dfx actif est de 47,0 Mio**, relevée sur la
+  machine par `tools/win95/probes/glide_memory.c`. Windows 95 en consomme 15,6 ;
+  la pile Glide, seulement 872 Kio — les tampons 640×480 vivent dans la mémoire
+  de la carte, pas dans celle de la machine ;
+- **le code recompilé fait 3,85 Mio**, mesuré sur les 37 objets de E00-S03. Le
+  ticket l'estimait entre 10 et 40 Mo.
+
+Une découverte au passage : la file d'instantanés est une
+`BlockingConcurrentQueue` **non bornée**. Sur une cible où le rendu est plus lent
+que la production de tâches, elle croît jusqu'à l'épuisement de la mémoire — un
+plantage à retardement, inoffensif sur machine moderne.
+
+**La cible 32 Mo est écartée** : il n'y resterait que ~16 Mio, sans marge. 64 Mo
+est confirmé comme plancher matériel.
+
+**Non fait, et assumé** : le pic mémoire de la build actuelle n'est pas mesuré —
+aucune build de la cible n'existe (E01-S05), et profiler la build moderne
+mesurerait précisément les postes qui disparaissent. Le budget est construit par
+le bas. Le critère d'acceptation correspondant reste ouvert jusqu'à E01-S05.
+
+## État antérieur — les plafonds mesurés
 
 [E00-S01](E00-S01-inventaire-dependances-incompatibles.md) a mesuré sur la
 machine cible ce que le code source ne pouvait pas dire :

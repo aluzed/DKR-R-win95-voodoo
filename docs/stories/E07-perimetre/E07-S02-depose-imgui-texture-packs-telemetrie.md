@@ -26,11 +26,17 @@ Conséquences chiffrées :
 Il n'y a donc **rien à supprimer** — ce qui préserve la cible moderne, qui
 continue d'allumer l'interrupteur.
 
-Reste le seul vrai travail : `runtime_platform.cpp` contient **31 références
-ImGui non gardées** (lignes 418-458), qui recopient l'état de la manette dans
-`ImGuiIO`. Ce fichier fait partie du socle et doit être découplé.
+Le dépouillement des directives du préprocesseur, fait ligne à ligne, montre
+que **le découplage d'ImGui est déjà complet** : les 26 lignes ImGui restantes
+de `runtime_platform.cpp` sont toutes sous `#if DKR_RUNTIME_HAS_RT64`,
+inclusion de `imgui.h` comprise. Zéro référence hors garde.
 
-La télémétrie (`runtime_telemetry.cpp`) n'est, elle, pas sous garde : à traiter.
+Il ne subsiste que **quatre références SDL2** hors garde, dans deux fichiers —
+la signature publique de `input::poll` (`runtime_input.cpp:571-572`) et
+`runtime_enhancements.cpp` (lignes 10, 461, 468). Elles relèvent de E07-S03.
+
+La télémétrie (`runtime_telemetry.cpp`) n'est, elle, pas sous garde : c'est le
+seul vrai reliquat de ce ticket.
 
 ## Contexte
 
