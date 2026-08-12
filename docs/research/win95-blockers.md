@@ -247,8 +247,20 @@ au désassemblage qu'il **n'émet aucune instruction SSE**. Rien à faire ici.
 
 ## 4. Hypothèses 64 bits — un bloquant sérieux, et un seul
 
+> **Correction du 2026-08-12.** Ce paragraphe affirmait qu'aucune hypothèse
+> 64 bits ne subsistait. C'était faux : la recherche employait `sizeof(size_t)`
+> sans accepter le préfixe `std::`, et manquait donc
+> `static_assert(sizeof(std::size_t) == 8)` dans
+> `librecomp/include/librecomp/mods.hpp:53` — révélée en compilant réellement
+> `librecomp` pour la cible ([E01-S02](../CPP-SUBSET.md)). Un balayage corrigé
+> sur `ultramodern`, `librecomp`, `N64Recomp/include` et `runtime-recomp/src`
+> n'en trouve **qu'une seule**, celle-là. Elle empaquette trois valeurs dans un
+> `size_t` de 64 bits pour hacher une définition de hook de mod, et se trouve
+> dans le système de mods — déjà premier candidat au fork.
+
 La recherche de `static_assert(sizeof(void*) == 8)`, de conversions
-pointeur↔`uint64_t` et d'hypothèses sur `size_t` ne remonte **rien**. Les
+pointeur↔`uint64_t` et d'autres hypothèses sur `size_t` ne remonte **rien de
+plus**. Les
 constantes `0xFFFFFFFF80000000` qui parsèment `recomp.h` sont des adresses
 *invitées*, calculées en `uint64_t` puis utilisées comme index dans `rdram` :
 correct en 32 bits.

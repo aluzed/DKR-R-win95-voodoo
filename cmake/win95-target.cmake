@@ -37,6 +37,27 @@ message(STATUS "Cible Windows 95 : ${CMAKE_C_COMPILER}")
 message(STATUS "  jeu d'instructions : Pentium II, sans SSE, virgule flottante x87")
 message(STATUS "  API : _WIN32_WINNT=0x0400")
 
+# --- Sous-ensemble C++ (E01-S02) ---------------------------------------------
+#
+# Il n'y a pas de norme à restreindre : GCC 13 implémente tout C++20 pour cette
+# cible. Ce qui est interdit, ce sont des facilités de bibliothèque dont la
+# simple inclusion fait apparaître dans la table d'imports des symboles que
+# Windows 95 n'exporte pas — `<thread>`, `<mutex>`, `<filesystem>` et leurs
+# voisins. Voir docs/CPP-SUBSET.md.
+#
+# Le contrôle est en **pré-build** et non en post-lien : une inclusion interdite
+# compile parfaitement, et ne se manifeste qu'au chargement sur la machine
+# cible. Le compilateur ne dira rien.
+#
+# Il ne porte pour l'instant que sur les sources de la cible. `ultramodern`
+# compte encore 9 inclusions interdites : c'est exactement le travail de
+# E02-S01, et l'y soumettre aujourd'hui ne ferait qu'échouer sans rien apprendre.
+add_custom_target(dkr_win95_cpp_subset ALL
+    COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check-cpp-subset.py"
+            "${DKR_WIN95_PLATFORM}"
+    COMMENT "Contrôle du sous-ensemble C++ autorisé"
+    VERBATIM)
+
 # --- Pont de compatibilité ---------------------------------------------------
 #
 # Les six fonctions que la bibliothèque standard de GCC 13 réclame et que
@@ -50,6 +71,8 @@ target_include_directories(win95compat PUBLIC "${DKR_WIN95_PLATFORM}")
 # `IsDebuggerPresent` et consorts sont déclarées `dllimport` par windows.h ; les
 # redéfinir est précisément le but de ce fichier.
 target_compile_options(win95compat PRIVATE -Wno-attributes)
+# Le contrôle du sous-ensemble passe avant toute compilation.
+add_dependencies(win95compat dkr_win95_cpp_subset)
 
 # `--whole-archive` est obligatoire, pas prudentiel : l'archive n'est consultée
 # qu'au moment où elle apparaît sur la ligne de commande, et `libwinpthread`

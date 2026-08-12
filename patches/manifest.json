@@ -57,6 +57,10 @@
         {
           "path": "patches/n64-modern-runtime/0013-use-reliable-external-message-fifo.patch",
           "sha256": "61712c2e214a2604b5460bcfa3c9a6dc1735859a53fd0f0e9e9f0b138a12cc08"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0014-build-for-windows-95-targets.patch",
+          "sha256": "f6a339578eefcdd96b2a569ada618a3721d55cf4517fb3e9e837c054621e48da"
         }
       ]
     },

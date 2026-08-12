@@ -1,0 +1,69 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Compile for Windows 95 targets
+
+Two constructs stop the Windows 95 build (E01-S02). Both are toolchain and
+platform facts rather than defects, and both are guarded so no other target
+changes behaviour.
+
+1. std::quick_exit
+
+mingw-w64 only declares quick_exit under _UCRT. This target links the legacy
+msvcrt, where the function does not exist at all - neither std::quick_exit nor
+::quick_exit. (The first attempt at this patch reached for the global one and
+failed the same way, which is how the _UCRT guard was found.)
+
+Use std::_Exit, which is what the __APPLE__ branch right above already picks.
+The difference is that _Exit does not run at_quick_exit handlers. Nothing in
+ultramodern, librecomp or runtime-recomp registers one, so nothing is lost
+today; a future handler would silently not run, which is why this is written
+down.
+
+2. SetThreadDescription
+
+Introduced in Windows 10, version 1607. It only names a thread for a debugger;
+on Windows 95 there is no debugger to name it for, and the header hides the
+declaration because the target sets _WIN32_WINNT=0x0400. Setting a thread name
+is a diagnostic nicety, so the call is skipped rather than emulated.
+
+Both guards test the toolchain and the target version, never a project macro:
+the modern targets keep taking the unchanged branch.
+
+diff --git a/ultramodern/src/error_handling.cpp b/ultramodern/src/error_handling.cpp
+--- a/ultramodern/src/error_handling.cpp
++++ b/ultramodern/src/error_handling.cpp
+@@ -23,6 +23,11 @@ void ultramodern::error_handling::quick_exit(const char* filename, int line, con
+ 
+ #ifdef __APPLE__
+     std::_Exit(exit_status);
++#elif defined(__MINGW32__) && !defined(_UCRT)
++    // The legacy msvcrt has no quick_exit at all, under either name. _Exit is
++    // the same immediate termination without unwinding; it skips at_quick_exit
++    // handlers, and this codebase registers none.
++    std::_Exit(exit_status);
+ #else
+     std::quick_exit(exit_status);
+ #endif
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -63,6 +63,12 @@ static void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint
+ 
+ #if defined(_WIN32)
+ void ultramodern::set_native_thread_name(const std::string& name) {
++#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0A00
++    // SetThreadDescription arrived with Windows 10 1607. It only labels a
++    // thread for a debugger, and there is none on a Windows 95 target, so the
++    // call is dropped rather than emulated.
++    (void)name;
++#else
+     std::wstring wname{name.begin(), name.end()};
+ 
+     HRESULT r;
+@@ -70,6 +76,7 @@ void ultramodern::set_native_thread_name(const std::string& name) {
+         GetCurrentThread(),
+         wname.c_str()
+     );
++#endif
+ }
+ 
+ void ultramodern::set_native_thread_priority(ThreadPriority pri) {
