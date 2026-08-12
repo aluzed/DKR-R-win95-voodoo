@@ -3,11 +3,51 @@
 | | |
 |---|---|
 | **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | S |
 | **Dépend de** | E00-S03, E00-S04 |
 | **Bloque** | E05-S01, E05-S02, E05-S04, E09-S01, E09-S04 |
+
+## État au 2026-08-12 — ADR écrite
+
+[`docs/adr/0002-cible-materielle.md`](../../adr/0002-cible-materielle.md).
+
+| Élément | Plancher | Recommandé |
+|---|---|---|
+| CPU | Pentium II 400 MHz *(provisoire)* | Pentium III 500 MHz et plus |
+| RAM | **64 Mo** — 47,0 Mio libres mesurés | 128 Mo |
+| Carte | Voodoo 2 8 Mo, **2 TMU** | Voodoo 2 12 Mo ou Voodoo 3 |
+| API | **Glide 2.4x** (`glide2x.dll` 2.54) | idem |
+| Résolution | **640 × 480, 16 bits, double tampon + Z** | idem |
+
+**Trois décisions reposent sur un calcul, pas sur une préférence :**
+
+- **Triple buffering écarté** : 2,34 Mio contre 2 Mo de mémoire d'image sur la
+  Voodoo 2 8 Mo. Le retenir excluerait le plancher.
+- **Résidence totale des textures** : le pic mesuré par le portage voisin est de
+  1 225 Ko padés sur 65 niveaux, soit **60 % d'une TMU de 2 Mo**. E05-S02 peut
+  viser la résidence par niveau plutôt qu'un cache avec éviction.
+- **Deux TMU exigées**, une TMU restant un repli multipasse correct mais lent.
+
+**Le choix Glide 2.4 est argumenté sur les sources**, comme demandé. Le `README`
+de `sezero/glide` montre que `glide2x` construit pour `sst1`, `cvg` et `h3`, et
+`glide3x` pour `sst1`, `cvg`, `h3` et `h5` : **les deux couvrent toute la cible**,
+et l'idée reçue « Glide 2.4 est la seule voie vers la Voodoo 1 » est fausse.
+
+Ce qui a départagé est mesuré sur la machine : Glide 2.54 est prouvé de bout en
+bout, tandis que **Glide 3 exige un HWND valide** — `grSstWinOpen` refuse avec
+« need to use a valid window handle », ce qui coupleraît l'amorçage du rendu à
+E06-S01. `grVertexLayout` reste l'argument qui rouvrirait la décision.
+
+**Un point à répercuter sur E09-S01 :** `grSstQueryHardware` rapporte le type
+`0` (Voodoo Graphics) avec 2 TMU de 4 Mo, alors que le fichier de configuration
+86Box annonce `type = 2`. La machine de test **n'exerce donc pas les chemins
+spécifiques à la Voodoo 2**, ce qui augmente le poids de E09-S04.
+
+**Réserve explicite :** le plancher CPU est **provisoire**. Le go/no-go de
+E00-S03 n'est pas tombé — il attend une vraie session de jeu (E02-S06). L'ADR le
+dit et ne contourne pas le chiffre.
 
 ## Contexte
 
