@@ -68,6 +68,10 @@
         {
           "path": "patches/n64recomp/0001-fix-high-vram-entrypoint-comparison.patch",
           "sha256": "a3a60874019e1118453cfe9030b071ac22eb1fea41ea7b81b4a8d50e56bd3967"
+        },
+        {
+          "path": "patches/n64recomp/0002-portable-128-bit-multiply-for-32-bit-targets.patch",
+          "sha256": "25771fd1bcef4b10a6f4f73603160b375a7c20f13bb0d216339d51c1a2558cd2"
         }
       ]
     },

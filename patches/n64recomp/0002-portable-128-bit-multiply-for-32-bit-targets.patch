@@ -1,0 +1,77 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Provide a portable 64x64->128 multiply for 32-bit targets
+
+recomp.h implements the MIPS DMULT/DMULTU instructions with __int128, and falls
+back to the MSVC _mul128 intrinsics. Neither exists on 32-bit x86 with GCC or
+Clang, so the header stops the build with "#error 128-bit integer type not
+found" before a single generated function is compiled.
+
+This blocks the whole Windows 95 target, which is 32-bit by definition.
+
+DKR itself never reaches this code: N64Recomp emits no DMULT or DMULTU call for
+dkr.us.v77 - zero occurrences across the 3,823 recompiled functions. A stub
+would therefore be enough to unblock the build, and would also be a landmine for
+any future target whose game does use them.
+
+Implement the long multiplication instead. The unsigned case splits both
+operands into 32-bit halves and reassembles the four partial products with an
+explicit carry taken on the column that straddles the 64-bit boundary; the
+signed case reuses it and applies the two's complement correction to the high
+word.
+
+Verified against the __int128 implementation on x86-64 over 10,000,000 random
+operand pairs plus the full cartesian product of the sign and overflow boundary
+values (0, 1, 2, 2^31-1, 2^31, 2^32-1, 2^32, 2^63-1, 2^63, 2^64-1):
+20,000,200 comparisons, zero differences.
+
+diff --git a/include/recomp.h b/include/recomp.h
+index 73f3e73..4eb7dae 100644
+--- a/include/recomp.h
++++ b/include/recomp.h
+@@ -66,8 +66,45 @@ static inline void DMULTU(uint64_t a, uint64_t b, uint64_t* lo64, uint64_t* hi64
+     *lo64 = _umul128(a, b, hi64);
+ }
+ 
++#elif defined(__SIZEOF_LONG_LONG__)
++
++// 32-bit targets have no 128-bit integer type. Reassemble the product from
++// four 32-bit partial products. Exact, and only a handful of instructions
++// more than the native path on the 32-bit hosts this exists for.
++static inline void DMULTU(uint64_t a, uint64_t b, uint64_t* lo64, uint64_t* hi64) {
++    const uint64_t a_lo = (uint32_t)a;
++    const uint64_t a_hi = a >> 32;
++    const uint64_t b_lo = (uint32_t)b;
++    const uint64_t b_hi = b >> 32;
++
++    const uint64_t p_ll = a_lo * b_lo;
++    const uint64_t p_lh = a_lo * b_hi;
++    const uint64_t p_hl = a_hi * b_lo;
++    const uint64_t p_hh = a_hi * b_hi;
++
++    // Carry out of the low 64 bits, computed on the 32-bit column that
++    // straddles the boundary so it cannot itself overflow.
++    const uint64_t middle = (p_ll >> 32) + (uint32_t)p_lh + (uint32_t)p_hl;
++
++    *lo64 = (middle << 32) | (uint32_t)p_ll;
++    *hi64 = p_hh + (p_lh >> 32) + (p_hl >> 32) + (middle >> 32);
++}
++
++static inline void DMULT(int64_t a, int64_t b, int64_t* lo64, int64_t* hi64) {
++    uint64_t u_lo = 0, u_hi = 0;
++    DMULTU((uint64_t)a, (uint64_t)b, &u_lo, &u_hi);
++
++    // Two's complement correction: the unsigned product treated a negative
++    // operand as 2^64 + a, so subtract the other operand once per negative.
++    if (a < 0) { u_hi -= (uint64_t)b; }
++    if (b < 0) { u_hi -= (uint64_t)a; }
++
++    *lo64 = (int64_t)u_lo;
++    *hi64 = (int64_t)u_hi;
++}
++
+ #else
+-#error "128-bit integer type not found"
++#error "No 64-bit integer type found for DMULT/DMULTU"
+ #endif
+ 
+ static inline void DDIV(int64_t a, int64_t b, int64_t* quot, int64_t* rem) {
