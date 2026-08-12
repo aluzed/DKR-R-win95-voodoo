@@ -58,3 +58,7 @@ extern/n64-modern-runtime/
 extern/rt64/
 runtime-recomp/RecompiledFuncs/
 build/runtime-tools/
+
+# Sorties de build des outils Win95 (produites par tools/win95/build-glidetest.sh)
+/tools/win95/*.EXE
+/tools/win95/*.exe
