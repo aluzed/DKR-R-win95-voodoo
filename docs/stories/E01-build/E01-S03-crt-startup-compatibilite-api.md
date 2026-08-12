@@ -3,11 +3,63 @@
 | | |
 |---|---|
 | **Épic** | E01 — Chaîne de build 32 bits Windows 95 |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E00-S01, E01-S01 |
 | **Bloque** | E01-S04, E02-S01, E06-S01 |
+
+## État au 2026-08-12 — livré et exécuté sur la machine
+
+`platform/win95/` : `compat.{h,c}`, `tick64.c`, `startup.{h,c}`, `witness.c`.
+Sémantique perdue documentée dans [`docs/WIN95-COMPAT.md`](../../WIN95-COMPAT.md).
+
+Le témoin exerçant **la couche entière** tourne sous Windows 95 :
+
+```
+IsDebuggerPresent      : faux
+SetProcessAffinityMask : accepte
+GetTickCount64         : 123 ms ecoulees        (pour un Sleep de 120 ms)
+TryEnterCriticalSection: verrou libre pris
+deux fils, 4000 tours  : compteur = 4000 / 4000
+```
+
+et son journal de démarrage identifie le système :
+
+```
+systeme : plate-forme 1, version 4.0 build 1111
+ C
+```
+
+soit `VER_PLATFORM_WIN32_WINDOWS`, 4.0 build 1111 marqueur « C » — la signature
+de Windows 95 OSR2.
+
+**Le rebouclage de `GetTickCount` est simulé, pas attendu.** La logique est
+isolée en fonction pure dans `tick64.c` ; neuf vérifications la pilotent avec des
+valeurs choisies, dont deux rebouclages successifs et une propriété de monotonie.
+Exécuté par CTest sur l'hôte (`DKRWin95Tick64`), sans émulateur.
+
+**Deux contournements que le ticket anticipait n'ont pas eu à être écrits**, et
+c'est mesuré plutôt que supposé : ni `SignalObjectAndWait` ni
+`InitializeCriticalSectionAndSpinCount` n'apparaissent dans les imports de
+`libwinpthread`, `libstdc++` ou `libgcc`. **Le risque annoncé par le ticket — perdre
+l'atomicité de `SignalObjectAndWait` — ne se matérialise pas.**
+
+**Unicode.** `librecomp` travaille en `std::u8string`, donc en octets UTF-8 : 236
+usages de chaînes étroites contre 25 de chaînes larges, toutes des `u8string` et
+non des `wchar_t`. Il n'y a pas de conversion large à supprimer. **Une exception
+subsiste** — `mod_manifest.cpp:52` appelle `_wfopen_s`, qui n'est pas exportée par
+le `MSVCRT.DLL` de la machine. C'est dans le système de mods, déjà désigné comme
+premier candidat au fork.
+
+**CRT : liaison statique**, décision de l'ADR 0001. Conséquence écrite pour
+E09-S05 : le paquet n'a aucun redistribuable à embarquer pour le CRT.
+
+**Une découverte de conception :** le garde `_WIN32_WINNT=0x0400` posé par
+E01-S01 masque aussi les API que *cette couche fournit* — il ne fait pas la
+différence entre une API utilisée par inadvertance et une API remplacée.
+`compat.h` doit donc redéclarer ce qu'il implémente, sous condition de version.
+Constaté en compilant le témoin, qui a échoué sur `GetTickCount64`.
 
 ## Contexte
 

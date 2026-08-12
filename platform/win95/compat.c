@@ -1,4 +1,4 @@
-/* E00-S02 / E02-S01 — pont de compatibilite Windows 95.
+/* E01-S03 — couche de compatibilite d'API Windows 95.
  *
  * La bibliotheque standard de GCC 13 reclame six fonctions que KERNEL32 de
  * Windows 95 n'exporte pas. Aucune n'est appelee par le code du projet : c'est
@@ -23,6 +23,8 @@
  * bas.
  */
 #include <windows.h>
+
+#include "compat.h"
 
 /* --- diagnostic ---------------------------------------------------------- */
 
@@ -65,24 +67,36 @@ ULONG WINAPI RemoveVectoredExceptionHandler(PVOID handle)
 
 /* --- horloge monotone 64 bits -------------------------------------------- */
 
-/* `GetTickCount` revient a zero apres 49,7 jours. On accumule les debordements
+/* `GetTickCount` revient a zero apres 49,7 jours. On accumule les rebouclages
    pour rendre un compteur qui, lui, ne revient pas.
-   Ce n'est exact que si la fonction est appelee au moins une fois par periode
-   de 49 jours — condition largement tenue par une boucle de jeu, et de toute
-   facon la machine cible ne reste pas allumee 49 jours. */
+ *
+ * La logique est isolee en fonction pure pour que le passage a zero se teste au
+ * lieu de s'attendre sept semaines : `platform/win95/tests/test_tick64.c` la
+ * pilote avec des valeurs choisies, sur l'hote, sans Windows.
+ *
+ * Condition de validite : etre appele au moins une fois par periode de 49 jours.
+ * Une boucle de jeu la tient largement ; un programme qui dormirait plus
+ * longtemps entre deux lectures verrait un rebouclage lui echapper. C'est une
+ * limite reelle, ecrite dans docs/WIN95-COMPAT.md.
+ */
+/* `dkr_tick64_step` vit dans `tick64.c` : sans dependance a Windows, elle est
+   pilotable par un test sur l'hote. */
+
+
+/* Un verrou tournant plutot qu'une section critique : `GetTickCount64` peut
+   etre appelee depuis n'importe quel fil, y compris pendant l'initialisation ou
+   aucune section critique n'est encore prete. `__sync_*` se compile en
+   `lock cmpxchg`, sans appel systeme. */
+static volatile long   dkr_tick_lock  = 0;
+static dkr_tick64_state dkr_tick_state = { 0, 0 };
+
 ULONGLONG WINAPI GetTickCount64(void)
 {
-    static volatile LONG high = 0;
-    static volatile LONG last = 0;
-    DWORD now = GetTickCount();
-    LONG  prev = last;
-
-    if ((DWORD)prev > now) {          /* le compteur 32 bits a reboucle */
-        InterlockedIncrement((LONG *)&high);
-    }
-    InterlockedExchange((LONG *)&last, (LONG)now);
-
-    return ((ULONGLONG)(DWORD)high << 32) | (ULONGLONG)now;
+    unsigned long long v;
+    while (!__sync_bool_compare_and_swap(&dkr_tick_lock, 0, 1)) { /* attente */ }
+    v = dkr_tick64_step(&dkr_tick_state, (unsigned long)GetTickCount());
+    __sync_lock_release(&dkr_tick_lock);
+    return v;
 }
 
 /* --- sections critiques --------------------------------------------------- *

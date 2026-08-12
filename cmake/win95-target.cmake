@@ -26,7 +26,8 @@ if(DKR_RUNTIME_BUILD_RT64)
         "Laisser DKR_RUNTIME_BUILD_RT64 à OFF, comme c'est le défaut.")
 endif()
 
-set(DKR_WIN95_TOOLS "${DKRPORT_ROOT}/tools/win95")
+set(DKR_WIN95_TOOLS    "${DKRPORT_ROOT}/tools/win95")
+set(DKR_WIN95_PLATFORM "${DKRPORT_ROOT}/platform/win95")
 
 # Le contrôle des imports est écrit en Python et n'a aucune dépendance : il lit
 # la table d'imports du PE lui-même.
@@ -41,8 +42,11 @@ message(STATUS "  API : _WIN32_WINNT=0x0400")
 # Les six fonctions que la bibliothèque standard de GCC 13 réclame et que
 # KERNEL32 de Windows 95 n'exporte pas. Voir ADR 0001 : sans elles le binaire ne
 # se charge pas, et Windows nomme le symbole manquant dans une boîte d'erreur.
-add_library(win95compat STATIC "${DKR_WIN95_TOOLS}/win95compat/win95compat.c")
-target_include_directories(win95compat PUBLIC "${DKR_WIN95_TOOLS}/win95compat")
+add_library(win95compat STATIC
+    "${DKR_WIN95_PLATFORM}/compat.c"
+    "${DKR_WIN95_PLATFORM}/tick64.c"
+    "${DKR_WIN95_PLATFORM}/startup.c")
+target_include_directories(win95compat PUBLIC "${DKR_WIN95_PLATFORM}")
 # `IsDebuggerPresent` et consorts sont déclarées `dllimport` par windows.h ; les
 # redéfinir est précisément le but de ce fichier.
 target_compile_options(win95compat PRIVATE -Wno-attributes)
@@ -88,6 +92,24 @@ endfunction()
 # exacte du modèle d'exécution dont `ultramodern` a besoin. C'est le témoin T3b
 # de E00-S02, qui affiche 1000/1000 sur la machine de test.
 set(DKR_WIN95_WITNESS_SOURCES "${DKR_WIN95_TOOLS}/witnesses/t3b.cpp")
+
+# Second témoin : celui de E01-S03, qui exerce la couche entière — démarrage,
+# journal, filtre d'exceptions, contrôle de version, les six API manquantes,
+# l'horloge 64 bits et deux fils en contention.
+add_executable(DKRWin95Platform "${DKR_WIN95_PLATFORM}/witness.c")
+target_link_libraries(DKRWin95Platform PRIVATE win95compat user32)
+set_target_properties(DKRWin95Platform PROPERTIES
+    OUTPUT_NAME "PLATFORM"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Platform)
+
+# Le rebouclage de GetTickCount se teste sur l'hôte : la logique est une fonction
+# pure, et attendre 49,7 jours n'est pas un protocole de test.
+# Il tourne avec le compilateur de l'hôte et non celui de la cible : c'est un
+# test de logique, pas de plate-forme.
+enable_testing()
+add_test(NAME DKRWin95Tick64 COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh")
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer
