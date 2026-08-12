@@ -3,11 +3,50 @@
 | | |
 |---|---|
 | **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E00-S01 |
 | **Bloque** | E01-S01, E01-S02, E01-S03 |
+
+## État au 2026-08-12 — tranché, et le risque majeur est écarté
+
+ADR : [`docs/adr/0001-toolchain.md`](../../adr/0001-toolchain.md).
+
+**Décision : mingw-w64 GCC 13, `i686-w64-mingw32`, modèle de threads `posix`,
+CRT lié statiquement, avec le pont `tools/win95/win95compat/`.**
+
+| Candidat | C++ | T1 | T2 | T3a | T3b | Taille T3b |
+|---|---|---|---|---|---|---:|
+| Open Watcom 2.0 | C++98 partiel | ✅ | ✅ | *sans objet* | ✅ | 51 200 o |
+| mingw GCC 13, posix | **C++20** | ✅ | ✅ | ❌ | ✅ *(avec pont)* | 501 625 o |
+| mingw GCC 13, win32 | **C++20** | ✅ | ✅ | ❌ | ❌ | 353 108 o |
+
+Aucun binaire n'émet d'instruction SSE, bibliothèque standard comprise.
+
+**Le risque majeur du ticket ne s'est pas matérialisé** : `ultramodern` et
+`librecomp` restent patchables. Watcom passe pourtant tous les témoins, avec des
+binaires dix fois plus petits et sans pont — mais son C++98 imposerait de
+réécrire les deux bibliothèques. Il reste le repli documenté si le portage
+dérape.
+
+**Trois résultats qui changent la suite :**
+
+1. **`std::thread` ne fonctionne pas sur la cible, même une fois tous les
+   symboles fournis.** T3a se charge, démarre, puis échoue dans la partie
+   threads. **E02-S01 devient obligatoire**, et ce n'est plus une hypothèse.
+2. **On ne peut pas éviter le problème en évitant `std::thread`** : T3b, qui
+   n'utilise que `CreateThread`, échoue quand même au chargement — `libstdc++`
+   importe `GetThreadId` pour les exceptions et le RTTI. La machine le dit
+   elle-même : « lié à une exportation manquante KERNEL32.DLL:GetThreadId ».
+3. **Un bouchon licite peut figer la machine.** `TryEnterCriticalSection`
+   renvoyant toujours `FALSE` — réponse permise par le contrat — a bloqué
+   Windows 95 au point d'arrêter l'horloge : `winpthreads` boucle dessus. Le pont
+   implémente les cinq fonctions de section critique.
+
+Le pont est écrit, lié et **éprouvé sur la machine** : T3b passe de « ne démarre
+pas » à 1000/1000, RTTI et exceptions compris. Il est le point de départ de
+E02-S01.
 
 ## Contexte
 
