@@ -96,6 +96,16 @@ target_include_directories(win95threading PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95threading PUBLIC win95compat)
 add_dependencies(win95threading dkr_win95_cpp_subset)
 
+# --- Base de temps (E02-S03) -------------------------------------------------
+#
+# Séparée de `win95threading` parce qu'elle a une dépendance de plus — `winmm`,
+# pour `timeGetTime` et `timeBeginPeriod` — et qu'il n'y a pas de raison de la
+# faire porter aux témoins qui n'ont besoin que des fils.
+add_library(win95clock STATIC "${DKR_WIN95_PLATFORM}/clock.cpp")
+target_include_directories(win95clock PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95clock PUBLIC win95compat winmm)
+add_dependencies(win95clock dkr_win95_cpp_subset)
+
 # --- ultramodern (E02-S02) ---------------------------------------------------
 #
 # Le patch 0015 route les cinq primitives de `ultramodern` — `thread`, `mutex`,
@@ -219,6 +229,18 @@ set_target_properties(DKRWin95ThreadsCpp PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95ThreadsCpp)
 
+# Cinquième témoin : la base de temps de E02-S03. Le mode `--long` mesure la
+# dérive sur une durée choisie — une base qui dérive lentement ne casse rien de
+# visible et fausse tous les chronométrages, donc le contrôle doit porter sur
+# une durée et non sur un instant.
+add_executable(DKRWin95Clock "${DKR_WIN95_PLATFORM}/tests/test_clock.cpp")
+target_link_libraries(DKRWin95Clock PRIVATE win95clock)
+set_target_properties(DKRWin95Clock PROPERTIES
+    OUTPUT_NAME "CLOCKT"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Clock)
+
 # Les tests qui tournent sur l'hôte. Deux suites, pour deux raisons :
 #
 #   Tick64     (E01-S03) le rebouclage de GetTickCount est une fonction pure, et
@@ -234,6 +256,8 @@ add_test(NAME DKRWin95Tick64
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" tick64)
 add_test(NAME DKRWin95Threading
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" threading)
+add_test(NAME DKRWin95Clock
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" clock)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

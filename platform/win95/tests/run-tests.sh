@@ -12,6 +12,10 @@
 #              jours. Attendre n'est pas un protocole : la logique est une
 #              fonction pure, pilotee ici avec des valeurs choisies.
 #
+#   clock      (E02-S03) la base de temps. Sa partie delicate — la conversion
+#              vers le compteur du VR4300 et le rebouclage 32 bits — est faite
+#              de fonctions pures, donc entierement pilotable ici.
+#
 #   threading  (E02-S01) la meme source que THREADS.EXE, qui tourne sous
 #              Windows 95 emule. Ici elle s'appuie sur le vehicule POSIX de
 #              threading.cpp, ce qui rend le cycle de mise au point court.
@@ -23,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading) ;;
-  *) echo "usage: $0 [all|tick64|threading]" >&2; exit 2 ;;
+  all|tick64|threading|clock) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,4 +84,15 @@ if [[ "$suite" == "all" || "$suite" == "threading" ]]; then
     [[ $rc -eq 124 ]] && echo "ECHEC : delai expire — interblocage ou reveil perdu" >&2
     exit $rc
   }
+fi
+
+# --- E02-S03 : base de temps -------------------------------------------------
+
+if [[ "$suite" == "all" || "$suite" == "clock" ]]; then
+  command -v "$CXX" >/dev/null \
+    || { echo "erreur: aucun compilateur C++ hote ($CXX)" >&2; exit 2; }
+  "$CXX" -O2 -Wall -Wextra -o "$tmp/test_clock" \
+         "$HERE/test_clock.cpp" "$HERE/../clock.cpp" "$HERE/../tick64.c"
+  echo
+  "$tmp/test_clock"
 fi
