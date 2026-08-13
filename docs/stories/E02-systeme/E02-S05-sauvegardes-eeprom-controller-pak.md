@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P1 |
 | **Estimation** | S |
 | **Dépend de** | E02-S03 |
@@ -68,13 +68,48 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
       persistance après redémarrage.
 - [ ] Les quatre Controller Pak virtuels fonctionnent, autotest inclus
       (`--self-test-pak` existe déjà dans les scripts de build).
-- [ ] Les noms de fichiers sont compatibles 8.3, ou le comportement FAT16 est
-      vérifié.
-- [ ] L'écriture est atomique et une copie de secours est conservée.
+- [x] Les noms de fichiers sont compatibles 8.3, ou le comportement FAT16 est
+      vérifié — les deux : les noms longs fonctionnent sur ce volume, et les noms
+      que la couche fabrique tiennent en 8.3 pour rester utilisables ailleurs.
+- [~] L'écriture est **aussi atomique que Windows 95 le permet** — il n'y a pas
+      de remplacement atomique — et une copie de secours est conservée. Ce que la
+      séquence garantit et ce qu'elle ne garantit pas est écrit.
 - [ ] Une sauvegarde produite par DKR-R moderne est lue par la version Win95, et
       réciproquement.
 - [ ] `dkr_save_codec_tests` et `save_manager_tests` passent sur la cible.
-- [ ] Disque plein et support en lecture seule produisent un message clair.
+- [~] Les codes sont distingués et portent un texte ; le support absent est
+      vérifié sur la machine (erreur 21). Le disque plein reste à provoquer
+      pour de bon, ce qui demande de remplir un volume d'essai.
+
+## État au 2026-08-13 — la couche d'écriture est livrée et mesurée
+
+`platform/win95/fileio.{h,cpp}`, avec sa suite `test_fileio.cpp` (hôte **et**
+`FILEIOT.EXE`). Relevé : [`docs/research/win95-fileio.md`](../../research/win95-fileio.md).
+
+**Le ticket avait raison sur `MoveFileEx`** — à la différence de deux
+suppositions de E02-S03, démenties par la mesure. Mais la forme de son
+indisponibilité échappe aux deux garde-fous du dépôt : `MoveFileExA` est
+exportée, elle a du **vrai code**, et elle refuse quand même avec
+`ERROR_CALL_NOT_IMPLEMENTED`. Ni le contrôle d'imports ni le relevé des bouchons
+ne pouvaient la voir. C'est une **troisième catégorie**, que seule l'exécution
+révèle, et elle est consignée dans `tools/win95/exports/stubs/PROVENANCE.md`.
+
+La séquence d'écriture est donc manuelle, et sa fenêtre assumée. **La garantie
+offerte n'est pas « on ne perd jamais la dernière écriture » mais « on ne perd
+jamais une sauvegarde valide »** : perdre la dernière course est désagréable,
+perdre la progression entière ne se pardonne pas. `.TMP` n'est jamais relu, parce
+que rien ne prouve qu'il soit complet et que le format de DKR-R ne porte pas de
+somme de contrôle.
+
+| | |
+|---|---|
+| Suite sur l'hôte | 40 contrôles, 0 échec, propre sous ASan |
+| Suite sur la cible | **40 contrôles, 0 échec** |
+| Noms longs sur FAT16 | fonctionnent ; l'alias 8.3 tronque l'extension |
+| Écriture refusée | erreur 21 `ERROR_NOT_READY`, distincte et exploitable |
+
+Les coupures ne sont pas attendues mais **simulées**, en fabriquant à la main les
+états intermédiaires que la séquence traverse — comme le rebouclage de E01-S03.
 
 ## Risques
 

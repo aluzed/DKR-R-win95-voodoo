@@ -1,0 +1,114 @@
+# Ce que Windows 95 permet pour écrire une sauvegarde
+
+Mesures de [E02-S05](../stories/E02-systeme/E02-S05-sauvegardes-eeprom-controller-pak.md),
+prises sur la machine de test. Sonde : `tools/win95/witnesses/fileio_probe.cpp`,
+relevé écrit sur le volume **FAT16** du disque de transfert — c'est-à-dire le
+système de fichiers qui nous intéresse.
+
+## Le relevé
+
+```text
+1. Remplacement d'un fichier existant
+   MoveFileExA(REPLACE_EXISTING) : ECHOUE, erreur 120
+   MoveFileA sur une cible existante : refuse (attendu)
+
+2. Noms de fichiers longs sur le volume FAT16
+   creation d'un nom long        : reussit
+   relecture par le meme nom     : reussit
+   nom court equivalent          : D:\SAUVEG~1.DKR
+   relecture par le nom court    : reussit
+
+3. Emplacement de l'executable
+   GetModuleFileNameA            : D:\FILEIO.EXE
+   repertoire courant            : D:\
+
+4. Ecriture refusee
+   ecriture sur A: (vide)        : refusee, erreur 21
+
+5. Place disponible sur D:
+   512 octets par secteur, 16 secteurs par unite
+```
+
+## `MoveFileExA` : une troisième façon d'être absente
+
+Le ticket annonçait que « `MoveFileEx` avec remplacement n'y est pas disponible ».
+**Il avait raison** — contrairement à deux de ses voisins de E02-S03, démentis
+par la mesure. Mais la forme de l'indisponibilité mérite d'être regardée, parce
+qu'elle échappe aux deux garde-fous du dépôt.
+
+`MoveFileExA` est **exportée** par KERNEL32, donc le contrôle d'imports la laisse
+passer. Elle n'est **pas** une entrée vide : son code commence par le même
+prologue que `MoveFileA`, `sub edx,edx` puis l'installation de la chaîne SEH,
+donc le relevé des bouchons ne la voit pas non plus. C'est une vraie fonction,
+qui décide de refuser et pose `ERROR_CALL_NOT_IMPLEMENTED`.
+
+| Catégorie | Exemple | Ce qui la révèle |
+|---|---|---|
+| Absente de la table d'exports | `TryEnterCriticalSection` | le contrôle d'imports |
+| Exportée, entrée vide | `CreateSemaphoreW` | le relevé des bouchons |
+| Exportée, vrai code, refuse | **`MoveFileExA`** | **rien d'autre que l'exécution** |
+
+La troisième ne se déduit d'aucune analyse statique. C'est pourquoi ce dépôt fait
+tourner des sondes sur la machine plutôt que de raisonner sur des tableaux.
+
+## Conséquence : il n'y a pas de remplacement atomique
+
+La séquence doit donc être écrite à la main, et sa fenêtre assumée :
+
+```
+1. écrire      SAUVE.TMP, vider les tampons, fermer
+2. effacer     SAUVE.BAK
+3. renommer    SAUVE.DAT -> SAUVE.BAK
+4. renommer    SAUVE.TMP -> SAUVE.DAT
+```
+
+Entre 3 et 4, le fichier final n'existe pas. **La garantie offerte n'est donc pas
+« on ne perd jamais la dernière écriture », mais « on ne perd jamais une
+sauvegarde valide ».** C'est la distinction qui compte : perdre la dernière
+course est désagréable, perdre la progression entière ne se pardonne pas.
+
+À la relecture, l'ordre de préférence est `SAUVE.DAT`, puis `SAUVE.BAK`, et
+**jamais** `SAUVE.TMP` : rien ne prouve qu'il soit complet, et le format de DKR-R
+ne porte pas de somme de contrôle qui permettrait de le vérifier sans le
+modifier. Charger une sauvegarde tronquée se découvrirait bien plus tard et bien
+plus mal.
+
+`MoveFileA` refuse d'écraser, comme documenté — d'où l'effacement préalable de
+l'étape 2.
+
+## Les noms longs fonctionnent, mais le 8.3 reste la référence
+
+VFAT est actif : un nom de 37 caractères se crée, se relit par son nom long
+comme par son alias `SAUVEG~1.DKR`. L'alias tronque l'extension de `.dkrsave`
+à `.DKR`, ce qui suffirait à faire diverger deux noms proches.
+
+La couche ne corrige rien et ne suppose rien : `dkr_file_name_is_8dot3`
+**répond**, et les noms qu'elle fabrique elle-même — `.DAT`, `.TMP`, `.BAK` sur
+une base d'au plus huit caractères — tiennent tous. Un Windows 95 de première
+génération sans VFAT, ou un volume monté autrement, reste donc utilisable.
+
+## Emplacement
+
+Il n'y a pas de `%APPDATA%` sous Windows 95. La sauvegarde va à côté de
+l'exécutable, trouvé par `GetModuleFileNameA` — **jamais** par le répertoire
+courant : lancé depuis le menu Démarrer, un programme hérite d'un courant sans
+rapport avec l'endroit où il est installé. Que les deux coïncident dans le relevé
+ci-dessus est une propriété du protocole de test, pas du système.
+
+## Erreurs
+
+L'écriture sur un lecteur vide est refusée avec l'erreur 21, `ERROR_NOT_READY` —
+exploitable, et distincte de `ERROR_ACCESS_DENIED` et de `ERROR_DISK_FULL`. La
+couche les distingue, parce que « disque plein » et « support protégé »
+n'appellent pas le même geste chez le joueur.
+
+## Reproduire
+
+```sh
+i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
+  -static-libgcc -static-libstdc++ -D_WIN32_WINNT=0x0400 \
+  -o FILEIO.EXE tools/win95/witnesses/fileio_probe.cpp \
+  -Wl,--whole-archive build/win95/libwin95compat.a -Wl,--no-whole-archive
+scripts/Push-To-Win95-VM.sh FILEIO.EXE
+# dans l'invité : d:\fileio.exe — le relevé atterrit dans D:\FILEIO.TXT
+```

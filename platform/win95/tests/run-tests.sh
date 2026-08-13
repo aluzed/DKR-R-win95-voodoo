@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -95,4 +95,16 @@ if [[ "$suite" == "all" || "$suite" == "clock" ]]; then
          "$HERE/test_clock.cpp" "$HERE/../clock.cpp" "$HERE/../tick64.c"
   echo
   "$tmp/test_clock"
+fi
+
+# --- E02-S05 : ecriture durable ----------------------------------------------
+
+if [[ "$suite" == "all" || "$suite" == "fileio" ]]; then
+  command -v "$CXX" >/dev/null \
+    || { echo "erreur: aucun compilateur C++ hote ($CXX)" >&2; exit 2; }
+  "$CXX" -O2 -Wall -Wextra -o "$tmp/test_fileio" \
+         "$HERE/test_fileio.cpp" "$HERE/../fileio.cpp"
+  echo
+  # Les fichiers d'essai sont crees dans le repertoire courant : on l'isole.
+  ( cd "$tmp" && "$tmp/test_fileio" )
 fi

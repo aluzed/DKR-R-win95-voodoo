@@ -67,6 +67,30 @@ Le motif n'est pas propre aux variantes `...W` : `BackupRead`, `CreateNamedPipeA
 être des API Unicode. C'est la raison pour laquelle le relevé est **mesuré et non
 déduit du suffixe du nom**.
 
+## Ce que ce relevé ne peut pas voir
+
+Il existe une **troisième** catégorie, que ni la table d'exports ni ce relevé
+n'attrapent, et il faut le savoir avant de faire confiance aux deux.
+
+`MoveFileExA` est exportée, a du **vrai code** — même prologue que `MoveFileA`,
+avec sa chaîne SEH — et n'apparaît donc pas ci-dessus. Elle échoue pourtant à
+l'exécution avec `ERROR_CALL_NOT_IMPLEMENTED` : c'est une fonction qui décide de
+refuser, pas une entrée vide. Mesuré par
+`tools/win95/witnesses/fileio_probe.cpp` sur la machine (E02-S05).
+
+Résumé des trois catégories, et de ce qui les révèle :
+
+| Catégorie | Exemple | Ce qui la révèle |
+|---|---|---|
+| Absente de la table d'exports | `TryEnterCriticalSection` | le contrôle d'imports — bruyant, le programme ne démarre pas |
+| Exportée, entrée vide | `CreateSemaphoreW` | ce relevé, par le motif au désassemblage |
+| Exportée, vrai code, refuse | `MoveFileExA` | **rien d'autre que l'exécution** |
+
+La troisième ne se déduit d'aucune analyse statique. C'est la raison pour
+laquelle ce dépôt fait tourner des sondes sur la machine plutôt que de raisonner
+sur des tableaux, et pourquoi un ticket qui suppose qu'une API est disponible
+doit le vérifier avant de bâtir dessus.
+
 ## Régénérer
 
 ```sh

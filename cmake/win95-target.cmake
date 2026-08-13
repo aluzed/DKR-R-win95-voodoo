@@ -106,6 +106,15 @@ target_include_directories(win95clock PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95clock PUBLIC win95compat winmm)
 add_dependencies(win95clock dkr_win95_cpp_subset)
 
+# --- Écriture de fichiers (E02-S05) ------------------------------------------
+#
+# Ne dépend que de `win95compat`, comme la couche de fils : la séquence
+# d'écriture durable n'appelle que des API `...A` présentes et implémentées.
+add_library(win95fileio STATIC "${DKR_WIN95_PLATFORM}/fileio.cpp")
+target_include_directories(win95fileio PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95fileio PUBLIC win95compat)
+add_dependencies(win95fileio dkr_win95_cpp_subset)
+
 # --- ultramodern (E02-S02) ---------------------------------------------------
 #
 # Le patch 0015 route les cinq primitives de `ultramodern` — `thread`, `mutex`,
@@ -241,6 +250,18 @@ set_target_properties(DKRWin95Clock PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Clock)
 
+# Sixième témoin : l'écriture durable de E02-S05. Ce qu'il éprouve n'est pas que
+# le fichier s'écrive — c'est ce qui reste sur le disque quand l'écriture est
+# interrompue, en fabriquant à la main les états intermédiaires que la séquence
+# traverse.
+add_executable(DKRWin95FileIO "${DKR_WIN95_PLATFORM}/tests/test_fileio.cpp")
+target_link_libraries(DKRWin95FileIO PRIVATE win95fileio)
+set_target_properties(DKRWin95FileIO PROPERTIES
+    OUTPUT_NAME "FILEIOT"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95FileIO)
+
 # Les tests qui tournent sur l'hôte. Deux suites, pour deux raisons :
 #
 #   Tick64     (E01-S03) le rebouclage de GetTickCount est une fonction pure, et
@@ -258,6 +279,8 @@ add_test(NAME DKRWin95Threading
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" threading)
 add_test(NAME DKRWin95Clock
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" clock)
+add_test(NAME DKRWin95FileIO
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" fileio)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer
