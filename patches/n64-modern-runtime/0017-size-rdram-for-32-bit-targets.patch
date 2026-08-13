@@ -1,0 +1,82 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Size the rdram reservation for the target's address space
+
+    constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;
+
+On a 32-bit target size_t is 32 bits wide, so this does not merely become an
+unreasonably large number -- it evaluates to exactly zero. VirtualAlloc is then
+asked to reserve nothing, fails, and the program stops at "Failed to allocate
+memory" before drawing a frame. It compiles, it links, and it dies at startup.
+
+GCC does say so, but only under -Woverflow and only as a warning among the
+thousands a generated-code build produces:
+
+    warning: conversion from 'long long unsigned int' to 'size_t'
+    {aka 'unsigned int'} changes value from '4294967296' to '0'
+
+The two sizes become target-dependent. The values for a 32-bit target are not
+chosen to make the numbers fit but to keep the mechanism intact: the reservation
+exists so that an out-of-range guest address lands on protected pages and faults
+immediately, rather than quietly reading whatever is mapped. Committing 4 MiB
+and reserving 8 MiB leaves 4 MiB of protected space above the rdram, so an
+invalid access still traps.
+
+4 MiB is not arbitrary either. DKR's main pool stops at RAM_END, 0x80400000, and
+the decomp sets EXPANSION_PAK_SUPPORT to 0 -- the game never uses the Expansion
+Pak. Committing 8 MiB would commit memory the game never writes, on a machine
+that has 47 MiB free in total.
+
+Verified on the target: the scheme works at this size, and reserving is the
+binding constraint rather than committing -- that machine tops out at 1 GiB of
+reservation and 256 MiB of read-write commit.
+
+The 64-bit values are untouched and still evaluate to 536870912 and 4294967296;
+all 26 translation units still compile there.
+
+diff --git a/librecomp/include/librecomp/addresses.hpp b/librecomp/include/librecomp/addresses.hpp
+index b1b50cb..fa6316e 100644
+--- a/librecomp/include/librecomp/addresses.hpp
++++ b/librecomp/include/librecomp/addresses.hpp
+@@ -2,14 +2,41 @@
+ #define __RECOMP_ADDRESSES_HPP__
+ 
+ #include <cstdint>
++#include <cstddef>
+ #include "ultramodern/ultra64.h"
+ #include "recomp.h"
+ 
+ namespace recomp {
+-    // 512GB (kseg0 size)
++    // How much rdram is committed, and how much address space is reserved
++    // around it.
++    //
++    // The reservation exists so that an out-of-range guest address lands on
++    // protected pages and faults immediately, instead of quietly reading
++    // whatever happens to be mapped. The defaults are generous because a
++    // 64-bit host has address space to spare.
++    //
++    // A 32-bit host does not, and the defaults are worse than merely large
++    // there: size_t is 32 bits wide, so 4096 * 1024 * 1024 does not overflow
++    // into something big -- it evaluates to exactly zero. VirtualAlloc is then
++    // asked for a zero-byte reservation, fails, and the program stops at
++    // "Failed to allocate memory". The compiler does warn, but only with
++    // -Woverflow, and only as a warning.
++    //
++    // The sizes are therefore target-dependent. On a 32-bit target they are
++    // chosen to keep the mechanism intact rather than to disable it: 4 MiB
++    // committed, 8 MiB reserved, so 4 MiB of protected space still sits above
++    // the rdram and still traps.
++#if SIZE_MAX > 0xFFFFFFFFu
++    // 512MB (kseg0 size)
+     constexpr size_t mem_size = 512ULL * 1024ULL * 1024ULL;
+     // 4GB (the full address space)
+     constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;
++#else
++    constexpr size_t mem_size = 4ULL * 1024ULL * 1024ULL;
++    constexpr size_t allocation_size = 8ULL * 1024ULL * 1024ULL;
++    static_assert(allocation_size > mem_size,
++        "the reservation must exceed the committed rdram, or nothing traps");
++#endif
+     // We need a place in rdram to hold the PI handles, so pick an address in extended rdram
+     constexpr int32_t cart_handle = 0x80800000;
+     constexpr int32_t drive_handle = (int32_t)(cart_handle + sizeof(OSPiHandle));

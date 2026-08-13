@@ -1,0 +1,105 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Build librecomp for 32-bit targets
+
+Two constructs assume a 64-bit target. Both are genuine portability defects
+rather than a Windows 95 peculiarity, and both are fixed rather than guarded.
+
+1. std::hash<HookDefinition> packed three values into a size_t and asserted
+   that size_t is 64 bits wide.
+
+The assert was right to exist: on a 32-bit target the `<< 32` discards
+section_rom entirely, and every hook in a given function would collide. But
+refusing to build is a blunt way to say so, and the packing does not actually
+need size_t -- it needs 64 bits.
+
+The value is now assembled in uint64_t, then narrowed only if size_t is
+smaller, by folding the two halves rather than truncating. On a 64-bit target
+the result is bit-for-bit what it was; verified over two million random
+triples. On a 32-bit target both halves still contribute, so the collision the
+assert guarded against does not occur.
+
+2. patch_func emitted a trampoline for x86_64 and ARM64 only.
+
+The 32-bit x86 form is the direct counterpart of the x86_64 one: mov eax,
+imm32 followed by jmp eax, six bytes instead of twelve. An absolute jump
+through a register is used rather than a relative one so that the displacement
+cannot overflow, exactly as on the other two architectures.
+
+With these two changes all 26 librecomp translation units compile for
+i686-w64-mingw32 with -march=pentium2 -mno-sse, and the disassembly of the
+resulting archive contains no instruction outside the Pentium II set. The
+64-bit targets are unaffected: all 26 still compile, and the only behavioural
+difference is confined to a branch that a 64-bit build never takes.
+
+diff --git a/librecomp/include/librecomp/mods.hpp b/librecomp/include/librecomp/mods.hpp
+index d7a464e..06ed699 100644
+--- a/librecomp/include/librecomp/mods.hpp
++++ b/librecomp/include/librecomp/mods.hpp
+@@ -49,12 +49,29 @@ template <>
+ struct std::hash<recomp::mods::HookDefinition>
+ {
+     std::size_t operator()(const recomp::mods::HookDefinition& def) const {
+-        // This hash packing only works if the resulting value is 64 bits.
+-        static_assert(sizeof(std::size_t) == 8);
+         // Combine the three values into a single 64-bit value.
+         // The lower 2 bits of a function address will always be zero, so pack
+         // the value of at_return into the lowest bit.
+-        return (size_t(def.section_rom) << 32) | size_t(def.function_vram) | size_t(def.at_return ? 1 : 0);
++        //
++        // The packing is done in uint64_t rather than size_t so that it does not
++        // depend on the width of the latter. On a 32-bit target size_t is 32
++        // bits wide, the shift discards section_rom entirely, and every hook in
++        // a given function collides -- which a static_assert used to prevent by
++        // refusing to build at all.
++        const uint64_t packed =
++            (uint64_t(def.section_rom) << 32) |
++            uint64_t(def.function_vram) |
++            uint64_t(def.at_return ? 1 : 0);
++
++        if constexpr (sizeof(std::size_t) == 8) {
++            return std::size_t(packed);
++        }
++        else {
++            // Fold rather than truncate, so that the high half still
++            // contributes. Truncating would reintroduce the collision the
++            // static_assert existed to avoid.
++            return std::size_t(packed ^ (packed >> 32));
++        }
+     }
+ };
+ 
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+index ff40212..bb4ef84 100644
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -74,6 +74,9 @@ bool get_to_vec(const nlohmann::json& val, std::vector<T2>& out) {
+ // MSVC/GCC/Clang ARM64
+ #elif defined(__ARM_ARCH_ISA_A64)
+ #   define IS_ARM64
++// MSVC x86, GCC/Clang x86
++#elif (defined(_M_IX86) && !defined(_M_AMD64)) || defined(__i386__)
++#   define IS_X86_32
+ #else
+ #   error "Unsupported architecture!"
+ #endif
+@@ -585,6 +588,20 @@ void patch_func(recomp_func_t* target_func, recomp::mods::GenericFunction replac
+            write_bytes(&native_func, sizeof(&native_func));
+         }
+     }, replacement_func);
++#elif defined(IS_X86_32)
++    // mov eax, imm32 ; jmp eax -- six bytes, the 32-bit counterpart of the
++    // movabs/jmp pair above. An absolute jump through a register is used rather
++    // than a relative one so that the displacement cannot overflow, exactly as
++    // on the other two architectures.
++    static const uint8_t mov_eax[] = {0xB8};
++    static const uint8_t jmp_eax[] = {0xFF, 0xE0};
++    std::visit(overloaded {
++        [&write_bytes](recomp_func_t* native_func) {
++           write_bytes(mov_eax, sizeof(mov_eax));
++           write_bytes(&native_func, sizeof(&native_func));
++           write_bytes(jmp_eax, sizeof(jmp_eax));
++        }
++    }, replacement_func);
+ #else
+ #   error "Unsupported architecture"
+ #endif

@@ -164,6 +164,42 @@ add_custom_target(dkr_win95_cpp_subset_ultramodern ALL
     COMMENT "Contrôle du sous-ensemble C++ : ultramodern"
     VERBATIM)
 
+# --- librecomp (E01-S05) -----------------------------------------------------
+#
+# Le patch 0016 lève les deux hypothèses 64 bits de `librecomp` : le hachage de
+# `HookDefinition`, qui empaquetait trois valeurs dans un `size_t` en exigeant
+# qu'il fasse 64 bits, et le trampoline de `patch_func`, qui ne connaissait que
+# x86_64 et ARM64. Les 26 unités de traduction compilent depuis.
+#
+# `miniz_export.h` vient de la cale : c'est un en-tête que le CMake de miniz
+# fabrique à la configuration, et cette cible ne construit pas miniz par son
+# CMake.
+#
+# **Ceci ne rend pas le jeu chargeable.** `librecomp` porte encore
+# `<filesystem>` en abondance — c'est le travail de E02-S05 — et cette cible
+# établit la compilation, pas le chargement.
+file(GLOB DKR_WIN95_LIBRECOMP_SOURCES
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/src/*.cpp")
+
+add_library(win95librecomp STATIC ${DKR_WIN95_LIBRECOMP_SOURCES})
+target_include_directories(win95librecomp PUBLIC
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/include/librecomp"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/src"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/lib/rabbitizer/cplusplus/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/lib/rabbitizer/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/ultramodern/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/concurrentqueue"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/o1heap"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz"
+    "${DKR_WIN95_PLATFORM}/include-shim"
+    "${DKRPORT_ROOT}/include")
+target_compile_definitions(win95librecomp PRIVATE NOMINMAX)
+target_link_libraries(win95librecomp PUBLIC win95ultramodern)
+add_dependencies(win95librecomp dkr_win95_cpp_subset)
+
 # --- Vérification du jeu d'instructions --------------------------------------
 #
 # Étape obligatoire après le lien, et non outil facultatif : c'est la seule

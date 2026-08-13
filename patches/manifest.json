@@ -65,6 +65,14 @@
         {
           "path": "patches/n64-modern-runtime/0015-platform-seam-for-threading-primitives.patch",
           "sha256": "4563032ca79a22abe063a1ac084b48610d77971d934fb881e585f0fd945d7d52"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0016-build-librecomp-for-32-bit-targets.patch",
+          "sha256": "01eb04c82df57b97de042c3cab23c15bf5a3ef6bc0d57fced7bf167cb735c2ad"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0017-size-rdram-for-32-bit-targets.patch",
+          "sha256": "e0e429fe9d54c97104291e87d7dac0e783f6db4f36d7bbc71a14457c30a81330"
         }
       ]
     },

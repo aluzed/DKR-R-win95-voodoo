@@ -113,6 +113,33 @@ suite demande un pilote qui reprend après la fonction en cours, ce qui
 fonctionne sur les deux cibles sans dépendre de ce que le système veut bien
 délivrer.
 
+### `librecomp` compile aussi, et les deux hypothèses 64 bits tombent
+
+Ce n'était pas le périmètre de ce ticket, mais c'est ce qui bloquait tous les
+autres, et le mur s'est révélé plus mince que le décompte de E01-S02 le laissait
+croire. **Les 26 unités de traduction de `librecomp` compilent** pour la cible,
+sans instruction hors Pentium II.
+
+Les « six erreurs » recensées étaient en réalité **une seule cause pour cinq
+d'entre elles** — le `static_assert(sizeof(std::size_t) == 8)` de `mods.hpp`,
+qui remontait par inclusion — plus deux chemins d'inclusion manquants et un
+en-tête que le CMake de miniz fabrique. Deux patchs suffisent :
+
+- **0016** — le hachage de `HookDefinition` s'assemble en `uint64_t` puis se
+  replie si `size_t` est plus étroit, au lieu d'exiger 64 bits ; et
+  `patch_func` reçoit son trampoline i386, `mov eax, imm32 ; jmp eax`, le
+  pendant exact des six autres octets de la variante x86_64. Le hachage 64 bits
+  est inchangé, vérifié sur deux millions de triplets.
+- **0017** — `allocation_size` valait `4096ULL * 1024 * 1024`, ce qui **fait
+  exactement zéro** quand `size_t` est de 32 bits : `VirtualAlloc` réservait
+  rien, échouait, et le jeu s'arrêtait sur « Failed to allocate memory » avant
+  la première image. Les tailles suivent désormais la cible, selon ce que
+  l'[ADR 0003](../../adr/0003-budget-memoire.md) avait tranché — 4 Mio validés,
+  8 Mio réservés, de sorte que le piège à accès invalides reste armé.
+
+L'image du code recompilé mesurée ici, **3,81 Mio de `.text`**, confirme
+l'estimation de 3,85 Mio sur laquelle cette ADR avait bâti son budget.
+
 **Ce qui reste hors d'atteinte** : le point 7, la réservation de RDRAM en
 conditions réelles, et le point 8, la confrontation au budget de E00-S06. Les
 deux demandent le jeu lié pour de bon, ce qui attend encore `librecomp`
