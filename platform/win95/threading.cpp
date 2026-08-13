@@ -30,7 +30,8 @@
 
 static dkr_threading_fatal_fn dkr_fatal_handler = 0;
 
-static void dkr_fatal(const char *message);
+/* Definie plus bas, une fois par implementation. Publique : voir threading.h. */
+void dkr_threading_fatal(const char *message);
 
 void dkr_threading_set_fatal_handler(dkr_threading_fatal_fn handler)
 {
@@ -120,6 +121,125 @@ void dkr_tls_set(int slot, void *value)
 }
 
 
+/* --- Variable de condition, commune aux deux implementations -------------- *
+ *
+ * Elle ne repose que sur `dkr_mutex` et `dkr_sem`, que les deux backends
+ * fournissent. Il n'y a donc **qu'une** implementation, et non deux a garder en
+ * phase — ce qui compte pour le morceau du ticket qui etait annonce comme le
+ * plus delicat. Le raisonnement de correction est dans `threading.h`.
+ */
+int dkr_condvar_init(dkr_condvar *cv)
+{
+    if (!cv) {
+        return 0;
+    }
+    cv->waiters     = 0;
+    cv->initialised = 0;
+    if (!dkr_mutex_init(&cv->guard)) {
+        return 0;
+    }
+    if (!dkr_sem_init(&cv->sem, 0)) {
+        dkr_mutex_destroy(&cv->guard);
+        return 0;
+    }
+    cv->initialised = 1;
+    return 1;
+}
+
+void dkr_condvar_destroy(dkr_condvar *cv)
+{
+    if (!cv || !cv->initialised) {
+        return;
+    }
+    dkr_sem_destroy(&cv->sem);
+    dkr_mutex_destroy(&cv->guard);
+    cv->initialised = 0;
+}
+
+void dkr_condvar_notify_one(dkr_condvar *cv)
+{
+    if (!cv || !cv->initialised) {
+        return;
+    }
+    dkr_mutex_lock(&cv->guard);
+    if (cv->waiters > 0) {
+        cv->waiters--;
+        dkr_sem_signal(&cv->sem, 1);
+    }
+    dkr_mutex_unlock(&cv->guard);
+}
+
+void dkr_condvar_notify_all(dkr_condvar *cv)
+{
+    long n;
+    if (!cv || !cv->initialised) {
+        return;
+    }
+    dkr_mutex_lock(&cv->guard);
+    n = cv->waiters;
+    if (n > 0) {
+        cv->waiters = 0;
+        dkr_sem_signal(&cv->sem, n);
+    }
+    dkr_mutex_unlock(&cv->guard);
+}
+
+/* Coeur commun des deux attentes. `ms` negatif — represente par `timed == 0` —
+   signifie « sans echeance ». */
+static int dkr_condvar_wait_impl(dkr_condvar *cv, dkr_mutex *external,
+                                 int timed, unsigned long ms)
+{
+    int woken;
+
+    if (!cv || !cv->initialised || !external) {
+        return 0;
+    }
+
+    /* L'inscription se fait **avant** de relacher le verrou de l'appelant.
+       C'est ce qui garantit qu'un signaleur, qui ne peut agir qu'apres avoir
+       obtenu ce meme verrou ou le notre, voit toujours l'attendeur. */
+    dkr_mutex_lock(&cv->guard);
+    cv->waiters++;
+    dkr_mutex_unlock(&cv->guard);
+
+    dkr_mutex_unlock(external);
+
+    woken = timed ? dkr_sem_wait_timeout(&cv->sem, ms)
+                  : dkr_sem_wait(&cv->sem);
+
+    if (!woken) {
+        /* L'echeance est passee. Un signal a pu etre emis entre l'expiration et
+           cet instant : le jeton serait alors depose et notre compteur deja
+           decremente. Le laisser trainerait un reveil pour personne, et le
+           prochain attendeur repartirait sans raison. On le reprend donc. */
+        dkr_mutex_lock(&cv->guard);
+        if (dkr_sem_try_wait(&cv->sem)) {
+            woken = 1;
+        } else {
+            cv->waiters--;
+        }
+        dkr_mutex_unlock(&cv->guard);
+    }
+
+    /* Reprise du verrou de l'appelant dans tous les cas, expiration comprise :
+       c'est le contrat de `std::condition_variable`, et l'appelant ecrit son
+       code en le supposant. */
+    dkr_mutex_lock(external);
+    return woken;
+}
+
+int dkr_condvar_wait(dkr_condvar *cv, dkr_mutex *external)
+{
+    return dkr_condvar_wait_impl(cv, external, 0, 0);
+}
+
+int dkr_condvar_wait_timeout(dkr_condvar *cv, dkr_mutex *external,
+                             unsigned long ms)
+{
+    return dkr_condvar_wait_impl(cv, external, 1, ms);
+}
+
+
 #if defined(_WIN32)
 
 /* ========================================================================== *
@@ -136,7 +256,7 @@ void dkr_tls_set(int slot, void *value)
 static_assert(sizeof(CRITICAL_SECTION) <= sizeof(((dkr_mutex *)0)->reserved),
               "dkr_mutex::reserved trop petit pour une CRITICAL_SECTION");
 
-static void dkr_fatal(const char *message)
+void dkr_threading_fatal(const char *message)
 {
     if (dkr_fatal_handler) {
         dkr_fatal_handler(message);
@@ -392,7 +512,7 @@ void dkr_mutex_lock(dkr_mutex *m)
     unsigned long me = (unsigned long)GetCurrentThreadId();
 
     if (m->owner == me) {
-        dkr_fatal("dkr_mutex : reentrance — un std::mutex se serait interbloque ici");
+        dkr_threading_fatal("dkr_mutex : reentrance — un std::mutex se serait interbloque ici");
         return;
     }
     EnterCriticalSection((LPCRITICAL_SECTION)m->reserved);
@@ -549,7 +669,7 @@ int dkr_event_wait_timeout(dkr_event *e, unsigned long ms)
 static_assert(sizeof(pthread_mutex_t) <= sizeof(((dkr_mutex *)0)->reserved),
               "dkr_mutex::reserved trop petit pour un pthread_mutex_t");
 
-static void dkr_fatal(const char *message)
+void dkr_threading_fatal(const char *message)
 {
     if (dkr_fatal_handler) {
         dkr_fatal_handler(message);
@@ -748,7 +868,7 @@ void dkr_mutex_lock(dkr_mutex *m)
     unsigned long me = dkr_thread_id();
 
     if (m->owner == me) {
-        dkr_fatal("dkr_mutex : reentrance — un std::mutex se serait interbloque ici");
+        dkr_threading_fatal("dkr_mutex : reentrance — un std::mutex se serait interbloque ici");
         return;
     }
     pthread_mutex_lock((pthread_mutex_t *)m->reserved);

@@ -188,6 +188,73 @@ void dkr_event_reset(dkr_event *e);
 int  dkr_event_wait(dkr_event *e);
 int  dkr_event_wait_timeout(dkr_event *e, unsigned long ms);
 
+/* --- Variable de condition ------------------------------------------------ *
+ *
+ * Windows 95 n'en a pas : les siennes datent de Vista. Celle-ci est batie sur
+ * le semaphore ci-dessus et un compteur d'attendeurs protege par un verrou.
+ *
+ * C'est le morceau que le ticket E02-S01 redoutait — « un exercice ou l'on perd
+ * des reveils ». Il s'est avere necessaire non pas a cause d'`ultramodern`
+ * amont, qui n'en emploie aucune, mais a cause du patch 0013 du depot, qui en
+ * introduit deux dans `mesgqueue.cpp`.
+ *
+ * ## Pourquoi aucun reveil ne se perd
+ *
+ * La fenetre dangereuse d'une variable de condition est celle-ci : l'attendeur
+ * relache le verrou de l'appelant, puis se met en attente. Un signal emis
+ * *entre les deux* doit lui parvenir quand meme.
+ *
+ * Ici il lui parvient, parce que le primitif d'attente est un **semaphore de
+ * comptage** : `notify` depose un jeton, et le jeton attend l'attendeur.
+ *
+ * Et surtout : le compteur d'attendeurs est incremente **avant** que le verrou
+ * de l'appelant ne soit relache. Cet ordre n'est pas une precaution, c'est la
+ * demonstration. Un signaleur ne peut signaler qu'apres avoir modifie l'etat
+ * que l'attendeur teste, et il ne peut le modifier qu'en tenant ce meme verrou.
+ * Il ne peut donc pas prendre le verrou tant que nous ne l'avons pas relache —
+ * or a cet instant nous sommes deja inscrits. Il n'existe aucun entrelacement
+ * ou il nous manque.
+ *
+ * **Cette propriete tient par l'argument, non par le test.** L'ordre inverse a
+ * ete essaye : la suite passe quand meme, 20 000 relais compris. La raison est
+ * instructive — le chemin du signaleur jusqu'a `notify` (prendre le verrou,
+ * modifier l'etat, le relacher) est plus long que celui de l'attendeur jusqu'a
+ * son inscription, de sorte qu'il perd presque toujours la course. Presque.
+ * C'est exactement la forme de defaut que le ticket decrit : rare, non
+ * deterministe, et qui se manifeste en gel aleatoire chez le joueur. On ne le
+ * traite donc pas par le test mais par la construction.
+ *
+ * ## Ce qui n'est pas garanti, et qui ne l'est pas non plus ailleurs
+ *
+ * Un reveil peut etre **derobe** : si deux fils attendent et qu'un troisieme
+ * signale, rien ne dit lequel des deux repart. `std::condition_variable` ne le
+ * dit pas davantage, et c'est pourquoi tout appelant correct enveloppe son
+ * attente dans une boucle sur un predicat. Les deux sites d'appel du depot le
+ * font — `wait(lock, predicat)` et `while (!complete && !exited)`.
+ *
+ * `notify` emis alors que personne n'attend est perdu, comme il se doit.
+ */
+typedef struct {
+    dkr_mutex  guard;        /* protege `waiters` */
+    dkr_sem    sem;          /* le primitif d'attente proprement dit */
+    long       waiters;
+    int        initialised;
+} dkr_condvar;
+
+int  dkr_condvar_init(dkr_condvar *cv);
+void dkr_condvar_destroy(dkr_condvar *cv);
+
+/* Reveille au plus un attendeur, au plus tous. Sans effet s'il n'y en a aucun. */
+void dkr_condvar_notify_one(dkr_condvar *cv);
+void dkr_condvar_notify_all(dkr_condvar *cv);
+
+/* Relache `external`, attend, puis le reprend avant de rendre la main — y
+   compris en cas d'expiration, comme `std::condition_variable`.
+   `wait` rend 1 ; `wait_timeout` rend 1 s'il a ete reveille, 0 s'il a expire. */
+int  dkr_condvar_wait(dkr_condvar *cv, dkr_mutex *external);
+int  dkr_condvar_wait_timeout(dkr_condvar *cv, dkr_mutex *external,
+                              unsigned long ms);
+
 /* --- Variables locales au fil --------------------------------------------- *
  *
  * Windows 95 n'offre que 64 emplacements TLS pour tout le processus, et
@@ -225,6 +292,16 @@ void  dkr_tls_release_current(void);
  */
 typedef void (*dkr_threading_fatal_fn)(const char *message);
 void dkr_threading_set_fatal_handler(dkr_threading_fatal_fn handler);
+
+/* Signale une faute par ce meme canal. Publique parce que le pont C++ de
+   E02-S02 (`threading.hpp`) en a besoin : un `thread` detruit encore joignable
+   est la meme classe de faute qu'une reentrance, et doit se signaler et se
+   tester de la meme facon.
+
+   Ne rend la main que si un gestionnaire l'a interceptee — le comportement par
+   defaut est d'arreter le processus. Les appelants doivent donc rester corrects
+   dans les deux cas. */
+void dkr_threading_fatal(const char *message);
 
 #ifdef __cplusplus
 }

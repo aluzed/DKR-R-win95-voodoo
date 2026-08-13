@@ -1,0 +1,537 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Route threading primitives through a platform seam
+
+Windows 95 resolves every import at load time, so a symbol the system does
+not export stops the process from starting even when the function is never
+called. <thread>, <mutex> and <condition_variable> each pull in six such
+symbols, four of them condition variables introduced with Windows Vista.
+Including any of them is enough to make the binary refuse to load -- which
+no compiler warning, and no successful link, will tell you.
+
+The primitives themselves are available: Win32 has threads, critical
+sections and semaphores. What is missing is the standard library's wrapping
+of them. So this patch does not change any logic; it introduces one header,
+ultramodern/threading.hpp, that names the five types ultramodern uses, and
+routes every use through it.
+
+A port supplies its own by defining two macros:
+
+    ULTRAMODERN_PLATFORM_THREADING_HEADER   header to include, as a string
+    ULTRAMODERN_PLATFORM_THREADING_NS       namespace providing the types
+
+Defining neither -- the default, and what every existing target does --
+leaves std::thread, std::mutex, std::condition_variable, std::lock_guard
+and std::unique_lock exactly where they were. The modern targets compile
+byte-for-byte the same code; verified by building all fifteen translation
+units on a 64-bit Linux host before and after.
+
+The seam deliberately names types rather than wrapping them. A wrapper
+would have to be kept in step with the standard library forever; a
+using-declaration cannot drift. lock_guard and unique_lock are introduced
+by using-declaration rather than alias template so that they stay class
+templates, and `lock_guard lock{m}` keeps deducing its argument.
+
+Two of the five types are needed only because of this repository's own
+patch 0013, which gives mesgqueue.cpp a condition-variable-based FIFO.
+Upstream ultramodern uses no condition variable at all.
+
+diff --git a/ultramodern/include/ultramodern/threading.hpp b/ultramodern/include/ultramodern/threading.hpp
+new file mode 100644
+index 0000000..3c3e9c4
+--- /dev/null
++++ b/ultramodern/include/ultramodern/threading.hpp
+@@ -0,0 +1,71 @@
++#ifndef __ULTRAMODERN_THREADING_HPP__
++#define __ULTRAMODERN_THREADING_HPP__
++
++// Threading primitives, with a seam for platforms that cannot use the standard
++// library's.
++//
++// ultramodern uses five of them -- std::thread, std::mutex, std::lock_guard,
++// std::unique_lock and std::condition_variable -- and on every mainstream
++// platform the standard library is the right answer.
++// This header exists for the platforms where merely *including* <thread> or
++// <mutex> is fatal.
++//
++// Windows 95 is such a platform. Its loader resolves every import at load time,
++// so a missing symbol stops the process from starting even if the function is
++// never called; <thread> and <mutex> pull in six symbols it does not export,
++// four of them condition variables introduced with Windows Vista. Including
++// either header is enough to make the binary refuse to load.
++//
++// A port supplies its own primitives by defining two macros:
++//
++//     ULTRAMODERN_PLATFORM_THREADING_HEADER   header to include, as a string
++//     ULTRAMODERN_PLATFORM_THREADING_NS       namespace providing the types
++//
++// The types must offer only what ultramodern actually uses: thread with default
++// construction, a variadic constructor, move assignment, join and detach; mutex
++// with default construction; lock_guard and unique_lock usable both with and
++// without an explicit template argument; and condition_variable with
++// notify_one, notify_all, wait with a predicate, and wait_for.
++//
++// Defining neither macro -- the default, and what every existing target does --
++// leaves the standard library in place, so this header changes nothing for them.
++
++#if defined(ULTRAMODERN_PLATFORM_THREADING_HEADER)
++
++#include ULTRAMODERN_PLATFORM_THREADING_HEADER
++
++namespace ultramodern {
++    using thread             = ULTRAMODERN_PLATFORM_THREADING_NS::thread;
++    using mutex              = ULTRAMODERN_PLATFORM_THREADING_NS::mutex;
++    using condition_variable = ULTRAMODERN_PLATFORM_THREADING_NS::condition_variable;
++    // Using-declarations rather than alias templates: they keep `lock_guard`
++    // and `unique_lock` class templates, so `lock_guard lock{m}` still deduces
++    // its argument.
++    using ULTRAMODERN_PLATFORM_THREADING_NS::lock_guard;
++    using ULTRAMODERN_PLATFORM_THREADING_NS::unique_lock;
++}
++
++#else
++
++// The Windows 95 target never reaches this branch: it defines the two macros
++// above and takes the platform seam instead. Its subset checker reads text
++// rather than preprocessor state, so the exemption is stated per line.
++//
++// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++#include <thread>
++// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++#include <mutex>
++// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++#include <condition_variable>
++
++namespace ultramodern {
++    using std::thread;
++    using std::mutex;
++    using std::condition_variable;
++    using std::lock_guard;
++    using std::unique_lock;
++}
++
++#endif
++
++#endif
+diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
+index 42d215a..d40f978 100644
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -1,7 +1,7 @@
+ #ifndef __ultramodern_HPP__
+ #define __ultramodern_HPP__
+ 
+-#include <thread>
++#include "ultramodern/threading.hpp"
+ #include <cassert>
+ #include <stdexcept>
+ #include <span>
+@@ -22,7 +22,7 @@
+ #include "ultramodern/threads.hpp"
+ 
+ struct UltraThreadContext {
+-    std::thread host_thread;
++    ultramodern::thread host_thread;
+     moodycamel::LightweightSemaphore running;
+     moodycamel::LightweightSemaphore initialized;
+ };
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index c342a01..6655a11 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -1,11 +1,10 @@
+-#include <thread>
++#include "ultramodern/threading.hpp"
+ #include <atomic>
+ #include <chrono>
+ #include <cinttypes>
+ #include <variant>
+ #include <unordered_map>
+ #include <utility>
+-#include <mutex>
+ #include <memory>
+ #include <queue>
+ #include <cstring>
+@@ -55,7 +54,7 @@ struct ViState {
+ 
+ static struct {
+     struct {
+-        std::thread thread;
++        ultramodern::thread thread;
+         int cur_state;
+         int field;
+         ViState states[2];
+@@ -111,8 +110,8 @@ static struct {
+         }
+     } vi;
+     struct {
+-        std::thread gfx_thread;
+-        std::thread task_thread;
++        ultramodern::thread gfx_thread;
++        ultramodern::thread task_thread;
+         PTR(OSMesgQueue) mq = NULLPTR;
+         OSMesg msg = (OSMesg)0;
+     } sp;
+@@ -129,7 +128,7 @@ static struct {
+         OSMesg msg = (OSMesg)0;
+     } si;
+     // The same message queue may be used for multiple events, so share a mutex for all of them
+-    std::mutex message_mutex;
++    ultramodern::mutex message_mutex;
+     uint8_t* rdram;
+     moodycamel::BlockingConcurrentQueue<Action> action_queue{};
+     moodycamel::BlockingConcurrentQueue<OSTask*> sp_task_queue{};
+@@ -141,7 +140,7 @@ ultramodern::renderer::ViRegs* ultramodern::renderer::get_vi_regs() {
+ }
+ 
+ extern "C" void osSetEventMesg(RDRAM_ARG OSEvent event_id, PTR(OSMesgQueue) mq_, OSMesg msg) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+ 
+     switch (event_id) {
+         case OS_EVENT_SP:
+@@ -163,7 +162,7 @@ extern "C" void osSetEventMesg(RDRAM_ARG OSEvent event_id, PTR(OSMesgQueue) mq_,
+ }
+ 
+ extern "C" void osViSetEvent(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, u32 retrace_count) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     ViState* next_state = events_context.vi.get_next_state();
+     next_state->mq = mq_;
+     next_state->msg = msg;
+@@ -235,7 +234,7 @@ void vi_thread_func() {
+         if (ultramodern::is_game_started()) {
+             remaining_retraces--;
+             
+-            std::lock_guard lock{ events_context.message_mutex };
++            ultramodern::lock_guard lock{ events_context.message_mutex };
+             ViState* cur_state = events_context.vi.get_cur_state();
+             if (remaining_retraces == 0) {
+                 if (cur_state->mq != NULLPTR) {
+@@ -261,7 +260,7 @@ void sp_complete() {
+     PTR(OSMesgQueue) mq;
+     OSMesg msg;
+     {
+-        std::lock_guard lock{ events_context.message_mutex };
++        ultramodern::lock_guard lock{ events_context.message_mutex };
+         mq = events_context.sp.mq;
+         msg = events_context.sp.msg;
+     }
+@@ -273,7 +272,7 @@ void sp_complete() {
+ 
+ void dp_complete() {
+     uint8_t* rdram = events_context.rdram;
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     ultramodern::enqueue_external_message_src(events_context.dp.mq, events_context.dp.msg, false, ultramodern::EventMessageSource::Dp);
+ }
+ 
+@@ -468,12 +467,12 @@ void set_dummy_vi(bool odd) {
+ }
+ 
+ extern "C" void osViSwapBuffer(RDRAM_ARG PTR(void) frameBufPtr) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     events_context.vi.get_next_state()->framebuffer = frameBufPtr;
+ }
+ 
+ extern "C" void osViSetMode(RDRAM_ARG PTR(OSViMode) mode_) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     OSViMode* mode = TO_PTR(OSViMode, mode_);
+     ViState* next_state = events_context.vi.get_next_state();
+     next_state->mode = mode;
+@@ -490,7 +489,7 @@ extern "C" void osViSetMode(RDRAM_ARG PTR(OSViMode) mode_) {
+ #define OS_VI_DITHER_FILTER_OFF 0x0080
+ 
+ extern "C" void osViSetSpecialFeatures(uint32_t func) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     ViState* next_state = events_context.vi.get_next_state();
+     uint32_t* control_out = &next_state->control;
+     if ((func & OS_VI_GAMMA_ON) != 0) {
+@@ -529,7 +528,7 @@ extern "C" void osViSetSpecialFeatures(uint32_t func) {
+ }
+ 
+ extern "C" void osViBlack(uint8_t active) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     ViState* next_state = events_context.vi.get_next_state();
+     uint32_t* state_out = &next_state->state;
+     if (active) {
+@@ -540,7 +539,7 @@ extern "C" void osViBlack(uint8_t active) {
+ }
+ 
+ extern "C" void osViRepeatLine(uint8_t active) {
+-    std::lock_guard lock{ events_context.message_mutex };
++    ultramodern::lock_guard lock{ events_context.message_mutex };
+     ViState* next_state = events_context.vi.get_next_state();
+     uint32_t* state_out = &next_state->state;
+     if (active) {
+@@ -594,8 +593,8 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
+     moodycamel::LightweightSemaphore gfx_thread_ready;
+     moodycamel::LightweightSemaphore task_thread_ready;
+     events_context.rdram = rdram;
+-    events_context.sp.gfx_thread = std::thread{ gfx_thread_func, rdram, &gfx_thread_ready, window_handle };
+-    events_context.sp.task_thread = std::thread{ task_thread_func, rdram, &task_thread_ready };
++    events_context.sp.gfx_thread = ultramodern::thread{ gfx_thread_func, rdram, &gfx_thread_ready, window_handle };
++    events_context.sp.task_thread = ultramodern::thread{ task_thread_func, rdram, &task_thread_ready };
+ 
+     // Wait for the two sp threads to be ready before continuing to prevent the game from
+     // running before we're able to handle RSP tasks.
+@@ -630,7 +629,7 @@ void ultramodern::init_events(RDRAM_ARG ultramodern::renderer::WindowHandle wind
+         throw std::runtime_error("Failed to initialize the renderer");
+     }
+ 
+-    events_context.vi.thread = std::thread{ vi_thread_func };
++    events_context.vi.thread = ultramodern::thread{ vi_thread_func };
+ }
+ 
+ void ultramodern::join_event_threads() {
+diff --git a/ultramodern/src/extensions.cpp b/ultramodern/src/extensions.cpp
+index e18b276..33ae2c6 100644
+--- a/ultramodern/src/extensions.cpp
++++ b/ultramodern/src/extensions.cpp
+@@ -1,4 +1,4 @@
+-#include <mutex>
++#include "ultramodern/threading.hpp"
+ #include <vector>
+ 
+ #include "ultramodern/extensions.h"
+@@ -13,13 +13,13 @@ struct DLEvent {
+ 
+ struct {
+     struct {
+-        std::mutex dl_event_mutex;
++        ultramodern::mutex dl_event_mutex;
+         std::vector<DLEvent> pending_events;
+     } dl_events;
+ } extension_state;
+ 
+ extern "C" void osExQueueDisplaylistEvent(PTR(OSMesgQueue) mq, OSMesg mesg, PTR(void) displaylist, u32 event_type) {
+-    std::lock_guard lock{ extension_state.dl_events.dl_event_mutex };
++    ultramodern::lock_guard lock{ extension_state.dl_events.dl_event_mutex };
+ 
+     assert(
+         event_type == OS_EX_DISPLAYLIST_EVENT_SUBMITTED || 
+@@ -32,7 +32,7 @@ extern "C" void osExQueueDisplaylistEvent(PTR(OSMesgQueue) mq, OSMesg mesg, PTR(
+ }
+ 
+ void dispatch_displaylist_events(PTR(void) displaylist, u32 event_type) {
+-    std::lock_guard lock{ extension_state.dl_events.dl_event_mutex };
++    ultramodern::lock_guard lock{ extension_state.dl_events.dl_event_mutex };
+ 
+     // Check every pending DL event to see if they match this displaylist and event type.
+     for (auto iter = extension_state.dl_events.pending_events.begin(); iter != extension_state.dl_events.pending_events.end(); ) {
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index 6ed0d32..6fa916c 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -1,11 +1,9 @@
+ #include <array>
+ #include <bitset>
+ #include <chrono>
+-#include <condition_variable>
++#include "ultramodern/threading.hpp"
+ #include <deque>
+ #include <memory>
+-#include <mutex>
+-#include <thread>
+ #include <utility>
+ 
+ #include "blockingconcurrentqueue.h"
+@@ -14,8 +12,8 @@
+ #include "ultramodern/ultramodern.hpp"
+ 
+ struct MessageDeliveryState {
+-    std::mutex mutex;
+-    std::condition_variable condition;
++    ultramodern::mutex mutex;
++    ultramodern::condition_variable condition;
+     ultramodern::EventMessageSource source = ultramodern::EventMessageSource::Sp;
+     bool complete = false;
+ };
+@@ -34,7 +32,7 @@ class ExternalMessageQueue {
+ public:
+     bool enqueue(QueuedMessage message) {
+         {
+-            std::lock_guard lock{ mutex_ };
++            ultramodern::lock_guard lock{ mutex_ };
+             messages_.push_back(std::move(message));
+         }
+         condition_.notify_one();
+@@ -42,7 +40,7 @@ public:
+     }
+ 
+     bool try_dequeue(QueuedMessage& message) {
+-        std::lock_guard lock{ mutex_ };
++        ultramodern::lock_guard lock{ mutex_ };
+         if (messages_.empty()) {
+             return false;
+         }
+@@ -52,7 +50,7 @@ public:
+     }
+ 
+     void wait_dequeue(QueuedMessage& message) {
+-        std::unique_lock lock{ mutex_ };
++        ultramodern::unique_lock lock{ mutex_ };
+         condition_.wait(lock, [this] { return !messages_.empty(); });
+         message = std::move(messages_.front());
+         messages_.pop_front();
+@@ -62,7 +60,7 @@ public:
+     bool wait_dequeue_timed(
+         QueuedMessage& message,
+         const std::chrono::duration<Rep, Period>& timeout) {
+-        std::unique_lock lock{ mutex_ };
++        ultramodern::unique_lock lock{ mutex_ };
+         if (!condition_.wait_for(lock, timeout,
+                                  [this] { return !messages_.empty(); })) {
+             return false;
+@@ -73,13 +71,13 @@ public:
+     }
+ 
+ private:
+-    std::mutex mutex_;
+-    std::condition_variable condition_;
++    ultramodern::mutex mutex_;
++    ultramodern::condition_variable condition_;
+     std::deque<QueuedMessage> messages_;
+ };
+ 
+ static ExternalMessageQueue external_messages{};
+-static std::mutex pending_delivery_mutex;
++static ultramodern::mutex pending_delivery_mutex;
+ static std::array<std::deque<std::shared_ptr<MessageDeliveryState>>, 32>
+     pending_deliveries;
+ std::bitset<32> requeue_enabled;
+@@ -90,7 +88,7 @@ static void complete_delivery(const std::shared_ptr<MessageDeliveryState>& deliv
+         return;
+     }
+     {
+-        std::lock_guard lock{ delivery->mutex };
++        ultramodern::lock_guard lock{ delivery->mutex };
+         delivery->complete = true;
+     }
+     delivery->condition.notify_all();
+@@ -101,7 +99,7 @@ static void defer_delivery_completion(
+     if (delivery == nullptr) {
+         return;
+     }
+-    std::lock_guard lock{ pending_delivery_mutex };
++    ultramodern::lock_guard lock{ pending_delivery_mutex };
+     pending_deliveries[static_cast<std::size_t>(delivery->source)].push_back(delivery);
+ }
+ 
+@@ -119,7 +117,7 @@ void ultramodern::set_message_queue_control(const ultramodern::MessageQueueContr
+ void ultramodern::acknowledge_external_message_src(EventMessageSource src) {
+     std::shared_ptr<MessageDeliveryState> delivery;
+     {
+-        std::lock_guard lock{ pending_delivery_mutex };
++        ultramodern::lock_guard lock{ pending_delivery_mutex };
+         auto& pending = pending_deliveries[static_cast<std::size_t>(src)];
+         if (pending.empty()) {
+             return;
+@@ -148,7 +146,7 @@ bool ultramodern::enqueue_external_message_src_and_wait(PTR(OSMesgQueue) mq, OSM
+     delivery->source = src;
+     external_messages.enqueue({
+         mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery});
+-    std::unique_lock lock{ delivery->mutex };
++    ultramodern::unique_lock lock{ delivery->mutex };
+     while (!delivery->complete && !exited.load()) {
+         delivery->condition.wait_for(lock, std::chrono::milliseconds{1});
+     }
+diff --git a/ultramodern/src/renderer_context.cpp b/ultramodern/src/renderer_context.cpp
+index a6af900..6418c62 100644
+--- a/ultramodern/src/renderer_context.cpp
++++ b/ultramodern/src/renderer_context.cpp
+@@ -1,5 +1,5 @@
+ #include <cassert>
+-#include <mutex>
++#include "ultramodern/threading.hpp"
+ 
+ #include "ultramodern/renderer_context.hpp"
+ #include "ultramodern/ultramodern.hpp"
+@@ -40,15 +40,15 @@ std::string ultramodern::renderer::get_graphics_api_name(GraphicsApi api) {
+ 
+ 
+ static ultramodern::renderer::GraphicsConfig graphic_config{};
+-static std::mutex graphic_config_mutex;
++static ultramodern::mutex graphic_config_mutex;
+ 
+ void ultramodern::renderer::set_graphics_config(const GraphicsConfig& config) {
+-    std::lock_guard<std::mutex> lock(graphic_config_mutex);
++    ultramodern::lock_guard<ultramodern::mutex> lock(graphic_config_mutex);
+     graphic_config = config;
+     ultramodern::trigger_config_action();
+ }
+ 
+ const ultramodern::renderer::GraphicsConfig& ultramodern::renderer::get_graphics_config() {
+-    std::lock_guard<std::mutex> lock(graphic_config_mutex);
++    ultramodern::lock_guard<ultramodern::mutex> lock(graphic_config_mutex);
+     return graphic_config;
+ }
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index b50641f..9accbcc 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -1,5 +1,5 @@
+ #include <cstdio>
+-#include <thread>
++#include "ultramodern/threading.hpp"
+ #include <cassert>
+ #include <string>
+ 
+@@ -273,7 +273,7 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
+     // Pass the context as an argument to the thread function to ensure that it can't get cleared before the thread captures its value.
+     UltraThreadContext* context = new UltraThreadContext{};
+     t->context = context;
+-    context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
++    context->host_thread = ultramodern::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
+ 
+     // Wait until the thread is initialized to indicate that it's ready to be started.
+     context->initialized.wait();
+@@ -351,7 +351,7 @@ PTR(OSThread) ultramodern::this_thread() {
+     return thread_self;
+ }
+ 
+-static std::thread thread_cleaner_thread;
++static ultramodern::thread thread_cleaner_thread;
+ static moodycamel::BlockingConcurrentQueue<UltraThreadContext*> deleted_threads{};
+ extern std::atomic_bool exited;
+ 
+@@ -369,7 +369,7 @@ void thread_cleaner_func() {
+ }
+ 
+ void ultramodern::init_thread_cleanup() {
+-    thread_cleaner_thread = std::thread{thread_cleaner_func};
++    thread_cleaner_thread = ultramodern::thread{thread_cleaner_func};
+ }
+ 
+ void ultramodern::cleanup_thread(UltraThreadContext *cur_context) {
+diff --git a/ultramodern/src/timer.cpp b/ultramodern/src/timer.cpp
+index ee26c45..1eb80cd 100644
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -1,4 +1,4 @@
+-#include <thread>
++#include "ultramodern/threading.hpp"
+ #include <variant>
+ #include <set>
+ #include "blockingconcurrentqueue.h"
+@@ -40,7 +40,7 @@ struct RemoveTimerAction {
+ using Action = std::variant<AddTimerAction, RemoveTimerAction>;
+ 
+ struct {
+-    std::thread thread;
++    ultramodern::thread thread;
+     moodycamel::BlockingConcurrentQueue<Action> action_queue{};
+ } timer_context;
+ 
+@@ -141,7 +141,7 @@ void timer_thread(RDRAM_ARG1) {
+ }
+ 
+ void ultramodern::init_timers(RDRAM_ARG1) {
+-    timer_context.thread = std::thread{ timer_thread, PASS_RDRAM1 };
++    timer_context.thread = ultramodern::thread{ timer_thread, PASS_RDRAM1 };
+     timer_context.thread.detach();
+ }
+ 

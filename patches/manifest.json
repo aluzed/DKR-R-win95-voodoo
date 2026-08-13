@@ -61,6 +61,10 @@
         {
           "path": "patches/n64-modern-runtime/0014-build-for-windows-95-targets.patch",
           "sha256": "f6a339578eefcdd96b2a569ada618a3721d55cf4517fb3e9e837c054621e48da"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0015-platform-seam-for-threading-primitives.patch",
+          "sha256": "4563032ca79a22abe063a1ac084b48610d77971d934fb881e585f0fd945d7d52"
         }
       ]
     },

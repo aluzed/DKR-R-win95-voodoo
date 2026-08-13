@@ -10,28 +10,66 @@ est écrit — y compris quand elle ne perd rien.
 
 ## Ce que la mesure a changé au ticket
 
-Le ticket a été écrit sur trois hypothèses. Le relevé du code d'`ultramodern`
-en a démenti deux, et en a révélé une quatrième que personne n'avait vue.
+> ### ⚠ Correction du 2026-08-13 — le relevé portait sur un arbre non représentatif
+>
+> Ce document a d'abord affirmé qu'`ultramodern` n'utilisait **aucune** variable
+> de condition. **C'est faux**, et la raison de l'erreur mérite d'être écrite
+> parce qu'elle n'est pas une inattention.
+>
+> Le relevé a été fait sur le worktree de la dépendance tel qu'il se trouvait :
+> seul le patch 0014 y était appliqué. Les treize autres ne l'étaient pas, et
+> ne pouvaient pas l'être — `scripts/apply-dependency-patches.sh` contrôlait la
+> propreté de l'arbre **à l'intérieur** de sa boucle, de sorte qu'au deuxième
+> patch il prenait l'effet du premier pour une édition locale et refusait. La
+> pile complète n'avait jamais pu s'appliquer d'un coup.
+>
+> Or le patch **0013 du projet lui-même** introduit dans `mesgqueue.cpp` une
+> file de messages qui repose sur **deux `std::condition_variable`**. Sur
+> l'arbre patché — le seul qui compte, puisque c'est celui qu'on compile —
+> l'inventaire est celui du tableau ci-dessous.
+>
+> La leçon est celle que le dépôt applique déjà ailleurs : une mesure ne vaut
+> que si l'on a vérifié qu'elle porte sur l'état réel. Le script est corrigé,
+> et la pile s'applique désormais en entier depuis un arbre vierge.
 
-### `ultramodern` n'utilise aucune variable de condition
+Le ticket a été écrit sur trois hypothèses. Le relevé en a démenti deux, en a
+confirmé une, et a révélé deux bloquants que personne n'avait vus.
+
+### Les variables de condition sont nécessaires — mais elles viennent du dépôt
 
 Le ticket prévoyait le morceau délicat : reconstruire les variables de condition
 de Vista sur des événements Windows 95, « un exercice où l'on perd des réveils ».
 
-Recherche faite sur les 15 `.cpp` et 10 en-têtes d'`ultramodern` : **zéro
-`std::condition_variable`**. Son attente conditionnelle est un *sémaphore de
-comptage* — `moodycamel::LightweightSemaphore` — et rien d'autre.
+`ultramodern` **amont** n'en utilise aucune : son attente conditionnelle est un
+sémaphore de comptage, `moodycamel::LightweightSemaphore`. C'est le patch 0013
+du dépôt, `use-reliable-external-message-fifo`, qui en ajoute deux dans
+`mesgqueue.cpp` — avec `notify_one`, `notify_all`, `wait(lock, prédicat)` et
+`wait_for`, c'est-à-dire la surface complète.
+
+Le morceau délicat est donc bien au programme. Il n'était simplement pas là où
+le ticket le cherchait.
 
 Le besoin réel, relevé et non déduit :
 
-| Primitive | Usages | Où |
-|---|---:|---|
-| `std::thread` | 12 | `events.cpp`×6, `threads.cpp`×3, `timer.cpp`×2, `ultramodern.hpp`×1 |
-| `std::mutex` | **3 verrous** (5 occurrences avec `lock_guard`) | `events.cpp`, `renderer_context.cpp`, `extensions.cpp` |
-| `LightweightSemaphore` | — | `UltraThreadContext::running` et `initialized`, plus chaque `BlockingConcurrentQueue` |
-| `thread_local` | 3 | `threads.cpp` : `is_entrypoint_thread`, `is_game_thread`, `thread_self` |
-| `this_thread::sleep_for` / `sleep_until` | 2 | `timer.cpp` |
-| `std::condition_variable` | **0** | — |
+Sur l'arbre **patché**, c'est-à-dire celui qu'on compile :
+
+| Primitive | Où | Statut |
+|---|---|---|
+| `std::thread` | `events.cpp`, `threads.cpp`, `timer.cpp`, `ultramodern.hpp` | pont C++ |
+| `std::mutex` + `lock_guard` | `events.cpp`, `renderer_context.cpp`, `extensions.cpp`, **`mesgqueue.cpp`** | pont C++ |
+| `std::condition_variable` | **`mesgqueue.cpp` ×2** — ajoutées par le patch 0013 | à implémenter |
+| `std::unique_lock` | `mesgqueue.cpp` ×3, exigé par `wait` | à implémenter |
+| `LightweightSemaphore` | `UltraThreadContext::running`, `initialized`, et chaque `BlockingConcurrentQueue` | pont `CreateSemaphoreW` |
+| `thread_local` | `threads.cpp` ×3 | **rien à faire** — mesuré fonctionnel sur la cible |
+| `this_thread::sleep_for` / `sleep_until` | `timer.cpp` | **rien à faire** — la branche `_WIN32` appelle `Sleep` |
+
+Deux lignes de ce tableau valent d'être lues deux fois. `thread_local`
+**fonctionne sous Windows 95** — le répertoire TLS du PE y est bien traité,
+contrairement à ce qui se dit souvent ; deux fils écrivent et relisent chacun sa
+valeur sans se marcher dessus, vérifié sur la machine par
+`tools/win95/witnesses/tls_probe.cpp`. Et `sleep_for` n'est jamais atteint,
+parce qu'`ultramodern` a déjà une branche Windows qui appelle `Sleep`
+directement.
 
 La couche livre donc un **sémaphore**, pas une variable de condition. C'est ce
 qui est demandé, et le risque annoncé par le ticket ne se matérialise pas.
@@ -205,6 +243,43 @@ ne promet pas le FIFO sur un sémaphore. `ultramodern` n'en a pas besoin : chacu
 de ses sémaphores `running` n'a **qu'un seul attendeur possible**, le fil
 propriétaire du contexte. La question ne se pose donc jamais.
 
+### Variable de condition — le morceau que le ticket redoutait
+
+Windows 95 n'en a pas : les siennes datent de Vista. Celle-ci est bâtie sur le
+sémaphore et un compteur d'attendeurs protégé par un verrou.
+
+**Pourquoi aucun réveil ne se perd.** La fenêtre dangereuse est celle-ci :
+l'attendeur relâche le verrou de l'appelant, puis se met en attente ; un signal
+émis *entre les deux* doit lui parvenir quand même. Il lui parvient, pour deux
+raisons qui se complètent :
+
+1. Le primitif d'attente est un **sémaphore de comptage**. `notify` dépose un
+   jeton, et le jeton attend l'attendeur.
+2. Le compteur d'attendeurs est incrémenté **avant** que le verrou de l'appelant
+   ne soit relâché. Un signaleur ne peut signaler qu'après avoir modifié l'état
+   que l'attendeur teste, et il ne peut le modifier qu'en tenant ce même verrou —
+   qu'il ne peut prendre qu'après notre relâchement, donc après notre
+   inscription. Il n'existe aucun entrelacement où il nous manque.
+
+**Cette propriété tient par l'argument, non par le test**, et c'est la chose la
+plus importante à savoir sur ce morceau. L'ordre inverse a été essayé : la suite
+passe quand même, les 20 000 relais compris. La raison est instructive — le
+chemin du signaleur jusqu'à `notify` (prendre le verrou, modifier l'état, le
+relâcher) est plus long que celui de l'attendeur jusqu'à son inscription, de
+sorte qu'il perd presque toujours la course. Presque. C'est exactement la forme
+de défaut que le ticket décrit : rare, non déterministe, et qui se manifeste en
+gel aléatoire chez le joueur.
+
+**Ce qui n'est pas garanti**, et ne l'est pas davantage ailleurs : un réveil peut
+être **dérobé**. Si deux fils attendent et qu'un troisième signale, rien ne dit
+lequel repart. `std::condition_variable` ne le dit pas non plus, et c'est
+pourquoi tout appelant correct enveloppe son attente dans une boucle sur un
+prédicat. Les deux sites d'appel du dépôt le font.
+
+`wait_for` à prédicat tient une **échéance globale**, et non une échéance par
+tour : la reprendre à chaque réveil est le défaut classique de cette fonction —
+sous des réveils répétés, l'attente ne finirait jamais.
+
 ### Événement à réinitialisation manuelle
 
 Ce que le sémaphore ne sait pas exprimer : réveiller **tous** les attendeurs d'un
@@ -290,6 +365,19 @@ resultat : OK
 Y compris la vérification que `CreateSemaphoreW` rend un descripteur utilisable,
 qui échouerait sur un Windows 95 sans le pont de `compat.c` — c'est-à-dire
 exactement ce qu'on lui demande de surveiller.
+
+### Le pont C++ et la variable de condition
+
+```text
+pont C++ : 22 controles, 0 echec(s)
+```
+
+Les vingt-deux reproduisent des lignes réelles d'`ultramodern` : la construction
+variadique à quatre arguments de `threads.cpp:273`, le détachement immédiat de
+`timer.cpp:145`, les deux formes de `lock_guard`, et les quatre usages de la
+variable de condition ajoutés par le patch 0013 — dont un passage de relais
+strict de **20 000 tours**, où le consommateur doit nécessairement s'endormir et
+où rien d'autre ne viendra le réveiller.
 
 ### Endurance : dix minutes sur la cible
 

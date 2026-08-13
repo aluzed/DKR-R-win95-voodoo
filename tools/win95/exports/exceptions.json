@@ -6,8 +6,8 @@
     "l'endroit ou l'on fait taire le controle plutot que de corriger le code.",
     "",
     "Une exception se justifie quand le symbole est fourni autrement que par",
-    "l'OS — par le pont win95compat, par exemple. Elle ne se justifie jamais",
-    "par « ca a l'air de marcher ».",
+    "l'OS \u2014 par le pont win95compat, par exemple. Elle ne se justifie jamais",
+    "par \u00ab ca a l'air de marcher \u00bb.",
     "",
     "Le champ facultatif 'binaries' restreint la portee a certains",
     "executables. Une API toleree dans un temoin qui l'exerce expres ne doit",
@@ -21,8 +21,8 @@
     },
     {
       "symbol": "GetHandleInformation",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par thread.o et sched.o de libwinpthread. Ce n'est PAS benin : pthread_join teste le retour et part sur son chemin d'erreur, donc std::thread::join() leve une exception sous Windows 95. C'est une des raisons d'etre de la couche de E02-S01, dont dkr_thread_join passe par WaitForSingleObject. Tolere uniquement dans WITNESS.EXE, le temoin de E00-S02, dont le role est justement d'exercer le modele standard. Interdit ailleurs.",
-      "binaries": ["WITNESS.EXE"]
+      "justification": "Bouchon de Windows 95 (rend 0), reclame par thread.o et sched.o de libwinpthread, que le modele de threads posix et la liaison statique de libstdc++ font entrer dans tout binaire C++ \u2014 y compris par <chrono> seul. Il n'est atteint que par pthread_join et pthread_cancel, ou il est loin d'etre benin : pthread_join teste son retour et part sur son chemin d'erreur, de sorte que std::thread::join() leve une exception sous Windows 95. C'est une des raisons d'etre de la couche de E02-S01, dont dkr_thread_join passe par WaitForSingleObject. Ce qui rend l'import inoffensif est structurel et non esper\u00e9 : check-cpp-subset.py interdit <thread> sur la cible, donc aucun code du projet ne peut atteindre pthread_join. Les deux garde-fous se composent. WITNESS.EXE fait exception dans l'exception \u2014 c'est le temoin de E00-S02, dont le role est justement d'exercer std::thread, et la ou le symbole est reellement atteignable.",
+      "binaries": []
     }
   ]
 }

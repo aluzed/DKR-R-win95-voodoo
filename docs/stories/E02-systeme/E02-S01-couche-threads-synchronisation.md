@@ -99,16 +99,20 @@ locales au fil, et leur validation.
 - [x] `platform/win95/threading.{h,cpp}` n'importe aucune API absente de
       Windows 95 — vérifié par le garde-fou de E01-S04, désormais doublé d'un
       contrôle des exports **vides** (voir ci-dessous).
-- [x] L'interface couvre les besoins relevés dans `ultramodern`, sans surplus —
-      relevé fichier par fichier, et il est plus petit que prévu.
+- [x] L'interface couvre les besoins relevés dans `ultramodern`, sans surplus.
+      *Rouvert puis refermé le 2026-08-13* : le relevé refait sur l'arbre patché
+      a révélé qu'il manquait la variable de condition et `unique_lock` ; les
+      deux sont livrés.
 - [x] La correspondance des priorités N64 → Win32 est écrite et justifiée. Le
       résultat est qu'**elle n'existe pas** : l'ordre N64 est tenu par la file
       logicielle d'`ultramodern`, pas par le système hôte. Ce qui est écrit, et
       testé, est la table `ThreadPriority` → `THREAD_PRIORITY_*`.
 - [x] La sémantique de réveil de l'attente conditionnelle est documentée et
-      correspond à ce qu'`ultramodern` suppose — c'est un **sémaphore**, non une
-      variable de condition, et la propriété qui compte est que le signal
-      antérieur à l'attente n'est pas perdu.
+      correspond à ce qu'`ultramodern` suppose. *Rouvert puis refermé le
+      2026-08-13* : `dkr_condvar` est livrée, et l'absence de réveil perdu est
+      établie **par construction** — l'inscription précède le relâchement du
+      verrou de l'appelant — parce qu'elle ne l'est pas de façon fiable par le
+      test, ce qui est écrit noir sur blanc.
 - [x] La différence de réentrance entre `CRITICAL_SECTION` et `std::mutex` est
       documentée, et son effet évalué : `dkr_mutex` rétablit la non-réentrance
       et la **signale** au lieu de s'interbloquer.
@@ -132,9 +136,16 @@ Documentation : [`docs/WIN95-THREADING.md`](../../WIN95-THREADING.md).
 Trois hypothèses du ticket sont tombées, et un bloquant qu'il n'avait pas vu est
 apparu :
 
-1. **Aucune variable de condition dans `ultramodern`.** Zéro occurrence. Le
-   morceau redouté — les reproduire sur des événements Win95 en perdant des
-   réveils — est sans objet. Le besoin réel est un sémaphore de comptage.
+1. ~~**Aucune variable de condition dans `ultramodern`.**~~ **Corrigé le
+   2026-08-13 : c'était faux.** Le relevé portait sur le worktree de la
+   dépendance tel qu'il se trouvait — seul le patch 0014 appliqué — et les
+   treize autres ne pouvaient pas l'être, `scripts/apply-dependency-patches.sh`
+   contrôlant la propreté de l'arbre à l'intérieur de sa boucle. Le patch
+   **0013 du dépôt** introduit dans `mesgqueue.cpp` deux
+   `std::condition_variable`, avec `notify_one`, `notify_all`,
+   `wait(lock, prédicat)` et `wait_for` — la surface complète. `ultramodern`
+   amont, lui, n'en utilise bien aucune. **Le morceau délicat reste donc à
+   faire**, et le critère d'acceptation correspondant est rouvert.
 
 2. **La correspondance de priorités N64 → Win32 n'a pas lieu d'être.**
    `thread_queue_insert` tient l'ordre en logiciel et un seul fil de jeu court à

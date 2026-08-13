@@ -36,7 +36,7 @@ reste de la pile est spécifique aux systèmes modernes.
 |---|---|---|---|---|
 | [E00](E00-cadrage/) | Cadrage, mesures et décisions | 7 | 5 | **2** |
 | [E01](E01-build/) | Chaîne de build 32 bits Win95 | 6 | 6 | 0 |
-| [E02](E02-systeme/) | Substrat système Win95 | 6 | 5 | **1** |
+| [E02](E02-systeme/) | Substrat système Win95 | 6 | 4 | **2** |
 | [E03](E03-rsp/) | RSP sur x86 sans SSE | 3 | 3 | 0 |
 | [E04](E04-hle-f3ddkr/) | HLE F3DDKR indépendant de RT64 | 8 | 8 | 0 |
 | [E05](E05-glide/) | Backend Glide | 8 | 8 | 0 |
@@ -44,7 +44,7 @@ reste de la pile est spécifique aux systèmes modernes.
 | [E07](E07-perimetre/) | Réduction de périmètre | 3 | 3 | 0 |
 | [E08](E08-perf/) | Performance | 4 | 4 | 0 |
 | [E09](E09-qa/) | Intégration, QA et distribution | 5 | 4 | **1** |
-| | **Total** | **56** | **53** | **3** |
+| | **Total** | **56** | **52** | **4** |
 
 ### En cours
 
@@ -52,7 +52,8 @@ reste de la pile est spécifique aux systèmes modernes.
 |---|---|
 | [E09-S01](E09-qa/E09-S01-environnement-test-emule.md) | `REVIEW` — **environnement complet** : Windows 95 OSR2.5 sur Pentium II / Voodoo 2, pilote 3dfx installé, **démonstration Glide rendant un triangle Gouraud**, instantané de référence figé, machine pilotable sans écran. |
 | [E00-S04](E00-cadrage/E00-S04-spike-cout-rsp-sans-sse.md) | `REVIEW` — **le microcode audio recompilé ne peut pas tenir le temps réel** : la cible n'atteint que **3,9 %** du débit vectoriel du RSP. Le repli scalaire existait déjà ; MMX ne sauverait pas ce chemin. **[E03-S03](E03-rsp/E03-S03-repli-mixeur-haut-niveau.md) passe de contingence à chemin critique.** |
-| [E02-S01](E02-systeme/E02-S01-couche-threads-synchronisation.md) | `REVIEW` — couche de fils et de synchronisation livrée, **48 contrôles sans échec sous Windows 95 émulé**. Trois hypothèses du ticket tombent (aucune variable de condition dans `ultramodern` ; pas de correspondance de priorités N64 → Win32 à faire) et **deux bloquants invisibles apparaissent** : `CreateSemaphoreW` et `GetHandleInformation` sont exportées par Windows 95 mais **vides**, ce qui casse le sémaphore de `moodycamel` et `std::thread::join()`. Le garde-fou des imports contrôle désormais aussi les exports vides. |
+| [E02-S02](E02-systeme/E02-S02-ordonnanceur-ultramodern.md) | `IN_PROGRESS` — patch 0015 : les cinq primitives d'`ultramodern` passent par un point d'indirection que la cible remplit avec la couche de E02-S01. **`ultramodern` compile pour Windows 95, 15 fichiers sur 15**, cibles modernes inchangées, inclusions interdites de **9 à 1**. `thread_local` fonctionne sur la cible, mesuré. Les points 5 à 7 restent bloqués par E01-S05, E02-S05 et E07-S03. |
+| [E02-S01](E02-systeme/E02-S01-couche-threads-synchronisation.md) | `REVIEW` — couche de fils complète : fils, verrous, sémaphore, **variable de condition**, événements, TLS. **48 contrôles sans échec sous Windows 95 émulé**, endurance de 600 s (8 437 tours). Deux bloquants invisibles trouvés : `CreateSemaphoreW` et `GetHandleInformation` sont exportées par Windows 95 mais **vides**, ce qui casse le sémaphore de `moodycamel` et `std::thread::join()` ; le garde-fou des imports contrôle désormais aussi les exports vides. Le relevé initial, fait sur un worktree que `apply-dependency-patches.sh` — cassé — laissait sans ses treize premiers patchs, avait conclu à tort qu'aucune variable de condition n'était nécessaire. |
 | [E00-S03](E00-cadrage/E00-S03-spike-budget-cpu-recompilation.md) | Les deux facteurs sont mesurés : **2,16×** pour le passage 64 → 32 bits sans SSE, **17,7×** pour la normalisation vers le Pentium II 400 MHz — soit **≈ 38×** entre le poste de développement et la cible. Go/no-go non prononcé : il manque désormais le coût CPU d'une image de jeu, qui exige [E02-S06](E02-systeme/E02-S06-amorcage-jeu.md). |
 
 ### Acquis en chemin

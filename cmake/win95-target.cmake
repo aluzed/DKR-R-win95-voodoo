@@ -6,11 +6,11 @@
 # donc qu'un seul `if()` faux : elles sont inchangées par construction, ce qui
 # est la garantie exigée par l'ADR 0004.
 #
-# Périmètre volontairement étroit. E01-S01 livre la chaîne de compilation, pas
-# la compilation du jeu : `ultramodern` et `librecomp` ne passent pas encore
-# (E01-S02, E01-S03), et le code recompilé attend E01-S05. Ce fichier construit
-# donc le pont de compatibilité et un témoin, ce qui suffit à prouver que la
-# chaîne produit un PE 32 bits exécutable sous Windows 95.
+# Périmètre. E01-S01 a livré la chaîne de compilation ; E01-S03 le pont de
+# compatibilité ; E02-S01 la couche de fils ; E02-S02 y a reposé `ultramodern`,
+# qui compile désormais ici en entier. Restent hors de portée `librecomp`
+# (E02-S05 pour son système de fichiers) et le code recompilé (E01-S05) : le jeu
+# ne se lie donc pas encore pour cette cible.
 
 if(NOT DKR_WIN95_TOOLCHAIN)
     message(FATAL_ERROR
@@ -49,9 +49,9 @@ message(STATUS "  API : _WIN32_WINNT=0x0400")
 # compile parfaitement, et ne se manifeste qu'au chargement sur la machine
 # cible. Le compilateur ne dira rien.
 #
-# Il ne porte pour l'instant que sur les sources de la cible. `ultramodern`
-# compte encore 9 inclusions interdites : c'est exactement le travail de
-# E02-S01, et l'y soumettre aujourd'hui ne ferait qu'échouer sans rien apprendre.
+# Il porte sur les sources de la cible ; `ultramodern` a son propre contrôle
+# plus bas, avec un cliquet, depuis que E02-S02 a fait tomber ses inclusions
+# interdites de neuf à une.
 add_custom_target(dkr_win95_cpp_subset ALL
     COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check-cpp-subset.py"
             "${DKR_WIN95_PLATFORM}"
@@ -95,6 +95,55 @@ add_library(win95threading STATIC "${DKR_WIN95_PLATFORM}/threading.cpp")
 target_include_directories(win95threading PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95threading PUBLIC win95compat)
 add_dependencies(win95threading dkr_win95_cpp_subset)
+
+# --- ultramodern (E02-S02) ---------------------------------------------------
+#
+# Le patch 0015 route les cinq primitives de `ultramodern` — `thread`, `mutex`,
+# `condition_variable`, `lock_guard`, `unique_lock` — par un point d'indirection
+# que la cible remplit ici avec la couche de E02-S01.
+#
+# Le chemin d'inclusion est `win95/threading.hpp` et non `threading.hpp`, avec
+# `platform` sur le chemin de recherche : `ultramodern` a lui-même un fichier
+# nommé `threading.hpp`, et une inclusion entre guillemets consulte d'abord le
+# répertoire du fichier qui inclut. Le nom court le faisait donc retomber sur
+# lui-même, avec pour seul symptôme des centaines d'erreurs sur des types
+# absents.
+#
+# **Ce n'est pas encore chargeable sous Windows 95**, et il faut le dire :
+# `ultramodern.hpp` inclut toujours `<filesystem>`, qui réclame à lui seul
+# treize symboles absents du système. C'est le travail de E02-S05. Cette cible
+# établit la compilation et la substitution des primitives, pas le chargement.
+file(GLOB DKR_WIN95_ULTRAMODERN_SOURCES
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/ultramodern/src/*.cpp")
+
+add_library(win95ultramodern STATIC ${DKR_WIN95_ULTRAMODERN_SOURCES})
+target_include_directories(win95ultramodern PUBLIC
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/ultramodern/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/concurrentqueue"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include"
+    "${DKR_WIN95_PLATFORM}/include-shim"
+    "${DKRPORT_ROOT}/platform")
+target_compile_definitions(win95ultramodern PRIVATE
+    NOMINMAX
+    "ULTRAMODERN_PLATFORM_THREADING_HEADER=\"win95/threading.hpp\""
+    "ULTRAMODERN_PLATFORM_THREADING_NS=dkr::win95")
+target_link_libraries(win95ultramodern PUBLIC win95threading)
+add_dependencies(win95ultramodern dkr_win95_cpp_subset)
+
+# Le contrôle du sous-ensemble C++ porte désormais aussi sur `ultramodern` : il
+# n'aurait rien appris tant que neuf inclusions interdites y subsistaient ; il
+# en reste une, et elle est attribuée.
+#
+# `--max 1` est un cliquet, pas une exemption : il chiffre la dette restante —
+# le seul `<filesystem>` d'`ultramodern.hpp` — de sorte qu'elle ne puisse pas
+# grandir. Quand E02-S05 l'aura retiré, le contrôleur le dira et ce 1 devra
+# tomber à 0.
+add_custom_target(dkr_win95_cpp_subset_ultramodern ALL
+    COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check-cpp-subset.py"
+            --max 1 "${DKRPORT_ROOT}/extern/n64-modern-runtime/ultramodern"
+    COMMENT "Contrôle du sous-ensemble C++ : ultramodern"
+    VERBATIM)
 
 # --- Vérification du jeu d'instructions --------------------------------------
 #
@@ -156,6 +205,19 @@ set_target_properties(DKRWin95Threads PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Threads)
+
+# Quatrième témoin : le pont C++ de E02-S02, exercé dans les formes exactes
+# qu'`ultramodern` emploie — construction variadique, détachement immédiat,
+# lock_guard sous ses deux formes, et la variable de condition avec ses quatre
+# usages réels.
+add_executable(DKRWin95ThreadsCpp
+    "${DKR_WIN95_PLATFORM}/tests/test_threading_cpp.cpp")
+target_link_libraries(DKRWin95ThreadsCpp PRIVATE win95threading)
+set_target_properties(DKRWin95ThreadsCpp PROPERTIES
+    OUTPUT_NAME "THRCPP"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95ThreadsCpp)
 
 # Les tests qui tournent sur l'hôte. Deux suites, pour deux raisons :
 #
