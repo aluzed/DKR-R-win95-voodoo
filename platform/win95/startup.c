@@ -41,6 +41,44 @@ void dkr_win95_log_num(const char *message, long value)
     write_raw(buf, (DWORD)n);
 }
 
+/* --- nettoyages d'arret anormal -------------------------------------------- *
+ *
+ * Voir startup.h pour le pourquoi. Ici, seulement les contraintes du contexte :
+ * on peut etre appele depuis un filtre d'exception, donc sans rien allouer, et
+ * la garde `g_cleanups_done` evite qu'un second passage — filtre puis sortie
+ * normale, ou deux fils qui plantent ensemble — ne rejoue les nettoyages.
+ */
+static dkr_win95_cleanup_fn g_cleanups[DKR_WIN95_MAX_CLEANUPS];
+static int                  g_cleanup_count = 0;
+static long                 g_cleanups_done = 0;
+
+int dkr_win95_at_abnormal_exit(dkr_win95_cleanup_fn cleanup)
+{
+    if (!cleanup || g_cleanup_count >= DKR_WIN95_MAX_CLEANUPS) {
+        return 0;
+    }
+    g_cleanups[g_cleanup_count++] = cleanup;
+    return 1;
+}
+
+void dkr_win95_run_cleanups(void)
+{
+    int i;
+
+    /* Un seul passage, quel que soit le nombre d'appelants. `lock cmpxchg`
+       plutot qu'une section critique : on peut etre ici parce que le processus
+       est deja abime, et prendre un verrou serait le meilleur moyen de finir
+       bloque au lieu de mourir proprement. */
+    if (!__sync_bool_compare_and_swap(&g_cleanups_done, 0, 1)) {
+        return;
+    }
+    /* Ordre inverse de l'enregistrement : un sous-systeme defait avant celui
+       dont il depend. */
+    for (i = g_cleanup_count - 1; i >= 0; i--) {
+        g_cleanups[i]();
+    }
+}
+
 /* --- filtre d'exceptions ---------------------------------------------------
  *
  * Windows 95 n'a pas les gestionnaires vectorises ; `SetUnhandledExceptionFilter`
@@ -82,6 +120,12 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
         dkr_win95_log("  piste   : instruction hors Pentium II ? "
                       "voir tools/win95/check-instruction-set.sh");
     }
+
+    /* Avant la boite de dialogue, et non apres : l'utilisateur peut la laisser
+       ouverte des heures, et les reglages a defaire degradent la machine tant
+       qu'ils tiennent. */
+    dkr_win95_run_cleanups();
+    dkr_win95_log("  nettoyages d'arret anormal executes");
 
     sprintf(buf, "%s s'est arrete sur une %s.\n\nDetails dans " DKR_LOG_NAME ".",
             g_app, exception_name(code));

@@ -54,6 +54,18 @@ static unsigned long long clock_frequency = 0;
 static unsigned long long clock_origin    = 0;
 static int                period_begun    = 0;
 
+/* Le seul geste qui doit survivre a un arret anormal. Isole de
+   `dkr_clock_shutdown` parce qu'un nettoyage appele depuis un filtre
+   d'exception doit faire le strict minimum : pas d'etat a remettre a zero, pas
+   d'allocation, rien qui puisse bloquer. */
+static void dkr_clock_release_period(void)
+{
+    if (period_begun) {
+        timeEndPeriod(1);
+        period_begun = 0;
+    }
+}
+
 /* Etat d'accumulation du repli 32 bits. Voir `tick64.c` : meme raisonnement,
    meme fonction, un seul exemplaire. */
 static dkr_tick64_state   timegettime_state = { 0, 0 };
@@ -119,6 +131,11 @@ int dkr_clock_init(void)
        rien ne garantit qu'il en aille de meme ailleurs. */
     if (timeBeginPeriod(1) == TIMERR_NOERROR) {
         period_begun = 1;
+        /* Un `timeBeginPeriod` laisse en place degrade tout le systeme jusqu'au
+           redemarrage, et survit donc au processus. Il ne suffit pas de le
+           relacher a l'arret normal : on s'annonce aupres du filtre
+           d'exceptions, pour qu'il soit defait meme si l'on meurt. */
+        dkr_win95_at_abnormal_exit(&dkr_clock_release_period);
     }
 
     if (qpc_is_sane(&frequency)) {
@@ -147,10 +164,7 @@ void dkr_clock_shutdown(void)
     /* Sous Windows 9x, un `timeBeginPeriod` laisse en place degrade tout le
        systeme jusqu'au redemarrage — y compris apres la fin du processus. Le
        relacher n'est donc pas une politesse. */
-    if (period_begun) {
-        timeEndPeriod(1);
-        period_begun = 0;
-    }
+    dkr_clock_release_period();
     clock_source    = DKR_CLOCK_SOURCE_NONE;
     clock_frequency = 0;
 }

@@ -266,6 +266,10 @@ void dkr_threading_fatal(const char *message)
        l'arret qui suit. C'est le seul canal utilisable — la machine cible n'a
        pas de console, et un jeu plein ecran n'en aurait pas l'usage. */
     dkr_win95_log(message);
+    /* Meme raison que pour le filtre d'exceptions : ce chemin d'arret est
+       brutal, et les reglages qui survivent au processus doivent etre defaits
+       avant qu'on ne parte. */
+    dkr_win95_run_cleanups();
     ExitProcess(3);
 }
 

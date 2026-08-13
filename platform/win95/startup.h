@@ -50,6 +50,40 @@ void dkr_win95_log_num(const char *message, long value);
 /* Ferme le journal. Facultatif : le systeme le fera. */
 void dkr_win95_shutdown(void);
 
+/* --- Nettoyages a executer meme sur un arret anormal ---------------------- *
+ *
+ * Certains reglages survivent au processus qui les a poses, et les laisser en
+ * place degrade la machine jusqu'au redemarrage. `timeBeginPeriod` de E02-S03
+ * en est un ; le mode plein ecran de Glide en sera un autre (E05).
+ *
+ * Le systeme ne les defait pas. Il faut donc les defaire soi-meme, y compris
+ * quand on meurt sur une exception — c'est-a-dire depuis le filtre installe par
+ * `dkr_win95_startup`.
+ *
+ * Le sens de la dependance est ce qui impose ce registre plutot qu'un appel
+ * direct : `startup.c` est la couche du bas, et ne peut pas connaitre l'horloge
+ * sans que tout temoin qui se contente du journal ne traine `winmm` avec lui.
+ * C'est donc l'horloge qui s'annonce.
+ *
+ * Contraintes du contexte, parce qu'un nettoyage appele depuis un filtre
+ * d'exception s'execute dans un processus deja abime : la fonction ne doit rien
+ * allouer, ne rien attendre, et supporter d'etre appelee alors que son propre
+ * sous-systeme est a moitie detruit. Le registre est donc de taille fixe, sans
+ * allocation.
+ *
+ * Rend 1 si le nettoyage a ete enregistre, 0 si le registre est plein. */
+typedef void (*dkr_win95_cleanup_fn)(void);
+
+#define DKR_WIN95_MAX_CLEANUPS 8
+
+int  dkr_win95_at_abnormal_exit(dkr_win95_cleanup_fn cleanup);
+
+/* Execute les nettoyages enregistres, dans l'ordre inverse de leur
+   enregistrement, et une seule fois quel que soit le nombre d'appels. Appelee
+   par le filtre d'exceptions ; a appeler aussi depuis tout autre chemin d'arret
+   brutal — `dkr_threading_fatal` le fait. */
+void dkr_win95_run_cleanups(void);
+
 #ifdef __cplusplus
 }
 #endif

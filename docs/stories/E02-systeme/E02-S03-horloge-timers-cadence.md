@@ -79,9 +79,12 @@ qui consomment cette base sans la définir.
       Bloqué : elles ne s'exercent qu'en faisant tourner le jeu.
 - [x] Le coût d'un appel est mesuré et consigné, avec la réserve que
       l'émulation n'est pas temporelle et que E09-S04 doit le confirmer.
-- [~] `timeBeginPeriod` est relâché par `dkr_clock_shutdown`. Le cas de l'arrêt
-      **anormal** reste à couvrir : il demande de le relâcher depuis le filtre
-      d'exceptions de E01-S03.
+- [x] `timeBeginPeriod` est relâché à l'arrêt, y compris sur un arrêt anormal.
+      Un registre de nettoyages (`dkr_win95_at_abnormal_exit`) est appelé par le
+      filtre d'exceptions de E01-S03 **et** par la faute fatale des fils. Le
+      registre existe plutôt qu'un appel direct pour ne pas inverser les
+      dépendances : `startup.c` est la couche du bas et ne peut pas connaître
+      l'horloge sans que tout témoin traîne `winmm`.
 
 ## État au 2026-08-13 — la base est livrée et mesurée
 
