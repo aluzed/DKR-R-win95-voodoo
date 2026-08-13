@@ -69,9 +69,17 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
       (cycle de vie complet, aller-retour, rejet d'une sauvegarde corrompue).
       **La persistance après redémarrage reste à vérifier** : la suite crée et
       détruit son arborescence dans la même exécution.
-- [~] Les quatre Controller Pak virtuels : le cycle de vie passe sur la machine
-      (`controller pak lifecycle`). L'autotest `--self-test-pak` des scripts de
-      build n'a pas encore été exécuté sur la cible.
+- [x] Les quatre Controller Pak virtuels fonctionnent, autotest inclus. Relevé
+      du 14 août 2026, `DKRR.EXE --self-test-pak` sur la machine :
+
+      ```text
+      [boot][pak] recovered controller pak 4 from backup
+      [test][pak] PASS: round-trip and backup recovery
+      ```
+
+      Le contrôle porte sur le **vrai binaire du jeu**, pas sur une suite
+      séparée, et il exerce la reprise depuis la copie de secours — c'est-à-dire
+      la séquence d'écriture durable elle-même.
 - [x] Les noms de fichiers sont compatibles 8.3, ou le comportement FAT16 est
       vérifié — les deux : les noms longs fonctionnent sur ce volume, et les noms
       que la couche fabrique tiennent en 8.3 pour rester utilisables ailleurs.
