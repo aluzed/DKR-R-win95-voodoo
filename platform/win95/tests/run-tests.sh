@@ -104,10 +104,31 @@ if [[ "$suite" == "all" || "$suite" == "fileio" ]]; then
     || { echo "erreur: aucun compilateur C++ hote ($CXX)" >&2; exit 2; }
   "$CXX" -O2 -Wall -Wextra -o "$tmp/test_fileio" \
          "$HERE/test_fileio.cpp" "$HERE/../fileio.cpp"
+  # Le point d'indirection est eprouve **deux fois** sur l'hote, et c'est le
+  # deuxieme montage qui compte le plus.
+  #
+  #   sans DKR_TARGET_WIN95 : la branche std::, celle des cibles modernes
+  #   avec  DKR_TARGET_WIN95 : la branche Windows 95, sur la dorsale POSIX
+  #
+  # Le second n'est pas la cible reelle — la dorsale POSIX est un vehicule — mais
+  # il execute la *logique* de la branche Windows 95 : les valeurs de retour, les
+  # conversions, l'ordre des appels. C'est la qu'un ecart de contrat se voit, et
+  # sans attendre un aller-retour de vingt minutes vers la machine emulee.
+  #
+  # Les deux defauts trouves en etendant la couche auraient ete pris ici : le
+  # `create_directories` qui rendait true sur un repertoire present, et le
+  # `weakly_canonical` qui ne resolvait pas « .. ». Le second l'a effectivement
+  # ete, des la premiere execution de ce montage.
   "$CXX" -O2 -Wall -Wextra -I"$HERE/.." -o "$tmp/test_fileio_seam" \
+         "$HERE/test_fileio_seam.cpp" "$HERE/../fileio.cpp"
+  "$CXX" -O2 -Wall -Wextra -DDKR_TARGET_WIN95 -I"$HERE/.." \
+         -o "$tmp/test_fileio_seam95" \
          "$HERE/test_fileio_seam.cpp" "$HERE/../fileio.cpp"
   echo
   # Les fichiers d'essai sont crees dans le repertoire courant : on l'isole.
   ( cd "$tmp" && "$tmp/test_fileio" )
+  echo "  -- point d'indirection, branche des cibles modernes --"
   ( cd "$tmp" && "$tmp/test_fileio_seam" )
+  echo "  -- point d'indirection, branche Windows 95 sur dorsale POSIX --"
+  ( cd "$tmp" && "$tmp/test_fileio_seam95" )
 fi

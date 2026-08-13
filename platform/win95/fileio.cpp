@@ -413,6 +413,16 @@ dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path)
     return DKR_FILE_OK;
 }
 
+dkr_file_result dkr_file_current_directory(char *out, size_t out_size)
+{
+    DWORD n;
+    if (!out || out_size == 0) {
+        return DKR_FILE_ERR_PATH;
+    }
+    n = GetCurrentDirectoryA((DWORD)out_size, out);
+    return (n == 0 || n >= out_size) ? DKR_FILE_ERR_PATH : DKR_FILE_OK;
+}
+
 struct dkr_dir {
     HANDLE           handle;
     WIN32_FIND_DATAA data;
@@ -703,9 +713,57 @@ dkr_file_result dkr_file_rename(const char *from, const char *to)
     return DKR_FILE_OK;
 }
 
+/* Resout « . » et « .. » sur place, sans toucher au disque.
+ *
+ * `GetFullPathNameA` le fait pour la cible ; sans equivalent ici, la dorsale de
+ * test se comporterait autrement que la plate-forme qu'elle sert a eprouver, et
+ * l'epreuve ne prouverait rien. C'est le nouveau montage — la branche Windows 95
+ * compilee sur l'hote — qui l'a montre : `weakly_canonical` y rendait deux
+ * chemins differents pour un meme fichier.
+ *
+ * La resolution est purement lexicale, comme celle de Windows : elle ne suit pas
+ * les liens symboliques et n'exige pas que le chemin existe. C'est exactement ce
+ * que demande `weakly_canonical`, et `realpath` en ferait trop. */
+static void normalize_lexically(char *p)
+{
+    char *out = p;
+    char *seg = p;
+    int   absolute = (p[0] == '/');
+
+    if (absolute) { out++; seg++; }
+    while (*seg) {
+        char *end = strchr(seg, '/');
+        size_t len = end ? (size_t)(end - seg) : strlen(seg);
+
+        if (len == 0 || (len == 1 && seg[0] == '.')) {
+            /* rien : un separateur double ou « . » ne dit rien */
+        } else if (len == 2 && seg[0] == '.' && seg[1] == '.') {
+            /* Remonter : effacer le dernier segment ecrit. A la racine, « .. »
+               ne mene nulle part et s'ignore — comme sous Windows. */
+            char *base = p + (absolute ? 1 : 0);
+            if (out > base) {
+                out--;                                   /* le '/' de fin */
+                while (out > base && out[-1] != '/') { out--; }
+            }
+        } else {
+            memmove(out, seg, len);
+            out += len;
+            *out++ = '/';
+        }
+        if (!end) { break; }
+        seg = end + 1;
+    }
+    /* Retirer le separateur final, sauf s'il est la racine a lui seul. */
+    if (out > p + (absolute ? 1 : 0) && out[-1] == '/') { out--; }
+    if (out == p) { *out++ = absolute ? '/' : '.'; }
+    *out = '\0';
+}
+
 dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path)
 {
     char resolved[MAX_PATH];
+    dkr_file_result r;
+
     if (!out || !path || out_size == 0) {
         return DKR_FILE_ERR_PATH;
     }
@@ -714,12 +772,17 @@ dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path)
             return DKR_FILE_ERR_PATH;
         }
         strcpy(out, path);
+        normalize_lexically(out);
         return DKR_FILE_OK;
     }
     if (!getcwd(resolved, sizeof(resolved))) {
         return DKR_FILE_ERR_PATH;
     }
-    return dkr_file_join(out, out_size, resolved, path);
+    r = dkr_file_join(out, out_size, resolved, path);
+    if (r == DKR_FILE_OK) {
+        normalize_lexically(out);
+    }
+    return r;
 }
 
 struct dkr_dir {
@@ -830,7 +893,101 @@ dkr_file_result dkr_file_write_durable(const char *path,
     return DKR_FILE_OK;
 }
 
+dkr_file_result dkr_file_current_directory(char *out, size_t out_size)
+{
+    if (!out || out_size == 0) {
+        return DKR_FILE_ERR_PATH;
+    }
+    return getcwd(out, out_size) ? DKR_FILE_OK : DKR_FILE_ERR_PATH;
+}
+
 #endif /* _WIN32 */
+
+
+/* ========================================================================== *
+ * Commun : effacement recursif
+ * ========================================================================== *
+ *
+ * Ecrit une seule fois, au-dessus des primitives, et non deux fois dans chaque
+ * dorsale : c'est de la logique d'arborescence, pas d'appel systeme. Les deux
+ * cibles executent donc exactement le meme parcours, ce qui est precisement ce
+ * qu'on cherche a garantir ailleurs a coups d'epreuves.
+ *
+ * La recursion est bornee par la profondeur de l'arborescence, et MAX_PATH la
+ * borne a son tour : un chemin qui ne tient pas dans le tampon fait echouer la
+ * jointure avant l'appel recursif.
+ *
+ * Le repertoire est ferme **avant** de descendre dans ses entrees. Garder une
+ * recherche ouverte sur un repertoire dont on efface le contenu est le genre de
+ * chose que Windows 95 tolere mal, et rien n'oblige a le faire : la liste des
+ * noms est recopiee d'abord.
+ */
+dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *removed)
+{
+    /* Les noms d'un niveau, recopies avant de descendre. La borne est celle
+       d'un repertoire de travail ordinaire ; au-dela, on traite ce qu'on a vu
+       puis on recommence, plutot que de renoncer ou de grossir sans fin. */
+    enum { BATCH = 64 };
+    char names[BATCH][MAX_PATH];
+    char child[MAX_PATH];
+    unsigned long long n = 0;
+    int again = 1;
+
+    if (removed) { *removed = 0; }
+    if (!path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (!dkr_file_exists(path)) {
+        return DKR_FILE_OK;      /* rien a faire : comme std::filesystem */
+    }
+
+    while (again && dkr_file_is_directory(path)) {
+        dkr_dir *d;
+        const char *name;
+        int count = 0, i;
+
+        again = 0;
+        d = dkr_dir_open(path);
+        if (!d) {
+            break;
+        }
+        while (count < BATCH && (name = dkr_dir_next(d)) != NULL) {
+            size_t len = strlen(name);
+            if (len >= sizeof(names[0])) {
+                continue;        /* impossible a former : signale plus bas */
+            }
+            memcpy(names[count], name, len + 1);
+            count++;
+        }
+        /* S'il restait des entrees, on repassera. */
+        again = (count == BATCH) && (dkr_dir_next(d) != NULL);
+        dkr_dir_close(d);
+
+        for (i = 0; i < count; i++) {
+            unsigned long long sub = 0;
+            if (dkr_file_join(child, sizeof(child), path, names[i])
+                != DKR_FILE_OK) {
+                return DKR_FILE_ERR_PATH;
+            }
+            if (dkr_file_remove_all(child, &sub) != DKR_FILE_OK) {
+                if (removed) { *removed = n + sub; }
+                return DKR_FILE_ERR_IO;
+            }
+            n += sub;
+        }
+        if (count == 0) {
+            break;
+        }
+    }
+
+    if (dkr_file_remove(path) != DKR_FILE_OK) {
+        if (removed) { *removed = n; }
+        return DKR_FILE_ERR_IO;
+    }
+    n++;
+    if (removed) { *removed = n; }
+    return DKR_FILE_OK;
+}
 
 
 /* ========================================================================== *

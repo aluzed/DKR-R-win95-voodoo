@@ -155,6 +155,21 @@ dkr_file_result dkr_file_rename(const char *from, const char *to);
    dissimulee : elle joue si un appelant compare deux chemins textuellement. */
 dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path);
 
+/* Efface un chemin et tout ce qu'il contient. `*removed` recoit le nombre
+   d'entrees reellement effacees — c'est ce que rend `std::filesystem::remove_all`,
+   et un appelant peut s'en servir pour dire ce qu'il a fait.
+
+   Il n'y a pas de version atomique : une coupure en cours d'effacement laisse
+   une arborescence partielle. C'est vrai de `std::filesystem::remove_all` aussi,
+   et les appelants s'en servent pour des repertoires de travail. */
+dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *removed);
+
+/* Repertoire courant. Rappel de la mise en garde plus haut : sous Windows 95 un
+   programme lance depuis le menu Demarrer herite d'un repertoire courant qui n'a
+   rien a voir avec son emplacement. Pour trouver ou l'on est installe, c'est
+   `dkr_file_app_directory` qu'il faut, jamais celle-ci. */
+dkr_file_result dkr_file_current_directory(char *out, size_t out_size);
+
 /* --- Enumeration d'un repertoire ------------------------------------------ *
  *
  * `std::filesystem::directory_iterator` n'est pas reproduit : un iterateur

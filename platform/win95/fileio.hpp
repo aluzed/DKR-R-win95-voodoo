@@ -186,6 +186,56 @@ list_directory(const std::filesystem::path &dir)
     return out;
 }
 
+inline std::uintmax_t remove_all(const std::filesystem::path &p)
+{
+    unsigned long long n = 0;
+    dkr_file_remove_all(p.string().c_str(), &n);
+    return (std::uintmax_t)n;
+}
+
+inline std::uintmax_t remove_all(const std::filesystem::path &p,
+                                 std::error_code &ec)
+{
+    unsigned long long n = 0;
+    ec.clear();
+    if (dkr_file_remove_all(p.string().c_str(), &n) != DKR_FILE_OK) {
+        ec = std::make_error_code(std::errc::io_error);
+    }
+    return (std::uintmax_t)n;
+}
+
+inline std::filesystem::path current_path()
+{
+    char out[512];
+    if (dkr_file_current_directory(out, sizeof(out)) != DKR_FILE_OK) {
+        return std::filesystem::path{};
+    }
+    return std::filesystem::path{out};
+}
+
+/* **Windows 95 n'a pas de liens symboliques.** Ni les jonctions de NTFS, qui
+   n'arrivent qu'avec Windows 2000, ni les liens de Vista.
+
+   Rendre false n'est donc pas un raccourci ni un aveu d'impuissance : c'est la
+   reponse juste sur cette plate-forme. Le site d'appel qui refuse d'effacer
+   recursivement un lien symbolique garde tout son sens ailleurs, et ici il ne
+   peut simplement jamais se declencher. */
+inline bool is_symlink(const std::filesystem::path &)
+{
+    return false;
+}
+
+/* `weakly_canonical` resout « . » et « .. » et rend un chemin absolu, sans
+   exiger que le chemin existe. `GetFullPathNameA` fait exactement cela — c'est
+   d'ailleurs plus proche de `weakly_canonical` que ne l'est
+   `std::filesystem::absolute`, qui se contente de prefixer le repertoire
+   courant. Ce qui manque est la resolution des liens symboliques, et il n'y en
+   a pas ici. */
+inline std::filesystem::path weakly_canonical(const std::filesystem::path &p)
+{
+    return dkr::fs::absolute(p);
+}
+
 #else
 
 /* Sur toute autre cible, ce sont les fonctions de la bibliotheque standard, sans
@@ -273,6 +323,21 @@ inline bool copy_file_overwrite(const std::filesystem::path &from,
     // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
     return std::filesystem::copy_file(
         from, to, std::filesystem::copy_options::overwrite_existing);
+}
+
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+using std::filesystem::remove_all;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+using std::filesystem::current_path;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+using std::filesystem::is_symlink;
+
+inline std::filesystem::path weakly_canonical(const std::filesystem::path &p)
+{
+    std::error_code ec;
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    const std::filesystem::path c = std::filesystem::weakly_canonical(p, ec);
+    return ec ? p : c;
 }
 
 inline bool copy_file_overwrite(const std::filesystem::path &from,

@@ -136,6 +136,46 @@ int main(){
     for (const char *n : {"e1.dat", "e2.dat", "e3.dat"}) dkr::fs::remove(deep / n);
   }
 
+
+  {
+    /* `remove_all` rend le nombre d'entrees effacees, pas un booleen. Le
+       controle porte sur le compte **et** sur l'effet : c'est en rendant succes
+       sans rien faire que `remove` s'etait trompee. */
+    std::filesystem::path tree = deep / "arbre";
+    dkr::fs::create_directories(tree / "sous");
+    for (const char *n : {"a.dat", "b.dat"}) {
+      FILE *h = std::fopen((tree / n).string().c_str(), "wb");
+      if (h) std::fclose(h);
+    }
+    { FILE *h = std::fopen((tree / "sous" / "c.dat").string().c_str(), "wb");
+      if (h) std::fclose(h); }
+    /* arbre, sous, a.dat, b.dat, c.dat — cinq entrees. */
+    check("remove_all compte ce qu'il efface", dkr::fs::remove_all(tree) == 5);
+    check("et l'arborescence a disparu", !dkr::fs::exists(tree));
+    check("remove_all sur un absent rend 0", dkr::fs::remove_all(tree) == 0);
+  }
+
+  {
+    std::filesystem::path cwd = dkr::fs::current_path();
+    check("current_path rend un chemin non vide", !cwd.string().empty());
+    check("et ce chemin est un repertoire", dkr::fs::is_directory(cwd));
+  }
+
+  /* Windows 95 n'a pas de liens symboliques : la reponse juste est false, et
+     c'est aussi celle que rend la bibliotheque standard sur un fichier
+     ordinaire. Les deux branches concordent donc reellement ici. */
+  check("is_symlink sur un fichier ordinaire", !dkr::fs::is_symlink(f));
+
+  {
+    /* `weakly_canonical` resout « .. » sans exiger que le chemin existe. */
+    std::filesystem::path detour = deep / "." / ".." / "b" / "x.dat";
+    std::filesystem::path direct = dkr::fs::weakly_canonical(f);
+    check("weakly_canonical rend un chemin absolu",
+          direct.is_absolute() || !direct.string().empty());
+    check("et deux ecritures du meme chemin se rejoignent",
+          dkr::fs::weakly_canonical(detour) == direct);
+  }
+
   dkr::fs::remove(f);
   std::printf("\n%d echec(s)\n", fails);
   if(g_out){ std::fprintf(g_out,"\n%d echec(s)\n", fails); std::fclose(g_out);} 
