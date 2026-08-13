@@ -34,7 +34,9 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#if !defined(DKR_TARGET_WIN95)
 #include <DbgHelp.h>
+#endif
 #endif
 
 extern RspUcodeFunc dkrAspMain;
@@ -104,7 +106,18 @@ std::string GetThreadName(const OSThread* thread) {
     return "DKR-" + std::to_string(thread->id);
 }
 
-#ifdef _WIN32
+// Ce filtre repose sur DbgHelp — SymInitialize, StackWalk64, SymFromAddr — pour
+// remonter une pile symbolisee. Windows 95 ne l'a pas : sa `imagehlp.dll` porte
+// une API bien anterieure, sans aucune de ces fonctions, et l'edition de liens
+// echoue avant meme qu'il soit question de l'executer.
+//
+// La cible n'en est pas privee pour autant. `platform/win95/startup.c` installe
+// deja son propre filtre, qui execute le registre de nettoyage avant d'afficher
+// quoi que ce soit — c'est lui qui remet le mode video et libere le materiel
+// Voodoo, ce qui compte davantage sur cette machine qu'une pile d'appels. Sans
+// cette garde, l'installation ci-dessous l'ecraserait : `SetUnhandledExceptionFilter`
+// ne garde que le dernier appelant.
+#if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
 LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
     if (g_crash_filter_active.test_and_set()) {
         Sleep(5000);
@@ -280,7 +293,9 @@ bool RelaunchApplication(int argc, char** argv) {
 int DkrMain(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
+    // Sur Windows 95, c'est le filtre de la couche plate-forme qui reste en
+    // place : il execute le registre de nettoyage, que celui-ci n'a pas.
     SetUnhandledExceptionFilter(RuntimeCrashFilter);
 #endif
 

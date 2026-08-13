@@ -185,6 +185,25 @@ add_custom_target(dkr_win95_cpp_subset_ultramodern ALL
 file(GLOB DKR_WIN95_LIBRECOMP_SOURCES
      "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/src/*.cpp")
 
+# Les deux bibliothèques tierces que `librecomp` réclame à l'édition de liens, et
+# que la construction de cette cible laissait de côté tant qu'elle n'établissait
+# que la compilation.
+#
+#   o1heap  l'allocateur du tas N64, employé par `heap.cpp` — cœur, indispensable
+#   miniz   la lecture d'archives ZIP, employée par le seul système de mods.
+#           Quatre fichiers et non un : `miniz.c` seul ne porte pas l'API zip,
+#           qui vit dans `miniz_zip.c` — l'objet ne faisait que 11 Ko et le
+#           lieur réclamait toujours `mz_zip_reader_*`.
+#
+# Elles sont compilées en C ici, et non par leur propre CMake : celui de miniz
+# fabriquerait `miniz_export.h` à la configuration, d'où la cale.
+list(APPEND DKR_WIN95_LIBRECOMP_SOURCES
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/o1heap/o1heap/o1heap.c"
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz/miniz.c"
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz/miniz_zip.c"
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz/miniz_tinfl.c"
+     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz/miniz_tdef.c")
+
 add_library(win95librecomp STATIC ${DKR_WIN95_LIBRECOMP_SOURCES})
 target_include_directories(win95librecomp PUBLIC
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/include"
@@ -198,6 +217,7 @@ target_include_directories(win95librecomp PUBLIC
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/concurrentqueue"
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/o1heap"
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/o1heap"
     "${DKR_WIN95_PLATFORM}/include-shim"
     "${DKRPORT_ROOT}/include")
 # Le patch 0018 route les opérations de fichiers du cœur de `librecomp` par un
