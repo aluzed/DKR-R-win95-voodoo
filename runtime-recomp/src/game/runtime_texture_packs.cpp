@@ -14,14 +14,14 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
-#include <mutex>
 #include <set>
 #include <system_error>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace {
 
-std::mutex g_mutex;
+dkr::sync::mutex g_mutex;
 std::filesystem::path g_pack_directory;
 std::filesystem::path g_settings_path;
 std::vector<dkr::runtime::texture_packs::PackInfo> g_packs;
@@ -392,7 +392,7 @@ const char* format_name(Format format) {
 
 void configure(const std::filesystem::path& config_directory) {
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         g_pack_directory = config_directory / "texture-packs";
         g_settings_path = config_directory / "texture-packs.ini";
         g_applied_ids.clear();
@@ -412,7 +412,7 @@ void refresh() {
     std::set<std::string> enabled;
     std::set<std::string> hidden;
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         directory = g_pack_directory;
         enabled = g_enabled_ids;
         hidden = g_hidden_ids;
@@ -445,7 +445,7 @@ void refresh() {
                   return Lower(left.name) < Lower(right.name);
               });
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         g_packs = std::move(scanned);
         ++g_generation;
         if (error) g_status = "The texture-pack folder could not be scanned: " + error.message();
@@ -454,7 +454,7 @@ void refresh() {
 }
 
 std::vector<PackInfo> snapshot(bool include_hidden) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     if (include_hidden) return g_packs;
     std::vector<PackInfo> visible;
     visible.reserve(g_packs.size());
@@ -498,7 +498,7 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
 
         std::filesystem::path destination;
         {
-            std::scoped_lock lock(g_mutex);
+            dkr::sync::scoped_lock lock(g_mutex);
             dkr::fs::create_directories(g_pack_directory, error);
             destination = UniqueManagedDestination(source);
         }
@@ -533,7 +533,7 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
         status_text = "Imported " + source.filename().string() + " as " +
             format_name(imported.format) + ". " + imported.detail;
         {
-            std::scoped_lock lock(g_mutex);
+            dkr::sync::scoped_lock lock(g_mutex);
             g_status = status_text;
         }
         return imported.compatible;
@@ -541,7 +541,7 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
 
     std::filesystem::path destination;
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         dkr::fs::create_directories(g_pack_directory, error);
         destination = UniqueDestination(source);
     }
@@ -555,14 +555,14 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
     status_text = "Imported " + destination.filename().string() + " as " +
         format_name(imported.format) + ". " + imported.detail;
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         g_status = status_text;
     }
     return true;
 }
 
 void set_enabled(const std::string& id, bool enabled) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     const std::string normalized = Lower(id);
     const auto match = std::find_if(g_packs.begin(), g_packs.end(),
         [&](const PackInfo& pack) { return pack.id == normalized; });
@@ -576,7 +576,7 @@ void set_enabled(const std::string& id, bool enabled) {
 }
 
 bool set_hidden(const std::string& id, bool hidden, std::string& status_text) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     const std::string normalized = Lower(id);
     const auto match = std::find_if(g_packs.begin(), g_packs.end(),
         [&](const PackInfo& pack) { return pack.id == normalized; });
@@ -606,7 +606,7 @@ bool delete_managed(const std::string& id, std::string& status_text) {
     PackInfo selected;
     bool defer_until_reload = false;
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         const auto match = std::find_if(g_packs.begin(), g_packs.end(),
             [&](const PackInfo& pack) { return pack.id == normalized; });
         if (match == g_packs.end()) {
@@ -626,7 +626,7 @@ bool delete_managed(const std::string& id, std::string& status_text) {
     }
 
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         g_enabled_ids.erase(normalized);
         if (defer_until_reload) {
             // Keep a tombstone in the settings file until RT64 has released
@@ -653,7 +653,7 @@ bool delete_managed(const std::string& id, std::string& status_text) {
 }
 
 void request_reload() {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     ++g_generation;
 }
 
@@ -664,7 +664,7 @@ void apply_pending(RT64::Application& application, bool modern_profile) {
     std::vector<PendingDeletion> completed_deletions;
     std::uint64_t generation = 0;
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         generation = g_generation;
         if (generation == g_applied_generation && modern_profile == g_applied_modern) return;
         previous_replacements = g_applied_replacements;
@@ -687,7 +687,7 @@ void apply_pending(RT64::Application& application, bool modern_profile) {
             previous_replacements);
     }
     {
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         if (success) {
             g_applied_generation = generation;
             g_applied_modern = modern_profile;
@@ -719,7 +719,7 @@ void apply_pending(RT64::Application& application, bool modern_profile) {
                 deletion_error = pending.name + ": " + error_text;
             }
         }
-        std::scoped_lock lock(g_mutex);
+        dkr::sync::scoped_lock lock(g_mutex);
         for (const auto& deleted_id : deleted_ids) {
             g_hidden_ids.erase(deleted_id);
         }
@@ -738,7 +738,7 @@ void apply_pending(RT64::Application& application, bool modern_profile) {
 }
 
 std::string status() {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     return g_status;
 }
 

@@ -202,6 +202,33 @@ private:
     dkr_mutex m_;
 };
 
+/* --- Temporisation --------------------------------------------------------- *
+ *
+ * `std::this_thread::sleep_for` prend une duree de `<chrono>`, en-tete qui
+ * fonctionne sur la cible — ce sont `<thread>` et `<mutex>` qui n'y passent pas.
+ * La duree est donc acceptee telle quelle et convertie en millisecondes, la
+ * seule granularite que `Sleep` de Windows 95 connaisse.
+ *
+ * Une duree inferieure a la milliseconde ne s'arrondit pas a zero mais a un :
+ * un appelant qui demande a ceder la main brievement doit ceder la main, et
+ * `Sleep(0)` ne rend pas forcement le processeur a un autre fil.
+ */
+namespace this_thread {
+
+template <class Rep, class Period>
+inline void sleep_for(const std::chrono::duration<Rep, Period> &d)
+{
+    const long long ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
+    if (ms <= 0) {
+        dkr_sleep_ms(d.count() > 0 ? 1 : 0);
+        return;
+    }
+    dkr_sleep_ms(static_cast<unsigned long>(ms));
+}
+
+} // namespace this_thread
+
 /* --- Garde de verrou ------------------------------------------------------ */
 
 template <class Mutex>
@@ -221,6 +248,39 @@ private:
    les deux formes, et la deduction est celle que C++17 donne gratuitement. */
 template <class Mutex>
 lock_guard(Mutex &) -> lock_guard<Mutex>;
+
+/* --- Garde a un seul verrou ------------------------------------------------ *
+ *
+ * `std::scoped_lock` est variadique, et c'est la forme dominante dans les
+ * sources du jeu : 95 emplois, tous sur **un seul** verrou.
+ *
+ * Elle n'est donc fournie que pour un verrou, et le choix merite d'etre dit,
+ * parce que l'alternative parait plus complete et serait pire. Une version
+ * variadique naive verrouillerait dans l'ordre des arguments — ce que
+ * `std::scoped_lock` ne fait justement pas : elle emploie l'algorithme de
+ * `std::lock`, qui evite l'interblocage par acquisitions et abandons repetes.
+ * Reproduire la signature sans reproduire cet algorithme donnerait du code qui
+ * compile, marche a l'essai, et interbloque un jour sous cadence.
+ *
+ * Avec un seul parametre, deux verrous ne compilent pas. L'echec est visible,
+ * a l'endroit fautif, et le jour ou le code du jeu en aura besoin il faudra
+ * ecrire l'algorithme — pas le contourner sans le savoir.
+ */
+template <class Mutex>
+class scoped_lock {
+public:
+    explicit scoped_lock(Mutex &m) : m_(m) { m_.lock(); }
+    ~scoped_lock() { m_.unlock(); }
+
+    scoped_lock(const scoped_lock &)            = delete;
+    scoped_lock &operator=(const scoped_lock &) = delete;
+
+private:
+    Mutex &m_;
+};
+
+template <class Mutex>
+scoped_lock(Mutex &) -> scoped_lock<Mutex>;
 
 /* --- Verrou cessible ------------------------------------------------------ *
  *

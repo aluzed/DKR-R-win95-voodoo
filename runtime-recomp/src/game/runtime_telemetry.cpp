@@ -4,7 +4,7 @@
 
 #include <atomic>
 #include <chrono>
-#include <mutex>
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -89,11 +89,11 @@ void dkr::runtime::telemetry::record_presented_frames(std::uint64_t count) {
 }
 
 dkr::runtime::telemetry::Metrics dkr::runtime::telemetry::metrics() {
-    static std::mutex guard;
+    static dkr::sync::mutex guard;
     static auto previous_time = Clock::now();
     static Snapshot previous = ReadSnapshot();
     static Metrics cached{};
-    std::scoped_lock lock(guard);
+    dkr::sync::scoped_lock lock(guard);
     const auto now = Clock::now();
     const double elapsed =
         std::chrono::duration<double>(now - previous_time).count();

@@ -12,10 +12,10 @@
 #include <cstdio>
 #include <deque>
 #include <cmath>
-#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -109,7 +109,7 @@ struct CameraContinuityState {
     bool valid = false;
 };
 
-std::mutex g_identity_mutex;
+dkr::sync::mutex g_identity_mutex;
 std::unordered_map<std::uint32_t, Lifetime> g_lifetimes;
 std::unordered_map<std::uint32_t, ObjectOwner> g_identity_owners;
 std::unordered_set<std::uint32_t> g_collided_identities;
@@ -379,7 +379,7 @@ void NoteSpawn(std::uint32_t object) {
     if (!ValidObjectAddress(object)) {
         return;
     }
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     Lifetime& lifetime = g_lifetimes[object];
     lifetime = {};
     lifetime.generation = NextLifetimeGeneration();
@@ -393,7 +393,7 @@ void NoteFree(std::uint32_t object) {
     if (!ValidObjectAddress(object)) {
         return;
     }
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     const auto it = g_lifetimes.find(object);
     if (it != g_lifetimes.end()) {
         it->second.alive = false;
@@ -413,7 +413,7 @@ void RegisterCameraMatrix(std::uint8_t* rdram,
         return;
     }
 
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     const std::uint32_t scene =
         g_scene_generation.load(std::memory_order_relaxed);
     std::uint32_t camera_id = 0U;
@@ -533,7 +533,7 @@ std::uint16_t dkr::runtime::presentation::presentation_token_for_object(
     if (!ValidObjectAddress(object_address)) {
         return 0U;
     }
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     EnsureLifetimeLocked(object_address);
     return g_lifetimes[object_address].presentation_token;
 }
@@ -544,7 +544,7 @@ dkr::runtime::presentation::presentation_token_for_registered_object(
     if (!ValidObjectAddress(object_address)) {
         return 0U;
     }
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     const auto it = g_lifetimes.find(object_address);
     return it != g_lifetimes.end() && it->second.alive
         ? it->second.presentation_token
@@ -577,7 +577,7 @@ dkr::runtime::presentation::active_vehicle_part_presentation_key(
     if (slot == kInvalidVehiclePartSlot) {
         return {};
     }
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     const auto lifetime_it = g_lifetimes.find(capture.object);
     if (lifetime_it == g_lifetimes.end() || !lifetime_it->second.alive) {
         return {};
@@ -610,7 +610,7 @@ std::uint32_t dkr::runtime::presentation::register_active_vehicle_part_matrix(
 
     const std::uint32_t identity = make_vehicle_part_matrix_identity(
         capture.identity, Physical(attachment_transform_address));
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     g_matrix_maps[capture.buffer & 1U].insert_or_assign(
         matrix, MatrixBinding{
             with_camera_continuity(identity, capture.camera_identity),
@@ -629,7 +629,7 @@ dkr::runtime::presentation::shadow_presentation_key(
         return {};
     }
 
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     EnsureLifetimeLocked(object_address);
     Lifetime& lifetime = g_lifetimes[object_address];
     bool incompatible_geometry = false;
@@ -666,7 +666,7 @@ dkr::runtime::presentation::TaskIdentityScope::TaskIdentityScope(
     std::uint32_t display_list_address) {
     g_active_matrix_map.clear();
     g_active_task_interpolation_allowed = false;
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     if (g_submitted_frames.empty()) {
         return;
     }
@@ -696,7 +696,7 @@ bool dkr::runtime::presentation::task_interpolation_allowed() {
 }
 
 extern "C" void dkr_presentation_scene_begin(std::uint8_t*, recomp_context*) {
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     std::uint32_t next =
         g_scene_generation.fetch_add(1U, std::memory_order_relaxed) + 1U;
     if (next == 0U) {
@@ -734,7 +734,7 @@ extern "C" void dkr_presentation_frame_begin(std::uint8_t* rdram,
     g_recording_interpolation_allowed =
         dkr::runtime::enhancements::interpolation_allowed_for_camera(
             dkr::runtime::enhancements::presentation_profile(), camera_mode);
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     g_matrix_maps[g_recording_buffer].clear();
 }
 
@@ -873,7 +873,7 @@ extern "C" void dkr_presentation_wave_matrix(
         ReadU32(rdram, transform + 0x04U),
         ReadU32(rdram, transform + 0x08U), topology);
 
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     g_matrix_maps[g_recording_buffer & 1U].insert_or_assign(
         Physical(matrix_address),
         MatrixBinding{
@@ -900,7 +900,7 @@ extern "C" void dkr_presentation_task_submitted(std::uint8_t*,
     SubmittedFrame frame{};
     frame.display_list_address = static_cast<std::uint32_t>(context->r4);
     frame.interpolation_allowed = g_recording_interpolation_allowed;
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     if (g_submission_overflowed) {
         return;
     }
@@ -941,7 +941,7 @@ extern "C" void dkr_presentation_object_begin(std::uint8_t* rdram,
     if (!ValidObjectAddress(first_matrix)) {
         return;
     }
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     capture.object = object;
     capture.identity = ObjectIdentityLocked(rdram, object);
     capture.camera_identity = g_current_camera_identity;
@@ -976,7 +976,7 @@ extern "C" void dkr_presentation_object_end(std::uint8_t* rdram,
         return;
     }
 
-    std::scoped_lock lock(g_identity_mutex);
+    dkr::sync::scoped_lock lock(g_identity_mutex);
     auto& map = g_matrix_maps[capture.buffer & 1U];
     for (std::uint32_t ordinal = 0; ordinal < matrix_count; ++ordinal) {
         const std::uint32_t address = capture.first_matrix + ordinal * 64U;

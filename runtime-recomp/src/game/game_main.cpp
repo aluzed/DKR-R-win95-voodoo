@@ -23,8 +23,8 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
-#include <thread>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 #ifndef _WIN32
 #include <cerrno>
@@ -492,7 +492,7 @@ int DkrMain(int argc, char** argv) {
     std::fprintf(stderr, "[boot] runtime initialized; waiting for first safe VI state\n");
     std::atomic<bool> runtime_finished{false};
     std::exception_ptr runtime_failure;
-    std::thread runtime_thread([&] {
+    dkr::sync::thread runtime_thread([&] {
         try {
             recomp::start(configuration);
         } catch (...) {
@@ -523,7 +523,7 @@ int DkrMain(int argc, char** argv) {
             timeout_requested = true;
             ultramodern::quit();
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        dkr::sync::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     runtime_thread.join();
 #if DKR_RUNTIME_HAS_RT64

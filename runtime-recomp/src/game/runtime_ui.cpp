@@ -49,12 +49,12 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
-#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -78,7 +78,7 @@ std::atomic<bool> g_overlay_visible{false};
 std::atomic<bool> g_overlay_focus_requested{false};
 std::atomic<dkr::runtime::ui::LifecycleRequest> g_lifecycle_request{
     dkr::runtime::ui::LifecycleRequest::None};
-std::mutex g_inspector_guard;
+dkr::sync::mutex g_inspector_guard;
 RT64::Inspector* g_inspector = nullptr;
 std::atomic<int> g_overlay_page{0};
 ImFont* g_font_heading = nullptr;
@@ -4032,8 +4032,8 @@ void dkr::runtime::ui::attach(RT64::Application& application) {
         application.swapChain == nullptr) {
         return;
     }
-    std::scoped_lock guard(g_inspector_guard);
-    std::scoped_lock present_lock(application.presentQueue->inspectorMutex);
+    dkr::sync::scoped_lock guard(g_inspector_guard);
+    dkr::sync::scoped_lock present_lock(application.presentQueue->inspectorMutex);
     application.presentQueue->inspector = std::make_unique<RT64::Inspector>(
         application.device.get(), application.swapChain.get(),
         application.chosenGraphicsAPI,
@@ -4047,10 +4047,10 @@ void dkr::runtime::ui::attach(RT64::Application& application) {
 }
 
 void dkr::runtime::ui::detach(RT64::Application& application) {
-    std::scoped_lock guard(g_inspector_guard);
+    dkr::sync::scoped_lock guard(g_inspector_guard);
     g_inspector = nullptr;
     if (application.presentQueue != nullptr) {
-        std::scoped_lock present_lock(application.presentQueue->inspectorMutex);
+        dkr::sync::scoped_lock present_lock(application.presentQueue->inspectorMutex);
         dkr::runtime::crt::release();
         application.presentQueue->inspector.reset();
     }
@@ -4261,11 +4261,11 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
             return true;
         }
     }
-    std::scoped_lock guard(g_inspector_guard);
+    dkr::sync::scoped_lock guard(g_inspector_guard);
     if (g_inspector == nullptr) {
         return false;
     }
-    std::scoped_lock frame_lock(g_inspector->frameMutex);
+    dkr::sync::scoped_lock frame_lock(g_inspector->frameMutex);
     // RT64's ImGui backend owns normal pointer, keyboard and gamepad event
     // delivery. Do not turn those events into page-focus requests: ImGui must
     // be allowed to retain the item selected by the previous event so the

@@ -14,9 +14,9 @@
 #include <atomic>
 #include <cstdio>
 #include <fstream>
-#include <mutex>
 #include <system_error>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -27,7 +27,7 @@ std::atomic<std::uint32_t> g_persistent_mask{0U};
 std::atomic<std::uint32_t> g_queued_one_shot_mask{0U};
 std::atomic<bool> g_applied{false};
 std::filesystem::path g_one_shot_path;
-std::mutex g_queue_file_guard;
+dkr::sync::mutex g_queue_file_guard;
 
 gpr RdramAddress(std::uint32_t address) {
     return static_cast<gpr>(static_cast<std::int32_t>(address));
@@ -46,7 +46,7 @@ bool ReplaceQueueFile(const std::filesystem::path& temporary,
 }
 
 bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
-    std::lock_guard lock(g_queue_file_guard);
+    dkr::sync::lock_guard lock(g_queue_file_guard);
     if (g_one_shot_path.empty()) {
         error = "Magic Code launch queue is not configured yet.";
         return false;
@@ -90,7 +90,7 @@ bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
 }
 
 void RemoveConsumedQueueFile() {
-    std::lock_guard lock(g_queue_file_guard);
+    dkr::sync::lock_guard lock(g_queue_file_guard);
     if (g_one_shot_path.empty()) {
         return;
     }
@@ -107,7 +107,7 @@ void RemoveConsumedQueueFile() {
 
 void dkr::runtime::magic_codes::configure(
     const std::filesystem::path& config_directory) {
-    std::lock_guard lock(g_queue_file_guard);
+    dkr::sync::lock_guard lock(g_queue_file_guard);
     g_one_shot_path = config_directory / "magic-codes-next-launch.txt";
     std::ifstream input(g_one_shot_path.string());
     std::uint32_t mask = 0U;

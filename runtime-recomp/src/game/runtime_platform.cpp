@@ -20,8 +20,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
-#include <mutex>
 #include <vector>
+#include "win95/sync.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -43,7 +43,7 @@ std::atomic<bool> g_rumble_enabled{true};
 std::atomic<float> g_rumble_strength{1.0F};
 
 #if DKR_RUNTIME_HAS_RT64
-std::mutex g_platform_mutex;
+dkr::sync::mutex g_platform_mutex;
 SDL_AudioDeviceID g_audio_device = 0;
 std::array<SDL_GameController*, kControllerCount> g_controllers{};
 SDL_GameController* g_gyro_controller = nullptr;
@@ -168,7 +168,7 @@ bool dkr::runtime::platform::initialise() {
                  linked_version.major, linked_version.minor,
                  linked_version.patch);
     SDL_GameControllerEventState(SDL_ENABLE);
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     RefreshControllers();
 #endif
     std::fprintf(stderr,
@@ -179,7 +179,7 @@ bool dkr::runtime::platform::initialise() {
 
 void dkr::runtime::platform::shutdown() {
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     if (g_cursor_hidden) {
         SDL_ShowCursor(SDL_ENABLE);
         g_cursor_hidden = false;
@@ -448,7 +448,7 @@ void dkr::runtime::platform::update_fullscreen_cursor(const void* raw_event) {
 
 void dkr::runtime::platform::update_ui_gamepad_navigation() {
     ImGuiIO& io = ImGui::GetIO();
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     SDL_GameControllerUpdate();
     RefreshControllers();
 
@@ -518,7 +518,7 @@ void dkr::runtime::platform::queue_audio(std::int16_t* samples,
     dkr::runtime::telemetry::record_audio_buffer(sample_count);
     const auto index = ++g_audio_buffers;
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     if (g_audio_device != 0 && sample_count != 0) {
         const std::size_t maximum_samples =
             static_cast<std::size_t>(std::max(g_audio_frequency, 48000U)) * 2U;
@@ -636,7 +636,7 @@ void dkr::runtime::platform::set_treble_gain(float decibels) {
 
 std::size_t dkr::runtime::platform::audio_frames_remaining() {
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     if (g_audio_device != 0) {
         // SDL's queue contains one deliberately protected host-side cushion
         // block in addition to the block that represents the N64 AI's active
@@ -688,7 +688,7 @@ void dkr::runtime::platform::set_audio_frequency(std::uint32_t frequency) {
         return;
     }
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     if (g_audio_device != 0 && g_audio_frequency == frequency) {
         return;
     }
@@ -732,7 +732,7 @@ void dkr::runtime::platform::set_audio_frequency(std::uint32_t frequency) {
 
 void dkr::runtime::platform::poll_input() {
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     SDL_GameControllerUpdate();
     RefreshControllers();
     const bool blocked = dkr::runtime::ui::overlay_visible();
@@ -771,7 +771,7 @@ void dkr::runtime::platform::set_rumble(int controller, bool enabled) {
     if (controller < 0 || controller >= static_cast<int>(kControllerCount)) {
         return;
     }
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     SDL_GameController* game_controller = g_controllers[static_cast<std::size_t>(controller)];
     if (game_controller != nullptr) {
         const bool active = enabled && g_rumble_enabled.load(std::memory_order_acquire);
@@ -806,7 +806,7 @@ void dkr::runtime::platform::set_rumble_enabled(bool enabled) {
     g_rumble_enabled.store(enabled, std::memory_order_release);
 #if DKR_RUNTIME_HAS_RT64
     if (!enabled) {
-        std::scoped_lock lock(g_platform_mutex);
+        dkr::sync::scoped_lock lock(g_platform_mutex);
         for (SDL_GameController* controller : g_controllers) {
             if (controller != nullptr) {
                 SDL_GameControllerRumble(controller, 0U, 0U, 0U);
@@ -818,7 +818,7 @@ void dkr::runtime::platform::set_rumble_enabled(bool enabled) {
 
 bool dkr::runtime::platform::gyro_available() {
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     return g_gyro_controller != nullptr &&
            SDL_GameControllerGetAttached(g_gyro_controller) == SDL_TRUE &&
            SDL_GameControllerHasSensor(
@@ -834,7 +834,7 @@ dkr::runtime::platform::get_connected_device_info(int controller) {
         return {ultramodern::input::Device::None, ultramodern::input::Pak::None};
     }
 #if DKR_RUNTIME_HAS_RT64
-    std::scoped_lock lock(g_platform_mutex);
+    dkr::sync::scoped_lock lock(g_platform_mutex);
     const bool has_gamepad = g_controllers[static_cast<std::size_t>(controller)] != nullptr;
     if (controller == 0) {
         return {ultramodern::input::Device::Controller,

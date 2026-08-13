@@ -13,10 +13,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <mutex>
 #include <string>
 #include <vector>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -48,7 +48,7 @@ struct PakFile {
 };
 
 struct VirtualPak {
-    std::mutex mutex;
+    dkr::sync::mutex mutex;
     bool loaded = false;
     bool corrupt = false;
     std::uint32_t generation = 0;
@@ -232,7 +232,7 @@ std::int32_t EnsureLoaded(int channel, VirtualPak*& result) {
     }
     VirtualPak& pak = g_paks[static_cast<std::size_t>(channel)];
     result = &pak;
-    std::scoped_lock lock(pak.mutex);
+    dkr::sync::scoped_lock lock(pak.mutex);
     if (pak.loaded) {
         return pak.corrupt ? kPfsBadData : kPfsOk;
     }
@@ -328,7 +328,7 @@ bool dkr::runtime::pak::self_test(const std::filesystem::path& directory,
     constexpr int channel = 3;
     VirtualPak& pak = g_paks[static_cast<std::size_t>(channel)];
     {
-        std::scoped_lock lock(pak.mutex);
+        dkr::sync::scoped_lock lock(pak.mutex);
         pak.files = {};
         pak.loaded = true;
         pak.corrupt = false;
@@ -380,7 +380,7 @@ bool dkr::runtime::pak::self_test(const std::filesystem::path& directory,
         output.write(&damaged, 1);
     }
     {
-        std::scoped_lock lock(pak.mutex);
+        dkr::sync::scoped_lock lock(pak.mutex);
         pak.loaded = false;
         pak.corrupt = false;
         pak.files = {};
@@ -391,7 +391,7 @@ bool dkr::runtime::pak::self_test(const std::filesystem::path& directory,
         return false;
     }
     {
-        std::scoped_lock lock(recovered->mutex);
+        dkr::sync::scoped_lock lock(recovered->mutex);
         if (!recovered->files[0].used || recovered->files[0].data.size() != 1024U ||
             recovered->files[0].data[0] != 0U) {
             error = "backup recovery returned the wrong generation";
@@ -426,7 +426,7 @@ extern "C" void osPfsFreeBlocks_recomp(std::uint8_t* rdram, recomp_context* cont
     const int channel = ChannelFromPfs(rdram, context);
     std::int32_t status = EnsureLoaded(channel, pak);
     if (status == kPfsOk) {
-        std::scoped_lock lock(pak->mutex);
+        dkr::sync::scoped_lock lock(pak->mutex);
         const gpr output = Arg(rdram, context, 1);
         MEM_W(0, output) = kDataCapacity - UsedBytes(*pak);
     }
@@ -438,7 +438,7 @@ extern "C" void osPfsNumFiles_recomp(std::uint8_t* rdram, recomp_context* contex
     const int channel = ChannelFromPfs(rdram, context);
     std::int32_t status = EnsureLoaded(channel, pak);
     if (status == kPfsOk) {
-        std::scoped_lock lock(pak->mutex);
+        dkr::sync::scoped_lock lock(pak->mutex);
         const std::uint32_t used = static_cast<std::uint32_t>(std::count_if(
             pak->files.begin(), pak->files.end(), [](const PakFile& file) { return file.used; }));
         MEM_W(0, Arg(rdram, context, 1)) = kMaximumFiles;
@@ -457,7 +457,7 @@ extern "C" void osPfsFindFile_recomp(std::uint8_t* rdram, recomp_context* contex
         const std::uint16_t company = static_cast<std::uint16_t>(Arg(rdram, context, 1));
         const std::uint32_t game = static_cast<std::uint32_t>(Arg(rdram, context, 2));
         status = kPfsInvalid;
-        std::scoped_lock lock(pak->mutex);
+        dkr::sync::scoped_lock lock(pak->mutex);
         for (std::uint32_t index = 0; index < kMaximumFiles; ++index) {
             if (MetadataMatches(pak->files[index], company, game, name, extension)) {
                 MEM_W(0, Arg(rdram, context, 5)) = index;
@@ -482,7 +482,7 @@ extern "C" void osPfsAllocateFile_recomp(std::uint8_t* rdram, recomp_context* co
         if (requested <= 0) {
             status = kPfsInvalid;
         } else {
-            std::scoped_lock lock(pak->mutex);
+            dkr::sync::scoped_lock lock(pak->mutex);
             auto existing = std::find_if(pak->files.begin(), pak->files.end(),
                 [&](const PakFile& file) {
                     return MetadataMatches(file, company, game, name, extension);
@@ -523,7 +523,7 @@ extern "C" void osPfsDeleteFile_recomp(std::uint8_t* rdram, recomp_context* cont
         const std::uint16_t company = static_cast<std::uint16_t>(Arg(rdram, context, 1));
         const std::uint32_t game = static_cast<std::uint32_t>(Arg(rdram, context, 2));
         status = kPfsInvalid;
-        std::scoped_lock lock(pak->mutex);
+        dkr::sync::scoped_lock lock(pak->mutex);
         for (PakFile& file : pak->files) {
             if (MetadataMatches(file, company, game, name, extension)) {
                 file = {};
@@ -541,7 +541,7 @@ extern "C" void osPfsFileState_recomp(std::uint8_t* rdram, recomp_context* conte
     std::int32_t status = EnsureLoaded(channel, pak);
     const std::int32_t index = static_cast<std::int32_t>(Arg(rdram, context, 1));
     if (status == kPfsOk) {
-        std::scoped_lock lock(pak->mutex);
+        dkr::sync::scoped_lock lock(pak->mutex);
         if (index < 0 || index >= static_cast<std::int32_t>(kMaximumFiles) ||
             !pak->files[static_cast<std::size_t>(index)].used) {
             status = kPfsInvalid;
@@ -568,7 +568,7 @@ extern "C" void osPfsReadWriteFile_recomp(std::uint8_t* rdram, recomp_context* c
     const std::int32_t size = static_cast<std::int32_t>(Arg(rdram, context, 4));
     const gpr buffer = Arg(rdram, context, 5);
     if (status == kPfsOk) {
-        std::scoped_lock lock(pak->mutex);
+        dkr::sync::scoped_lock lock(pak->mutex);
         if (index < 0 || index >= static_cast<std::int32_t>(kMaximumFiles) ||
             !pak->files[static_cast<std::size_t>(index)].used || offset < 0 || size < 0) {
             status = kPfsInvalid;
@@ -611,7 +611,7 @@ extern "C" int dkr_virtual_pak_reformat(std::uint8_t* rdram, recomp_context* con
         return kPfsNoPak;
     }
     VirtualPak& pak = g_paks[static_cast<std::size_t>(channel)];
-    std::scoped_lock lock(pak.mutex);
+    dkr::sync::scoped_lock lock(pak.mutex);
     pak.files = {};
     pak.loaded = true;
     pak.corrupt = false;

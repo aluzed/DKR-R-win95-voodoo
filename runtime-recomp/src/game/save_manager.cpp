@@ -8,10 +8,10 @@
 #include <fstream>
 #include <iomanip>
 #include <iterator>
-#include <mutex>
 #include <sstream>
 #include <vector>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -39,7 +39,7 @@ constexpr std::size_t kMaximumBundleSize =
     64U + kAdventureSaveSize +
     dkr::runtime::saves::kControllerPakCount * (32U + kControllerPakSize);
 std::filesystem::path g_config_directory;
-std::mutex g_save_manager_mutex;
+dkr::sync::mutex g_save_manager_mutex;
 
 std::filesystem::path AdventurePath() {
     return g_config_directory / "saves" / "dkr.us.v77.bin";
@@ -376,12 +376,12 @@ bool ReadBundle(const std::filesystem::path& path,
 
 void dkr::runtime::saves::configure(
     const std::filesystem::path& config_directory) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     g_config_directory = config_directory;
 }
 
 dkr::runtime::saves::SaveInfo dkr::runtime::saves::adventure_info() {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     SaveInfo info{};
     info.path = AdventurePath();
     std::error_code error;
@@ -395,12 +395,12 @@ dkr::runtime::saves::SaveInfo dkr::runtime::saves::adventure_info() {
 }
 
 std::filesystem::path dkr::runtime::saves::backup_directory() {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     return g_config_directory / "save-backups";
 }
 
 std::vector<std::filesystem::path> dkr::runtime::saves::adventure_backups() {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<std::filesystem::path> result;
     std::error_code error;
     const auto directory = g_config_directory / "save-backups";
@@ -424,13 +424,13 @@ std::vector<std::filesystem::path> dkr::runtime::saves::adventure_backups() {
 
 bool dkr::runtime::saves::backup_adventure(std::filesystem::path& created,
                                             std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     return BackupUnlocked(created, error);
 }
 
 bool dkr::runtime::saves::export_adventure(
     const std::filesystem::path& destination, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<std::uint8_t> bytes;
     if (!ReadAdventure(AdventurePath(), bytes)) {
         error = "No valid Adventure save is available to export.";
@@ -441,7 +441,7 @@ bool dkr::runtime::saves::export_adventure(
 
 bool dkr::runtime::saves::import_adventure(
     const std::filesystem::path& source, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<std::uint8_t> bytes;
     if (!ReadAdventure(source, bytes)) {
         error = "That file is not a valid 512-byte DKR Adventure save.";
@@ -458,7 +458,7 @@ bool dkr::runtime::saves::import_adventure(
 }
 
 bool dkr::runtime::saves::reset_adventure(std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::error_code exists_error;
     if (dkr::fs::exists(AdventurePath(), exists_error)) {
         std::filesystem::path backup;
@@ -472,7 +472,7 @@ bool dkr::runtime::saves::reset_adventure(std::string& error) {
 
 bool dkr::runtime::saves::load_adventure(codec::SaveImage& image,
                                          std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<std::uint8_t> bytes;
     if (!ReadAdventure(AdventurePath(), bytes)) {
         error = "No checksum-valid Adventure EEPROM is available to edit.";
@@ -483,7 +483,7 @@ bool dkr::runtime::saves::load_adventure(codec::SaveImage& image,
 
 bool dkr::runtime::saves::commit_adventure(const codec::SaveImage& image,
                                            std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     if (!codec::validate_editable_ranges(image, &error)) {
         error = "The edited Adventure save is outside DKR's retail limits: " +
             error;
@@ -506,7 +506,7 @@ bool dkr::runtime::saves::commit_adventure(const codec::SaveImage& image,
 
 dkr::runtime::saves::SaveInfo dkr::runtime::saves::controller_pak_info(
     int channel) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     SaveInfo info{};
     if (!ValidChannel(channel)) {
         return info;
@@ -524,7 +524,7 @@ dkr::runtime::saves::SaveInfo dkr::runtime::saves::controller_pak_info(
 
 std::vector<std::filesystem::path>
 dkr::runtime::saves::controller_pak_backups(int channel) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<std::filesystem::path> result;
     if (!ValidChannel(channel)) {
         return result;
@@ -553,13 +553,13 @@ dkr::runtime::saves::controller_pak_backups(int channel) {
 
 bool dkr::runtime::saves::backup_controller_pak(
     int channel, std::filesystem::path& created, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     return BackupPakUnlocked(channel, created, error);
 }
 
 bool dkr::runtime::saves::export_controller_pak(
     int channel, const std::filesystem::path& destination, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     if (!ValidChannel(channel)) {
         error = "That Controller Pak channel is outside the supported range.";
         return false;
@@ -574,7 +574,7 @@ bool dkr::runtime::saves::export_controller_pak(
 
 bool dkr::runtime::saves::import_controller_pak(
     int channel, const std::filesystem::path& source, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     if (!ValidChannel(channel)) {
         error = "That Controller Pak channel is outside the supported range.";
         return false;
@@ -596,7 +596,7 @@ bool dkr::runtime::saves::import_controller_pak(
 
 bool dkr::runtime::saves::export_bundle(
     const std::filesystem::path& destination, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<BundleEntry> entries;
     std::vector<std::uint8_t> image;
     if (ReadAdventure(AdventurePath(), image)) {
@@ -628,7 +628,7 @@ bool dkr::runtime::saves::export_bundle(
 
 bool dkr::runtime::saves::import_bundle(
     const std::filesystem::path& source, std::string& error) {
-    std::scoped_lock lock(g_save_manager_mutex);
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<BundleEntry> entries;
     if (!DecodeBundle(source, entries)) {
         error = "That file is not a valid DKR-R save bundle.";

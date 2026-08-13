@@ -11,8 +11,8 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <mutex>
 #include <optional>
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -65,7 +65,7 @@ constexpr std::array<BindingPair, static_cast<std::size_t>(Action::Count)> kDefa
 #endif
 
 std::array<BindingPair, static_cast<std::size_t>(Action::Count)> g_bindings = kDefaults;
-std::mutex g_binding_mutex;
+dkr::sync::mutex g_binding_mutex;
 #if DKR_RUNTIME_HAS_RT64
 dkr::runtime::input::ShortcutBinding g_quick_restart_keyboard{
     SDL_SCANCODE_LCTRL, SDL_SCANCODE_R};
@@ -75,7 +75,7 @@ dkr::runtime::input::ShortcutBinding g_quick_restart_controller{
 dkr::runtime::input::ShortcutBinding g_quick_restart_keyboard{};
 dkr::runtime::input::ShortcutBinding g_quick_restart_controller{};
 #endif
-std::mutex g_shortcut_mutex;
+dkr::sync::mutex g_shortcut_mutex;
 std::atomic<bool> g_quick_restart_enabled{false};
 std::atomic<bool> g_quick_restart_requested{false};
 std::atomic<bool> g_quick_restart_held{false};
@@ -94,7 +94,7 @@ std::atomic<float> g_gyro_y_calibration_sum{0.0F};
 std::atomic<int> g_gyro_calibration_samples{0};
 std::atomic<int> g_gyro_calibration_remaining{0};
 constexpr int kGyroCalibrationSampleCount = 90;
-std::mutex g_gyro_motion_mutex;
+dkr::sync::mutex g_gyro_motion_mutex;
 float g_gyro_angle_radians = 0.0F;
 float g_gyro_y_angle_radians = 0.0F;
 std::chrono::steady_clock::time_point g_gyro_last_sample{};
@@ -254,7 +254,7 @@ std::optional<GyroSample> PollGyro(SDL_GameController* controller) {
         return GyroSample{};
     }
     const auto now = std::chrono::steady_clock::now();
-    std::scoped_lock motion_lock(g_gyro_motion_mutex);
+    dkr::sync::scoped_lock motion_lock(g_gyro_motion_mutex);
     float delta_seconds = 0.0F;
     if (g_gyro_has_last_sample) {
         delta_seconds = std::chrono::duration<float>(
@@ -291,17 +291,17 @@ const char* dkr::runtime::input::action_label(Action action) {
 }
 
 int dkr::runtime::input::keyboard_binding(Action action) {
-    std::scoped_lock lock(g_binding_mutex);
+    dkr::sync::scoped_lock lock(g_binding_mutex);
     return g_bindings[Index(action)].keyboard;
 }
 
 int dkr::runtime::input::controller_binding(Action action) {
-    std::scoped_lock lock(g_binding_mutex);
+    dkr::sync::scoped_lock lock(g_binding_mutex);
     return g_bindings[Index(action)].controller;
 }
 
 void dkr::runtime::input::set_keyboard_binding(Action action, int scancode) {
-    std::scoped_lock lock(g_binding_mutex);
+    dkr::sync::scoped_lock lock(g_binding_mutex);
     const std::size_t target = Index(action);
     if (scancode != kUnbound) {
         for (std::size_t index = 0; index < g_bindings.size(); ++index) {
@@ -314,7 +314,7 @@ void dkr::runtime::input::set_keyboard_binding(Action action, int scancode) {
 }
 
 void dkr::runtime::input::set_controller_binding(Action action, int source) {
-    std::scoped_lock lock(g_binding_mutex);
+    dkr::sync::scoped_lock lock(g_binding_mutex);
     const std::size_t target = Index(action);
     if (source != kUnbound) {
         for (std::size_t index = 0; index < g_bindings.size(); ++index) {
@@ -328,12 +328,12 @@ void dkr::runtime::input::set_controller_binding(Action action, int source) {
 
 void dkr::runtime::input::reset_defaults() {
     {
-        std::scoped_lock lock(g_binding_mutex);
+        dkr::sync::scoped_lock lock(g_binding_mutex);
         g_bindings = kDefaults;
     }
 #if DKR_RUNTIME_HAS_RT64
     {
-        std::scoped_lock lock(g_shortcut_mutex);
+        dkr::sync::scoped_lock lock(g_shortcut_mutex);
         g_quick_restart_keyboard = {SDL_SCANCODE_LCTRL, SDL_SCANCODE_R};
         g_quick_restart_controller = {
             SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_START};
@@ -358,25 +358,25 @@ void dkr::runtime::input::set_quick_restart_enabled(bool enabled) {
 
 dkr::runtime::input::ShortcutBinding
 dkr::runtime::input::quick_restart_keyboard_binding() {
-    std::scoped_lock lock(g_shortcut_mutex);
+    dkr::sync::scoped_lock lock(g_shortcut_mutex);
     return g_quick_restart_keyboard;
 }
 
 dkr::runtime::input::ShortcutBinding
 dkr::runtime::input::quick_restart_controller_binding() {
-    std::scoped_lock lock(g_shortcut_mutex);
+    dkr::sync::scoped_lock lock(g_shortcut_mutex);
     return g_quick_restart_controller;
 }
 
 void dkr::runtime::input::set_quick_restart_keyboard_binding(
     ShortcutBinding binding) {
-    std::scoped_lock lock(g_shortcut_mutex);
+    dkr::sync::scoped_lock lock(g_shortcut_mutex);
     g_quick_restart_keyboard = binding;
 }
 
 void dkr::runtime::input::set_quick_restart_controller_binding(
     ShortcutBinding binding) {
-    std::scoped_lock lock(g_shortcut_mutex);
+    dkr::sync::scoped_lock lock(g_shortcut_mutex);
     g_quick_restart_controller = binding;
 }
 
@@ -481,7 +481,7 @@ void dkr::runtime::input::begin_gyro_calibration() {
 }
 
 void dkr::runtime::input::recenter_gyro() {
-    std::scoped_lock motion_lock(g_gyro_motion_mutex);
+    dkr::sync::scoped_lock motion_lock(g_gyro_motion_mutex);
     g_gyro_angle_radians = 0.0F;
     g_gyro_y_angle_radians = 0.0F;
     g_gyro_last_sample = {};
@@ -489,13 +489,13 @@ void dkr::runtime::input::recenter_gyro() {
 }
 
 float dkr::runtime::input::gyro_steering_position() {
-    std::scoped_lock motion_lock(g_gyro_motion_mutex);
+    dkr::sync::scoped_lock motion_lock(g_gyro_motion_mutex);
     return gyro_angle_to_steering(g_gyro_angle_radians,
                                   gyro_sensitivity());
 }
 
 float dkr::runtime::input::gyro_steering_y_position() {
-    std::scoped_lock motion_lock(g_gyro_motion_mutex);
+    dkr::sync::scoped_lock motion_lock(g_gyro_motion_mutex);
     return gyro_angle_to_steering(g_gyro_y_angle_radians,
                                   gyro_y_sensitivity());
 }
@@ -582,14 +582,14 @@ dkr::runtime::input::State dkr::runtime::input::poll(
         : std::nullopt;
     std::array<BindingPair, static_cast<std::size_t>(Action::Count)> bindings;
     {
-        std::scoped_lock lock(g_binding_mutex);
+        dkr::sync::scoped_lock lock(g_binding_mutex);
         bindings = g_bindings;
     }
     const Uint8* keys = include_keyboard ? SDL_GetKeyboardState(nullptr) : nullptr;
     ShortcutBinding quick_keyboard;
     ShortcutBinding quick_controller;
     {
-        std::scoped_lock lock(g_shortcut_mutex);
+        dkr::sync::scoped_lock lock(g_shortcut_mutex);
         quick_keyboard = g_quick_restart_keyboard;
         quick_controller = g_quick_restart_controller;
     }
