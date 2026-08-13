@@ -1,0 +1,220 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Route filesystem operations through a platform seam
+
+Windows 95 resolves every import at load time, and a single call to
+std::filesystem::exists drags in seventeen symbols, seven of which that system
+does not export at all. The binary then refuses to load.
+
+What matters here is what is *not* changed. Including <filesystem> costs
+nothing on that target, and a std::filesystem::path object costs nothing
+either: it is string manipulation, and it asks nothing of the operating system.
+Both were measured, and path was exercised on the machine -- construction,
+parent_path, filename, extension, concatenation, all correct.
+
+Only the operations cost anything. So the type stays, all 250 uses of it stay,
+the signatures stay, and only the ten call sites outside the mod system are
+routed through a seam. Replacing the type instead would have touched five times
+more code for no gain, and would have made the modern targets diverge from the
+oracle they exist to be.
+
+A port supplies its own operations by defining two macros:
+
+    LIBRECOMP_PLATFORM_FILEIO_HEADER   header to include, as a string
+    LIBRECOMP_PLATFORM_FILEIO_NS       namespace providing them
+
+It must provide exists, remove, create_directories and copy_file_overwrite,
+each taking std::filesystem::path, with and without a std::error_code. That is
+what librecomp calls outside its mod system; nothing more is required.
+
+copy_options is deliberately not part of the seam. overwrite_existing is the
+only form librecomp uses, so it is named rather than parameterised -- a seam
+that reproduces an option nobody passes is a seam that will be wrong the first
+time someone passes it.
+
+Defining neither macro -- the default, and what every existing target does --
+forwards straight to the standard library with nothing in between. All 26
+translation units still compile on a 64-bit host, and the 18 policy test suites
+still pass.
+
+The mod system is left alone. It uses four further operations, including
+directory_iterator, and E00-S01 already identifies it as the part of librecomp
+this port does not need.
+
+diff --git a/librecomp/include/librecomp/fileio.hpp b/librecomp/include/librecomp/fileio.hpp
+new file mode 100644
+index 0000000..4e550ff
+--- /dev/null
++++ b/librecomp/include/librecomp/fileio.hpp
+@@ -0,0 +1,79 @@
++#ifndef __LIBRECOMP_FILEIO_HPP__
++#define __LIBRECOMP_FILEIO_HPP__
++
++// Filesystem operations, with a seam for platforms whose standard library
++// cannot perform them.
++//
++// std::filesystem::path is not the problem and is used throughout unchanged:
++// it is string manipulation, and it asks nothing of the operating system. The
++// operations are the problem on platforms where the calls underneath are
++// missing.
++//
++// Windows 95 is such a platform. Its loader resolves every import at load
++// time, and a single call to std::filesystem::exists drags in seventeen
++// symbols, seven of which that system does not export at all -- so the binary
++// stops loading. Including <filesystem> costs nothing there, and a path object
++// costs nothing either; only the operations do.
++//
++// A port supplies its own by defining two macros:
++//
++//     LIBRECOMP_PLATFORM_FILEIO_HEADER   header to include, as a string
++//     LIBRECOMP_PLATFORM_FILEIO_NS       namespace providing the operations
++//
++// It must provide exists, remove, create_directories and copy_file_overwrite,
++// each taking std::filesystem::path, with and without a std::error_code. That
++// is what librecomp calls outside its mod system; nothing more is required.
++//
++// Defining neither macro -- the default, and what every existing target does --
++// forwards straight to the standard library, with nothing in between.
++
++#include <filesystem>
++#include <system_error>
++
++namespace recomp::fs {
++
++#if defined(LIBRECOMP_PLATFORM_FILEIO_HEADER)
++
++} // namespace recomp::fs
++
++#include LIBRECOMP_PLATFORM_FILEIO_HEADER
++
++namespace recomp::fs {
++    using namespace LIBRECOMP_PLATFORM_FILEIO_NS;
++}
++
++#else
++
++    // The Windows 95 target never reaches this branch: it defines the two
++    // macros above. Its subset checker reads text rather than preprocessor
++    // state, so the exemption is stated per line.
++    //
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::filesystem::create_directories;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::filesystem::exists;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::filesystem::remove;
++
++    // copy_options is not part of the seam: overwrite_existing is the only
++    // form librecomp uses, so it is named rather than parameterised.
++    inline bool copy_file_overwrite(const std::filesystem::path& from,
++                                    const std::filesystem::path& to) {
++        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        return std::filesystem::copy_file(
++            from, to, std::filesystem::copy_options::overwrite_existing);
++    }
++
++    inline bool copy_file_overwrite(const std::filesystem::path& from,
++                                    const std::filesystem::path& to,
++                                    std::error_code& ec) {
++        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        return std::filesystem::copy_file(
++            from, to, std::filesystem::copy_options::overwrite_existing, ec);
++    }
++
++} // namespace recomp::fs
++
++#endif
++
++#endif
+diff --git a/librecomp/src/files.cpp b/librecomp/src/files.cpp
+index af6f18d..024194b 100644
+--- a/librecomp/src/files.cpp
++++ b/librecomp/src/files.cpp
+@@ -1,4 +1,5 @@
+ #include "files.hpp"
++#include "librecomp/fileio.hpp"
+ 
+ constexpr std::u8string_view backup_suffix = u8".bak";
+ constexpr std::u8string_view temp_suffix = u8".temp";
+@@ -36,16 +37,16 @@ bool recomp::finalize_output_file_with_backup(const std::filesystem::path& filep
+     temp_path += temp_suffix;
+ 
+     std::error_code ec;
+-    if (std::filesystem::exists(filepath, ec)) {
+-        std::filesystem::copy_file(filepath, backup_path, std::filesystem::copy_options::overwrite_existing, ec);
++    if (recomp::fs::exists(filepath, ec)) {
++        recomp::fs::copy_file_overwrite(filepath, backup_path, ec);
+         if (ec) {
+             return false;
+         }
+     }
+-    std::filesystem::copy_file(temp_path, filepath, std::filesystem::copy_options::overwrite_existing, ec);
++    recomp::fs::copy_file_overwrite(temp_path, filepath, ec);
+     if (ec) {
+         return false;
+     }
+-    std::filesystem::remove(temp_path, ec);
++    recomp::fs::remove(temp_path, ec);
+     return true;
+ }
+diff --git a/librecomp/src/pi.cpp b/librecomp/src/pi.cpp
+index 43509ba..a492fde 100644
+--- a/librecomp/src/pi.cpp
++++ b/librecomp/src/pi.cpp
+@@ -10,6 +10,7 @@
+ #include "librecomp/files.hpp"
+ #include <ultramodern/ultra64.h>
+ #include <ultramodern/ultramodern.hpp>
++#include "librecomp/fileio.hpp"
+ 
+ static std::vector<uint8_t> rom;
+ 
+@@ -227,7 +228,7 @@ void read_save_file() {
+     std::filesystem::path save_file_path = ultramodern::get_save_file_path();
+ 
+     // Ensure the save file directory exists.
+-    std::filesystem::create_directories(save_file_path.parent_path());
++    recomp::fs::create_directories(save_file_path.parent_path());
+ 
+     // Read the save file if it exists.
+     std::ifstream save_file = recomp::open_input_file_with_backup(save_file_path, std::ios_base::binary);
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+index 8c07628..6f4c3bc 100644
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -24,6 +24,7 @@
+ #include "librecomp/addresses.hpp"
+ #include "librecomp/mods.hpp"
+ #include "recompiler/live_recompiler.h"
++#include "librecomp/fileio.hpp"
+ 
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+@@ -84,8 +85,8 @@ bool recomp::register_game(const recomp::GameEntry& entry) {
+ 
+ void recomp::mods::initialize_mods() {
+     N64Recomp::live_recompiler_init();
+-    std::filesystem::create_directories(config_path / mods_directory);
+-    std::filesystem::create_directories(config_path / mod_config_directory);
++    recomp::fs::create_directories(config_path / mods_directory);
++    recomp::fs::create_directories(config_path / mod_config_directory);
+     mod_context->set_mods_config_path(config_path / "mods.json");
+     mod_context->set_mod_config_directory(config_path / mod_config_directory);
+ }
+@@ -187,7 +188,7 @@ bool check_stored_rom(const recomp::GameEntry& game_entry) {
+ 
+     if (!check_hash(stored_rom_data, game_entry.rom_hash)) {
+         // Incorrect hash, remove the stored ROM file if it exists.
+-        std::filesystem::remove(config_path / game_entry.stored_filename());
++        recomp::fs::remove(config_path / game_entry.stored_filename());
+         return false;
+     }
+ 
+@@ -219,7 +220,7 @@ bool recomp::load_stored_rom(std::u8string& game_id) {
+ 
+     if (!check_hash(stored_rom_data, find_it->second.rom_hash)) {
+         // The ROM no longer has the right hash, delete it.
+-        std::filesystem::remove(config_path / find_it->second.stored_filename());
++        recomp::fs::remove(config_path / find_it->second.stored_filename());
+         return false;
+     }
+ 

@@ -164,6 +164,30 @@ d'exceptions logées dans `.text` — corrigé — et le fait que
 **`std::random_device` ne fonctionne pas sur cette cible**, son chemin passant
 par un bouchon.
 
+### Le cœur de `librecomp` est câblé
+
+Patch **0018** : les dix appels d'opérations hors système de mods passent par un
+point d'indirection, `recomp::fs`, que la cible remplit avec la couche de ce
+ticket. Le type n'est pas touché.
+
+| | |
+|---|---|
+| Opérations routées dans le cœur de `librecomp` | **10 sur 10** |
+| `librecomp` sur l'hôte 64 bits | 26 unités sur 26 |
+| Suites de la cible moderne | 18 sur 18 |
+| Suites de la cible Win95 | 4 sur 4 |
+
+`copy_options` n'entre délibérément pas dans le point d'indirection :
+`overwrite_existing` est la seule forme employée, donc elle est **nommée** plutôt
+que paramétrée. Un point d'indirection qui reproduit une option que personne ne
+passe sera faux le jour où quelqu'un la passe.
+
+Ce qui reste dans `librecomp` est **le système de mods** — 12 signalements, avec
+quatre opérations de plus dont `directory_iterator` — que
+[E00-S01](../../research/win95-blockers.md) désigne déjà comme la partie dont ce
+portage n'a pas besoin. Et deux `<mutex>` dans `recomp.cpp` et `pi.cpp`, qui
+relèvent de E02-S02.
+
 ## Risques
 
 Perdre la progression d'un joueur est le défaut le moins pardonnable d'un

@@ -200,7 +200,16 @@ target_include_directories(win95librecomp PUBLIC
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz"
     "${DKR_WIN95_PLATFORM}/include-shim"
     "${DKRPORT_ROOT}/include")
-target_compile_definitions(win95librecomp PRIVATE NOMINMAX)
+# Le patch 0018 route les opérations de fichiers du cœur de `librecomp` par un
+# point d'indirection, que la cible remplit ici avec la couche de E02-S05.
+#
+# Le type `std::filesystem::path` n'est **pas** remplacé, et c'est mesuré : sous
+# Windows 95 il ne coûte rien et fonctionne. Seules les opérations coûtent.
+target_compile_definitions(win95librecomp PRIVATE
+    NOMINMAX
+    "LIBRECOMP_PLATFORM_FILEIO_HEADER=\"win95/fileio.hpp\""
+    "LIBRECOMP_PLATFORM_FILEIO_NS=dkr::fs"
+    DKR_TARGET_WIN95=1)
 target_link_libraries(win95librecomp PUBLIC win95ultramodern)
 add_dependencies(win95librecomp dkr_win95_cpp_subset)
 

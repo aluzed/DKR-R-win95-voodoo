@@ -73,6 +73,10 @@
         {
           "path": "patches/n64-modern-runtime/0017-size-rdram-for-32-bit-targets.patch",
           "sha256": "e0e429fe9d54c97104291e87d7dac0e783f6db4f36d7bbc71a14457c30a81330"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0018-platform-seam-for-filesystem-operations.patch",
+          "sha256": "dd433fef5d814a0f19b454575c5fd1ddad6b6b29e9d1c98c43812d3a62b8a37e"
         }
       ]
     },
