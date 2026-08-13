@@ -104,3 +104,48 @@ suit le chargement n'est éprouvé : ni la boucle de jeu, ni le rendu Voodoo, ni
 le son, ni la cadence. Le recompilateur à la volée est lié et n'a jamais été
 exécuté sur cette machine — il alloue une page et y écrit du code, ce qui reste
 à voir sous Windows 95.
+
+## La construction est reproductible
+
+Le premier démarrage est venu d'un enchaînement de commandes dans un répertoire
+de travail. Ce n'était pas un livrable : le binaire existait, le projet ne savait
+pas le refaire.
+
+Trois cibles ont été ajoutées à `cmake/win95-target.cmake` :
+
+| Cible | Contenu |
+|---|---|
+| `win95liverecomp` | le cœur de `N64Recomp`, `sljit`, `rabbitizer`, le générateur à la volée |
+| `win95recompiled` | les 37 fichiers recompilés et le microcode RSP |
+| `DKRWin95Game` | les 17 sources du jeu, liées en `DKRR.EXE` |
+
+Construction complète depuis zéro : **34 secondes**, les deux garde-fous
+compris, et le binaire se comporte sur la machine exactement comme celui lié à
+la main.
+
+### Deux pièges du câblage
+
+**L'archive de compatibilité était ajoutée deux fois.** `win95compat` s'ajoute
+elle-même, en tête et sous `--whole-archive`, par ses options d'interface. La
+nommer une seconde fois donnait « définitions multiples ».
+
+**`file(GLOB)` à profondeur fixe laissait des sources derrière.** Celles de
+`rabbitizer` sont réparties sur deux niveaux ; le motif `src/*/*.c` en manquait
+treize, et le lieur réclamait `RabbitizerInstruction_getRaw` et une trentaine
+d'autres. `GLOB_RECURSE`.
+
+### Et un piège qui ne venait pas du câblage
+
+CMake laisse `CMAKE_BUILD_TYPE` vide par défaut. Sur les cibles modernes c'est
+un désagrément ; ici c'est un piège silencieux :
+
+| | Taille de `DKRR.EXE` |
+|---|---:|
+| sans type de construction | **20,6 Mo** |
+| `Release` | 8,5 Mo |
+
+Et la taille n'est pas le pire. Le cœur de ce portage est du MIPS recompilé en
+C, dont le coût par instruction décide de tout sur un Pentium II à 400 MHz.
+Non optimisé, il ne serait pas « plus lent » : il serait injouable, sans que
+rien ne l'annonce. La cible impose donc `Release` quand l'appelant n'a rien
+choisi, et le dit à la configuration.

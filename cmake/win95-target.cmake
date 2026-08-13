@@ -26,6 +26,25 @@ if(DKR_RUNTIME_BUILD_RT64)
         "Laisser DKR_RUNTIME_BUILD_RT64 à OFF, comme c'est le défaut.")
 endif()
 
+# --- Type de construction ----------------------------------------------------
+#
+# CMake laisse `CMAKE_BUILD_TYPE` vide par défaut, ce qui donne un binaire sans
+# optimisation. Sur les cibles modernes c'est un désagrément ; ici c'est un
+# piège, et il est silencieux.
+#
+# Mesure : sans type, `DKRR.EXE` fait 20,6 Mo ; en Release, 8,5 Mo. Et la taille
+# n'est pas le pire — le cœur de ce portage est du MIPS recompilé en C, dont le
+# coût par instruction décide de tout sur un Pentium II à 400 MHz (E00-S03).
+# Non optimisé, il ne serait pas « plus lent » : il serait injouable, sans que
+# rien ne l'annonce.
+#
+# On choisit donc pour l'appelant qui n'a rien choisi, et on le dit.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Type de construction" FORCE)
+    message(STATUS "CMAKE_BUILD_TYPE non défini : Release imposé "
+                   "(sans optimisation, la cible est injouable)")
+endif()
+
 set(DKR_WIN95_TOOLS    "${DKRPORT_ROOT}/tools/win95")
 set(DKR_WIN95_PLATFORM "${DKRPORT_ROOT}/platform/win95")
 
@@ -406,4 +425,112 @@ set_target_properties(DKRWin95Witness PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Witness)
 
-message(STATUS "Cible Windows 95 configurée : win95compat, DKRWin95Witness")
+# --- Recompilateur à la volée (E02-S06) --------------------------------------
+#
+# `librecomp` l'appelle depuis `initialize_mods`, et le système de mods est
+# compilé pour cette cible même s'il n'y fonctionnera pas : ses symboles doivent
+# donc être résolus, sinon rien ne se lie.
+#
+# C'est un JIT — il écrit du code machine dans une page allouée à l'exécution.
+# `sljit` détecte l'absence de SSE2 au démarrage et se rabat sur x87, ce qui le
+# rend viable sur un Pentium II. Le contrôle du jeu d'instructions le confirme :
+# ses tables SSE2 sont des **données**, jamais exécutées ici.
+#
+# `fmt` est employée en mode en-tête seul : elle n'a pas besoin d'être construite,
+# et cela évite une bibliothèque de plus.
+set(DKR_WIN95_N64RECOMP "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp")
+
+# `GLOB_RECURSE` et non `GLOB` : les sources de rabbitizer sont réparties sur
+# plusieurs niveaux, et un motif à profondeur fixe en laissait derrière — le
+# lieur réclamait alors `RabbitizerInstruction_getRaw` et une trentaine d'autres.
+file(GLOB_RECURSE DKR_WIN95_RABBITIZER_C   CONFIGURE_DEPENDS
+     "${DKR_WIN95_N64RECOMP}/lib/rabbitizer/src/*.c")
+file(GLOB_RECURSE DKR_WIN95_RABBITIZER_CPP CONFIGURE_DEPENDS
+     "${DKR_WIN95_N64RECOMP}/lib/rabbitizer/cplusplus/src/*.cpp")
+
+add_library(win95liverecomp STATIC
+    "${DKR_WIN95_N64RECOMP}/src/analysis.cpp"
+    "${DKR_WIN95_N64RECOMP}/src/operations.cpp"
+    "${DKR_WIN95_N64RECOMP}/src/cgenerator.cpp"
+    "${DKR_WIN95_N64RECOMP}/src/recompilation.cpp"
+    "${DKR_WIN95_N64RECOMP}/src/mod_symbols.cpp"
+    "${DKR_WIN95_N64RECOMP}/LiveRecomp/live_generator.cpp"
+    "${DKR_WIN95_N64RECOMP}/lib/sljit/sljit_src/sljitLir.c"
+    ${DKR_WIN95_RABBITIZER_C}
+    ${DKR_WIN95_RABBITIZER_CPP})
+target_include_directories(win95liverecomp PUBLIC
+    "${DKR_WIN95_N64RECOMP}/include"
+    "${DKR_WIN95_N64RECOMP}/lib/sljit/sljit_src"
+    "${DKR_WIN95_N64RECOMP}/lib/rabbitizer/include"
+    "${DKR_WIN95_N64RECOMP}/lib/rabbitizer/tables"
+    "${DKR_WIN95_N64RECOMP}/lib/rabbitizer/cplusplus/include"
+    "${DKR_WIN95_N64RECOMP}/lib/fmt/include"
+    "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty")
+target_compile_definitions(win95liverecomp PUBLIC FMT_HEADER_ONLY=1)
+# Code tiers : ses avertissements ne sont pas les nôtres et noieraient les nôtres.
+target_compile_options(win95liverecomp PRIVATE -w)
+
+# --- Code recompilé (E01-S05) ------------------------------------------------
+file(GLOB DKR_WIN95_RECOMPILED_C   CONFIGURE_DEPENDS
+     "${DKRPORT_ROOT}/runtime-recomp/RecompiledFuncs/*.c")
+file(GLOB DKR_WIN95_RECOMPILED_RSP CONFIGURE_DEPENDS
+     "${DKRPORT_ROOT}/runtime-recomp/RecompiledRSP/*.cpp")
+if(NOT DKR_WIN95_RECOMPILED_C)
+    message(FATAL_ERROR
+        "Aucune sortie de N64Recomp sous runtime-recomp/RecompiledFuncs. "
+        "Lancer Prepare-DKR-Runtime puis la recompilation avant de construire le jeu.")
+endif()
+
+add_library(win95recompiled STATIC
+    ${DKR_WIN95_RECOMPILED_C} ${DKR_WIN95_RECOMPILED_RSP})
+target_include_directories(win95recompiled PUBLIC
+    "${DKRPORT_ROOT}/runtime-recomp/RecompiledFuncs"
+    "${DKRPORT_ROOT}/runtime-recomp/RecompiledRSP")
+target_link_libraries(win95recompiled PUBLIC win95librecomp)
+target_compile_options(win95recompiled PRIVATE -w)   # code généré
+
+# --- Le jeu (E02-S06) --------------------------------------------------------
+#
+# Les 17 sources que cette cible construit : celles de `DKR_GAME_SOURCES` moins
+# les quatre que seul RT64 compile, puisque RT64 exige D3D12, Vulkan ou Metal.
+set(DKR_WIN95_GAME_SOURCES
+    audio_equalizer dkr_save_codec game_main game_registration null_renderer
+    presentation_identity renderer_snapshot runtime_enhancements
+    runtime_audio_controls runtime_input runtime_magic_codes runtime_platform
+    runtime_quick_restart save_manager runtime_stubs runtime_telemetry
+    virtual_pak)
+list(TRANSFORM DKR_WIN95_GAME_SOURCES
+     PREPEND "${DKRPORT_ROOT}/runtime-recomp/src/game/")
+list(TRANSFORM DKR_WIN95_GAME_SOURCES APPEND ".cpp")
+
+add_executable(DKRWin95Game ${DKR_WIN95_GAME_SOURCES})
+target_include_directories(DKRWin95Game PRIVATE
+    "${DKRPORT_ROOT}/runtime-recomp/src/game"
+    "${DKRPORT_ROOT}/platform"
+    "${DKR_WIN95_PLATFORM}"
+    "${DKR_WIN95_PLATFORM}/include-shim"
+    "${DKRPORT_ROOT}/include")
+target_compile_definitions(DKRWin95Game PRIVATE
+    NOMINMAX
+    DKR_RUNTIME_HAS_RT64=0
+    "DKR_RELEASE_VERSION=\"${DKR_RELEASE_VERSION}\""
+    DKR_TARGET_WIN95=1)
+
+# `--start-group` : `librecomp` et `ultramodern` se réclament mutuellement, et
+# `miniz` vit dans la même archive que ce qui l'appelle. Un lieur à une passe
+# laisserait des symboles non résolus selon l'ordre.
+target_link_libraries(DKRWin95Game PRIVATE
+    -Wl,--start-group
+    win95recompiled win95librecomp win95ultramodern win95liverecomp
+    win95fileio win95clock win95threading
+    -Wl,--end-group)
+# `win95compat` n'est pas nommée ici : elle s'ajoute d'elle-même, en tête et sous
+# `--whole-archive`, par les options d'interface posées plus haut. La nommer une
+# seconde fois duplique l'archive et le lieur refuse — définitions multiples.
+set_target_properties(DKRWin95Game PROPERTIES
+    OUTPUT_NAME "DKRR"
+    SUFFIX ".EXE"                      # 8.3, pour être lançable depuis DOS
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Game)
+
+message(STATUS "Cible Windows 95 configurée : win95compat, DKRWin95Witness, DKRWin95Game")
