@@ -75,6 +75,47 @@ cliquet `--max 1` a été retiré — le contrôleur l'a signalé lui-même. Res
 signalements dans `librecomp` et 112 dans les sources du jeu, qui sont le travail
 réel de E02-S05 et de E02-S02.
 
+## Deux pièges rencontrés en câblant le point d'indirection
+
+Aucun des deux ne concerne `<filesystem>` lui-même, et tous deux valent d'être
+écrits parce qu'ils ont failli faire conclure à tort.
+
+### Le vérificateur de jeu d'instructions accusait à tort
+
+Un binaire employant `std::filesystem::path` était refusé avec deux instructions
+« hors Pentium II » : `movaps %xmm0,(%eax)` et `movnti %eax,(%edx)`.
+
+Elles n'étaient pas du code. Le lieur place les tables d'exceptions —
+`.gcc_except_table` — **à l'intérieur de `.text`**, et `objdump -d` les
+désassemble comme le reste ; des octets de données s'y décodent en instructions
+que le processeur n'exécute jamais.
+
+Le faux positif n'est pas bénin : il fait échouer un build correct, et la
+réaction naturelle devant un garde-fou qui crie à tort est de le désactiver.
+`check-instruction-set.sh` suit désormais le symbole courant et ignore les
+régions de données. Son auto-test, qui injecte du vrai SSE, refuse toujours.
+
+Ce piège avait failli passer inaperçu dans l'autre sens aussi : la première
+sonde `path` n'avait été soumise qu'au contrôle des **imports**, pas à celui des
+instructions. Elle s'exécutait sur la machine émulée, ce qui ne prouvait rien
+d'un vrai Pentium II.
+
+### `std::random_device` ne fonctionne pas sous Windows 95
+
+La présence de `std::filesystem::path` dans un binaire y fait entrer
+`std::random_device::_M_getentropy` de libstdc++, qui appelle `rand_s` de
+libmsvcrt, qui appelle **`LoadLibraryW`** puis `GetProcAddress` pour atteindre le
+générateur du système.
+
+`LoadLibraryW` est un bouchon. `rand_s` obtient donc un pointeur de fonction nul,
+et **appeler `std::random_device` sauterait dedans**.
+
+L'import lui-même est inoffensif — un bouchon n'empêche pas le chargement — et
+la manipulation de `path` n'y touche pas, ce que la sonde confirme sur la
+machine. Mais la conclusion est à retenir pour la suite : sur cette cible, le
+hasard doit venir d'ailleurs. Aucun code du projet n'emploie `random_device`
+aujourd'hui.
+
 ## Reproduire
 
 ```sh

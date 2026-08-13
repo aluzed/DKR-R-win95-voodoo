@@ -143,6 +143,27 @@ avec un auto-test qui l'éprouve dans les deux sens.
 Effet immédiat : **`ultramodern` n'a plus aucune inclusion interdite**, et son
 cliquet a été retiré — le contrôleur l'a signalé de lui-même.
 
+### Le point d'indirection est livré
+
+`platform/win95/fileio.hpp` détourne les quatre opérations qu'emploie le cœur de
+`librecomp` — `exists`, `remove`, `create_directories`, `copy_file` — **sans
+toucher au type** : les signatures gardent `std::filesystem::path`, et les 250
+usages du type restent intacts. Une suite unique éprouve l'équivalence des deux
+branches, `std::filesystem` sur l'hôte et les API `...A` sur la cible :
+**12 contrôles, 0 échec des deux côtés**.
+
+L'un d'eux mérite d'être cité, parce qu'il n'est pas évident : `remove` rend
+**false** sur un fichier déjà absent, sans que ce soit une erreur. L'appelant
+voulait qu'il ne soit plus là, il ne l'est pas ; mais rien n'a été effacé, et
+`std::filesystem::remove` le dit ainsi. Un point d'indirection qui rendrait true
+aurait l'air correct et ferait mentir tout code comptant les fichiers supprimés.
+
+Deux pièges rencontrés en le câblant sont consignés dans le relevé : un **faux
+positif du vérificateur de jeu d'instructions**, qui désassemblait les tables
+d'exceptions logées dans `.text` — corrigé — et le fait que
+**`std::random_device` ne fonctionne pas sur cette cible**, son chemin passant
+par un bouchon.
+
 ## Risques
 
 Perdre la progression d'un joueur est le défaut le moins pardonnable d'un

@@ -23,6 +23,11 @@
       "symbol": "GetHandleInformation",
       "justification": "Bouchon de Windows 95 (rend 0), reclame par thread.o et sched.o de libwinpthread, que le modele de threads posix et la liaison statique de libstdc++ font entrer dans tout binaire C++ \u2014 y compris par <chrono> seul. Il n'est atteint que par pthread_join et pthread_cancel, ou il est loin d'etre benin : pthread_join teste son retour et part sur son chemin d'erreur, de sorte que std::thread::join() leve une exception sous Windows 95. C'est une des raisons d'etre de la couche de E02-S01, dont dkr_thread_join passe par WaitForSingleObject. Ce qui rend l'import inoffensif est structurel et non esper\u00e9 : check-cpp-subset.py interdit <thread> sur la cible, donc aucun code du projet ne peut atteindre pthread_join. Les deux garde-fous se composent. WITNESS.EXE fait exception dans l'exception \u2014 c'est le temoin de E00-S02, dont le role est justement d'exercer std::thread, et la ou le symbole est reellement atteignable.",
       "binaries": []
+    },
+    {
+      "symbol": "LoadLibraryW",
+      "justification": "Bouchon de Windows 95 (rend 0), reclame par rand_s.o de libmsvcrt, lui-meme tire par std::random_device::_M_getentropy de libstdc++ \u2014 que la simple presence de std::filesystem::path dans un binaire fait entrer. rand_s appelle LoadLibraryW puis GetProcAddress pour atteindre le generateur du systeme ; sous Windows 95 il obtient donc un pointeur de fonction nul. Ce qui est tolere ici est la *presence* de l'import, qui n'empeche pas le chargement. Ce qui ne l'est pas, et qui doit etre retenu : **std::random_device ne fonctionne pas sur cette cible**, et l'appeler sauterait dans un pointeur nul. Aucun code du projet ne l'emploie ; verifie que la manipulation de std::filesystem::path, elle, n'y touche pas \u2014 la sonde FSPATH.EXE rend des resultats corrects sur la machine.",
+      "binaries": []
     }
   ]
 }

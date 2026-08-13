@@ -52,9 +52,31 @@ scan() { # $1 = binaire ; renvoie 1 si une instruction interdite est trouvee
   if [[ -z "$dis" ]]; then
     bad "$bin : desassemblage impossible"; return 1
   fi
-  # Ne garder que les lignes d'instruction : « adresse: octets  mnemonique ».
-  hits="$(grep -E '^[[:space:]]*[0-9a-f]+:' <<< "$dis" \
-          | grep -EI "$RX_REG|$RX_MNEMO" || true)"
+  # Ne garder que les lignes d'instruction : « adresse: octets  mnemonique »,
+  # **et seulement celles qui sont vraiment du code**.
+  #
+  # Le lieur place les tables d'exceptions — `.gcc_except_table`, `.eh_frame` —
+  # a l'interieur de `.text`, et `objdump -d` les desassemble comme le reste.
+  # Des octets de donnees s'y decodent alors en instructions : un binaire qui
+  # emploie `std::filesystem::path` produisait ainsi « movaps %xmm0,(%eax) » et
+  # « movnti », deux instructions posterieures au Pentium II, dans de la donnee
+  # que le processeur n'execute jamais.
+  #
+  # Le faux positif n'est pas benin : il fait echouer un build correct, et la
+  # reaction naturelle devant un garde-fou qui crie a tort est de le desactiver.
+  # On suit donc le symbole courant et on ignore les regions de donnees.
+  hits="$(awk -v rx_reg="$RX_REG" -v rx_mnemo="$RX_MNEMO" '
+    /^[0-9a-fA-F]+ <.*>:/ {
+      sym = $2
+      # Les regions de donnees que le lieur loge dans .text.
+      skip = (sym ~ /gcc_except_table|eh_frame|\.rdata|\.data|jcr|CRT\$/) ? 1 : 0
+      next
+    }
+    skip { next }
+    /^[[:space:]]*[0-9a-fA-F]+:/ {
+      if ($0 ~ rx_reg || $0 ~ rx_mnemo) print
+    }
+  ' <<< "$dis" || true)"
   if [[ -n "$hits" ]]; then
     local n; n=$(wc -l <<< "$hits")
     bad "$(basename "$bin") : $n instruction(s) hors Pentium II"

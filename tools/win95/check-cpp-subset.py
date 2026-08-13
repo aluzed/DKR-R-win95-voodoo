@@ -90,6 +90,33 @@ RED, GREEN, YELLOW, BLUE, OFF = (
     "\033[1;31m", "\033[1;32m", "\033[1;33m", "\033[1;34m", "\033[0m")
 
 
+def strip_comments(line, in_block):
+    """Rend (code sans commentaire, toujours dans un bloc ?).
+
+    Volontairement simple : ni chaines ni cas tordus. Un commentaire mal
+    reconnu ferait au pire manquer un signalement sur une ligne qui en
+    contiendrait un vrai a cote d'un faux, ce qui ne s'est jamais vu ; le faire
+    correctement demanderait un analyseur lexical, pour un gain nul."""
+    out = []
+    i = 0
+    while i < len(line):
+        if in_block:
+            end = line.find("*/", i)
+            if end == -1:
+                return "".join(out), True
+            i, in_block = end + 2, False
+            continue
+        if line.startswith("//", i):
+            break
+        if line.startswith("/*", i):
+            in_block = True
+            i += 2
+            continue
+        out.append(line[i])
+        i += 1
+    return "".join(out), in_block
+
+
 def scan(paths, quiet=False):
     """Renvoie la liste des (fichier, ligne, en-tete) fautifs."""
     bad = []
@@ -108,8 +135,14 @@ def scan(paths, quiet=False):
             except OSError:
                 continue
             lines = text.splitlines()
+            in_block_comment = False
             for i, line in enumerate(lines, 1):
-                fs = RX_FS_OPERATION.search(line)
+                # Le code seul, commentaires retires. Sans cela, **documenter**
+                # qu'on a remplace `std::filesystem::exists` declenche l'alarme,
+                # ce qui pousse a ne pas l'ecrire — exactement l'inverse de ce
+                # que ce depot veut encourager.
+                code, in_block_comment = strip_comments(line, in_block_comment)
+                fs = RX_FS_OPERATION.search(code)
                 if fs:
                     allow = RX_ALLOW.search(lines[i - 2]) if i >= 2 else None
                     why = allow.group(1).strip() if allow else ""

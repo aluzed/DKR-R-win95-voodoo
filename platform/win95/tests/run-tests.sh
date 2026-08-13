@@ -104,7 +104,10 @@ if [[ "$suite" == "all" || "$suite" == "fileio" ]]; then
     || { echo "erreur: aucun compilateur C++ hote ($CXX)" >&2; exit 2; }
   "$CXX" -O2 -Wall -Wextra -o "$tmp/test_fileio" \
          "$HERE/test_fileio.cpp" "$HERE/../fileio.cpp"
+  "$CXX" -O2 -Wall -Wextra -I"$HERE/.." -o "$tmp/test_fileio_seam" \
+         "$HERE/test_fileio_seam.cpp" "$HERE/../fileio.cpp"
   echo
   # Les fichiers d'essai sont crees dans le repertoire courant : on l'isole.
   ( cd "$tmp" && "$tmp/test_fileio" )
+  ( cd "$tmp" && "$tmp/test_fileio_seam" )
 fi

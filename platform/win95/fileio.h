@@ -103,6 +103,39 @@ dkr_file_result dkr_file_read_durable(const char *path,
                                       void *buffer, size_t buffer_size,
                                       size_t *read_size, int *from_backup);
 
+/* --- Operations de systeme de fichiers ------------------------------------ *
+ *
+ * `std::filesystem` fournit deja tout cela, et son en-tete comme son type `path`
+ * sont utilisables sous Windows 95 — mesure, voir
+ * `docs/research/win95-filesystem.md`. Ce sont ses **operations** qui ne le sont
+ * pas : `exists` a lui seul reclame dix-sept symboles, dont sept que le systeme
+ * n'exporte pas du tout, et le binaire ne se charge alors plus.
+ *
+ * Les quatre ci-dessous sont exactement celles que `librecomp` emploie hors du
+ * systeme de mods. Elles ne cherchent pas a reproduire `std::filesystem` : elles
+ * couvrent ce qui est appele, et rien de plus.
+ */
+
+/* Rend 1 si le chemin existe, 0 sinon. Ne distingue pas « absent » de
+   « inaccessible » — c'est ce que fait `std::filesystem::exists` avec un code
+   d'erreur, et les appelants s'en contentent. */
+int dkr_file_exists(const char *path);
+
+/* Rend 1 si le chemin existe et est un repertoire. */
+int dkr_file_is_directory(const char *path);
+
+/* Efface un fichier. Un fichier deja absent est un succes, comme pour
+   `std::filesystem::remove` : l'appelant voulait qu'il ne soit plus la. */
+dkr_file_result dkr_file_remove(const char *path);
+
+/* Cree le repertoire et tous ses parents. Un repertoire deja present est un
+   succes. */
+dkr_file_result dkr_file_create_directories(const char *path);
+
+/* Copie, en ecrasant la destination si elle existe — c'est-a-dire
+   `copy_options::overwrite_existing`, la seule forme employee. */
+dkr_file_result dkr_file_copy(const char *from, const char *to);
+
 /* --- Noms de fichiers ------------------------------------------------------ *
  *
  * Le volume de test est en FAT16 avec les noms longs actifs, et un nom long y

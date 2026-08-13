@@ -302,6 +302,20 @@ set_target_properties(DKRWin95FileIO PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95FileIO)
 
+# Septième témoin : le point d'indirection des opérations de fichiers. Ce qu'il
+# éprouve est l'**équivalence** des deux branches — `std::filesystem` sur l'hôte,
+# les API `...A` sur la cible — parce qu'un point d'indirection dont les deux
+# côtés diffèrent est pire que pas de point d'indirection du tout.
+add_executable(DKRWin95FileIOSeam
+    "${DKR_WIN95_PLATFORM}/tests/test_fileio_seam.cpp")
+target_link_libraries(DKRWin95FileIOSeam PRIVATE win95fileio)
+target_compile_definitions(DKRWin95FileIOSeam PRIVATE DKR_TARGET_WIN95=1)
+set_target_properties(DKRWin95FileIOSeam PROPERTIES
+    OUTPUT_NAME "FSSEAM"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95FileIOSeam)
+
 # Les tests qui tournent sur l'hôte. Deux suites, pour deux raisons :
 #
 #   Tick64     (E01-S03) le rebouclage de GetTickCount est une fonction pure, et

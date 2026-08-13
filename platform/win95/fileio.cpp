@@ -235,6 +235,100 @@ dkr_file_result dkr_file_write_durable(const char *path,
     return DKR_FILE_OK;
 }
 
+
+/* --- Operations ------------------------------------------------------------ */
+
+int dkr_file_exists(const char *path)
+{
+    return path && GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+}
+
+int dkr_file_is_directory(const char *path)
+{
+    DWORD a;
+    if (!path) {
+        return 0;
+    }
+    a = GetFileAttributesA(path);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+dkr_file_result dkr_file_remove(const char *path)
+{
+    if (!path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (DeleteFileA(path)) {
+        return DKR_FILE_OK;
+    }
+    /* Deja absent : l'appelant voulait qu'il ne soit plus la, il ne l'est pas. */
+    if (GetLastError() == ERROR_FILE_NOT_FOUND ||
+        GetLastError() == ERROR_PATH_NOT_FOUND) {
+        return DKR_FILE_OK;
+    }
+    /* Un repertoire ne s'efface pas par DeleteFile. */
+    if (dkr_file_is_directory(path) && RemoveDirectoryA(path)) {
+        return DKR_FILE_OK;
+    }
+    return from_last_error();
+}
+
+dkr_file_result dkr_file_create_directories(const char *path)
+{
+    char work[MAX_PATH];
+    size_t len, i;
+
+    if (!path || !*path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    len = strlen(path);
+    if (len + 1 > sizeof(work)) {
+        return DKR_FILE_ERR_PATH;
+    }
+    memcpy(work, path, len + 1);
+
+    /* On cree chaque niveau, du plus court au plus long. `CreateDirectoryA` ne
+       cree qu'un niveau a la fois — il n'y a pas d'equivalent de
+       `create_directories` sous Windows 95. */
+    for (i = 0; i <= len; i++) {
+        const int at_end = (i == len);
+        if (!at_end && work[i] != '\\' && work[i] != '/') {
+            continue;
+        }
+        if (i == 0) {
+            continue;                       /* separateur de tete */
+        }
+        {
+            const char saved = work[i];
+            work[i] = '\0';
+            /* « D: » n'est pas un repertoire a creer, c'est un volume. */
+            if (!(i == 2 && work[1] == ':')) {
+                if (!CreateDirectoryA(work, NULL) &&
+                    GetLastError() != ERROR_ALREADY_EXISTS) {
+                    dkr_file_result r = from_last_error();
+                    work[i] = saved;
+                    return r;
+                }
+            }
+            work[i] = saved;
+        }
+    }
+    return DKR_FILE_OK;
+}
+
+dkr_file_result dkr_file_copy(const char *from, const char *to)
+{
+    if (!from || !to) {
+        return DKR_FILE_ERR_PATH;
+    }
+    /* FALSE : ecraser si la destination existe, ce qui est
+       `copy_options::overwrite_existing`. */
+    if (!CopyFileA(from, to, FALSE)) {
+        return from_last_error();
+    }
+    return DKR_FILE_OK;
+}
+
 static dkr_file_result read_whole(const char *path, void *buffer,
                                   size_t buffer_size, size_t *read_size)
 {
@@ -321,6 +415,101 @@ static dkr_file_result write_whole(const char *path, const void *data, size_t si
        systeme, `fsync` jusqu'au disque. */
     fsync(fileno(f));
     fclose(f);
+    return DKR_FILE_OK;
+}
+
+
+/* --- Operations ------------------------------------------------------------ */
+
+int dkr_file_exists(const char *path)
+{
+    return path && file_exists(path);
+}
+
+int dkr_file_is_directory(const char *path)
+{
+    struct stat st;
+    return path && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+dkr_file_result dkr_file_remove(const char *path)
+{
+    if (!path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (unlink(path) == 0 || errno == ENOENT) {
+        return DKR_FILE_OK;
+    }
+    if (errno == EISDIR && rmdir(path) == 0) {
+        return DKR_FILE_OK;
+    }
+    return from_errno();
+}
+
+dkr_file_result dkr_file_create_directories(const char *path)
+{
+    char work[MAX_PATH];
+    size_t len, i;
+
+    if (!path || !*path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    len = strlen(path);
+    if (len + 1 > sizeof(work)) {
+        return DKR_FILE_ERR_PATH;
+    }
+    memcpy(work, path, len + 1);
+
+    for (i = 0; i <= len; i++) {
+        const int at_end = (i == len);
+        if (!at_end && work[i] != '/') {
+            continue;
+        }
+        if (i == 0) {
+            continue;
+        }
+        {
+            const char saved = work[i];
+            work[i] = '\0';
+            if (mkdir(work, 0777) != 0 && errno != EEXIST) {
+                dkr_file_result r = from_errno();
+                work[i] = saved;
+                return r;
+            }
+            work[i] = saved;
+        }
+    }
+    return DKR_FILE_OK;
+}
+
+dkr_file_result dkr_file_copy(const char *from, const char *to)
+{
+    FILE *in, *out;
+    char buf[8192];
+    size_t n;
+
+    if (!from || !to) {
+        return DKR_FILE_ERR_PATH;
+    }
+    in = fopen(from, "rb");
+    if (!in) {
+        return from_errno();
+    }
+    out = fopen(to, "wb");
+    if (!out) {
+        dkr_file_result r = from_errno();
+        fclose(in);
+        return r;
+    }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            fclose(in);
+            fclose(out);
+            return DKR_FILE_ERR_NO_SPACE;
+        }
+    }
+    fclose(in);
+    fclose(out);
     return DKR_FILE_OK;
 }
 
