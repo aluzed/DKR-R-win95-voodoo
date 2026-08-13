@@ -35,7 +35,8 @@
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
-        "WPROBE.EXE"
+        "WPROBE.EXE",
+        "DKRR.EXE"
       ]
     },
     {
@@ -44,7 +45,8 @@
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
-        "WPROBE.EXE"
+        "WPROBE.EXE",
+        "DKRR.EXE"
       ]
     },
     {
@@ -53,16 +55,32 @@
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
-        "WPROBE.EXE"
+        "WPROBE.EXE",
+        "DKRR.EXE"
       ]
     },
     {
       "symbol": "MoveFileExW",
-      "justification": "Exportee avec du vrai code, et elle refuse quand meme : E02-S05 l'a mesuree sur la machine, MoveFileExA(REPLACE_EXISTING) rend ERROR_CALL_NOT_IMPLEMENTED. C'est la troisieme categorie d'API indisponible, celle qu'aucune analyse statique ne voit. Elle est reclamee par fs_ops.o de libstdc++, c'est-a-dire par std::filesystem::rename — que ce code n'appelle pas sur cette cible, le point d'indirection de E02-S05 passant par dkr_file_rename et sa sequence effacer-puis-renommer. L'import est donc present et inatteignable. La tolerance porte sur les binaires d'epreuve ; le jeu doit etre reexamine quand il se liera.",
+      "justification": "Exportee avec du vrai code, et elle refuse quand meme : E02-S05 l'a mesuree sur la machine, MoveFileExA(REPLACE_EXISTING) rend ERROR_CALL_NOT_IMPLEMENTED. C'est la troisieme categorie d'API indisponible, celle qu'aucune analyse statique ne voit. Elle est reclamee par fs_ops.o de libstdc++, c'est-a-dire par std::filesystem::rename — que ce code n'appelle pas sur cette cible, le point d'indirection de E02-S05 passant par dkr_file_rename et sa sequence effacer-puis-renommer. L'import est donc present et inatteignable. Le jeu est desormais lie, et le reexamen a eu lieu : save_manager appelait MoveFileExW directement sous #if defined(_WIN32), ce que E02-S06 a corrige en le faisant passer par le point d'indirection. L'import qui reste vient de fs_ops.o de libstdc++, atteint par la seule std::filesystem::rename, que plus aucun code du projet n'appelle sur cette cible.",
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
-        "WPROBE.EXE"
+        "WPROBE.EXE",
+        "DKRR.EXE"
+      ]
+    },
+    {
+      "symbol": "LoadLibraryExW",
+      "justification": "Bouchon de Windows 95 (rend 0). Reclamee par mods.cpp de librecomp pour charger un mod natif — une DLL compilee. La fonction elle-meme n'existe qu'a partir de Windows NT4/98 dans cette forme, et ses drapeaux LOAD_LIBRARY_SEARCH_* datent de Windows 7. Le bouchon rend donc un descripteur nul, et le chargement du mod echoue proprement par le chemin d'erreur deja prevu. C'est le comportement voulu : les mods natifs ne peuvent pas fonctionner sur cette cible, et le systeme de mods est hors perimetre depuis E00-S01. Ce qui compte est que l'echec soit celui d'une operation, pas celui du chargement du programme.",
+      "binaries": [
+        "DKRR.EXE"
+      ]
+    },
+    {
+      "symbol": "WriteConsoleW",
+      "justification": "Bouchon de Windows 95 (rend 0). Reclamee par analysis.cpp, cgenerator.cpp et recompilation.cpp de N64Recomp — non par leur code, mais par fmt, l'en-tete de formatage qu'ils emploient, qui ecrit sur la console par l'API large quand elle detecte un terminal. Le bouchon fait echouer cette ecriture, et fmt ne le teste pas : les messages de diagnostic du recompilateur a la volee n'apparaitront pas sur cette machine. C'est une degradation, et elle est acceptee comme telle — ces messages ne concernent que la recompilation de mods, deja hors perimetre. Rien de ce que le joueur voit ne passe par la.",
+      "binaries": [
+        "DKRR.EXE"
       ]
     }
   ]

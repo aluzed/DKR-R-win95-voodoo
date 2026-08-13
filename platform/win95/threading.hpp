@@ -55,6 +55,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -160,14 +161,23 @@ private:
         delete pack;
     }
 
-    /* L'element 0 du paquet est l'appelable, les suivants ses arguments. On
-       appelle directement plutot que par `std::invoke` : `<functional>` n'a
-       aucune raison d'entrer ici, et aucun appel d'`ultramodern` n'est un
-       pointeur sur membre. */
+    /* L'element 0 du paquet est l'appelable, les suivants ses arguments.
+     *
+     * Ce code appelait directement, `std::get<0>(pack)(...)`, en s'appuyant sur
+     * une remarque exacte mais trop etroite : aucun appel d'`ultramodern`
+     * n'etait un pointeur sur membre. `librecomp` en a un — `mods.cpp` demarre
+     * un fil sur `&ModContext::dirty_mod_configuration_thread_process` — et la
+     * forme directe ne compile pas pour lui.
+     *
+     * `std::invoke` est ce que `std::thread` emploie, et c'est le contrat qu'on
+     * reproduit ici. `<functional>` est de la bibliotheque pure : il ne demande
+     * rien au systeme et n'ajoute aucun import. La supposition d'origine
+     * economisait un en-tete au prix d'une divergence de contrat — le mauvais
+     * cote du marche. */
     template <class Pack, std::size_t... I>
     static void call(Pack &pack, std::index_sequence<I...>)
     {
-        std::get<0>(pack)(std::get<I + 1>(pack)...);
+        std::invoke(std::get<0>(pack), std::get<I + 1>(pack)...);
     }
 
     dkr_thread *handle_;
@@ -225,6 +235,27 @@ inline void sleep_for(const std::chrono::duration<Rep, Period> &d)
         return;
     }
     dkr_sleep_ms(static_cast<unsigned long>(ms));
+}
+
+/* `sleep_until` est exprimee sur `sleep_for` plutot que sur une horloge
+   absolue : Windows 95 n'a pas d'attente jusqu'a une date, et la difference
+   entre les deux se reduit ici a une soustraction. Une date deja passee rend la
+   main immediatement, comme la bibliotheque standard. */
+template <class Clock, class Duration>
+inline void sleep_until(const std::chrono::time_point<Clock, Duration> &when)
+{
+    const auto now = Clock::now();
+    if (when > now) {
+        sleep_for(when - now);
+    }
+}
+
+/* `yield` cede le reste du quantum. `Sleep(0)` ne le rend qu'a un fil de meme
+   priorite pret a s'executer, et rien du tout sinon — c'est le comportement de
+   Windows 95, et `dkr_yield` en fait ce qu'il peut. */
+inline void yield()
+{
+    dkr_yield();
 }
 
 } // namespace this_thread

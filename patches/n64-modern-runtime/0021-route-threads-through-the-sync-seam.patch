@@ -1,0 +1,281 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Route thread creation and sleeping through the seams
+
+The synchronisation seam added by the previous patch covered mutex and
+lock_guard. It missed thread, and the omission is worth recording because of how
+it was found.
+
+The subset checker reads #include lines. librecomp never includes <thread>
+directly -- it arrives transitively -- so nothing complained while recomp.cpp
+went on constructing the game thread with std::thread. The binary linked, loaded
+on Windows 95, and died at startup:
+
+    terminate called after throwing an instance of 'std::system_error'
+      what():  Resource temporarily unavailable
+
+That is pthread_create failing behind the standard library. A guard that reads
+includes cannot see a use; the checker now watches the types themselves, which
+is what it already does for filesystem operations.
+
+Four sites move: the game thread in recomp.cpp, the saving thread in pi.cpp, and
+the mod configuration thread in mods.cpp and mods.hpp. mods.cpp's nine
+unique_locks come with them.
+
+Sleeping moves too. ultramodern::sleep_milliseconds and sleep_until called
+std::this_thread, as did vi.cpp's spin on the VI counter, and each would have
+pulled <thread> in on its own. The alias is named platform_thread rather than
+this_thread: ultramodern already has a function by that name returning the
+current OSThread, and the collision is a compile error -- which is how it was
+found.
+
+---
+
+--- a/librecomp/include/librecomp/sync.hpp
++++ b/librecomp/include/librecomp/sync.hpp
+@@ -22,9 +22,17 @@
+ //     LIBRECOMP_PLATFORM_SYNC_HEADER   header to include, as a string
+ //     LIBRECOMP_PLATFORM_SYNC_NS       namespace providing the types
+ //
+-// It must provide mutex, and lock_guard usable both with and without an
+-// explicit template argument. That is all librecomp uses: recomp.cpp and
+-// pi.cpp guard shared tables, and never wait on a condition or start a thread.
++// It must provide mutex, lock_guard usable both with and without an explicit
++// template argument, and thread with default construction, a variadic
++// constructor, move assignment, join and joinable.
++//
++// thread was missing from the first version of this header, and the omission is
++// worth recording. The subset checker reads #include lines, and librecomp never
++// includes <thread> directly -- it arrives transitively -- so nothing complained
++// while recomp.cpp went on constructing the game thread with std::thread. The
++// binary loaded on Windows 95 and died at startup with std::system_error,
++// "Resource temporarily unavailable": pthread_create failing behind the
++// standard library. A guard that reads includes cannot see a use.
+ //
+ // Defining neither macro -- the default, and what every existing target does --
+ // leaves the standard library in place, so this header changes nothing for them.
+@@ -39,6 +47,10 @@
+ 
+ namespace recomp::sync {
+     using mutex = LIBRECOMP_PLATFORM_SYNC_NS::mutex;
++    using thread = LIBRECOMP_PLATFORM_SYNC_NS::thread;
++
++    template <typename M>
++    using unique_lock = LIBRECOMP_PLATFORM_SYNC_NS::unique_lock<M>;
+ 
+     template <typename M>
+     using lock_guard = LIBRECOMP_PLATFORM_SYNC_NS::lock_guard<M>;
+@@ -54,10 +66,18 @@
+ //
+ // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+ #include <mutex>
++// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++#include <thread>
+ 
+ namespace recomp::sync {
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::lock_guard;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::mutex;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::thread;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::unique_lock;
+ }
+ 
+ #endif
+--- a/librecomp/include/librecomp/mods.hpp
++++ b/librecomp/include/librecomp/mods.hpp
+@@ -438,7 +438,7 @@
+             std::unordered_set<std::string> auto_enabled_mods;
+             std::unordered_map<recomp_func_t*, PatchData> patched_funcs;
+             std::unordered_map<std::string, size_t> loaded_mods_by_id;
+-            std::unique_ptr<std::thread> mod_configuration_thread;
++            std::unique_ptr<recomp::sync::thread> mod_configuration_thread;
+             moodycamel::BlockingConcurrentQueue<ModConfigQueueVariant> mod_configuration_thread_queue;
+             std::filesystem::path mods_config_path;
+             std::filesystem::path mod_config_directory;
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -803,7 +803,7 @@
+     recomp::mods::register_config_exports();
+     recomp::mods::register_hook_exports();
+ 
+-    std::thread game_thread{[](ultramodern::renderer::WindowHandle window_handle, uint8_t* rdram) {
++    recomp::sync::thread game_thread{[](ultramodern::renderer::WindowHandle window_handle, uint8_t* rdram) {
+         debug_printf("[Recomp] Starting\n");
+ 
+         ultramodern::set_native_thread_name("Game Start Thread");
+--- a/librecomp/src/pi.cpp
++++ b/librecomp/src/pi.cpp
+@@ -87,7 +87,7 @@
+ 
+ struct {
+     std::vector<char> save_buffer;
+-    std::thread saving_thread;
++    recomp::sync::thread saving_thread;
+     std::filesystem::path save_file_path;
+     moodycamel::LightweightSemaphore write_sempahore;
+     // Used to tell the saving thread that a file swap is pending.
+@@ -248,7 +248,7 @@
+ 
+     read_save_file();
+ 
+-    save_context.saving_thread = std::thread{saving_thread_func, PASS_RDRAM};
++    save_context.saving_thread = recomp::sync::thread{saving_thread_func, PASS_RDRAM};
+ }
+ 
+ void ultramodern::change_save_file(const std::u8string& subfolder, const std::u8string& name) {
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -11,6 +11,7 @@
+ #include "recompiler/context.h"
+ #include "recompiler/live_recompiler.h"
+ #include "librecomp/fileio.hpp"
++#include "librecomp/sync.hpp"
+ 
+ static bool read_json(std::ifstream input_file, nlohmann::json &json_out) {
+     if (!input_file.good()) {
+@@ -618,7 +619,7 @@
+ }
+ 
+ void recomp::mods::ModContext::add_opened_mod(ModManifest&& manifest, ConfigStorage&& config_storage, std::vector<size_t>&& game_indices, std::vector<ModContentTypeId>&& detected_content_types, std::vector<char>&& thumbnail) {
+-    std::unique_lock lock(opened_mods_mutex);
++    recomp::sync::unique_lock lock(opened_mods_mutex);
+     size_t mod_index = opened_mods.size();
+     opened_mods_by_id.emplace(manifest.mod_id, mod_index);
+     opened_mods_by_filename.emplace(manifest.mod_root_path.filename().native(), mod_index);
+@@ -655,7 +656,7 @@
+ }
+ 
+ void recomp::mods::ModContext::close_mods() {
+-    std::unique_lock lock(opened_mods_mutex);
++    recomp::sync::unique_lock lock(opened_mods_mutex);
+     opened_mods_by_id.clear();
+     opened_mods_by_filename.clear();
+     opened_mods.clear();
+@@ -787,12 +788,12 @@
+ 
+         if (active && !pending_mods.empty()) {
+             {
+-                std::unique_lock opened_mods_lock(opened_mods_mutex);
++                recomp::sync::unique_lock opened_mods_lock(opened_mods_mutex);
+                 for (const std::string &id : pending_mods) {
+                     auto it = opened_mods_by_id.find(id);
+                     if (it != opened_mods_by_id.end()) {
+                         const ModHandle &mod = opened_mods[it->second];
+-                        std::unique_lock config_storage_lock(mod_config_storage_mutex);
++                        recomp::sync::unique_lock config_storage_lock(mod_config_storage_mutex);
+                         pending_mod_storage[id] = mod.config_storage;
+                         pending_mod_schema[id] = mod.manifest.config_schema;
+                         pending_mod_version[id] = mod.manifest.version;
+@@ -811,7 +812,7 @@
+         if (active && pending_config_save) {
+             {
+                 // Store the enabled mods and the order.
+-                std::unique_lock lock(opened_mods_mutex);
++                recomp::sync::unique_lock lock(opened_mods_mutex);
+                 config_enabled_mods = enabled_mods;
+                 config_mod_order.clear();
+                 for (size_t mod_index : opened_mods_order) {
+@@ -953,7 +954,7 @@
+     // Register the default mod container type (.nrm) and allow it to have any content type by passing an empty vector.
+     register_container_type(std::string{ modpaths::default_mod_extension }, {}, true);
+ 
+-    mod_configuration_thread = std::make_unique<std::thread>(&ModContext::dirty_mod_configuration_thread_process, this);
++    mod_configuration_thread = std::make_unique<recomp::sync::thread>(&ModContext::dirty_mod_configuration_thread_process, this);
+ }
+ 
+ void recomp::mods::ModContext::on_code_mod_enabled(ModContext& context, const ModHandle& mod) {
+@@ -1057,7 +1058,7 @@
+ 
+ void recomp::mods::ModContext::enable_mod(const std::string& mod_id, bool enabled, bool trigger_save) {
+     // Check that the mod exists.
+-    std::unique_lock lock(opened_mods_mutex);
++    recomp::sync::unique_lock lock(opened_mods_mutex);
+     auto find_it = opened_mods_by_id.find(mod_id);
+     if (find_it == opened_mods_by_id.end()) {
+         return;
+@@ -1400,7 +1401,7 @@
+ }
+ 
+ void recomp::mods::ModContext::set_mod_index(const std::string &mod_game_id, const std::string &mod_id, size_t index) {
+-    std::unique_lock lock(opened_mods_mutex);
++    recomp::sync::unique_lock lock(opened_mods_mutex);
+     bool all_games = mod_game_id.empty();
+     size_t game_index = (size_t)-1;
+     auto find_game_it = mod_game_ids.find(mod_game_id);
+@@ -1481,7 +1482,7 @@
+     }
+ 
+     ModHandle &mod = opened_mods[mod_index];
+-    std::unique_lock lock(mod_config_storage_mutex);
++    recomp::sync::unique_lock lock(mod_config_storage_mutex);
+     auto option_by_id_it = mod.manifest.config_schema.options_by_id.find(option_id);
+     if (option_by_id_it != mod.manifest.config_schema.options_by_id.end()) {
+         // Only accept setting values if the value exists and the variant is the right type.
+@@ -1534,7 +1535,7 @@
+     }
+ 
+     const ModHandle &mod = opened_mods[mod_index];
+-    std::unique_lock lock(mod_config_storage_mutex);
++    recomp::sync::unique_lock lock(mod_config_storage_mutex);
+     auto it = mod.config_storage.value_map.find(option_id);
+     if (it != mod.config_storage.value_map.end()) {
+         return it->second;
+--- a/librecomp/src/vi.cpp
++++ b/librecomp/src/vi.cpp
+@@ -47,6 +47,6 @@
+ extern "C" void wait_one_frame(uint8_t* rdram, recomp_context* ctx) {
+     uint64_t cur_vis = total_vis;
+     while (cur_vis == total_vis) {
+-        std::this_thread::yield();
++        ultramodern::platform_thread::yield();
+     }
+ }
+--- a/ultramodern/include/ultramodern/threading.hpp
++++ b/ultramodern/include/ultramodern/threading.hpp
+@@ -36,6 +36,10 @@
+ 
+ namespace ultramodern {
+     using thread             = ULTRAMODERN_PLATFORM_THREADING_NS::thread;
++    // Not `this_thread`: ultramodern already has a function by that name,
++    // returning the current OSThread. The collision is a compile error, which
++    // is how it was found.
++    namespace platform_thread = ULTRAMODERN_PLATFORM_THREADING_NS::this_thread;
+     using mutex              = ULTRAMODERN_PLATFORM_THREADING_NS::mutex;
+     using condition_variable = ULTRAMODERN_PLATFORM_THREADING_NS::condition_variable;
+     // Using-declarations rather than alias templates: they keep `lock_guard`
+@@ -59,10 +63,17 @@
+ #include <condition_variable>
+ 
+ namespace ultramodern {
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::thread;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    namespace platform_thread = std::this_thread;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::mutex;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::condition_variable;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::lock_guard;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::unique_lock;
+ }
+ 
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -224,11 +224,11 @@
+ #else
+ 
+ void ultramodern::sleep_milliseconds(uint32_t millis) {
+-    std::this_thread::sleep_for(std::chrono::milliseconds{millis});
++    ultramodern::platform_thread::sleep_for(std::chrono::milliseconds{millis});
+ }
+ 
+ void ultramodern::sleep_until(const std::chrono::high_resolution_clock::time_point& time_point) {
+-    std::this_thread::sleep_until(time_point);
++    ultramodern::platform_thread::sleep_until(time_point);
+ }
+ 
+ #endif

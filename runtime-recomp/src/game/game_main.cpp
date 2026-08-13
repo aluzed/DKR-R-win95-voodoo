@@ -260,14 +260,21 @@ bool RelaunchApplication(int argc, char** argv) {
 #ifdef _WIN32
     (void)argc;
     (void)argv;
-    STARTUPINFOW startup{};
+    // La famille large est un bouchon sous Windows 9x : `CreateProcessW` y rend 0
+    // sans rien faire, et le redemarrage rapide echouerait en silence — le pire
+    // des cas, puisque le programme se charge et parait fonctionner.
+    //
+    // La forme etroite fait la meme chose partout ailleurs, donc elle est
+    // employee partout : deux chemins dont un seul est eprouve valent moins
+    // qu'un chemin unique.
+    STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
-    std::wstring command_line = GetCommandLineW();
+    std::string command_line = GetCommandLineA();
     if (command_line.empty() ||
-        !CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, FALSE,
+        !CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, FALSE,
                         0, nullptr, nullptr, &startup, &process)) {
-        std::fprintf(stderr, "[boot][restart] CreateProcessW failed: %lu\n",
+        std::fprintf(stderr, "[boot][restart] CreateProcessA failed: %lu\n",
                      static_cast<unsigned long>(GetLastError()));
         return false;
     }

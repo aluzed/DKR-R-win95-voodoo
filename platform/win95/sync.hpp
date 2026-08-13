@@ -68,13 +68,21 @@ namespace this_thread = dkr::win95::this_thread;
 
 namespace dkr::sync {
 
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::condition_variable;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::cv_status;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::lock_guard;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::mutex;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::scoped_lock;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::thread;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::unique_lock;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 namespace this_thread = std::this_thread;
 
 #endif

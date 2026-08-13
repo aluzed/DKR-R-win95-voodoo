@@ -85,6 +85,10 @@
         {
           "path": "patches/n64-modern-runtime/0020-platform-seam-for-synchronisation-primitives.patch",
           "sha256": "3498dfdad98ea93894a7d010772f3fdf7a8e7ec41617df2065b638d4b39fdd84"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0021-route-threads-through-the-sync-seam.patch",
+          "sha256": "2240df0e07e06056e196cadea357ed241baef9056fcf9f4475460158bb8433a8"
         }
       ]
     },

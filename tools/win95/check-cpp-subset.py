@@ -125,6 +125,26 @@ def stream_opens_on_path(code):
     return arg
 
 
+# --- Types de synchronisation : les usages, pas seulement les inclusions ------
+#
+# Ce fichier surveillait `#include <thread>` et `#include <mutex>`, et cela ne
+# suffit pas : `librecomp` ne les inclut nulle part directement — ils arrivent
+# par transitivite — et `recomp.cpp` construisait pourtant le fil du jeu avec
+# `std::thread`. Rien n'a proteste. Le binaire s'est charge sous Windows 95 et
+# est mort au demarrage sur std::system_error, « Resource temporarily
+# unavailable » : pthread_create echouant derriere la bibliotheque standard.
+#
+# **Un controle qui lit les inclusions ne peut pas voir un usage.** C'est
+# exactement la lecon que <filesystem> avait deja donnee, ou la surveillance
+# porte sur les operations et non sur l'en-tete. On applique la meme regle ici.
+SYNC_TYPES = (
+    "thread", "jthread", "mutex", "recursive_mutex", "timed_mutex",
+    "shared_mutex", "lock_guard", "unique_lock", "scoped_lock", "shared_lock",
+    "condition_variable", "condition_variable_any", "call_once", "once_flag",
+    "async", "future", "promise", "packaged_task", "this_thread",
+)
+RX_SYNC_USE = re.compile(r'\bstd::(' + "|".join(SYNC_TYPES) + r')\b')
+
 SOURCE_SUFFIXES = (".cpp", ".hpp", ".h", ".cc", ".cxx")
 RX_INCLUDE = re.compile(r'^\s*#\s*include\s*<([A-Za-z0-9_./]+)>')
 
@@ -174,6 +194,29 @@ def strip_comments(line, in_block):
     return "".join(out), in_block
 
 
+def strip_strings(code):
+    """Retire les litteraux de chaine et de caractere.
+
+    `strip_comments` ne suffisait pas : `threading.cpp` porte le message
+    « un std::mutex se serait interbloque ici », qui declenchait l'alarme. Un
+    controle qui punit d'expliquer ce qu'on a remplace pousse a ne plus
+    l'expliquer — c'est l'inverse de ce que ce depot veut."""
+    out, i, n = [], 0, len(code)
+    while i < n:
+        c = code[i]
+        if c in "\"'":
+            quote = c
+            i += 1
+            while i < n and code[i] != quote:
+                i += 2 if code[i] == "\\" else 1
+            i += 1
+            out.append('""')
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def scan(paths, quiet=False):
     """Renvoie la liste des (fichier, ligne, en-tete) fautifs."""
     bad = []
@@ -199,6 +242,7 @@ def scan(paths, quiet=False):
                 # ce qui pousse a ne pas l'ecrire — exactement l'inverse de ce
                 # que ce depot veut encourager.
                 code, in_block_comment = strip_comments(line, in_block_comment)
+                code = strip_strings(code)
                 fs = RX_FS_OPERATION.search(code)
                 if fs:
                     allow = RX_ALLOW.search(lines[i - 2]) if i >= 2 else None
@@ -207,6 +251,14 @@ def scan(paths, quiet=False):
                         allowed.append((f, i, "filesystem::" + fs.group(1), why))
                     else:
                         bad.append((f, i, "filesystem::" + fs.group(1)))
+                sync = RX_SYNC_USE.search(code)
+                if sync:
+                    allow = RX_ALLOW.search(lines[i - 2]) if i >= 2 else None
+                    why = allow.group(1).strip() if allow else ""
+                    if allow and len(why) >= ALLOW_MIN_JUSTIFICATION:
+                        allowed.append((f, i, "sync::" + sync.group(1), why))
+                    else:
+                        bad.append((f, i, "sync::" + sync.group(1)))
                 arg = stream_opens_on_path(code)
                 if arg:
                     allow = RX_ALLOW.search(lines[i - 2]) if i >= 2 else None
@@ -244,6 +296,15 @@ def report(bad):
             print(f"  {RED}INTERDIT{OFF}  {f}:{line}")
             print(f"            `std::{header}` — operation de systeme de fichiers")
             print(f"            remplacement : platform/win95/fileio.h (E02-S05)")
+            continue
+        if header.startswith("sync::"):
+            name = header.split("::", 1)[1]
+            print(f"  {RED}INTERDIT{OFF}  {f}:{line}")
+            print(f"            `std::{name}` — type de synchronisation")
+            print(f"            <thread> et <mutex> tirent six symboles absents,")
+            print(f"            et l'inclusion peut etre transitive : c'est l'usage")
+            print(f"            qui est surveille, pas la ligne #include.")
+            print(f"            remplacement : dkr::sync (E02-S02)")
             continue
         if header.startswith("flux sur path"):
             print(f"  {RED}INTERDIT{OFF}  {f}:{line}")

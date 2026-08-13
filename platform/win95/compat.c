@@ -26,6 +26,223 @@
 
 #include "compat.h"
 
+#include <sys/stat.h>
+#include <io.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <wchar.h>
+
+/* --- Les quatre autres manques de MSVCRT, et un de KERNEL32 ---------------- *
+ *
+ * Trouves a la premiere edition de liens du jeu, et tous de la meme famille que
+ * `_fstat64` : des fonctions que les MSVCRT ulterieures ont ajoutees et que
+ * celle de Windows 95 n'a pas. Absentes, donc bloquantes au chargement.
+ *
+ *   _wfopen_s, _wfreopen_s   basic_file.o de libstdc++, ouverture par nom large
+ *   _strtoi64, _strtoui64    conversion 64 bits
+ *   GetModuleHandleExW       atexit_thread.o de libstdc++
+ */
+
+/* Les deux ouvertures larges ne sont jamais atteintes par le code du projet :
+   E02-S05 a etabli que passer un `path` a un flux ouvre par l'API large, qui est
+   bouchonnee ici, et tous les sites d'appel passent desormais `.string()`.
+   L'import, lui, reste — d'ou ces definitions.
+
+   Elles ne se contentent pas d'echouer. Convertir le nom en octets etroits et
+   appeler `fopen` est aussi court a ecrire, et rend la fonction juste pour tout
+   nom representable dans la page de codes du systeme. Un echec silencieux aurait
+   ete un piege pour qui les appellerait un jour sans le savoir. */
+static int widen_to_ansi(const wchar_t *w, char *out, int out_size)
+{
+    BOOL used_default = FALSE;
+    int  n;
+
+    if (!w || !out || out_size <= 0) {
+        return 0;
+    }
+    n = WideCharToMultiByte(CP_ACP, 0, w, -1, out, out_size, NULL, &used_default);
+    /* Un caractere de remplacement designerait un autre fichier que celui
+       demande : mieux vaut refuser que d'ouvrir le mauvais. */
+    return (n > 0 && !used_default) ? 1 : 0;
+}
+
+int _wfopen_s(FILE **stream, const wchar_t *filename, const wchar_t *mode)
+{
+    char name[MAX_PATH], m[16];
+
+    if (!stream) {
+        return EINVAL;
+    }
+    *stream = NULL;
+    if (!widen_to_ansi(filename, name, sizeof(name)) ||
+        !widen_to_ansi(mode, m, sizeof(m))) {
+        return EINVAL;
+    }
+    *stream = fopen(name, m);
+    return *stream ? 0 : errno;
+}
+
+int _wfreopen_s(FILE **stream, const wchar_t *filename, const wchar_t *mode,
+                FILE *old)
+{
+    char name[MAX_PATH], m[16];
+
+    if (!stream) {
+        return EINVAL;
+    }
+    *stream = NULL;
+    if (!widen_to_ansi(filename, name, sizeof(name)) ||
+        !widen_to_ansi(mode, m, sizeof(m))) {
+        return EINVAL;
+    }
+    *stream = freopen(name, m, old);
+    return *stream ? 0 : errno;
+}
+
+/* L'analyse est ecrite ici plutot que deleguee a `strtoll`, et ce n'est pas par
+   gout : sous mingw, `strtoll` est un renvoi vers `_strtoi64` **importe de
+   MSVCRT**. S'appuyer dessus rendait la definition circulaire — elle compilait,
+   se liait, et le symbole absent reapparaissait dans la table d'imports sans que
+   rien ne le signale. Le controle des imports l'a vu ; une lecture du code, non.
+ *
+ * Le contrat suivi est celui de `strtoull` de C99 : espaces en tete, signe
+ * facultatif, prefixe `0x` pour la base 16 et base 0 deduite, `endptr` pose sur
+ * le premier caractere non consomme — et sur `nptr` si rien n'a ete consomme —
+ * et `ERANGE` avec saturation en cas de debordement. */
+static unsigned __int64 parse_u64(const char *s, char **end, int base,
+                                  int *negative, int *overflow)
+{
+    const char        *p = s;
+    const char        *digits_begin;
+    unsigned __int64   value = 0;
+    int                any = 0;
+
+    *negative = 0;
+    *overflow = 0;
+    while (*p == ' ' || (*p >= '\t' && *p <= '\r')) {
+        p++;
+    }
+    if (*p == '+' || *p == '-') {
+        *negative = (*p == '-');
+        p++;
+    }
+    if ((base == 0 || base == 16) && p[0] == '0' &&
+        (p[1] == 'x' || p[1] == 'X')) {
+        p += 2;
+        base = 16;
+    } else if (base == 0) {
+        base = (p[0] == '0') ? 8 : 10;
+    }
+    if (base < 2 || base > 36) {
+        if (end) { *end = (char *)s; }
+        return 0;
+    }
+
+    digits_begin = p;
+    for (; *p; p++) {
+        int digit;
+        if (*p >= '0' && *p <= '9')      { digit = *p - '0'; }
+        else if (*p >= 'a' && *p <= 'z') { digit = *p - 'a' + 10; }
+        else if (*p >= 'A' && *p <= 'Z') { digit = *p - 'A' + 10; }
+        else                             { break; }
+        if (digit >= base) {
+            break;
+        }
+        if (value > (~(unsigned __int64)0 - (unsigned)digit) / (unsigned)base) {
+            *overflow = 1;
+        } else {
+            value = value * (unsigned)base + (unsigned)digit;
+        }
+        any = 1;
+    }
+    /* Rien de consommable : `endptr` revient au depart, prefixe compris. */
+    if (end) { *end = (char *)(any ? p : s); }
+    (void)digits_begin;
+    return value;
+}
+
+__int64 _strtoi64(const char *s, char **end, int base)
+{
+    int negative = 0, overflow = 0;
+    unsigned __int64 v;
+
+    if (!s) {
+        if (end) { *end = NULL; }
+        return 0;
+    }
+    v = parse_u64(s, end, base, &negative, &overflow);
+    if (negative) {
+        if (overflow || v > 0x8000000000000000ULL) {
+            errno = ERANGE;
+            return (__int64)0x8000000000000000ULL;   /* LLONG_MIN */
+        }
+        return -(__int64)v;
+    }
+    if (overflow || v > 0x7FFFFFFFFFFFFFFFULL) {
+        errno = ERANGE;
+        return (__int64)0x7FFFFFFFFFFFFFFFULL;       /* LLONG_MAX */
+    }
+    return (__int64)v;
+}
+
+unsigned __int64 _strtoui64(const char *s, char **end, int base)
+{
+    int negative = 0, overflow = 0;
+    unsigned __int64 v;
+
+    if (!s) {
+        if (end) { *end = NULL; }
+        return 0;
+    }
+    v = parse_u64(s, end, base, &negative, &overflow);
+    if (overflow) {
+        errno = ERANGE;
+        return ~(unsigned __int64)0;
+    }
+    /* `strtoull` rend la negation modulaire, et non une erreur. */
+    return negative ? (unsigned __int64)(-(__int64)v) : v;
+}
+
+/* `strtoll` et `strtoull` viennent avec, et c'est la partie qui manquait.
+ *
+ * Sous mingw ce ne sont pas des fonctions mais des renvois vers `_strtoi64` et
+ * `_strtoui64` **importes de MSVCRT**. Definir les deux precedentes ne suffisait
+ * donc pas : `mod_manifest.cpp` et `mods.cpp` appellent `strtoll`, le renvoi
+ * etait tire de `libmsvcrt.a`, et l'import absent revenait par cette porte.
+ *
+ * C'est le meme piege que la premiere version de `_strtoi64`, vu d'un autre
+ * cote : sur cette cible, une fonction de la bibliotheque C peut en cacher une
+ * autre, et seule la table d'imports du binaire fini le dit. */
+long long strtoll(const char *s, char **end, int base)
+{
+    return (long long)_strtoi64(s, end, base);
+}
+
+unsigned long long strtoull(const char *s, char **end, int base)
+{
+    return (unsigned long long)_strtoui64(s, end, base);
+}
+
+/* Reclamee par `atexit_thread.o` de libstdc++, qui s'en sert pour epingler le
+   module portant un destructeur de variable locale au fil, afin qu'il ne soit
+   pas decharge avant la fin du fil.
+ *
+ * Ce binaire est entierement statique : il n'y a pas de DLL a maintenir en vie,
+ * et le module portant le code est l'executable lui-meme. Rendre son descripteur
+ * est donc la reponse juste, et non un pis-aller. L'epinglage demande n'a rien a
+ * faire — un executable ne se decharge pas. */
+BOOL WINAPI GetModuleHandleExW(DWORD flags, LPCWSTR name, HMODULE *module)
+{
+    (void)flags;
+    (void)name;
+    if (!module) {
+        return FALSE;
+    }
+    *module = GetModuleHandleA(NULL);
+    return *module != NULL;
+}
+
 /* --- <fstream> : `_fstat64` de MSVCRT ------------------------------------- *
  *
  * Le seul manque qui ne vienne pas de KERNEL32, et il coute cher : la simple
@@ -46,9 +263,6 @@
  * est mis a zero plutot que rempli au jugé — une date fausse serait pire qu'une
  * date absente, parce qu'elle aurait l'air d'une donnee.
  */
-#include <sys/stat.h>
-#include <io.h>
-#include <errno.h>
 
 int _fstat64(int fd, struct _stat64 *st)
 {
@@ -368,3 +582,10 @@ REDIRECT(CreateSemaphoreW,               "@16");
 /* cdecl : pas de suffixe de taille d'arguments, a la difference des
    fonctions de KERNEL32 ci-dessus. */
 REDIRECT(_fstat64,                       "");
+REDIRECT(_wfopen_s,                      "");
+REDIRECT(_wfreopen_s,                    "");
+REDIRECT(_strtoi64,                      "");
+REDIRECT(_strtoui64,                     "");
+REDIRECT(strtoll,                        "");
+REDIRECT(strtoull,                       "");
+REDIRECT(GetModuleHandleExW,             "@12");
