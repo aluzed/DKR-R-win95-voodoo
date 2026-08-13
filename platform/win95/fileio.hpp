@@ -291,6 +291,15 @@ inline std::filesystem::path current_path()
     return std::filesystem::path{out};
 }
 
+inline std::filesystem::path temp_directory_path()
+{
+    char out[512];
+    if (dkr_file_temp_directory(out, sizeof(out)) != DKR_FILE_OK) {
+        return std::filesystem::path{};
+    }
+    return std::filesystem::path{out};
+}
+
 inline std::filesystem::path current_path(std::error_code &ec)
 {
     char out[512];
@@ -461,6 +470,8 @@ inline bool copy_file_no_overwrite(const std::filesystem::path &from,
 using std::filesystem::remove_all;
 // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::filesystem::current_path;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+using std::filesystem::temp_directory_path;
 // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::filesystem::is_symlink;
 

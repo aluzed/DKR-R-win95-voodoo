@@ -180,6 +180,11 @@ dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *remove
    `dkr_file_app_directory` qu'il faut, jamais celle-ci. */
 dkr_file_result dkr_file_current_directory(char *out, size_t out_size);
 
+/* Repertoire des fichiers temporaires. `GetTempPathA` consulte TMP, puis TEMP,
+   puis le repertoire de Windows — et rend toujours quelque chose. Sa variante
+   `...W` est un bouchon, comme le reste de la famille. */
+dkr_file_result dkr_file_temp_directory(char *out, size_t out_size);
+
 /* --- Enumeration d'un repertoire ------------------------------------------ *
  *
  * `std::filesystem::directory_iterator` n'est pas reproduit : un iterateur

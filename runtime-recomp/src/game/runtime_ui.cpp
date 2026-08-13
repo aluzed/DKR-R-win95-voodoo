@@ -646,7 +646,7 @@ void SaveSettings() {
     const std::filesystem::path settings_path = SettingsPath();
     const std::filesystem::path temporary_path = settings_path.string() + ".tmp";
     {
-        std::ofstream output(temporary_path, std::ios::trunc);
+        std::ofstream output(temporary_path.string(), std::ios::trunc);
         if (!output) {
             std::fprintf(stderr, "[boot][settings] failed to open temporary settings file\n");
             return;
@@ -792,7 +792,7 @@ void LoadSettings() {
     bool migrated = false;
     auto quick_keyboard = dkr::runtime::input::quick_restart_keyboard_binding();
     auto quick_controller = dkr::runtime::input::quick_restart_controller_binding();
-    std::ifstream input(SettingsPath());
+    std::ifstream input(SettingsPath().string());
     std::string line;
     while (std::getline(input, line)) {
         const std::size_t separator = line.find('=');
@@ -1061,12 +1061,12 @@ void LoadSettings() {
 }
 
 void SaveLastRom(const std::filesystem::path& path) {
-    std::ofstream output(LastRomPath(), std::ios::trunc);
+    std::ofstream output(LastRomPath().string(), std::ios::trunc);
     output << PathUtf8(path);
 }
 
 std::optional<std::filesystem::path> LoadLastRom() {
-    std::ifstream input(LastRomPath());
+    std::ifstream input(LastRomPath().string());
     std::string path;
     std::getline(input, path);
     if (path.empty()) {

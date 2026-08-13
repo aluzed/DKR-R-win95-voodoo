@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -44,7 +45,7 @@ std::vector<std::uint8_t> valid_pak() {
 
 void write_bytes(const std::filesystem::path& path,
                  const std::vector<std::uint8_t>& bytes) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    std::ofstream output(path.string(), std::ios::binary | std::ios::trunc);
     output.write(reinterpret_cast<const char*>(bytes.data()),
                  static_cast<std::streamsize>(bytes.size()));
     assert(output.good());
@@ -53,10 +54,10 @@ void write_bytes(const std::filesystem::path& path,
 } // namespace
 
 int main() {
-    const auto root = std::filesystem::temp_directory_path() /
+    const auto root = dkr::fs::temp_directory_path() /
         ("dkr-save-manager-test-" + std::to_string(
             std::chrono::steady_clock::now().time_since_epoch().count()));
-    std::filesystem::create_directories(root);
+    dkr::fs::create_directories(root);
     dkr::runtime::saves::configure(root);
     std::fputs("[test][save-manager] adventure lifecycle\n", stderr);
     assert(!dkr::runtime::saves::adventure_info().exists);
@@ -71,7 +72,7 @@ int main() {
 
     std::filesystem::path backup;
     assert(dkr::runtime::saves::backup_adventure(backup, error));
-    assert(std::filesystem::exists(backup));
+    assert(dkr::fs::exists(backup));
     assert(!dkr::runtime::saves::adventure_backups().empty());
 
     const auto exported = root / "exported.bin";
@@ -93,7 +94,7 @@ int main() {
     assert(erased_slot_image.slots[1].name.empty());
 
     const auto invalid = root / "invalid.bin";
-    std::ofstream(invalid, std::ios::binary).put('x');
+    std::ofstream(invalid.string(), std::ios::binary).put('x');
     assert(!dkr::runtime::saves::import_adventure(invalid, error));
     const auto bad_checksum = root / "bad-checksum.bin";
     auto corrupt_adventure = dkr::runtime::saves::codec::blank_bytes();
@@ -121,7 +122,7 @@ int main() {
     assert(pak_info.exists && pak_info.valid && pak_info.size == 32U * 1024U);
     std::filesystem::path pak_backup;
     assert(dkr::runtime::saves::backup_controller_pak(0, pak_backup, error));
-    assert(std::filesystem::exists(pak_backup));
+    assert(dkr::fs::exists(pak_backup));
     assert(!dkr::runtime::saves::controller_pak_backups(0).empty());
     const auto exported_pak = root / "exported.mpk";
     assert(dkr::runtime::saves::export_controller_pak(0, exported_pak, error));
@@ -143,7 +144,7 @@ int main() {
     std::fputs("[test][save-manager] corrupt bundle rejection\n", stderr);
     std::vector<std::uint8_t> corrupt_bundle;
     {
-        std::ifstream input(bundle, std::ios::binary);
+        std::ifstream input(bundle.string(), std::ios::binary);
         corrupt_bundle.assign(std::istreambuf_iterator<char>(input),
                               std::istreambuf_iterator<char>());
     }
@@ -157,7 +158,7 @@ int main() {
     assert(!dkr::runtime::saves::import_bundle(oversized_bundle, error));
 
     std::error_code cleanup_error;
-    std::filesystem::remove_all(root, cleanup_error);
+    dkr::fs::remove_all(root, cleanup_error);
     std::puts("[test][save-manager] PASS");
     return 0;
 }

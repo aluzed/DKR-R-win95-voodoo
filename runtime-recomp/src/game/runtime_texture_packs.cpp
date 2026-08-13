@@ -83,7 +83,7 @@ bool LooksLikeRiceName(const std::string& entry) {
 void LoadSettingsLocked() {
     g_enabled_ids.clear();
     g_hidden_ids.clear();
-    std::ifstream input(g_settings_path);
+    std::ifstream input(g_settings_path.string());
     std::string line;
     while (std::getline(input, line)) {
         constexpr const char* enabled_prefix = "enabled=";
@@ -101,6 +101,7 @@ void SaveSettingsLocked() {
     std::error_code error;
     dkr::fs::create_directories(g_settings_path.parent_path(), error);
     const auto temporary = g_settings_path.string() + ".tmp";
+    // DKR-WIN95-ALLOW: `temporary` est deja une std::string — la ligne au-dessus la fabrique par .string() + ".tmp" — et non un path : l'ouverture est donc bien etroite. Le controle lit du texte et ne peut pas le savoir.
     std::ofstream output(temporary, std::ios::trunc);
     if (!output) {
         g_status = "Texture-pack preferences could not be saved.";
@@ -254,7 +255,7 @@ dkr::runtime::texture_packs::PackInfo InspectDirectory(
         return info;
     }
     try {
-        std::ifstream database_file(database_path);
+        std::ifstream database_file(database_path.string());
         const auto database = nlohmann::json::parse(database_file);
         if (!database.is_object() || !database.contains("configuration") ||
             !database.contains("textures") || !database["textures"].is_array()) {
@@ -299,7 +300,7 @@ dkr::runtime::texture_packs::PackInfo InspectDirectory(
 
     if (managed_rice) {
         try {
-            std::ifstream report_file(report_path);
+            std::ifstream report_file(report_path.string());
             const auto report = nlohmann::json::parse(report_file);
             const std::size_t source_images = report.value("sourceImages", 0U);
             const std::size_t identities = report.value("convertedIdentities", 0U);

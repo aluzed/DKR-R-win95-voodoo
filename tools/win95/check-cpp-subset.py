@@ -68,6 +68,63 @@ FILESYSTEM_OPERATIONS = (
 RX_FS_OPERATION = re.compile(
     r'\bstd::filesystem::(' + "|".join(FILESYSTEM_OPERATIONS) + r')\b')
 
+# --- Flux ouverts sur un `path` ------------------------------------------------
+#
+# Sous MinGW, `std::filesystem::path::value_type` est `wchar_t`. Passer un
+# `path` a un constructeur de flux ouvre donc le fichier par `_wfopen` — la
+# bibliotheque C large — et Windows 95 exporte cette famille sous forme de
+# bouchons : le binaire se charge, et chaque ouverture echoue en silence.
+#
+# C'est la troisieme categorie d'API indisponible, la plus couteuse a
+# diagnostiquer : le controle des imports ne dit rien, puisque le symbole est
+# bien la. Le defaut s'est manifeste par une suite de sauvegarde mourant sur
+# « Could not create the temporary save file » alors que le meme code passait
+# sur l'hote. Mesure : tools/win95/witnesses/wide_stream_probe.cpp.
+#
+#     ofstream(path)             ECHEC
+#     ofstream(path.string())    OK
+#
+# `path.string()` est etroit partout et rend les memes octets ailleurs : la
+# correction ne coute rien aux cibles qui marchaient deja.
+RX_STREAM = re.compile(r'\bstd::(?:basic_)?[io]?fstream\s*(?:\w+\s*)?[({]')
+
+def _first_argument(code, start):
+    """Le premier argument, parentheses equilibrees.
+
+    Un decoupage naif sur la virgule couperait `p.string()` en son milieu et
+    ferait conclure a tort que l'ouverture est large — l'erreur exacte que
+    cette regle est censee empecher."""
+    depth = 0
+    for j in range(start, len(code)):
+        c = code[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return code[start:j]
+            depth -= 1
+        elif c == "," and depth == 0:
+            return code[start:j]
+    return code[start:]
+
+def stream_opens_on_path(code):
+    """Rend l'argument fautif, ou None si l'ouverture est etroite."""
+    m = RX_STREAM.search(code)
+    if not m:
+        return None
+    arg = _first_argument(code, m.end()).strip()
+    if not arg:
+        return None
+    # Une declaration de fonction, pas une ouverture : `std::ifstream f(const path&`
+    if arg.startswith("const ") or "&" in arg or "*" in arg:
+        return None
+    # Deja etroit : litteral, `.string()`, `.c_str()`, ou un argv.
+    if (arg.startswith('"') or arg.endswith(".string()") or
+            arg.endswith(".c_str()") or arg.startswith("argv")):
+        return None
+    return arg
+
+
 SOURCE_SUFFIXES = (".cpp", ".hpp", ".h", ".cc", ".cxx")
 RX_INCLUDE = re.compile(r'^\s*#\s*include\s*<([A-Za-z0-9_./]+)>')
 
@@ -150,6 +207,14 @@ def scan(paths, quiet=False):
                         allowed.append((f, i, "filesystem::" + fs.group(1), why))
                     else:
                         bad.append((f, i, "filesystem::" + fs.group(1)))
+                arg = stream_opens_on_path(code)
+                if arg:
+                    allow = RX_ALLOW.search(lines[i - 2]) if i >= 2 else None
+                    why = allow.group(1).strip() if allow else ""
+                    if allow and len(why) >= ALLOW_MIN_JUSTIFICATION:
+                        allowed.append((f, i, "flux sur path <" + arg + ">", why))
+                    else:
+                        bad.append((f, i, "flux sur path <" + arg + ">"))
                 m = RX_INCLUDE.match(line)
                 if not (m and m.group(1) in FORBIDDEN):
                     continue
@@ -179,6 +244,13 @@ def report(bad):
             print(f"  {RED}INTERDIT{OFF}  {f}:{line}")
             print(f"            `std::{header}` — operation de systeme de fichiers")
             print(f"            remplacement : platform/win95/fileio.h (E02-S05)")
+            continue
+        if header.startswith("flux sur path"):
+            print(f"  {RED}INTERDIT{OFF}  {f}:{line}")
+            print(f"            {header} — MinGW ouvre alors par _wfopen, et")
+            print(f"            Windows 95 exporte la famille large en bouchons :")
+            print(f"            le binaire se charge et l'ouverture echoue.")
+            print(f"            remplacement : passer `.string()` (E02-S05)")
             continue
         n, replacement = FORBIDDEN[header]
         print(f"  {RED}INTERDIT{OFF}  {f}:{line}")

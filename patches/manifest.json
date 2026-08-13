@@ -77,6 +77,10 @@
         {
           "path": "patches/n64-modern-runtime/0018-platform-seam-for-filesystem-operations.patch",
           "sha256": "dd433fef5d814a0f19b454575c5fd1ddad6b6b29e9d1c98c43812d3a62b8a37e"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0019-open-streams-from-narrow-strings.patch",
+          "sha256": "0906928da3d45fca0ff5d46c5eb93d970ca33815263c10a95772ef2a2a62ce9b"
         }
       ]
     },

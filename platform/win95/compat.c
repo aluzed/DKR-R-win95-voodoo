@@ -26,6 +26,70 @@
 
 #include "compat.h"
 
+/* --- <fstream> : `_fstat64` de MSVCRT ------------------------------------- *
+ *
+ * Le seul manque qui ne vienne pas de KERNEL32, et il coute cher : la simple
+ * inclusion de `<fstream>` rend le binaire inchargeable sous Windows 95.
+ *
+ * `basic_file.o` de libstdc++ importe `__imp___fstat64`. La MSVCRT.DLL de
+ * Windows 95 n'exporte que la famille `_fstat` d'origine — les variantes 64 bits
+ * sont arrivees bien plus tard. Mesure : un binaire qui n'inclut que `<cstdio>`
+ * se charge, un binaire qui inclut `<fstream>` ne se charge pas.
+ *
+ * L'enjeu depasse les suites d'epreuve. Treize fichiers du projet emploient
+ * `<fstream>`, dont le coeur de `librecomp` — `recomp.cpp`, `pi.cpp`, `sp.cpp`.
+ * Sans cette fonction, le jeu ne se lierait pas pour cette cible.
+ *
+ * Ce dont libstdc++ se sert reellement est etroit : `showmanyc()` demande
+ * `st_mode` pour savoir si le descripteur designe un fichier ordinaire, et
+ * `st_size` pour dire combien d'octets restent a lire. Le reste de la structure
+ * est mis a zero plutot que rempli au jugé — une date fausse serait pire qu'une
+ * date absente, parce qu'elle aurait l'air d'une donnee.
+ */
+#include <sys/stat.h>
+#include <io.h>
+#include <errno.h>
+
+int _fstat64(int fd, struct _stat64 *st)
+{
+    HANDLE h;
+    DWORD  type, low, high = 0;
+
+    if (!st) {
+        errno = EINVAL;
+        return -1;
+    }
+    h = (HANDLE)_get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    memset(st, 0, sizeof(*st));
+    st->st_nlink = 1;
+
+    type = GetFileType(h);
+    if (type == FILE_TYPE_DISK) {
+        st->st_mode = _S_IFREG | _S_IREAD | _S_IWRITE;
+        low = GetFileSize(h, &high);
+        if (low == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) {
+            errno = EBADF;
+            return -1;
+        }
+        st->st_size = ((__int64)high << 32) | (__int64)low;
+    } else if (type == FILE_TYPE_CHAR) {
+        /* La console et NUL. `showmanyc` doit alors rendre « je ne sais pas »,
+           ce qu'il fait des lors que ce n'est pas un fichier ordinaire. */
+        st->st_mode = _S_IFCHR;
+    } else if (type == FILE_TYPE_PIPE) {
+        st->st_mode = _S_IFIFO;
+    } else {
+        errno = EBADF;
+        return -1;
+    }
+    return 0;
+}
+
+
 /* --- diagnostic ---------------------------------------------------------- */
 
 /* Il n'y a pas de debogueur attache : la reponse est toujours la meme, et elle
@@ -301,3 +365,6 @@ REDIRECT(TryEnterCriticalSection,        "@4");
 REDIRECT(AddVectoredExceptionHandler,    "@8");
 REDIRECT(RemoveVectoredExceptionHandler, "@4");
 REDIRECT(CreateSemaphoreW,               "@16");
+/* cdecl : pas de suffixe de taille d'arguments, a la difference des
+   fonctions de KERNEL32 ci-dessus. */
+REDIRECT(_fstat64,                       "");

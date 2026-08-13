@@ -71,6 +71,7 @@ bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
     }
     const auto temporary = g_one_shot_path.string() + ".tmp";
     {
+        // DKR-WIN95-ALLOW: `temporary` est deja une std::string — la ligne au-dessus la fabrique par .string() + ".tmp" — et non un path : l'ouverture est donc bien etroite. Le controle lit du texte et ne peut pas le savoir.
         std::ofstream output(temporary, std::ios::trunc);
         output << mask << '\n';
         output.flush();
@@ -108,7 +109,7 @@ void dkr::runtime::magic_codes::configure(
     const std::filesystem::path& config_directory) {
     std::lock_guard lock(g_queue_file_guard);
     g_one_shot_path = config_directory / "magic-codes-next-launch.txt";
-    std::ifstream input(g_one_shot_path);
+    std::ifstream input(g_one_shot_path.string());
     std::uint32_t mask = 0U;
     if (input) {
         unsigned long long parsed = 0U;

@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     }
 
     const std::filesystem::path path = std::filesystem::u8path(argv[1]);
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(path.string(), std::ios::binary);
     if (!input) {
         std::cerr << "Could not open ROM: " << path.string() << '\n';
         return 3;

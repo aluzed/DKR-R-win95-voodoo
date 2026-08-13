@@ -103,7 +103,7 @@ std::uint32_t UsedBytes(const VirtualPak& pak) {
 }
 
 bool DecodePak(const std::filesystem::path& path, VirtualPak& pak) {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(path.string(), std::ios::binary);
     if (!input) {
         return false;
     }
@@ -186,7 +186,7 @@ bool SavePakLocked(int channel, VirtualPak& pak) {
     const std::filesystem::path temporary = path.string() + ".tmp";
     const std::filesystem::path backup = path.string() + ".bak";
     {
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        std::ofstream output(temporary.string(), std::ios::binary | std::ios::trunc);
         if (!output) {
             return false;
         }
@@ -370,7 +370,7 @@ bool dkr::runtime::pak::self_test(const std::filesystem::path& directory,
 
     const std::filesystem::path path = PakPath(channel);
     {
-        std::fstream output(path, std::ios::binary | std::ios::in | std::ios::out);
+        std::fstream output(path.string(), std::ios::binary | std::ios::in | std::ios::out);
         if (!output) {
             error = "could not open the test Pak for corruption recovery";
             return false;

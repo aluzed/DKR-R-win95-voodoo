@@ -429,6 +429,8 @@ if(BUILD_TESTING)
     )
     target_include_directories(DKRSaveManagerTests PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
+        # `save_manager.cpp` passe par `win95/fileio.hpp` — E02-S05.
+        "${DKRPORT_ROOT}/platform"
     )
     add_test(NAME DKRSaveManager COMMAND DKRSaveManagerTests)
 

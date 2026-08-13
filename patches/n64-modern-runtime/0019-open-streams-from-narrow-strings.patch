@@ -1,0 +1,87 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Open streams from path.string(), never from the path
+
+On MinGW, std::filesystem::path::value_type is wchar_t. Passing a path to a
+stream constructor therefore opens the file through _wfopen -- the wide CRT --
+and Windows 95 exports that whole family as stubs: the binary loads, and every
+open silently fails.
+
+The failure is not obvious from the code. It surfaced as a save test dying on
+"Could not create the temporary save file" while the same code passed on the
+host, and the import table was no help: _wfopen is present, because a stub is
+present. Measured on the machine with tools/win95/witnesses/wide_stream_probe.cpp:
+
+    ofstream(path)             FAILS
+    ofstream(path.string())    works
+    ifstream(path)             FAILS
+    ifstream(path.string())    works
+
+path.string() is narrow on every platform and yields the same bytes elsewhere,
+so this costs nothing on the targets that already worked. It is applied to the
+five sites librecomp uses outside its mod system.
+
+---
+
+--- a/librecomp/src/files.cpp
++++ b/librecomp/src/files.cpp
+@@ -4,14 +4,29 @@
+ constexpr std::u8string_view backup_suffix = u8".bak";
+ constexpr std::u8string_view temp_suffix = u8".temp";
+ 
++// Streams are opened from path.string() and never from the path itself.
++//
++// On MinGW, std::filesystem::path::value_type is wchar_t, so passing a path to
++// a stream constructor opens the file through _wfopen -- the wide CRT. Windows
++// 95 exports that family as stubs: the binary loads and every open fails.
++//
++// Measured on the machine (tools/win95/witnesses/wide_stream_probe.cpp):
++//
++//     ofstream(path)             FAILS
++//     ofstream(path.string())    works
++//     ifstream(path)             FAILS
++//     ifstream(path.string())    works
++//
++// path.string() is narrow on every platform and identical elsewhere, so this
++// costs nothing on the targets that were already working.
+ std::ifstream recomp::open_input_backup_file(const std::filesystem::path& filepath, std::ios_base::openmode mode) {
+     std::filesystem::path backup_path{filepath};
+     backup_path += backup_suffix;
+-    return std::ifstream{backup_path, mode};
++    return std::ifstream{backup_path.string(), mode};
+ }
+ 
+ std::ifstream recomp::open_input_file_with_backup(const std::filesystem::path& filepath, std::ios_base::openmode mode) {
+-    std::ifstream ret{filepath, mode};
++    std::ifstream ret{filepath.string(), mode};
+ 
+     // Check if the file failed to open and open the corresponding backup file instead if so.
+     if (!ret.good()) {
+@@ -24,7 +39,7 @@
+ std::ofstream recomp::open_output_file_with_backup(const std::filesystem::path& filepath, std::ios_base::openmode mode) {
+     std::filesystem::path temp_path{filepath};
+     temp_path += temp_suffix;
+-    std::ofstream temp_file_out{ temp_path, mode };
++    std::ofstream temp_file_out{ temp_path.string(), mode };
+ 
+     return temp_file_out;
+ }
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -158,7 +158,7 @@
+ static std::vector<uint8_t> read_file(const std::filesystem::path& path) {
+     std::vector<uint8_t> ret;
+ 
+-    std::ifstream file{ path, std::ios::binary};
++    std::ifstream file{ path.string(), std::ios::binary};
+ 
+     if (file.good()) {
+         file.seekg(0, std::ios::end);
+@@ -172,7 +172,7 @@
+ }
+ 
+ bool write_file(const std::filesystem::path& path, const std::vector<uint8_t>& data) {
+-    std::ofstream out_file{ path, std::ios::binary };
++    std::ofstream out_file{ path.string(), std::ios::binary };
+ 
+     if (!out_file.good()) {
+         return false;

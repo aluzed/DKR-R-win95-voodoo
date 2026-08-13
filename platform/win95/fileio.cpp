@@ -436,6 +436,28 @@ dkr_file_result dkr_file_current_directory(char *out, size_t out_size)
     return (n == 0 || n >= out_size) ? DKR_FILE_ERR_PATH : DKR_FILE_OK;
 }
 
+dkr_file_result dkr_file_temp_directory(char *out, size_t out_size)
+{
+    DWORD n;
+    size_t len;
+    if (!out || out_size == 0) {
+        return DKR_FILE_ERR_PATH;
+    }
+    n = GetTempPathA((DWORD)out_size, out);
+    if (n == 0 || n >= out_size) {
+        return DKR_FILE_ERR_PATH;
+    }
+    /* `GetTempPathA` termine par une contre-oblique, la ou
+       `std::filesystem::temp_directory_path` ne le fait pas. Sans cela un
+       `path / "x"` produirait un double separateur, et les deux branches
+       rendraient des chemins differents pour le meme repertoire. */
+    len = strlen(out);
+    if (len > 1 && (out[len - 1] == '\\' || out[len - 1] == '/')) {
+        out[len - 1] = '\0';
+    }
+    return DKR_FILE_OK;
+}
+
 struct dkr_dir {
     HANDLE           handle;
     WIN32_FIND_DATAA data;
@@ -950,6 +972,20 @@ dkr_file_result dkr_file_current_directory(char *out, size_t out_size)
         return DKR_FILE_ERR_PATH;
     }
     return getcwd(out, out_size) ? DKR_FILE_OK : DKR_FILE_ERR_PATH;
+}
+
+dkr_file_result dkr_file_temp_directory(char *out, size_t out_size)
+{
+    const char *tmp = getenv("TMPDIR");
+    if (!out || out_size == 0) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (!tmp || !*tmp) { tmp = "/tmp"; }
+    if (strlen(tmp) + 1 > out_size) {
+        return DKR_FILE_ERR_PATH;
+    }
+    strcpy(out, tmp);
+    return DKR_FILE_OK;
 }
 
 #endif /* _WIN32 */

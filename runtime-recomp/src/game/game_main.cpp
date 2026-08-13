@@ -24,6 +24,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include "win95/fileio.hpp"
 
 #ifndef _WIN32
 #include <cerrno>
@@ -34,7 +35,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <DbgHelp.h>
-#include "win95/fileio.hpp"
 #endif
 
 extern RspUcodeFunc dkrAspMain;

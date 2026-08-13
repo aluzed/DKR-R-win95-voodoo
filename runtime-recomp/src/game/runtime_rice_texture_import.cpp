@@ -224,7 +224,7 @@ bool convert_archive(RT64::FileSystem& archive,
         {"shiftFilters", nlohmann::json::array()},
         {"extraFiles", nlohmann::json::array()}
     };
-    std::ofstream database_file(destination / "rt64.json", std::ios::trunc);
+    std::ofstream database_file((destination / "rt64.json").string(), std::ios::trunc);
     if (!database_file) {
         error = "Could not create the native RT64 database for the Rice pack.";
         return false;
@@ -242,7 +242,8 @@ bool convert_archive(RT64::FileSystem& archive,
         {"opaqueRgbImages", result.opaque_rgb},
         {"nativeAllImages", result.all_images}
     };
-    std::ofstream metadata_file(destination / "dkr-r-rice-import.json", std::ios::trunc);
+    std::ofstream metadata_file((destination / "dkr-r-rice-import.json").string(),
+                               std::ios::trunc);
     if (!metadata_file) {
         error = "Could not write the Rice import report.";
         return false;

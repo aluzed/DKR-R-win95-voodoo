@@ -11,13 +11,13 @@
 #include <mutex>
 #include <sstream>
 #include <vector>
+#include "win95/fileio.hpp"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
-#include "win95/fileio.hpp"
 #endif
 
 namespace {
@@ -90,7 +90,7 @@ bool ReadFileBounded(const std::filesystem::path& path,
     if (error || size > maximum_size) {
         return false;
     }
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(path.string(), std::ios::binary);
     if (!input) {
         return false;
     }
@@ -161,7 +161,22 @@ using ImageValidator = bool (*)(const std::filesystem::path&,
 bool ReplaceFileAtomic(const std::filesystem::path& temporary,
                        const std::filesystem::path& destination,
                        std::error_code& error) {
-#if defined(_WIN32)
+// Windows 95 est ecarte du chemin MoveFileEx, et le nom de cette fonction
+// devient alors une promesse qu'elle ne tient pas : **il n'y a pas de
+// remplacement atomique sur cette cible**.
+//
+// MoveFileExA comme MoveFileExW y sont exportees, avec du vrai code, et
+// refusent : ERROR_CALL_NOT_IMPLEMENTED. C'est la troisieme categorie d'API
+// indisponible, celle qu'aucune analyse de la table d'imports ne revele —
+// mesuree par E02-S05, et retrouvee ici sur la machine, la suite mourant sur
+// « Cette fonction n'est valide qu'en mode Win32 ».
+//
+// Le repli passe par le point d'indirection, dont `rename` efface la cible
+// puis renomme. La fenetre que cela ouvre est assumee et decrite dans
+// platform/win95/fileio.h : ce qui est garanti n'est pas « on ne perd jamais
+// la derniere ecriture » mais « on ne perd jamais une sauvegarde valide » —
+// et c'est pour cela que l'appelant a deja pris une copie de secours.
+#if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
     if (MoveFileExW(temporary.c_str(), destination.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
         error.clear();
@@ -187,7 +202,7 @@ bool WriteAtomic(const std::filesystem::path& destination,
     }
     const std::filesystem::path temporary = destination.string() + ".importing";
     {
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        std::ofstream output(temporary.string(), std::ios::binary | std::ios::trunc);
         if (!output) {
             error = "Could not create the temporary save file.";
             return false;

@@ -64,10 +64,14 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
 
 ## Critères d'acceptation
 
-- [ ] Les sauvegardes EEPROM fonctionnent sous Windows 95 : écriture, relecture,
-      persistance après redémarrage.
-- [ ] Les quatre Controller Pak virtuels fonctionnent, autotest inclus
-      (`--self-test-pak` existe déjà dans les scripts de build).
+- [~] Les sauvegardes EEPROM fonctionnent sous Windows 95 : écriture et
+      relecture sont éprouvées sur la machine par `save_manager_tests`
+      (cycle de vie complet, aller-retour, rejet d'une sauvegarde corrompue).
+      **La persistance après redémarrage reste à vérifier** : la suite crée et
+      détruit son arborescence dans la même exécution.
+- [~] Les quatre Controller Pak virtuels : le cycle de vie passe sur la machine
+      (`controller pak lifecycle`). L'autotest `--self-test-pak` des scripts de
+      build n'a pas encore été exécuté sur la cible.
 - [x] Les noms de fichiers sont compatibles 8.3, ou le comportement FAT16 est
       vérifié — les deux : les noms longs fonctionnent sur ce volume, et les noms
       que la couche fabrique tiennent en 8.3 pour rester utilisables ailleurs.
@@ -76,7 +80,12 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
       séquence garantit et ce qu'elle ne garantit pas est écrit.
 - [ ] Une sauvegarde produite par DKR-R moderne est lue par la version Win95, et
       réciproquement.
-- [ ] `dkr_save_codec_tests` et `save_manager_tests` passent sur la cible.
+- [x] `dkr_save_codec_tests` et `save_manager_tests` passent sur la cible —
+      relevé du 13 août 2026, les quatre phases puis PASS. Il aura fallu
+      lever trois obstacles que seule l'exécution révélait : `<fstream>`
+      inchargeable, les flux ouverts sur un `path` qui passent par l'API
+      large, et `MoveFileExW` appelée directement. Voir
+      [docs/research/win95-flux-larges.md](../../research/win95-flux-larges.md).
 - [~] Les codes sont distingués et portent un texte ; le support absent est
       vérifié sur la machine (erreur 21). Le disque plein reste à provoquer
       pour de bon, ce qui demande de remplir un volume d'essai.
