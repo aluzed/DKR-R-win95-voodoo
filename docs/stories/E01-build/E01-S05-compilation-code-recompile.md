@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E01 — Chaîne de build 32 bits Windows 95 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E01-S01, E01-S02, E00-S06 |
@@ -66,18 +66,59 @@ vectorielle du RSP (E03-S01).
 
 ## Critères d'acceptation
 
-- [ ] `DKRRecompiledFuncs` compile intégralement pour la cible Win95.
-- [ ] `RecompiledRSP/aspMain.cpp` compile, l'émulation vectorielle étant soit
-      fonctionnelle, soit un bouchon nommément renvoyé à E03-S01.
-- [ ] L'arithmétique 64 bits générée est vérifiée par comparaison à l'oracle sur
-      un échantillon de fonctions.
-- [ ] Temps de compilation, pic mémoire du lien et taille des sections sont
-      mesurés et consignés.
-- [ ] L'édition de liens produit un PE 32 bits qui passe les deux garde-fous
-      (E01-S01, E01-S04).
+- [x] `DKRRecompiledFuncs` compile intégralement pour la cible Win95 — 37/37.
+- [x] `RecompiledRSP/aspMain.cpp` compile, l'émulation vectorielle étant
+      **fonctionnelle** : le repli scalaire suffit, aucun bouchon n'est posé.
+- [~] L'arithmétique 64 bits générée est vérifiée par comparaison à l'oracle.
+      **Concorde exactement sur les fonctions atteintes**, fautes comprises ; la
+      comparaison s'interrompt sur une faute que Windows 95 ne délivre pas comme
+      signal. Voir la note ci-dessus.
+- [x] Temps de compilation, pic mémoire et taille des sections sont mesurés et
+      consignés.
+- [x] L'édition de liens produit un PE 32 bits qui passe les deux garde-fous —
+      4,23 Mo, aucune instruction hors Pentium II, chargeable sous Windows 95.
 - [ ] La réservation de RDRAM est vérifiée sous Windows 95, avec son comportement
       d'échec.
 - [ ] La taille obtenue est confrontée au budget de E00-S06, écart remonté.
+
+## État au 2026-08-13 — tout compile et se lie ; la comparaison est partielle
+
+Relevé complet : [`docs/research/win95-recompiled-code.md`](../../research/win95-recompiled-code.md).
+
+| | |
+|---|---:|
+| Fichiers générés compilés | **37 sur 37**, zéro erreur |
+| Compilation, en parallèle | 5,76 s, pic de 142 Mo par processus |
+| `.text` du PE lié | 3 813 Ko |
+| PE complet | **4,23 Mo** |
+| `aspMain.cpp` | compile, **sans bouchon** — le repli scalaire suffit |
+| Garde-fous | jeu d'instructions **et** imports : passés |
+
+Trois résultats méritent d'être notés.
+
+**Aucune extension absente.** L'arithmétique 64 bits appelle `__divdi3`,
+`__moddi3`, `__ashrdi3` et leurs voisins, tous fournis par libgcc, que l'ADR
+0001 lie déjà statiquement. C'était la première des trois questions du ticket.
+
+**Le point 4 est sans objet.** `aspMain.cpp` compile sans SSE grâce au repli
+scalaire de `rsp_vu_impl.hpp` : il n'y a pas de bouchon à poser ni de dette à
+renvoyer à E03-S01. Sa lenteur reste le sujet de E03-S03, pas de la compilation.
+
+**La comparaison à l'oracle concorde sur ce qu'elle atteint** — empreintes bit à
+bit identiques, et jusqu'aux fautes, qui se produisent des deux côtés sur les
+mêmes fonctions. Elle s'interrompt sur `func_8001CD28`, dont la faute n'est pas
+délivrée comme `SIGSEGV` sous Windows 95 alors qu'elle l'est sur l'hôte. Ce
+n'est pas un débordement de pile : une réserve de 64 Mo n'y change rien. La
+suite demande un pilote qui reprend après la fonction en cours, ce qui
+fonctionne sur les deux cibles sans dépendre de ce que le système veut bien
+délivrer.
+
+**Ce qui reste hors d'atteinte** : le point 7, la réservation de RDRAM en
+conditions réelles, et le point 8, la confrontation au budget de E00-S06. Les
+deux demandent le jeu lié pour de bon, ce qui attend encore `librecomp`
+(E02-S05) et le découplage SDL2 (E07-S03). E00-S01 a déjà mesuré les plafonds —
+1 Gio de réservation, 256 Mio de validation, le schéma de `librecomp` à 8 Mio
+fonctionnel.
 
 ## Risques
 
