@@ -7,7 +7,6 @@
 
 #include "recomp.h"
 
-#include <SDL.h>
 
 #include <array>
 #include <atomic>
@@ -458,15 +457,9 @@ extern "C" void dkr_extended_frustum_begin(std::uint8_t* rdram,
         g_frustum_scope.active = false;
     }
 
-    auto* window = static_cast<SDL_Window*>(
-        dkr::runtime::platform::sdl_window());
-    if (window == nullptr) {
-        return;
-    }
     int width = 0;
     int height = 0;
-    SDL_GetWindowSize(window, &width, &height);
-    if (width <= 0 || height <= 0) {
+    if (!dkr::runtime::platform::window_size(width, height)) {
         return;
     }
     const int layout = static_cast<std::int32_t>(

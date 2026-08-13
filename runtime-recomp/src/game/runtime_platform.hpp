@@ -11,6 +11,25 @@ namespace dkr::runtime::platform {
 bool initialise();
 void shutdown();
 
+// Taille de la fenetre de jeu, en pixels.
+//
+// Declaree **hors** du garde RT64, contrairement a `sdl_window()` juste en
+// dessous, et c'est tout l'objet de cette fonction. Deux endroits n'avaient
+// besoin que de cette taille — `runtime_enhancements.cpp` pour le rapport
+// d'aspect du tronc de vision, `runtime_stubs.cpp` pour la meme chose — et
+// l'obtenaient en recuperant le `SDL_Window*` pour appeler `SDL_GetWindowSize`.
+// Cela faisait dependre de SDL2 du code qui n'a que faire de SDL2 : la logique
+// qui suit ne travaille que sur un rapport largeur/hauteur.
+//
+// C'est la separation que demande E07-S03 : obtenir la taille est **de la
+// plate-forme**, tout ce qui s'en deduit est **de la logique**, et seule la
+// premiere se dedouble par cible.
+//
+// Rend false si la fenetre n'existe pas encore ou si la cible n'en a pas ;
+// `width` et `height` sont alors laisses intacts. Un appelant qui recoit false
+// doit renoncer, pas supposer une taille.
+bool window_size(int& width, int& height);
+
 #if DKR_RUNTIME_HAS_RT64
 ultramodern::renderer::WindowHandle create_window();
 ultramodern::renderer::WindowHandle prepare_window_for_game();

@@ -327,6 +327,38 @@ void dkr::runtime::platform::pump_window_events(void*) {
 void* dkr::runtime::platform::sdl_window() {
     return g_window;
 }
+#endif  // DKR_RUNTIME_HAS_RT64
+
+// La seule implementation de `window_size`, des deux cotes du garde. Ce qui
+// change d'une cible a l'autre est d'ou vient la taille ; ce qu'on en fait ne
+// change pas, et reste donc ailleurs.
+bool dkr::runtime::platform::window_size(int& width, int& height) {
+#if DKR_RUNTIME_HAS_RT64
+    auto* window = static_cast<SDL_Window*>(g_window);
+    if (window == nullptr) {
+        return false;
+    }
+    int w = 0;
+    int h = 0;
+    SDL_GetWindowSize(window, &w, &h);
+    if (w <= 0 || h <= 0) {
+        return false;
+    }
+    width = w;
+    height = h;
+    return true;
+#else
+    // La cible Windows 95 n'a pas encore de fenetre : E06-S01 la lui donnera,
+    // et c'est ici qu'elle se branchera. Renvoyer false plutot qu'une taille
+    // inventee — un appelant qui recoit false renonce, la ou une taille fausse
+    // lui ferait calculer un rapport d'aspect faux sans qu'il s'en apercoive.
+    (void)width;
+    (void)height;
+    return false;
+#endif
+}
+
+#if DKR_RUNTIME_HAS_RT64
 
 bool dkr::runtime::platform::handle_window_shortcut(
     const void* raw_event, bool renderer_active) {

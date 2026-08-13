@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E07 — Réduction de périmètre |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P1 |
 | **Estimation** | M |
 | **Dépend de** | E06-S01, E06-S02, E06-S03, E07-S02 |
@@ -58,15 +58,80 @@ cible moderne.
 
 ## Critères d'acceptation
 
-- [ ] Chaque usage de SDL2 est classé plateforme ou logique.
-- [ ] L'interface de plateforme est minimale et couvre les deux implémentations.
-- [ ] La logique de correspondance des entrées et la politique audio restent
-      uniques, non dupliquées.
-- [ ] La sélection se fait à la compilation.
-- [ ] La cible moderne est inchangée, vérifié par les tests et par comparaison de
-      comportement.
-- [ ] Aucun symbole SDL2 dans le binaire Win95.
+- [x] Chaque usage de SDL2 est classé plateforme ou logique.
+- [~] L'interface de plateforme est minimale — une fonction — et couvre les deux
+      implémentations **pour la fenêtre**. Entrées, audio et temps attendent E06.
+- [x] La logique reste unique : rien n'a été dupliqué, et deux morceaux
+      portables enfermés derrière un garde de plate-forme en ont été sortis.
+- [x] La sélection se fait à la compilation, sans branchement à l'exécution.
+- [~] La cible moderne passe ses **18 suites**. Le comportement avec RT64 allumé
+      n'est pas vérifié ici, faute de SDL2 sur ce poste.
+- [~] Aucun fichier compilé pour Win95 n'inclut SDL2. Le contrôle sur le
+      binaire viendra quand le jeu se liera.
 - [ ] Les suites de tests conservées passent sur les deux cibles.
+
+## État au 2026-08-13 — le lien est coupé, une seule fonction a suffi
+
+Le recensement de l'étape 1 donne un résultat plus favorable que le ticket ne le
+laissait craindre. **L'interrupteur RT64 avait déjà fait presque tout le
+travail** :
+
+| Fichier | Occurrences | Hors garde RT64 | Verdict |
+|---|---:|---:|---|
+| `runtime_platform.cpp` | 189 | 0 | plate-forme, remplacé par E06 |
+| `runtime_ui.cpp`, `rt64_renderer.cpp` | 87 | — | **exclus du build** quand RT64 est éteint |
+| `runtime_input.cpp` | 82 | 0 | plate-forme, sous garde |
+| `runtime_input.hpp`, `runtime_ui.hpp` | 8 | 8 | **déclaration anticipée seule** — aucune inclusion de SDL |
+| `game_main.cpp`, `runtime_stubs.cpp` | 4 | 0 | sous garde |
+| **`runtime_enhancements.cpp`** | **3** | **3** | **le seul lien réel** |
+
+Un seul fichier dépendait vraiment de SDL2 hors garde, et il n'en voulait
+qu'**une chose** : la taille de la fenêtre, pour un rapport d'aspect. Tout ce qui
+en découlait — l'échelle du tronc de vision, la politique de présentation — est
+de la logique portable.
+
+D'où l'interface, qui tient en une fonction :
+
+```cpp
+bool dkr::runtime::platform::window_size(int& width, int& height);
+```
+
+Déclarée **hors** du garde, implémentée une fois de chaque côté. `runtime_stubs.cpp`
+faisait exactement la même danse `sdl_window()` + `SDL_GetWindowSize` et passe
+par le même accesseur : la duplication contre laquelle le ticket met en garde est
+retirée au lieu d'être ajoutée.
+
+Deux découpages hérités, trouvés en compilant, ont été rectifiés au passage —
+tous deux du **code portable enfermé derrière un garde de plate-forme**, ce qui
+est le défaut exact que ce ticket cherche à défaire :
+
+- `RdramAddress` et `g_title_intro_tail_gate` vivaient sous le garde RT64 dans
+  `runtime_stubs.cpp` alors que `dkr_title_intro_audio_tail`, qui les emploie,
+  n'en dépend pas.
+- Le gestionnaire de plantage de `game_main.cpp` lisait les registres x86-64 par
+  leur nom. Une branche i386 lui a été ajoutée, et `StackWalk64` reçoit
+  désormais le type de machine qui convient — le lui donner faux remonterait une
+  pile de valeurs fantaisistes, ce qui est pire que pas de pile du tout.
+
+### Résultat
+
+| | |
+|---|---|
+| Sources du jeu compilant pour Windows 95 | **17 sur 17** |
+| Suites de la cible moderne | **18 sur 18** |
+| Suites de la cible Win95 | 4 sur 4 |
+| Jeu d'instructions | aucune hors Pentium II |
+
+**Ce qui n'est pas vérifié ici** : le comportement de la cible moderne avec RT64
+*allumé*, faute de SDL2 sur ce poste. Les 18 suites couvrent la logique portable,
+qui est précisément ce que ce ticket ne devait pas toucher ; la branche RT64 de
+`window_size` reproduit le code retiré à l'identique — même test de nullité,
+même appel, même seuil.
+
+Les critères qui restent ouverts appartiennent à E06 : l'interface ne couvre
+aujourd'hui que la fenêtre, parce que c'est tout ce qui manquait pour compiler.
+Entrées, audio et temps y viendront quand leurs implémentations Win32
+existeront.
 
 ## Risques
 

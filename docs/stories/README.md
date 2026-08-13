@@ -41,10 +41,10 @@ reste de la pile est spécifique aux systèmes modernes.
 | [E04](E04-hle-f3ddkr/) | HLE F3DDKR indépendant de RT64 | 8 | 8 | 0 |
 | [E05](E05-glide/) | Backend Glide | 8 | 8 | 0 |
 | [E06](E06-plateforme/) | Plateforme Win95 | 6 | 6 | 0 |
-| [E07](E07-perimetre/) | Réduction de périmètre | 3 | 3 | 0 |
+| [E07](E07-perimetre/) | Réduction de périmètre | 3 | 2 | **1** |
 | [E08](E08-perf/) | Performance | 4 | 4 | 0 |
 | [E09](E09-qa/) | Intégration, QA et distribution | 5 | 4 | **1** |
-| | **Total** | **56** | **49** | **7** |
+| | **Total** | **56** | **48** | **8** |
 
 ### En cours
 
@@ -52,6 +52,7 @@ reste de la pile est spécifique aux systèmes modernes.
 |---|---|
 | [E09-S01](E09-qa/E09-S01-environnement-test-emule.md) | `REVIEW` — **environnement complet** : Windows 95 OSR2.5 sur Pentium II / Voodoo 2, pilote 3dfx installé, **démonstration Glide rendant un triangle Gouraud**, instantané de référence figé, machine pilotable sans écran. |
 | [E00-S04](E00-cadrage/E00-S04-spike-cout-rsp-sans-sse.md) | `REVIEW` — **le microcode audio recompilé ne peut pas tenir le temps réel** : la cible n'atteint que **3,9 %** du débit vectoriel du RSP. Le repli scalaire existait déjà ; MMX ne sauverait pas ce chemin. **[E03-S03](E03-rsp/E03-S03-repli-mixeur-haut-niveau.md) passe de contingence à chemin critique.** |
+| [E07-S03](E07-perimetre/E07-S03-decouplage-sdl2.md) | `IN_PROGRESS` — le lien avec SDL2 est coupé : **un seul fichier en dépendait hors garde RT64**, et il n'en voulait que la taille de la fenêtre. Une fonction, `platform::window_size`, suffit ; `runtime_stubs.cpp` passe par le même accesseur plutôt que de dupliquer. **Les 17 sources du jeu compilent pour Windows 95**, et les 18 suites de la cible moderne passent. |
 | [E01-S05](E01-build/E01-S05-compilation-code-recompile.md) | `IN_PROGRESS` — **le code recompilé compile et se lie pour Windows 95** : 37 fichiers sur 37, un PE de 4,23 Mo qui passe les deux garde-fous, `aspMain.cpp` compris et sans bouchon. Aucune extension absente — l'arithmétique 64 bits passe par libgcc. La comparaison à l'oracle **concorde bit à bit sur les fonctions atteintes**, fautes comprises ; elle s'interrompt sur une faute que Windows 95 ne délivre pas comme signal. **`librecomp` compile également** — 26 unités sur 26 — les « six erreurs » de E01-S02 se réduisant à un seul `static_assert` plus des chemins d'inclusion, et `allocation_size`, qui valait **zéro** en 32 bits, suit désormais la cible. |
 | [E02-S05](E02-systeme/E02-S05-sauvegardes-eeprom-controller-pak.md) | `IN_PROGRESS` — couche d'écriture durable livrée, **40 contrôles sans échec sur la cible**, les coupures étant simulées plutôt qu'attendues. Le ticket avait raison sur `MoveFileEx`, mais sa forme d'indisponibilité révèle une **troisième catégorie d'API absente** : exportée, avec du vrai code, et refusant à l'exécution — que ni le contrôle d'imports ni le relevé des bouchons ne peuvent voir. |
 | [E02-S03](E02-systeme/E02-S03-horloge-timers-cadence.md) | `IN_PROGRESS` — base de temps livrée et mesurée : `QueryPerformanceCounter` à **1 193 180 Hz, soit le PIT 8254**, 4,19 µs, 200 000 lectures sans un recul, et une **dérive de −0,0000 % sur 300 s** sur la cible. Deux suppositions du ticket sont démenties (`GetTickCount` est à 9 ms et cent fois moins chère ; `timeBeginPeriod(1)` ne change rien ici). Défaut trouvé en chemin : `ultramodern` dérive `osGetCount` de `high_resolution_clock`, qui est **l'horloge murale** sur cette chaîne — le brancher sur cette base est donc justifié par la mesure. |

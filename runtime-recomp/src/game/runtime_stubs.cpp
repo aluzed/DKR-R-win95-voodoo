@@ -25,6 +25,20 @@
 
 namespace {
 
+// Ces deux-la sont **portables** et vivaient pourtant derriere le garde RT64,
+// alors que la logique qui les emploie — `dkr_title_intro_audio_tail`, plus bas —
+// n'en depend pas. Une cible sans RT64 ne compilait donc pas ce fichier, pour
+// une raison qui n'avait rien a voir avec le rendu.
+//
+// C'est le mauvais decoupage que E07-S03 cherche precisement a defaire :
+// separer ce qui depend de la plate-forme de ce qui n'en depend pas, plutot que
+// de laisser la frontiere passer la ou l'historique l'a mise.
+gpr RdramAddress(std::uint32_t address) {
+    return static_cast<gpr>(static_cast<std::int32_t>(address));
+}
+
+dkr::runtime::intro::TailGate g_title_intro_tail_gate{};
+
 #if DKR_RUNTIME_HAS_RT64
 constexpr std::uint32_t kOrthoMatrixAddress = 0x800DD2B8U;
 constexpr std::uint32_t kViewProjectionMatrixAddress = 0x80120F20U;
@@ -56,7 +70,6 @@ bool g_shadow_interpolation_active = false;
 bool g_vehicle_part_interpolation_active = false;
 bool g_billboard_interpolation_active = false;
 bool g_surface_interpolation_active = false;
-dkr::runtime::intro::TailGate g_title_intro_tail_gate{};
 std::array<float, 8> g_saved_sky_projection_columns{};
 bool g_sky_cover_active = false;
 
@@ -65,14 +78,9 @@ float ExpandedCoverScale() {
     if (ultramodern::renderer::get_graphics_config().ar_option != AspectRatio::Expand) {
         return 1.0F;
     }
-    auto* window = static_cast<SDL_Window*>(dkr::runtime::platform::sdl_window());
-    if (window == nullptr) {
-        return 1.0F;
-    }
     int width = 0;
     int height = 0;
-    SDL_GetWindowSize(window, &width, &height);
-    if (width <= 0 || height <= 0) {
+    if (!dkr::runtime::platform::window_size(width, height)) {
         return 1.0F;
     }
     return std::max(1.0F,
@@ -87,10 +95,6 @@ float ReadRdramFloat(std::uint8_t* rdram, std::uint32_t address) {
 void WriteRdramFloat(std::uint8_t* rdram, std::uint32_t address, float value) {
     const auto signed_address = static_cast<gpr>(static_cast<std::int32_t>(address));
     MEM_W(0, signed_address) = std::bit_cast<std::uint32_t>(value);
-}
-
-gpr RdramAddress(std::uint32_t address) {
-    return static_cast<gpr>(static_cast<std::int32_t>(address));
 }
 
 bool AppendPresentationGroupCommand(std::uint8_t* rdram,

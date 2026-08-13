@@ -133,6 +133,7 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
     std::fprintf(stderr, "[boot][crash] module-base=0x%016llX rva=0x%llX\n",
                  static_cast<unsigned long long>(module_base),
                  static_cast<unsigned long long>(fault_address - module_base));
+#if defined(_M_AMD64) || defined(__x86_64__)
     std::fprintf(stderr,
                  "[boot][crash] registers rcx=0x%016llX rdx=0x%016llX "
                  "r8=0x%016llX r9=0x%016llX rsp=0x%016llX\n",
@@ -160,14 +161,42 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
                  static_cast<unsigned long long>(exception->ContextRecord->R14),
                  static_cast<unsigned long long>(exception->ContextRecord->R15),
                  static_cast<unsigned long long>(exception->ContextRecord->Rip));
+#else
+    // Le meme releve pour un x86 32 bits. Les registres n'ont pas les memes
+    // noms dans CONTEXT — Eax et non Rax — et il y en a huit au lieu de seize.
+    // Ce n'est pas une degradation : ce sont les registres que la machine a.
+    std::fprintf(stderr,
+                 "[boot][crash] registers eax=0x%08lX ebx=0x%08lX "
+                 "ecx=0x%08lX edx=0x%08lX\n",
+                 static_cast<unsigned long>(exception->ContextRecord->Eax),
+                 static_cast<unsigned long>(exception->ContextRecord->Ebx),
+                 static_cast<unsigned long>(exception->ContextRecord->Ecx),
+                 static_cast<unsigned long>(exception->ContextRecord->Edx));
+    std::fprintf(stderr,
+                 "[boot][crash] registers esi=0x%08lX edi=0x%08lX "
+                 "ebp=0x%08lX esp=0x%08lX eip=0x%08lX\n",
+                 static_cast<unsigned long>(exception->ContextRecord->Esi),
+                 static_cast<unsigned long>(exception->ContextRecord->Edi),
+                 static_cast<unsigned long>(exception->ContextRecord->Ebp),
+                 static_cast<unsigned long>(exception->ContextRecord->Esp),
+                 static_cast<unsigned long>(exception->ContextRecord->Eip));
+#endif
 
     CONTEXT context = *exception->ContextRecord;
     STACKFRAME64 frame{};
+#if defined(_M_AMD64) || defined(__x86_64__)
     frame.AddrPC.Offset = context.Rip;
     frame.AddrPC.Mode = AddrModeFlat;
     frame.AddrFrame.Offset = context.Rbp;
     frame.AddrFrame.Mode = AddrModeFlat;
     frame.AddrStack.Offset = context.Rsp;
+#else
+    frame.AddrPC.Offset = context.Eip;
+    frame.AddrPC.Mode = AddrModeFlat;
+    frame.AddrFrame.Offset = context.Ebp;
+    frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = context.Esp;
+#endif
     frame.AddrStack.Mode = AddrModeFlat;
 
     alignas(SYMBOL_INFO) unsigned char symbol_storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME]{};
@@ -176,7 +205,15 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
     symbol->MaxNameLen = MAX_SYM_NAME;
 
     for (unsigned index = 0; index < 32; ++index) {
-        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame,
+        // Le type de machine doit suivre l'architecture, sinon StackWalk64
+        // interprete le cadre avec les mauvaises largeurs et remonte une pile
+        // de valeurs fantaisistes — ce qui est pire que pas de pile du tout.
+#if defined(_M_AMD64) || defined(__x86_64__)
+        constexpr DWORD kMachineType = IMAGE_FILE_MACHINE_AMD64;
+#else
+        constexpr DWORD kMachineType = IMAGE_FILE_MACHINE_I386;
+#endif
+        if (!StackWalk64(kMachineType, process, GetCurrentThread(), &frame,
                          &context, nullptr, SymFunctionTableAccess64, SymGetModuleBase64, nullptr) ||
             frame.AddrPC.Offset == 0) {
             break;
