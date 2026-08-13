@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | ~~L~~ **M** |
 | **Dépend de** | E01-S02, E01-S03 |
@@ -96,17 +96,82 @@ locales au fil, et leur validation.
 
 ## Critères d'acceptation
 
-- [ ] `platform/win95/threading.{h,cpp}` n'importe aucune API absente de
-      Windows 95 — vérifié par le garde-fou de E01-S04.
-- [ ] L'interface couvre les besoins relevés dans `ultramodern`, sans surplus.
-- [ ] La correspondance des priorités N64 → Win32 est écrite et justifiée.
-- [ ] La sémantique de réveil de l'attente conditionnelle est documentée et
-      correspond à ce qu'`ultramodern` suppose.
-- [ ] La différence de réentrance entre `CRITICAL_SECTION` et `std::mutex` est
-      documentée, et son effet sur le code appelant évalué.
-- [ ] Les tests passent sur l'hôte moderne et sous Windows 95 émulé.
-- [ ] Une exécution de stress d'au moins dix minutes passe sans réveil perdu ni
-      interblocage.
+- [x] `platform/win95/threading.{h,cpp}` n'importe aucune API absente de
+      Windows 95 — vérifié par le garde-fou de E01-S04, désormais doublé d'un
+      contrôle des exports **vides** (voir ci-dessous).
+- [x] L'interface couvre les besoins relevés dans `ultramodern`, sans surplus —
+      relevé fichier par fichier, et il est plus petit que prévu.
+- [x] La correspondance des priorités N64 → Win32 est écrite et justifiée. Le
+      résultat est qu'**elle n'existe pas** : l'ordre N64 est tenu par la file
+      logicielle d'`ultramodern`, pas par le système hôte. Ce qui est écrit, et
+      testé, est la table `ThreadPriority` → `THREAD_PRIORITY_*`.
+- [x] La sémantique de réveil de l'attente conditionnelle est documentée et
+      correspond à ce qu'`ultramodern` suppose — c'est un **sémaphore**, non une
+      variable de condition, et la propriété qui compte est que le signal
+      antérieur à l'attente n'est pas perdu.
+- [x] La différence de réentrance entre `CRITICAL_SECTION` et `std::mutex` est
+      documentée, et son effet évalué : `dkr_mutex` rétablit la non-réentrance
+      et la **signale** au lieu de s'interbloquer.
+- [x] Les tests passent sur l'hôte moderne et sous Windows 95 émulé — même
+      source, 48 contrôles sur la cible, 0 échec.
+- [x] Une exécution de stress d'au moins dix minutes passe sans réveil perdu ni
+      interblocage — **600 s sur la cible, 8 437 tours**, soit 8,4 millions de
+      réveils de sémaphore et 337 millions de verrouillages sous contention.
+      La machine est restée utilisable tout du long.
+
+## Résultat
+
+Livré : `platform/win95/threading.{h,cpp}`, `platform/win95/tests/test_threading.cpp`
+(hôte **et** `THREADS.EXE`), `tools/win95/find_stubs.py`, et le contrôle des
+exports vides dans `tools/win95/check_imports.py`.
+
+Documentation : [`docs/WIN95-THREADING.md`](../../WIN95-THREADING.md).
+
+### Ce que la mesure a changé au ticket
+
+Trois hypothèses du ticket sont tombées, et un bloquant qu'il n'avait pas vu est
+apparu :
+
+1. **Aucune variable de condition dans `ultramodern`.** Zéro occurrence. Le
+   morceau redouté — les reproduire sur des événements Win95 en perdant des
+   réveils — est sans objet. Le besoin réel est un sémaphore de comptage.
+
+2. **La correspondance de priorités N64 → Win32 n'a pas lieu d'être.**
+   `thread_queue_insert` tient l'ordre en logiciel et un seul fil de jeu court à
+   la fois : le système hôte n'arbitre jamais entre deux fils de jeu.
+
+3. **`CreateSemaphoreW` est un bouchon.** Exportée par Windows 95, elle rend 0 et
+   pose `ERROR_CALL_NOT_IMPLEMENTED`. `moodycamel::LightweightSemaphore`
+   l'appelle, et c'est le primitif de blocage de *tout* le planificateur. Côté
+   attente le blocage disparaît — les fils de jeu courent alors tous ensemble ;
+   côté signal `ReleaseSemaphore(NULL)` boucle sans fin et **fige la machine**.
+   Le pont de `compat.c` la fournit désormais.
+
+4. **`std::thread::join()` ne fonctionne pas sous Windows 95.** `pthread_join`
+   valide son descripteur par `GetHandleInformation`, autre bouchon ; l'échec
+   remonte en `std::system_error`. `dkr_thread_join` passe par
+   `WaitForSingleObject`.
+
+Un cinquième point est apparu à la relecture, et il vient de cette couche et non
+de Windows 95 : la première version fondait le descripteur de fil et son paquet
+de démarrage en une seule allocation, ce qui fait de `dkr_thread_release` une
+**utilisation après libération** — le fil créé lit `fn` avant d'avoir couru, et
+sur un monoprocesseur il n'a en général pas encore couru du tout. Aucune épreuve
+ne détachait de fil, donc rien ne l'attrapait. L'épreuve nº 3 le fait désormais,
+et `ultramodern/src/timer.cpp` emprunte ce chemin pour de bon.
+
+Les points 3 et 4 étaient invisibles au garde-fou des imports, qui ne vérifiait
+que la *présence* du symbole. Il vérifie désormais aussi qu'il n'est pas vide :
+`find_stubs.py` reconnaît le motif au désassemblage et relève **179 bouchons dans
+KERNEL32, 176 dans ADVAPI32, 162 dans USER32, 62 dans GDI32**.
+
+### Ce qui reste pour E02-S02
+
+`ultramodern` n'est pas encore reposé sur cette couche — c'est le ticket suivant,
+et le périmètre est celui que ce ticket avait exclu. Les 12 `std::thread`, 3
+`std::mutex` et 3 `thread_local` recensés y attendent, ainsi que la question de
+`BlockingConcurrentQueue`, que le pont `CreateSemaphoreW` rend fonctionnelle sans
+la patcher.
 
 ## Risques
 

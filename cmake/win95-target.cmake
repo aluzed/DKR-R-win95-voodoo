@@ -82,6 +82,20 @@ add_dependencies(win95compat dkr_win95_cpp_subset)
 target_link_options(win95compat INTERFACE
     "-Wl,--whole-archive" "$<TARGET_FILE:win95compat>" "-Wl,--no-whole-archive")
 
+# --- Couche de fils et de synchronisation (E02-S01) --------------------------
+#
+# Bibliothèque distincte de `win95compat`, et non fusionnée avec elle, pour une
+# raison mécanique : celle-ci est en C++, et les témoins en C de E01-S03 se lient
+# avec le compilateur C. Les fusionner obligerait ces derniers à traîner
+# libstdc++ sans en avoir l'usage.
+#
+# La dépendance va dans l'autre sens : la couche s'appuie sur `win95compat` pour
+# les cinq fonctions de section critique et pour le journal de démarrage.
+add_library(win95threading STATIC "${DKR_WIN95_PLATFORM}/threading.cpp")
+target_include_directories(win95threading PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95threading PUBLIC win95compat)
+add_dependencies(win95threading dkr_win95_cpp_subset)
+
 # --- Vérification du jeu d'instructions --------------------------------------
 #
 # Étape obligatoire après le lien, et non outil facultatif : c'est la seule
@@ -127,12 +141,37 @@ set_target_properties(DKRWin95Platform PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Platform)
 
-# Le rebouclage de GetTickCount se teste sur l'hôte : la logique est une fonction
-# pure, et attendre 49,7 jours n'est pas un protocole de test.
-# Il tourne avec le compilateur de l'hôte et non celui de la cible : c'est un
-# test de logique, pas de plate-forme.
+# Troisième témoin : l'épreuve de la couche de fils (E02-S01). C'est
+# **exactement la même source** que la suite exécutée sur l'hôte — deux fichiers
+# distincts finiraient par diverger, et c'est justement sur la cible que les
+# différences comptent.
+#
+#   scripts/Push-To-Win95-VM.sh build/win95/bin/THREADS.EXE
+#   THREADS.EXE                    la suite
+#   THREADS.EXE --stress 600       l'endurance de dix minutes
+add_executable(DKRWin95Threads "${DKR_WIN95_PLATFORM}/tests/test_threading.cpp")
+target_link_libraries(DKRWin95Threads PRIVATE win95threading)
+set_target_properties(DKRWin95Threads PROPERTIES
+    OUTPUT_NAME "THREADS"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Threads)
+
+# Les tests qui tournent sur l'hôte. Deux suites, pour deux raisons :
+#
+#   Tick64     (E01-S03) le rebouclage de GetTickCount est une fonction pure, et
+#              attendre 49,7 jours n'est pas un protocole de test.
+#   Threading  (E02-S01) la même source que THREADS.EXE, sur le véhicule POSIX.
+#              Passer ici ne prouve rien de la cible — c'est pourquoi le binaire
+#              cible est aussi exécuté sur la machine — mais raccourcit le cycle
+#              de mise au point de plusieurs minutes à une seconde.
+#
+# Les deux tournent avec le compilateur de l'hôte et non celui de la cible.
 enable_testing()
-add_test(NAME DKRWin95Tick64 COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh")
+add_test(NAME DKRWin95Tick64
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" tick64)
+add_test(NAME DKRWin95Threading
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" threading)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

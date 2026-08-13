@@ -7,7 +7,22 @@
     "",
     "Une exception se justifie quand le symbole est fourni autrement que par",
     "l'OS — par le pont win95compat, par exemple. Elle ne se justifie jamais",
-    "par « ca a l'air de marcher »."
+    "par « ca a l'air de marcher ».",
+    "",
+    "Le champ facultatif 'binaries' restreint la portee a certains",
+    "executables. Une API toleree dans un temoin qui l'exerce expres ne doit",
+    "pas l'etre dans le jeu : sans ce champ, l'exception vaut partout."
   ],
-  "exceptions": []
+  "exceptions": [
+    {
+      "symbol": "GetModuleHandleW",
+      "justification": "Bouchon de Windows 95 (rend 0), reclame par _vscprintf.o, _scprintf.o et wassert.o de libmsvcrt. Le desassemblage de _init_vscprintf montre que l'echec est prevu : GetModuleHandleW nul fait brancher mingw sur sa propre implementation _emu_vscprintf, batie sur strlen/malloc/vsnprintf. Le bouchon selectionne donc le repli portable, ce qui est le comportement voulu ici. Rien n'est perdu.",
+      "binaries": []
+    },
+    {
+      "symbol": "GetHandleInformation",
+      "justification": "Bouchon de Windows 95 (rend 0), reclame par thread.o et sched.o de libwinpthread. Ce n'est PAS benin : pthread_join teste le retour et part sur son chemin d'erreur, donc std::thread::join() leve une exception sous Windows 95. C'est une des raisons d'etre de la couche de E02-S01, dont dkr_thread_join passe par WaitForSingleObject. Tolere uniquement dans WITNESS.EXE, le temoin de E00-S02, dont le role est justement d'exercer le modele standard. Interdit ailleurs.",
+      "binaries": ["WITNESS.EXE"]
+    }
+  ]
 }

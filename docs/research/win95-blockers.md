@@ -166,6 +166,70 @@ le Pentium II émulé** et affiche `2 1`, la valeur attendue.
 
 C'est le genre de conclusion qu'on ne tire pas d'un tableau de compatibilité.
 
+### Le piège que les sondes ne pouvaient pas voir : les exports vides
+
+> **Ajout du 2026-08-12, par [E02-S01](../stories/E02-systeme/E02-S01-couche-threads-synchronisation.md).**
+
+La méthode par table d'imports répond à une question — « ce symbole existe-t-il ? »
+— et **la limite annoncée en fin de document s'est matérialisée** : elle ne dit
+rien de ce qui se passe quand le symbole existe et que la fonction ne fait rien.
+
+`moodycamel::LightweightSemaphore` — le primitif de blocage sur lequel repose
+*tout* le planificateur d'`ultramodern` — appelle **`CreateSemaphoreW`**. Le
+symbole est exporté par le `KERNEL32.DLL` de la machine. Son code :
+
+```asm
+0x03500a:  33 c0              xor  eax,eax     ; retour 0
+           b1 04              mov  cl,0x4      ; index du bouchon
+           e9 06 c3 fc ff     jmp  0x1319      ; queue commune
+0x001319:  51                 push ecx
+           68 78 00 00 00     push 0x78        ; ERROR_CALL_NOT_IMPLEMENTED
+           e8 be c7 00 00     call SetLastError
+```
+
+Elle partage son adresse avec `CreateEventW`. `CreateSemaphoreA`, à l'inverse,
+est du vrai code.
+
+**Les deux côtés du sémaphore cassent, et différemment :**
+
+| | Conséquence d'un descripteur nul |
+|---|---|
+| `wait()` | `WaitForSingleObject(NULL, INFINITE)` échoue au lieu de bloquer. `ultramodern` **ignore le retour** de `running.wait()` : le fil poursuit comme s'il avait été réveillé. Les fils de jeu, qui doivent courir un par un, courent alors tous ensemble — corruption non déterministe, pas un plantage. |
+| `signal()` | `while (!ReleaseSemaphore(NULL, ...));` — une boucle qui ne se termine jamais. Même famine d'ordonnanceur que la première version de `TryEnterCriticalSection` : la machine entière se fige. |
+
+L'`assert(m_hSema)` de moodycamel est compilé hors du binaire en Release.
+
+**Ampleur du phénomène.** Le motif se reconnaît mécaniquement, donc se compte.
+Sur les DLL extraites de la machine :
+
+| DLL | Bouchons | Exports nommés | Part |
+|---|---:|---:|---:|
+| `ADVAPI32` | 176 | 224 | **79 %** |
+| `KERNEL32` | 179 | 682 | 26 % |
+| `USER32` | 162 | 580 | 28 % |
+| `GDI32` | 62 | 330 | 19 % |
+| `MSVCRT`, `WINMM`, `CRTDLL` | 0 | — | — |
+
+`ADVAPI32` à 79 % est un avertissement pour tout ticket qui la viserait : sous
+Windows 95, elle est presque entièrement décorative.
+
+**Le garde-fou existait et ne pouvait rien voir**, puisque le symbole *est*
+exporté. Il est désormais doublé d'un relevé des bouchons, produit par
+`tools/win95/find_stubs.py` et rangé dans `tools/win95/exports/stubs/`. Un
+binaire qui importe une entrée vide échoue au contrôle, avec le nom de l'objet
+fautif.
+
+Deux bouchons étaient déjà importés par les binaires de E01-S03, et le nouveau
+contrôle les a fait sortir :
+
+| Symbole | Réclamé par | Verdict |
+|---|---|---|
+| `GetModuleHandleW` | `libmsvcrt` (`_vscprintf`, `_scprintf`, `wassert`) | **bénin, et vérifié** — le désassemblage de `_init_vscprintf` montre que l'échec est prévu : un retour nul fait brancher mingw sur sa propre implémentation `_emu_vscprintf`. Le bouchon sélectionne le repli portable. |
+| `GetHandleInformation` | `libwinpthread` (`thread.o`, `sched.o`) | **pas bénin** — `pthread_join` teste le retour et part sur son chemin d'erreur. **`std::thread::join()` lève donc une exception sous Windows 95.** Toléré dans le seul `WITNESS.EXE`, dont le rôle est d'exercer le modèle standard. |
+
+Le second est un bloquant en soi, et il conforte E02-S01 : `dkr_thread_join`
+passe par `WaitForSingleObject` et ne dépend d'aucun bouchon.
+
 ### Le modèle de threads déplace le problème sans le résoudre
 
 Deux modèles existent pour mingw. Les deux ont été installés et mesurés :
@@ -397,3 +461,9 @@ la valeur conservée du projet :
   Elles ne disent rien de ce qui se passerait si l'on fournissait ces symboles
   et que la sémantique différait — c'est le risque propre à la bibliothèque de
   compatibilité, à couvrir par des tests.
+
+  > **Cette limite s'est matérialisée**, et sous une forme que le paragraphe
+  > ci-dessus n'anticipait qu'à moitié : le danger n'est pas venu d'un symbole
+  > que *nous* fournissions avec une sémantique différente, mais d'un symbole que
+  > **Windows 95 lui-même** fournit vide. Voir « le piège que les sondes ne
+  > pouvaient pas voir », §2. Le contrôle des imports est corrigé en conséquence.

@@ -49,6 +49,14 @@ say "Épreuve du vérificateur de jeu d'instructions"
 "${project_root}/tools/win95/check-instruction-set.sh" --self-test >/dev/null \
   || fail "le vérificateur de jeu d'instructions ne détecte pas le SSE injecté."
 
+# Même raison pour le contrôle des imports, et une de plus depuis E02-S01 : il
+# doit refuser deux choses de natures différentes — un symbole *absent*, dont
+# l'absence est bruyante, et un symbole *exporté mais vide*, dont l'échec est
+# silencieux. La seconde est celle qui avait échappé à tout le monde.
+say "Épreuve du contrôle des imports et des bouchons"
+python3 "${project_root}/tools/win95/check_imports.py" --self-test >/dev/null \
+  || fail "le contrôle des imports ne détecte pas le témoin sale ou le témoin creux."
+
 # --- Configuration et compilation --------------------------------------------
 
 say "Configuration (${build_dir})"

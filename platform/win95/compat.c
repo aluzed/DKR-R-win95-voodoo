@@ -190,6 +190,86 @@ void WINAPI DeleteCriticalSection(LPCRITICAL_SECTION cs)
 }
 
 
+/* --- CreateSemaphoreW : exportee, mais vide (E02-S01) --------------------- *
+ *
+ * Celle-ci n'est pas du meme genre que les six precedentes. Les six manquaient a
+ * la table d'exports, et leur absence est bruyante : le programme ne demarre
+ * pas, et Windows nomme le symbole. `CreateSemaphoreW`, elle, *est* exportee.
+ * Elle ne fait simplement rien :
+ *
+ *     0x03500a:  33 c0              xor  eax,eax     ; retour 0
+ *                b1 04              mov  cl,0x4      ; index du bouchon
+ *                e9 06 c3 fc ff     jmp  0x1319      ; queue commune
+ *     0x001319:  51                 push ecx
+ *                68 78 00 00 00     push 0x78        ; ERROR_CALL_NOT_IMPLEMENTED
+ *                e8 be c7 00 00     call SetLastError
+ *
+ * Elle partage son adresse avec `CreateEventW`, ce qui ne laisse aucun doute :
+ * aucune des deux n'a de code. Releve sur la KERNEL32.DLL de la machine de test.
+ *
+ * Pourquoi cela compte : `moodycamel::LightweightSemaphore` l'appelle, et c'est
+ * le primitif de blocage sur lequel repose *tout* le planificateur
+ * d'`ultramodern` — le semaphore `running` de chaque fil de jeu, et chaque
+ * `BlockingConcurrentQueue`. Avec un descripteur nul, les deux cotes cassent, et
+ * differemment :
+ *
+ *   - `wait()`  -> `WaitForSingleObject(NULL, INFINITE)` echoue au lieu de
+ *     bloquer. `ultramodern` ignore le retour : le fil poursuit comme s'il avait
+ *     ete reveille. Les fils de jeu, qui doivent courir un par un, courent alors
+ *     tous en meme temps.
+ *   - `signal()` -> `while (!ReleaseSemaphore(NULL, ...));` — une boucle qui ne
+ *     se termine jamais. C'est la meme famine d'ordonnanceur que la premiere
+ *     version de `TryEnterCriticalSection`, et le meme symptome : la machine
+ *     entiere se fige.
+ *
+ * Le controle d'imports de E01-S04 ne peut rien y voir, puisque le symbole est
+ * bien exporte. C'est pourquoi il est desormais double d'une liste de bouchons
+ * connus (`tools/win95/exports/stubs.json`).
+ *
+ * Le contournement est immediat : `CreateSemaphoreA` existe et fonctionne. Le
+ * nom, quand il y en a un, est converti. `ultramodern` n'en pose aucun — ses
+ * semaphores sont anonymes — mais rendre un semaphore anonyme la ou l'appelant
+ * en a demande un nomme casserait le partage entre processus sans le dire.
+ */
+HANDLE WINAPI CreateSemaphoreW(LPSECURITY_ATTRIBUTES attributes,
+                               LONG initial_count, LONG maximum_count,
+                               LPCWSTR name)
+{
+    /* MAX_PATH est la longueur maximale d'un nom d'objet noyau : un tampon plus
+       court ferait echouer la couche la ou l'API d'origine aurait reussi. */
+    char  narrow[MAX_PATH + 1];
+    char *narrow_name = NULL;
+    BOOL  substituted = FALSE;
+
+    if (name) {
+        /* Le tampon borne la conversion : au-dela, WideCharToMultiByte echoue
+           avec ERROR_INSUFFICIENT_BUFFER plutot que d'ecrire hors limites. On
+           laisse son code d'erreur en place au lieu d'en poser un autre — il
+           dit precisement ce qui s'est passe, et c'est tout ce que l'appelant
+           pourra lire.
+
+           `substituted` n'est pas un ornement. Sans lui, un caractere absent de
+           la page de codes du systeme devient « ? » en silence, et deux noms
+           larges differents s'effondrent sur un meme nom etroit : deux
+           processus croiraient ouvrir des semaphores distincts et
+           partageraient le meme. Puisque la conversion du nom n'a d'autre
+           raison d'etre que de preserver ce partage, une substitution la vide
+           de son sens — et on echoue plutot que de mentir. */
+        int n = WideCharToMultiByte(CP_ACP, 0, name, -1, narrow,
+                                    (int)sizeof(narrow), NULL, &substituted);
+        if (n <= 0) {
+            return NULL;
+        }
+        if (substituted) {
+            SetLastError(ERROR_INVALID_NAME);
+            return NULL;
+        }
+        narrow_name = narrow;
+    }
+    return CreateSemaphoreA(attributes, initial_count, maximum_count, narrow_name);
+}
+
+
 /* --- redirection des pointeurs d'import ---------------------------------- *
  *
  * Definir les fonctions ne suffit pas. `winpthreads` et `libstdc++` sont
@@ -220,3 +300,4 @@ REDIRECT(SetProcessAffinityMask,         "@8");
 REDIRECT(TryEnterCriticalSection,        "@4");
 REDIRECT(AddVectoredExceptionHandler,    "@8");
 REDIRECT(RemoveVectoredExceptionHandler, "@4");
+REDIRECT(CreateSemaphoreW,               "@16");

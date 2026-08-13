@@ -35,6 +35,7 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 EXPORTS_DIR = HERE / "exports"
+STUBS_DIR = EXPORTS_DIR / "stubs"
 EXCEPTIONS = EXPORTS_DIR / "exceptions.json"
 PREFIX = pathlib.Path(os.environ.get("DKR_WIN95_PREFIX",
                                      pathlib.Path.home() / ".local/dkr-win95"))
@@ -70,6 +71,38 @@ def load_reference():
     return ref
 
 
+def load_stubs():
+    """Charge le releve des exports qui ne font rien : {DLL -> ensemble}.
+
+    Un symbole absent de la table d'exports est un probleme bruyant — Windows 95
+    refuse de charger le programme et le nomme. Un symbole **exporte et vide**
+    est silencieux, et c'est pire : le lien passe, le chargement passe, ce
+    controle passait, et la fonction ne fait rien.
+
+    C'est ainsi que `CreateSemaphoreW` a failli emporter le planificateur
+    d'`ultramodern` sans qu'aucun garde-fou ne bronche (E02-S01). Le releve est
+    produit par `find_stubs.py`, qui reconnait le motif au desassemblage plutot
+    que de deviner d'apres le nom.
+
+    Cette fonction **echoue** si le releve est absent ou vide, au lieu de rendre
+    un dictionnaire vide. Rendre {} desactiverait silencieusement la moitie du
+    controle, et l'outil afficherait « chargeable sous Windows 95 » en vert : ce
+    serait exactement la panne silencieuse qu'il est cense empecher, cette fois
+    dans le garde-fou lui-meme.
+    """
+    if not STUBS_DIR.is_dir():
+        sys.exit(f"releve des bouchons absent : {STUBS_DIR}\n"
+                 f"le reconstituer avec tools/win95/find_stubs.py --write, "
+                 f"sur les DLL de la machine de test.")
+    out = {}
+    for path in sorted(STUBS_DIR.glob("*.txt")):
+        out[path.stem.upper() + ".DLL"] = set(path.read_text().split())
+    if not out:
+        sys.exit(f"aucune liste de bouchons dans {STUBS_DIR} — voir "
+                 f"tools/win95/find_stubs.py")
+    return out
+
+
 def load_exceptions():
     """Exceptions explicites. Chacune doit porter une justification ecrite :
     sans cela, la liste devient l'endroit ou l'on fait taire l'outil."""
@@ -85,8 +118,23 @@ def load_exceptions():
         if len(why) < 20:
             sys.exit(f"{EXCEPTIONS} : l'exception '{sym}' n'a pas de "
                      f"justification ecrite — elle est refusee.")
-        out[sym] = why
+        # `binaries` restreint la portee a certains executables, par nom de
+        # fichier. Sans lui l'exception vaut partout — ce qui est rarement
+        # voulu : une API toleree dans un temoin qui l'exerce expres ne doit
+        # pas l'etre dans le jeu.
+        out[sym] = (why, [b.upper() for b in entry.get("binaries", [])])
     return out
+
+
+def excused_here(exceptions, symbol, binary):
+    """Rend la justification si l'exception couvre ce binaire, sinon None."""
+    entry = exceptions.get(symbol)
+    if entry is None:
+        return None
+    why, binaries = entry
+    if binaries and pathlib.Path(binary).name.upper() not in binaries:
+        return None
+    return why
 
 
 def attribute(symbols, objdirs):
@@ -121,7 +169,7 @@ def attribute(symbols, objdirs):
     return {k: sorted(v) for k, v in wanted.items() if v}
 
 
-def check(binary, ref, exceptions, objdirs):
+def check(binary, ref, stubs, exceptions, objdirs):
     """Renvoie True si le binaire peut se charger sous Windows 95."""
     try:
         imports = PE(str(binary)).imports()
@@ -135,13 +183,19 @@ def check(binary, ref, exceptions, objdirs):
 
     print(f"### {binary} — {len(imports)} symboles, {len(by_dll)} DLL")
 
-    missing, unknown_dlls, driver, excused = [], [], [], []
+    missing, unknown_dlls, driver, excused, hollow = [], [], [], [], []
     for dll, syms in sorted(by_dll.items()):
         if dll in ref:
             for s in syms:
                 if s in ref[dll]:
+                    # Exportee — mais fait-elle quelque chose ?
+                    if s in stubs.get(dll, ()):
+                        if excused_here(exceptions, s, binary):
+                            excused.append((dll, s))
+                        else:
+                            hollow.append((dll, s))
                     continue
-                if s in exceptions:
+                if excused_here(exceptions, s, binary):
                     excused.append((dll, s))
                 else:
                     missing.append((dll, s))
@@ -154,7 +208,8 @@ def check(binary, ref, exceptions, objdirs):
         print(f"  {YELLOW}PILOTE{OFF}  {dll} ({n} symboles) — {DRIVER_DLLS[dll]}")
         print(f"          non verifiable ici ; sa presence l'est au lancement.")
     for dll, sym in excused:
-        print(f"  {YELLOW}TOLERE{OFF}  {dll}:{sym} — {exceptions[sym]}")
+        print(f"  {YELLOW}TOLERE{OFF}  {dll}:{sym} — "
+              f"{excused_here(exceptions, sym, binary)}")
 
     ok = True
     if unknown_dlls:
@@ -163,6 +218,20 @@ def check(binary, ref, exceptions, objdirs):
             print(f"  {RED}DLL INCONNUE{OFF}  {dll} ({n} symboles)")
             print(f"          ni dans la base d'exports, ni declaree comme "
                   f"fournie par un pilote.")
+
+    if hollow:
+        ok = False
+        owners = attribute([s for _, s in hollow], objdirs)
+        for dll, sym in hollow:
+            src = owners.get(sym)
+            where = f"  <- {', '.join(src)}" if src else ""
+            print(f"  {RED}BOUCHON{OFF}  {dll}:{sym}{where}")
+        print(f"          exportee mais vide : rend 0 et pose "
+              f"ERROR_CALL_NOT_IMPLEMENTED.")
+        print(f"          Le programme se chargera et la fonction ne fera "
+              f"rien — panne silencieuse.")
+        print(f"          Employer la variante ...A, ou la fournir depuis "
+              f"platform/win95/compat.c.")
 
     if missing:
         ok = False
@@ -213,6 +282,13 @@ def refresh():
             say(f"{name}.DLL : {len(syms)} exports")
     say(f"base reconstituee dans {EXPORTS_DIR}")
     say("penser a mettre PROVENANCE.md a jour si le systeme de reference a change")
+    # Le releve des bouchons ne se reconstitue pas ici : il demande les DLL
+    # elles-memes, que `refresh` extrait dans un repertoire temporaire. Le dire
+    # explicitement, sinon la liste des bouchons vieillit sans que personne ne
+    # s'en apercoive — et une liste de bouchons perimee redonne exactement le
+    # silence qu'elle etait censee supprimer.
+    say(f"{YELLOW}le releve des bouchons n'est PAS regenere par cette commande{OFF} : "
+        f"lancer tools/win95/find_stubs.py --write sur les memes DLL.")
 
 
 def self_test():
@@ -223,7 +299,7 @@ def self_test():
           or shutil.which("i686-w64-mingw32-gcc"))
     if not cc:
         sys.exit("mingw-w64 i686 absent : auto-test impossible")
-    ref, exc = load_reference(), load_exceptions()
+    ref, stubs, exc = load_reference(), load_stubs(), load_exceptions()
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = pathlib.Path(tmp)
@@ -235,19 +311,31 @@ def self_test():
         (tmp / "dirty.c").write_text(
             "#include <windows.h>\n"
             "int main(void){ return (int)GetTickCount64(); }\n")
-        for name in ("clean", "dirty"):
+        # Temoin creux : CreateSemaphoreW *est* exportee par Windows 95, et ne
+        # fait rien. C'est le cas que le controle des exports seuls laissait
+        # passer, et qui a coute le planificateur d'ultramodern (E02-S01).
+        (tmp / "hollow.c").write_text(
+            "#include <windows.h>\n"
+            "int main(void){ return CreateSemaphoreW(0,0,1,0) != 0; }\n")
+        for name in ("clean", "dirty", "hollow"):
             subprocess.run([cc, "-O2", "-march=pentium2", "-mno-sse", "-static",
                             str(tmp / f"{name}.c"), "-o", str(tmp / f"{name}.exe")],
                            check=True, capture_output=True)
 
         say("temoin propre : uniquement des API de Windows 95")
-        if not check(tmp / "clean.exe", ref, exc, []):
+        if not check(tmp / "clean.exe", ref, stubs, exc, []):
             print(f"{RED}le temoin propre est refuse — l'outil est trop strict{OFF}")
             return 1
 
         say("temoin sale : GetTickCount64, absente de Windows 95")
-        if check(tmp / "dirty.exe", ref, exc, []):
+        if check(tmp / "dirty.exe", ref, stubs, exc, []):
             print(f"{RED}le temoin sale est accepte — l'outil ne detecte rien{OFF}")
+            return 1
+
+        say("temoin creux : CreateSemaphoreW, exportee mais vide")
+        if check(tmp / "hollow.exe", ref, stubs, exc, []):
+            print(f"{RED}le temoin creux est accepte — le controle des bouchons "
+                  f"ne detecte rien{OFF}")
             return 1
         say(f"{GREEN}l'outil fonctionne{OFF}")
     return 0
@@ -274,7 +362,7 @@ def main():
         ap.print_help()
         return 2
 
-    ref, exc = load_reference(), load_exceptions()
+    ref, stubs, exc = load_reference(), load_stubs(), load_exceptions()
     status = 0
     for b in args.binaries:
         p = pathlib.Path(b)
@@ -282,7 +370,7 @@ def main():
             print(f"  {RED}introuvable{OFF} : {b}")
             status = 1
             continue
-        if not check(p, ref, exc, args.objects):
+        if not check(p, ref, stubs, exc, args.objects):
             status = 1
     return status
 

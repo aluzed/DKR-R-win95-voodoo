@@ -69,7 +69,7 @@ n'est pas un protocole. La logique est isolée en fonction pure dans
 `platform/win95/tick64.c`, précisément pour être pilotable :
 
 ```sh
-platform/win95/tests/run-tests.sh
+platform/win95/tests/run-tests.sh tick64
 ctest --test-dir build/win95 -R DKRWin95Tick64
 ```
 
@@ -116,6 +116,29 @@ compteur final exactement 4 000.
 >
 > **Un bouchon licite n'est pas un bouchon inoffensif.**
 
+### `CreateSemaphoreW` — ajoutée par E02-S01, et d'une autre nature
+
+Les six ci-dessus **manquaient** à la table d'exports, et leur absence est
+bruyante : le programme ne démarre pas, et Windows nomme le symbole.
+`CreateSemaphoreW` est exportée. Elle ne fait simplement rien — trois
+instructions qui rendent zéro et posent `ERROR_CALL_NOT_IMPLEMENTED`, à la même
+adresse que `CreateEventW`.
+
+C'est un piège d'une autre classe : le lien réussit, le chargement réussit, le
+contrôle des imports était satisfait, et seule l'exécution diffère.
+
+Elle compte parce que `moodycamel::LightweightSemaphore` l'appelle, et que ce
+sémaphore est le primitif de blocage de tout le planificateur d'`ultramodern`.
+Avec un descripteur nul, l'attente ne bloque plus et le signal boucle sans fin.
+
+La couche la fournit, renvoyée sur `CreateSemaphoreA`, en convertissant le nom
+s'il y en a un. **Ce qui est perdu** : rien — `CreateSemaphoreA` est du vrai code,
+et la conversion de nom ne peut échouer que sur un nom que la page de codes du
+système ne représente pas.
+
+Détail complet et conséquences : [WIN95-THREADING.md](WIN95-THREADING.md) et
+[research/win95-blockers.md](research/win95-blockers.md).
+
 ## Ce qui n'a pas eu besoin d'être écrit
 
 Le ticket anticipait deux contournements délicats. La mesure les a rendus sans
@@ -130,6 +153,15 @@ objet, et c'est un résultat qui mérite d'être consigné :
 Le risque annoncé par le ticket — décomposer `SignalObjectAndWait` en perdant son
 atomicité, donc ouvrir une fenêtre de course — **ne se matérialise pas**. Rien ne
 la demande.
+
+> **Suite, par E02-S01.** La conclusion « les variables de condition de Vista ne
+> sont pas à reproduire » s'est confirmée pour une raison plus forte que le choix
+> du modèle `posix` : `ultramodern` n'utilise **aucune** variable de condition.
+> Son attente conditionnelle est un sémaphore de comptage.
+>
+> Le tableau ci-dessus reste vrai, mais il faut lui ajouter une colonne qu'il
+> n'avait pas : « exportée » ne veut pas dire « implémentée ». Voir
+> [WIN95-THREADING.md](WIN95-THREADING.md).
 
 Les variables de condition de Vista ne sont pas non plus réimplémentées : c'est
 précisément ce que le choix du modèle `posix` a permis d'éviter, leur
@@ -231,7 +263,7 @@ avec le marqueur « C » est la signature de Windows 95 OSR2.
 
 ```sh
 ./Build-Win95.sh
-ctest --test-dir build/win95 -R DKRWin95Tick64      # rebouclage simulé
+ctest --test-dir build/win95                        # tick64 + fils (E02-S01)
 scripts/Push-To-Win95-VM.sh build/win95/bin/PLATFORM.EXE
 ```
 
