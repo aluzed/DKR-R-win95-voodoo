@@ -18,6 +18,7 @@
 #include <system_error>
 #include <unordered_map>
 #include <vector>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -165,7 +166,7 @@ bool convert_archive(RT64::FileSystem& archive,
     }
 
     std::error_code filesystem_error;
-    std::filesystem::create_directories(destination, filesystem_error);
+    dkr::fs::create_directories(destination, filesystem_error);
     if (filesystem_error) {
         error = "Could not create the managed Rice pack: " + filesystem_error.message();
         return false;

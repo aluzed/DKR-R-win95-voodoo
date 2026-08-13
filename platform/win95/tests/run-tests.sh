@@ -124,6 +124,15 @@ if [[ "$suite" == "all" || "$suite" == "fileio" ]]; then
   "$CXX" -O2 -Wall -Wextra -DDKR_TARGET_WIN95 -I"$HERE/.." \
          -o "$tmp/test_fileio_seam95" \
          "$HERE/test_fileio_seam.cpp" "$HERE/../fileio.cpp"
+  # Les signatures employees par les quatre fichiers que RT64 seul construit, et
+  # qui ne peuvent donc pas etre compiles ici. Rien ne s'execute : c'est la
+  # compilation, dans les deux branches, qui est le controle.
+  "$CXX" -std=c++20 -Wall -Wextra -fsyntax-only -I"$HERE/.." \
+         "$HERE/test_fileio_signatures.cpp"
+  "$CXX" -std=c++20 -Wall -Wextra -fsyntax-only -DDKR_TARGET_WIN95 -I"$HERE/.." \
+         "$HERE/test_fileio_signatures.cpp"
+  echo "  ok    les signatures du jeu compilent dans les deux branches"
+
   echo
   # Les fichiers d'essai sont crees dans le repertoire courant : on l'isole.
   ( cd "$tmp" && "$tmp/test_fileio" )

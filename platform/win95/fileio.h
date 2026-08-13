@@ -136,6 +136,16 @@ dkr_file_result dkr_file_create_directories(const char *path);
    `copy_options::overwrite_existing`, la seule forme employee. */
 dkr_file_result dkr_file_copy(const char *from, const char *to);
 
+/* Copie en **refusant** d'ecraser : c'est `copy_options::none`, le defaut de
+   `std::filesystem::copy_file`, et deux sites d'appel en dependent — importer un
+   filtre ou un pack de textures ne doit pas remplacer silencieusement celui qui
+   porte deja ce nom.
+
+   Le refus est fait par le systeme et non par un `exists` prealable : entre le
+   test et la copie il y a un intervalle, si petit soit-il, et `CopyFileA` sait
+   refuser toute seule. */
+dkr_file_result dkr_file_copy_no_overwrite(const char *from, const char *to);
+
 /* Rend 1 si le chemin existe et est un fichier ordinaire. */
 int dkr_file_is_regular(const char *path);
 

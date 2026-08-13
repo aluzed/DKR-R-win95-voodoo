@@ -17,6 +17,7 @@
 #include <mutex>
 #include <set>
 #include <system_error>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -98,7 +99,7 @@ void LoadSettingsLocked() {
 
 void SaveSettingsLocked() {
     std::error_code error;
-    std::filesystem::create_directories(g_settings_path.parent_path(), error);
+    dkr::fs::create_directories(g_settings_path.parent_path(), error);
     const auto temporary = g_settings_path.string() + ".tmp";
     std::ofstream output(temporary, std::ios::trunc);
     if (!output) {
@@ -109,11 +110,11 @@ void SaveSettingsLocked() {
     for (const auto& id : g_enabled_ids) output << "enabled=" << id << '\n';
     for (const auto& id : g_hidden_ids) output << "hidden=" << id << '\n';
     output.close();
-    std::filesystem::rename(temporary, g_settings_path, error);
+    dkr::fs::rename(temporary, g_settings_path, error);
     if (error) {
-        std::filesystem::remove(g_settings_path, error);
+        dkr::fs::remove(g_settings_path, error);
         error.clear();
-        std::filesystem::rename(temporary, g_settings_path, error);
+        dkr::fs::rename(temporary, g_settings_path, error);
     }
     if (error) g_status = "Texture-pack preferences could not be committed.";
 }
@@ -212,7 +213,7 @@ std::filesystem::path UniqueDestination(const std::filesystem::path& source) {
     const std::string stem = destination.stem().string();
     const std::string extension = destination.extension().string();
     std::error_code error;
-    for (int suffix = 2; std::filesystem::exists(destination, error) && suffix < 1000;
+    for (int suffix = 2; dkr::fs::exists(destination, error) && suffix < 1000;
          ++suffix) {
         destination = g_pack_directory /
             (stem + "-" + std::to_string(suffix) + extension);
@@ -225,7 +226,7 @@ std::filesystem::path UniqueManagedDestination(const std::filesystem::path& sour
         g_pack_directory / (source.stem().string() + ".rice");
     const std::string stem = destination.stem().string();
     std::error_code error;
-    for (int suffix = 2; std::filesystem::exists(destination, error) && suffix < 1000;
+    for (int suffix = 2; dkr::fs::exists(destination, error) && suffix < 1000;
          ++suffix) {
         destination = g_pack_directory /
             (stem + "-" + std::to_string(suffix) + ".rice");
@@ -246,9 +247,9 @@ dkr::runtime::texture_packs::PackInfo InspectDirectory(
     std::error_code error;
     const auto database_path = path / "rt64.json";
     const auto report_path = path / "dkr-r-rice-import.json";
-    const bool managed_rice = std::filesystem::is_regular_file(report_path, error);
+    const bool managed_rice = dkr::fs::is_regular_file(report_path, error);
     error.clear();
-    if (!std::filesystem::is_regular_file(database_path, error)) {
+    if (!dkr::fs::is_regular_file(database_path, error)) {
         info.detail = "Managed pack is missing rt64.json.";
         return info;
     }
@@ -284,7 +285,7 @@ dkr::runtime::texture_packs::PackInfo InspectDirectory(
                 }
                 const auto image_path = path /
                     ("Diddy Kong Racing#" + rice + "_all.png");
-                if (!std::filesystem::is_regular_file(image_path, error)) {
+                if (!dkr::fs::is_regular_file(image_path, error)) {
                     info.detail = "Managed Rice database is missing a converted PNG for " + rice + ".";
                     return info;
                 }
@@ -329,11 +330,11 @@ bool IsDirectManagedChild(const std::filesystem::path& path) {
     if (g_pack_directory.empty() || path.empty()) return false;
     std::error_code error;
     const std::filesystem::path root =
-        std::filesystem::absolute(g_pack_directory, error).lexically_normal();
+        dkr::fs::absolute(g_pack_directory, error).lexically_normal();
     if (error) return false;
     error.clear();
     const std::filesystem::path candidate =
-        std::filesystem::absolute(path, error).lexically_normal();
+        dkr::fs::absolute(path, error).lexically_normal();
     return !error && candidate != root && candidate.parent_path() == root;
 }
 
@@ -343,20 +344,28 @@ bool RemoveManagedPath(const std::filesystem::path& path,
         error_text = "DKR-R refused to delete a path outside its managed texture-pack folder.";
         return false;
     }
+    /* Ecrit en operations sur le chemin plutot que sur un `file_status`.
+       Reproduire `file_status` pour Windows 95 aurait demande un type, ses
+       accesseurs et ses categories, la ou deux appels disent la meme chose.
+
+       L'ordre est conserve, et il compte : un lien symbolique casse n'« existe »
+       pas, et c'est pour cela que le refus est controle avant la presence. Sur
+       Windows 95 la question ne se pose pas — il n'y a pas de liens symboliques
+       — mais le code est le meme pour toutes les cibles. */
     std::error_code error;
-    const auto status = std::filesystem::symlink_status(path, error);
+    const bool present = dkr::fs::exists(path, error);
     if (error && error != std::errc::no_such_file_or_directory) {
         error_text = "The managed texture pack could not be inspected: " +
             error.message();
         return false;
     }
     error.clear();
-    if (std::filesystem::is_symlink(status)) {
+    if (dkr::fs::is_symlink(path)) {
         error_text = "DKR-R will not recursively delete a symbolic link.";
         return false;
     }
-    if (std::filesystem::exists(status)) {
-        std::filesystem::remove_all(path, error);
+    if (present) {
+        dkr::fs::remove_all(path, error);
     }
     if (error) {
         error_text = "The managed texture pack could not be deleted: " +
@@ -391,7 +400,7 @@ void configure(const std::filesystem::path& config_directory) {
         g_applied_generation = 0;
         g_applied_modern = false;
         std::error_code error;
-        std::filesystem::create_directories(g_pack_directory, error);
+        dkr::fs::create_directories(g_pack_directory, error);
         LoadSettingsLocked();
     }
     refresh();
@@ -410,12 +419,12 @@ void refresh() {
     std::vector<PackInfo> scanned;
     std::error_code error;
     if (!directory.empty()) {
-        std::filesystem::create_directories(directory, error);
-        for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
+        dkr::fs::create_directories(directory, error);
+        for (const auto& entry : dkr::fs::list_directory(directory, error)) {
             if (error) break;
-            if (entry.is_directory(error)) {
-                if (Lower(entry.path().extension().string()) == ".importing") continue;
-                auto info = InspectDirectory(entry.path());
+            if (dkr::fs::is_directory(entry)) {
+                if (Lower(entry.extension().string()) == ".importing") continue;
+                auto info = InspectDirectory(entry);
                 info.hidden = hidden.contains(info.id);
                 info.enabled = !info.hidden && info.compatible && enabled.contains(info.id);
                 scanned.emplace_back(std::move(info));
@@ -455,7 +464,7 @@ std::vector<PackInfo> snapshot(bool include_hidden) {
 
 bool import_archive(const std::filesystem::path& source, std::string& status_text) {
     std::error_code error;
-    if (!std::filesystem::is_regular_file(source, error)) {
+    if (!dkr::fs::is_regular_file(source, error)) {
         status_text = "Choose a readable ZIP or RTZ texture-pack archive.";
         return false;
     }
@@ -466,7 +475,7 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
     }
     constexpr std::uintmax_t maximum_archive_size =
         static_cast<std::uintmax_t>(4) * 1024U * 1024U * 1024U;
-    const auto size = std::filesystem::file_size(source, error);
+    const auto size = dkr::fs::file_size(source, error);
     if (error || size == 0 || size > maximum_archive_size) {
         status_text = "The texture-pack archive is empty, unreadable, or larger than 4 GB.";
         return false;
@@ -489,7 +498,7 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
         std::filesystem::path destination;
         {
             std::scoped_lock lock(g_mutex);
-            std::filesystem::create_directories(g_pack_directory, error);
+            dkr::fs::create_directories(g_pack_directory, error);
             destination = UniqueManagedDestination(source);
         }
         const std::filesystem::path temporary =
@@ -499,7 +508,7 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
             status_text = "The managed Rice destination failed its safety check.";
             return false;
         }
-        std::filesystem::remove_all(temporary, error);
+        dkr::fs::remove_all(temporary, error);
         error.clear();
 
         rice_texture::ImportResult conversion;
@@ -507,14 +516,14 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
         if (!rice_texture::convert_archive(*archive, temporary,
                                            source.filename().string(),
                                            conversion, conversion_error)) {
-            std::filesystem::remove_all(temporary, error);
+            dkr::fs::remove_all(temporary, error);
             status_text = "Rice import failed: " + conversion_error;
             return false;
         }
-        std::filesystem::rename(temporary, destination, error);
+        dkr::fs::rename(temporary, destination, error);
         if (error) {
             const std::string rename_error = error.message();
-            std::filesystem::remove_all(temporary, error);
+            dkr::fs::remove_all(temporary, error);
             status_text = "The converted Rice pack could not be committed: " + rename_error;
             return false;
         }
@@ -532,11 +541,10 @@ bool import_archive(const std::filesystem::path& source, std::string& status_tex
     std::filesystem::path destination;
     {
         std::scoped_lock lock(g_mutex);
-        std::filesystem::create_directories(g_pack_directory, error);
+        dkr::fs::create_directories(g_pack_directory, error);
         destination = UniqueDestination(source);
     }
-    std::filesystem::copy_file(source, destination,
-                               std::filesystem::copy_options::none, error);
+    dkr::fs::copy_file_no_overwrite(source, destination, error);
     if (error) {
         status_text = "The texture pack could not be imported: " + error.message();
         return false;

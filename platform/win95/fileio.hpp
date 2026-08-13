@@ -56,6 +56,12 @@ inline bool is_directory(const std::filesystem::path &p)
     return dkr_file_is_directory(p.string().c_str()) != 0;
 }
 
+inline bool is_directory(const std::filesystem::path &p, std::error_code &ec)
+{
+    ec.clear();
+    return dkr::fs::is_directory(p);
+}
+
 /* `std::filesystem::remove` rend true si quelque chose a ete efface. Un fichier
    deja absent n'est pas une erreur — l'appelant voulait qu'il ne soit plus la —
    mais la valeur rendue est alors false, et on reproduit cela. */
@@ -116,9 +122,40 @@ inline bool copy_file_overwrite(const std::filesystem::path &from,
     return dkr::fs::copy_file_overwrite(from, to);
 }
 
+/* `copy_options::none` — le defaut de `std::filesystem::copy_file` — refuse
+   d'ecraser. Deux sites d'appel en dependent : importer un filtre ou un pack de
+   textures ne doit pas remplacer celui qui porte deja ce nom. Les deux formes
+   sont donc nommees, plutot que de faire passer un jeu d'options que personne
+   n'emploie au-dela de ces deux valeurs. */
+inline bool copy_file_no_overwrite(const std::filesystem::path &from,
+                                   const std::filesystem::path &to)
+{
+    return dkr_file_copy_no_overwrite(from.string().c_str(),
+                                      to.string().c_str()) == DKR_FILE_OK;
+}
+
+inline bool copy_file_no_overwrite(const std::filesystem::path &from,
+                                   const std::filesystem::path &to,
+                                   std::error_code &ec)
+{
+    ec.clear();
+    if (dkr_file_copy_no_overwrite(from.string().c_str(), to.string().c_str())
+        != DKR_FILE_OK) {
+        ec = std::make_error_code(std::errc::file_exists);
+        return false;
+    }
+    return true;
+}
+
 inline bool is_regular_file(const std::filesystem::path &p)
 {
     return dkr_file_is_regular(p.string().c_str()) != 0;
+}
+
+inline bool is_regular_file(const std::filesystem::path &p, std::error_code &ec)
+{
+    ec.clear();
+    return dkr::fs::is_regular_file(p);
 }
 
 inline std::uintmax_t file_size(const std::filesystem::path &p)
@@ -168,6 +205,23 @@ inline std::filesystem::path absolute(const std::filesystem::path &p)
     return std::filesystem::path{out};
 }
 
+/* La forme sans code d'erreur rend le chemin d'origine quand elle echoue, ce qui
+   convient a un appelant qui veut juste « le meilleur chemin disponible ». Un
+   autre veut savoir : `game_main` se rabat sur le repertoire courant quand le
+   chemin de l'executable ne se resout pas. Rendre le chemin d'origine le
+   priverait de cette decision. */
+inline std::filesystem::path absolute(const std::filesystem::path &p,
+                                      std::error_code &ec)
+{
+    char out[512];
+    if (dkr_file_absolute(out, sizeof(out), p.string().c_str()) != DKR_FILE_OK) {
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return p;
+    }
+    ec.clear();
+    return std::filesystem::path{out};
+}
+
 /* Le pendant de `directory_iterator`, rendu comme une liste. Voir `fileio.h` :
    reproduire un iterateur demanderait un cycle de vie et des categories dont
    aucun appelant ne se sert. */
@@ -179,6 +233,30 @@ list_directory(const std::filesystem::path &dir)
     if (!d) {
         return out;
     }
+    for (const char *name = dkr_dir_next(d); name; name = dkr_dir_next(d)) {
+        out.push_back(dir / name);
+    }
+    dkr_dir_close(d);
+    return out;
+}
+
+/* Un repertoire vide et un repertoire illisible rendent tous deux une liste
+   vide, et un site d'appel les distingue pour le dire au joueur — « T.T. could
+   not read this location ». D'ou cette forme.
+
+   `dkr_dir_open` ne rend NULL que sur un echec reel : sur la cible, une
+   recherche dans un repertoire valide trouve toujours au moins « . » et
+   « .. », meme s'il est vide. */
+inline std::vector<std::filesystem::path>
+list_directory(const std::filesystem::path &dir, std::error_code &ec)
+{
+    std::vector<std::filesystem::path> out;
+    dkr_dir *d = dkr_dir_open(dir.string().c_str());
+    if (!d) {
+        ec = std::make_error_code(std::errc::no_such_file_or_directory);
+        return out;
+    }
+    ec.clear();
     for (const char *name = dkr_dir_next(d); name; name = dkr_dir_next(d)) {
         out.push_back(dir / name);
     }
@@ -210,6 +288,17 @@ inline std::filesystem::path current_path()
     if (dkr_file_current_directory(out, sizeof(out)) != DKR_FILE_OK) {
         return std::filesystem::path{};
     }
+    return std::filesystem::path{out};
+}
+
+inline std::filesystem::path current_path(std::error_code &ec)
+{
+    char out[512];
+    if (dkr_file_current_directory(out, sizeof(out)) != DKR_FILE_OK) {
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return std::filesystem::path{};
+    }
+    ec.clear();
     return std::filesystem::path{out};
 }
 
@@ -305,13 +394,39 @@ inline std::filesystem::path absolute(const std::filesystem::path &p)
     return ec ? p : a;
 }
 
+inline std::filesystem::path absolute(const std::filesystem::path &p,
+                                      std::error_code &ec)
+{
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    return std::filesystem::absolute(p, ec);
+}
+
 inline std::vector<std::filesystem::path>
 list_directory(const std::filesystem::path &dir)
 {
     std::vector<std::filesystem::path> out;
     std::error_code ec;
+    /* `skip_permission_denied` reproduit ce que faisaient les sites d'appel : un
+       repertoire illisible fait sauter l'entree, pas la boucle. Windows 95 n'a
+       pas de permissions au sens ou l'entend cette option, et sa branche se
+       comporte deja ainsi. */
     // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
-    for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+    for (const auto &entry : std::filesystem::directory_iterator(
+             dir, std::filesystem::directory_options::skip_permission_denied,
+             ec)) {
+        out.push_back(entry.path());
+    }
+    return out;
+}
+
+inline std::vector<std::filesystem::path>
+list_directory(const std::filesystem::path &dir, std::error_code &ec)
+{
+    std::vector<std::filesystem::path> out;
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    for (const auto &entry : std::filesystem::directory_iterator(
+             dir, std::filesystem::directory_options::skip_permission_denied,
+             ec)) {
         out.push_back(entry.path());
     }
     return out;
@@ -323,6 +438,23 @@ inline bool copy_file_overwrite(const std::filesystem::path &from,
     // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
     return std::filesystem::copy_file(
         from, to, std::filesystem::copy_options::overwrite_existing);
+}
+
+inline bool copy_file_no_overwrite(const std::filesystem::path &from,
+                                   const std::filesystem::path &to)
+{
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    return std::filesystem::copy_file(
+        from, to, std::filesystem::copy_options::none);
+}
+
+inline bool copy_file_no_overwrite(const std::filesystem::path &from,
+                                   const std::filesystem::path &to,
+                                   std::error_code &ec)
+{
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    return std::filesystem::copy_file(
+        from, to, std::filesystem::copy_options::none, ec);
 }
 
 // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95

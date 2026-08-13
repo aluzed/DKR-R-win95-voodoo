@@ -75,6 +75,25 @@ int main(){
   check("copy_file_overwrite", dkr::fs::copy_file_overwrite(f, c));
   check("la copie existe", dkr::fs::exists(c));
   check("copie par-dessus", dkr::fs::copy_file_overwrite(f, c));
+  {
+    /* `copy_options::none` refuse d'ecraser, et deux sites d'appel en dependent :
+       importer un filtre ou un pack de textures ne doit pas remplacer
+       silencieusement celui qui porte deja ce nom. Le controle porte sur le
+       refus **et** sur le fait que le contenu d'origine survit. */
+    std::filesystem::path garde = deep / "garde.dat";
+    { FILE *h = std::fopen(garde.string().c_str(), "wb");
+      if (h) { std::fputs("ancien", h); std::fclose(h); } }
+    std::error_code nec;
+    check("copy_file_no_overwrite refuse une cible existante",
+          !dkr::fs::copy_file_no_overwrite(f, garde, nec) && (bool)nec);
+    check("et l'ancien contenu est intact", dkr::fs::file_size(garde) == 6);
+    dkr::fs::remove(garde);
+    check("copy_file_no_overwrite ecrit quand la cible est absente",
+          dkr::fs::copy_file_no_overwrite(f, garde));
+    check("et la copie a le bon contenu", dkr::fs::file_size(garde) == 3);
+    dkr::fs::remove(garde);
+  }
+
   check("remove rend true", dkr::fs::remove(c));
   check("le fichier a disparu", !dkr::fs::exists(c));
   check("remove d'un absent rend false", !dkr::fs::remove(c));

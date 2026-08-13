@@ -17,6 +17,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#include "win95/fileio.hpp"
 #endif
 
 namespace {
@@ -85,7 +86,7 @@ bool ReadFileBounded(const std::filesystem::path& path,
                      std::size_t maximum_size,
                      std::vector<std::uint8_t>& bytes) {
     std::error_code error;
-    const auto size = std::filesystem::file_size(path, error);
+    const auto size = dkr::fs::file_size(path, error);
     if (error || size > maximum_size) {
         return false;
     }
@@ -170,7 +171,7 @@ bool ReplaceFileAtomic(const std::filesystem::path& temporary,
                             std::system_category());
     return false;
 #else
-    std::filesystem::rename(temporary, destination, error);
+    dkr::fs::rename(temporary, destination, error);
     return !error;
 #endif
 }
@@ -179,7 +180,7 @@ bool WriteAtomic(const std::filesystem::path& destination,
                  const std::vector<std::uint8_t>& bytes,
                  ImageValidator validator, std::string& error) {
     std::error_code filesystem_error;
-    std::filesystem::create_directories(destination.parent_path(), filesystem_error);
+    dkr::fs::create_directories(destination.parent_path(), filesystem_error);
     if (filesystem_error) {
         error = "Could not create the save folder: " + filesystem_error.message();
         return false;
@@ -196,26 +197,25 @@ bool WriteAtomic(const std::filesystem::path& destination,
         output.flush();
         if (!output) {
             error = "The temporary save file could not be written completely.";
-            std::filesystem::remove(temporary, filesystem_error);
+            dkr::fs::remove(temporary, filesystem_error);
             return false;
         }
     }
     std::vector<std::uint8_t> check;
     if (!validator(temporary, check)) {
         error = "The temporary save failed validation.";
-        std::filesystem::remove(temporary, filesystem_error);
+        dkr::fs::remove(temporary, filesystem_error);
         return false;
     }
     const std::filesystem::path rollback = destination.string() + ".rollback";
-    const bool had_destination = std::filesystem::exists(destination, filesystem_error);
+    const bool had_destination = dkr::fs::exists(destination, filesystem_error);
     filesystem_error.clear();
     if (had_destination) {
-        std::filesystem::copy_file(destination, rollback,
-            std::filesystem::copy_options::overwrite_existing, filesystem_error);
+        dkr::fs::copy_file_overwrite(destination, rollback, filesystem_error);
         if (filesystem_error) {
             error = "Could not create the import rollback copy: " +
                     filesystem_error.message();
-            std::filesystem::remove(temporary, filesystem_error);
+            dkr::fs::remove(temporary, filesystem_error);
             return false;
         }
     }
@@ -224,14 +224,13 @@ bool WriteAtomic(const std::filesystem::path& destination,
         error = "Could not activate the imported save: " + filesystem_error.message();
         if (had_destination) {
             std::error_code recovery_error;
-            std::filesystem::copy_file(rollback, destination,
-                std::filesystem::copy_options::overwrite_existing, recovery_error);
+            dkr::fs::copy_file_overwrite(rollback, destination, recovery_error);
         }
-        std::filesystem::remove(temporary, filesystem_error);
+        dkr::fs::remove(temporary, filesystem_error);
         return false;
     }
     filesystem_error.clear();
-    std::filesystem::remove(rollback, filesystem_error);
+    dkr::fs::remove(rollback, filesystem_error);
     return true;
 }
 
@@ -244,15 +243,13 @@ bool BackupUnlocked(std::filesystem::path& created, std::string& error) {
     }
     std::error_code filesystem_error;
     const auto directory = g_config_directory / "save-backups";
-    std::filesystem::create_directories(directory, filesystem_error);
+    dkr::fs::create_directories(directory, filesystem_error);
     if (filesystem_error) {
         error = "Could not create the backup garage: " + filesystem_error.message();
         return false;
     }
     created = directory / ("adventure-" + Timestamp() + ".bin");
-    std::filesystem::copy_file(source, created,
-                               std::filesystem::copy_options::overwrite_existing,
-                               filesystem_error);
+    dkr::fs::copy_file_overwrite(source, created, filesystem_error);
     if (filesystem_error) {
         error = "Could not create the backup: " + filesystem_error.message();
         return false;
@@ -274,7 +271,7 @@ bool BackupPakUnlocked(int channel, std::filesystem::path& created,
     }
     std::error_code filesystem_error;
     const auto directory = g_config_directory / "save-backups";
-    std::filesystem::create_directories(directory, filesystem_error);
+    dkr::fs::create_directories(directory, filesystem_error);
     if (filesystem_error) {
         error = "Could not create the backup garage: " + filesystem_error.message();
         return false;
@@ -282,8 +279,7 @@ bool BackupPakUnlocked(int channel, std::filesystem::path& created,
     created = directory /
         ("controller-pak-" + std::to_string(channel + 1) + "-" +
          Timestamp() + ".mpk");
-    std::filesystem::copy_file(source, created,
-        std::filesystem::copy_options::overwrite_existing, filesystem_error);
+    dkr::fs::copy_file_overwrite(source, created, filesystem_error);
     if (filesystem_error) {
         error = "Could not create the Controller Pak backup: " +
                 filesystem_error.message();
@@ -374,9 +370,9 @@ dkr::runtime::saves::SaveInfo dkr::runtime::saves::adventure_info() {
     SaveInfo info{};
     info.path = AdventurePath();
     std::error_code error;
-    info.exists = std::filesystem::exists(info.path, error);
+    info.exists = dkr::fs::exists(info.path, error);
     if (info.exists && !error) {
-        info.size = std::filesystem::file_size(info.path, error);
+        info.size = dkr::fs::file_size(info.path, error);
         std::vector<std::uint8_t> bytes;
         info.valid = !error && ReadAdventure(info.path, bytes);
     }
@@ -393,18 +389,16 @@ std::vector<std::filesystem::path> dkr::runtime::saves::adventure_backups() {
     std::vector<std::filesystem::path> result;
     std::error_code error;
     const auto directory = g_config_directory / "save-backups";
-    if (!std::filesystem::is_directory(directory, error)) {
+    if (!dkr::fs::is_directory(directory, error)) {
         return result;
     }
-    for (const auto& entry : std::filesystem::directory_iterator(
-             directory, std::filesystem::directory_options::skip_permission_denied,
-             error)) {
-        if (entry.is_regular_file(error) &&
-            entry.path().filename().string().rfind("adventure-", 0) == 0 &&
-            entry.path().extension() == ".bin") {
+    for (const auto& entry : dkr::fs::list_directory(directory)) {
+        if (dkr::fs::is_regular_file(entry) &&
+            entry.filename().string().rfind("adventure-", 0) == 0 &&
+            entry.extension() == ".bin") {
             std::vector<std::uint8_t> bytes;
-            if (ReadAdventure(entry.path(), bytes)) {
-                result.push_back(entry.path());
+            if (ReadAdventure(entry, bytes)) {
+                result.push_back(entry);
             }
         }
         error.clear();
@@ -439,7 +433,7 @@ bool dkr::runtime::saves::import_adventure(
         return false;
     }
     std::error_code equivalent_error;
-    if (std::filesystem::exists(AdventurePath(), equivalent_error)) {
+    if (dkr::fs::exists(AdventurePath(), equivalent_error)) {
         std::filesystem::path backup;
         if (!BackupUnlocked(backup, error)) {
             return false;
@@ -451,7 +445,7 @@ bool dkr::runtime::saves::import_adventure(
 bool dkr::runtime::saves::reset_adventure(std::string& error) {
     std::scoped_lock lock(g_save_manager_mutex);
     std::error_code exists_error;
-    if (std::filesystem::exists(AdventurePath(), exists_error)) {
+    if (dkr::fs::exists(AdventurePath(), exists_error)) {
         std::filesystem::path backup;
         if (!BackupUnlocked(backup, error)) {
             return false;
@@ -486,7 +480,7 @@ bool dkr::runtime::saves::commit_adventure(const codec::SaveImage& image,
         return false;
     }
     std::error_code exists_error;
-    if (std::filesystem::exists(AdventurePath(), exists_error)) {
+    if (dkr::fs::exists(AdventurePath(), exists_error)) {
         std::filesystem::path backup;
         if (!BackupUnlocked(backup, error)) {
             return false;
@@ -504,9 +498,9 @@ dkr::runtime::saves::SaveInfo dkr::runtime::saves::controller_pak_info(
     }
     info.path = ControllerPakPath(channel);
     std::error_code filesystem_error;
-    info.exists = std::filesystem::exists(info.path, filesystem_error);
+    info.exists = dkr::fs::exists(info.path, filesystem_error);
     if (info.exists && !filesystem_error) {
-        info.size = std::filesystem::file_size(info.path, filesystem_error);
+        info.size = dkr::fs::file_size(info.path, filesystem_error);
         std::vector<std::uint8_t> bytes;
         info.valid = !filesystem_error && ReadControllerPak(info.path, bytes);
     }
@@ -522,20 +516,18 @@ dkr::runtime::saves::controller_pak_backups(int channel) {
     }
     std::error_code error;
     const auto directory = g_config_directory / "save-backups";
-    if (!std::filesystem::is_directory(directory, error)) {
+    if (!dkr::fs::is_directory(directory, error)) {
         return result;
     }
     const std::string prefix =
         "controller-pak-" + std::to_string(channel + 1) + "-";
-    for (const auto& entry : std::filesystem::directory_iterator(
-             directory, std::filesystem::directory_options::skip_permission_denied,
-             error)) {
-        if (entry.is_regular_file(error) &&
-            entry.path().filename().string().rfind(prefix, 0) == 0 &&
-            entry.path().extension() == ".mpk") {
+    for (const auto& entry : dkr::fs::list_directory(directory)) {
+        if (dkr::fs::is_regular_file(entry) &&
+            entry.filename().string().rfind(prefix, 0) == 0 &&
+            entry.extension() == ".mpk") {
             std::vector<std::uint8_t> bytes;
-            if (ReadControllerPak(entry.path(), bytes)) {
-                result.push_back(entry.path());
+            if (ReadControllerPak(entry, bytes)) {
+                result.push_back(entry);
             }
         }
         error.clear();
@@ -578,7 +570,7 @@ bool dkr::runtime::saves::import_controller_pak(
         return false;
     }
     std::error_code exists_error;
-    if (std::filesystem::exists(ControllerPakPath(channel), exists_error)) {
+    if (dkr::fs::exists(ControllerPakPath(channel), exists_error)) {
         std::filesystem::path backup;
         if (!BackupPakUnlocked(channel, backup, error)) {
             return false;
@@ -644,7 +636,7 @@ bool dkr::runtime::saves::import_bundle(
         original.validator = entry.kind == kBundleAdventureKind
             ? ReadAdventure : ReadControllerPak;
         original.existed = original.validator(original.destination, original.bytes);
-        if (std::filesystem::exists(original.destination) && !original.existed) {
+        if (dkr::fs::exists(original.destination) && !original.existed) {
             error = "A destination save exists but is corrupt; move it aside before importing.";
             return false;
         }
@@ -682,7 +674,7 @@ bool dkr::runtime::saves::import_bundle(
                         original.validator, ignored);
         } else {
             std::error_code remove_error;
-            std::filesystem::remove(original.destination, remove_error);
+            dkr::fs::remove(original.destination, remove_error);
         }
     }
     if (error.empty()) {

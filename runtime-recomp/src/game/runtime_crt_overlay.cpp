@@ -24,6 +24,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -42,7 +43,7 @@ struct GpuImage {
 std::unordered_map<std::string, std::unique_ptr<GpuImage>> g_images;
 
 std::string PathKey(const std::filesystem::path& path) {
-    const auto value = std::filesystem::weakly_canonical(path).u8string();
+    const auto value = dkr::fs::weakly_canonical(path).u8string();
     return {value.begin(), value.end()};
 }
 
@@ -198,7 +199,7 @@ bool dkr::runtime::crt::draw(RT64::Application& application,
                              std::string& status) {
     if (image_path.empty() || application.device == nullptr) return false;
     std::error_code error;
-    if (!std::filesystem::is_regular_file(image_path, error)) {
+    if (!dkr::fs::is_regular_file(image_path, error)) {
         status = "CRT filter is missing: " + image_path.filename().string();
         return false;
     }

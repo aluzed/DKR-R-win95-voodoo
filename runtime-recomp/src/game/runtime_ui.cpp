@@ -54,6 +54,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -193,14 +194,14 @@ std::filesystem::path RuntimeAssetPath(const std::filesystem::path& relative) {
             std::filesystem::path(base) / relative;
         SDL_free(base);
         std::error_code error;
-        if (std::filesystem::is_regular_file(candidate, error)) {
+        if (dkr::fs::is_regular_file(candidate, error)) {
             return candidate;
         }
     }
     const std::filesystem::path candidate =
-        std::filesystem::current_path() / relative;
+        dkr::fs::current_path() / relative;
     std::error_code error;
-    return std::filesystem::is_regular_file(candidate, error)
+    return dkr::fs::is_regular_file(candidate, error)
         ? candidate : std::filesystem::path{};
 }
 
@@ -228,19 +229,18 @@ void RefreshCrtFilters() {
     const std::filesystem::path custom_directory =
         g_config_directory / "filters";
     std::error_code error;
-    std::filesystem::create_directories(custom_directory, error);
+    dkr::fs::create_directories(custom_directory, error);
     std::vector<std::filesystem::path> custom_paths;
     if (!error) {
-        for (const auto& entry :
-             std::filesystem::directory_iterator(custom_directory, error)) {
+        for (const auto& entry : dkr::fs::list_directory(custom_directory, error)) {
             if (error) break;
-            if (!entry.is_regular_file(error)) continue;
-            std::string extension = entry.path().extension().string();
+            if (!dkr::fs::is_regular_file(entry)) continue;
+            std::string extension = entry.extension().string();
             std::transform(extension.begin(), extension.end(), extension.begin(),
                            [](unsigned char value) {
                                return static_cast<char>(std::tolower(value));
                            });
-            if (extension == ".png") custom_paths.push_back(entry.path());
+            if (extension == ".png") custom_paths.push_back(entry);
         }
     }
     std::sort(custom_paths.begin(), custom_paths.end());
@@ -331,7 +331,7 @@ bool ReplaceSettingsFile(const std::filesystem::path& temporary,
                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #else
     std::error_code error;
-    std::filesystem::rename(temporary, destination, error);
+    dkr::fs::rename(temporary, destination, error);
     return !error;
 #endif
 }
@@ -636,7 +636,7 @@ void ApplyProfileGraphics(GraphicsConfig& config,
 
 void SaveSettings() {
     std::error_code error;
-    std::filesystem::create_directories(g_config_directory, error);
+    dkr::fs::create_directories(g_config_directory, error);
     if (error) {
         std::fprintf(stderr, "[boot][settings] failed to create settings directory: %s\n",
                      error.message().c_str());
@@ -773,13 +773,13 @@ void SaveSettings() {
         if (!output) {
             std::fprintf(stderr, "[boot][settings] failed while writing settings\n");
             output.close();
-            std::filesystem::remove(temporary_path, error);
+            dkr::fs::remove(temporary_path, error);
             return;
         }
     }
     if (!ReplaceSettingsFile(temporary_path, settings_path)) {
         std::fprintf(stderr, "[boot][settings] failed to replace settings file\n");
-        std::filesystem::remove(temporary_path, error);
+        dkr::fs::remove(temporary_path, error);
     }
 }
 
@@ -1091,14 +1091,14 @@ std::filesystem::path DefaultBrowserDirectory(const std::filesystem::path& selec
     std::error_code error;
     if (!selected.empty()) {
         const auto parent = selected.parent_path();
-        if (std::filesystem::is_directory(parent, error)) {
+        if (dkr::fs::is_directory(parent, error)) {
             return parent;
         }
     }
 #if defined(_WIN32)
     if (const char* profile = std::getenv("USERPROFILE"); profile != nullptr) {
         const auto downloads = std::filesystem::path(profile) / "Downloads";
-        if (std::filesystem::is_directory(downloads, error)) {
+        if (dkr::fs::is_directory(downloads, error)) {
             return downloads;
         }
         return std::filesystem::path(profile);
@@ -1106,13 +1106,13 @@ std::filesystem::path DefaultBrowserDirectory(const std::filesystem::path& selec
 #else
     if (const char* home = std::getenv("HOME"); home != nullptr) {
         const auto downloads = std::filesystem::path(home) / "Downloads";
-        if (std::filesystem::is_directory(downloads, error)) {
+        if (dkr::fs::is_directory(downloads, error)) {
             return downloads;
         }
         return std::filesystem::path(home);
     }
 #endif
-    return std::filesystem::current_path(error);
+    return dkr::fs::current_path(error);
 }
 
 void RefreshRomBrowser() {
@@ -1136,19 +1136,15 @@ void RefreshRomBrowser() {
         }
 #endif
     } else {
-        std::filesystem::directory_iterator iterator(
-            g_rom_browser.directory,
-            std::filesystem::directory_options::skip_permission_denied, error);
+        const auto items = dkr::fs::list_directory(g_rom_browser.directory, error);
         if (error) {
             g_rom_browser.message = "T.T. could not read this location: " + error.message();
         } else {
-            for (const auto& item : iterator) {
-                const bool directory = item.is_directory(error);
-                error.clear();
-                if (directory || (item.is_regular_file(error) && IsRomFile(item.path()))) {
-                    g_rom_browser.entries.push_back({item.path(), directory});
+            for (const auto& item : items) {
+                const bool directory = dkr::fs::is_directory(item);
+                if (directory || (dkr::fs::is_regular_file(item) && IsRomFile(item))) {
+                    g_rom_browser.entries.push_back({item, directory});
                 }
-                error.clear();
             }
         }
     }
@@ -1263,13 +1259,13 @@ bool ImportCrtFilterWithDialog() {
 
     std::error_code error;
     constexpr std::uintmax_t maximum_filter_bytes = 64U * 1024U * 1024U;
-    const std::uintmax_t size = std::filesystem::file_size(source, error);
+    const std::uintmax_t size = dkr::fs::file_size(source, error);
     if (error || size == 0 || size > maximum_filter_bytes) {
         g_crt_status = "Choose a valid PNG filter no larger than 64 MB.";
         return false;
     }
     const std::filesystem::path custom_directory = g_config_directory / "filters";
-    std::filesystem::create_directories(custom_directory, error);
+    dkr::fs::create_directories(custom_directory, error);
     if (error) {
         g_crt_status = "The custom filter folder could not be created.";
         return false;
@@ -1277,13 +1273,12 @@ bool ImportCrtFilterWithDialog() {
     std::string stem = source.stem().string();
     if (stem.empty()) stem = "custom-filter";
     std::filesystem::path destination = custom_directory / (stem + ".png");
-    for (int suffix = 2; std::filesystem::exists(destination, error) && suffix < 1000;
+    for (int suffix = 2; dkr::fs::exists(destination, error) && suffix < 1000;
          ++suffix) {
         destination = custom_directory /
             (stem + "-" + std::to_string(suffix) + ".png");
     }
-    std::filesystem::copy_file(source, destination,
-                               std::filesystem::copy_options::none, error);
+    dkr::fs::copy_file_no_overwrite(source, destination, error);
     if (error) {
         g_crt_status = "The custom filter could not be imported: " + error.message();
         return false;

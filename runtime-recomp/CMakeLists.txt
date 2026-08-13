@@ -178,6 +178,11 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     add_executable(DKRPortGame ${DKR_GAME_SOURCES})
     target_include_directories(DKRPortGame PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
+        # E02-S05 : `win95/fileio.hpp`, le point d'indirection des operations de
+        # systeme de fichiers. Ajoute pour toutes les cibles et non seulement
+        # Windows 95 : sur les autres, l'en-tete se resout aux fonctions de la
+        # bibliotheque standard sans la moindre couche entre elles et l'appelant.
+        "${DKRPORT_ROOT}/platform"
         "${DKR_RECOMP_SOURCE}/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/N64Recomp/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/ultramodern/include"

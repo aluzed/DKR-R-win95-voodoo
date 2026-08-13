@@ -339,6 +339,19 @@ dkr_file_result dkr_file_copy(const char *from, const char *to)
     return DKR_FILE_OK;
 }
 
+dkr_file_result dkr_file_copy_no_overwrite(const char *from, const char *to)
+{
+    if (!from || !to) {
+        return DKR_FILE_ERR_PATH;
+    }
+    /* TRUE : echouer si la destination existe. */
+    if (!CopyFileA(from, to, TRUE)) {
+        return (GetLastError() == ERROR_FILE_EXISTS)
+               ? DKR_FILE_ERR_ACCESS : from_last_error();
+    }
+    return DKR_FILE_OK;
+}
+
 
 int dkr_file_is_regular(const char *path)
 {
@@ -645,6 +658,44 @@ dkr_file_result dkr_file_create_directories(const char *path)
         }
     }
     return DKR_FILE_OK;
+}
+
+static dkr_file_result copy_bytes(const char *from, const char *to,
+                                  const char *mode)
+{
+    FILE *in, *out;
+    char buf[8192];
+    size_t n;
+
+    if (!from || !to) {
+        return DKR_FILE_ERR_PATH;
+    }
+    in = fopen(from, "rb");
+    if (!in) {
+        return from_errno();
+    }
+    out = fopen(to, mode);
+    if (!out) {
+        dkr_file_result r = from_errno();
+        fclose(in);
+        return r;
+    }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            fclose(in);
+            fclose(out);
+            return DKR_FILE_ERR_IO;
+        }
+    }
+    fclose(in);
+    return fclose(out) == 0 ? DKR_FILE_OK : DKR_FILE_ERR_IO;
+}
+
+/* « wx » refuse une destination existante, et c'est le systeme qui tranche —
+   comme le TRUE de CopyFileA sur la cible. */
+dkr_file_result dkr_file_copy_no_overwrite(const char *from, const char *to)
+{
+    return copy_bytes(from, to, "wbx");
 }
 
 dkr_file_result dkr_file_copy(const char *from, const char *to)

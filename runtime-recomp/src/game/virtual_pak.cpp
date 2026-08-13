@@ -16,6 +16,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -180,7 +181,7 @@ bool SavePakLocked(int channel, VirtualPak& pak) {
     WriteU32(bytes, 16U, Checksum(bytes));
 
     std::error_code error;
-    std::filesystem::create_directories(g_config_directory, error);
+    dkr::fs::create_directories(g_config_directory, error);
     const std::filesystem::path path = PakPath(channel);
     const std::filesystem::path temporary = path.string() + ".tmp";
     const std::filesystem::path backup = path.string() + ".bak";
@@ -196,30 +197,28 @@ bool SavePakLocked(int channel, VirtualPak& pak) {
             return false;
         }
     }
-    if (std::filesystem::exists(path, error)) {
-        std::filesystem::copy_file(path, backup,
-            std::filesystem::copy_options::overwrite_existing, error);
+    if (dkr::fs::exists(path, error)) {
+        dkr::fs::copy_file_overwrite(path, backup, error);
         if (error) {
-            std::filesystem::remove(temporary, error);
+            dkr::fs::remove(temporary, error);
             return false;
         }
         error.clear();
-        std::filesystem::remove(path, error);
+        dkr::fs::remove(path, error);
         if (error) {
-            std::filesystem::remove(temporary, error);
+            dkr::fs::remove(temporary, error);
             return false;
         }
     }
     error.clear();
-    std::filesystem::rename(temporary, path, error);
+    dkr::fs::rename(temporary, path, error);
     if (error) {
         std::error_code recovery_error;
-        if (std::filesystem::exists(backup, recovery_error)) {
-            std::filesystem::copy_file(backup, path,
-                std::filesystem::copy_options::overwrite_existing, recovery_error);
+        if (dkr::fs::exists(backup, recovery_error)) {
+            dkr::fs::copy_file_overwrite(backup, path, recovery_error);
         }
         recovery_error.clear();
-        std::filesystem::remove(temporary, recovery_error);
+        dkr::fs::remove(temporary, recovery_error);
         return false;
     }
     pak.loaded = true;
@@ -238,7 +237,7 @@ std::int32_t EnsureLoaded(int channel, VirtualPak*& result) {
         return pak.corrupt ? kPfsBadData : kPfsOk;
     }
     const std::filesystem::path path = PakPath(channel);
-    if (!std::filesystem::exists(path)) {
+    if (!dkr::fs::exists(path)) {
         pak.loaded = true;
         pak.corrupt = false;
         return SavePakLocked(channel, pak) ? kPfsOk : kPfsBadData;
@@ -252,7 +251,7 @@ std::int32_t EnsureLoaded(int channel, VirtualPak*& result) {
         // Do not overwrite the known-good backup with the corrupt primary
         // while promoting the recovered in-memory generation.
         std::error_code remove_error;
-        std::filesystem::remove(path, remove_error);
+        dkr::fs::remove(path, remove_error);
         return SavePakLocked(channel, pak) ? kPfsOk : kPfsBadData;
     }
     pak.loaded = true;

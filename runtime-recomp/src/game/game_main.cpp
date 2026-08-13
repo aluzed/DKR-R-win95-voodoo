@@ -34,6 +34,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <DbgHelp.h>
+#include "win95/fileio.hpp"
 #endif
 
 extern RspUcodeFunc dkrAspMain;
@@ -46,12 +47,12 @@ std::atomic_flag g_crash_filter_active = ATOMIC_FLAG_INIT;
 
 std::filesystem::path DefaultConfigDirectory(const char* executable_argument) {
     std::error_code error;
-    const std::filesystem::path executable = std::filesystem::absolute(
+    const std::filesystem::path executable = dkr::fs::absolute(
         std::filesystem::u8path(executable_argument), error);
     const std::filesystem::path executable_directory = error
-        ? std::filesystem::current_path()
+        ? dkr::fs::current_path()
         : executable.parent_path();
-    if (std::filesystem::exists(executable_directory / "portable.txt")) {
+    if (dkr::fs::exists(executable_directory / "portable.txt")) {
         return executable_directory / "dkr-runtime-data";
     }
 #if defined(_WIN32)
@@ -266,7 +267,7 @@ bool RelaunchApplication(int argc, char** argv) {
     }
     std::error_code error;
     const std::filesystem::path executable =
-        std::filesystem::absolute(std::filesystem::u8path(argv[0]), error);
+        dkr::fs::absolute(std::filesystem::u8path(argv[0]), error);
     const std::string executable_utf8 = error
         ? std::string(argv[0])
         : executable.string();
@@ -333,7 +334,7 @@ int DkrMain(int argc, char** argv) {
         }
         if (!dkr::runtime::texture_packs::delete_managed(pack_id, status) ||
             !dkr::runtime::texture_packs::snapshot(true).empty() ||
-            std::filesystem::exists(managed_path)) {
+            dkr::fs::exists(managed_path)) {
             std::fprintf(stderr, "[test][rice] FAILED: permanent managed deletion failed: %s\n",
                          status.c_str());
             return 1;
@@ -358,7 +359,7 @@ int DkrMain(int argc, char** argv) {
         ? std::filesystem::u8path(argv[2])
         : DefaultConfigDirectory(argv[0]);
     const unsigned timeout_seconds = argc >= 4 ? static_cast<unsigned>(std::stoul(argv[3])) : 0U;
-    std::filesystem::create_directories(config_directory);
+    dkr::fs::create_directories(config_directory);
     dkr::runtime::pak::configure(config_directory);
     dkr::runtime::saves::configure(config_directory);
 

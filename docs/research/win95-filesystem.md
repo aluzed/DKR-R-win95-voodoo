@@ -202,3 +202,64 @@ Il l'est désormais, parce qu'aucun chemin Windows ne s'écrit sans « : » ni �
 27 contrôles, tous verts sur la machine émulée comme sur l'hôte, la même source
 compilée pour les deux. Ce qui est établi n'est pas « les opérations
 fonctionnent » mais « elles se comportent comme celles qu'elles remplacent ».
+
+## Le câblage des sources du jeu — 13 août 2026
+
+Les 96 sites d'opérations des sources du jeu passent désormais par `dkr::fs`.
+Quatre-vingt-sept se sont réécrits mécaniquement ; les neuf autres demandaient
+une décision, et c'est là que se trouvait le travail.
+
+### `copy_options::none` n'est pas `overwrite_existing`
+
+Six des huit `copy_file` écrasaient ; **deux refusaient de le faire** —
+importer un filtre CRT ou un pack de textures ne doit pas remplacer
+silencieusement celui qui porte déjà ce nom. Le point d'indirection n'offrait que
+la première forme.
+
+Les deux sont maintenant nommées, `copy_file_overwrite` et
+`copy_file_no_overwrite`, plutôt que de faire circuler un jeu d'options dont
+personne n'emploie plus de deux valeurs. Le refus est fait par le système —
+`CopyFileA(…, TRUE)` sur la cible, `fopen` en « wbx » sur le véhicule — et non
+par un `exists` préalable : entre le test et la copie il y a un intervalle.
+
+### Une liste vide ne dit pas pourquoi
+
+`list_directory` rendait une liste vide aussi bien pour un répertoire vide que
+pour un répertoire illisible. Un site d'appel distingue les deux pour le dire au
+joueur — « T.T. could not read this location ». D'où une forme à `error_code`.
+
+### Ce qui n'a pas été reproduit, et pourquoi
+
+`symlink_status` rend un `file_status` : un type, ses accesseurs, ses catégories.
+Son unique site d'appel s'exprime aussi bien en opérations sur le chemin, et
+l'ordre du code — refuser le lien **avant** de tester la présence — est conservé,
+parce qu'un lien cassé n'« existe » pas.
+
+`is_symlink` rend toujours false sur la cible. Ce n'est pas un renoncement :
+Windows 95 n'a ni liens symboliques, ni jonctions NTFS — celles-ci n'arrivent
+qu'avec Windows 2000.
+
+### Ce qui reste invérifiable ici, et ce qui a été mis à sa place
+
+Quatre fichiers — `runtime_ui`, `runtime_texture_packs`, `runtime_crt_overlay`,
+`runtime_rice_texture_import` — ne se compilent qu'avec RT64, absent de ce dépôt.
+Windows 95 ne les construit de toute façon jamais : RT64 exige D3D12, Vulkan ou
+Metal.
+
+Leurs appels ne peuvent donc pas être éprouvés en les compilant. Ce qui porte le
+risque réel, en revanche, l'est : `test_fileio_signatures.cpp` reprend chaque
+appel avec ses types d'arguments et se compile dans les deux branches. C'est
+ainsi qu'ont été trouvées les surcharges manquantes — `absolute(p, ec)`,
+`is_regular_file(p, ec)`, `current_path(ec)` — dont l'absence ne se voit qu'à la
+compilation.
+
+**Ce contrôle ne remplace pas la compilation de ces fichiers**, et il faudra la
+faire quand RT64 sera présent. Il couvre la seule chose qui pouvait être couverte
+sans lui.
+
+### État
+
+39 contrôles sur la machine émulée, autant sur les deux branches de l'hôte, plus
+les signatures. Les 17 sources du jeu que construit la cible Windows 95 compilent
+toutes. Ne subsistent dans les sources du jeu que 11 inclusions de `<mutex>` et
+`<thread>`, qui relèvent de E02-S02.

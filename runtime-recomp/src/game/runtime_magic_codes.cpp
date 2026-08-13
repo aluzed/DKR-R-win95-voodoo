@@ -16,6 +16,7 @@
 #include <fstream>
 #include <mutex>
 #include <system_error>
+#include "win95/fileio.hpp"
 
 namespace {
 
@@ -39,7 +40,7 @@ bool ReplaceQueueFile(const std::filesystem::path& temporary,
                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #else
     std::error_code error;
-    std::filesystem::rename(temporary, destination, error);
+    dkr::fs::rename(temporary, destination, error);
     return !error;
 #endif
 }
@@ -52,7 +53,7 @@ bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
     }
     std::error_code filesystem_error;
     if (mask == 0U) {
-        std::filesystem::remove(g_one_shot_path, filesystem_error);
+        dkr::fs::remove(g_one_shot_path, filesystem_error);
         if (filesystem_error) {
             error = "Could not clear the Magic Code launch queue: " +
                 filesystem_error.message();
@@ -61,7 +62,7 @@ bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
         return true;
     }
 
-    std::filesystem::create_directories(g_one_shot_path.parent_path(),
+    dkr::fs::create_directories(g_one_shot_path.parent_path(),
                                         filesystem_error);
     if (filesystem_error) {
         error = "Could not create the Magic Code settings folder: " +
@@ -75,13 +76,13 @@ bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
         output.flush();
         if (!output) {
             error = "Could not write the Magic Code launch queue.";
-            std::filesystem::remove(temporary, filesystem_error);
+            dkr::fs::remove(temporary, filesystem_error);
             return false;
         }
     }
     if (!ReplaceQueueFile(temporary, g_one_shot_path)) {
         error = "Could not safely replace the Magic Code launch queue.";
-        std::filesystem::remove(temporary, filesystem_error);
+        dkr::fs::remove(temporary, filesystem_error);
         return false;
     }
     return true;
@@ -93,7 +94,7 @@ void RemoveConsumedQueueFile() {
         return;
     }
     std::error_code error;
-    std::filesystem::remove(g_one_shot_path, error);
+    dkr::fs::remove(g_one_shot_path, error);
     if (error) {
         std::fprintf(stderr,
                      "[boot][magic-codes] could not clear one-shot queue: %s\n",
