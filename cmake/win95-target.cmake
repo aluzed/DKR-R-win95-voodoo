@@ -154,13 +154,17 @@ add_dependencies(win95ultramodern dkr_win95_cpp_subset)
 # n'aurait rien appris tant que neuf inclusions interdites y subsistaient ; il
 # en reste une, et elle est attribuée.
 #
-# `--max 1` est un cliquet, pas une exemption : il chiffre la dette restante —
-# le seul `<filesystem>` d'`ultramodern.hpp` — de sorte qu'elle ne puisse pas
-# grandir. Quand E02-S05 l'aura retiré, le contrôleur le dira et ce 1 devra
-# tomber à 0.
+# Le cliquet `--max 1` a été retiré : `ultramodern` n'a plus aucune inclusion
+# interdite. Il en restait une, `<filesystem>`, et elle a disparu non pas en
+# réécrivant du code mais parce que la mesure a montré que la règle était
+# fausse — l'inclusion et le type `std::filesystem::path` ne coûtent rien sous
+# Windows 95, seules les opérations coûtent. Voir docs/research/win95-filesystem.md.
+#
+# C'est le cliquet qui l'a signalé, en disant que sa tolérance n'avait plus lieu
+# d'être. Un seuil qu'on ne desserre jamais cesse de protéger.
 add_custom_target(dkr_win95_cpp_subset_ultramodern ALL
     COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check-cpp-subset.py"
-            --max 1 "${DKRPORT_ROOT}/extern/n64-modern-runtime/ultramodern"
+            "${DKRPORT_ROOT}/extern/n64-modern-runtime/ultramodern"
     COMMENT "Contrôle du sous-ensemble C++ : ultramodern"
     VERBATIM)
 

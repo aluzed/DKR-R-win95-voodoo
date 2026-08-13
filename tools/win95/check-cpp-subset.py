@@ -33,9 +33,40 @@ FORBIDDEN = {
     "barrier":            (6,  "la couche de E02-S01"),
     "semaphore":          (6,  "la couche de E02-S01"),
     "stop_token":         (6,  "la couche de E02-S01"),
-    "filesystem":         (13, "couche fichiers en ...A (E02-S05)"),
+    # <filesystem> n'est PAS ici, et c'est mesure : voir FILESYSTEM_OPERATIONS.
     "syncstream":         (6,  "sans objet sur cette cible"),
 }
+
+# --- <filesystem> : l'inclusion est libre, les operations ne le sont pas -------
+#
+# Ce fichier a longtemps banni `<filesystem>` en bloc, en lui attribuant treize
+# symboles absents. **La mesure dit autre chose** (E02-S05, sondes dans
+# `docs/research/win95-filesystem.md`) :
+#
+#     #include <filesystem> seul            0 symbole bloquant
+#     un objet std::filesystem::path        1 — LoadLibraryW, et c'est un bouchon
+#     un appel a exists()                  17 — dont 7 absents pour de bon
+#
+# La distinction est celle qui compte : un bouchon laisse le binaire se charger,
+# un symbole absent l'en empeche. Un `path` est donc utilisable sous Windows 95,
+# et il l'a ete verifie sur la machine — construction, parent_path, filename,
+# extension, concatenation, tout est juste.
+#
+# Bannir l'en-tete aurait donc impose de reecrire 250 usages du type pour un
+# gain nul, et laisse croire le probleme resolu tant qu'il restait les ~140
+# appels d'operations, qui sont les seuls a compter.
+#
+# On surveille donc les operations, et elles seules.
+FILESYSTEM_OPERATIONS = (
+    "absolute", "canonical", "copy", "copy_file", "create_directories",
+    "create_directory", "current_path", "directory_iterator", "exists",
+    "file_size", "is_directory", "is_regular_file", "is_symlink",
+    "last_write_time", "recursive_directory_iterator", "remove", "remove_all",
+    "rename", "space", "status", "symlink_status", "temp_directory_path",
+    "weakly_canonical",
+)
+RX_FS_OPERATION = re.compile(
+    r'\bstd::filesystem::(' + "|".join(FILESYSTEM_OPERATIONS) + r')\b')
 
 SOURCE_SUFFIXES = (".cpp", ".hpp", ".h", ".cc", ".cxx")
 RX_INCLUDE = re.compile(r'^\s*#\s*include\s*<([A-Za-z0-9_./]+)>')
@@ -78,6 +109,14 @@ def scan(paths, quiet=False):
                 continue
             lines = text.splitlines()
             for i, line in enumerate(lines, 1):
+                fs = RX_FS_OPERATION.search(line)
+                if fs:
+                    allow = RX_ALLOW.search(lines[i - 2]) if i >= 2 else None
+                    why = allow.group(1).strip() if allow else ""
+                    if allow and len(why) >= ALLOW_MIN_JUSTIFICATION:
+                        allowed.append((f, i, "filesystem::" + fs.group(1), why))
+                    else:
+                        bad.append((f, i, "filesystem::" + fs.group(1)))
                 m = RX_INCLUDE.match(line)
                 if not (m and m.group(1) in FORBIDDEN):
                     continue
@@ -103,6 +142,11 @@ def scan(paths, quiet=False):
 
 def report(bad):
     for f, line, header in bad:
+        if header.startswith("filesystem::"):
+            print(f"  {RED}INTERDIT{OFF}  {f}:{line}")
+            print(f"            `std::{header}` — operation de systeme de fichiers")
+            print(f"            remplacement : platform/win95/fileio.h (E02-S05)")
+            continue
         n, replacement = FORBIDDEN[header]
         print(f"  {RED}INTERDIT{OFF}  {f}:{line}")
         print(f"            <{header}> — {n} symboles absents de Windows 95")
@@ -119,6 +163,16 @@ def self_test():
             "#include <atomic>\n#include <chrono>\nint main(){return 0;}\n")
         (tmp / "sale.cpp").write_text(
             "#include <vector>\n#include <thread>\nint main(){return 0;}\n")
+        # Une operation de systeme de fichiers : interdite, la ou l'inclusion et
+        # le type `path` ne le sont pas. C'est la distinction que ce controleur
+        # a longtemps ratee, et il faut donc l'eprouver dans les deux sens.
+        (tmp / "fs_type.cpp").write_text(
+            "#include <filesystem>\n"
+            "static std::filesystem::path p{\"a\"};\n"
+            "int main(){ return (int)p.string().size(); }\n")
+        (tmp / "fs_call.cpp").write_text(
+            "#include <filesystem>\n"
+            "int main(){ return (int)std::filesystem::exists(\"a\"); }\n")
         # Derogation valable : branche non compilee sur la cible, motif ecrit.
         (tmp / "derogation.cpp").write_text(
             "// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee ici\n"
@@ -140,6 +194,24 @@ def self_test():
         bad = scan([tmp / "sale.cpp"], quiet=True)
         if not bad:
             print(f"{RED}le temoin sale est accepte — le verificateur ne detecte rien{OFF}")
+            return 1
+        report(bad)
+        print(f"  {GREEN}correctement refuse{OFF}")
+
+        print(f"{BLUE}==>{OFF} <filesystem> : le type path est permis")
+        bad = scan([tmp / "fs_type.cpp"], quiet=True)
+        if bad:
+            report(bad)
+            print(f"{RED}std::filesystem::path est refuse — il est pourtant "
+                  f"utilisable sous Windows 95, mesure sur la machine{OFF}")
+            return 1
+        print(f"  {GREEN}accepte{OFF}")
+
+        print(f"{BLUE}==>{OFF} <filesystem> : une operation est refusee")
+        bad = scan([tmp / "fs_call.cpp"], quiet=True)
+        if not bad:
+            print(f"{RED}std::filesystem::exists est accepte — il tire sept "
+                  f"symboles absents et le binaire ne se chargerait pas{OFF}")
             return 1
         report(bad)
         print(f"  {GREEN}correctement refuse{OFF}")

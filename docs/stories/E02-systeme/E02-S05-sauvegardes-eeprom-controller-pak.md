@@ -111,6 +111,38 @@ somme de contrôle.
 Les coupures ne sont pas attendues mais **simulées**, en fabriquant à la main les
 états intermédiaires que la séquence traverse — comme le rebouclage de E01-S03.
 
+### `<filesystem>` : la règle du dépôt était fausse, et coûteuse
+
+Ce dépôt bannissait `<filesystem>` en bloc, en lui attribuant treize symboles
+absents. La mesure dit autre chose — relevé complet dans
+[`docs/research/win95-filesystem.md`](../../research/win95-filesystem.md) :
+
+| | Symboles bloquants | Se charge ? |
+|---|---:|---|
+| `#include <filesystem>` seul | **0** | oui |
+| un objet `std::filesystem::path` | 1, un **bouchon** | **oui** |
+| un appel à `exists()` | 17, dont **7 absents** | **non** |
+
+Et `path` ne fait pas que se charger : il **fonctionne**, vérifié sur la machine —
+construction, `parent_path`, `filename`, `extension`, concaténation, tout est
+juste. C'est de la manipulation de chaînes, et la manipulation de chaînes ne
+demande rien au système.
+
+L'écart de coût entre la règle et la réalité est de deux ordres de grandeur :
+
+| | Occurrences | À faire |
+|---|---:|---|
+| `std::filesystem::path` — le **type** | **250** | **rien** |
+| les opérations | ~140 | à router vers `fileio.h` |
+
+Bannir l'en-tête aurait fait réécrire 250 usages pour un gain nul, **et** laissé
+croire le problème résolu tant que subsistaient les 140 qui comptent. Le
+contrôleur de sous-ensemble surveille désormais les opérations, et elles seules,
+avec un auto-test qui l'éprouve dans les deux sens.
+
+Effet immédiat : **`ultramodern` n'a plus aucune inclusion interdite**, et son
+cliquet a été retiré — le contrôleur l'a signalé de lui-même.
+
 ## Risques
 
 Perdre la progression d'un joueur est le défaut le moins pardonnable d'un
