@@ -99,6 +99,7 @@ static int derive_sibling(char *out, size_t out_size,
  * ========================================================================== */
 
 #include <windows.h>
+#include <stdlib.h>
 
 static dkr_file_result from_last_error(void)
 {
@@ -258,16 +259,25 @@ dkr_file_result dkr_file_remove(const char *path)
     if (!path) {
         return DKR_FILE_ERR_PATH;
     }
+    /* Le cas du repertoire vient **en premier**, et l'ordre n'est pas
+       cosmetique. Ce code essayait d'abord `DeleteFileA`, puis se rabattait sur
+       `RemoveDirectoryA` ; il rendait DKR_FILE_OK sur un repertoire sans rien
+       effacer, parce que l'echec de `DeleteFileA` sur un repertoire passait par
+       la branche « deja absent ». L'appelant croyait avoir efface, le
+       repertoire restait, et le nettoyage prealable de la suite d'epreuve
+       n'operait pas — c'est ainsi que le defaut s'est montre.
+
+       Interroger le type avant d'agir coute un appel et supprime la
+       possibilite de confondre « rien a faire » avec « je n'ai pas su ». */
+    if (dkr_file_is_directory(path)) {
+        return RemoveDirectoryA(path) ? DKR_FILE_OK : from_last_error();
+    }
     if (DeleteFileA(path)) {
         return DKR_FILE_OK;
     }
     /* Deja absent : l'appelant voulait qu'il ne soit plus la, il ne l'est pas. */
     if (GetLastError() == ERROR_FILE_NOT_FOUND ||
         GetLastError() == ERROR_PATH_NOT_FOUND) {
-        return DKR_FILE_OK;
-    }
-    /* Un repertoire ne s'efface pas par DeleteFile. */
-    if (dkr_file_is_directory(path) && RemoveDirectoryA(path)) {
         return DKR_FILE_OK;
     }
     return from_last_error();
@@ -329,6 +339,149 @@ dkr_file_result dkr_file_copy(const char *from, const char *to)
     return DKR_FILE_OK;
 }
 
+
+int dkr_file_is_regular(const char *path)
+{
+    DWORD a;
+    if (!path) {
+        return 0;
+    }
+    a = GetFileAttributesA(path);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+unsigned long long dkr_file_size(const char *path, int *ok)
+{
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+
+    if (ok) { *ok = 0; }
+    if (!path) {
+        return 0;
+    }
+    /* `GetFileAttributesExA` serait le choix naturel, et c'est celui que ce code
+       faisait d'abord. **Windows 95 ne l'exporte pas** — pas un bouchon, une
+       absence, et le chargeur refuse alors de demarrer le processus entier. Le
+       controle des imports l'a arrete avant la machine ; c'est exactement le
+       genre de symbole que Windows 98 a ajoute et qu'on suppose acquis.
+       `GetFileSizeEx` est absent pour la meme raison.
+     *
+       `FindFirstFileA` rend la taille sans ouvrir le fichier — donc sans
+       descripteur qui fuirait ni conflit de partage avec un fichier deja
+       ouvert, ce qui etait la raison du choix initial. Elle attend un chemin
+       litteral : un appelant qui y glisserait un `*` ferait mesurer une autre
+       entree. Aucun ne le fait, et le nom de la fonction ne le laisse pas
+       entendre. */
+    h = FindFirstFileA(path, &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    FindClose(h);
+    if (ok) { *ok = 1; }
+    return ((unsigned long long)fd.nFileSizeHigh << 32) |
+            (unsigned long long)fd.nFileSizeLow;
+}
+
+dkr_file_result dkr_file_rename(const char *from, const char *to)
+{
+    if (!from || !to) {
+        return DKR_FILE_ERR_PATH;
+    }
+    /* `MoveFileA` refuse une cible existante et `MoveFileExA` n'est pas
+       implementee ici — mesure de E02-S05. On efface donc d'abord, ce qui ouvre
+       la meme fenetre que l'ecriture durable : entre l'effacement et le
+       renommage, ni l'ancien ni le nouveau ne sont a leur place. */
+    if (dkr_file_exists(to)) {
+        DeleteFileA(to);
+    }
+    if (!MoveFileA(from, to)) {
+        return from_last_error();
+    }
+    return DKR_FILE_OK;
+}
+
+dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path)
+{
+    DWORD n;
+    if (!out || !path || out_size == 0) {
+        return DKR_FILE_ERR_PATH;
+    }
+    n = GetFullPathNameA(path, (DWORD)out_size, out, NULL);
+    if (n == 0 || n >= out_size) {
+        return DKR_FILE_ERR_PATH;
+    }
+    return DKR_FILE_OK;
+}
+
+struct dkr_dir {
+    HANDLE           handle;
+    WIN32_FIND_DATAA data;
+    int              pending;   /* une entree deja lue attend d'etre rendue */
+};
+
+dkr_dir *dkr_dir_open(const char *path)
+{
+    char pattern[MAX_PATH];
+    dkr_dir *d;
+    size_t len;
+
+    if (!path) {
+        return NULL;
+    }
+    len = strlen(path);
+    if (len + 5 > sizeof(pattern)) {
+        return NULL;
+    }
+    memcpy(pattern, path, len);
+    /* `FindFirstFileA` veut un motif, pas un repertoire. */
+    if (len > 0 && pattern[len - 1] != '\\' && pattern[len - 1] != '/') {
+        pattern[len++] = '\\';
+    }
+    strcpy(pattern + len, "*");
+
+    d = (dkr_dir *)calloc(1, sizeof(*d));
+    if (!d) {
+        return NULL;
+    }
+    d->handle = FindFirstFileA(pattern, &d->data);
+    if (d->handle == INVALID_HANDLE_VALUE) {
+        free(d);
+        return NULL;
+    }
+    d->pending = 1;
+    return d;
+}
+
+const char *dkr_dir_next(dkr_dir *d)
+{
+    if (!d) {
+        return NULL;
+    }
+    for (;;) {
+        if (!d->pending) {
+            if (!FindNextFileA(d->handle, &d->data)) {
+                return NULL;
+            }
+        }
+        d->pending = 0;
+        /* « . » et « .. » sont ecartes, comme le fait `directory_iterator`. */
+        if (strcmp(d->data.cFileName, ".") != 0 &&
+            strcmp(d->data.cFileName, "..") != 0) {
+            return d->data.cFileName;
+        }
+    }
+}
+
+void dkr_dir_close(dkr_dir *d)
+{
+    if (d) {
+        if (d->handle != INVALID_HANDLE_VALUE) {
+            FindClose(d->handle);
+        }
+        free(d);
+    }
+}
+
 static dkr_file_result read_whole(const char *path, void *buffer,
                                   size_t buffer_size, size_t *read_size)
 {
@@ -356,8 +509,10 @@ static dkr_file_result read_whole(const char *path, void *buffer,
  * POSIX — vehicule de test, pas une plate-forme supportee
  * ========================================================================== */
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -511,6 +666,104 @@ dkr_file_result dkr_file_copy(const char *from, const char *to)
     fclose(in);
     fclose(out);
     return DKR_FILE_OK;
+}
+
+
+int dkr_file_is_regular(const char *path)
+{
+    struct stat st;
+    return path && stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+unsigned long long dkr_file_size(const char *path, int *ok)
+{
+    struct stat st;
+    if (ok) { *ok = 0; }
+    if (!path || stat(path, &st) != 0) {
+        return 0;
+    }
+    if (ok) { *ok = 1; }
+    return (unsigned long long)st.st_size;
+}
+
+dkr_file_result dkr_file_rename(const char *from, const char *to)
+{
+    if (!from || !to) {
+        return DKR_FILE_ERR_PATH;
+    }
+    /* On reproduit la sequence de la cible — effacer puis renommer — plutot que
+       d'employer le `rename` de POSIX, qui ecrase de lui-meme. Un vehicule de
+       test qui prend un raccourci que la cible n'a pas ne teste pas la cible. */
+    if (dkr_file_exists(to)) {
+        unlink(to);
+    }
+    if (rename(from, to) != 0) {
+        return from_errno();
+    }
+    return DKR_FILE_OK;
+}
+
+dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path)
+{
+    char resolved[MAX_PATH];
+    if (!out || !path || out_size == 0) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (path[0] == '/') {
+        if (strlen(path) + 1 > out_size) {
+            return DKR_FILE_ERR_PATH;
+        }
+        strcpy(out, path);
+        return DKR_FILE_OK;
+    }
+    if (!getcwd(resolved, sizeof(resolved))) {
+        return DKR_FILE_ERR_PATH;
+    }
+    return dkr_file_join(out, out_size, resolved, path);
+}
+
+struct dkr_dir {
+    DIR *handle;
+};
+
+dkr_dir *dkr_dir_open(const char *path)
+{
+    dkr_dir *d;
+    if (!path) {
+        return NULL;
+    }
+    d = (dkr_dir *)calloc(1, sizeof(*d));
+    if (!d) {
+        return NULL;
+    }
+    d->handle = opendir(path);
+    if (!d->handle) {
+        free(d);
+        return NULL;
+    }
+    return d;
+}
+
+const char *dkr_dir_next(dkr_dir *d)
+{
+    struct dirent *e;
+    if (!d) {
+        return NULL;
+    }
+    while ((e = readdir(d->handle)) != NULL) {
+        if (strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0) {
+            return e->d_name;
+        }
+    }
+    return NULL;
+}
+
+void dkr_dir_close(dkr_dir *d)
+{
+    if (d) {
+        if (d->handle) { closedir(d->handle); }
+        free(d);
+    }
 }
 
 static dkr_file_result read_whole(const char *path, void *buffer,

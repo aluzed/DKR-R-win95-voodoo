@@ -22,6 +22,7 @@
 #     l'interface de l'émulateur et non à l'invité.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${DKR_WIN95_PREFIX:-$HOME/.local/dkr-win95}"
 VM_NAME="${DKR_WIN95_VM:-dkr-p2-voodoo2}"
 VM="$PREFIX/vm/$VM_NAME"
@@ -82,10 +83,30 @@ case "${1:-}" in
     say "touches envoyées : $*"
     ;;
   type)
+    # `xdotool type` envoie des scancodes, et l'invité les interprète avec SA
+    # disposition — française. Les lettres croisées et surtout la ponctuation en
+    # ressortent fausses : `D:\FSSEAM.EXE` devient `DM"FSSEQ?:EXE`, ce qui donne
+    # une boîte « fichier introuvable » qu'on impute volontiers au binaire.
+    #
+    # C'est exactement ce que `tools/win95/azerty_keys.py` sait corriger. Il
+    # existait déjà, mais n'était pas branché ici ; il l'est maintenant, parce
+    # qu'aucun chemin Windows ne s'écrit sans « : » ni « \ ».
     need_running
     [[ -n "${2:-}" ]] || die "usage: type <texte>"
+    mapfile -t _keys < <(python3 "$HERE/../tools/win95/azerty_keys.py" "$2" | tr ' ' '\n')
+    for k in "${_keys[@]}"; do
+      [[ -n "$k" ]] || continue
+      DISPLAY="$DISP" "$XDO" key --clearmodifiers "$k"
+      sleep 0.06
+    done
+    say "texte saisi : $2"
+    ;;
+  type-raw)
+    # Sans traduction, pour un invité dont la disposition serait qwerty.
+    need_running
+    [[ -n "${2:-}" ]] || die "usage: type-raw <texte>"
     DISPLAY="$DISP" "$XDO" type --clearmodifiers --delay 60 -- "$2"
-    say "texte saisi"
+    say "texte saisi (brut)"
     ;;
   stop)
     n=0

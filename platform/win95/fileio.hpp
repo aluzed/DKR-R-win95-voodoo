@@ -20,8 +20,10 @@
 #ifndef DKR_WIN95_FILEIO_HPP
 #define DKR_WIN95_FILEIO_HPP
 
+#include <cstdint>
 #include <filesystem>
 #include <system_error>
+#include <vector>
 
 namespace dkr::fs {
 
@@ -69,8 +71,24 @@ inline bool remove(const std::filesystem::path &p, std::error_code &ec)
     return dkr::fs::remove(p);
 }
 
+/* `std::filesystem::create_directories` ne rend pas « le repertoire est la » mais
+   « j'en ai cree au moins un » : sur un repertoire deja present elle rend
+   **false**, sans que ce soit une erreur.
+
+   La couche C, elle, traite le repertoire deja present comme un succes — ce qui
+   est le bon contrat pour elle, l'appelant voulant que le chemin existe. Les
+   deux sont justes, et c'est ici qu'ils se rejoignent : on regarde d'abord si le
+   chemin etait la.
+
+   Sans cela l'ecart etait invisible et pourtant reel — la suite d'epreuve le
+   validait sur la machine parce qu'elle demandait seulement true, et un appelant
+   qui compte les repertoires reellement crees aurait ete trompe. C'est le meme
+   piege que `remove`, decrit en tete de la suite. */
 inline bool create_directories(const std::filesystem::path &p)
 {
+    if (dkr::fs::exists(p)) {
+        return false;
+    }
     return dkr_file_create_directories(p.string().c_str()) == DKR_FILE_OK;
 }
 
@@ -98,6 +116,76 @@ inline bool copy_file_overwrite(const std::filesystem::path &from,
     return dkr::fs::copy_file_overwrite(from, to);
 }
 
+inline bool is_regular_file(const std::filesystem::path &p)
+{
+    return dkr_file_is_regular(p.string().c_str()) != 0;
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path &p)
+{
+    int ok = 0;
+    const unsigned long long n = dkr_file_size(p.string().c_str(), &ok);
+    /* `std::filesystem::file_size` rend `-1` converti en `uintmax_t` quand elle
+       echoue et qu'on lui a passe un `error_code`. On reproduit ce sentinelle
+       plutot que zero : un fichier vide rend zero legitimement, et confondre les
+       deux ferait prendre un echec pour un fichier vide. */
+    return ok ? (std::uintmax_t)n : (std::uintmax_t)-1;
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path &p, std::error_code &ec)
+{
+    const std::uintmax_t n = dkr::fs::file_size(p);
+    if (n == (std::uintmax_t)-1) {
+        ec = std::make_error_code(std::errc::no_such_file_or_directory);
+    } else {
+        ec.clear();
+    }
+    return n;
+}
+
+inline void rename(const std::filesystem::path &from,
+                   const std::filesystem::path &to)
+{
+    dkr_file_rename(from.string().c_str(), to.string().c_str());
+}
+
+inline void rename(const std::filesystem::path &from,
+                   const std::filesystem::path &to, std::error_code &ec)
+{
+    ec.clear();
+    if (dkr_file_rename(from.string().c_str(), to.string().c_str())
+        != DKR_FILE_OK) {
+        ec = std::make_error_code(std::errc::io_error);
+    }
+}
+
+inline std::filesystem::path absolute(const std::filesystem::path &p)
+{
+    char out[512];
+    if (dkr_file_absolute(out, sizeof(out), p.string().c_str()) != DKR_FILE_OK) {
+        return p;                    /* mieux vaut le chemin d'origine que rien */
+    }
+    return std::filesystem::path{out};
+}
+
+/* Le pendant de `directory_iterator`, rendu comme une liste. Voir `fileio.h` :
+   reproduire un iterateur demanderait un cycle de vie et des categories dont
+   aucun appelant ne se sert. */
+inline std::vector<std::filesystem::path>
+list_directory(const std::filesystem::path &dir)
+{
+    std::vector<std::filesystem::path> out;
+    dkr_dir *d = dkr_dir_open(dir.string().c_str());
+    if (!d) {
+        return out;
+    }
+    for (const char *name = dkr_dir_next(d); name; name = dkr_dir_next(d)) {
+        out.push_back(dir / name);
+    }
+    dkr_dir_close(d);
+    return out;
+}
+
 #else
 
 /* Sur toute autre cible, ce sont les fonctions de la bibliotheque standard, sans
@@ -115,6 +203,69 @@ using std::filesystem::exists;
 using std::filesystem::is_directory;
 // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
 using std::filesystem::remove;
+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+using std::filesystem::is_regular_file;
+
+/* Ces trois-la ne sont pas reprises telles quelles, et la raison vaut d'etre
+ * dite : `std::filesystem::file_size`, `rename` et `absolute` **levent** quand
+ * on ne leur passe pas de code d'erreur, la ou la branche Windows 95 ne le peut
+ * pas — elle rend un sentinelle.
+ *
+ * Deux branches d'un meme point d'indirection qui different sur la gestion des
+ * erreurs sont pires que pas de point d'indirection du tout : le code marche sur
+ * l'hote et se comporte autrement sur la cible, ce qui est exactement ce qu'un
+ * portage doit eviter. Elles sont donc enveloppees pour ne **jamais** lever, des
+ * deux cotes.
+ *
+ * Aucun site d'appel n'y perd : tous emploient deja la forme a `error_code`. */
+inline std::uintmax_t file_size(const std::filesystem::path &p)
+{
+    std::error_code ec;
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    const std::uintmax_t n = std::filesystem::file_size(p, ec);
+    return ec ? (std::uintmax_t)-1 : n;
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path &p, std::error_code &ec)
+{
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    return std::filesystem::file_size(p, ec);
+}
+
+inline void rename(const std::filesystem::path &from,
+                   const std::filesystem::path &to)
+{
+    std::error_code ec;
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    std::filesystem::rename(from, to, ec);
+}
+
+inline void rename(const std::filesystem::path &from,
+                   const std::filesystem::path &to, std::error_code &ec)
+{
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    std::filesystem::rename(from, to, ec);
+}
+
+inline std::filesystem::path absolute(const std::filesystem::path &p)
+{
+    std::error_code ec;
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    const std::filesystem::path a = std::filesystem::absolute(p, ec);
+    return ec ? p : a;
+}
+
+inline std::vector<std::filesystem::path>
+list_directory(const std::filesystem::path &dir)
+{
+    std::vector<std::filesystem::path> out;
+    std::error_code ec;
+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+    for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+        out.push_back(entry.path());
+    }
+    return out;
+}
 
 inline bool copy_file_overwrite(const std::filesystem::path &from,
                                 const std::filesystem::path &to)

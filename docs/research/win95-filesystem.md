@@ -130,3 +130,75 @@ i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
 
 python3 tools/win95/check_imports.py p1.exe p2.exe p3.exe
 ```
+
+## Ce que l'extension aux sources du jeu a appris — 13 août 2026
+
+Les quatre opérations de `librecomp` ne suffisaient pas aux 59 sites du jeu. En
+ajoutant `is_regular_file`, `file_size`, `rename`, `absolute` et l'énumération,
+trois choses sont apparues, dont deux qu'aucune relecture n'aurait données.
+
+### `GetFileAttributesExA` est **absente**, pas bouchonnée
+
+C'était le choix naturel pour `file_size` : elle rend attributs et taille sans
+ouvrir le fichier. Windows 95 ne l'exporte pas — comme `GetFileSizeEx`. Ce ne
+sont pas des bouchons : le chargeur refuse de démarrer le processus entier.
+
+Le contrôle des imports l'a arrêtée avant la machine, ce qui est exactement son
+rôle. La leçon est générale : **une API `...A` n'est pas garantie par le seul
+fait d'être `...A`.** Ce couple-là a été ajouté par Windows 98, et rien dans son
+nom ne le dit.
+
+Le remplacement est `FindFirstFileA`, qui rend la taille sans ouvrir le fichier
+non plus — donc sans descripteur qui fuirait ni conflit de partage, ce qui était
+la raison du choix initial.
+
+### `DeleteFileA` sur un répertoire ne dit pas ce qu'on croit
+
+`dkr_file_remove` essayait `DeleteFileA`, puis se rabattait sur
+`RemoveDirectoryA` si le chemin était un répertoire. Sur Windows 95 l'échec de
+`DeleteFileA` sur un répertoire passait par la branche « déjà absent » et la
+fonction **rendait succès sans rien effacer**.
+
+Le défaut ne s'est pas montré par un plantage mais par un faux échec ailleurs :
+le nettoyage préalable de la suite d'épreuve n'opérait pas, et l'exécution
+suivante trouvait l'arborescence de la précédente. Les horodatages du disque de
+transfert l'ont désigné — ils étaient restés à l'heure de la veille.
+
+Le correctif interroge le type **avant** d'agir. Un appel de plus, et plus aucune
+façon de confondre « rien à faire » avec « je n'ai pas su ».
+
+### `create_directories` ne rend pas « il est là »
+
+Elle rend « j'en ai créé au moins un ». Sur un répertoire déjà présent,
+`std::filesystem` rend **false** ; la couche Windows 95 rendait **true**, parce
+que pour elle un répertoire déjà présent est légitimement un succès.
+
+Les deux contrats sont justes séparément, et c'est ce qui rend l'écart pernicieux :
+la suite d'épreuve le validait, puisqu'elle demandait seulement `true`. C'est le
+même piège que `remove` sur un fichier absent, décrit en tête de la suite — et il
+avait été tendu deux fois sans être vu.
+
+**Un point d'indirection dont les deux branches diffèrent sur une valeur de
+retour est pire que pas de point d'indirection du tout** : le code marche sur
+l'hôte et se comporte autrement sur la cible. Les épreuves portent désormais sur
+l'effet autant que sur la valeur rendue.
+
+Pour la même raison, `file_size`, `rename` et `absolute` sont enveloppées des
+deux côtés : leurs formes sans `error_code` **lèvent** dans la bibliothèque
+standard, là où la cible ne le peut pas. Aucun site d'appel n'y perd — tous
+emploient déjà la forme à `error_code`.
+
+### En passant : la machine de test recevait des chemins faux
+
+`Drive-Win95-VM.sh type` passait par `xdotool type`, sans traduction. L'invité
+étant en AZERTY, `D:\FSSEAM.EXE` y arrivait en `DM"FSSEQ?:EXE` — et Windows
+répondait « fichier introuvable », ce qu'on impute volontiers au binaire.
+
+`tools/win95/azerty_keys.py` savait déjà corriger cela, mais n'était pas branché.
+Il l'est désormais, parce qu'aucun chemin Windows ne s'écrit sans « : » ni « \ ».
+
+### État
+
+27 contrôles, tous verts sur la machine émulée comme sur l'hôte, la même source
+compilée pour les deux. Ce qui est établi n'est pas « les opérations
+fonctionnent » mais « elles se comportent comme celles qu'elles remplacent ».

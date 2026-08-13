@@ -136,6 +136,42 @@ dkr_file_result dkr_file_create_directories(const char *path);
    `copy_options::overwrite_existing`, la seule forme employee. */
 dkr_file_result dkr_file_copy(const char *from, const char *to);
 
+/* Rend 1 si le chemin existe et est un fichier ordinaire. */
+int dkr_file_is_regular(const char *path);
+
+/* Taille en octets. Rend 0 et pose `*ok` a 0 si le chemin n'est pas lisible —
+   un fichier vide et un fichier absent rendent tous deux 0, d'ou le drapeau. */
+unsigned long long dkr_file_size(const char *path, int *ok);
+
+/* Renomme, en ecrasant la destination si elle existe. `MoveFileA` refuse
+   d'ecraser et `MoveFileExA` n'est pas implementee sous Windows 95 : on efface
+   donc d'abord, avec la meme fenetre de vulnerabilite que l'ecriture durable et
+   pour la meme raison. */
+dkr_file_result dkr_file_rename(const char *from, const char *to);
+
+/* Rend le chemin absolu dans `out`. Sous Windows 95 c'est `GetFullPathNameA`,
+   qui resout aussi les `..` — la ou `std::filesystem::absolute` ne fait que
+   prefixer le repertoire courant. La difference est ecrite plutot que
+   dissimulee : elle joue si un appelant compare deux chemins textuellement. */
+dkr_file_result dkr_file_absolute(char *out, size_t out_size, const char *path);
+
+/* --- Enumeration d'un repertoire ------------------------------------------ *
+ *
+ * `std::filesystem::directory_iterator` n'est pas reproduit : un iterateur
+ * demande un cycle de vie, des categories, des comparateurs, et le code
+ * appelant n'en emploie qu'une chose — parcourir une fois les entrees. On rend
+ * donc la liste, ce qui se teste et se lit.
+ *
+ * `dkr_dir_open` rend NULL si le repertoire n'existe pas. Chaque appel a
+ * `dkr_dir_next` rend le nom de l'entree suivante, sans le chemin, ou NULL a la
+ * fin ; « . » et « .. » sont ecartes, comme le fait `directory_iterator`.
+ */
+typedef struct dkr_dir dkr_dir;
+
+dkr_dir    *dkr_dir_open(const char *path);
+const char *dkr_dir_next(dkr_dir *d);
+void        dkr_dir_close(dkr_dir *d);
+
 /* --- Noms de fichiers ------------------------------------------------------ *
  *
  * Le volume de test est en FAT16 avec les noms longs actifs, et un nom long y
