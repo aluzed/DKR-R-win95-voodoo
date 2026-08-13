@@ -1,0 +1,687 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Route synchronisation and the mod system through the platform seams
+
+Windows 95 resolves every import at load time, and <mutex> pulls in six symbols
+it does not export -- four of them condition variables introduced with Windows
+Vista. Including the header is enough to stop the binary from starting, whether
+or not anything is ever locked.
+
+This adds librecomp/sync.hpp, alongside the fileio.hpp seam and mirroring
+ultramodern/threading.hpp, and routes recomp.cpp, pi.cpp and mods.hpp through
+it. Only mutex and lock_guard are required: librecomp guards shared tables and
+never waits on a condition or starts a thread.
+
+Note how this differs from the filesystem seam next to it. There the *type*
+std::filesystem::path works on that platform and only its operations do not, so
+the type stays and all 250 uses of it stay with it. Here the types themselves
+are the problem, so the names change at every declaration. That is more
+intrusive, and there is no way around it.
+
+The mod system is included, which was not the original intent -- it is out of
+scope as a feature -- but it is compiled and linked into the target, so its
+forbidden includes would block the binary from loading just the same. A feature
+that does not work is one thing; a binary that does not start is another. So
+mod_manifest.cpp, mod_config_api.cpp and mods.cpp get the same treatment:
+filesystem operations through recomp::fs, streams opened from narrow strings.
+
+fileio.hpp grows the operations those files need -- absolute, is_directory,
+is_regular_file, and list_directory in place of directory_iterator. absolute is
+wrapped so that neither branch throws: two branches of one seam that differ on
+error handling are worse than no seam at all.
+
+---
+
+--- a/librecomp/include/librecomp/fileio.hpp
++++ b/librecomp/include/librecomp/fileio.hpp
+@@ -20,15 +20,21 @@
+ //     LIBRECOMP_PLATFORM_FILEIO_HEADER   header to include, as a string
+ //     LIBRECOMP_PLATFORM_FILEIO_NS       namespace providing the operations
+ //
+-// It must provide exists, remove, create_directories and copy_file_overwrite,
+-// each taking std::filesystem::path, with and without a std::error_code. That
+-// is what librecomp calls outside its mod system; nothing more is required.
++// It must provide exists, remove, create_directories, copy_file_overwrite,
++// absolute, is_directory, is_regular_file and list_directory, each taking
++// std::filesystem::path, with and without a std::error_code.
++//
++// list_directory takes the place of directory_iterator and returns a container
++// of paths. Reproducing an iterator would mean a lifetime, iterator categories
++// and comparators, and every call site here does one thing with it: walk the
++// entries once.
+ //
+ // Defining neither macro -- the default, and what every existing target does --
+ // forwards straight to the standard library, with nothing in between.
+ 
+ #include <filesystem>
+ #include <system_error>
++#include <vector>
+ 
+ namespace recomp::fs {
+ 
+@@ -54,6 +60,38 @@
+     using std::filesystem::exists;
+     // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     using std::filesystem::remove;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::filesystem::is_directory;
++    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    using std::filesystem::is_regular_file;
++
++    // absolute throws without an error_code; the Windows 95 side cannot. Both
++    // are wrapped so neither does: two branches of one seam that differ on
++    // error handling are worse than no seam at all.
++    inline std::filesystem::path absolute(const std::filesystem::path& p) {
++        std::error_code ec;
++        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        const std::filesystem::path a = std::filesystem::absolute(p, ec);
++        return ec ? p : a;
++    }
++
++    inline std::filesystem::path absolute(const std::filesystem::path& p,
++                                          std::error_code& ec) {
++        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        return std::filesystem::absolute(p, ec);
++    }
++
++    inline std::vector<std::filesystem::path>
++    list_directory(const std::filesystem::path& dir, std::error_code& ec) {
++        std::vector<std::filesystem::path> out;
++        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        for (const auto& entry : std::filesystem::directory_iterator(
++                 dir, std::filesystem::directory_options::skip_permission_denied,
++                 ec)) {
++            out.push_back(entry.path());
++        }
++        return out;
++    }
+ 
+     // copy_options is not part of the seam: overwrite_existing is the only
+     // form librecomp uses, so it is named rather than parameterised.
+--- a/librecomp/include/librecomp/mods.hpp
++++ b/librecomp/include/librecomp/mods.hpp
+@@ -13,7 +13,7 @@
+ #include <array>
+ #include <cstddef>
+ #include <variant>
+-#include <mutex>
++#include "librecomp/sync.hpp"
+ #include <optional>
+ 
+ #include "blockingconcurrentqueue.h"
+@@ -432,7 +432,7 @@
+             std::unordered_map<std::filesystem::path::string_type, size_t> opened_mods_by_filename;
+             std::vector<size_t> opened_mods_order; // order index -> mod index
+             std::vector<size_t> mod_order_lookup; // mod index -> order index
+-            std::mutex opened_mods_mutex;
++            recomp::sync::mutex opened_mods_mutex;
+             std::unordered_set<std::string> mod_ids;
+             std::unordered_set<std::string> enabled_mods;
+             std::unordered_set<std::string> auto_enabled_mods;
+@@ -442,7 +442,7 @@
+             moodycamel::BlockingConcurrentQueue<ModConfigQueueVariant> mod_configuration_thread_queue;
+             std::filesystem::path mods_config_path;
+             std::filesystem::path mod_config_directory;
+-            mutable std::mutex mod_config_storage_mutex;
++            mutable recomp::sync::mutex mod_config_storage_mutex;
+             std::vector<size_t> loaded_code_mods;
+             // Code handle for vanilla code that was regenerated to add hooks.
+             std::unique_ptr<LiveRecompilerCodeHandle> regenerated_code_handle;
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -9,7 +9,7 @@
+ #include <sstream>
+ #include <iostream>
+ #include <optional>
+-#include <mutex>
++#include "librecomp/sync.hpp"
+ #include <array>
+ #include <cinttypes>
+ #include <cuchar>
+@@ -46,9 +46,9 @@
+ };
+ 
+ // Mutexes
+-std::mutex game_roms_mutex;
+-std::mutex current_game_mutex;
+-std::mutex mod_context_mutex{};
++recomp::sync::mutex game_roms_mutex;
++recomp::sync::mutex current_game_mutex;
++recomp::sync::mutex mod_context_mutex{};
+ 
+ // Global variables
+ std::filesystem::path config_path;
+@@ -72,11 +72,11 @@
+ bool recomp::register_game(const recomp::GameEntry& entry) {
+     // TODO verify that there's no game with this ID already.
+     {
+-        std::lock_guard<std::mutex> lock(game_roms_mutex);
++        recomp::sync::lock_guard<recomp::sync::mutex> lock(game_roms_mutex);
+         game_roms.insert({ entry.game_id, entry });
+     }
+     if (!entry.mod_game_id.empty()) {
+-        std::lock_guard<std::mutex> lock(mod_context_mutex);
++        recomp::sync::lock_guard<recomp::sync::mutex> lock(mod_context_mutex);
+         mod_context->register_game(entry.mod_game_id);
+     }
+ 
+@@ -92,14 +92,14 @@
+ }
+ 
+ void recomp::mods::register_embedded_mod(const std::string &mod_id, std::span<const uint8_t> mod_bytes) {
+-    std::lock_guard<std::mutex> lock(mod_context_mutex);
++    recomp::sync::lock_guard<recomp::sync::mutex> lock(mod_context_mutex);
+     mod_context->register_embedded_mod(mod_id, mod_bytes);
+ }
+ 
+ void recomp::mods::scan_mods() {
+     std::vector<recomp::mods::ModOpenErrorDetails> mod_open_errors;
+     {
+-        std::lock_guard mod_lock{ mod_context_mutex };
++        recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+         mod_open_errors = mod_context->scan_mod_folder(config_path / mods_directory);
+     }
+     for (const auto& cur_error : mod_open_errors) {
+@@ -111,7 +111,7 @@
+ 
+ void recomp::mods::close_mods() {
+     {
+-        std::lock_guard mod_lock{ mod_context_mutex };
++        recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+         mod_context->close_mods();
+     }
+ }
+@@ -121,32 +121,32 @@
+ }
+ 
+ recomp::mods::ModContentTypeId recomp::mods::register_mod_content_type(const ModContentType& type) {
+-    std::lock_guard mod_lock{ mod_context_mutex };
++    recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+     return mod_context->register_content_type(type);
+ }
+ 
+ bool recomp::mods::register_mod_container_type(const std::string& extension, const std::vector<ModContentTypeId>& content_types, bool requires_manifest) {
+-    std::lock_guard mod_lock{ mod_context_mutex };
++    recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+     return mod_context->register_container_type(extension, content_types, requires_manifest);
+ }
+ 
+ std::string recomp::mods::get_mod_display_name(size_t mod_index) {
+-    std::lock_guard mod_lock{ mod_context_mutex };
++    recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+     return mod_context->get_mod_display_name(mod_index);
+ }
+ 
+ std::filesystem::path recomp::mods::get_mod_path(size_t mod_index) {
+-    std::lock_guard mod_lock{ mod_context_mutex };
++    recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+     return mod_context->get_mod_path(mod_index);
+ }
+ 
+ std::pair<std::string, std::string> recomp::mods::get_mod_import_info(size_t mod_index, size_t import_index) {
+-    std::lock_guard mod_lock{ mod_context_mutex };
++    recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+     return mod_context->get_mod_import_info(mod_index, import_index);
+ }
+ 
+ recomp::mods::DependencyStatus recomp::mods::is_dependency_met(size_t mod_index, const std::string& dependency_id) {
+-    std::lock_guard mod_lock{ mod_context_mutex };
++    recomp::sync::lock_guard mod_lock{ mod_context_mutex };
+     return mod_context->is_dependency_met(mod_index, dependency_id);
+ }
+ 
+@@ -512,7 +512,7 @@
+ }
+ 
+ std::u8string recomp::current_game_id() {
+-    std::lock_guard<std::mutex> lock(current_game_mutex);
++    recomp::sync::lock_guard<recomp::sync::mutex> lock(current_game_mutex);
+     return current_game.value();
+ };
+ 
+@@ -524,7 +524,7 @@
+ }
+ 
+ void recomp::start_game(const std::u8string& game_id) {
+-    std::lock_guard<std::mutex> lock(current_game_mutex);
++    recomp::sync::lock_guard<recomp::sync::mutex> lock(current_game_mutex);
+     current_game = game_id;
+     game_status.store(GameStatus::Running);
+     game_status.notify_all();
+@@ -543,97 +543,97 @@
+     GameStatus desired = GameStatus::None;
+     game_status.compare_exchange_strong(desired, GameStatus::Quit);
+     game_status.notify_all();
+-    std::lock_guard<std::mutex> lock(current_game_mutex);
++    recomp::sync::lock_guard<recomp::sync::mutex> lock(current_game_mutex);
+     current_game.reset();
+ }
+ 
+ void recomp::mods::enable_mod(const std::string& mod_id, bool enabled) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->enable_mod(mod_id, enabled, true);
+ }
+ 
+ bool recomp::mods::is_mod_enabled(const std::string& mod_id) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->is_mod_enabled(mod_id);
+ }
+ 
+ bool recomp::mods::is_mod_auto_enabled(const std::string& mod_id) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->is_mod_auto_enabled(mod_id);
+ }
+ 
+ const recomp::mods::ConfigSchema &recomp::mods::get_mod_config_schema(const std::string &mod_id) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->get_mod_config_schema(mod_id);
+ }
+ 
+ const std::vector<char> &recomp::mods::get_mod_thumbnail(const std::string &mod_id) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->get_mod_thumbnail(mod_id);
+ }
+ 
+ void recomp::mods::set_mod_config_value(size_t mod_index, const std::string &option_id, const ConfigValueVariant &value) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->set_mod_config_value(mod_index, option_id, value);
+ }
+ 
+ void recomp::mods::set_mod_config_value(const std::string &mod_id, const std::string &option_id, const ConfigValueVariant &value) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->set_mod_config_value(mod_id, option_id, value);
+ }
+ 
+ recomp::mods::ConfigValueVariant recomp::mods::get_mod_config_value(size_t mod_index, const std::string &option_id) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->get_mod_config_value(mod_index, option_id);
+ }
+ 
+ recomp::mods::ConfigValueVariant recomp::mods::get_mod_config_value(const std::string &mod_id, const std::string &option_id) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->get_mod_config_value(mod_id, option_id);
+ }
+ 
+ std::string recomp::mods::get_mod_id_from_filename(const std::filesystem::path& mod_filename) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_mod_id_from_filename(mod_filename);
+ }
+ 
+ std::filesystem::path recomp::mods::get_mod_filename(const std::string& mod_id) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_mod_filename(mod_id);
+ }
+ 
+ size_t recomp::mods::get_mod_order_index(const std::string& mod_id) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_mod_order_index(mod_id);
+ }
+ 
+ size_t recomp::mods::get_mod_order_index(size_t mod_index) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_mod_order_index(mod_index);
+ }
+ 
+ std::optional<recomp::mods::ModDetails> recomp::mods::get_details_for_mod(const std::string& mod_id) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_details_for_mod(mod_id);
+ }
+ 
+ std::vector<recomp::mods::ModDetails> recomp::mods::get_all_mod_details(const std::string& mod_game_id) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_all_mod_details(mod_game_id);
+ }
+ 
+ recomp::Version recomp::mods::get_mod_version(size_t mod_index) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_mod_version(mod_index);
+ }
+ 
+ std::string recomp::mods::get_mod_id(size_t mod_index) {
+-    std::lock_guard lock { mod_context_mutex };
++    recomp::sync::lock_guard lock { mod_context_mutex };
+     return mod_context->get_mod_id(mod_index);
+ }
+ 
+ void recomp::mods::set_mod_index(const std::string &mod_game_id, const std::string &mod_id, size_t index) {
+-    std::lock_guard lock{ mod_context_mutex };
++    recomp::sync::lock_guard lock{ mod_context_mutex };
+     return mod_context->set_mod_index(mod_game_id, mod_id, index);
+ }
+ 
+@@ -660,7 +660,7 @@
+                 if (!game_entry.mod_game_id.empty()) {
+                     std::vector<recomp::mods::ModLoadErrorDetails> mod_load_errors;
+                     {
+-                        std::lock_guard lock { mod_context_mutex };
++                        recomp::sync::lock_guard lock { mod_context_mutex };
+                         mod_load_errors = mod_context->load_mods(game_entry, rdram, recomp::mod_rdram_start, mod_ram_used);
+                     }
+ 
+--- a/librecomp/src/pi.cpp
++++ b/librecomp/src/pi.cpp
+@@ -3,7 +3,7 @@
+ #include <array>
+ #include <cstring>
+ #include <string>
+-#include <mutex>
++#include "librecomp/sync.hpp"
+ #include "recomp.h"
+ #include "librecomp/addresses.hpp"
+ #include "librecomp/game.hpp"
+@@ -94,7 +94,7 @@
+     moodycamel::LightweightSemaphore swap_file_pending_sempahore;
+     // Used to tell the consumer thread that the saving thread is ready for a file swap.
+     moodycamel::LightweightSemaphore swap_file_ready_sempahore;
+-    std::mutex save_buffer_mutex;
++    recomp::sync::mutex save_buffer_mutex;
+ } save_context;
+ 
+ const std::u8string save_folder = u8"saves";
+@@ -119,7 +119,7 @@
+         std::ofstream save_file = recomp::open_output_file_with_backup(ultramodern::get_save_file_path(), std::ios_base::binary);
+ 
+         if (save_file.good()) {
+-            std::lock_guard lock{ save_context.save_buffer_mutex };
++            recomp::sync::lock_guard lock{ save_context.save_buffer_mutex };
+             save_file.write(save_context.save_buffer.data(), save_context.save_buffer.size());
+         }
+         else {
+@@ -167,7 +167,7 @@
+     assert(offset + count <= save_context.save_buffer.size());
+ 
+     {
+-        std::lock_guard lock { save_context.save_buffer_mutex };
++        recomp::sync::lock_guard lock { save_context.save_buffer_mutex };
+         memcpy(&save_context.save_buffer[offset], in, count);
+     }
+     
+@@ -178,7 +178,7 @@
+     assert(offset + count <= save_context.save_buffer.size());
+ 
+     {
+-        std::lock_guard lock { save_context.save_buffer_mutex };
++        recomp::sync::lock_guard lock { save_context.save_buffer_mutex };
+         for (gpr i = 0; i < count; i++) {
+             save_context.save_buffer[offset + i] = MEM_B(i, rdram_address);
+         }
+@@ -190,7 +190,7 @@
+ void save_read(RDRAM_ARG PTR(void) rdram_address, uint32_t offset, uint32_t count) {
+     assert(offset + count <= save_context.save_buffer.size());
+ 
+-    std::lock_guard lock { save_context.save_buffer_mutex };
++    recomp::sync::lock_guard lock { save_context.save_buffer_mutex };
+     for (gpr i = 0; i < count; i++) {
+         MEM_B(i, rdram_address) = save_context.save_buffer[offset + i];
+     }
+@@ -200,7 +200,7 @@
+     assert(start + size < save_context.save_buffer.size());
+ 
+     {
+-        std::lock_guard lock { save_context.save_buffer_mutex };
++        recomp::sync::lock_guard lock { save_context.save_buffer_mutex };
+         std::fill_n(save_context.save_buffer.begin() + start, size, value);
+     }
+ 
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -10,6 +10,7 @@
+ #include "librecomp/patcher.hpp"
+ #include "recompiler/context.h"
+ #include "recompiler/live_recompiler.h"
++#include "librecomp/fileio.hpp"
+ 
+ static bool read_json(std::ifstream input_file, nlohmann::json &json_out) {
+     if (!input_file.good()) {
+@@ -27,7 +28,7 @@
+ 
+ static bool read_json_with_backups(const std::filesystem::path &path, nlohmann::json &json_out) {
+     // Try reading and parsing the base file.
+-    if (read_json(std::ifstream{ path }, json_out)) {
++    if (read_json(std::ifstream{ path.string() }, json_out)) {
+         return true;
+     }
+ 
+@@ -102,7 +103,7 @@
+     static constexpr std::string_view PlatformExtension = ".dll";
+     DynamicLibrary() = default;
+     DynamicLibrary(const std::filesystem::path& path) {
+-        native_handle = LoadLibraryExW(std::filesystem::absolute(path).c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
++        native_handle = LoadLibraryExW(recomp::fs::absolute(path).c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+ 
+         if (good()) {
+             uint32_t* recomp_api_version;
+@@ -830,32 +831,35 @@
+     close_mods();
+ 
+     static const std::vector<ModContentTypeId> empty_content_types{};
+-    for (const auto& mod_path : std::filesystem::directory_iterator{mod_folder, std::filesystem::directory_options::skip_permission_denied, ec}) {
++    // list_directory yields paths rather than directory_entry objects, so the
++    // queries below name the path explicitly. open_mod_from_path already takes
++    // a path, which is what directory_entry was converting to here anyway.
++    for (const auto& mod_path : recomp::fs::list_directory(mod_folder, ec)) {
+         bool is_mod = false;
+         bool requires_manifest = true;
+         std::reference_wrapper<const std::vector<ModContentTypeId>> supported_content_types = std::cref(empty_content_types);
+-        if (mod_path.is_regular_file()) {
+-            auto find_container_it = container_types.find(mod_path.path().extension().string());
++        if (recomp::fs::is_regular_file(mod_path)) {
++            auto find_container_it = container_types.find(mod_path.extension().string());
+             if (find_container_it != container_types.end()) {
+                 is_mod = true;
+                 supported_content_types = find_container_it->second.supported_content_types;
+                 requires_manifest = find_container_it->second.requires_manifest;
+             }
+         }
+-        else if (mod_path.is_directory()) {
++        else if (recomp::fs::is_directory(mod_path)) {
+             is_mod = true;
+         }
+         if (is_mod) {
+-            printf("Opening mod " PATHFMT "\n", mod_path.path().stem().c_str());
++            printf("Opening mod " PATHFMT "\n", mod_path.stem().c_str());
+             std::string open_error_param;
+             ModOpenError open_error = open_mod_from_path(mod_path, open_error_param, supported_content_types, requires_manifest);
+ 
+             if (open_error != ModOpenError::Good) {
+-                ret.emplace_back(mod_path.path(), open_error, open_error_param);
++                ret.emplace_back(mod_path, open_error, open_error_param);
+             }
+         }
+         else {
+-            printf("Skipping non-mod " PATHFMT PATHFMT "\n", mod_path.path().stem().c_str(), mod_path.path().extension().c_str());
++            printf("Skipping non-mod " PATHFMT PATHFMT "\n", mod_path.stem().c_str(), mod_path.extension().c_str());
+         }
+     }
+ 
+--- a/librecomp/src/mod_manifest.cpp
++++ b/librecomp/src/mod_manifest.cpp
+@@ -5,6 +5,7 @@
+ #include "recompiler/context.h"
+ #include "librecomp/files.hpp"
+ #include "librecomp/mods.hpp"
++#include "librecomp/fileio.hpp"
+ 
+ static bool read_json(std::ifstream input_file, nlohmann::json &json_out) {
+     if (!input_file.good()) {
+@@ -22,7 +23,7 @@
+ 
+ static bool read_json_with_backups(const std::filesystem::path &path, nlohmann::json &json_out) {
+     // Try reading and parsing the base file.
+-    if (read_json(std::ifstream{ path }, json_out)) {
++    if (read_json(std::ifstream{ path.string() }, json_out)) {
+         return true;
+     }
+ 
+@@ -121,7 +122,7 @@
+     root_path = mod_path;
+ 
+     std::error_code ec;
+-    if (!std::filesystem::is_directory(root_path, ec)) {
++    if (!recomp::fs::is_directory(root_path, ec)) {
+         error = ModOpenError::NotAFileOrFolder;
+     }
+ 
+@@ -137,12 +138,12 @@
+     std::filesystem::path full_path = root_path / filepath;
+ 
+     std::error_code ec;
+-    if (!std::filesystem::is_regular_file(full_path, ec) || ec) {
++    if (!recomp::fs::is_regular_file(full_path, ec) || ec) {
+         exists = false;
+         return ret;
+     }
+ 
+-    std::ifstream file{ full_path, std::ios::binary };
++    std::ifstream file{ full_path.string(), std::ios::binary };
+ 
+     if (!file.good()) {
+         exists = false;
+@@ -164,7 +165,7 @@
+     std::filesystem::path full_path = root_path / filepath;
+ 
+     std::error_code ec;
+-    if (!std::filesystem::is_regular_file(full_path, ec) || ec) {
++    if (!recomp::fs::is_regular_file(full_path, ec) || ec) {
+         return false;
+     }
+ 
+@@ -870,17 +871,17 @@
+     std::error_code ec;
+     error_param = "";
+ 
+-    if (!std::filesystem::exists(mod_path, ec) || ec) {
++    if (!recomp::fs::exists(mod_path, ec) || ec) {
+         return ModOpenError::DoesNotExist;
+     }
+ 
+     // TODO support symlinks?
+-    bool is_file = std::filesystem::is_regular_file(mod_path, ec);
++    bool is_file = recomp::fs::is_regular_file(mod_path, ec);
+     if (ec) {
+         return ModOpenError::FileError;
+     }
+ 
+-    bool is_directory = std::filesystem::is_directory(mod_path, ec);
++    bool is_directory = recomp::fs::is_directory(mod_path, ec);
+     if (ec) {
+         return ModOpenError::FileError;
+     }
+--- a/librecomp/src/mod_config_api.cpp
++++ b/librecomp/src/mod_config_api.cpp
+@@ -1,6 +1,7 @@
+ #include "librecomp/mods.hpp"
+ #include "librecomp/helpers.hpp"
+ #include "librecomp/addresses.hpp"
++#include "librecomp/fileio.hpp"
+ 
+ void recomp_get_config_u32(uint8_t* rdram, recomp_context* ctx, size_t mod_index) {
+     recomp::mods::ConfigValueVariant val = recomp::mods::get_mod_config_value(mod_index, _arg_string<0>(rdram, ctx));
+@@ -87,19 +88,19 @@
+ void recomp_get_save_file_path(uint8_t* rdram, recomp_context* ctx) {
+     std::filesystem::path save_file_path = ultramodern::get_save_file_path();
+ 
+-    return_string(rdram, ctx, std::filesystem::absolute(save_file_path).u8string());    
++    return_string(rdram, ctx, recomp::fs::absolute(save_file_path).u8string());    
+ }
+ 
+ void recomp_get_mod_folder_path(uint8_t* rdram, recomp_context* ctx) {
+     std::filesystem::path mod_folder_path = recomp::mods::get_mods_directory();
+ 
+-    return_string(rdram, ctx, std::filesystem::absolute(mod_folder_path).u8string());    
++    return_string(rdram, ctx, recomp::fs::absolute(mod_folder_path).u8string());    
+ }
+ 
+ void recomp_get_mod_file_path(uint8_t* rdram, recomp_context* ctx, size_t mod_index) {
+     std::filesystem::path mod_file_path = recomp::mods::get_mod_path(mod_index);
+ 
+-    return_string(rdram, ctx, std::filesystem::absolute(mod_file_path).u8string()); 
++    return_string(rdram, ctx, recomp::fs::absolute(mod_file_path).u8string()); 
+ }
+ 
+ void recomp_is_dependency_met(uint8_t* rdram, recomp_context* ctx, size_t mod_index) {
+diff --git a/librecomp/include/librecomp/sync.hpp b/librecomp/include/librecomp/sync.hpp
+new file mode 100644
+--- /dev/null
++++ b/librecomp/include/librecomp/sync.hpp
+@@ -0,0 +1,65 @@
++#ifndef __LIBRECOMP_SYNC_HPP__
++#define __LIBRECOMP_SYNC_HPP__
++
++// Synchronisation primitives, with a seam for platforms that cannot use the
++// standard library's.
++//
++// This mirrors ultramodern/threading.hpp, and exists for the same reason: on
++// some platforms, merely *including* <mutex> is fatal. Windows 95 resolves
++// every import at load time, and <mutex> pulls in six symbols it does not
++// export -- four of them condition variables introduced with Windows Vista.
++// A binary that includes it refuses to start, whether or not it ever locks
++// anything.
++//
++// Note how this differs from fileio.hpp next to it. There, the *type*
++// std::filesystem::path works on that platform and only its operations do not,
++// so the type stays and all its uses stay with it. Here the types themselves
++// are the problem, so the names must change at every declaration. That is more
++// intrusive, and there is no way around it.
++//
++// A port supplies its own by defining two macros:
++//
++//     LIBRECOMP_PLATFORM_SYNC_HEADER   header to include, as a string
++//     LIBRECOMP_PLATFORM_SYNC_NS       namespace providing the types
++//
++// It must provide mutex, and lock_guard usable both with and without an
++// explicit template argument. That is all librecomp uses: recomp.cpp and
++// pi.cpp guard shared tables, and never wait on a condition or start a thread.
++//
++// Defining neither macro -- the default, and what every existing target does --
++// leaves the standard library in place, so this header changes nothing for them.
++
++namespace recomp::sync {
++
++#if defined(LIBRECOMP_PLATFORM_SYNC_HEADER)
++
++} // namespace recomp::sync
++
++#include LIBRECOMP_PLATFORM_SYNC_HEADER
++
++namespace recomp::sync {
++    using mutex = LIBRECOMP_PLATFORM_SYNC_NS::mutex;
++
++    template <typename M>
++    using lock_guard = LIBRECOMP_PLATFORM_SYNC_NS::lock_guard<M>;
++}
++
++#else
++
++} // namespace recomp::sync
++
++// The Windows 95 target never reaches this branch: it defines the two macros
++// above. Its subset checker reads text rather than preprocessor state, so the
++// exemption is stated per line.
++//
++// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++#include <mutex>
++
++namespace recomp::sync {
++    using std::lock_guard;
++    using std::mutex;
++}
++
++#endif
++
++#endif

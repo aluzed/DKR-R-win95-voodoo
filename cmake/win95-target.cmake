@@ -205,10 +205,18 @@ target_include_directories(win95librecomp PUBLIC
 #
 # Le type `std::filesystem::path` n'est **pas** remplacé, et c'est mesuré : sous
 # Windows 95 il ne coûte rien et fonctionne. Seules les opérations coûtent.
+#
+# Le patch 0020 fait de même pour la synchronisation. La différence entre les
+# deux mérite d'être notée : pour les fichiers, seules les *opérations* sont
+# détournées et le type reste ; ici ce sont les types eux-mêmes qui ne passent
+# pas, l'inclusion de `<mutex>` suffisant à empêcher le chargement. Le nom
+# change donc à chaque déclaration.
 target_compile_definitions(win95librecomp PRIVATE
     NOMINMAX
     "LIBRECOMP_PLATFORM_FILEIO_HEADER=\"win95/fileio.hpp\""
     "LIBRECOMP_PLATFORM_FILEIO_NS=dkr::fs"
+    "LIBRECOMP_PLATFORM_SYNC_HEADER=\"win95/threading.hpp\""
+    "LIBRECOMP_PLATFORM_SYNC_NS=dkr::win95"
     DKR_TARGET_WIN95=1)
 target_link_libraries(win95librecomp PUBLIC win95ultramodern)
 add_dependencies(win95librecomp dkr_win95_cpp_subset)
