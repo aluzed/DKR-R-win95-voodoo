@@ -133,6 +133,91 @@ int main(int argc, char **argv)
         }
     }
 
+    /* --- Relire ce que la carte a dessine ----------------------------------- *
+     *
+     * C'est la premiere fois que ce projet **voit** sa sortie 3dfx. Tout ce qui
+     * precede reposait sur l'absence de plantage : sur une Voodoo passthrough,
+     * l'ecran appartient a la carte et aucune capture de l'emulateur ne le
+     * montre. */
+    {
+        static unsigned pixels[640 * 480];
+        int rw = 0, rh = 0;
+        int got;
+
+        /* **Une derniere image sur fond noir**, pour que « peint » veuille dire
+           quelque chose. La boucle de cadence effacait sur un degrade : tout
+           l'ecran s'y trouvait peint, et compter les pixels non noirs n'aurait
+           rien prouve. */
+        dkr_glide_clear(0x000000);
+        dkr_glide_draw_test_triangle();
+        dkr_glide_swap();
+
+        got = dkr_glide_read_framebuffer(pixels, 640 * 480, &rw, &rh);
+        if (got <= 0) {
+            say("relecture         : indisponible (grLfbLock absent ou refuse)\n");
+        } else {
+            int x, y, painted = 0, background = 0;
+            say("relecture         : %d pixels, %dx%d\n", got, rw, rh);
+            /* On vient de dessiner le triangle sur fond noir puis d'echanger :
+               le tampon avant porte donc l'image. Compter ce qui est peint dit
+               si le triangle existe vraiment. */
+            for (y = 0; y < rh; y++) {
+                for (x = 0; x < rw; x++) {
+                    const unsigned c = pixels[(size_t)y * (size_t)rw + (size_t)x];
+                    if ((c & 0x00FFFFFFu) == 0u) { background++; } else { painted++; }
+                }
+            }
+            say("  pixels peints   : %d\n", painted);
+            say("  pixels de fond  : %d\n", background);
+            /* Le triangle couvre environ la moitie de l'ecran ; on verifie
+               large, l'enjeu etant de distinguer « quelque chose » de « rien ». */
+            say("  verdict         : %s\n",
+                (painted > rw * rh / 20) ? "LE TRIANGLE EST BIEN DESSINE"
+                                         : "rien de visible");
+            {
+                /* Un echantillon au centre, ecrit en clair : c'est la preuve la
+                   plus directe qu'on puisse ramener d'une carte dont personne ne
+                   voit l'ecran. */
+                const unsigned c = pixels[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+                say("  centre de l'ecran : 0x%06X\n", c & 0x00FFFFFFu);
+            }
+            /* Et l'image entiere, pour qu'on puisse enfin la regarder. */
+            {
+                FILE *bmp = fopen("D:\\GLIDEBK.BMP", "wb");
+                if (bmp) {
+                    const int pad = (4 - (rw * 3) % 4) % 4;
+                    const unsigned data = (unsigned)((rw * 3 + pad) * rh);
+                    unsigned char head[54];
+                    int x, y, i;
+                    memset(head, 0, sizeof(head));
+                    head[0] = 'B'; head[1] = 'M';
+                    *(unsigned *)&head[2]  = 54u + data;
+                    *(unsigned *)&head[10] = 54u;
+                    *(unsigned *)&head[14] = 40u;
+                    *(int *)     &head[18] = rw;
+                    *(int *)     &head[22] = rh;
+                    head[26] = 1; head[28] = 24;
+                    *(unsigned *)&head[34] = data;
+                    fwrite(head, 1, sizeof(head), bmp);
+                    /* BMP range ses lignes du bas vers le haut. */
+                    for (y = rh - 1; y >= 0; y--) {
+                        for (x = 0; x < rw; x++) {
+                            const unsigned c = pixels[(size_t)y * (size_t)rw + (size_t)x];
+                            unsigned char bgr[3];
+                            bgr[0] = (unsigned char)(c & 0xFF);
+                            bgr[1] = (unsigned char)((c >> 8) & 0xFF);
+                            bgr[2] = (unsigned char)((c >> 16) & 0xFF);
+                            fwrite(bgr, 1, 3, bmp);
+                        }
+                        for (i = 0; i < pad; i++) { fputc(0, bmp); }
+                    }
+                    fclose(bmp);
+                    say("  image ecrite    : D:\\GLIDEBK.BMP\n");
+                }
+            }
+        }
+    }
+
     /* --- Fermeture --------------------------------------------------------- */
     dkr_glide_shutdown();
     say("fermeture          : affichage restitue\n");

@@ -92,3 +92,54 @@ Restent aussi non éprouvés, faute de pouvoir les provoquer sans casser la
 machine : le repli de résolution — la mémoire suffisait — et le message rendu
 quand la carte ou la bibliothèque est absente. Les deux chemins existent et
 rendent un texte nommant le geste possible ; aucun n'a été exercé.
+
+## Relire le tampon d'image — la première image réellement vue
+
+Jusqu'ici, tout ce que ce document affirmait sur le rendu Glide reposait sur
+**l'absence de plantage**. Sur une Voodoo passthrough, l'écran appartient à la
+carte : le relais analogique coupe la sortie 2D tant que le contexte est ouvert,
+et aucune capture de l'émulateur ne montre la sortie 3dfx. On savait que
+`grDrawTriangle` rendait la main ; on ne savait pas qu'il peignait.
+
+`grLfbLock` / `grLfbUnlock` lèvent cette cécité. `dkr_glide_read_framebuffer`
+verrouille le tampon avant, lit du 565, et rend de l'ARGB 32 bits dans l'ordre
+du rastériseur logiciel — pour que les deux images se comparent sans conversion.
+
+### La conversion 565 réplique les bits de poids fort
+
+Un simple décalage à gauche donnerait 0xF8 pour le rouge maximal : le blanc
+serait gris, et **toute comparaison avec l'oracle dériverait d'un écart constant**
+qu'on attribuerait au rastériseur. Répliquer donne bien 255.
+
+Relevé sur la machine, au sommet rouge du triangle de test : `(247, 0, 0)`. Ce
+n'est pas 255, et c'est correct : 247 vaut 30 en 5 bits, pas 31 — le point
+échantillonné est huit lignes sous le sommet, déjà dans le dégradé. Un 240 aurait
+signalé la troncature ; un 247 signale une interpolation.
+
+### Ce que la carte a dessiné
+
+    resolution         : 640x480, 2 tampons, profondeur oui
+    cadence            : 64 images/s
+    pixels peints      : 75264 sur 307200
+    centre de l'ecran  : 0x7B3C39
+
+Les sommets du triangle sont à (320,72), (544,408) et (96,408). Son aire
+analytique vaut ½ × 448 × 336 = **75264 pixels — exactement le compte relevé**.
+La carte remplit donc la surface géométrique sans débordement ni manque, et sa
+règle de remplissage des bords ne compte chaque pixel qu'une fois.
+
+Le centre `0x7B3C39` est rouge-dominant, ce qui est la bonne réponse et non la
+réponse évidente : le centre de l'*écran* (320,240) n'est pas le centre de
+gravité du triangle (320,296), il est plus proche du sommet rouge. Un mélange à
+parts égales aurait au contraire trahi une interpolation fausse.
+
+### Un piège dans le témoin lui-même
+
+La première version comptait « pixels peints » après la boucle de cadence, qui
+efface sur un dégradé : les 307200 pixels étaient peints et le verdict était
+positif sans rien prouver. Le témoin dessine désormais une dernière image **sur
+fond noir** avant de lire. La leçon vaut au-delà de Glide : un compteur dont la
+valeur de fond n'est pas distinguable du résultat ne mesure rien.
+
+L'image complète est écrite en BMP 24 bits (`D:\GLIDEBK.BMP`), lisible depuis
+l'hôte — c'est elle qui servira d'entrée à la comparaison de E09-S02.

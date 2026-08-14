@@ -107,6 +107,29 @@ void dkr_glide_swap(void);
  * que ce soit. Appeler deux fois est sans effet. */
 void dkr_glide_shutdown(void);
 
+/* --- Relire ce que la carte a dessiné --------------------------------------- *
+ *
+ * Sur une Voodoo passthrough, l'écran appartient à la carte : **aucune capture
+ * de l'émulateur ne montre la sortie 3dfx**, et tout ce que le projet affirmait
+ * jusqu'ici sur le rendu Glide reposait sur l'absence de plantage.
+ *
+ * `grLfbLock` donne accès au tampon d'image. Cela débloque trois choses d'un
+ * coup, et c'est pourquoi cette fonction vaut d'être écrite :
+ *
+ *   - la vérification visuelle du triangle de E05-S01, jusqu'ici partielle ;
+ *   - la mesure de la marge hors écran que Glide tolère (E04-S05) ;
+ *   - la comparaison avec le rastériseur de référence (E09-S02), qui est la
+ *     raison d'être de tout l'oracle.
+ *
+ * `out` reçoit du ARGB 32 bits, lignes du haut vers le bas — le format du
+ * rastériseur logiciel, pour que les deux images se comparent sans conversion.
+ * La carte, elle, travaille en 565 : la conversion réplique les bits de poids
+ * fort, sans quoi le blanc ne serait pas blanc et toute comparaison dériverait.
+ *
+ * Rend le nombre de pixels lus, ou zéro. */
+int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
+                               int *width, int *height);
+
 /* Un triangle Gouraud plein écran, pour prouver que la chaîne va jusqu'au pixel.
    Sa place ici est provisoire : elle disparaîtra quand E04-S01 donnera une vraie
    interface de dessin. */

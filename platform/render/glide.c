@@ -51,6 +51,23 @@ typedef void   (WINAPI *pfn_grBufferClear)(FxU32, FxU8, FxU32);
 typedef void   (WINAPI *pfn_grBufferSwap)(int);
 typedef void   (WINAPI *pfn_grDrawTriangle)(const void *, const void *, const void *);
 typedef void   (WINAPI *pfn_grGlideGetVersion)(char *);
+typedef FxBool (WINAPI *pfn_grLfbLock)(FxU32, FxU32, FxU32, FxU32, FxU32, void *);
+typedef FxBool (WINAPI *pfn_grLfbUnlock)(FxU32, FxU32);
+
+/* `GrLfbInfo_t` de Glide 2.x. Le champ `size` doit être renseigné avant l'appel :
+   Glide s'en sert pour savoir quelle version de la structure on lui passe, et le
+   laisser à zéro fait échouer le verrouillage sans autre explication. */
+typedef struct {
+    int    size;
+    void  *lfbPtr;
+    FxU32  strideInBytes;
+    FxU32  writeMode;
+    FxU32  origin;
+} GrLfbInfo_t;
+
+#define GR_LFB_READ_ONLY        0x00
+#define GR_BUFFER_FRONTBUFFER   0x0
+#define GR_LFBWRITEMODE_ANY     0xFF
 
 static struct {
     HMODULE dll;
@@ -64,6 +81,8 @@ static struct {
     pfn_grBufferSwap       swap;
     pfn_grDrawTriangle     triangle;
     pfn_grGlideGetVersion  version;
+    pfn_grLfbLock          lfb_lock;
+    pfn_grLfbUnlock        lfb_unlock;
 
     int  initialised;   /* grGlideInit appelé */
     int  context_open;  /* grSstWinOpen réussi */
@@ -165,6 +184,11 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
     g.swap      = (pfn_grBufferSwap)       sym("_grBufferSwap@4");
     g.triangle  = (pfn_grDrawTriangle)     sym("_grDrawTriangle@12");
     g.version   = (pfn_grGlideGetVersion)  sym("_grGlideGetVersion@4");
+    /* La relecture est facultative : une Glide qui ne l'exporte pas reste
+       utilisable pour dessiner, seule la comparaison devient impossible. On ne
+       la met donc pas dans la liste des symboles obligatoires. */
+    g.lfb_lock   = (pfn_grLfbLock)   sym("_grLfbLock@24");
+    g.lfb_unlock = (pfn_grLfbUnlock) sym("_grLfbUnlock@8");
 
     if (!g.init || !g.shutdown || !g.query || !g.select || !g.win_open ||
         !g.win_close || !g.clear || !g.swap || !g.triangle) {
@@ -334,4 +358,51 @@ void dkr_glide_draw_test_triangle(void)
     a.ooz = b.ooz = c.ooz = 1.0f;
 
     g.triangle(&a, &b, &c);
+}
+
+int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
+                               int *width, int *height)
+{
+    GrLfbInfo_t info;
+    int x, y, w, h, count = 0;
+
+    if (!g.context_open || !g.lfb_lock || !g.lfb_unlock || !out) {
+        return 0;
+    }
+    w = g.ctx.width;
+    h = g.ctx.height;
+    if (width)  { *width  = w; }
+    if (height) { *height = h; }
+
+    memset(&info, 0, sizeof(info));
+    /* Renseigner `size` avant l'appel : Glide s'en sert pour reconnaitre la
+       version de la structure, et le laisser a zero fait echouer le
+       verrouillage sans autre explication. */
+    info.size = (int)sizeof(info);
+    if (!g.lfb_lock(GR_LFB_READ_ONLY, GR_BUFFER_FRONTBUFFER,
+                    GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, 0, &info) ||
+        !info.lfbPtr) {
+        return 0;
+    }
+
+    for (y = 0; y < h && count < max_pixels; y++) {
+        const unsigned short *row =
+            (const unsigned short *)((const unsigned char *)info.lfbPtr +
+                                     (size_t)y * info.strideInBytes);
+        for (x = 0; x < w && count < max_pixels; x++) {
+            const unsigned short p = row[x];
+            /* 565 vers 888. La replication des bits de poids fort est la bonne
+               extension : 0x1F doit donner 0xFF et non 0xF8, sans quoi le blanc
+               n'est pas blanc et toute comparaison de couleur derive. */
+            const unsigned r = (unsigned)((p >> 11) & 0x1F);
+            const unsigned gg = (unsigned)((p >>  5) & 0x3F);
+            const unsigned b = (unsigned)(p & 0x1F);
+            out[count++] = 0xFF000000u |
+                           (((r << 3) | (r >> 2)) << 16) |
+                           (((gg << 2) | (gg >> 4)) <<  8) |
+                            ((b << 3) | (b >> 2));
+        }
+    }
+    g.lfb_unlock(GR_LFB_READ_ONLY, GR_BUFFER_FRONTBUFFER);
+    return count;
 }
