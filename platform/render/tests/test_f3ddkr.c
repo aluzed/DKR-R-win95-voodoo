@@ -178,6 +178,17 @@ int main(void)
         a = put_cmd(0, 0x04000000u | (2u << 19), verts);   /* 3 sommets */
         a = put_cmd(a, 0x05000000u, table);                /* 1 triangle */
         (void)put_cmd(a, 0xB8000000u, 0u);
+        /* Une projection ou w = z. **Sans elle, w vaut 1** et un sommet a x = -10
+           se retrouve a dix demi-ecrans du centre, donc hors de la bande de garde
+           — le triangle est alors correctement ecarte, et le controle echouerait
+           pour une raison qui n'a rien a voir avec ce qu'il verifie. */
+        {
+            dkr_matrix proj;
+            memset(&proj, 0, sizeof(proj));
+            proj.m[0][0] = 1.0f; proj.m[1][1] = 1.0f; proj.m[2][2] = 0.5f;
+            proj.m[2][3] = 1.0f;
+            dkr_transform_set_projection(&c.transform, &proj);
+        }
         dkr_f3d_run(&c, 0);
         check("un lot de triangles valide est accepte",
               c.state.triangles == 1 && c.state.rejects[DKR_F3D_REJECT_INDEX] == 0);

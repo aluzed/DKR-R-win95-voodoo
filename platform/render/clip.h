@@ -50,6 +50,32 @@ typedef struct dkr_clip_vertex_ dkr_clip_vertex;
 #define DKR_CLIP_NEAR_EPSILON 0.0001f
 #endif
 
+/* --- La bande de garde ------------------------------------------------------ *
+ *
+ * Le découpage au seul plan proche ne suffit pas, et la mesure l'a montré : un
+ * sommet créé à `w = 0,0001` projette à **16 millions de pixels**. Les fonctions
+ * d'arête du rastériseur soustraient alors des nombres de cet ordre pour obtenir
+ * des unités — annulation catastrophique — et le résultat dépend de la précision
+ * des intermédiaires. L'hôte calcule en SSE 32 bits, la cible en x87 80 bits :
+ * les deux ne rendent alors pas les mêmes pixels.
+ *
+ * Découper aussi contre une **bande de garde** borne les coordonnées projetées
+ * par construction, et rend l'oracle exact des deux côtés.
+ *
+ * Ce n'est pas le découpage complet aux six plans que E04-S05 écarte à juste
+ * titre : la bande est bien plus large que l'écran, donc presque aucun triangle
+ * ne la traverse, et ceux qui restent entièrement dedans sortent par un
+ * court-circuit sans qu'aucune arête ne soit calculée.
+ *
+ * `DKR_CLIP_GUARD` est le rapport entre la bande et le demi-écran. À 4, un écran
+ * de 640 pixels tolère des coordonnées de −960 à 1600. La valeur exacte que Glide
+ * accepte reste à mesurer (E04-S05) ; celle-ci est choisie pour que les
+ * coordonnées restent dans un domaine où la précision tient, ce qui est une
+ * contrainte différente et indépendante. */
+#ifndef DKR_CLIP_GUARD
+#define DKR_CLIP_GUARD 4.0f
+#endif
+
 /* Découpe un triangle au plan proche.
  *
  * `out` reçoit 0, 1 ou 2 triangles — trois sommets chacun — et doit donc pouvoir

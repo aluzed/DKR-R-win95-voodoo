@@ -86,18 +86,45 @@ cible en x87 sur **80 bits** (`-mfpmath=387`). Les mêmes opérations, dans le m
 ordre, ne rendent donc pas les mêmes pixels — mais seulement là où l'annulation
 mord.
 
-### Ce que cela impose à E09-S02
+### Le remède, appliqué et mesuré
 
-Le harnais de comparaison ne peut pas exiger l'égalité binaire d'une image
-produite ici et d'une image produite là-bas **tant que des coordonnées extrêmes
-subsistent**. Deux voies, et la première est la bonne :
+Plutôt que de choisir une marge au jugé, le découpeur borne désormais les
+coordonnées **par construction** : il découpe aussi contre une **bande de garde**,
+dans l'espace homogène — quatre plans latéraux à quatre demi-écrans du centre,
+traités par la même boucle que le plan proche.
 
-1. **Borner les coordonnées projetées**, c'est-à-dire choisir la marge du plan
-   proche en fonction de la scène plutôt que de prendre une valeur arbitrairement
-   petite. C'est précisément la mesure que E04-S05 laisse ouverte, et voici son
-   premier argument chiffré.
-2. Tolérer un écart dans la comparaison — ce qui reviendrait à accepter que
-   l'oracle soit flou exactement là où il devrait trancher.
+Ce n'est pas le découpage complet aux six plans que E04-S05 écarte à juste titre.
+La bande est bien plus large que l'écran, donc presque aucun triangle ne la
+traverse, et ceux qui restent entièrement dedans sortent par un **court-circuit**
+sans qu'aucune arête ne soit calculée.
+
+| | Pixels différents | Part |
+|---|---:|---:|
+| plan proche seul | 1 986 | 2,59 % |
+| plan proche + bande de garde | **479** | **0,62 %** |
+
+### Ce qui reste, et pourquoi il ne peut pas disparaître comme cela
+
+Les 479 pixels restants sont **tous sur une arête** de l'image de référence —
+479 sur 479. Leur écart est grand (jusqu'à 250) parce qu'une arête sépare deux
+couleurs très différentes : un décalage d'un seul pixel suffit à échanger du
+magenta contre du bleu sombre.
+
+Ce n'est plus une annulation catastrophique mais la divergence ordinaire entre
+deux unités de calcul : l'hôte évalue les fonctions d'arête en SSE sur 32 bits,
+la cible en x87 sur 80 bits, et la couverture bascule sur les pixels que l'arête
+frôle.
+
+**Conséquence pour E09-S02 :** la comparaison doit tolérer un pixel d'écart le
+long des arêtes. Ce n'est pas un aveu — c'est la seule forme de comparaison qui
+ait un sens entre deux rastériseurs, et elle reste sévère : les 76 321 autres
+pixels sont identiques au bit près.
+
+Il existe une autre voie, et elle n'est pas retenue : forcer la précision du x87
+à 24 bits de mantisse (`_controlfp`) rendrait la cible identique à l'hôte. Mais
+ce réglage vaut pour **tout le processus**, y compris le code recompilé du jeu,
+dont les calculs attendent la double précision. Échanger la justesse du jeu
+contre la commodité d'une comparaison serait un mauvais marché.
 
 La profondeur, elle, est désormais bornée à `[0,1]` à la projection. Une valeur
 hors de cet intervalle n'a pas de sens pour le tampon et gagnait le test partout,

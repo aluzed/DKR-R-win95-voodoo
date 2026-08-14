@@ -91,40 +91,62 @@ int main(void)
      *
      * C'est le controle qui compte. Un attribut oublie ne se voit que sur les
      * triangles decoupes ; le verifier separement pour chacun est le seul moyen
-     * de ne pas laisser passer l'oubli. */
+     * de ne pas laisser passer l'oubli.
+     *
+     * Le plan choisi est celui de la **bande de garde a droite**, et non le plan
+     * proche : depuis que le decoupeur borne aussi les cotes, un sommet cree au
+     * plan proche a `w` minuscule et se fait redecouper par la garde — ce qui est
+     * l'effet voulu, mais rend l'interpolation malaisee a verifier a la main. Ici
+     * tous les `w` valent 1, donc la garde tombe simplement a `x = 4`. */
     {
-        int n, i, found_mid = 0;
-        /* Une arete qui traverse a mi-chemin : w passe de +1 a -1, donc
-           l'intersection est tres pres du milieu. */
-        in[0] = vertex(0.0f, 0.0f, 0.0f,  1.0f, 100.0f, 0.0f, 0.0f);
-        in[1] = vertex(2.0f, 0.0f, 0.0f, -1.0f, 200.0f, 1.0f, 0.5f);
-        in[2] = vertex(0.0f, 2.0f, 0.0f,  1.0f, 100.0f, 0.0f, 1.0f);
+        int n, i, found = 0;
+        in[0] = vertex(0.0f, 0.0f, 0.0f, 1.0f, 100.0f, 0.0f, 0.0f);
+        in[1] = vertex(8.0f, 0.0f, 0.0f, 1.0f, 200.0f, 1.0f, 0.5f);  /* hors garde */
+        in[2] = vertex(0.0f, 2.0f, 0.0f, 1.0f, 100.0f, 0.0f, 1.0f);
         n = dkr_clip_near(in, out);
-        check("le triangle a cheval est decoupe", n >= 1);
-        /* **Deux** aretes traversent, donc deux sommets sont crees — et tous
-           deux tombent a x proche de 1. Une premiere version de cette epreuve
-           les confondait et attendait le `t` de l'un chez l'autre ; c'est
-           l'epreuve qui avait tort. Ils se distinguent par `y` :
-
-             arete 0-1  ->  y = 0,   s = 0,5,  t = 0,25
-             arete 1-2  ->  y = 1,   s = 0,5,  t = 0,75  */
+        check("le triangle qui depasse la garde est decoupe", n >= 1);
         for (i = 0; i < n * 3; i++) {
-            if (out[i].x <= 0.9f || out[i].x >= 1.1f) {
-                continue;
-            }
-            check("w y vaut la marge du plan proche",
-                  out[i].w > 0.0f && out[i].w < 0.001f);
-            check_near("la couleur y est interpolee", out[i].r, 150.0, 1.0);
-            check_near("la coordonnee s aussi",       out[i].s,   0.5, 0.01);
-            if (out[i].y < 0.5f) {
-                found_mid |= 1;
-                check_near("t sur l'arete 0-1",       out[i].t,  0.25, 0.01);
-            } else {
-                found_mid |= 2;
-                check_near("t sur l'arete 1-2",       out[i].t,  0.75, 0.01);
+            /* Le sommet cree sur l'arete 0-1 : x vaut 4, soit la moitie du
+               chemin, donc chaque attribut doit valoir sa moyenne. */
+            if (out[i].x > 3.9f && out[i].x < 4.1f && out[i].y < 0.5f) {
+                found = 1;
+                check_near("la couleur y est interpolee", out[i].r, 150.0, 1.0);
+                check_near("la coordonnee s aussi",       out[i].s,   0.5, 0.01);
+                check_near("et la coordonnee t",          out[i].t,  0.25, 0.01);
             }
         }
-        check("les deux sommets crees ont ete trouves", found_mid == 3);
+        check("le sommet cree a bien ete trouve", found);
+    }
+
+    /* --- L'invariant que la bande de garde apporte --------------------------- *
+     *
+     * **Aucune coordonnee projetee ne depasse la bande.** C'est la propriete pour
+     * laquelle le decoupeur a ete generalise : sans elle, un sommet cree au plan
+     * proche projetait a seize millions de pixels, et les fonctions d'arete du
+     * rasteriseur perdaient toute precision — au point que l'hote et la cible ne
+     * rendaient plus les memes pixels. */
+    {
+        dkr_transform vp;
+        int n, i;
+        dkr_transform_init(&vp);
+        dkr_transform_set_viewport(&vp, 160.0f, -120.0f, 160.0f, 120.0f);
+
+        /* Le cas qui posait probleme : un sommet derriere la camera. */
+        in[0] = vertex(-30.0f, 0.0f, -25.0f, -50.0f, 255.0f, 0.0f, 0.0f);
+        in[1] = vertex( 90.0f, 0.0f, 150.0f, 300.0f, 255.0f, 1.0f, 0.0f);
+        in[2] = vertex( 60.0f, -60.0f, 100.0f, 200.0f, 255.0f, 0.0f, 1.0f);
+        n = dkr_clip_near(in, out);
+        check("le triangle traversant produit quelque chose", n >= 1);
+        for (i = 0; i < n * 3; i++) {
+            dkr_render_vertex rv;
+            dkr_clip_project(&vp, &out[i], &rv);
+            /* La garde vaut 4 demi-ecrans ; avec une echelle de 160 et une
+               translation de 160, cela borne x a [-480, 800]. On verifie large :
+               ce qui compte est qu'il n'y ait plus de millions. */
+            check("les coordonnees projetees restent bornees",
+                  rv.x > -2000.0f && rv.x < 3000.0f &&
+                  rv.y > -2000.0f && rv.y < 3000.0f);
+        }
     }
 
     /* --- La projection ------------------------------------------------------ */

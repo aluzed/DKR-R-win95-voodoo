@@ -76,12 +76,17 @@ viewport, fenêtre de ciseaux.
       Le cas à un sommet derrière produit bien **deux** triangles : le polygone
       restant est un quadrilatère, et ne pas le retrianguler ferait disparaître
       la moitié de la surface.
-- [ ] La marge de tolérance de Glide hors écran est mesurée et exploitée —
-      **pas mesurée**. Elle demande de lire le tampon d'image de la carte
-      (`grLfbLock`) pour voir où le rendu se dégrade : sur une Voodoo
-      passthrough, aucune capture de l'émulateur ne montre la sortie 3dfx. En
-      attendant, la marge retenue est **délibérément généreuse** (2048 px), ce
-      qui laisse passer des triangles inutiles plutôt que d'en découper à tort.
+- [~] La marge de tolérance de Glide hors écran est mesurée et exploitée — **la
+      marge de Glide n'est toujours pas mesurée** : elle demande de lire le
+      tampon d'image de la carte (`grLfbLock`), la sortie d'une Voodoo
+      passthrough n'apparaissant dans aucune capture de l'émulateur.
+      **Mais une contrainte différente, elle, est mesurée et exploitée** : la
+      précision. Un sommet créé au plan proche projetait à 16 millions de pixels,
+      où les fonctions d'arête perdent tout sens. Le découpeur borne désormais
+      les coordonnées par une **bande de garde** à quatre demi-écrans, ce qui a
+      fait passer l'écart entre l'hôte et la cible de 2,59 % à 0,62 % des pixels.
+      Les deux marges répondent à des questions distinctes et la seconde
+      n'attend pas la première.
 - [x] L'élimination des faces arrière suit la convention du microcode : le sens
       dépend du **signe de l'échelle en x de la fenêtre**, relevé dans
       `f3ddkr_rt64.cpp`. Une fenêtre miroir inverse l'orientation apparente, et

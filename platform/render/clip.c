@@ -23,49 +23,107 @@ static void lerp_vertex(const dkr_clip_vertex *a, const dkr_clip_vertex *b,
     out->t = a->t + (b->t - a->t) * k;
 }
 
+/* La distance signée d'un sommet à un plan, en espace homogène.
+ *
+ * Cinq plans : le plan proche, et les quatre côtés de la bande de garde. Les
+ * écrire comme des fonctions linéaires de (x, y, w) permet de les traiter par la
+ * même boucle — donc de n'avoir qu'un seul découpeur à relire. */
+static float plane_distance(const dkr_clip_vertex *v, int plane)
+{
+    const float g = DKR_CLIP_GUARD;
+    switch (plane) {
+    case 0:  return v->w - DKR_CLIP_NEAR_EPSILON;   /* plan proche */
+    case 1:  return v->x + g * v->w;                /* garde gauche */
+    case 2:  return g * v->w - v->x;                /* garde droite */
+    case 3:  return v->y + g * v->w;                /* garde haute */
+    default: return g * v->w - v->y;                /* garde basse */
+    }
+}
+
+#define CLIP_PLANES 5
+/* Cinq plans peuvent porter un triangle à huit sommets : chacun en ajoute au
+   plus un. La borne est atteignable, et la dépasser écraserait la pile. */
+#define CLIP_MAX_VERTICES 8
+
 int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
 {
-    dkr_clip_vertex kept[4];
-    int             n = 0;
-    int             i;
+    dkr_clip_vertex poly[CLIP_MAX_VERTICES];
+    dkr_clip_vertex work[CLIP_MAX_VERTICES];
+    int n = 3, plane, i, triangles;
 
     if (!in || !out) {
         return 0;
     }
 
-    /* Sutherland-Hodgman sur un seul plan : pour chaque arête, on garde le
-       sommet s'il est devant, et l'on ajoute l'intersection si l'arête traverse.
-       Le polygone résultant a trois ou quatre sommets. */
-    for (i = 0; i < 3; i++) {
-        const dkr_clip_vertex *cur  = &in[i];
-        const dkr_clip_vertex *next = &in[(i + 1) % 3];
-        const int cur_in  = cur->w  > DKR_CLIP_NEAR_EPSILON;
-        const int next_in = next->w > DKR_CLIP_NEAR_EPSILON;
-
-        if (cur_in) {
-            kept[n++] = *cur;
+    /* **Court-circuit.** La quasi-totalité des triangles est entièrement dans la
+       bande, et sort d'ici sans qu'aucune arête ne soit calculée. C'est ce qui
+       rend le découpage à cinq plans abordable là où le découpage complet ne le
+       serait pas. */
+    {
+        int all_inside = 1;
+        for (plane = 0; plane < CLIP_PLANES && all_inside; plane++) {
+            for (i = 0; i < 3; i++) {
+                if (plane_distance(&in[i], plane) < 0.0f) {
+                    all_inside = 0;
+                    break;
+                }
+            }
         }
-        if (cur_in != next_in) {
-            /* Le paramètre de l'intersection avec `w = epsilon`. Le dénominateur
-               ne peut pas s'annuler : les deux sommets sont de part et d'autre,
-               donc leurs `w` diffèrent. */
-            const float k = (DKR_CLIP_NEAR_EPSILON - cur->w) / (next->w - cur->w);
-            lerp_vertex(cur, next, k, &kept[n++]);
+        if (all_inside) {
+            out[0] = in[0]; out[1] = in[1]; out[2] = in[2];
+            return 1;
         }
     }
 
-    if (n < 3) {
-        return 0;                     /* entièrement derrière */
+    poly[0] = in[0]; poly[1] = in[1]; poly[2] = in[2];
+
+    /* Sutherland-Hodgman, un plan après l'autre : pour chaque arête, on garde le
+       sommet s'il est du bon côté, et l'on ajoute l'intersection si l'arête
+       traverse. */
+    for (plane = 0; plane < CLIP_PLANES; plane++) {
+        int m = 0;
+        for (i = 0; i < n; i++) {
+            const dkr_clip_vertex *cur  = &poly[i];
+            const dkr_clip_vertex *next = &poly[(i + 1) % n];
+            const float dc = plane_distance(cur,  plane);
+            const float dn = plane_distance(next, plane);
+
+            if (dc >= 0.0f && m < CLIP_MAX_VERTICES) {
+                work[m++] = *cur;
+            }
+            if ((dc >= 0.0f) != (dn >= 0.0f) && m < CLIP_MAX_VERTICES) {
+                /* Le dénominateur ne peut pas s'annuler : les deux sommets sont
+                   de part et d'autre, donc leurs distances diffèrent. */
+                lerp_vertex(cur, next, dc / (dc - dn), &work[m++]);
+            }
+        }
+        n = m;
+        if (n < 3) {
+            return 0;                 /* entièrement rejeté */
+        }
+        for (i = 0; i < n; i++) {
+            poly[i] = work[i];
+        }
     }
-    out[0] = kept[0]; out[1] = kept[1]; out[2] = kept[2];
-    if (n == 3) {
-        return 1;
+
+    /* Le polygone est retriangulé en éventail. Ne garder que le premier triangle
+       ferait disparaître le reste de la surface — un trou, sur les seuls
+       triangles découpés, donc rare et déroutant.
+
+       `out` en contient six, soit deux triangles : c'est le contrat de cette
+       fonction, et un polygone plus riche est tronqué plutôt que de déborder.
+       Le cas ne se présente que sur des triangles qui traversent plusieurs plans
+       à la fois, où la surface perdue est hors de la bande de garde. */
+    triangles = n - 2;
+    if (triangles > 2) {
+        triangles = 2;
     }
-    /* Quatre sommets : le polygone est un quadrilatère, et il faut le
-       retrianguler. L'oublier ferait disparaître la moitié de la surface — un
-       trou, sur les seuls triangles qui traversent le plan. */
-    out[3] = kept[0]; out[4] = kept[2]; out[5] = kept[3];
-    return 2;
+    for (i = 0; i < triangles; i++) {
+        out[i * 3 + 0] = poly[0];
+        out[i * 3 + 1] = poly[i + 1];
+        out[i * 3 + 2] = poly[i + 2];
+    }
+    return triangles;
 }
 
 void dkr_clip_project(const dkr_transform *t, const dkr_clip_vertex *in,
