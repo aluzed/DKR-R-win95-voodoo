@@ -299,6 +299,18 @@ static void apply_blend(dkr_blend_mode m)
     }
 }
 
+/* Quel tampon employer. Un, en W, par défaut — voir `apply_depth`.
+ *
+ * Exposé pour que E05-S05 puisse **comparer les deux par la mesure** plutôt que
+ * de trancher sur la réputation du mode W. Le ticket demande explicitement que
+ * ce choix soit justifié par une mesure d'artefacts consignée. */
+static int g_depth_en_w = 1;
+
+void dkr_glide_backend_depth_mode(int en_w)
+{
+    g_depth_en_w = en_w;
+}
+
 static void apply_depth(dkr_depth_mode m)
 {
     if (!gs.depth_mode || !gs.depth_function || !gs.depth_mask) { return; }
@@ -332,7 +344,7 @@ static void apply_depth(dkr_depth_mode m)
      * comme un défaut de géométrie ou de fenêtre, et l'on cherche longtemps avant
      * de soupçonner un tampon de profondeur qui fonctionne parfaitement.
      * Confirmé par relecture le 14 août 2026 ; voir `win95-glide-etats.md`. */
-    gs.depth_mode(GR_DEPTHBUFFER_WBUFFER);
+    gs.depth_mode(g_depth_en_w ? GR_DEPTHBUFFER_WBUFFER : GR_DEPTHBUFFER_ZBUFFER);
     gs.depth_function(GR_CMP_LESS);
     gs.depth_mask(m == DKR_DEPTH_TEST_AND_WRITE ? 1 : 0);
 }

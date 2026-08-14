@@ -342,6 +342,9 @@ void dkr_glide_backend_force_single_tmu(int force);
 /* Le nombre de TMU **utilisables**, qui tient compte du forcage. C'est lui que
    le choix de chemin doit lire, jamais la detection materielle directement. */
 int  dkr_glide_backend_tmu_count(void);
+/* Choisit le tampon de profondeur : non nul pour W, zero pour Z. Expose pour que
+   E05-S05 compare les deux par la mesure plutot que sur reputation. */
+void dkr_glide_backend_depth_mode(int en_w);
 #endif
 
 #ifdef __cplusplus

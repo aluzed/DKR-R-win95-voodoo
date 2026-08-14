@@ -704,6 +704,18 @@ set_target_properties(DKRWin95Multitex PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Multitex)
 
+# E05-S05 — trancher Z contre W par la mesure, sur le pire cas plutot que sur la
+# reputation. Le ticket nomme le risque : le combat de profondeur se manifeste au
+# loin et doit etre cherche activement.
+add_executable(DKRWin95Depth
+    "${DKR_WIN95_TOOLS}/witnesses/depth_probe.c")
+target_link_libraries(DKRWin95Depth PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95Depth PROPERTIES
+    OUTPUT_NAME "DEPTH"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Depth)
+
 # La mesure qui a decide de la conception de l'allocateur : granularite, espace
 # adressable, cout reel de chaque taille et de chaque format.
 add_executable(DKRWin95TmuProbe

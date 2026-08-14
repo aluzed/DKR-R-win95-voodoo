@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E04-S06, E05-S01 |
@@ -66,18 +66,35 @@ surfaces translucides.
 
 ## Critères d'acceptation
 
-- [ ] Les modes de rendu utilisés sont relevés et implémentés.
-- [ ] Le choix Z / W est justifié par une mesure d'artefacts de précision
-      consignée.
-- [ ] La plage de profondeur est cohérente avec E04-S03, vérifiée sur une scène
-      profonde.
-- [ ] Le test alpha rend correctement la végétation, et le choix test alpha /
-      chroma-key est justifié.
-- [ ] Les modes de mélange sans équivalent exact sont identifiés et leur écart
-      mesuré.
-- [ ] L'ordre de rendu des surfaces translucides suit celui de la display list.
-- [ ] Ombres, eau, particules et reflets sont vérifiés visuellement contre la
-      référence.
+- [~] Les modes sont relevés dans la source du portage voisin, par fréquence :
+      `XLU_SURF` 78, `OPA_SURF` 47, `TEX_EDGE` 25, `DECAL` 21, `INTER` 12, plus
+      74 `FOG_SHADE_A` qui relèvent de E05-S06. Opaque, translucide et test alpha
+      sont implémentés et mesurés ; **le biais de profondeur des modes `DECAL` et
+      `INTER` ne l'est pas**, sa valeur utile se réglant sur une scène réelle.
+- [x] Mesuré et consigné — **et le résultat contredit l'hypothèse du ticket**.
+      Les deux tampons résolvent 2 ‰ à toute distance de la plage et cèdent tous
+      deux entièrement à 0,2 ‰ : le mur est au même endroit. Le W est conservé
+      pour une raison qui n'est pas la précision — il consomme `oow` tel quel,
+      là où le Z imposerait de remettre chaque sommet à l'échelle.
+      Voir `docs/research/win95-profondeur-melange.md`.
+- [x] La plage est cohérente : de 0,50025 à 20 unités jusqu'à 0,99983 à 15000,
+      et sur toute cette plage le proche masque le lointain.
+- [~] Le test alpha est mesuré dans les deux sens sur la carte — 0 pixel sous le
+      seuil, 112000 au-dessus, soit exactement l'aire analytique du triangle.
+      **La comparaison avec `grChromakeyMode` n'est pas faite**, et le rendu de
+      la végétation demande la ROM.
+- [~] Le seul écart structurel est identifié : le préfixe `AA_`, un
+      anti-crénelage par couverture de pixel intégré au mélangeur du RDP, que
+      Glide 2 n'offre que par `grAADrawTriangle` à un coût sans rapport. Ces
+      modes sont rendus sans anti-crénelage — dégradation visible sur les bords,
+      **et non une erreur de couleur** : elle ne se cumule pas et ne se propage
+      pas. L'écart n'est pas chiffré, faute de scène représentative.
+- [x] Éprouvé plutôt qu'affirmé : trois triangles à la même profondeur, émis
+      dans un ordre connu, profondeur désactivée pour que rien ne trie à notre
+      place. Le dernier émis gagne. Un contrôle négatif vérifie que les trois ont
+      bien été dessinés, sans quoi un rendu ne dessinant que le dernier
+      passerait.
+- [ ] Ombres, eau, particules et reflets — **bloqué par la ROM absente**.
 
 ## Risques
 

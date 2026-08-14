@@ -126,6 +126,59 @@ int main(void)
               (c & 0x00FFFFFFu) != (c2 & 0x00FFFFFFu));
     }
 
+    /* --- L'ordre de rendu des surfaces translucides --------------------------- *
+     *
+     * La N64 dessinait dans l'ordre de la display list, et le jeu en depend :
+     * il faut reproduire cet ordre plutot que trier. Le piege que le ticket
+     * E05-S05 nomme est classique de tout regroupement d'etat — une
+     * optimisation par lot qui reordonne les primitives pour economiser des
+     * changements de registre casse silencieusement la superposition.
+     *
+     * On l'eprouve ici plutot que de l'affirmer : trois triangles translucides
+     * a la *meme* profondeur, emis dans un ordre connu. Le dernier emis doit
+     * gagner. Un tri, quel qu'il soit, changerait le resultat. */
+    {
+        dkr_render_state st;
+        dkr_render_vertex v[9];
+        int i;
+        const unsigned char R[3] = { 255, 0, 0 };
+        const unsigned char G[3] = { 0, 255, 0 };
+        const unsigned char B[3] = { 0, 0, 255 };
+        const unsigned char *couleurs[3];
+        couleurs[0] = R; couleurs[1] = G; couleurs[2] = B;
+
+        memset(&st, 0, sizeof(st));
+        st.combine = DKR_COMBINE_SHADE;
+        st.blend   = DKR_BLEND_OPAQUE;
+        st.depth   = DKR_DEPTH_DISABLED;   /* rien ne doit trier a notre place */
+        st.cull    = DKR_CULL_NONE;
+        backend.begin_frame(backend.self, 0x000000);
+        backend.set_state(backend.self, &st);
+
+        memset(v, 0, sizeof(v));
+        for (i = 0; i < 9; i++) {
+            const int tri = i / 3;
+            const float xs[3] = { 40.0f, 280.0f, 40.0f };
+            const float ys[3] = { 40.0f, 40.0f, 200.0f };
+            v[i].x = xs[i % 3]; v[i].y = ys[i % 3];
+            v[i].r = (float)couleurs[tri][0];
+            v[i].g = (float)couleurs[tri][1];
+            v[i].b = (float)couleurs[tri][2];
+            v[i].a = 255.0f;
+            v[i].oow = 1.0f;
+            v[i].z = 0.5f;                  /* strictement la meme profondeur */
+        }
+        backend.draw_triangles(backend.self, v, 3);
+
+        /* Le troisieme emis est bleu : c'est lui qui doit rester. */
+        check("l'ordre de la display list est respecte : le dernier emis gagne",
+              (pixel(80, 60) & 0x00FFFFFFu) == 0x0000FFu);
+        /* Et le controle negatif, sans lequel le precedent passerait sur un
+           rendu qui ne dessinerait que le dernier triangle. */
+        check("et les trois ont bien ete dessines, pas seulement le dernier",
+              ctx.state.emitted > 0);
+    }
+
     check("l'image s'ecrit", dkr_software_write_bmp("D:\\PIPELINE.BMP") != 0);
 
     backend.close(backend.self);
