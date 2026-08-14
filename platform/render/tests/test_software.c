@@ -225,14 +225,24 @@ int main(void)
     b.begin_frame(b.self, 0x000000);
     b.set_state(b.self, &st);
     memset(v, 0, sizeof(v));
-    /* Un triangle vert loin, puis un rouge pres : le rouge doit gagner. */
-    v[0].x = 10.0f; v[0].y = 10.0f; v[0].z = 0.8f; v[0].g = 255.0f;
-    v[1].x = 90.0f; v[1].y = 10.0f; v[1].z = 0.8f; v[1].g = 255.0f;
-    v[2].x = 10.0f; v[2].y = 50.0f; v[2].z = 0.8f; v[2].g = 255.0f;
-    v[3].x = 10.0f; v[3].y = 10.0f; v[3].z = 0.2f; v[3].r = 255.0f;
-    v[4].x = 90.0f; v[4].y = 10.0f; v[4].z = 0.2f; v[4].r = 255.0f;
-    v[5].x = 10.0f; v[5].y = 50.0f; v[5].z = 0.2f; v[5].r = 255.0f;
-    { int i; for (i = 0; i < 6; i++) { v[i].oow = 1.0f; v[i].a = 255.0f; } }
+    /* Un triangle vert loin, puis un rouge pres : le rouge doit gagner.
+     *
+     * **C'est `oow` qui porte la profondeur**, comme sur la Voodoo : `1/w` grand
+     * veut dire proche. La premiere version de cette epreuve remplissait `z` et
+     * posait `oow = 1` partout — elle passait alors sur un tampon en z et
+     * echouait des que le rasteriseur a trie comme le materiel. Les deux champs
+     * sont donc renseignes de facon coherente : `w` de 5 pour le lointain, de
+     * 1,25 pour le proche.
+     *
+     * `z` reste rempli parce qu'il n'est pas mort : il servira le jour ou l'on
+     * confrontera le portage au RDP plutot qu'a Glide. */
+    v[0].x = 10.0f; v[0].y = 10.0f; v[0].z = 0.8f; v[0].oow = 0.20f; v[0].g = 255.0f;
+    v[1].x = 90.0f; v[1].y = 10.0f; v[1].z = 0.8f; v[1].oow = 0.20f; v[1].g = 255.0f;
+    v[2].x = 10.0f; v[2].y = 50.0f; v[2].z = 0.8f; v[2].oow = 0.20f; v[2].g = 255.0f;
+    v[3].x = 10.0f; v[3].y = 10.0f; v[3].z = 0.2f; v[3].oow = 0.80f; v[3].r = 255.0f;
+    v[4].x = 90.0f; v[4].y = 10.0f; v[4].z = 0.2f; v[4].oow = 0.80f; v[4].r = 255.0f;
+    v[5].x = 10.0f; v[5].y = 50.0f; v[5].z = 0.2f; v[5].oow = 0.80f; v[5].r = 255.0f;
+    { int i; for (i = 0; i < 6; i++) { v[i].a = 255.0f; } }
     b.draw_triangles(b.self, v, 2);
     check("le plus proche masque le plus lointain",
           (pixel_at(30, 20) & 0x00FF0000u) != 0 &&

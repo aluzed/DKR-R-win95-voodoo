@@ -574,7 +574,9 @@ dkr_win95_verify(DKRWin95SoftRaster)
 # écrite en RDRAM ressort en pixels.
 add_executable(DKRWin95Pipeline
     "${DKRPORT_ROOT}/platform/render/tests/test_pipeline.c")
-target_include_directories(DKRWin95Pipeline PRIVATE "${DKRPORT_ROOT}/platform")
+target_include_directories(DKRWin95Pipeline PRIVATE
+    "${DKRPORT_ROOT}/platform"
+    "${DKRPORT_ROOT}/platform/render/tests")
 target_link_libraries(DKRWin95Pipeline PRIVATE win95f3ddkr win95software)
 set_target_properties(DKRWin95Pipeline PROPERTIES
     OUTPUT_NAME "PIPELINE"
@@ -644,6 +646,22 @@ set_target_properties(DKRWin95GlideRegistry PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideRegistry)
+
+# E09-S02 — l'oracle enfin confronte au materiel. La meme scene synthetique
+# traverse le rasteriseur de reference puis la Voodoo, et les deux images sont
+# comparees au pixel. C'est ce que la relecture du tampon d'image a rendu
+# possible : sans elle, l'oracle n'avait rien a comparer.
+add_executable(DKRWin95Compare
+    "${DKRPORT_ROOT}/platform/render/tests/test_compare.c")
+target_link_libraries(DKRWin95Compare PRIVATE
+    win95glide win95software win95f3ddkr win95clock winmm)
+target_include_directories(DKRWin95Compare PRIVATE
+    "${DKRPORT_ROOT}/platform/render/tests")
+set_target_properties(DKRWin95Compare PROPERTIES
+    OUTPUT_NAME "COMPARE"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Compare)
 
 # --- Sonde de la coupure de courant (E02-S05) ---------------------------------
 #

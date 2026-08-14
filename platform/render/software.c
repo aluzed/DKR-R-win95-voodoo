@@ -305,11 +305,53 @@ static void raster_triangle(const dkr_render_vertex *v0,
             oow = w0 * v0->oow + w1 * v1->oow + w2 * v2->oow;
             w   = (oow != 0.0f) ? (1.0f / oow) : 0.0f;
 
-            sr = (w0 * v0->r * v0->oow + w1 * v1->r * v1->oow + w2 * v2->r * v2->oow) * w;
-            sg = (w0 * v0->g * v0->oow + w1 * v1->g * v1->oow + w2 * v2->g * v2->oow) * w;
-            sb = (w0 * v0->b * v0->oow + w1 * v1->b * v1->oow + w2 * v2->b * v2->oow) * w;
-            sa = (w0 * v0->a * v0->oow + w1 * v1->a * v1->oow + w2 * v2->a * v2->oow) * w;
-            z  =  w0 * v0->z + w1 * v1->z + w2 * v2->z;
+            /* **La couleur est iteree lineairement, sans correction perspective.**
+             *
+             * C'est contre-intuitif apres le paragraphe qui precede, et c'est
+             * pourtant ce qu'il faut : ni Glide 2 ni le RDP ne corrigent la
+             * couleur. `GrVertex.r/g/b/a` sont iteres en espace ecran, et seuls
+             * `s/w`, `t/w` et `1/w` traversent la division. Un oracle dont la
+             * cible est Glide doit iterer comme Glide, faute de quoi il accuse
+             * le materiel d'un ecart dont il est lui-meme l'auteur.
+             *
+             * La premiere version corrigeait la couleur, et l'erreur ne se
+             * voyait pas : sur une surface ordinaire, les deux interpolations
+             * different de quelques unites. Elle a explose sur le premier
+             * triangle **decoupe au plan proche**, ou le sommet cree porte un
+             * `1/w` enorme qui, pondere, impose sa couleur a tout le polygone.
+             * La comparaison avec la carte montrait un aplat magenta la ou le
+             * materiel produisait un degrade vert — voir
+             * `docs/research/win95-oracle-vs-carte.md`. */
+            sr = w0 * v0->r + w1 * v1->r + w2 * v2->r;
+            sg = w0 * v0->g + w1 * v1->g + w2 * v2->g;
+            sb = w0 * v0->b + w1 * v1->b + w2 * v2->b;
+            sa = w0 * v0->a + w1 * v1->a + w2 * v2->a;
+            /* **La profondeur est triee sur `1/w`, pas sur `z`.**
+             *
+             * Un tampon en z est parfaitement legitime, et c'etait le premier
+             * choix. La comparaison avec la carte l'a invalide, pour une raison
+             * qui ne se devine pas.
+             *
+             * `dkr_clip_project` borne `z` a [0,1] — il le faut, un sommet cree
+             * par le decoupage sort avec une profondeur de l'ordre de -200000.
+             * Mais borner **au sommet** deforme le gradient sur toute la
+             * primitive : les deux extremites ne sont plus a l'echelle l'une de
+             * l'autre, et l'interpolation ment partout entre elles. Le defaut
+             * reste invisible sur une surface entiere et n'apparait que la ou
+             * une primitive decoupee en croise une autre — un coin de quelques
+             * milliers de pixels, ou l'oracle et la carte designaient chacun une
+             * surface differente comme etant devant.
+             *
+             * `oow` n'a pas ce probleme : il vaut `1/w`, il est affine en espace
+             * ecran, il n'a jamais besoin d'etre borne, et c'est exactement ce
+             * que la Voodoo range dans son tampon. L'oracle doit predire Glide,
+             * donc il trie comme Glide. Grand `1/w` = proche, d'ou l'inversion
+             * du sens du test.
+             *
+             * `v->z` reste rempli et disponible : le RDP, lui, trie bien en z,
+             * et le jour ou l'on voudra confronter le portage a l'original
+             * plutot qu'au materiel, c'est cette valeur qu'il faudra. */
+            z  = -oow;
 
             if (tex) {
                 s = (w0 * v0->tmu[0][DKR_TMU_SOW] + w1 * v1->tmu[0][DKR_TMU_SOW] +
@@ -382,9 +424,11 @@ static void sw_begin_frame(void *self, unsigned clear_argb)
     n = (size_t)g_sw.width * (size_t)g_sw.height;
     for (i = 0; i < n; i++) {
         g_sw.color[i] = 0xFF000000u | (clear_argb & 0x00FFFFFFu);
-        /* La profondeur part au plus loin. `1.0` et non `FLT_MAX` : les valeurs
-           interpolées sont dans [0,1], et une borne hors échelle masquerait une
-           erreur d'échelle au lieu de la révéler. */
+        /* Le tampon part au plus loin. La grandeur triee etant `-1/w`, « loin »
+           est un grand positif : `1/w` tend vers zero a l'infini, donc `-1/w`
+           tend vers zero par en dessous, et toute surface reelle a une valeur
+           negative. Zero suffirait ; on prend une marge pour qu'une surface
+           exactement a l'infini soit malgre tout peinte. */
         g_sw.depth[i] = 1.0f;
     }
 }
