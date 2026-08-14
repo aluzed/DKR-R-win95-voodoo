@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E04-S02 |
@@ -71,15 +71,30 @@ façon exhaustive et vérifiable.
 ## Critères d'acceptation
 
 - [ ] L'inventaire de 33 configurations est revérifié sur ce portage, écarts
-      consignés.
-- [ ] Cycle unique et double cycle sont tous deux décodés et distingués.
-- [ ] Le combineur est représenté sous une forme canonique comparable.
-- [ ] Les modes de rendu et de texture sont décodés.
-- [ ] Toute configuration non répertoriée est journalisée à l'exécution.
-- [ ] Une partie complète est rejouée sous instrumentation, et l'inventaire est
-      complété de ce qu'elle révèle.
-- [ ] `docs/research/rdp-state-inventory.md` donne, par configuration, fréquence
-      et surface d'écran couverte.
+      consignés — **impossible par la même méthode**, et c'est la conclusion.
+      Le voisin l'a dérivé des sources C de la décomposition ; ce portage-ci
+      n'en dispose pas, il travaille depuis du MIPS recompilé. Son équivalent
+      est l'instrumentation à l'exécution, qui demande la ROM.
+- [x] Cycle unique et double cycle sont tous deux décodés et distingués — et le
+      mode de cycle **fait partie de la clé canonique**, le même mot ne produisant
+      pas la même image selon le cycle.
+- [x] Le combineur est représenté sous une forme canonique comparable. Vérifié
+      contre les **63 macros `G_CC_*` des en-têtes de la décomposition**,
+      résolues et encodées par un générateur plutôt que transcrites : les 63 se
+      décodent champ pour champ, sans collision de clé.
+- [x] Les modes de rendu et de texture sont décodés — cycle, filtrage, LOD,
+      détail, perspective, comparaison alpha, source de Z, test et écriture de
+      profondeur. Le blender reste brut : il relève de E05-S05.
+- [~] Toute configuration non répertoriée est journalisée à l'exécution. Le
+      mécanisme existe — `dkr_rdp_combiner_name` rend `NULL` pour l'inconnu —
+      mais **la table n'est amorcée qu'à huit entrées**, et rien ne journalise
+      encore faute de décodeur en fonctionnement (E04-S02).
+- [ ] Une partie complète est rejouée sous instrumentation — **bloqué** par
+      E02-S06, qui demande la ROM.
+- [~] `docs/research/rdp-state-inventory.md` existe et consigne ce qui est
+      établi. **Fréquence et surface d'écran manquent** : les deux se mesurent à
+      l'exécution, et le nombre d'entrées de table du voisin en est un substitut
+      grossier — il compte des déclarations, pas des pixels.
 
 ## Risques
 

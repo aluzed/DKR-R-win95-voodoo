@@ -458,6 +458,30 @@ add_library(win95renderbackend STATIC
 target_include_directories(win95renderbackend PUBLIC
     "${DKRPORT_ROOT}/platform/render")
 
+# --- Décodage de l'état RDP (E04-S06) -----------------------------------------
+#
+# Le combineur du RDP est une unité programmable ; celui de Glide est fixe, et la
+# traduction est le point dur de tout E05. Ce qui rend le problème traitable est
+# que **DKR déclare ses réglages dans des tables statiques** : l'ensemble employé
+# est borné. Le décodage produit une forme canonique comparable, et E05-S03 y
+# fera correspondre un réglage Glide par simple recherche.
+add_library(win95rdpstate STATIC "${DKRPORT_ROOT}/platform/render/rdp_state.c")
+target_link_libraries(win95rdpstate PUBLIC win95renderbackend)
+
+# Les vecteurs de test viennent des en-têtes de la décomposition, résolus par
+# `tools/win95/gen_combiner_vectors.py` — pas d'une transcription à la main, qui
+# se tromperait en silence et ferait alors passer un décodeur faux.
+add_executable(DKRWin95RdpState
+    "${DKRPORT_ROOT}/platform/render/tests/test_rdp_state.c")
+target_include_directories(DKRWin95RdpState PRIVATE
+    "${DKRPORT_ROOT}/platform" "${DKRPORT_ROOT}/platform/render/tests")
+target_link_libraries(DKRWin95RdpState PRIVATE win95rdpstate)
+set_target_properties(DKRWin95RdpState PROPERTIES
+    OUTPUT_NAME "RDPSTATE"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95RdpState)
+
 # --- Rastériseur logiciel de référence (E04-S08) ------------------------------
 #
 # L'oracle. Quand une image sera fausse en Glide, il faudra savoir si l'erreur
@@ -587,6 +611,8 @@ add_test(NAME DKRWin95Saves
 # autorise à comparer une image produite ici à une image produite là-bas.
 add_test(NAME DKRWin95Render
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" render)
+add_test(NAME DKRWin95RdpState
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" rdp)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

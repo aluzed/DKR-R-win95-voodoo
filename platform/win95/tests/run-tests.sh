@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -192,4 +192,19 @@ if [[ "$suite" == "all" || "$suite" == "render" ]]; then
         -o "$tmp/test_software" "$R/tests/test_software.c" "$R/software.c"
   echo
   ( cd "$tmp" && "$tmp/test_software" )
+fi
+
+# --- E04-S06 : decodage de l'etat RDP -----------------------------------------
+#
+# Les vecteurs viennent des en-tetes de la decomposition, resolus par
+# tools/win95/gen_combiner_vectors.py. Une transcription a la main se tromperait
+# en silence, et le test partagerait alors l'erreur du code qu'il verifie.
+if [[ "$suite" == "all" || "$suite" == "rdp" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" -I"$R/tests" \
+        -o "$tmp/test_rdp_state" "$R/tests/test_rdp_state.c" "$R/rdp_state.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_rdp_state" )
 fi
