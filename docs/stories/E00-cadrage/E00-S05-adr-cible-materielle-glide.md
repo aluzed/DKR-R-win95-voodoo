@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | REVIEW |
+| **Statut** | DONE |
 | **Priorité** | P0 |
 | **Estimation** | S |
 | **Dépend de** | E00-S03, E00-S04 |
@@ -40,10 +40,23 @@ bout, tandis que **Glide 3 exige un HWND valide** — `grSstWinOpen` refuse avec
 « need to use a valid window handle », ce qui coupleraît l'amorçage du rendu à
 E06-S01. `grVertexLayout` reste l'argument qui rouvrirait la décision.
 
-**Un point à répercuter sur E09-S01 :** `grSstQueryHardware` rapporte le type
-`0` (Voodoo Graphics) avec 2 TMU de 4 Mo, alors que le fichier de configuration
-86Box annonce `type = 2`. La machine de test **n'exerce donc pas les chemins
-spécifiques à la Voodoo 2**, ce qui augmente le poids de E09-S04.
+**Corrigé le 14 août 2026.** Ce paragraphe disait que le fichier de
+configuration de 86Box mentait, `grSstQueryHardware` rapportant le type `0`
+alors que le fichier annonçait `type = 2`. C'était faux, et la méthode l'était
+aussi : il y a **deux sections Voodoo** dans `86box.cfg`, et celle que 86Box lit
+porte le suffixe d'instance. Elle disait `type = 1` — Obsidian SB50, un Voodoo 1
+à deux TMU — et 86Box l'honorait fidèlement. La section écrite à la main n'était
+jamais lue.
+
+La machine est maintenant sur la carte **plancher** : Voodoo 2, 2 Mo de tampon
+d'images, 2 Mo par TMU, confirmé dans le dialogue de réglages. Le budget de
+texture de E05-S02 sera donc éprouvé contre la vraie limite et non contre le
+double, ce qui **réduit** le poids de E09-S04 au lieu de l'augmenter.
+
+Ce qui reste vrai, et qui compte pour E05-S01 : Glide 2.54 rapporte le type `0`
+et la révision FBI `261` pour la Voodoo 2 comme pour l'Obsidian. **Sur cette
+plate-forme, `grSstQueryHardware` ne distingue pas les deux générations** — le
+nombre de TMU et la mémoire par TMU sont exploitables, le modèle ne l'est pas.
 
 **Réserve explicite :** le plancher CPU est **provisoire**. Le go/no-go de
 E00-S03 n'est pas tombé — il attend une vraie session de jeu (E02-S06). L'ADR le
@@ -113,17 +126,18 @@ par une mesure ou une contrainte matérielle, pas par une préférence.
 
 ## Critères d'acceptation
 
-- [ ] `docs/adr/0002-cible-materielle.md` fixe : CPU plancher, CPU recommandé,
+- [x] `docs/adr/0002-cible-materielle.md` fixe : CPU plancher, CPU recommandé,
       RAM, carte 3dfx plancher, carte recommandée, version de Glide, résolution.
-- [ ] Chaque valeur renvoie à la mesure ou à la contrainte matérielle qui la
+- [x] Chaque valeur renvoie à la mesure ou à la contrainte matérielle qui la
       justifie.
-- [ ] Le choix Glide 2.4 / 3.x est argumenté sur la couverture matérielle réelle
+- [x] Le choix Glide 2.4 / 3.x est argumenté sur la couverture matérielle réelle
       des sources 3dfx, pas sur la documentation d'époque.
-- [ ] Le budget de mémoire de texture par TMU est chiffré et comparé au pic
-      mesuré par niveau.
-- [ ] La configuration de validation matériel réel est nommée.
-- [ ] L'ADR indique ce qui la rouvrirait — par exemple un dépassement de budget
-      de texture découvert en E05-S02.
+- [x] Le budget de mémoire de texture par TMU est chiffré et comparé au pic
+      mesuré par niveau — 1 225 Ko padés contre 2 Mo par TMU, soit 60 %.
+- [x] La configuration de validation matériel réel est nommée.
+- [x] L'ADR indique ce qui la rouvrirait — dépassement du budget de texture en
+      E05-S02, coût du remplissage de `GrVertex` en E08-S03, go/no-go de E00-S03,
+      demande de support Voodoo 4/5.
 
 ## Vérifié en amont par E09-S01
 

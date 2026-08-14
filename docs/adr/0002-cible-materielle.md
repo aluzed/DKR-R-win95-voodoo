@@ -142,32 +142,69 @@ de sorte qu'un backend Glide 3 puisse s'ajouter sans toucher au décodeur F3DDKR
 ## Ce que la machine de test dit d'elle-même
 
 `tools/win95/probes/glide_hwinfo.c` interroge `grSstQueryHardware`, par le même
-chemin que le moteur utilisera (E05-S01) :
+chemin que le moteur utilisera (E05-S01).
 
+### Correction du 14 août 2026 — la machine est bien une Voodoo 2
+
+La version précédente de cette section concluait que le fichier de configuration
+de 86Box « mentait », Glide rapportant le type `0` alors que le fichier annonçait
+`type = 2`. **Cette conclusion était fausse, et la méthode l'était aussi.**
+
+Il y a deux sections Voodoo dans `86box.cfg`. Celle que 86Box lit porte le
+suffixe d'instance — `[3dfx Voodoo Graphics #1]` — et elle disait `type = 1`,
+c'est-à-dire **Obsidian SB50 + Amethyst**, un Voodoo 1 à deux TMU. 86Box
+l'honorait fidèlement. L'autre section, écrite à la main, annonçait `type = 2` et
+n'était simplement jamais lue.
+
+La machine est désormais configurée sur la carte **plancher** de cette ADR, et le
+dialogue de réglages — la seule source qui fasse foi, comme E09-S01 l'avait déjà
+établi — le confirme :
+
+```text
+Type de Voodoo                     : 3Dfx Voodoo 2
+Taille memoire du tampon d'images  : 2 Mo
+Taille memoire des textures        : 2 Mo
 ```
+
+### Et Glide 2.54 rapporte quand même le type 0
+
+Relevé de `grSstQueryHardware` sur cette machine, une fois la Voodoo 2 en place :
+
+```text
 version Glide : 2.54
 cartes detectees : 1
 carte 0
-  type          : 0 (Voodoo Graphics (Voodoo 1))
-  memoire image : 4 Mo
+  type          : 0 (Voodoo Graphics)
+  memoire image : 2 Mo
   revision FBI  : 261
   TMU           : 2
-  TMU 0 memoire : 4 Mo
-  TMU 1 memoire : 4 Mo
+  TMU 0 memoire : 2 Mo
+  TMU 1 memoire : 2 Mo
 ```
 
-**Deux TMU de 4 Mo et 4 Mo d'image : la configuration convient pour développer et
-valider le multitexture et le budget de texture.** Mais Glide rapporte le type
-`0` — Voodoo Graphics — et non `3` (Voodoo 2), alors que le fichier de
-configuration de 86Box annonce `type = 2`.
+Le type reste `0`, et la révision FBI reste `261` — **exactement les mêmes valeurs
+que sur l'Obsidian**. Seules les tailles mémoire ont changé.
 
-C'est la troisième fois que ce fichier ment ; E09-S01 avait déjà relevé que des
-réglages Voodoo écrits à la main y sont ignorés en silence. **Conséquence à
-tenir : la machine de test n'exerce pas les chemins spécifiques à la Voodoo 2 de
-Glide.** Cela ne change pas la cible retenue — qui porte sur du matériel réel —
-mais cela augmente le poids de
-[E09-S04](../stories/E09-qa/E09-S04-validation-materiel-reel.md), et cela doit
-être vérifié dans le dialogue de réglages avant toute mesure de multitexture.
+**Conséquence pour E05-S01, et elle est concrète : sur cette plate-forme,
+`grSstQueryHardware` ne permet pas de distinguer une Voodoo 1 d'une Voodoo 2.**
+`GrSstType` de Glide 2.x ne sépare pas les deux — `GR_SSTTYPE_VOODOO` couvre la
+famille, et `glide2x` 2.54 *est* le pilote Voodoo 2. La détection à l'exécution
+doit donc reposer sur autre chose que le type : le nombre de TMU et la mémoire
+par TMU sont exploitables ; le modèle exact ne l'est pas.
+
+Réserve de portée : ce relevé est celui de l'**émulation**. Sur du matériel réel
+la révision FBI diffère entre les deux générations, et pourrait discriminer.
+C'est à vérifier en E09-S04, et c'est une raison de plus de ne pas faire reposer
+la détection sur elle.
+
+### Ce que cela change au poids de E09-S04
+
+La version précédente concluait que « la machine de test n'exerce pas les chemins
+spécifiques à la Voodoo 2 », ce qui augmentait le poids de la validation sur
+matériel réel. **Ce n'est plus vrai** : la machine émule désormais une Voodoo 2,
+et sur la configuration plancher — 2 Mo de tampon d'images et 2 Mo par TMU, les
+deux contraintes les plus serrées de cette ADR. Le budget de texture de E05-S02
+sera donc éprouvé contre la vraie limite, et non contre le double.
 
 ## Configuration de validation sur matériel réel
 

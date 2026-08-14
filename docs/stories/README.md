@@ -10,8 +10,11 @@ Windows 95, rendu par une carte 3dfx via Glide. Le joueur fournit sa propre
 ROM ; aucun asset n'est redistribué (`docs/ASSET_POLICY.md`).
 
 **Cible retenue** : Pentium II / III, Voodoo 2 ou 3, 64 Mo de RAM, Windows 95
-OSR2.5. Ce plancher est provisoire jusqu'à ce que [E00-S05](E00-cadrage/E00-S05-adr-cible-materielle-glide.md)
-l'acte sur les mesures de E00-S03 et E00-S04.
+OSR2.5 — actée par [E00-S05](E00-cadrage/E00-S05-adr-cible-materielle-glide.md)
+et [l'ADR 0002](../adr/0002-cible-materielle.md). Le plancher **matériel** est
+fixé et la machine de test y est désormais alignée : Voodoo 2, 2 Mo de tampon
+d'images, 2 Mo par TMU. Seul le plancher **CPU** reste provisoire, le go/no-go
+de E00-S03 attendant une vraie session de jeu.
 
 ## Ce qui est conservé, ce qui tombe
 
