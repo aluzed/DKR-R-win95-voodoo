@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
+| **Statut** | REVIEW |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E01-S02, E00-S05 |
@@ -73,15 +73,28 @@ est un contrat.
 
 ## Critères d'acceptation
 
-- [ ] `platform/render/backend.h` définit l'interface complète.
-- [ ] Chaque élément est justifié par un besoin réel relevé dans `f3ddkr_rt64.cpp`,
-      pas par généralité.
-- [ ] La structure de vertex évite une conversion par sommet vers Glide.
-- [ ] L'état de rendu est un bloc comparable, permettant l'émission différentielle.
-- [ ] L'interface est manifestement implémentable par Glide : chaque élément est
-      annoté « natif » ou « à émuler », avec l'appel Glide correspondant.
-- [ ] Une implémentation vide compile et se lie.
-- [ ] L'interface n'expose aucun type propre à RT64, SDL2 ou ImGui.
+- [x] `platform/render/backend.h` définit l'interface complète.
+- [x] Chaque élément est justifié par un besoin réel relevé dans `f3ddkr_rt64.cpp`,
+      pas par généralité. Le relevé a produit une contrainte qui décide de la
+      forme : **le sommet DKR ne porte pas de coordonnées de texture** — ses dix
+      octets sont `x, y, z` en 16 bits signés et `r, g, b, a` en octets — et les
+      `s, t` arrivent **par coin, au moment du triangle**. Une interface à
+      sommets indexés serait donc fausse ici ; l'expansion se fait côté décodeur.
+- [x] La structure de vertex évite une conversion par sommet vers Glide — et ce
+      n'est pas seulement documenté : `backend_layout_check.c` vérifie **à la
+      compilation** que chaque champ est au décalage de `GrVertex`.
+- [x] L'état de rendu est un bloc comparable, permettant l'émission
+      différentielle. Vérifié aussi : le contrôle refuse tout remplissage, qui
+      ferait comparer à `memcmp` des octets indéterminés.
+- [x] L'interface est manifestement implémentable par Glide : chaque élément est
+      annoté « NATIF » ou « A EMULER », avec l'appel Glide correspondant. Un seul
+      relève de la seconde catégorie — le rectangle plein, que Glide ne connaît
+      pas et que le backend fabrique en deux triangles — plus le combineur, dont
+      la traduction est le travail de E05-S03.
+- [x] Une implémentation vide compile et se lie — `backend_null.c`, qui compte ce
+      qu'elle reçoit : un décodeur qui n'émet rien et un backend qui ne dessine
+      rien se ressemblent beaucoup vus de l'écran.
+- [x] L'interface n'expose aucun type propre à RT64, SDL2 ou ImGui.
 
 ## Risques
 

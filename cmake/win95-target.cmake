@@ -445,6 +445,19 @@ set_target_properties(DKRWin95SaveInterchange PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95SaveInterchange)
 
+# --- Interface de backend de rendu (E04-S01) ----------------------------------
+#
+# Un ticket de conception, dont le livrable est un contrat — `backend.h`. Sont
+# construits ici l'implémentation vide, qui établit que l'interface se compile et
+# se lie sans backend réel, et le contrôle de disposition, qui vérifie à la
+# compilation les deux promesses dont tout le reste dépend : le sommet a la
+# disposition de `GrVertex`, et le bloc d'état est comparable par `memcmp`.
+add_library(win95renderbackend STATIC
+    "${DKRPORT_ROOT}/platform/render/backend_null.c"
+    "${DKRPORT_ROOT}/platform/render/backend_layout_check.c")
+target_include_directories(win95renderbackend PUBLIC
+    "${DKRPORT_ROOT}/platform/render")
+
 # --- Amorçage Glide (E05-S01) -------------------------------------------------
 #
 # La couche qui ouvre la carte 3dfx et rend la main : détection, contexte,
