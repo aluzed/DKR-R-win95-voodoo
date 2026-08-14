@@ -445,6 +445,21 @@ set_target_properties(DKRWin95SaveInterchange PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95SaveInterchange)
 
+# --- Sonde de la coupure de courant (E02-S05) ---------------------------------
+#
+# Ce que la séquence d'écriture durable promet n'est pas « on ne perd jamais la
+# dernière écriture » mais « on ne perd jamais une sauvegarde valide ». Sur une
+# machine émulée, la vraie coupure est à portée : `kill -9` sur l'émulateur
+# emporte le cache disque de l'invité comme le ferait une prise arrachée.
+add_executable(DKRWin95PowerCut
+    "${DKR_WIN95_TOOLS}/witnesses/power_cut_probe.cpp")
+target_link_libraries(DKRWin95PowerCut PRIVATE win95fileio)
+set_target_properties(DKRWin95PowerCut PROPERTIES
+    OUTPUT_NAME "COUPURE"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95PowerCut)
+
 # --- Sonde du disque plein (E02-S05) ------------------------------------------
 #
 # La suite d'épreuve vérifie que les codes d'erreur sont distincts et portent un

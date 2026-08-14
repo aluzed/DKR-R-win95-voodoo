@@ -83,9 +83,20 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
 - [x] Les noms de fichiers sont compatibles 8.3, ou le comportement FAT16 est
       vérifié — les deux : les noms longs fonctionnent sur ce volume, et les noms
       que la couche fabrique tiennent en 8.3 pour rester utilisables ailleurs.
-- [~] L'écriture est **aussi atomique que Windows 95 le permet** — il n'y a pas
+- [x] L'écriture est **aussi atomique que Windows 95 le permet** — il n'y a pas
       de remplacement atomique — et une copie de secours est conservée. Ce que la
-      séquence garantit et ce qu'elle ne garantit pas est écrit.
+      séquence garantit et ce qu'elle ne garantit pas est écrit, et **la coupure
+      est désormais provoquée plutôt que simulée** : `kill -9` sur l'émulateur,
+      après plus de 350 tours d'écriture.
+
+      ScanDisk n'a trouvé qu'un fichier endommagé — `COUPURE.TMP`, celui que la
+      séquence sacrifie — et la sauvegarde du tour 370 a été relue intacte après
+      redémarrage, sans même recourir à la copie de secours.
+
+      Ce relevé ne prouve pas que la fenêtre ne soit jamais atteinte : c'est un
+      tirage, et la coupure est tombée pendant l'écriture du `.TMP`, qui occupe
+      l'essentiel de chaque tour. Il prouve que la séquence tient sous une
+      coupure réelle, et que le volume se répare au démarrage suivant.
 - [x] Une sauvegarde produite par DKR-R moderne est lue par la version Win95, et
       réciproquement — et le résultat est plus fort que demandé : **les deux
       constructions produisent les mêmes octets**.

@@ -149,3 +149,60 @@ rien de reproductible.
 
 La configuration de la machine est à remettre en l'état après coup — le montage
 d'une disquette pleine changerait la référence de toutes les autres épreuves.
+
+## La coupure de courant, provoquée pour de bon — 14 août 2026
+
+Jusqu'ici la promesse de la séquence durable était raisonnée et éprouvée par
+simulation. Sur une machine émulée la vraie coupure est à portée : `kill -9` sur
+l'émulateur emporte le cache disque de l'invité comme le ferait une prise
+arrachée.
+
+Protocole : écriture en boucle de sauvegardes numérotées et sommées, coupure
+après 23 secondes — plus de 350 tours — puis redémarrage et relecture.
+
+### Ce que la coupure a laissé
+
+Windows a détecté l'arrêt incorrect et lancé ScanDisk, qui a trouvé **un seul
+fichier endommagé** :
+
+```text
+Le fichier D:\COUPURE.TMP est endommagé. Bien que le début du fichier soit
+probablement correct, le fichier est endommagé plus loin.
+```
+
+C'est exactement le fichier que la séquence sacrifie. `COUPURE.DAT` et
+`COUPURE.BAK` étaient intacts.
+
+### Le verdict après redémarrage
+
+```text
+code de lecture    : 0 (succes)
+octets relus       : 512
+numero de tour     : 370
+verdict            : sauvegarde valide, fichier principal
+```
+
+La sauvegarde du tour 370 a survécu, somme de contrôle comprise, et il n'a même
+pas fallu recourir à la copie de secours.
+
+### Ce que ce relevé prouve, et ce qu'il ne prouve pas
+
+Il prouve que la séquence tient sous une coupure réelle, que le dégât se porte
+sur le fichier temporaire, et que Windows répare le volume au démarrage suivant.
+
+**Il ne prouve pas que la fenêtre ne soit jamais atteinte.** C'est un tirage :
+la coupure est tombée pendant l'écriture du `.TMP`, qui occupe l'essentiel du
+temps de chaque tour. La fenêtre — entre le renommage de `.DAT` vers `.BAK` et
+celui de `.TMP` vers `.DAT` — reste étroite par construction, et c'est tout ce
+que la plate-forme permet : `MoveFileExA(REPLACE_EXISTING)` n'y est pas
+implémentée. Un tirage qui tomberait dedans laisserait la précédente dans
+`.BAK`, et c'est précisément la garantie annoncée : **on ne perd jamais une
+sauvegarde valide**, pas « on ne perd jamais la dernière écriture ».
+
+### Une remarque sur la sévérité du protocole
+
+`kill -9` emporte aussi ce que l'émulateur gardait dans le cache de l'hôte, que
+le matériel réel aurait déjà écrit. Le protocole est donc **au moins aussi dur**
+qu'une coupure véritable, jamais plus doux — le bon sens de l'erreur. Il l'a
+montré : la FAT du volume était illisible depuis l'hôte avant que ScanDisk ne
+la répare.
