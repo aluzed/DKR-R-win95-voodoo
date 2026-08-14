@@ -109,7 +109,7 @@ typedef enum {
 
 /* Le réglage Glide, sous forme de données. Les valeurs sont celles des
    énumérations de Glide 2.x, telles que `glide_backend.c` les emploie. */
-typedef struct {
+typedef struct dkr_cc_reglage {
     unsigned char cc_function, cc_factor, cc_local, cc_other;
     unsigned char ac_function, ac_factor, ac_local, ac_other;
     unsigned char tc_function, tc_factor;   /* étage de texture */

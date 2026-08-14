@@ -34,6 +34,7 @@
 #include "glide.h"
 #include "backend.h"
 #include "tmu.h"
+#include "combiner.h"
 
 #include <string.h>
 
@@ -690,6 +691,38 @@ void dkr_render_backend_glide(dkr_render_backend *out)
 unsigned long dkr_glide_backend_triangle_count(void)
 {
     return b.triangles;
+}
+
+/* Applique un reglage de la table de E05-S03, tel quel.
+ *
+ * Point d'entree direct, employe par le harnais de mesure et destine au moteur.
+ * Il court-circuite `apply_combine`, dont les quatre modes ne sont qu'un
+ * raccourci : la table couvre vingt-neuf configurations, et c'est elle qui doit
+ * decider, pas une enumeration qui la resume.
+ *
+ * `constant_argb` charge l'unique registre constant de Glide. **Quel registre du
+ * RDP y placer est une decision de la table** — `DKR_CONST_PRIMITIVE` ou
+ * `DKR_CONST_ENVIRONMENT` — et la seconde constante, quand elle est necessaire,
+ * voyage dans l'alpha du sommet. */
+void dkr_glide_backend_set_recipe(const dkr_cc_reglage *r, unsigned constant_argb)
+{
+    if (!r) { return; }
+    if (gs.constant_color) { gs.constant_color(constant_argb); }
+    if (gs.color_combine) {
+        gs.color_combine(r->cc_function, r->cc_factor, r->cc_local, r->cc_other, 0);
+    }
+    if (gs.alpha_combine) {
+        gs.alpha_combine(r->ac_function, r->ac_factor, r->ac_local, r->ac_other, 0);
+    }
+    if (gs.tex_combine && r->utilise_texture) {
+        gs.tex_combine(GR_TMU0, r->tc_function, r->tc_factor,
+                       r->tc_function, r->tc_factor, 0, 0);
+    }
+}
+
+void dkr_glide_backend_bind(dkr_texture_handle handle)
+{
+    bind_texture(handle);
 }
 
 const dkr_tmu *dkr_glide_backend_tmu(int index)

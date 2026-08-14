@@ -631,7 +631,7 @@ target_include_directories(win95glide PUBLIC
     "${DKRPORT_ROOT}/platform"
     "${DKR_WIN95_PLATFORM}"
     "${DKR_WIN95_PLATFORM}/include-shim")
-target_link_libraries(win95glide PUBLIC win95compat win95tmu)
+target_link_libraries(win95glide PUBLIC win95compat win95tmu win95combiner)
 # PUBLIC : `backend.h` ne déclare `dkr_render_backend_glide` que sur cette cible,
 # de sorte qu'un hôte qui compile l'oracle ne puisse pas l'appeler par mégarde.
 # Le témoin doit donc voir la définition, pas seulement la bibliothèque.
@@ -679,6 +679,18 @@ set_target_properties(DKRWin95GlideTexture PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideTexture)
+
+# E05-S03 — l'ecart de chaque configuration, mesure sur la carte. Le ticket met
+# en garde contre la tentation de traiter les configurations « jusqu'a ce que ca
+# ressemble » : ce temoin est la reponse a cette mise en garde.
+add_executable(DKRWin95CombinerProbe
+    "${DKR_WIN95_TOOLS}/witnesses/combiner_probe.c")
+target_link_libraries(DKRWin95CombinerProbe PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95CombinerProbe PROPERTIES
+    OUTPUT_NAME "COMBINER"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95CombinerProbe)
 
 # La mesure qui a decide de la conception de l'allocateur : granularite, espace
 # adressable, cout reel de chaque taille et de chaque format.
