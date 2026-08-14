@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -221,4 +221,19 @@ if [[ "$suite" == "all" || "$suite" == "f3ddkr" ]]; then
         -o "$tmp/test_f3ddkr" "$R/tests/test_f3ddkr.c" "$R/f3ddkr.c"
   echo
   ( cd "$tmp" && "$tmp/test_f3ddkr" )
+fi
+
+# --- E04-S03 : transformation des sommets -------------------------------------
+#
+# La justesse se verifie ici ; **le chiffre qui compte se mesure sur la cible**.
+# Sur l'hote la boucle de mesure est ignoree : un Ryzen ne dit rien d'un
+# Pentium II a 400 MHz.
+if [[ "$suite" == "all" || "$suite" == "transform" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_transform" "$R/tests/test_transform.c" "$R/transform.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_transform" )
 fi

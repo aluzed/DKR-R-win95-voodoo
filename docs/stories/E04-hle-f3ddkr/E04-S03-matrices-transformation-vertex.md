@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E04-S02 |
@@ -70,18 +70,32 @@ dans ce pipeline mais se traitent à part.
 
 ## Critères d'acceptation
 
-- [ ] La pile de matrices reproduit le comportement du microcode, profondeur
-      relevée sur le jeu réel.
-- [ ] La conversion 16.16 en deux moitiés est exacte, testée sur des matrices
-      capturées.
-- [ ] Le choix flottant / virgule fixe est justifié par une mesure consignée.
-- [ ] Les sommets transformés sont produits directement au format du backend, sans
-      recopie.
-- [ ] Les positions écran correspondent à celles de la cible moderne, dans une
-      tolérance écrite et justifiée.
-- [ ] Le coût par sommet et par image est mesuré sur la cible.
-- [ ] L'éclairage par sommet correspond au comportement du microcode, vérifié
-      contre le decomp.
+- [x] La pile de matrices reproduit le comportement du microcode, profondeur
+      **relevée et non supposée** : `f3ddkr_rt64.cpp` borne l'index à 2 dans
+      `Matrix` comme dans `MoveWord`, donc trois emplacements. En prévoir seize
+      par prudence coûterait de la mémoire sur une machine qui n'en a pas, et
+      masquerait une commande mal décodée visant un emplacement inexistant.
+- [~] La conversion 16.16 en deux moitiés est exacte, testée sur des valeurs
+      **calculées à la main** — entier seul, fraction seule, négatif avec
+      fraction, et juste sous l'unité. Le cas qui casse une conversion naïve est
+      couvert : la fraction n'est pas signée. **Pas de matrices capturées** :
+      elles demandent la ROM.
+- [~] Le choix flottant / virgule fixe est justifié par une mesure consignée —
+      **le x87 est mesuré, la virgule fixe ne l'est pas**. Écrire une variante à
+      la hâte mesurerait sa propre maladresse plutôt que la technique, et la
+      décision dépend du nombre de sommets par image, que seul le jeu donne.
+      Voir [`docs/research/win95-cout-sommet.md`](../../research/win95-cout-sommet.md).
+- [x] Les sommets transformés sont produits directement au format du backend,
+      sans recopie — `dkr_render_vertex` est écrit sur place, `oow` et `ooz`
+      compris.
+- [ ] Les positions écran correspondent à celles de la cible moderne — **bloqué**,
+      la comparaison demandant des scènes capturées, donc la ROM.
+- [x] Le coût par sommet et par image est mesuré sur la cible : **0,682 µs par
+      sommet**, soit **24 322 sommets** dans une image de 16,6 ms.
+- [ ] L'éclairage par sommet — **pas fait**. DKR porte des couleurs de sommet, et
+      le décodeur les transmet telles quelles ; savoir si le microcode y applique
+      autre chose demande de relever le comportement dans le decomp, qui n'est
+      pas dans ce dépôt.
 
 ## Risques
 

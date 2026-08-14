@@ -458,6 +458,24 @@ add_library(win95renderbackend STATIC
 target_include_directories(win95renderbackend PUBLIC
     "${DKRPORT_ROOT}/platform/render")
 
+# --- Transformation des sommets (E04-S03) -------------------------------------
+#
+# Sur la N64 c'est le RSP qui transforme ; ici cela revient au processeur, comme
+# sur toute carte 3dfx. **C'est le poste de calcul graphique le plus lourd du
+# portage**, et son coût est mesuré sur la machine plutôt que supposé.
+add_library(win95transform STATIC "${DKRPORT_ROOT}/platform/render/transform.c")
+target_link_libraries(win95transform PUBLIC win95renderbackend)
+
+add_executable(DKRWin95Transform
+    "${DKRPORT_ROOT}/platform/render/tests/test_transform.c")
+target_include_directories(DKRWin95Transform PRIVATE "${DKRPORT_ROOT}/platform")
+target_link_libraries(DKRWin95Transform PRIVATE win95transform)
+set_target_properties(DKRWin95Transform PROPERTIES
+    OUTPUT_NAME "TRANSFRM"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Transform)
+
 # --- Décodeur de display list F3DDKR (E04-S02) --------------------------------
 #
 # Extrait de `f3ddkr_rt64.cpp`, dont la logique de décodage est propre au
@@ -638,6 +656,8 @@ add_test(NAME DKRWin95RdpState
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" rdp)
 add_test(NAME DKRWin95F3DDKR
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" f3ddkr)
+add_test(NAME DKRWin95Transform
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" transform)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer
