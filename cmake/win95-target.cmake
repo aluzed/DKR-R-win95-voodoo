@@ -504,7 +504,9 @@ dkr_win95_verify(DKRWin95Transform)
 # mémoire de l'hôte. Elle protège contre une ROM modifiée comme contre un bug du
 # portage — la seconde étant la plus probable.
 add_library(win95f3ddkr STATIC "${DKRPORT_ROOT}/platform/render/f3ddkr.c")
-target_link_libraries(win95f3ddkr PUBLIC win95renderbackend)
+# La chaîne : le décodeur émet désormais, donc il dépend du découpage, qui dépend
+# lui-même de la transformation.
+target_link_libraries(win95f3ddkr PUBLIC win95clip)
 
 # La suite injecte des display lists **volontairement corrompues**. C'est ce qui
 # la rend possible sans ROM : une liste corrompue s'écrit, une vraie se capture.
@@ -563,6 +565,22 @@ set_target_properties(DKRWin95SoftRaster PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95SoftRaster)
+
+# --- La chaîne complète, sur une scène synthétique (E04) -----------------------
+#
+# Cinq modules s'emboîtent : décodeur, transformation, découpage, interface,
+# rastériseur. Ce que cette cible établit n'est pas que le rendu soit *juste* —
+# il faudra le jeu pour cela — mais que **la chaîne est continue** : une commande
+# écrite en RDRAM ressort en pixels.
+add_executable(DKRWin95Pipeline
+    "${DKRPORT_ROOT}/platform/render/tests/test_pipeline.c")
+target_include_directories(DKRWin95Pipeline PRIVATE "${DKRPORT_ROOT}/platform")
+target_link_libraries(DKRWin95Pipeline PRIVATE win95f3ddkr win95software)
+set_target_properties(DKRWin95Pipeline PROPERTIES
+    OUTPUT_NAME "PIPELINE"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Pipeline)
 
 # --- Amorçage Glide (E05-S01) -------------------------------------------------
 #
@@ -679,6 +697,8 @@ add_test(NAME DKRWin95Transform
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" transform)
 add_test(NAME DKRWin95Clip
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" clip)
+add_test(NAME DKRWin95Pipeline
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" pipeline)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

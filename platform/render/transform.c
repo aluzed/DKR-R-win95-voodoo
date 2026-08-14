@@ -1,5 +1,6 @@
 /* E04-S03 — mise en œuvre. Le contrat est dans `transform.h`. */
 #include "transform.h"
+#include "clip.h"
 
 #include <string.h>
 
@@ -195,4 +196,31 @@ int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
     out->tmu[0][DKR_TMU_OOW] = oow;
 
     return 1;
+}
+
+void dkr_transform_to_clip(dkr_transform *t, const dkr_source_vertex *in,
+                           float s, float tc, struct dkr_clip_vertex_ *out)
+{
+    const dkr_matrix *m;
+    float x, y, z;
+
+    if (!t || !in || !out) {
+        return;
+    }
+    m = dkr_transform_mvp(t);
+    x = (float)in->x;
+    y = (float)in->y;
+    z = (float)in->z;
+
+    out->x = x * m->m[0][0] + y * m->m[1][0] + z * m->m[2][0] + m->m[3][0];
+    out->y = x * m->m[0][1] + y * m->m[1][1] + z * m->m[2][1] + m->m[3][1];
+    out->z = x * m->m[0][2] + y * m->m[1][2] + z * m->m[2][2] + m->m[3][2];
+    out->w = x * m->m[0][3] + y * m->m[1][3] + z * m->m[2][3] + m->m[3][3];
+
+    out->r = (float)in->r;
+    out->g = (float)in->g;
+    out->b = (float)in->b;
+    out->a = (float)in->a;
+    out->s = s;
+    out->t = tc;
 }

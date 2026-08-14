@@ -41,6 +41,12 @@ static void put32(unsigned int a, unsigned int v)
     g_ram[a + 3] = (unsigned char)(v);
 }
 
+static void put16(unsigned int a, int v)
+{
+    g_ram[a] = (unsigned char)((unsigned)v >> 8);
+    g_ram[a + 1] = (unsigned char)v;
+}
+
 static unsigned int put_cmd(unsigned int a, unsigned int w0, unsigned int w1)
 {
     put32(a, w0);
@@ -141,16 +147,42 @@ int main(void)
               c.state.triangles == 0);
     }
 
-    /* Un lot valide passe, pour que le controle precedent ne soit pas vide. */
+    /* Dessiner sans avoir charge de sommets : les index sont dans les bornes du
+       cache, mais le cache est vide. Ce n'est pas une adresse fausse — donc pas
+       un rejet de plage — et dessiner des sommets non initialises donnerait une
+       geometrie aleatoire, ce qui est pire qu'un triangle absent. */
     reset(&c, 1);
     {
         const unsigned int table = 0x100u;
         g_ram[table + 1] = 0; g_ram[table + 2] = 1; g_ram[table + 3] = 2;
-        a = put_cmd(0, 0x05000000u, table);            /* 1 triangle */
+        a = put_cmd(0, 0x05000000u, table);
+        (void)put_cmd(a, 0xB8000000u, 0u);
+        dkr_f3d_run(&c, 0);
+        check("dessiner sans avoir charge de sommets est rejete",
+              c.state.rejects[DKR_F3D_REJECT_INDEX] == 1 && c.state.emitted == 0);
+    }
+
+    /* Un lot valide, sommets charges d'abord — la sequence d'une vraie display
+       list. Sans ce controle, le precedent pourrait passer pour une mauvaise
+       raison : un decodeur qui rejetterait tout le satisferait aussi. */
+    reset(&c, 1);
+    {
+        const unsigned int table = 0x100u;
+        const unsigned int verts = 0x200u;
+        g_ram[table + 1] = 0; g_ram[table + 2] = 1; g_ram[table + 3] = 2;
+        /* Trois sommets, a des positions distinctes pour que le triangle ait une
+           surface. z positif : devant le plan proche. */
+        put16(verts +  0, -10); put16(verts +  2, -10); put16(verts +  4, 100);
+        put16(verts + 10,  10); put16(verts + 12, -10); put16(verts + 14, 100);
+        put16(verts + 20,   0); put16(verts + 22,  10); put16(verts + 24, 100);
+        a = put_cmd(0, 0x04000000u | (2u << 19), verts);   /* 3 sommets */
+        a = put_cmd(a, 0x05000000u, table);                /* 1 triangle */
         (void)put_cmd(a, 0xB8000000u, 0u);
         dkr_f3d_run(&c, 0);
         check("un lot de triangles valide est accepte",
               c.state.triangles == 1 && c.state.rejects[DKR_F3D_REJECT_INDEX] == 0);
+        /* Et la chaine va jusqu'au bout : le triangle atteint le backend. */
+        check("et la chaine l'emet effectivement", c.state.emitted == 1);
     }
 
     /* --- Imbrication : la profondeur est bornee ----------------------------- */

@@ -23,15 +23,18 @@
  * décode pas les textures (E04-S07). Il lit la display list, valide, tient
  * l'état du microcode, et appelle l'interface de rendu.
  *
- * Il en découle une limite assumée : **les sommets qu'il émet sont en espace
- * objet**, non projetés. Tant que E04-S03 n'existe pas, ils ne peuvent pas être
- * dessinés correctement — le décodeur les compte et les trace, ce qui suffit à
- * établir que la séquence de commandes est juste.
+ * Il **émet** en revanche, désormais que E04-S03 et E04-S05 existent : chaque
+ * triangle traverse la transformation, le découpage au plan proche, la
+ * projection et l'élimination des faces arrière avant d'atteindre le backend.
+ * C'est la chaîne complète, et le seul assemblage qui prouve que les cinq
+ * modules s'emboîtent.
  */
 #ifndef DKR_RENDER_F3DDKR_H
 #define DKR_RENDER_F3DDKR_H
 
 #include "backend.h"
+#include "clip.h"
+#include "transform.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,6 +73,16 @@ typedef struct {
     unsigned long triangles;
     unsigned long vertices;
     unsigned long rejects[DKR_F3D_REJECT_COUNT_MAX];
+
+    /* Ce que la chaîne a réellement remis au backend, par opposition à ce que la
+       display list demandait. L'écart entre `triangles` et `emitted` est le
+       nombre éliminé — par le découpage, la culling ou le rejet hors écran — et
+       c'est un chiffre qu'on veut voir : un écran vide avec `triangles` élevé et
+       `emitted` nul désigne immédiatement cet étage. */
+    unsigned long emitted;
+    unsigned long culled;
+    unsigned long clipped_away;
+    unsigned long clip_split;      /* triangles devenus deux */
 } dkr_f3d_state;
 
 /* --- Le contexte ----------------------------------------------------------- */
@@ -78,6 +91,19 @@ typedef struct {
     unsigned int         rdram_size;
     dkr_render_backend  *backend;    /* peut être NULL : on décode sans dessiner */
     dkr_f3d_state        state;
+
+    /* La chaîne. `transform` porte les matrices et la fenêtre ; `cache` tient les
+       32 sommets du microcode, **déjà transformés en espace homogène**.
+     *
+       Les transformer au chargement plutôt qu'au triangle n'est pas une
+       optimisation gratuite : un sommet servi par trois triangles serait sinon
+       transformé trois fois, et la transformation est le poste le plus lourd du
+       portage (0,682 µs par sommet, mesuré). Les coordonnées de texture, elles,
+       arrivent bien au triangle — c'est ainsi que le microcode fonctionne. */
+    dkr_transform        transform;
+    dkr_clip_vertex      cache[32];
+    unsigned char        cache_valid[32];
+    dkr_render_state     render_state;
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne

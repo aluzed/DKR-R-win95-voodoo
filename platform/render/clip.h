@@ -34,18 +34,21 @@ extern "C" {
 /* Un sommet **avant** division perspective : position homogène et attributs.
  * C'est là que le découpage doit avoir lieu — après projection il est trop tard,
  * la division ayant déjà produit des coordonnées sans signification. */
-typedef struct {
+struct dkr_clip_vertex_ {
     float x, y, z, w;
     float r, g, b, a;
     float s, t;              /* coordonnées de texture, non divisées */
-} dkr_clip_vertex;
+};
+typedef struct dkr_clip_vertex_ dkr_clip_vertex;
 
 /* Le plan proche n'est pas `w > 0` mais `w > epsilon`.
  *
  * Un sommet exactement sur le plan donne `1/w` infini ; un sommet juste devant
  * donne un `1/w` énorme qui sature en flottant et produit les mêmes éclats que
  * le sommet derrière. La marge est petite mais elle n'est pas nulle. */
+#ifndef DKR_CLIP_NEAR_EPSILON
 #define DKR_CLIP_NEAR_EPSILON 0.0001f
+#endif
 
 /* Découpe un triangle au plan proche.
  *

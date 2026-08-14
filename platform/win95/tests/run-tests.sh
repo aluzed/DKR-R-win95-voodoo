@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -218,7 +218,8 @@ if [[ "$suite" == "all" || "$suite" == "f3ddkr" ]]; then
     || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
   R="$HERE/../../render"
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
-        -o "$tmp/test_f3ddkr" "$R/tests/test_f3ddkr.c" "$R/f3ddkr.c"
+        -o "$tmp/test_f3ddkr" "$R/tests/test_f3ddkr.c" "$R/f3ddkr.c" \
+        "$R/clip.c" "$R/transform.c"
   echo
   ( cd "$tmp" && "$tmp/test_f3ddkr" )
 fi
@@ -252,4 +253,20 @@ if [[ "$suite" == "all" || "$suite" == "clip" ]]; then
         -o "$tmp/test_clip" "$R/tests/test_clip.c" "$R/clip.c" "$R/transform.c"
   echo
   ( cd "$tmp" && "$tmp/test_clip" )
+fi
+
+# --- E04 : la chaine complete sur une scene synthetique -------------------------
+#
+# Cinq modules s'emboitent. Ce qui est etabli n'est pas que le rendu soit juste —
+# il faudra le jeu — mais que la chaine est **continue** : une commande ecrite en
+# RDRAM ressort en pixels, et chaque etage passe a son voisin ce qu'il attend.
+if [[ "$suite" == "all" || "$suite" == "pipeline" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_pipeline" "$R/tests/test_pipeline.c" "$R/f3ddkr.c" \
+        "$R/clip.c" "$R/transform.c" "$R/software.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_pipeline" )
 fi

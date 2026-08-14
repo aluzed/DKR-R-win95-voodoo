@@ -135,6 +135,13 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         reject(c, DKR_F3D_REJECT_ADDRESS, d);
         return;
     }
+    {
+        dkr_matrix loaded;
+        if (dkr_matrix_from_fixed(c->rdram + address, &loaded)) {
+            dkr_transform_set_matrix(&c->transform, (int)index, &loaded);
+        }
+    }
+    dkr_transform_select(&c->transform, (int)index);
     trace(c, "Matrix emplacement=%u adresse=0x%06X", index, address);
 }
 
@@ -163,12 +170,23 @@ static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
     for (i = 0; i < count; i++) {
         const unsigned int a = source + i * VERTEX_STRIDE;
+        dkr_source_vertex sv;
         /* Le sommet DKR : x, y, z en 16 bits signes puis r, g, b, a en octets.
            **Aucune coordonnee de texture** — elles arrivent au triangle. */
-        (void)read_s16(c, a + 0);
-        (void)read_s16(c, a + 2);
-        (void)read_s16(c, a + 4);
-        (void)read_u8(c, a + 6);
+        sv.x = read_s16(c, a + 0);
+        sv.y = read_s16(c, a + 2);
+        sv.z = read_s16(c, a + 4);
+        sv.r = read_u8(c, a + 6);
+        sv.g = read_u8(c, a + 7);
+        sv.b = read_u8(c, a + 8);
+        sv.a = read_u8(c, a + 9);
+        /* Transforme **ici** et non au triangle : un sommet servi par trois
+           triangles serait sinon transforme trois fois, et c'est le poste le
+           plus lourd du portage. Les coordonnees de texture restent a zero —
+           elles seront posees au triangle. */
+        dkr_transform_to_clip(&c->transform, &sv, 0.0f, 0.0f,
+                              &c->cache[destination + i]);
+        c->cache_valid[destination + i] = 1;
     }
     c->state.vertices += count;
     trace(c, "Vertex %u sommets vers %u depuis 0x%06X", count, destination, source);
@@ -210,9 +228,74 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     c->state.triangles += count;
     trace(c, "Triangle %u depuis 0x%06X", count, source);
 
-    /* Le dessin viendra quand E04-S03 aura projete les sommets. Emettre ici des
-       sommets en espace objet donnerait une image fausse plutot qu'une image
-       absente, ce qui est pire : on croirait le chemin complet. */
+    /* --- L'emission, et c'est ici que la chaine se referme ------------------ *
+     *
+     * Chaque triangle traverse : coordonnees de texture posees par coin,
+     * decoupage au plan proche, projection, culling, rejet hors ecran. */
+    for (i = 0; i < count; i++) {
+        const unsigned int a = source + i * TRIANGLE_STRIDE;
+        const unsigned char flags = read_u8(c, a + 0);
+        const unsigned char idx[3] = { read_u8(c, a + 1), read_u8(c, a + 2),
+                                       read_u8(c, a + 3) };
+        dkr_clip_vertex   tri[3], clipped[6];
+        dkr_render_vertex out[6];
+        int pieces, k, corner, emitted_here = 0;
+        dkr_cull_mode cull;
+
+        for (corner = 0; corner < 3; corner++) {
+            if (!c->cache_valid[idx[corner]]) {
+                /* Un index valide pointant sur un emplacement jamais charge :
+                   la display list emploie un sommet qu'elle n'a pas defini. Ce
+                   n'est pas une adresse fausse, donc pas un rejet de plage —
+                   mais dessiner un sommet non initialise donnerait une geometrie
+                   aleatoire, ce qui est pire qu'un triangle absent. */
+                reject(c, DKR_F3D_REJECT_INDEX, "sommet non charge");
+                emitted_here = -1;
+                break;
+            }
+            tri[corner] = c->cache[idx[corner]];
+            /* Les s, t du coin, en 16 bits signes. C'est ici qu'elles entrent —
+               le sommet ne les portait pas. */
+            tri[corner].s = (float)read_s16(c, a + 4 + corner * 4);
+            tri[corner].t = (float)read_s16(c, a + 6 + corner * 4);
+        }
+        if (emitted_here < 0) {
+            continue;
+        }
+
+        pieces = dkr_clip_near(tri, clipped);
+        if (pieces == 0) {
+            c->state.clipped_away++;
+            continue;
+        }
+        if (pieces == 2) {
+            c->state.clip_split++;
+        }
+
+        /* Le bit 0x40 desactive l'elimination des faces arriere ; sinon le sens
+           vient du signe de l'echelle en x de la fenetre. */
+        cull = dkr_cull_mode_for_viewport(c->transform.viewport_scale_x,
+                                          (flags & 0x40u) == 0);
+
+        for (k = 0; k < pieces; k++) {
+            dkr_render_vertex *v = &out[k * 3];
+            dkr_clip_project(&c->transform, &clipped[k * 3 + 0], &v[0]);
+            dkr_clip_project(&c->transform, &clipped[k * 3 + 1], &v[1]);
+            dkr_clip_project(&c->transform, &clipped[k * 3 + 2], &v[2]);
+            if (!dkr_cull_accept(v, cull)) {
+                c->state.culled++;
+                continue;
+            }
+            if (dkr_clip_reject_offscreen(v, 640, 480, DKR_CLIP_DEFAULT_MARGIN)) {
+                c->state.clipped_away++;
+                continue;
+            }
+            if (c->backend && c->backend->draw_triangles) {
+                c->backend->draw_triangles(c->backend->self, v, 1);
+            }
+            c->state.emitted++;
+        }
+    }
 }
 
 static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
@@ -231,6 +314,7 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         unsigned int m = (w1 >> 6) & 0x03u;
         if (m > 2u) { m = 2u; }
         c->state.selected_matrix = m;
+        dkr_transform_select(&c->transform, (int)m);
         trace(c, "MoveWord matrice=%u", m);
     } else {
         trace(c, "MoveWord type=0x%02X valeur=0x%08X", type, w1);
@@ -372,4 +456,5 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
     ctx->rdram      = rdram;
     ctx->rdram_size = rdram_size;
     ctx->backend    = backend;
+    dkr_transform_init(&ctx->transform);
 }

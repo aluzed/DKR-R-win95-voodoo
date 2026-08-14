@@ -83,7 +83,25 @@ void dkr_clip_project(const dkr_transform *t, const dkr_clip_vertex *in,
     memset(out, 0, sizeof(*out));
     out->x = in->x * oow * t->viewport_scale_x + t->viewport_trans_x;
     out->y = in->y * oow * t->viewport_scale_y + t->viewport_trans_y;
-    out->z = in->z * oow;
+
+    /* **La profondeur est bornee a [0,1], et ce n'est pas un ajustement.**
+     *
+     * Le tampon de profondeur est defini sur cet intervalle : une valeur en
+     * dehors n'a pas de sens, et elle gagne le test partout. Un sommet cree par
+     * le decoupage sort avec `w` egal a la marge du plan proche, donc une
+     * profondeur enorme — mesure : -250000 pour une marge de 0,0001 — qui passe
+     * devant toute la scene.
+     *
+     * Le symptome est spectaculaire et trompeur : des pixels isoles du triangle
+     * decoupe percent a travers une surface qui devrait le masquer, en un motif
+     * poinstille qui evoque un defaut de rasterisation plutot qu'un defaut de
+     * profondeur. Il a fallu projeter un sommet a la main pour le voir.
+     *
+     * Le materiel reel borne de meme. */
+    {
+        const float z = in->z * oow;
+        out->z = (z < 0.0f) ? 0.0f : (z > 1.0f ? 1.0f : z);
+    }
     out->ooz = out->z;
     out->oow = oow;
     out->r = in->r;

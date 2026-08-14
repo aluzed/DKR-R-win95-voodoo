@@ -29,6 +29,10 @@
 extern "C" {
 #endif
 
+/* Déclaration anticipée : `clip.h` inclut ce fichier, l'inverse ferait un
+   cycle. Le type complet est défini là-bas. */
+struct dkr_clip_vertex_;
+
 #define DKR_MATRIX_SLOTS 3
 
 typedef struct {
@@ -87,6 +91,18 @@ typedef struct {
  * contente de ne pas diviser par une valeur qui n'a pas de sens. */
 int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
                          dkr_render_vertex *out);
+
+/* Transforme vers l'**espace homogène**, sans diviser.
+ *
+ * C'est ce qu'il faut au découpage : diviser avant de découper produit des
+ * coordonnées sans signification pour les sommets derrière la caméra, et c'est
+ * précisément ce que E04-S05 existe pour éviter. `dkr_transform_vertex` reste
+ * disponible pour les cas où l'on sait qu'aucun découpage n'est nécessaire.
+ *
+ * `s` et `t` sont posés tels quels — non divisés — parce qu'ils arrivent au
+ * moment du triangle et non du sommet. */
+void dkr_transform_to_clip(dkr_transform *t, const dkr_source_vertex *in,
+                           float s, float tc, struct dkr_clip_vertex_ *out);
 
 /* La matrice modèle-vue-projection courante, recalculée si nécessaire. Exposée
    pour les épreuves et pour E08-S03, qui voudra la traiter par lots. */
