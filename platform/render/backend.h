@@ -276,6 +276,19 @@ typedef struct dkr_render_backend {
  * ou le backend est en cause. */
 void dkr_render_backend_null(dkr_render_backend *out);
 
+/* Les implémentations réelles. Déclarées ici plutôt que chacune dans son
+   en-tête : l'appelant qui choisit un backend à l'exécution les veut toutes
+   visibles d'un seul include, et c'est ainsi que le comparateur de E09-S02 les
+   ouvre côte à côte sur la même entrée.
+
+   `glide` n'est disponible que sur la cible Win95 ; sur l'hôte, seule la version
+   logicielle est compilée, et c'est délibéré — l'oracle doit tourner partout. */
+void dkr_render_backend_software(dkr_render_backend *out);
+#if defined(DKR_TARGET_WIN95)
+void dkr_render_backend_glide(dkr_render_backend *out);
+unsigned long dkr_glide_backend_triangle_count(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

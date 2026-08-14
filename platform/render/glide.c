@@ -406,3 +406,21 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
     g.lfb_unlock(GR_LFB_READ_ONLY, GR_BUFFER_FRONTBUFFER);
     return count;
 }
+
+/* --- Ouvertures pour le calque de backend ------------------------------------ */
+
+void *dkr_glide_symbol(const char *decorated_name)
+{
+    if (!g.dll || !decorated_name) {
+        return 0;
+    }
+    return (void *)GetProcAddress(g.dll, decorated_name);
+}
+
+void dkr_glide_draw_raw(const void *a, const void *b, const void *c)
+{
+    if (!g.triangle || !g.context_open || !a || !b || !c) {
+        return;
+    }
+    g.triangle(a, b, c);
+}

@@ -130,6 +130,22 @@ void dkr_glide_shutdown(void);
 int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
                                int *width, int *height);
 
+/* --- Ce dont le calque de backend a besoin ---------------------------------- *
+ *
+ * `glide_backend.c` programme les registres d'état — mélange, profondeur,
+ * ciseaux, brouillard — que cette couche-ci n'a pas à connaître. Plutôt que d'y
+ * dupliquer le chargement de la DLL, on expose la résolution de symbole.
+ *
+ * Rend NULL si la bibliothèque n'est pas chargée ou si le symbole manque, ce qui
+ * est un cas normal : Glide 2.4 n'exporte pas tout ce que Glide 2.6 exporte, et
+ * un état non programmable doit dégrader, pas planter. */
+void *dkr_glide_symbol(const char *decorated_name);
+
+/* Trois sommets déjà à la disposition de `GrVertex`, remis tels quels à
+   `grDrawTriangle`. Le type reste opaque ici : `backend.h` n'est pas inclus par
+   cette couche, et l'assertion de disposition vit dans `backend_layout_check.c`. */
+void dkr_glide_draw_raw(const void *a, const void *b, const void *c);
+
 /* Un triangle Gouraud plein écran, pour prouver que la chaîne va jusqu'au pixel.
    Sa place ici est provisoire : elle disparaîtra quand E04-S01 donnera une vraie
    interface de dessin. */

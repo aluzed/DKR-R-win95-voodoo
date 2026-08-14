@@ -584,15 +584,22 @@ dkr_win95_verify(DKRWin95Pipeline)
 
 # --- Amorçage Glide (E05-S01) -------------------------------------------------
 #
-# La couche qui ouvre la carte 3dfx et rend la main : détection, contexte,
-# tampons, présentation, fermeture. Elle n'implémente pas l'interface de backend
-# de E04-S01 — celle-ci n'existe pas encore — et E05-S01 n'est donc pas terminé.
-add_library(win95glide STATIC "${DKRPORT_ROOT}/platform/render/glide.c")
+# La couche qui ouvre la carte 3dfx, puis le calque qui la présente comme un
+# `dkr_render_backend` de E04-S01. Les deux sont séparés à dessein : ouvrir la
+# carte et programmer ses registres d'état sont deux savoirs distincts, et la
+# première moitié doit rester utilisable pour un simple diagnostic.
+add_library(win95glide STATIC
+    "${DKRPORT_ROOT}/platform/render/glide.c"
+    "${DKRPORT_ROOT}/platform/render/glide_backend.c")
 target_include_directories(win95glide PUBLIC
     "${DKRPORT_ROOT}/platform"
     "${DKR_WIN95_PLATFORM}"
     "${DKR_WIN95_PLATFORM}/include-shim")
 target_link_libraries(win95glide PUBLIC win95compat)
+# PUBLIC : `backend.h` ne déclare `dkr_render_backend_glide` que sur cette cible,
+# de sorte qu'un hôte qui compile l'oracle ne puisse pas l'appeler par mégarde.
+# Le témoin doit donc voir la définition, pas seulement la bibliothèque.
+target_compile_definitions(win95glide PUBLIC DKR_TARGET_WIN95=1)
 
 # Le témoin exerce la couche dans l'ordre où le moteur l'emploiera, et mesure la
 # cadence sur cent images. Son mode « crash » éprouve la restitution de
@@ -606,6 +613,23 @@ set_target_properties(DKRWin95GlideProbe PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideProbe)
+
+# Les constantes de Glide 2.x sont écrites de mémoire : il n'y a pas de
+# `glide.h` sur cette machine. Une valeur fausse ne provoque aucune erreur —
+# Glide ne valide pas ses énumérations — mais programme un registre voisin, et
+# l'écart d'image est ensuite attribué au décodeur de display list.
+#
+# Ce témoin exerce chaque mode isolément et **relit le tampon d'image**, ce qui
+# transforme une supposition en fait daté. Il a déjà attrapé une faute : le sens
+# de comparaison du tampon w. Voir `docs/research/win95-glide-etats.md`.
+add_executable(DKRWin95GlideState
+    "${DKR_WIN95_TOOLS}/witnesses/glide_state_probe.c")
+target_link_libraries(DKRWin95GlideState PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95GlideState PROPERTIES
+    OUTPUT_NAME "GLSTATE"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95GlideState)
 
 # --- Sonde de la coupure de courant (E02-S05) ---------------------------------
 #
