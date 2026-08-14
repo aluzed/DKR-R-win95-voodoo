@@ -716,6 +716,18 @@ set_target_properties(DKRWin95Depth PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Depth)
 
+# E05-S06 — le brouillard, mode de rendu le plus frequent de DKR. Le temoin
+# mesure aussi ce que le ticket ne demandait pas : l'alpha du sommet sert au
+# brouillard *et* a la transparence, et les deux sont donc couples.
+add_executable(DKRWin95Fog
+    "${DKR_WIN95_TOOLS}/witnesses/fog_probe.c")
+target_link_libraries(DKRWin95Fog PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95Fog PROPERTIES
+    OUTPUT_NAME "FOG"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Fog)
+
 # La mesure qui a decide de la conception de l'allocateur : granularite, espace
 # adressable, cout reel de chaque taille et de chaque format.
 add_executable(DKRWin95TmuProbe

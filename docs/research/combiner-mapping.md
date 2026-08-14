@@ -47,6 +47,12 @@ chercher. Tant que ce n'est pas mesuré, la classification reste prudente —
 annoncer exact ce qui ne l'est pas est précisément le défaut contre lequel ce
 ticket met en garde.
 
+> **Et E05-S06 l'a depuis restreinte.** Le facteur de brouillard occupe déjà
+> l'alpha du sommet, sur les 74 modes de rendu `G_RM_FOG_SHADE_A` — le plus
+> fréquent du jeu. L'issue n'est donc pas générale : elle ne vaut que pour les
+> configurations sans brouillard, ce qui la rend conditionnelle plutôt
+> qu'impossible. Voir `win95-brouillard.md`.
+
 ## Le combineur tronque
 
 Une constante de 32 ressort à 28, une de 96 à 90 : le combineur multiplie en

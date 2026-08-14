@@ -190,6 +190,30 @@ int main(void)
         }
     }
 
+    /* --- Le brouillard, deduit du melangeur --------------------------------- *
+     *
+     * `G_RM_FOG_SHADE_A` vaut `GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, ...)`, soit
+     * la source 3 en position 30 et le facteur 2 en position 26. C'est le mode
+     * de rendu le plus frequent de DKR, et le decodeur le laissait a zero. */
+    {
+        dkr_rdp_state s;
+        const unsigned int FOG_SHADE_A = (3u << 30) | (2u << 26);
+        memset(&s, 0, sizeof(s));
+        dkr_rdp_decode_othermode(0u, FOG_SHADE_A, &s);
+        check("G_RM_FOG_SHADE_A est reconnu", s.fog != 0);
+
+        /* Et le controle qui empeche de declarer du brouillard partout : la
+           valeur 3 signifie `G_BL_CLR_FOG` en position m1a mais `G_BL_0` en
+           position m1b. Un dictionnaire unique ferait passer ce cas-ci. */
+        memset(&s, 0, sizeof(s));
+        dkr_rdp_decode_othermode(0u, (3u << 30) | (3u << 26), &s);
+        check("mais la valeur 3 en position m1b ne le declenche pas", s.fog == 0);
+
+        memset(&s, 0, sizeof(s));
+        dkr_rdp_decode_othermode(0u, 0u, &s);
+        check("et un melangeur nul n'a pas de brouillard", s.fog == 0);
+    }
+
     printf("\n%d echec(s)\n", g_fails);
     if (g_out) { fprintf(g_out, "\n%d echec(s)\n", g_fails); fclose(g_out); }
     return g_fails != 0;

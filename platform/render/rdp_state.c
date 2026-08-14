@@ -92,7 +92,27 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
        c'est le décodeur qui le porte. */
     out->z_test  = (unsigned char)((mode_l >> 4) & 1u);
     out->z_write = (unsigned char)((mode_l >> 5) & 1u);
-    out->fog     = 0;
+    /* --- Le brouillard, lu dans le melangeur -------------------------------- *
+     *
+     * Il n'a pas de bit propre. Il se deduit de la configuration du melangeur au
+     * premier cycle : source de couleur `G_BL_CLR_FOG`, facteur `G_BL_A_SHADE`.
+     * C'est la definition meme de `G_RM_FOG_SHADE_A`, le mode de rendu **le plus
+     * frequent de DKR** — 74 occurrences dans la source du jeu.
+     *
+     * Les champs sont a des positions fixes du mot de mode de rendu :
+     * `m1a` sur deux bits en 30, `m1b` en 26. Et l'on retrouve ici le piege du
+     * RDP : la valeur 3 signifie `G_BL_CLR_FOG` en position `m1a` mais `G_BL_0`
+     * en position `m1b`. Lire les deux avec le meme dictionnaire ferait declarer
+     * du brouillard la ou il n'y en a pas.
+     *
+     * **Consequence qui depasse ce decodeur** : le facteur de brouillard occupe
+     * l'alpha du sommet. Tout ce qui voudrait y ranger autre chose entre en
+     * conflit avec lui — voir la note de `docs/research/win95-brouillard.md`. */
+    {
+        const unsigned m1a = (mode_l >> 30) & 3u;   /* source de couleur */
+        const unsigned m1b = (mode_l >> 26) & 3u;   /* facteur alpha */
+        out->fog = (unsigned char)(m1a == 3u && m1b == 2u);
+    }
 }
 
 /* --- Forme canonique -------------------------------------------------------- *

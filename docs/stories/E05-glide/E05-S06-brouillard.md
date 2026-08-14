@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P1 |
 | **Estimation** | S |
 | **Dépend de** | E04-S06, E05-S01 |
@@ -59,15 +59,41 @@ identique à la référence.
 
 ## Critères d'acceptation
 
-- [ ] Le calcul du facteur de brouillard du microcode est relevé depuis le decomp.
-- [ ] Le choix facteur par sommet / table est justifié par une mesure.
-- [ ] Si la table est retenue, son erreur d'approximation est mesurée.
-- [ ] La couleur de brouillard suit l'état du jeu et varie correctement d'un
-      niveau à l'autre.
-- [ ] L'interaction avec le mélange et le test alpha est vérifiée.
-- [ ] La transition est comparée à la référence sur une caméra qui s'éloigne, et
-      non sur une capture fixe.
-- [ ] Le coût est mesuré.
+- [x] Relevé depuis le decomp : `gSPFogPosition(min, max)` charge un
+      multiplicateur `128000/(max-min)` et un décalage `(500-min)*256/(max-min)`,
+      dont le RSP tire un facteur par sommet rangé dans **l'alpha du sommet**.
+      Le mélangeur l'applique par `G_RM_FOG_SHADE_A`.
+      Le décodeur d'état a été corrigé au passage : il laissait le bit de
+      brouillard à zéro en dur, alors que c'est le mode de rendu le plus fréquent
+      du jeu. Il se déduit du mélangeur, et la valeur 3 y signifie `G_BL_CLR_FOG`
+      en position `m1a` mais `G_BL_0` en `m1b` — une épreuve vérifie ce piège.
+- [x] Le facteur par sommet est retenu, et la mesure le justifie : le dégradé
+      est régulier de `DE1C00` à `18DB00` en passant par `7B7D00`, et le sens est
+      le bon — alpha 255 vaut plein brouillard, comme le facteur de la N64 qui
+      croît avec la distance. Se tromper de sens donnerait un brouillard inversé.
+- [x] Sans objet : la table n'est pas retenue. Elle n'apporterait qu'une
+      approximation d'une courbe qu'on possède déjà exactement, par sommet.
+- [~] La couleur est prise de l'état de rendu et non fixée à la construction ;
+      `grFogColorValue` la reçoit à chaque changement d'état. La **variation d'un
+      niveau à l'autre** vient de `set_fog` et de `rain_fog`, relevés dans le
+      decomp, mais n'est pas exercée faute de ROM.
+- [x] Vérifiée, et elle révèle un couplage que le ticket n'annonçait pas :
+      **l'alpha du sommet sert simultanément au brouillard et à la
+      transparence**. Les deux fonctionnent, mais ne sont pas indépendants — on
+      ne peut régler l'un sans déranger l'autre, et le jeu emploie 78 modes
+      translucides pour 74 modes de brouillard.
+      Conséquence sur E05-S03 : l'issue consistant à faire voyager la seconde
+      couleur constante dans l'alpha du sommet entre en conflit avec le
+      brouillard. Elle n'est pas générale.
+- [ ] Comparaison sur une caméra qui s'éloigne — **bloqué par la ROM**. Le
+      ticket a raison d'insister : une courbe fausse ne se voit pas sur une image
+      fixe. Le dégradé mesuré ici est une transition dans l'espace, pas dans le
+      temps.
+- [~] Mesuré, mais la mesure ne tranche pas : 1538 ms contre 1662 ms sur cent
+      images, soit deux multiples différents de la période de balayage. **La
+      mesure est quantifiée par l'échange de tampons** et ne peut pas résoudre un
+      coût inférieur à une période. Ce qu'on peut affirmer : le brouillard ne
+      fait pas franchir plus d'une période, ce qui borne son coût par le haut.
 
 ## Risques
 

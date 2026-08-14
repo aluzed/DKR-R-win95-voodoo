@@ -64,7 +64,7 @@ Relevés dans la source du portage voisin, par fréquence d'apparition :
 
 | Famille | Occurrences | Ce que c'est | Traduction Glide |
 |---|---|---|---|
-| `FOG_SHADE_A` | 74 | brouillard sur alpha itérée | E05-S06 |
+| `FOG_SHADE_A` | 74 | brouillard sur alpha itérée | E05-S06 — **mesuré**, facteur par sommet |
 | `XLU_SURF` | 78 | translucide | `SRC_ALPHA` / `ONE_MINUS_SRC_ALPHA` |
 | `OPA_SURF` | 47 | opaque | `ONE` / `ZERO` |
 | `TEX_EDGE` | 25 | découpe par seuil alpha | test alpha — la végétation |
