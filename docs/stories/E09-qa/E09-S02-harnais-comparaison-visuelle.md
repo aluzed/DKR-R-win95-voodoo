@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E09 — Intégration, QA et distribution |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E00-S07, E04-S02, E04-S08, E09-S01 |
@@ -78,11 +78,28 @@ continue.
 - [ ] Les captures de tâches graphiques sont enregistrables et rejouables.
 - [ ] Le corpus couvre titre, menus, tous les niveaux, cinématiques, écran
       partagé et résultats.
-- [ ] Le rejeu est déterministe : deux exécutions produisent la même image.
-- [ ] La métrique de comparaison distingue quantification et erreur.
-- [ ] Le rapport présente référence, obtenu, différence et métrique.
+- [~] Le rejeu est déterministe pour la scène synthétique — la comparaison des
+      comptes de triangles émis précède celle des images, précisément pour que
+      l'écart d'image ne masque pas un défaut de déterminisme. **La rejouabilité
+      d'une capture réelle reste bloquée** : elle suppose la ROM.
+- [x] La métrique de comparaison distingue quantification et erreur — la
+      référence est quantifiée en 565 avant comparaison, avec la même
+      réplication des bits de poids fort que la relecture, et les pixels de bord
+      sont comptés à part. Le seuil large qui a servi à défricher est doublé d'un
+      seuil serré une fois le bruit réel mesuré : pire écart 9 sur 255, borne
+      posée à 16. Un seuil qu'on ne resserre pas après avoir mesuré n'affirme
+      que sa propre indulgence.
+- [~] Le rapport présente référence et obtenu en BMP 24 bits ramenés sur l'hôte,
+      plus les métriques — surface peinte de part et d'autre, pixels divergents,
+      pixels de bord, pire écart et sa position. **L'image de différence n'est
+      pas produite par le harnais** ; elle a été calculée sur l'hôte pendant le
+      diagnostic.
 - [ ] Une régression visuelle est signalée automatiquement, seuil par scène.
-- [ ] Le rejeu fonctionne sur la machine cible avec le backend Glide.
+- [x] Le rejeu fonctionne sur la machine cible avec le backend Glide — la même
+      scène traverse la chaîne complète vers le rastériseur puis vers la Voodoo,
+      dont le tampon d'image est relu. Résultat : 0 pixel divergent sur 307200,
+      après correction de trois défauts **tous situés dans l'oracle**.
+      Voir `docs/research/win95-oracle-vs-carte.md`.
 - [ ] Le format de capture est documenté.
 
 ## Risques
