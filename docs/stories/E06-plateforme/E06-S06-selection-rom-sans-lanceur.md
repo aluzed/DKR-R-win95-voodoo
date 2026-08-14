@@ -66,6 +66,8 @@ message clair quand elle est absente ou invalide.
 - [ ] Les trois ordres d'octets sont acceptés.
 - [ ] La procédure est documentée dans le paquet de distribution.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 C'est le premier contact de l'utilisateur avec le portage. Un message d'erreur

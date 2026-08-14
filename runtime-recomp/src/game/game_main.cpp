@@ -297,7 +297,40 @@ bool RelaunchApplication(int argc, char** argv) {
 #endif
 }
 
+#if defined(DKR_TARGET_WIN95)
+// **Rediriger stderr vers un fichier, sur cette cible uniquement.**
+//
+// Tout le journal du runtime passe par stderr — y compris le gestionnaire
+// [boot][crash], qui imprime code d'exception, adresse, base de module et RVA.
+// Or COMMAND.COM de Windows 95 **ne sait pas rediriger stderr** : il n'a pas de
+// syntaxe `2>&1`. Sans ce point de sortie, le seul moyen de lire un plantage sur
+// la machine cible est de photographier une fenêtre de console et d'en
+// transcrire le contenu à la main.
+//
+// **L'appel est dans `DkrMain` et non dans `main`**, parce que le point d'entrée
+// sous Windows est `WinMain` : une première version l'avait posé dans la branche
+// `#else`, où il n'a jamais été compilé. Le symptôme était muet — le programme
+// tournait, le fichier n'apparaissait pas, et rien ne disait pourquoi.
+//
+// `DKR_LOG` permet d'en changer l'emplacement ; par défaut le fichier atterrit
+// dans le répertoire courant.
+static void RedirectDiagnosticsToFile() {
+    const char* path = std::getenv("DKR_LOG");
+    if (path == nullptr || path[0] == '\0') {
+        path = "DKRR.LOG";
+    }
+    if (std::freopen(path, "w", stderr) != nullptr) {
+        // Sans mise en mémoire tampon : un plantage ne laisse pas le temps de
+        // vider un tampon, et c'est justement le message qui compte le plus.
+        std::setvbuf(stderr, nullptr, _IONBF, 0);
+    }
+}
+#endif
+
 int DkrMain(int argc, char** argv) {
+#if defined(DKR_TARGET_WIN95)
+    RedirectDiagnosticsToFile();
+#endif
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
 #if defined(_WIN32) && !defined(DKR_TARGET_WIN95)

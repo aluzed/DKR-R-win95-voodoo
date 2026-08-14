@@ -107,6 +107,8 @@ téléchargement en cours de course.
       et compte l'échec plutôt que de dégrader silencieusement, ce qui est la
       condition pour que la question puisse être posée.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 Un téléchargement de texture en cours de course est un à-coup visible : le bus PCI

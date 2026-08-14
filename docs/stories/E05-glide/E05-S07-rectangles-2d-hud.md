@@ -90,6 +90,8 @@ rendu de jeu.
       `t` sur seize bits. L'erreur aurait déplacé des motifs plutôt que de les
       faire disparaître, et l'on aurait cherché du côté du décodage de texture.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 Un décalage d'un demi-texel est le genre de défaut qu'on cesse de voir après

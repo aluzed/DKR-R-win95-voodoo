@@ -96,6 +96,8 @@ surfaces translucides.
       passerait.
 - [ ] Ombres, eau, particules et reflets — **bloqué par la ROM absente**.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 Le combat de profondeur en 16 bits est le risque principal, et il ne se manifeste

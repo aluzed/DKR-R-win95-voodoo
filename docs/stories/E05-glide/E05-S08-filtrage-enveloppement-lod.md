@@ -100,6 +100,8 @@ que la carte le permet, en connaissant et en documentant les écarts.
       écart documenté est une caractéristique connue du portage ; le même écart
       non documenté sera signalé comme un défaut à chaque comparaison.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 Le filtrage à trois points de la N64 ne peut pas être reproduit exactement sur

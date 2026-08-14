@@ -95,6 +95,8 @@ identique à la référence.
       coût inférieur à une période. Ce qu'on peut affirmer : le brouillard ne
       fait pas franchir plus d'une période, ce qui borne son coût par le haut.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 Une courbe de brouillard fausse est difficile à repérer sur une capture unique et

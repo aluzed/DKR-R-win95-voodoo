@@ -63,6 +63,72 @@ case "${1:-}" in
     DISPLAY="$DISP" "$XDO" mousemove --window "$W" 300 250 click 1 2>/dev/null || true
     say "La machine tourne. `basename "$0"` shot / key / type / stop"
     ;;
+  boot)
+    # Démarre et **traverse ScanDisk**, qui apparaît à chaque fois que la machine
+    # s'est arrêtée salement — c'est-à-dire à chaque plantage du jeu, donc
+    # souvent pendant une session de mise au point.
+    #
+    # Sans cette étape, les frappes destinées au bureau partent dans les boîtes
+    # de ScanDisk et la commande suivante s'exécute dans le vide. Le symptôme est
+    # déroutant : le programme « ne démarre pas » alors qu'il n'a jamais été
+    # lancé.
+    #
+    # La séquence est celle relevée sur cette machine, dans cet ordre :
+    #   Entrée      lance l'analyse
+    #   Entrée      « données perdues » — on les abandonne
+    #   Entrée      « pas de disquette dans le lecteur A »
+    #   Tab, Entrée « disque d'annulation » — on choisit Ignorer
+    "$0" start >/dev/null 2>&1
+    sleep 55
+    # **L'ordre des boîtes de ScanDisk varie d'un démarrage à l'autre** : selon
+    # ce que le plantage précédent a laissé, il y a ou non des données perdues,
+    # une demande de disquette, une proposition de disque d'annulation. Une
+    # séquence de frappes fixe fonctionne une fois sur deux, ce qui est pire
+    # qu'un échec franc — la commande suivante s'exécute dans le vide.
+    #
+    # On boucle donc jusqu'à voir le bureau, en envoyant à chaque tour les deux
+    # gestes qui font avancer n'importe laquelle de ces boîtes : Entrée, puis
+    # Tab-Entrée pour celles dont le bouton par défaut n'est pas le bon.
+    tmp_shot="$(mktemp --suffix=.png)"
+    for essai in $(seq 1 20); do
+      import -display "$DISP" -window root "$tmp_shot" 2>/dev/null || true
+      couleur="$(convert "$tmp_shot" -format "%[pixel:p{400,300}]" info: 2>/dev/null || echo "")"
+      # Le bureau de cette machine est turquoise ; ScanDisk est bleu et gris.
+      case "$couleur" in
+        *"85,170,170"*|*"102,153,153"*)
+          rm -f "$tmp_shot"
+          "$0" grab >/dev/null 2>&1
+          say "machine démarrée, ScanDisk traversé en $essai tour(s)"
+          exit 0 ;;
+      esac
+      "$0" grab >/dev/null 2>&1
+      "$0" key Return >/dev/null 2>&1; sleep 4
+      "$0" key Tab >/dev/null 2>&1; sleep 1
+      "$0" key Return >/dev/null 2>&1; sleep 8
+    done
+    rm -f "$tmp_shot"
+    die "le bureau n'est pas apparu après vingt tours"
+    ;;
+  run)
+    # Lance un programme par la boîte « Exécuter » et rend la main.
+    need_running; shift
+    "$0" grab >/dev/null 2>&1
+    "$0" key ctrl+Escape >/dev/null 2>&1; sleep 3
+    for i in 1 2 3; do "$0" key Up >/dev/null 2>&1; sleep 1; done
+    "$0" key Return >/dev/null 2>&1; sleep 4
+    "$0" type "$1" >/dev/null 2>&1; sleep 2
+    "$0" key Return >/dev/null 2>&1
+    say "lancé : $1"
+    ;;
+  dismiss)
+    # Ferme une boîte de dialogue modale en cliquant son bouton par défaut.
+    # Les frappes ne suffisent pas toujours : une boîte d'erreur système vole le
+    # focus sans que xdotool le voie.
+    need_running; W="$(window)"
+    DISPLAY="$DISP" "$XDO" windowactivate "$W" 2>/dev/null || true
+    DISPLAY="$DISP" "$XDO" mousemove "${2:-495}" "${3:-272}" click 1 2>/dev/null || true
+    say "boîte fermée"
+    ;;
   grab)
     need_running; W="$(window)"
     DISPLAY="$DISP" "$XDO" windowfocus --sync "$W" 2>/dev/null || true

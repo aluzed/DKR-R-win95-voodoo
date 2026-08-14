@@ -115,6 +115,8 @@ la mesure de l'écart.
       Fixer un seuil avant d'avoir tenté cette issue reviendrait à accepter un
       écart qu'on sait peut-être évitable.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 C'est le ticket qui peut déraper. La tentation sera de traiter les 33

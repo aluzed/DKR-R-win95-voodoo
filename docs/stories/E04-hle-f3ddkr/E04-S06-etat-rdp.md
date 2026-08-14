@@ -96,6 +96,8 @@ façon exhaustive et vérifiable.
       l'exécution, et le nombre d'entrées de table du voisin en est un substitut
       grossier — il compte des déclarations, pas des pixels.
 
+> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-disponible.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+
 ## Risques
 
 Une configuration manquée ne se voit pas au décodage : elle se voit à l'écran,
