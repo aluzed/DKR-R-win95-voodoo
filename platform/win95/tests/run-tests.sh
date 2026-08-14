@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -236,4 +236,20 @@ if [[ "$suite" == "all" || "$suite" == "transform" ]]; then
         -o "$tmp/test_transform" "$R/tests/test_transform.c" "$R/transform.c"
   echo
   ( cd "$tmp" && "$tmp/test_transform" )
+fi
+
+# --- E04-S05 : decoupage, faces arriere, ciseaux -------------------------------
+#
+# Le decoupage est un classique des erreurs subtiles : un triangle mal decoupe
+# produit un eclat de geometrie qui traverse l'ecran, tres visible et difficile a
+# reproduire parce qu'il depend d'un angle precis. La suite place donc la camera
+# **dans** la geometrie, et verifie chaque attribut interpole separement.
+if [[ "$suite" == "all" || "$suite" == "clip" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_clip" "$R/tests/test_clip.c" "$R/clip.c" "$R/transform.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_clip" )
 fi

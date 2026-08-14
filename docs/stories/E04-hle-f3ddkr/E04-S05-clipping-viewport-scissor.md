@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E04-S03 |
@@ -69,16 +69,36 @@ viewport, fenêtre de ciseaux.
 
 ## Critères d'acceptation
 
-- [ ] Les triangles traversant le plan proche sont découpés, tous attributs
-      interpolés.
-- [ ] La marge de tolérance de Glide hors écran est mesurée et exploitée.
-- [ ] L'élimination des faces arrière suit la convention du microcode, vérifiée
-      contre le decomp.
-- [ ] Le viewport correspond à celui de la cible moderne sur des scènes capturées.
-- [ ] L'écran partagé multijoueur est correct à deux, trois et quatre joueurs.
-- [ ] La part du budget et le nombre de triangles découpés sont mesurés.
-- [ ] Aucune primitive ne parvient au backend avec une coordonnée hors du domaine
-      accepté — vérifié par assertion en build de développement.
+- [x] Les triangles traversant le plan proche sont découpés, tous attributs
+      interpolés — position, couleur **et** coordonnées de texture, chacun
+      vérifié séparément. L'oubli d'un seul ne se verrait que sur les triangles
+      découpés, donc rarement ; l'auto-test le confirme en le provoquant.
+      Le cas à un sommet derrière produit bien **deux** triangles : le polygone
+      restant est un quadrilatère, et ne pas le retrianguler ferait disparaître
+      la moitié de la surface.
+- [ ] La marge de tolérance de Glide hors écran est mesurée et exploitée —
+      **pas mesurée**. Elle demande de lire le tampon d'image de la carte
+      (`grLfbLock`) pour voir où le rendu se dégrade : sur une Voodoo
+      passthrough, aucune capture de l'émulateur ne montre la sortie 3dfx. En
+      attendant, la marge retenue est **délibérément généreuse** (2048 px), ce
+      qui laisse passer des triangles inutiles plutôt que d'en découper à tort.
+- [x] L'élimination des faces arrière suit la convention du microcode : le sens
+      dépend du **signe de l'échelle en x de la fenêtre**, relevé dans
+      `f3ddkr_rt64.cpp`. Une fenêtre miroir inverse l'orientation apparente, et
+      éliminer le mauvais côté viderait l'écran.
+- [ ] Le viewport correspond à celui de la cible moderne — **bloqué**, la
+      comparaison demandant des scènes capturées.
+- [~] L'écran partagé est correct à deux, trois et quatre joueurs — les quatre
+      dispositions sont calculées et vérifiées, y compris **l'absence de
+      chevauchement** entre quadrants voisins. Mais c'est de la géométrie de
+      rectangles : le jeu ne l'a pas encore exercée.
+- [ ] La part du budget et le nombre de triangles découpés sont mesurés —
+      **bloqué** : le nombre découpé dépend d'une scène réelle, et sans lui la
+      part du budget n'a pas de sens.
+- [~] Aucune primitive ne parvient au backend hors domaine — le rejet hors écran
+      existe et n'écarte un triangle que si **les trois** sommets sont du même
+      côté. **Pas d'assertion en build de développement** : il n'y a pas encore
+      de chemin complet du décodeur au backend où la poser.
 
 ## Risques
 

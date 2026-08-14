@@ -458,6 +458,25 @@ add_library(win95renderbackend STATIC
 target_include_directories(win95renderbackend PUBLIC
     "${DKRPORT_ROOT}/platform/render")
 
+# --- Découpage et fenêtre de ciseaux (E04-S05) --------------------------------
+#
+# Les cartes 3dfx ne découpent pas. Leur fenêtre de ciseaux suffit sur les côtés,
+# mais un triangle dont un sommet passe **derrière la caméra** ne peut pas être
+# rejeté au niveau du fragment : sa projection est absurde, et le sommet ressort
+# de l'autre côté de l'écran. Seul le plan proche exige donc un vrai découpage,
+# et c'est ce qui rend cet étage abordable.
+add_library(win95clip STATIC "${DKRPORT_ROOT}/platform/render/clip.c")
+target_link_libraries(win95clip PUBLIC win95transform)
+
+add_executable(DKRWin95Clip "${DKRPORT_ROOT}/platform/render/tests/test_clip.c")
+target_include_directories(DKRWin95Clip PRIVATE "${DKRPORT_ROOT}/platform")
+target_link_libraries(DKRWin95Clip PRIVATE win95clip)
+set_target_properties(DKRWin95Clip PROPERTIES
+    OUTPUT_NAME "CLIP"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Clip)
+
 # --- Transformation des sommets (E04-S03) -------------------------------------
 #
 # Sur la N64 c'est le RSP qui transforme ; ici cela revient au processeur, comme
@@ -658,6 +677,8 @@ add_test(NAME DKRWin95F3DDKR
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" f3ddkr)
 add_test(NAME DKRWin95Transform
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" transform)
+add_test(NAME DKRWin95Clip
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" clip)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer
