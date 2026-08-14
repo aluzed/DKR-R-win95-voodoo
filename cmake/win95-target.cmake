@@ -458,6 +458,29 @@ add_library(win95renderbackend STATIC
 target_include_directories(win95renderbackend PUBLIC
     "${DKRPORT_ROOT}/platform/render")
 
+# --- Décodeur de display list F3DDKR (E04-S02) --------------------------------
+#
+# Extrait de `f3ddkr_rt64.cpp`, dont la logique de décodage est propre au
+# microcode de Rare et n'a rien à voir avec RT64. Ce qui devait survivre à
+# l'extraction est la **validation des plages** : chaque lecture est bornée, et
+# une plage invalide produit une erreur circonscrite plutôt que d'adresser la
+# mémoire de l'hôte. Elle protège contre une ROM modifiée comme contre un bug du
+# portage — la seconde étant la plus probable.
+add_library(win95f3ddkr STATIC "${DKRPORT_ROOT}/platform/render/f3ddkr.c")
+target_link_libraries(win95f3ddkr PUBLIC win95renderbackend)
+
+# La suite injecte des display lists **volontairement corrompues**. C'est ce qui
+# la rend possible sans ROM : une liste corrompue s'écrit, une vraie se capture.
+add_executable(DKRWin95F3DDKR
+    "${DKRPORT_ROOT}/platform/render/tests/test_f3ddkr.c")
+target_include_directories(DKRWin95F3DDKR PRIVATE "${DKRPORT_ROOT}/platform")
+target_link_libraries(DKRWin95F3DDKR PRIVATE win95f3ddkr)
+set_target_properties(DKRWin95F3DDKR PROPERTIES
+    OUTPUT_NAME "F3DDKR"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95F3DDKR)
+
 # --- Décodage de l'état RDP (E04-S06) -----------------------------------------
 #
 # Le combineur du RDP est une unité programmable ; celui de Glide est fixe, et la
@@ -613,6 +636,8 @@ add_test(NAME DKRWin95Render
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" render)
 add_test(NAME DKRWin95RdpState
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" rdp)
+add_test(NAME DKRWin95F3DDKR
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" f3ddkr)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

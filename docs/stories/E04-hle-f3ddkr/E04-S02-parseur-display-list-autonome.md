@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E04-S01 |
@@ -73,17 +73,27 @@ RDP (E04-S06), les textures (E04-S07).
 
 ## Critères d'acceptation
 
-- [ ] `platform/render/f3ddkr.{h,cpp}` ne référence aucun type RT64.
-- [ ] Les quatorze commandes sont décodées et documentées dans
-      `docs/research/f3ddkr-commands.md`.
-- [ ] La validation de plages est intégralement reprise et testée par injection de
-      display lists volontairement corrompues.
-- [ ] L'imbrication est bornée, et le dépassement produit une erreur circonscrite.
-- [ ] Le mode trace journalise commandes et primitives émises.
-- [ ] Les tests rejouent au moins quatre display lists capturées et vérifient la
-      séquence de primitives.
-- [ ] La séquence de primitives est identique à celle produite par le décodeur RT64
-      sur les mêmes entrées, pour tout ce qui ne dépend pas des étages suivants.
+- [x] `platform/render/f3ddkr.{h,c}` ne référence aucun type RT64 — en C plutôt
+      qu'en C++, l'extraction n'ayant besoin d'aucune facilité du second.
+- [x] Les treize opcodes et le groupe de présentation sont décodés et documentés
+      dans `docs/research/f3ddkr-commands.md`. Le quatorzième « gestionnaire »
+      n'a pas d'opcode : `PresentationGroup` est atteint par `MoveWord` avec un
+      mot magique, et c'est une **extension du portage**, pas du microcode.
+- [x] La validation de plages est intégralement reprise et testée par injection
+      de display lists volontairement corrompues — ce qui rend la suite possible
+      **sans ROM** : une liste corrompue s'écrit, une vraie se capture. Éprouvée
+      dans les deux sens : retirer une des deux disciplines fait échouer trois
+      contrôles.
+- [x] L'imbrication est bornée à 32, et le dépassement produit une erreur
+      circonscrite — vérifié par une liste qui s'appelle elle-même.
+- [~] Le mode trace journalise les commandes. **Pas encore les primitives
+      émises** : le décodeur n'en émet aucune, faute de E04-S03 pour projeter les
+      sommets. Émettre des sommets en espace objet donnerait une image fausse
+      plutôt qu'absente, ce qui est pire — on croirait le chemin complet.
+- [ ] Les tests rejouent au moins quatre display lists capturées — **bloqué**,
+      la capture demandant une partie sur la cible moderne, donc la ROM.
+- [ ] La séquence est identique à celle du décodeur RT64 — **bloqué** pour la
+      même raison, et parce que RT64 est absent de ce dépôt.
 
 ## Risques
 

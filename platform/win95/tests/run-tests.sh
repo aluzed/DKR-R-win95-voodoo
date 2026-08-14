@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -207,4 +207,18 @@ if [[ "$suite" == "all" || "$suite" == "rdp" ]]; then
         -o "$tmp/test_rdp_state" "$R/tests/test_rdp_state.c" "$R/rdp_state.c"
   echo
   ( cd "$tmp" && "$tmp/test_rdp_state" )
+fi
+
+# --- E04-S02 : decodeur de display list ---------------------------------------
+#
+# Par injection de listes volontairement corrompues. C'est ce qui rend la suite
+# possible sans ROM : une liste corrompue s'ecrit, une vraie se capture.
+if [[ "$suite" == "all" || "$suite" == "f3ddkr" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_f3ddkr" "$R/tests/test_f3ddkr.c" "$R/f3ddkr.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_f3ddkr" )
 fi
