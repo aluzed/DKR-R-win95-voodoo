@@ -73,6 +73,6 @@ DKR_STATIC_ASSERT(
         DKR_FIELD_SIZE(wrap_t)    + DKR_FIELD_SIZE(alpha_test) +
         DKR_FIELD_SIZE(alpha_reference) + DKR_FIELD_SIZE(fog_enabled) +
         DKR_FIELD_SIZE(pad_)      + DKR_FIELD_SIZE(fog_color) +
-        DKR_FIELD_SIZE(texture),
+        DKR_FIELD_SIZE(texture)  + DKR_FIELD_SIZE(texture1),
     "dkr_render_state porte du remplissage : memcmp comparerait des octets "
     "indetermines et le suivi d'etat reemettrait a chaque appel");

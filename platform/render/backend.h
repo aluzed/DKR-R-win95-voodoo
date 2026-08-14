@@ -203,6 +203,9 @@ typedef struct {
     unsigned int       fog_color;         /* 0x00RRGGBB */
 
     dkr_texture_handle texture;
+    /* La seconde couche, pour les configurations qui lisent deux texels
+       (E05-S04). Nulle quand il n'y en a qu'une, ce qui est le cas courant. */
+    dkr_texture_handle texture1;
 } dkr_render_state;
 
 /* --- Les textures ---------------------------------------------------------- *
@@ -232,6 +235,14 @@ typedef struct {
     int                width, height;
     const void        *pixels;
     size_t             size_bytes;
+    /* Sur quelle unité de texture la placer. Zéro par défaut.
+     *
+     * **Une texture n'est pas échantillonnable depuis une TMU où elle ne réside
+     * pas**, et les deux unités ont leur mémoire propre : ce sont deux espaces,
+     * pas un. Porter la cible dans le descripteur plutôt que dans la signature
+     * évite de changer la table de fonctions pour une information que seul le
+     * multitexturage emploie. */
+    int                tmu;
 } dkr_texture_desc;
 
 /* --- L'interface ----------------------------------------------------------- *
@@ -320,6 +331,17 @@ struct dkr_cc_reglage;
 void dkr_glide_backend_set_recipe(const struct dkr_cc_reglage *r,
                                   unsigned constant_argb);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
+/* Chaine les deux unites de texture (E05-S04). Sans effet sur une carte a une
+   seule TMU, ou le repli multipasse s'applique. */
+void dkr_glide_backend_chain(dkr_texture_handle tmu0, dkr_texture_handle tmu1,
+                             unsigned char fonction, unsigned char facteur);
+/* Force le chemin multipasse meme sur une carte a deux TMU. Le ticket E05-S04
+   nomme le risque : un repli facile a ecrire et facile a ne jamais eprouver,
+   faute de materiel a une seule TMU sous la main. */
+void dkr_glide_backend_force_single_tmu(int force);
+/* Le nombre de TMU **utilisables**, qui tient compte du forcage. C'est lui que
+   le choix de chemin doit lire, jamais la detection materielle directement. */
+int  dkr_glide_backend_tmu_count(void);
 #endif
 
 #ifdef __cplusplus

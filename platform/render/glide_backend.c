@@ -106,6 +106,7 @@ typedef int           FxBool;
 #define GR_TEXFMT_INTENSITY_8 0x03
 #define GR_MIPMAPLEVELMASK_BOTH  0x03
 #define GR_TMU0  0
+#define GR_TMU1  1
 
 /* Le combineur de texture, quand il y en a une. */
 #define GR_TEXTURECOMBINE_ZERO   0x0
@@ -168,6 +169,7 @@ typedef struct {
     unsigned long long key;
     unsigned int       address;
     GrTexInfo          info;
+    unsigned char      tmu;      /* sur quelle unite elle reside */
     unsigned char      live;
 } glide_texture;
 
@@ -634,7 +636,17 @@ static dkr_texture_handle gl_texture_upload(void *self,
      *
      * `dkr_tmu_acquire` distingue seul le succes du defaut : c'est lui qui tient
      * les compteurs, et il doit les tenir sur la totalite des demandes. */
-    address = dkr_tmu_acquire(&g_tmu[0], desc->key, &info, bytes);
+    /* **Deux espaces, pas un.** Chaque TMU a sa memoire propre, et une texture
+       n'est echantillonnable que depuis l'unite ou elle reside. Une meme cle
+       peut donc legitimement etre residente deux fois — mais seulement si les
+       deux unites l'echantillonnent, et la cle du cache inclut la TMU pour que
+       ce ne soit jamais accidentel. */
+    {
+        int cible = desc->tmu;
+        if (cible < 0 || cible >= g_tmu_count) { cible = 0; }
+        g_tex[slot].tmu = (unsigned char)cible;
+        address = dkr_tmu_acquire(&g_tmu[cible], desc->key, &info, bytes);
+    }
     if (address == DKR_TMU_NONE) {
         g_tex[slot].live = 0;
         return 0;
@@ -667,7 +679,12 @@ static void bind_texture(dkr_texture_handle handle)
     if (handle == 0 || handle > GLIDE_MAX_TEXTURES || !gs.tex_source) { return; }
     tx = &g_tex[handle - 1];
     if (!tx->live) { return; }
-    gs.tex_source(GR_TMU0, tx->address, GR_MIPMAPLEVELMASK_BOTH, &tx->info);
+    /* Lier sur l'unite ou la texture reside, et non sur la TMU 0 par defaut :
+       lier une adresse de la TMU 1 sur la TMU 0 ne provoque aucune erreur, la
+       TMU 0 echantillonnant simplement ce qui traine a cette adresse chez elle.
+       Le decor porterait alors le motif d'un autre. */
+    gs.tex_source(tx->tmu ? GR_TMU1 : GR_TMU0, tx->address,
+                  GR_MIPMAPLEVELMASK_BOTH, &tx->info);
 }
 
 void dkr_render_backend_glide(dkr_render_backend *out)
@@ -723,6 +740,50 @@ void dkr_glide_backend_set_recipe(const dkr_cc_reglage *r, unsigned constant_arg
 void dkr_glide_backend_bind(dkr_texture_handle handle)
 {
     bind_texture(handle);
+}
+
+/* Chaîne les deux unités : la TMU 1 échantillonne, sa sortie devient l'entrée
+ * « other » de la TMU 0, dont la sortie alimente le combineur de couleurs.
+ *
+ * **L'ordre des appels n'est pas indifférent.** Glide veut la TMU la plus haute
+ * d'abord : c'est elle qui commence la chaîne, et la programmer après la TMU 0
+ * laisse cette dernière chaînée sur une unité pas encore configurée. L'effet
+ * n'est pas une erreur mais une image construite à partir de l'état précédent —
+ * donc juste tant qu'on ne change rien, et fausse au premier changement d'état,
+ * ce qui est le pire moment pour s'en apercevoir.
+ *
+ * `fonction` et `facteur` sont passés plutôt que codés : leurs valeurs
+ * d'énumération sont mesurées par `multitex_probe.c`, et ce projet a déjà payé
+ * deux fois pour avoir supposé de telles valeurs. */
+/* **Le repli à une TMU doit être éprouvable sur une carte qui en a deux.**
+ *
+ * C'est le risque que le ticket nomme : « facile à écrire et facile à ne jamais
+ * tester, faute de matériel à une seule TMU sous la main ». Sans ce drapeau, le
+ * chemin multipasse ne serait vérifié qu'après une remontée d'utilisateur — donc
+ * sur la machine de quelqu'un d'autre, et sans trace. */
+static int g_force_une_tmu;
+
+void dkr_glide_backend_force_single_tmu(int force)
+{
+    g_force_une_tmu = force;
+}
+
+int dkr_glide_backend_tmu_count(void)
+{
+    return g_force_une_tmu ? 1 : g_tmu_count;
+}
+
+void dkr_glide_backend_chain(dkr_texture_handle tmu0, dkr_texture_handle tmu1,
+                             unsigned char fonction, unsigned char facteur)
+{
+    if (dkr_glide_backend_tmu_count() < 2 || !gs.tex_combine) { return; }
+
+    bind_texture(tmu1);
+    /* La TMU 1 se contente d'échantillonner : elle n'a pas d'unité en amont. */
+    gs.tex_combine(GR_TMU1, GR_TEXTURECOMBINE_DECAL, 0,
+                             GR_TEXTURECOMBINE_DECAL, 0, 0, 0);
+    bind_texture(tmu0);
+    gs.tex_combine(GR_TMU0, fonction, facteur, fonction, facteur, 0, 0);
 }
 
 const dkr_tmu *dkr_glide_backend_tmu(int index)

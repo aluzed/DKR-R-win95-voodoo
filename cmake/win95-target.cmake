@@ -692,6 +692,18 @@ set_target_properties(DKRWin95CombinerProbe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95CombinerProbe)
 
+# E05-S04 — le chainage des deux TMU. Les valeurs de grTexCombine sont mesurees,
+# pas supposees : c'est la troisieme fois de ce portage qu'une enumeration Glide
+# ecrite de memoire se revele fausse.
+add_executable(DKRWin95Multitex
+    "${DKR_WIN95_TOOLS}/witnesses/multitex_probe.c")
+target_link_libraries(DKRWin95Multitex PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95Multitex PROPERTIES
+    OUTPUT_NAME "MULTITEX"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Multitex)
+
 # La mesure qui a decide de la conception de l'allocateur : granularite, espace
 # adressable, cout reel de chaque taille et de chaque format.
 add_executable(DKRWin95TmuProbe

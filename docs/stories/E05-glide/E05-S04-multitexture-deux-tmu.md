@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P1 |
 | **Estimation** | M |
 | **Dépend de** | E05-S02, E05-S03 |
@@ -63,14 +63,39 @@ repli multipasse correct sur une TMU.
 
 ## Critères d'acceptation
 
-- [ ] La surface d'écran des configurations à deux texels est mesurée.
-- [ ] Les configurations concernées se rendent en une passe sur deux TMU.
-- [ ] Le repli à une TMU produit une image identique, vérifiée par différence.
-- [ ] L'allocateur gère les deux espaces sans duplication inutile.
-- [ ] Le chemin est choisi à l'exécution selon la détection matérielle.
-- [ ] Le gain en temps par image est mesuré.
-- [ ] Les coordonnées de texture des deux unités sont cohérentes, vérifiées sur
-      une surface où les deux couches doivent se superposer exactement.
+- [~] Le **poids** des configurations à deux texels est relevé : 34 entrées de
+      table sur 214, soit 15 %, et la plus lourde du jeu entier
+      (`G_CC_BLENDTEX_PRIM`, 32 entrées) en fait partie. Ce n'est pas
+      anecdotique. La **surface d'écran** réelle, elle, demande une mesure à
+      l'exécution, donc la ROM.
+- [x] Le chaînage fonctionne en une passe sur deux TMU, vérifié par relecture :
+      `DECAL`, `OTHER` et `ADD` produisent chacun l'image attendue. Les valeurs
+      d'énumération sont **mesurées** — `OTHER` vaut 3 et `ADD` vaut 4, décalées
+      d'un cran par rapport à ce qui avait été écrit de mémoire.
+- [x] Le repli à une TMU produit une image **strictement identique** : 0 pixel
+      différent sur 307200, vérifié par différence et non à l'œil.
+- [x] L'allocateur gère les deux espaces : `dkr_texture_desc` porte la TMU
+      visée, et `bind_texture` lie sur l'unité où la texture réside — lier une
+      adresse de la TMU 1 sur la TMU 0 ne provoque aucune erreur, la TMU 0
+      échantillonnant ce qui traîne à cette adresse chez elle. Vérifié : chaque
+      unité occupe exactement 8192 octets après un chargement.
+      La duplication n'a lieu que dans le repli, où elle est le prix à payer —
+      et c'est une raison de plus pour que le repli ne soit pas le défaut.
+- [x] Le chemin est choisi à l'exécution par `dkr_glide_backend_tmu_count`, qui
+      lit la détection de E05-S01 — et le forçage d'épreuve. Aucune capacité
+      codée en dur.
+- [~] Mesuré : 1552 ms en une passe contre 1662 ms en deux, sur cent images,
+      soit 7 % de surcoût. **Ce chiffre demande une réserve** : à 64 images par
+      seconde l'échange est synchronisé sur le balayage et la carte attend, donc
+      une passe de plus se glisse dans un temps mort. Sept pour cent est le coût
+      du repli sur une scène qui ne sature pas le remplissage, pas le coût du
+      multipasse en général. Le mesurer sur une scène représentative demande la
+      ROM.
+- [x] Les coordonnées des deux unités sont cohérentes, vérifiées sur deux motifs
+      complémentaires additionnés : 0 pixel non couvert sur 307200, et chaque
+      moitié vient bien d'une unité différente. Ce second contrôle n'est pas
+      redondant — la première version du témoin comptait zéro pixel noir sur un
+      écran entièrement blanc, et réussissait sans rien établir.
 
 ## Risques
 
