@@ -590,6 +590,24 @@ dkr_win95_verify(DKRWin95Pipeline)
 # `dkr_render_backend` de E04-S01. Les deux sont séparés à dessein : ouvrir la
 # carte et programmer ses registres d'état sont deux savoirs distincts, et la
 # première moitié doit rester utilisable pour un simple diagnostic.
+# E05-S03 — l'oracle du combineur et la table de correspondance. La table est
+# engendree par tools/win95/gen_combiner_table.py depuis les definitions de la
+# source du jeu : trente-trois quadruplets recopies a la main inviteraient la
+# faute de frappe, et une faute ici ne se verrait qu'a l'image.
+add_library(win95combiner STATIC "${DKRPORT_ROOT}/platform/render/combiner.c")
+target_include_directories(win95combiner PUBLIC
+    "${DKRPORT_ROOT}/platform" "${DKRPORT_ROOT}/platform/render")
+target_link_libraries(win95combiner PUBLIC win95rdpstate)
+
+add_executable(DKRWin95Combiner
+    "${DKRPORT_ROOT}/platform/render/tests/test_combiner.c")
+target_link_libraries(DKRWin95Combiner PRIVATE win95combiner)
+set_target_properties(DKRWin95Combiner PROPERTIES
+    OUTPUT_NAME "COMBTEST"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Combiner)
+
 add_library(win95tmu STATIC "${DKRPORT_ROOT}/platform/render/tmu.c")
 target_include_directories(win95tmu PUBLIC "${DKRPORT_ROOT}/platform")
 target_link_libraries(win95tmu PUBLIC win95compat)
@@ -764,6 +782,8 @@ dkr_win95_verify(DKRWin95WideStreamProbe)
 #
 # Les deux tournent avec le compilateur de l'hôte et non celui de la cible.
 enable_testing()
+add_test(NAME DKRWin95Combiner2
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" combiner)
 add_test(NAME DKRWin95Tmu2
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" tmu)
 add_test(NAME DKRWin95Tick64

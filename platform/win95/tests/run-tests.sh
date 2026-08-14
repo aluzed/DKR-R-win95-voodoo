@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -275,6 +275,20 @@ fi
 # pointeur de fonction — et s'eprouve donc entierement sur l'hote. C'est
 # necessaire : la ROM absente interdit de le verifier en jeu, et la carte ne
 # rend aucun code d'erreur sur ce qu'elle recoit.
+# Le combineur : l'oracle, verifie contre des valeurs calculees a la main, et la
+# table de correspondance, verifiee par proprietes — aucune cle en double, toute
+# entree retrouvable, toute categorie justifiee.
+if [[ "$suite" == "all" || "$suite" == "combiner" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_combiner" "$R/tests/test_combiner.c" "$R/combiner.c" \
+        "$R/rdp_state.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_combiner" )
+fi
+
 if [[ "$suite" == "all" || "$suite" == "tmu" ]]; then
   command -v "$CC" >/dev/null \
     || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
