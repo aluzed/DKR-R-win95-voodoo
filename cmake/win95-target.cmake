@@ -739,6 +739,18 @@ set_target_properties(DKRWin95Rect PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Rect)
 
+# E05-S08 — enveloppement et bornage pour toutes les tailles, et cout du
+# filtrage. Deux premisses du ticket tombent avant la mesure : DKR n'emploie ni
+# mipmap ni miroir, ce que la source etablit sans ambiguite.
+add_executable(DKRWin95Sampling
+    "${DKR_WIN95_TOOLS}/witnesses/sampling_probe.c")
+target_link_libraries(DKRWin95Sampling PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95Sampling PROPERTIES
+    OUTPUT_NAME "SAMPLING"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Sampling)
+
 # La mesure qui a decide de la conception de l'allocateur : granularite, espace
 # adressable, cout reel de chaque taille et de chaque format.
 add_executable(DKRWin95TmuProbe

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P1 |
 | **Estimation** | M |
 | **Dépend de** | E05-S02, E04-S07 |
@@ -64,15 +64,41 @@ que la carte le permet, en connaissant et en documentant les écarts.
 
 ## Critères d'acceptation
 
-- [ ] L'usage des mipmaps par DKR est déterminé, et leur coût chiffré s'ils sont
-      utilisés.
-- [ ] Enveloppement, bornage et miroir fonctionnent pour toutes les tailles
-      utilisées.
-- [ ] Le choix de filtrage est justifié par une comparaison visuelle documentée.
-- [ ] Les éléments d'interface respectent le mode demandé par le jeu.
-- [ ] Le coût de chaque mode est mesuré, et le conflit éventuel avec E05-S04 est
-      identifié.
-- [ ] `docs/RENDER-DIFFERENCES.md` documente les écarts assumés.
+- [x] Déterminé depuis la source, sans ambiguïté : **DKR n'emploie pas de
+      mipmaps**. `G_TL_TILE` apparaît quinze fois, `G_TL_LOD` aucune. Le tiers de
+      mémoire de texture supplémentaire que le ticket redoutait pour E05-S02
+      n'existe pas, et les textures lointaines scintilleront exactement comme sur
+      la console — ce qui est consigné dans `RENDER-DIFFERENCES.md` précisément
+      parce que c'est le genre de chose qu'on prend pour un défaut du portage.
+- [x] Enveloppement et bornage vérifiés sur la carte pour les sept tailles de 4
+      à 256 : trois répétitions en enveloppement, une seule en bornage, dans tous
+      les cas.
+      **Le miroir n'est pas vérifié parce que DKR ne l'emploie pas** — le ticket
+      le décrit comme « très utilisé pour économiser de la mémoire de texture »,
+      et la source n'en contient pas une seule occurrence. Dix-huit `G_TX_WRAP`,
+      seize `G_TX_NOMIRROR`, quatre `G_TX_CLAMP`.
+- [~] L'écart est documenté dans `RENDER-DIFFERENCES.md` : filtrage à trois
+      points contre bilinéaire à quatre, irréductible parce qu'inexprimable avec
+      les modes de Glide. **La comparaison visuelle elle-même demande la ROM** —
+      l'écart se juge sur les textures du jeu, pas sur une mire.
+      Le mode point à point reste disponible, et le jeu le demande déjà pour 30
+      entrées de table sur 214 : ces surfaces seront identiques à la console.
+- [x] Le mode vient de l'état de rendu décodé et non d'un choix du backend ;
+      `DKR_OMH_1CYC_POINT` et `DKR_OMH_2CYC_POINT` totalisent 30 entrées de table
+      et donnent bien du point à point. E05-S07 a vérifié qu'en point à point
+      l'alignement est exact au texel.
+- [~] Mesuré : 1538 ms au point contre 1662 ms en bilinéaire sur cent images.
+      **Ce sont exactement les deux mêmes valeurs que la mesure du brouillard**,
+      ce qui confirme que la mesure est quantifiée par l'échange de tampons et ne
+      résout pas un coût inférieur à une période de balayage. Le bilinéaire ne
+      coûte donc rien de mesurable ici, conformément à ce que le ticket annonce.
+      Le conflit avec E05-S04 est identifié et **n'a pas lieu** : il ne
+      surviendrait qu'avec le filtrage trilinéaire, qui consomme une TMU, et le
+      trilinéaire suppose des mipmaps que DKR n'emploie pas.
+- [x] `docs/RENDER-DIFFERENCES.md` est écrit : six écarts, chacun disant ce qui
+      diffère, pourquoi c'est irréductible, et ce que cela donne à l'écran. Un
+      écart documenté est une caractéristique connue du portage ; le même écart
+      non documenté sera signalé comme un défaut à chaque comparaison.
 
 ## Risques
 
