@@ -136,3 +136,45 @@ injouable au premier combineur oublié.
 - Le coût de remplissage du multipasse, non mesuré : il demande une scène
   représentative, donc la ROM.
 - Les trois configurations à deux texels, qui appartiennent à E05-S04.
+
+## Les écarts mesurés sur la carte
+
+Relevé par `COMBINER.EXE` le 14 août 2026, après correction de la
+classification. Écart maximal par canal, quantification 565 et troncature du
+combineur déjà défalquées.
+
+| Configuration | Catégorie | Écart |
+|---|---|---|
+| `G_CC_MODULATEIDECALA` | exacte | 0 |
+| `G_CC_MODULATEIA_PRIM` | exacte | 0 |
+| `G_CC_MODULATERGBA` | exacte | 0 |
+| `G_CC_MODULATEIA` | exacte | 0 |
+| `G_CC_PRIMITIVE` | exacte | 0 |
+| `G_CC_SHADE` | exacte | 0 |
+| `G_CC_ENVIRONMENT` | exacte | 0 |
+| `G_CC_ENV_DECALA` | exacte | 0 |
+| `G_CC_DECALRGB` | exacte | 8 |
+| `G_CC_DECALRGBA` | exacte | 8 |
+| `G_CC_DECAL_A_PRIM` | exacte | 8 |
+| `G_CC_DECAL_SCALE` | approchée | 8 |
+| `G_CC_BLENDT_ENV_ALPHA_A_PRIM` | approchée | 140 |
+| `G_CC_BLENDT_ENV_ALPHA_A_TxP` | approchée | 148 |
+| `G_CC_BLENDPE`, `G_CC_BLENDPE_A_PRIM` | multipasse | 107 |
+| `G_CC_BLENDI_ENV_ALPHA*` | multipasse | 99 |
+| `G_CC_BLEND_SHADEALPHA` | multipasse | 99 |
+| configurations à deux texels | E05-S04 | 60 à 181 |
+
+**Toute configuration déclarée exacte l'est**, à un pas de quantification près.
+C'est le seul contrôle que le harnais compte en échec : les catégories
+`multipasse` et `approchée` annoncent un écart, et le mesurer est leur raison
+d'être.
+
+Les huit unités résiduelles des trois `DECAL*` viennent du chemin de texture,
+où le texel traverse le combineur avec un facteur d'un — donc la même troncature
+255/256, que le modèle n'applique pas au texel. Systématique, benin, et signalé
+plutôt que masqué par une tolérance élargie.
+
+Les écarts de 99 à 148 sont ceux que la traduction en une passe ne peut pas
+éviter aujourd'hui. **Aucun seuil d'acceptation n'est encore posé** : l'issue par
+l'alpha du sommet n'a pas été éprouvée, et accepter un écart qu'on sait peut-être
+évitable serait prématuré.
