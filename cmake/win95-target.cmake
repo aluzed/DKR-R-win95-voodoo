@@ -445,6 +445,22 @@ set_target_properties(DKRWin95SaveInterchange PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95SaveInterchange)
 
+# --- Sonde du disque plein (E02-S05) ------------------------------------------
+#
+# La suite d'épreuve vérifie que les codes d'erreur sont distincts et portent un
+# texte — nécessaire, pas suffisant. Rien ne prouvait qu'un support réellement
+# plein rende `NO_SPACE` plutôt que `IO`. Cette sonde le demande, sur une
+# disquette de 1,44 Mo remplie à l'avance : le disque de transfert a un
+# demi-gigaoctet de libre, ce qui rend l'exercice impraticable par ce chemin.
+add_executable(DKRWin95DiskFull
+    "${DKR_WIN95_TOOLS}/witnesses/disk_full_probe.cpp")
+target_link_libraries(DKRWin95DiskFull PRIVATE win95fileio)
+set_target_properties(DKRWin95DiskFull PROPERTIES
+    OUTPUT_NAME "DSKFULL"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95DiskFull)
+
 # --- Sonde des flux ouverts sur un `path` (E02-S05) ---------------------------
 #
 # Elle a servi une fois, à établir que `std::ofstream(path)` échoue sur cette

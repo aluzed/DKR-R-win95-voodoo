@@ -107,9 +107,25 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
       inchargeable, les flux ouverts sur un `path` qui passent par l'API
       large, et `MoveFileExW` appelée directement. Voir
       [docs/research/win95-flux-larges.md](../../research/win95-flux-larges.md).
-- [~] Les codes sont distingués et portent un texte ; le support absent est
-      vérifié sur la machine (erreur 21). Le disque plein reste à provoquer
-      pour de bon, ce qui demande de remplir un volume d'essai.
+- [x] Les codes sont distingués, portent un texte, et **les deux cas limites sont
+      provoqués sur la machine** — support absent (erreur 21) et disque plein.
+
+      Le second demandait un volume qu'on puisse remplir : le disque de transfert
+      a un demi-gigaoctet de libre, d'où une disquette de 1,44 Mo remplie à
+      l'avance depuis l'hôte et montée en A:.
+
+      ```text
+      cible              : A:\PLEIN.DAT
+      taille demandee    : 2097152 octets
+      code rendu         : 4
+      texte              : disque plein
+      verdict            : DISQUE PLEIN, correctement nomme
+      ```
+
+      L'écriture visée est plus grande que **le volume entier**, et non seulement
+      que l'espace restant : une écriture qui tiendrait tout juste ne prouverait
+      rien de reproductible, la place libre dépendant de ce qui traîne sur le
+      support.
 
 ## État au 2026-08-13 — la couche d'écriture est livrée et mesurée
 

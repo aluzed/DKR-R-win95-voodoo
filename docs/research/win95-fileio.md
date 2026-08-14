@@ -112,3 +112,40 @@ i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
 scripts/Push-To-Win95-VM.sh FILEIO.EXE
 # dans l'invité : d:\fileio.exe — le relevé atterrit dans D:\FILEIO.TXT
 ```
+
+## Le disque plein, provoqué pour de bon — 14 août 2026
+
+Le relevé initial vérifiait que les codes d'erreur sont **distincts** et portent
+un texte. C'est nécessaire et ce n'est pas suffisant : rien ne prouvait qu'un
+support réellement plein rende `DKR_FILE_ERR_NO_SPACE` plutôt que le
+`DKR_FILE_ERR_IO` fourre-tout.
+
+```text
+cible              : A:\PLEIN.DAT
+taille demandee    : 2097152 octets
+code rendu         : 4              (DKR_FILE_ERR_NO_SPACE)
+texte              : disque plein
+```
+
+### Reproduire
+
+Le disque de transfert a un demi-gigaoctet de libre, ce qui rend l'exercice
+impraticable par ce chemin. Une disquette de 1,44 Mo se remplit en une seconde :
+
+```sh
+P=~/.local/dkr-win95; VM=$P/vm/dkr-p2-voodoo2
+dd if=/dev/zero of=$VM/plein.img bs=1024 count=1440
+$P/bin/mformat -i $VM/plein.img -f 1440 ::
+head -c 1350000 /dev/urandom > bourrage.dat
+$P/bin/mcopy -i $VM/plein.img bourrage.dat ::/BOURRAGE.DAT   # 107 Ko restants
+
+# puis, dans 86box.cfg, sous [Floppy and CD-ROM drives] :
+#   fdd_01_fn = plein.img
+```
+
+La sonde vise **2 Mo**, c'est-à-dire plus que le volume entier et non seulement
+plus que la place restante : une écriture qui tiendrait tout juste ne prouverait
+rien de reproductible.
+
+La configuration de la machine est à remettre en l'état après coup — le montage
+d'une disquette pleine changerait la référence de toutes les autres épreuves.
