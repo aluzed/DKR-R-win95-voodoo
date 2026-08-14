@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E00-S05, E04-S01, E04-S08 |
@@ -70,16 +70,30 @@ configuration des tampons, la présentation, et la fermeture propre.
 
 ## Critères d'acceptation
 
-- [ ] La détection rapporte carte, nombre de TMU et mémoires disponibles.
-- [ ] L'absence de carte ou de bibliothèque produit un message clair, pas un refus
-      de chargement par l'OS.
-- [ ] Le contexte s'ouvre à la résolution de l'ADR, avec repli vérifié si la
-      mémoire est insuffisante.
-- [ ] Un triangle coloré s'affiche sous Windows 95 sur la cible.
-- [ ] Le cycle d'image tourne à cadence stable.
-- [ ] La fermeture restitue l'affichage, y compris après un arrêt anormal.
-- [ ] La fenêtre de ciseaux fonctionne, vérifiée par l'écran partagé.
-- [ ] Aucune capacité matérielle n'est codée en dur.
+- [x] La détection rapporte carte, nombre de TMU et mémoires disponibles —
+      relevé sur la machine : 1 carte, 2 TMU, 2048 Ko d'image, 2048 Ko par TMU.
+- [~] L'absence de carte ou de bibliothèque produit un message clair, pas un refus
+      de chargement par l'OS. Glide est chargée par `LoadLibrary` et chaque échec
+      rend un texte nommant le geste possible — **mais aucun de ces chemins n'a
+      été exercé**, la machine ayant toujours sa carte.
+- [~] Le contexte s'ouvre à la résolution de l'ADR — 640×480, double tampon,
+      profondeur — **le repli n'est pas vérifié** : la mémoire suffisait. Le
+      budget est calculé plutôt que deviné, pour que l'échec dise « 640×480 ne
+      tient pas dans 2 Mo » au lieu d'un refus muet.
+- [~] Un triangle coloré s'affiche sous Windows 95 sur la cible. Il est dessiné
+      par la couche, et E09-S01 l'avait vérifié à l'écran ; **la confirmation
+      visuelle n'est pas rejouable** ici, la sortie d'une Voodoo passthrough
+      n'apparaissant pas dans une capture de l'émulateur.
+- [x] Le cycle d'image tourne à cadence stable — 100 images en 1573 ms, soit
+      63 images/s, échange synchronisé sur le balayage. Cela montre que le cycle
+      n'est pas le goulot à charge triviale, et rien du taux de remplissage réel.
+- [x] La fermeture restitue l'affichage, y compris après un arrêt anormal —
+      éprouvé dans les deux sens, le mode « crash » du témoin déréférençant un
+      pointeur nul contexte ouvert. Le bureau revient avant la boîte du filtre.
+- [ ] La fenêtre de ciseaux fonctionne, vérifiée par l'écran partagé — **bloqué**
+      par E04-S05, dont vient la fenêtre à traduire.
+- [x] Aucune capacité matérielle n'est codée en dur — TMU et mémoires viennent de
+      `grSstQueryHardware`, et le repli de résolution du budget calculé.
 
 ## Risques
 

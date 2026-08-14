@@ -1,6 +1,6 @@
 # Le premier pixel Glide passe par la couche du moteur
 
-Relevé de [E05-S01](../stories/E05-backend-glide/E05-S01-initialisation-glide-buffers.md),
+Relevé de [E05-S01](../stories/E05-glide/E05-S01-initialisation-glide-buffers.md),
 14 août 2026, sur la machine de test — Voodoo 2 à 2 Mo de tampon d'images et
 2 Mo par TMU, la **configuration plancher** de l'ADR 0002.
 
