@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | L |
 | **Dépend de** | E05-S01, E04-S07 |
@@ -71,15 +71,41 @@ téléchargement en cours de course.
 ## Critères d'acceptation
 
 - [ ] Le nombre de textures, le volume et le motif de réutilisation sont mesurés
-      par niveau, sur tous les niveaux.
-- [ ] L'allocateur respecte l'alignement et la granularité de la TMU.
+      par niveau, sur tous les niveaux — **bloqué par la ROM absente**. La mesure
+      qui a pu être faite porte sur le matériel et non sur le jeu, et elle a
+      suffi à décider de la conception : voir `docs/research/win95-tmu.md`.
+- [x] L'allocateur respecte l'alignement et la granularité de la TMU — 8 octets,
+      relevés et non supposés : quatorze tailles sur quinze coûtent exactement le
+      calcul, et la quinzième (une texture 1×1, 8 octets pour 2 utiles) donne la
+      granularité. Les bornes viennent de `grTexMinAddress` et
+      `grTexMaxAddress` ; la première rend zéro, ce qui interdit d'en faire un
+      sentinelle d'échec.
 - [ ] Aucun téléchargement de texture en cours de course sur les niveaux qui
-      tiennent en mémoire — vérifié par compteur, pas par observation.
-- [ ] La politique d'éviction est justifiée par la mesure de l'étape 1.
-- [ ] Les deux TMU sont gérées séparément.
-- [ ] Les compteurs d'occupation et de téléchargement sont lisibles en jeu.
+      tiennent en mémoire — **bloqué par la ROM absente**. Le compteur qui
+      l'établira existe et est remis à zéro à chaque image ; les compteurs
+      cumulés survivent au changement de niveau, précisément pour pouvoir
+      répondre à cette question à la fin d'une session.
+- [~] La politique d'éviction est le moindre récemment utilisé, avec protection
+      des textures employées par l'image en cours. Elle n'est **pas** justifiée
+      par la mesure du jeu, qui suppose la ROM ; elle l'est par une propriété du
+      matériel : toute taille de texture étant une puissance de deux, un buddy ne
+      produit aucune fragmentation externe, et l'éviction n'a donc jamais à
+      combattre l'émiettement. Le cas qui compte est éprouvé : une image
+      demandant plus que la TMU ne tient sature proprement plutôt que de chasser
+      ce qu'elle vient de télécharger.
+- [~] Les deux TMU sont initialisées séparément, chacune avec ses propres bornes
+      relevées — mesure : les deux exposent le même espace. **Seule la TMU 0 est
+      employée** : la politique de placement dépend du multitexturage, qui est
+      E05-S04.
+- [x] Les compteurs sont tenus et formatés en une ligne lisible — occupation,
+      taux de succès, téléchargements totaux et par image, évictions, échecs.
+      Ils sont exposés par `dkr_glide_backend_tmu` pour l'affichage de E08-S01.
+      Un défaut de cache de texture se sent à la manette plutôt qu'il ne se lit
+      dans un journal.
 - [ ] Les niveaux qui ne tiennent pas sont identifiés, et leur traitement est
-      documenté.
+      documenté — **bloqué par la ROM absente**. L'allocateur rend `DKR_TMU_NONE`
+      et compte l'échec plutôt que de dégrader silencieusement, ce qui est la
+      condition pour que la question puisse être posée.
 
 ## Risques
 

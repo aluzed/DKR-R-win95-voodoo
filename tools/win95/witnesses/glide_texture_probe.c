@@ -248,6 +248,33 @@ int main(void)
                 (double)ECHELLES[bonne], TW);
             say("  soit un facteur %g\n", (double)ECHELLES[bonne] / (double)TW);
         }
+        /* **Le balayage a servi a trouver ; l'assertion doit porter sur le
+           contrat.** Laisser la verification a « une echelle quelconque marche »
+           accepterait n'importe quelle valeur future, y compris une qui ne
+           correspondrait plus a ce que la chaine produit. C'est
+           `DKR_TEXCOORD_SCALE` qui est employe par `clip.c`, donc c'est lui
+           qu'il faut eprouver. */
+        {
+            unsigned hg, hd, bg, bd;
+            bk.begin_frame(bk.self, 0x000000);
+            bk.set_state(bk.self, &st);
+            draw_quad(&bk, W, H, DKR_TEXCOORD_SCALE);
+            bk.present(bk.self);
+            if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) > 0) {
+                hg = read_at(rw / 8,     rh / 8,     rw);
+                hd = read_at(rw * 7 / 8, rh / 8,     rw);
+                bg = read_at(rw / 8,     rh * 7 / 8, rw);
+                bd = read_at(rw * 7 / 8, rh * 7 / 8, rw);
+                check("a DKR_TEXCOORD_SCALE, le coin haut-gauche est rouge",
+                      dominant(hg, 1, 0, 0));
+                check("le coin haut-droit est vert : s croit vers la droite",
+                      dominant(hd, 0, 1, 0));
+                check("le coin bas-gauche est bleu : t croit vers le bas",
+                      dominant(bg, 0, 0, 1));
+                check("le coin bas-droit est jaune : ni s ni t ne sont inverses",
+                      dominant(bd, 1, 1, 0));
+            }
+        }
     }
 
     /* Et le contrôle négatif, sans lequel les précédents ne prouvent rien :
