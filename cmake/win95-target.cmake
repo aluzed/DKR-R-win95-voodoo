@@ -427,6 +427,24 @@ set_target_properties(DKRWin95SaveCodec PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95SaveCodec)
 
+# --- Échange de sauvegardes (E02-S05) -----------------------------------------
+#
+# La moitié productrice de l'épreuve d'échange : elle écrit une sauvegarde
+# d'aventure non triviale, et la même source est compilée pour les deux cibles.
+# La moitié consommatrice est `SAVECDC.EXE`, qui prend un fichier en argument,
+# le décode, le réencode et exige l'égalité **octet pour octet**.
+add_executable(DKRWin95SaveInterchange
+    "${DKR_WIN95_TOOLS}/witnesses/save_interchange.cpp"
+    "${DKRPORT_ROOT}/runtime-recomp/src/game/dkr_save_codec.cpp")
+target_include_directories(DKRWin95SaveInterchange PRIVATE
+    "${DKRPORT_ROOT}/runtime-recomp/src/game")
+target_link_libraries(DKRWin95SaveInterchange PRIVATE win95compat)
+set_target_properties(DKRWin95SaveInterchange PROPERTIES
+    OUTPUT_NAME "SAVEGEN"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95SaveInterchange)
+
 # --- Sonde des flux ouverts sur un `path` (E02-S05) ---------------------------
 #
 # Elle a servi une fois, à établir que `std::ofstream(path)` échoue sur cette

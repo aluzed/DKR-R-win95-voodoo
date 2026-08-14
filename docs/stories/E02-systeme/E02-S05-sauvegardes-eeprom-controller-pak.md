@@ -64,11 +64,11 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
 
 ## Critères d'acceptation
 
-- [~] Les sauvegardes EEPROM fonctionnent sous Windows 95 : écriture et
-      relecture sont éprouvées sur la machine par `save_manager_tests`
-      (cycle de vie complet, aller-retour, rejet d'une sauvegarde corrompue).
-      **La persistance après redémarrage reste à vérifier** : la suite crée et
-      détruit son arborescence dans la même exécution.
+- [x] Les sauvegardes EEPROM fonctionnent sous Windows 95 : écriture, relecture,
+      persistance après redémarrage. Les deux premières par
+      `save_manager_tests` sur la machine ; la troisième par une sauvegarde
+      écrite dans une session, la machine arrêtée proprement, puis relue et
+      réencodée octet pour octet dans la session suivante.
 - [x] Les quatre Controller Pak virtuels fonctionnent, autotest inclus. Relevé
       du 14 août 2026, `DKRR.EXE --self-test-pak` sur la machine :
 
@@ -86,8 +86,21 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
 - [~] L'écriture est **aussi atomique que Windows 95 le permet** — il n'y a pas
       de remplacement atomique — et une copie de secours est conservée. Ce que la
       séquence garantit et ce qu'elle ne garantit pas est écrit.
-- [ ] Une sauvegarde produite par DKR-R moderne est lue par la version Win95, et
-      réciproquement.
+- [x] Une sauvegarde produite par DKR-R moderne est lue par la version Win95, et
+      réciproquement — et le résultat est plus fort que demandé : **les deux
+      constructions produisent les mêmes octets**.
+
+      | | SHA-256 |
+      |---|---|
+      | écrite par la construction hôte | `2673ca1a…4dae47bc` |
+      | écrite sur Windows 95 | `2673ca1a…4dae47bc` |
+
+      Chacune relit celle de l'autre, décode et réencode sans un octet d'écart.
+      Le témoin (`tools/win95/witnesses/save_interchange.cpp`) pose des motifs
+      **asymétriques** dans les champs de 16 et 32 bits — `0x1234` et non
+      `0x1221` — parce qu'une inversion d'octets sur une valeur symétrique ne se
+      voit pas, et que c'est le risque principal quand la même structure est
+      encodée par deux compilateurs différents.
 - [x] `dkr_save_codec_tests` et `save_manager_tests` passent sur la cible —
       relevé du 13 août 2026, les quatre phases puis PASS. Il aura fallu
       lever trois obstacles que seule l'exécution révélait : `<fstream>`

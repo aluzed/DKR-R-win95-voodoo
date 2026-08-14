@@ -263,3 +263,37 @@ sans lui.
 les signatures. Les 17 sources du jeu que construit la cible Windows 95 compilent
 toutes. Ne subsistent dans les sources du jeu que 11 inclusions de `<mutex>` et
 `<thread>`, qui relèvent de E02-S02.
+
+## L'échange de sauvegardes, dans les deux sens — 14 août 2026
+
+Le critère demandait qu'une sauvegarde produite par la version moderne soit lue
+par celle de Windows 95, et réciproquement. Le résultat est plus fort :
+**les deux constructions produisent les mêmes octets.**
+
+```text
+2673ca1aa7ecf15e5751ae5b894f6d6ca57a6c831b15d9bb1da975db4dae47bc  ADVHOST.BIN
+2673ca1aa7ecf15e5751ae5b894f6d6ca57a6c831b15d9bb1da975db4dae47bc  ADVWIN.BIN
+```
+
+Le montage a deux moitiés, et c'est ce qui le rend concluant :
+
+- **la moitié productrice**, `save_interchange.cpp`, écrit une sauvegarde
+  d'aventure et la même source est compilée pour les deux cibles ;
+- **la moitié consommatrice** existait déjà — `dkr_save_codec_tests` prend un
+  fichier en argument, le décode, le réencode, et exige l'égalité **octet pour
+  octet**. C'est plus fort qu'un « le décodage réussit » : cela prend aussi les
+  différences d'encodage, qui sont précisément ce qu'un changement de
+  plate-forme risque d'introduire.
+
+Le contenu écrit n'est pas une sauvegarde vierge. Une sauvegarde vierge est
+surtout faite de zéros, et des zéros survivent à peu près à n'importe quelle
+erreur de conversion. Les champs de 16 et 32 bits portent donc des motifs
+**asymétriques** — `0x1234` et non `0x1221` — parce qu'une inversion d'octets
+sur une valeur symétrique ne se voit pas, et que c'est le risque principal
+quand la même structure est encodée par deux compilateurs différents.
+
+### Et la persistance après redémarrage
+
+Écrite dans une session, la machine arrêtée proprement, relue dans la suivante :
+512 octets intacts, aller-retour sans écart. C'est le dernier des trois volets
+du premier critère — écriture, relecture, persistance.
