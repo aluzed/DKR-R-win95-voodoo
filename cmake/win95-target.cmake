@@ -372,6 +372,80 @@ set_target_properties(DKRWin95FileIOSeam PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95FileIOSeam)
 
+# --- Suites de sauvegarde, compilées pour la cible (E02-S05) ------------------
+#
+# Ces deux-là étaient construites à la main, et c'est précisément celles qu'il
+# ne fallait pas laisser ainsi : ce sont elles qui ferment les critères
+# d'acceptation de E02-S05, et un relevé qu'on ne sait pas refaire ne prouve
+# rien de durable.
+#
+# Elles emportent `save_manager.cpp` et `dkr_save_codec.cpp` — du code du jeu,
+# et non de la couche plate-forme — d'où les chemins d'inclusion vers
+# `src/game`. Elles écrivent leur verdict sur la sortie d'erreur, que DOS ne
+# sait pas rediriger : sur la machine, on les lance par un fichier de commandes
+# et on lit la fenêtre. Voir docs/TEST-ENVIRONMENT.md.
+add_executable(DKRWin95SaveManager
+    "${DKRPORT_ROOT}/runtime-recomp/tests/save_manager_tests.cpp"
+    "${DKRPORT_ROOT}/runtime-recomp/src/game/save_manager.cpp"
+    "${DKRPORT_ROOT}/runtime-recomp/src/game/dkr_save_codec.cpp")
+target_include_directories(DKRWin95SaveManager PRIVATE
+    "${DKRPORT_ROOT}/runtime-recomp/src/game"
+    "${DKRPORT_ROOT}/platform"
+    "${DKR_WIN95_PLATFORM}"
+    "${DKR_WIN95_PLATFORM}/include-shim")
+target_compile_definitions(DKRWin95SaveManager PRIVATE NOMINMAX DKR_TARGET_WIN95=1)
+# `-UNDEBUG` : ces suites sont **faites d'assertions**, et `Release` définit
+# `NDEBUG`, qui les efface. Ce n'est pas seulement qu'elles ne vérifieraient plus
+# rien — elles mettent leurs appels *dans* les assertions :
+#
+#     assert(dkr::runtime::saves::backup_adventure(backup, error));
+#
+# Sous NDEBUG l'appel disparaît avec l'assertion. La suite affichait ses quatre
+# phases puis plantait sur la machine, l'état n'ayant jamais été construit. Une
+# suite d'épreuve qui passe en ne testant rien est le pire des résultats ; ici
+# elle ne passait même pas, ce qui a permis de le voir.
+target_compile_options(DKRWin95SaveManager PRIVATE -UNDEBUG)
+target_link_libraries(DKRWin95SaveManager PRIVATE win95fileio win95threading)
+set_target_properties(DKRWin95SaveManager PROPERTIES
+    OUTPUT_NAME "SAVEMGR"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95SaveManager)
+
+add_executable(DKRWin95SaveCodec
+    "${DKRPORT_ROOT}/runtime-recomp/tests/dkr_save_codec_tests.cpp"
+    "${DKRPORT_ROOT}/runtime-recomp/src/game/dkr_save_codec.cpp")
+target_include_directories(DKRWin95SaveCodec PRIVATE
+    "${DKRPORT_ROOT}/runtime-recomp/src/game")
+target_compile_definitions(DKRWin95SaveCodec PRIVATE NOMINMAX DKR_TARGET_WIN95=1)
+# Même raison : `dkr_save_codec_tests` est lui aussi bâti sur `assert`.
+target_compile_options(DKRWin95SaveCodec PRIVATE -UNDEBUG)
+target_link_libraries(DKRWin95SaveCodec PRIVATE win95compat)
+set_target_properties(DKRWin95SaveCodec PROPERTIES
+    OUTPUT_NAME "SAVECDC"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95SaveCodec)
+
+# --- Sonde des flux ouverts sur un `path` (E02-S05) ---------------------------
+#
+# Elle a servi une fois, à établir que `std::ofstream(path)` échoue sur cette
+# cible — MinGW passe alors par `_wfopen`, que Windows 9x bouchonne. Elle est
+# conservée et construite parce que c'est la seule preuve exécutable de cette
+# affirmation, et que la règle correspondante du contrôleur de sous-ensemble
+# n'a de sens que si la mesure qui la fonde reste rejouable.
+add_executable(DKRWin95WideStreamProbe
+    "${DKR_WIN95_TOOLS}/witnesses/wide_stream_probe.cpp")
+# `win95compat` est indispensable ici comme partout : `<fstream>` seul réclame
+# `_fstat64`, que la MSVCRT de Windows 95 n'exporte pas. Sans elle la sonde ne
+# se chargerait pas — ce que le contrôle des imports a dit tout de suite.
+target_link_libraries(DKRWin95WideStreamProbe PRIVATE win95compat)
+set_target_properties(DKRWin95WideStreamProbe PROPERTIES
+    OUTPUT_NAME "WPROBE"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95WideStreamProbe)
+
 # Les tests qui tournent sur l'hôte. Deux suites, pour deux raisons :
 #
 #   Tick64     (E01-S03) le rebouclage de GetTickCount est une fonction pure, et
@@ -391,6 +465,12 @@ add_test(NAME DKRWin95Clock
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" clock)
 add_test(NAME DKRWin95FileIO
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" fileio)
+# `saves` (E02-S05) construit `save_manager` deux fois : la branche des cibles
+# modernes, puis celle de Windows 95 sur les dorsales POSIX. Passer ici ne prouve
+# rien de la machine — SAVEMGR.EXE y est exécuté séparément — mais c'est le
+# montage qui a pris l'écart de contrat de `create_directories`.
+add_test(NAME DKRWin95Saves
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" saves)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

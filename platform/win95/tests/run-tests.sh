@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -140,4 +140,37 @@ if [[ "$suite" == "all" || "$suite" == "fileio" ]]; then
   ( cd "$tmp" && "$tmp/test_fileio_seam" )
   echo "  -- point d'indirection, branche Windows 95 sur dorsale POSIX --"
   ( cd "$tmp" && "$tmp/test_fileio_seam95" )
+fi
+
+# --- E02-S05 : les suites de sauvegarde, sur l'hote ---------------------------
+#
+# Elles sont compilees pour la cible et executees sur la machine — c'est la que
+# se ferment les criteres d'acceptation — mais les faire tourner ici aussi
+# raccourcit le cycle de plusieurs minutes a une seconde, et prend les ecarts de
+# contrat avant l'aller-retour.
+#
+# `save_manager` est construit **deux fois**, comme le point d'indirection : la
+# branche des cibles modernes, puis la branche Windows 95 sur les dorsales
+# POSIX. C'est le second montage qui a pris le create_directories rendant true
+# sur un repertoire present.
+if [[ "$suite" == "all" || "$suite" == "saves" ]]; then
+  command -v "$CXX" >/dev/null \
+    || { echo "erreur: aucun compilateur C++ hote ($CXX)" >&2; exit 2; }
+  GAME="$HERE/../../../runtime-recomp/src/game"
+  TESTS="$HERE/../../../runtime-recomp/tests"
+  echo
+  "$CXX" -O2 -Wall -Wextra -std=c++20 -I"$GAME" -I"$HERE/../.." -I"$HERE/.." \
+         -o "$tmp/save_codec" "$TESTS/dkr_save_codec_tests.cpp" "$GAME/dkr_save_codec.cpp"
+  "$tmp/save_codec"
+  for mode in "" "-DDKR_TARGET_WIN95=1"; do
+    label="branche des cibles modernes"
+    [[ -n "$mode" ]] && label="branche Windows 95 sur dorsales POSIX"
+    "$CXX" -O2 -Wall -Wextra -std=c++20 $mode -I"$GAME" -I"$HERE/../.." -I"$HERE/.." \
+           -o "$tmp/save_manager" \
+           "$TESTS/save_manager_tests.cpp" "$GAME/save_manager.cpp" \
+           "$GAME/dkr_save_codec.cpp" "$HERE/../fileio.cpp" "$HERE/../threading.cpp" \
+           -lpthread
+    echo "  -- save_manager, $label --"
+    ( cd "$tmp" && "$tmp/save_manager" )
+  done
 fi

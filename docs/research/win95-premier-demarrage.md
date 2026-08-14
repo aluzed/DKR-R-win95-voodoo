@@ -149,3 +149,40 @@ C, dont le coût par instruction décide de tout sur un Pentium II à 400 MHz.
 Non optimisé, il ne serait pas « plus lent » : il serait injouable, sans que
 rien ne l'annonce. La cible impose donc `Release` quand l'appelant n'a rien
 choisi, et le dit à la configuration.
+
+## Le câblage a trouvé un défaut que la construction manuelle cachait
+
+Les deux suites de sauvegarde étaient elles aussi construites à la main. Une
+fois passées par CMake, elles ont affiché leurs quatre phases sur la machine
+puis **planté** — faute de protection générale.
+
+La cause est dans le mode `Release`, qui définit `NDEBUG`. Ces suites sont
+faites d'assertions, et elles mettent leurs appels **dans** les assertions :
+
+```cpp
+assert(dkr::runtime::saves::backup_adventure(backup, error));
+```
+
+Sous `NDEBUG`, l'appel disparaît avec l'assertion. La sauvegarde n'est jamais
+écrite, l'état n'est jamais construit, et le nettoyage final travaille sur un
+vide.
+
+**Une suite d'épreuve qui passe en ne testant rien est le pire des résultats.**
+Ici elle ne passait même pas, et c'est ce qui a permis de la voir : le plantage
+est un cadeau. Les deux cibles sont donc compilées avec `-UNDEBUG`.
+
+À noter pour la suite : le danger reste dans la source. Ces 35 assertions à
+effet de bord sont inoffensives tant que personne ne construit ces suites avec
+`NDEBUG` — ce qui est exactement ce que fait un `Release` ordinaire, sur
+n'importe quelle plate-forme.
+
+## Ce que la cible construit désormais
+
+Onze exécutables, tous soumis aux deux garde-fous après le lien :
+
+```text
+CLOCKT  DKRR  FILEIOT  FSSEAM  PLATFORM  SAVECDC
+SAVEMGR  THRCPP  THREADS  WITNESS  WPROBE
+```
+
+et cinq suites enregistrées dans CTest, qui passent en 20 secondes.
