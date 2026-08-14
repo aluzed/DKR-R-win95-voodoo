@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E05-S01, E05-S02, E04-S07 |
@@ -68,13 +68,27 @@ rendu de jeu.
 
 ## Critères d'acceptation
 
-- [ ] Les rectangles texturés et pleins sont rendus.
-- [ ] Le décalage de demi-texel est réglé, vérifié sur une grille d'un pixel.
-- [ ] Des rectangles adjacents ne laissent ni jointure ni recouvrement.
-- [ ] Le texte du jeu est net et correctement positionné.
-- [ ] Cinq écrans de référence sont comparés **au pixel près** à la référence.
-- [ ] Le HUD est correct en écran partagé, à deux comme à quatre joueurs.
-- [ ] Le comportement de `TextureOffset` est relevé et reproduit.
+- [x] Les rectangles texturés et pleins sont rendus, en coordonnées écran et
+      sans passer par le pipeline de transformation.
+- [x] Vérifié sur une grille d'un texel, et le résultat est **qu'aucune
+      correction n'est nécessaire** : le décalage nul aligne les 64 colonnes. La
+      bande sûre va de −0,5 à +0,25 texel, la rupture tombant exactement là où le
+      point échantillonné change de texel. Savoir qu'il reste un quart de texel
+      de marge de chaque côté dit qu'une petite erreur d'arrondi ailleurs dans la
+      chaîne ne fera pas basculer l'interface.
+- [x] Quatre rectangles bord à bord : 0 pixel de fond sur 200. Avec un contrôle
+      négatif vérifiant que les quatre couleurs sont distinctes, sans quoi un
+      seul rectangle couvrant tout passerait.
+- [ ] Le texte du jeu — **bloqué par la ROM**. C'est l'épreuve la plus exigeante
+      du positionnement, et la grille d'un texel n'en est qu'un substitut.
+- [ ] Cinq écrans de référence — **bloqué par la ROM**.
+- [x] Exact au pixel près dans les quatre cas mesurés : 153600 peints pour
+      153600 attendus à deux joueurs, 76800 pour 76800 à quatre.
+- [x] Relevé — **et il a révélé une erreur du décodeur**. `w1` est une adresse
+      RDRAM, base de chargement de texture, et la commande remet à zéro le
+      décalage et le compte. Notre décodeur la lisait comme deux décalages `s` et
+      `t` sur seize bits. L'erreur aurait déplacé des motifs plutôt que de les
+      faire disparaître, et l'on aurait cherché du côté du décodage de texture.
 
 ## Risques
 

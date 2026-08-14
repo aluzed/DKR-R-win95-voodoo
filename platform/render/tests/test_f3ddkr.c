@@ -278,6 +278,39 @@ int main(void)
     check("et un mot quelconque ne l'est pas",
           !trace_contains("PresentationGroup"));
 
+    /* --- TextureOffset porte une adresse, pas des decalages ------------------ *
+     *
+     * Ce decodeur lisait `w1` comme deux decalages de texture sur seize bits.
+     * Le portage voisin, qui tourne, en fait une **base d'adressage RDRAM**, et
+     * remet a zero le decalage et le compte. L'erreur n'aurait pas saute aux
+     * yeux : elle aurait deplace des motifs plutot que de les faire disparaitre,
+     * et l'on aurait cherche du cote du decodage de texture. */
+    {
+        dkr_f3d_context ctx2;
+        unsigned int at2 = 0;
+        memset(g_ram, 0, sizeof(g_ram));
+        at2 = put_cmd(at2, 0x02000000u, 0x00123456u);   /* TextureOffset */
+        (void)put_cmd(at2, 0xB8000000u, 0u);
+        dkr_f3d_init(&ctx2, g_ram, RAM_SIZE, NULL);
+        ctx2.state.texture_shift = 7;
+        ctx2.state.texture_count = 9;
+        (void)dkr_f3d_run(&ctx2, 0);
+        check("TextureOffset retient une adresse RDRAM",
+              ctx2.state.texture_offset == 0x123456u);
+        check("et remet le decalage et le compte a zero",
+              ctx2.state.texture_shift == 0 && ctx2.state.texture_count == 0);
+        /* Le masque de 24 bits n'est pas decoratif : la RDRAM fait 8 Mio, et
+           les octets de poids fort d'une commande portent autre chose. */
+        memset(g_ram, 0, sizeof(g_ram));
+        at2 = 0;
+        at2 = put_cmd(at2, 0x02000000u, 0xFF123456u);
+        (void)put_cmd(at2, 0xB8000000u, 0u);
+        dkr_f3d_init(&ctx2, g_ram, RAM_SIZE, NULL);
+        (void)dkr_f3d_run(&ctx2, 0);
+        check("l'adresse est bornee a 24 bits, la taille de la RDRAM",
+              ctx2.state.texture_offset == 0x123456u);
+    }
+
     printf("\n%d echec(s)\n", g_fails);
     if (g_out) { fprintf(g_out, "\n%d echec(s)\n", g_fails); fclose(g_out); }
     return g_fails != 0;

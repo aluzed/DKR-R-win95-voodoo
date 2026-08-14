@@ -66,7 +66,11 @@ typedef struct {
 
     unsigned int selected_matrix;    /* 0..2 */
     unsigned char billboard;
-    unsigned int texture_offset_s, texture_offset_t;
+    /* Base d'adressage pour le chargement de texture, **et non un couple de
+       decalages s et t** — relevé dans le portage voisin, voir `f3ddkr.c`. */
+    unsigned int texture_offset;
+    unsigned int texture_shift;
+    unsigned int texture_count;
 
     /* Comptes, pour le mode trace et pour les épreuves. */
     unsigned long commands;

@@ -359,10 +359,24 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         case OP_MOVEWORD:   cmd_move_word(c, w0, w1);   break;
 
         case OP_TEXOFFSET:
-            c->state.texture_offset_s = (w1 >> 16) & 0xFFFFu;
-            c->state.texture_offset_t =  w1        & 0xFFFFu;
-            trace(c, "TextureOffset s=%u t=%u",
-                  c->state.texture_offset_s, c->state.texture_offset_t);
+            /* **`w1` est une adresse RDRAM, pas un couple de decalages.**
+             *
+             * Ce decodeur lisait `(w1 >> 16)` et `(w1 & 0xFFFF)` comme des
+             * decalages `s` et `t` sur seize bits. Le portage voisin, qui tourne,
+             * en fait tout autre chose : `data.texture_offset = w1 & 0x00FFFFFF`,
+             * une **base d'adressage pour le chargement de texture**, et la
+             * commande remet a zero le decalage et le compte.
+             *
+             * L'erreur ne se serait pas vue tout de suite. Une base d'adresse
+             * lue comme deux decalages de texture produit des coordonnees
+             * absurdes sur les surfaces concernees — donc un motif deplace, pas
+             * une absence — et l'on aurait cherche du cote du decodage de
+             * texture. E05-S07 demandait de relever ce comportement plutot que
+             * de le supposer ; c'est ce qui l'a revele. */
+            c->state.texture_offset = w1 & 0x00FFFFFFu;
+            c->state.texture_shift  = 0;
+            c->state.texture_count  = 0;
+            trace(c, "TextureOffset base=0x%06X", c->state.texture_offset);
             break;
 
         case OP_DLBRANCH: {

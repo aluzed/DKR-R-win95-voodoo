@@ -728,6 +728,17 @@ set_target_properties(DKRWin95Fog PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Fog)
 
+# E05-S07 — les rectangles 2D. Le decalage de demi-texel se determine par
+# l'experience, pas par le raisonnement : le ticket l'exige, et il a raison.
+add_executable(DKRWin95Rect
+    "${DKR_WIN95_TOOLS}/witnesses/rect_probe.c")
+target_link_libraries(DKRWin95Rect PRIVATE win95glide win95clip win95clock winmm)
+set_target_properties(DKRWin95Rect PROPERTIES
+    OUTPUT_NAME "RECT"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Rect)
+
 # La mesure qui a decide de la conception de l'allocateur : granularite, espace
 # adressable, cout reel de chaque taille et de chaque format.
 add_executable(DKRWin95TmuProbe
