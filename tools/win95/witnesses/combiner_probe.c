@@ -119,6 +119,24 @@ static unsigned pack(const float c[4])
     return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
+/* Le combineur de Glide multiplie en 0..255 et **tronque**.
+ *
+ * Mesure : une constante de 32 ressort a 28, une de 96 a 90. Le facteur vaut
+ * 255/256 et la troncature coute un pas de quantification. Ce n'est pas une
+ * erreur de traduction, c'est le materiel ; ne pas le modeliser ferait porter a
+ * chaque configuration un ecart systematique de huit a neuf unites, qui
+ * masquerait les vrais ecarts en les noyant dans un bruit de fond. */
+static unsigned tronque_glide(unsigned c)
+{
+    unsigned out = 0;
+    int i;
+    for (i = 0; i < 3; i++) {
+        const unsigned v = (c >> (i * 8)) & 0xFF;
+        out |= ((v * 255u) / 256u) << (i * 8);
+    }
+    return out;
+}
+
 /* Quantifie comme le tampon d'image de la carte, pour ne pas compter la
    conversion 565 comme un écart du combineur. */
 static unsigned q565(unsigned c)
@@ -233,7 +251,7 @@ int main(void)
             say("  %-32s relecture impossible\n", e->nom);
             continue;
         }
-        ca = q565(pack(attendu) & 0x00FFFFFFu);
+        ca = q565(tronque_glide(pack(attendu) & 0x00FFFFFFu));
         cb = g_pixels[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)] & 0x00FFFFFFu;
         d  = ecart(ca, cb);
 

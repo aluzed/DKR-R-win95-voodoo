@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P0 |
 | **Estimation** | XL |
 | **Dépend de** | E04-S06, E05-S01 |
@@ -74,19 +74,46 @@ la mesure de l'écart.
 
 ## Critères d'acceptation
 
-- [ ] Toutes les configurations de l'inventaire sont traitées et classées.
-- [ ] La table de correspondance est une structure de données indexée par forme
-      canonique.
-- [ ] L'écart de chaque configuration au rastériseur de référence est mesuré par
-      différence d'image.
-- [ ] Le double cycle est traité, chaque cas indiquant sa stratégie.
-- [ ] Le coût de remplissage du multipasse est mesuré, et les configurations
-      multipasse à forte couverture sont réexaminées.
-- [ ] `docs/research/combiner-mapping.md` documente catégorie, réglage, écart et
-      coût par configuration.
-- [ ] Une configuration inconnue est journalisée et rendue par un repli non
-      aberrant.
-- [ ] Aucune configuration « approchée » ne dépasse un écart écrit et accepté.
+- [x] Les 29 configurations distinctes de l'inventaire sont traitées et classées
+      — 12 exactes, 10 multipasse, 4 approchées, 3 renvoyées à E05-S04. Le ticket
+      annonçait 33 : l'inventaire du portage voisin en dénombre 21 dans les
+      tables plus 12 hors tables, dont plusieurs coïncident.
+- [x] La table est une structure de données indexée par forme canonique, et
+      **engendrée** depuis les définitions de la source du jeu. Vérifiée par
+      propriétés : aucune clé en double — deux entrées de même clé se
+      masqueraient, et une configuration serait rendue par le réglage d'une autre
+      sans qu'aucun message ne le signale.
+- [x] L'écart de chaque configuration est mesuré sur la carte, par relecture du
+      tampon d'image. L'oracle est **la formule** et non un second programme :
+      comparer deux programmes ne fait que déplacer la question de savoir lequel
+      a raison. La scène exclut toute interpolation, de sorte qu'un écart ne
+      puisse venir que du combineur.
+      Le ticket supposait que le rastériseur de E04-S08 implémentait le combineur
+      fidèlement ; **ce n'était pas le cas**, et `dkr_combiner_eval` a dû être
+      écrit pour que ce critère ait un sens.
+- [x] Le double cycle est traité et chaque cas indique sa stratégie. Deux formes
+      se replient — `PASS2` est l'identité, `(COMBINED,0,X,0)` est une mise à
+      l'échelle qui compose — ce qui évite de déclarer multipasse tout second
+      cycle et de doubler le remplissage sur les surfaces les plus courantes.
+- [ ] Le coût de remplissage du multipasse est mesuré — **bloqué par la ROM**.
+      La part multipasse est en revanche bornée et surveillée : une épreuve
+      échoue si elle dépasse la moitié des entrées de table, parce que c'est le
+      remplissage qui limite une Voodoo 2 en 640×480.
+- [~] `docs/research/combiner-mapping.md` documente catégorie, réglage et
+      justification par configuration, ainsi que les valeurs d'énumération
+      mesurées. **Le coût de remplissage du multipasse n'y figure pas** : il
+      demande une scène représentative, donc la ROM.
+- [x] Une configuration inconnue rend NULL à la recherche, et le repli est
+      défini : texture modulée par la couleur du sommet, le comportement le plus
+      fréquent de l'inventaire. Les deux réflexes opposés sont écartés — ne rien
+      dessiner ferait disparaître un décor sans trace, peindre en couleur
+      d'alerte rendrait le jeu injouable au premier combineur oublié.
+- [~] L'écart de chaque approchée est mesuré et rapporté, mais **aucun seuil
+      n'est encore accepté** : la famille `ENV_ALPHA` vient d'être reclassée sur
+      la foi d'une mesure, et une issue non éprouvée subsiste — porter la
+      constante dans l'alpha du sommet, où `LOCAL_ALPHA` irait la chercher.
+      Fixer un seuil avant d'avoir tenté cette issue reviendrait à accepter un
+      écart qu'on sait peut-être évitable.
 
 ## Risques
 

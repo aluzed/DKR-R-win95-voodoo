@@ -246,6 +246,26 @@ def classify(c1, c2):
     if c_name in ("TEXEL0", "TEXEL1"):
         return ("DKR_CC_APPROCHEE", const,
                 "facteur = couleur de texture : Glide n'offre que TEXTURE_ALPHA")
+    # **Mesure, et non deduction.** Le balayage des seize valeurs de facteur sur
+    # la carte (`combine_enum_probe.c`) a etabli qu'*aucune* ne delivre l'alpha
+    # du registre constant : les facteurs confirmes sont ONE, LOCAL et
+    # ONE_MINUS_LOCAL, tous fonctions de la couleur locale ou de rien.
+    #
+    # Toute la famille BLENDI/BLENDT repose sur `ENV_ALPHA` en facteur, et se
+    # trouve donc hors d'atteinte en l'etat. Elle etait classee « exacte » sur la
+    # foi de valeurs d'enumeration ecrites de memoire ; le harnais de mesure l'a
+    # prise en defaut avec 140 a 156 unites d'ecart, et c'est exactement ce qu'on
+    # lui demandait de faire.
+    #
+    # Une issue existe et n'est pas encore eprouvee : ENV_ALPHA est une constante
+    # connue du processeur, donc portable dans l'alpha du sommet, ou
+    # `LOCAL_ALPHA` irait la chercher. Tant que ce n'est pas mesure, la
+    # configuration reste approchee — annoncer exact ce qui ne l'est pas est
+    # precisement le defaut contre lequel ce ticket met en garde.
+    if c_name in ("ENV_ALPHA", "PRIMITIVE_ALPHA"):
+        return ("DKR_CC_APPROCHEE", const,
+                "facteur = alpha d'un registre constant : mesure sur la carte, "
+                "aucun facteur Glide ne le delivre")
     if c_name == "SHADE_ALPHA" and const != "DKR_CONST_AUCUNE":
         # local est la constante, donc LOCAL_ALPHA vaut l'alpha de la constante
         # et non celle du sommet.
