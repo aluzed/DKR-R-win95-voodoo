@@ -97,7 +97,14 @@ const char *dkr_glide_result_text(dkr_glide_result r)
     case DKR_GLIDE_OK:             return "succes";
     case DKR_GLIDE_ERR_NO_LIBRARY: return "glide2x.dll introuvable — pilote 3dfx absent ?";
     case DKR_GLIDE_ERR_NO_SYMBOL:  return "glide2x.dll incomplete — version inattendue";
-    case DKR_GLIDE_ERR_NO_BOARD:   return "aucune carte 3dfx detectee";
+    /* Ce texte suit une boite modale anglaise que le joueur vient de congedier,
+       et il doit s'y rattacher explicitement — sans quoi il lira deux problemes
+       la ou il n'y en a qu'un. Voir `docs/research/win95-glide-sans-carte.md` :
+       la boite vient de glide2x.dll elle-meme, au chargement, et rien ne permet
+       de la devancer. */
+    case DKR_GLIDE_ERR_NO_BOARD:
+        return "aucune carte 3dfx detectee — c'est ce que disait aussi le "
+               "message anglais de glide2x.dll";
     case DKR_GLIDE_ERR_NO_MEMORY:  return "la carte n'a pas assez de memoire d'image";
     default:                       return "ouverture du contexte refusee";
     }

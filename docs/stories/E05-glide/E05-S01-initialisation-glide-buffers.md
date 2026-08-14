@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E05 — Backend Glide |
-| **Statut** | IN_PROGRESS |
+| **Statut** | DONE |
 | **Priorité** | P0 |
 | **Estimation** | M |
 | **Dépend de** | E00-S05, E04-S01, E04-S08 |
@@ -72,26 +72,47 @@ configuration des tampons, la présentation, et la fermeture propre.
 
 - [x] La détection rapporte carte, nombre de TMU et mémoires disponibles —
       relevé sur la machine : 1 carte, 2 TMU, 2048 Ko d'image, 2048 Ko par TMU.
-- [~] L'absence de carte ou de bibliothèque produit un message clair, pas un refus
-      de chargement par l'OS. Glide est chargée par `LoadLibrary` et chaque échec
-      rend un texte nommant le geste possible — **mais aucun de ces chemins n'a
-      été exercé**, la machine ayant toujours sa carte.
+- [x] L'absence de carte produit un message clair, pas un refus de chargement par
+      l'OS — **exercé** en retirant la Voodoo de la configuration de l'émulateur,
+      puis en la remettant, configuration restaurée octet pour octet. Le chemin
+      propre est atteint et `DKR_GLIDE_ERR_NO_BOARD` remonte.
+      Mais la mesure a révélé mieux que ce que le critère demandait : **Glide
+      affiche sa propre boîte modale anglaise pendant le `LoadLibrary`**, avant
+      que notre code ne voie quoi que ce soit. Le registre ne permet pas de la
+      devancer — les relevés avec et sans carte sont identiques, et une Voodoo 1
+      qui n'a jamais existé y figure comme la carte présente. Le texte d'erreur
+      rattache donc explicitement la boîte qui le précède.
+      Voir `docs/research/win95-glide-sans-carte.md`.
 - [~] Le contexte s'ouvre à la résolution de l'ADR — 640×480, double tampon,
-      profondeur — **le repli n'est pas vérifié** : la mémoire suffisait. Le
+      profondeur — **le repli reste non vérifié** : 86Box ne propose pas de
+      Voodoo assez pauvre pour faire échouer 640×480, et la mémoire a toujours
+      suffi. Le calcul est écrit et relu, il n'est pas éprouvé. Le
       budget est calculé plutôt que deviné, pour que l'échec dise « 640×480 ne
       tient pas dans 2 Mo » au lieu d'un refus muet.
-- [~] Un triangle coloré s'affiche sous Windows 95 sur la cible. Il est dessiné
-      par la couche, et E09-S01 l'avait vérifié à l'écran ; **la confirmation
-      visuelle n'est pas rejouable** ici, la sortie d'une Voodoo passthrough
-      n'apparaissant pas dans une capture de l'émulateur.
+- [x] Un triangle coloré s'affiche sous Windows 95 sur la cible, **et l'image a
+      été relue**. `grLfbLock` contourne l'obstacle de la Voodoo passthrough, dont
+      la sortie n'apparaît dans aucune capture de l'émulateur : 75264 pixels
+      peints sur 307200, soit exactement l'aire analytique du triangle
+      (½ × 448 × 336). Le centre est rouge-dominant, ce qui est la bonne réponse
+      et non l'évidente — le centre de l'écran n'est pas le centre de gravité du
+      triangle. L'image entière est ramenée en BMP.
 - [x] Le cycle d'image tourne à cadence stable — 100 images en 1573 ms, soit
       63 images/s, échange synchronisé sur le balayage. Cela montre que le cycle
       n'est pas le goulot à charge triviale, et rien du taux de remplissage réel.
 - [x] La fermeture restitue l'affichage, y compris après un arrêt anormal —
       éprouvé dans les deux sens, le mode « crash » du témoin déréférençant un
       pointeur nul contexte ouvert. Le bureau revient avant la boîte du filtre.
-- [ ] La fenêtre de ciseaux fonctionne, vérifiée par l'écran partagé — **bloqué**
-      par E04-S05, dont vient la fenêtre à traduire.
+- [x] La fenêtre de ciseaux fonctionne, mesurée plutôt que constatée : un
+      triangle symétrique de 112000 pixels, restreint à la moitié droite, en
+      garde 55960 sur 56000. Les 40 manquants sont la colonne frontière comptée
+      une fois — la fenêtre de Glide est donc incluse à gauche et exclue à droite,
+      ce que `backend.h` supposait sans l'avoir vérifié. `dkr_scissor_for_player`
+      de E04-S05 fournit les rectangles.
+- [x] La couche implémente `dkr_render_backend` de E04-S01 : mélange, profondeur,
+      ciseaux, test alpha et brouillard sont traduits, et **les huit modes sans
+      texture sont confirmés par relecture du tampon d'image**. Les textures
+      restent à E05-S02/E05-S03, et `texture_upload` rend zéro plutôt qu'un
+      handle bidon. Voir `docs/research/win95-glide-etats.md`.
 - [x] Aucune capacité matérielle n'est codée en dur — TMU et mémoires viennent de
       `grSstQueryHardware`, et le repli de résolution du budget calculé.
 

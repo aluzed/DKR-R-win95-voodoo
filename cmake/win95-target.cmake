@@ -631,6 +631,20 @@ set_target_properties(DKRWin95GlideState PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideState)
 
+# Sur une machine sans carte, `glide2x.dll` affiche sa propre boîte modale
+# pendant le LoadLibrary. Ce témoin a servi à établir qu'aucun signal du registre
+# ne permet de la devancer : les relevés avec et sans carte sont identiques.
+# Il est conservé parce que la conclusion est négative et donc invérifiable par
+# la lecture du code seul.
+add_executable(DKRWin95GlideRegistry
+    "${DKR_WIN95_TOOLS}/witnesses/glide_registry_probe.c")
+target_link_libraries(DKRWin95GlideRegistry PRIVATE win95compat advapi32)
+set_target_properties(DKRWin95GlideRegistry PROPERTIES
+    OUTPUT_NAME "GLREG"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95GlideRegistry)
+
 # --- Sonde de la coupure de courant (E02-S05) ---------------------------------
 #
 # Ce que la séquence d'écriture durable promet n'est pas « on ne perd jamais la
