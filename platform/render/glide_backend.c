@@ -33,6 +33,7 @@
  */
 #include "glide.h"
 #include "backend.h"
+#include "tmu.h"
 
 #include <string.h>
 
@@ -89,6 +90,45 @@ typedef int           FxBool;
 #define GR_FOG_DISABLE                    0x0
 #define GR_FOG_WITH_ITERATED_ALPHA        0x1
 
+/* --- Textures ---------------------------------------------------------------- *
+ *
+ * Ces valeurs-ci ne sont pas de memoire : `tmu_probe.c` les a validees sur la
+ * carte en comparant `grTexTextureMemRequired` a la taille analytique. Un LOD ou
+ * un rapport d'aspect faux aurait donne une taille visiblement fausse.
+ * Voir `docs/research/win95-tmu.md`. */
+#define GR_LOD_256   0    /* le LOD nomme la plus grande dimension, et decroit */
+#define GR_LOD_1     8
+#define GR_ASPECT_8x1  0
+#define GR_ASPECT_1x1  3
+#define GR_ASPECT_1x8  6
+#define GR_TEXFMT_ARGB_1555  0x0B
+#define GR_TEXFMT_INTENSITY_8 0x03
+#define GR_MIPMAPLEVELMASK_BOTH  0x03
+#define GR_TMU0  0
+
+/* Le combineur de texture, quand il y en a une. */
+#define GR_TEXTURECOMBINE_ZERO   0x0
+#define GR_TEXTURECOMBINE_DECAL  0x1
+
+typedef struct {
+    int   smallLod;
+    int   largeLod;
+    int   aspectRatio;
+    int   format;
+    void *data;
+} GrTexInfo;
+
+typedef unsigned int (WINAPI *pfn_tex_addr)(int tmu);
+typedef unsigned int (WINAPI *pfn_tex_req)(unsigned evenOdd, GrTexInfo *info);
+typedef void         (WINAPI *pfn_tex_dl)(int tmu, unsigned start,
+                                          unsigned evenOdd, GrTexInfo *info);
+typedef void         (WINAPI *pfn_tex_src)(int tmu, unsigned start,
+                                           unsigned evenOdd, GrTexInfo *info);
+typedef void         (WINAPI *pfn_tex_comb)(int tmu, FxU32 rgbFn, FxU32 rgbFac,
+                                            FxU32 aFn, FxU32 aFac,
+                                            FxBool rgbInv, FxBool aInv);
+typedef void         (WINAPI *pfn_tex_mode)(int tmu, FxU32 a, FxU32 b);
+
 typedef void (WINAPI *pfn_5)(FxU32, FxU32, FxU32, FxU32, FxBool);
 typedef void (WINAPI *pfn_4)(FxU32, FxU32, FxU32, FxU32);
 typedef void (WINAPI *pfn_1)(FxU32);
@@ -108,7 +148,46 @@ static struct {
     pfn_1 fog_mode;
     pfn_1 fog_color;
     pfn_1 constant_color;
+
+    pfn_tex_addr tex_min, tex_max;
+    pfn_tex_req  tex_required;
+    pfn_tex_dl   tex_download;
+    pfn_tex_src  tex_source;
+    pfn_tex_comb tex_combine;
+    pfn_tex_mode tex_filter, tex_clamp;
 } gs;
+
+/* --- Les textures residentes -------------------------------------------------- *
+ *
+ * Le handle rendu a l'appelant est un indice dans cette table, decale de un :
+ * zero signifie l'echec, et c'est le contrat de `backend.h`. La table garde ce
+ * qu'il faut pour **relier** la texture au moment du dessin — Glide exige de
+ * repasser le meme `GrTexInfo` a `grTexSource` qu'a `grTexDownloadMipMap`. */
+typedef struct {
+    unsigned long long key;
+    unsigned int       address;
+    GrTexInfo          info;
+    unsigned char      live;
+} glide_texture;
+
+#define GLIDE_MAX_TEXTURES 512
+static glide_texture g_tex[GLIDE_MAX_TEXTURES];
+static dkr_tmu       g_tmu[2];
+static int           g_tmu_count;
+
+/* Le transfert vers la carte, appele par l'allocateur.
+   `data` porte le `GrTexInfo` deja rempli : l'allocateur ne connait ni les LOD
+   ni les rapports d'aspect, et n'a pas a les connaitre. */
+static int glide_download(void *user, int tmu, unsigned int address,
+                          const void *data, unsigned int bytes)
+{
+    (void)user; (void)bytes;
+    if (!gs.tex_download || !data) { return 0; }
+    gs.tex_download(tmu, address, GR_MIPMAPLEVELMASK_BOTH, (GrTexInfo *)data);
+    /* Glide ne rend rien. L'absence de moyen de verifier ici est precisement
+       pourquoi `glide_texture_probe.c` va relire le tampon d'image. */
+    return 1;
+}
 
 /* --- L'état du backend ------------------------------------------------------ */
 static struct {
@@ -125,20 +204,79 @@ static struct {
  * d'exercer un mode à la fois, et donc d'attribuer un écart d'image à une
  * traduction précise plutôt qu'à « l'état ». */
 
-static void apply_combine(dkr_combine_mode m)
+static void bind_texture(dkr_texture_handle handle);
+
+static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
 {
     if (!gs.color_combine || !gs.alpha_combine) { return; }
 
-    /* Sans texture chargée, les quatre modes retombent sur la couleur du sommet.
-       Ce n'est pas un raccourci : E05-S02 n'ayant rien mis en TMU, sélectionner
-       la texture donnerait du blanc, et l'écran serait faux d'une manière qui
-       *ressemble* à un défaut de combineur. Mieux vaut un rendu franchement
-       non texturé. */
-    (void)m;
-    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
-                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
-    gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
-                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
+    /* **Sans texture liee, on retombe sur la couleur du sommet, et c'est voulu.**
+     *
+     * Selectionner la texture alors qu'aucune n'est residente ne provoque pas
+     * d'erreur : la TMU echantillonne ce qui traine a l'adresse ou elle pointait.
+     * L'ecran est alors faux d'une maniere qui *ressemble* a un defaut de
+     * combineur, et l'on cherche longtemps du mauvais cote. Un rendu franchement
+     * non texture se diagnostique mieux. */
+    if (handle == 0 || m == DKR_COMBINE_SHADE) {
+        gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
+        return;
+    }
+
+    bind_texture(handle);
+    if (gs.tex_combine) {
+        /* Une seule TMU employee ici : la texture passe telle quelle. Le
+           multitexturage sur deux TMU est E05-S04, la traduction fidele du
+           combineur RDP est E05-S03 — ce qui suit couvre les modes que le
+           decodeur sait deja produire, pas davantage. */
+        gs.tex_combine(GR_TMU0, GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO,
+                       GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO, 0, 0);
+    }
+
+    switch (m) {
+    case DKR_COMBINE_TEXTURE:
+        /* Le texel seul : la couleur du sommet n'intervient pas. */
+        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        break;
+    case DKR_COMBINE_TEXTURE_SHADE_ALPHA:
+        /* Texel module par la couleur du sommet, mais **alpha du texel retenu** :
+           c'est ce qui permet a une texture percee de le rester quand le sommet
+           porte une transparence propre. */
+        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        break;
+    default:  /* DKR_COMBINE_TEXTURE_SHADE */
+        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        break;
+    }
+}
+
+/* Filtrage et enveloppement. E05-S08 les traitera pour de bon ; ici l'on se
+   contente de ne pas laisser un etat herite decider a notre place. */
+static void apply_texture_modes(const dkr_render_state *st)
+{
+    /* GR_TEXTUREFILTER_POINT_SAMPLED = 0, BILINEAR = 1.
+       GR_TEXTURECLAMP_WRAP = 0, CLAMP = 1 — le miroir n'existe pas sur Voodoo 2
+       et se traite au decodage, ce qui est note pour E05-S08. */
+    if (gs.tex_filter) {
+        const FxU32 f = (st->filter == DKR_FILTER_BILINEAR) ? 1u : 0u;
+        gs.tex_filter(GR_TMU0, f, f);
+    }
+    if (gs.tex_clamp) {
+        gs.tex_clamp(GR_TMU0,
+                     (st->wrap_s == DKR_WRAP_REPEAT) ? 0u : 1u,
+                     (st->wrap_t == DKR_WRAP_REPEAT) ? 0u : 1u);
+    }
 }
 
 static void apply_blend(dkr_blend_mode m)
@@ -234,6 +372,16 @@ static void apply_fog(unsigned char enabled, unsigned int color)
 
 /* --- L'interface ------------------------------------------------------------ */
 
+/* Le nombre de TMU vient de la detection, pas d'une constante : l'ADR 0002
+   impose deux TMU sans interdire d'en trouver une seule, auquel cas le repli
+   multipasse de E05-S04 s'appliquera. */
+static int hw_tmu_count(void)
+{
+    dkr_glide_hardware hw;
+    if (dkr_glide_detect(&hw) != DKR_GLIDE_OK) { return 0; }
+    return hw.tmu_count;
+}
+
 static int gl_open(void *self, int width, int height)
 {
     dkr_glide_context ctx;
@@ -266,7 +414,30 @@ static int gl_open(void *self, int width, int height)
         gs.fog_mode             = (pfn_1)dkr_glide_symbol("_grFogMode@4");
         gs.fog_color            = (pfn_1)dkr_glide_symbol("_grFogColorValue@4");
         gs.constant_color       = (pfn_1)dkr_glide_symbol("_grConstantColorValue@4");
+        gs.tex_min      = (pfn_tex_addr)dkr_glide_symbol("_grTexMinAddress@4");
+        gs.tex_max      = (pfn_tex_addr)dkr_glide_symbol("_grTexMaxAddress@4");
+        gs.tex_required = (pfn_tex_req) dkr_glide_symbol("_grTexTextureMemRequired@8");
+        gs.tex_download = (pfn_tex_dl)  dkr_glide_symbol("_grTexDownloadMipMap@16");
+        gs.tex_source   = (pfn_tex_src) dkr_glide_symbol("_grTexSource@16");
+        gs.tex_combine  = (pfn_tex_comb)dkr_glide_symbol("_grTexCombine@28");
+        gs.tex_filter   = (pfn_tex_mode)dkr_glide_symbol("_grTexFilterMode@12");
+        gs.tex_clamp    = (pfn_tex_mode)dkr_glide_symbol("_grTexClampMode@12");
         gs.ready = 1;
+    }
+
+    /* Les bornes de la TMU sont **demandees**, jamais supposees. La mesure a
+       montre `grTexMinAddress` a zero, ce qui interdit de faire de zero un
+       sentinelle — d'ou `DKR_TMU_NONE` a 0xFFFFFFFF. */
+    memset(g_tex, 0, sizeof(g_tex));
+    g_tmu_count = 0;
+    if (gs.tex_min && gs.tex_max) {
+        int i;
+        const int n = (hw_tmu_count() > 2) ? 2 : hw_tmu_count();
+        for (i = 0; i < n; i++) {
+            dkr_tmu_init(&g_tmu[i], i, gs.tex_min(i), gs.tex_max(i),
+                         glide_download, 0);
+        }
+        g_tmu_count = n;
     }
     return 1;
 }
@@ -282,6 +453,13 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
 {
     (void)self;
     b.triangles = 0;
+    {
+        /* L'allocateur doit savoir qu'une image commence : c'est ce qui leve les
+           protections de l'image precedente et remet les compteurs par image a
+           zero. Sans cela, plus rien ne serait jamais evincable. */
+        int i;
+        for (i = 0; i < g_tmu_count; i++) { dkr_tmu_begin_frame(&g_tmu[i]); }
+    }
     dkr_glide_clear(clear_argb);
 }
 
@@ -305,7 +483,8 @@ static void gl_set_state(void *self, const dkr_render_state *state)
     b.current   = *state;
     b.has_state = 1;
 
-    apply_combine(state->combine);
+    apply_combine(state->combine, state->texture);
+    apply_texture_modes(state);
     apply_blend(state->blend);
     apply_depth(state->depth);
     apply_cull(state->cull);
@@ -373,18 +552,121 @@ static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
     gl_draw_triangles(self, v, 2);
 }
 
+/* Traduit (largeur, hauteur) en couple (LOD, rapport d'aspect).
+ *
+ * Glide ne connait pas les dimensions : elle connait la plus grande, et le
+ * rapport. Rend zero si la texture n'est pas exprimable — dimensions qui ne sont
+ * pas des puissances de deux, ou rapport au-dela de 8:1. **Refuser est le bon
+ * comportement** : approcher donnerait une texture lue de travers, ce qui
+ * ressemble a un defaut de coordonnees et se diagnostique tres mal. */
+static int lod_and_aspect(int w, int h, int *lod, int *aspect)
+{
+    int big = (w > h) ? w : h;
+    int small = (w > h) ? h : w;
+    int ratio = 0, k = 0;
+
+    if (w <= 0 || h <= 0 || big > 256) { return 0; }
+    if ((w & (w - 1)) != 0 || (h & (h - 1)) != 0) { return 0; }
+    if (big / small > 8) { return 0; }
+
+    for (k = 0; (256 >> k) != big; k++) {
+        if (k > 8) { return 0; }
+    }
+    *lod = k;
+
+    /* GR_ASPECT_1x1 vaut 3 ; les rapports larges descendent vers 0, les hauts
+       montent vers 6. */
+    ratio = big / small;
+    if (w >= h) {
+        *aspect = (ratio == 1) ? GR_ASPECT_1x1
+                : (ratio == 2) ? 2 : (ratio == 4) ? 1 : GR_ASPECT_8x1;
+    } else {
+        *aspect = (ratio == 2) ? 4 : (ratio == 4) ? 5 : GR_ASPECT_1x8;
+    }
+    return 1;
+}
+
 static dkr_texture_handle gl_texture_upload(void *self,
                                             const dkr_texture_desc *desc)
 {
-    (void)self; (void)desc;
-    /* Zéro, et non un handle bidon : l'appelant doit pouvoir constater que rien
-       n'a été chargé. E05-S02. */
-    return 0;
+    int lod = 0, aspect = 0, i, slot = -1;
+    unsigned int bytes, address;
+    GrTexInfo info;
+
+    (void)self;
+    if (!desc || !desc->pixels || g_tmu_count == 0 || !gs.tex_required) {
+        return 0;
+    }
+    if (!lod_and_aspect(desc->width, desc->height, &lod, &aspect)) {
+        return 0;
+    }
+
+    memset(&info, 0, sizeof(info));
+    info.smallLod    = lod;
+    info.largeLod    = lod;        /* pas de mipmap : E05-S08 */
+    info.aspectRatio = aspect;
+    info.format      = (desc->format == DKR_TEXFMT_INTENSITY8)
+                       ? GR_TEXFMT_INTENSITY_8 : GR_TEXFMT_ARGB_1555;
+    info.data        = (void *)desc->pixels;
+
+    /* **La taille vient de la carte, pas d'un calcul.** La mesure a montre un
+       cas d'arrondi — une texture 1x1 coute 8 octets pour 2 utiles — et empiler
+       d'apres un calcul ferait se recouvrir deux textures. Le symptome ne serait
+       pas une erreur mais un decor portant le motif d'un autre, a un endroit qui
+       depend de l'ordre de chargement. */
+    bytes = gs.tex_required(GR_MIPMAPLEVELMASK_BOTH, &info);
+    if (bytes == 0u) { return 0; }
+
+    for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
+        if (g_tex[i].live && g_tex[i].key == desc->key) { slot = i; break; }
+        if (!g_tex[i].live && slot < 0) { slot = i; }
+    }
+    if (slot < 0) { return 0; }
+
+    /* **On passe par l'allocateur meme quand la texture est deja connue.**
+     *
+     * Rendre directement le handle serait plus rapide et serait un piege : la
+     * date d'usage de la texture n'avancerait jamais, l'allocateur la croirait
+     * abandonnee, et il evincerait au moindre recemment utilise precisement ce
+     * que le jeu emploie a chaque image. Le symptome serait un retelechargement
+     * permanent — donc des a-coups — sur les textures les plus vues.
+     *
+     * `dkr_tmu_acquire` distingue seul le succes du defaut : c'est lui qui tient
+     * les compteurs, et il doit les tenir sur la totalite des demandes. */
+    address = dkr_tmu_acquire(&g_tmu[0], desc->key, &info, bytes);
+    if (address == DKR_TMU_NONE) {
+        g_tex[slot].live = 0;
+        return 0;
+    }
+
+    g_tex[slot].key     = desc->key;
+    g_tex[slot].address = address;
+    g_tex[slot].info    = info;
+    g_tex[slot].info.data = 0;   /* les pixels ne nous appartiennent pas */
+    g_tex[slot].live    = 1;
+    return (dkr_texture_handle)(slot + 1);
 }
 
 static void gl_texture_release(void *self, dkr_texture_handle handle)
 {
-    (void)self; (void)handle;
+    (void)self;
+    if (handle == 0 || handle > GLIDE_MAX_TEXTURES) { return; }
+    /* On oublie le handle sans liberer le bloc : c'est l'allocateur qui decide
+       quand evincer, au moindre recemment utilise, et il le fera mieux que
+       l'appelant. Liberer ici jetterait une texture que l'image suivante
+       redemanderait — le pire regime, ou l'on paie le bus pour rien. */
+    g_tex[handle - 1].live = 0;
+}
+
+/* Lie la texture courante avant le dessin. Sans `grTexSource`, la TMU echantillonne
+   ce qui traine a l'adresse ou elle pointait — donc une autre texture. */
+static void bind_texture(dkr_texture_handle handle)
+{
+    glide_texture *tx;
+    if (handle == 0 || handle > GLIDE_MAX_TEXTURES || !gs.tex_source) { return; }
+    tx = &g_tex[handle - 1];
+    if (!tx->live) { return; }
+    gs.tex_source(GR_TMU0, tx->address, GR_MIPMAPLEVELMASK_BOTH, &tx->info);
 }
 
 void dkr_render_backend_glide(dkr_render_backend *out)
@@ -408,4 +690,10 @@ void dkr_render_backend_glide(dkr_render_backend *out)
 unsigned long dkr_glide_backend_triangle_count(void)
 {
     return b.triangles;
+}
+
+const dkr_tmu *dkr_glide_backend_tmu(int index)
+{
+    if (index < 0 || index >= g_tmu_count) { return 0; }
+    return &g_tmu[index];
 }

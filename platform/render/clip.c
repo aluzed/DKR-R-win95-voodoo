@@ -167,9 +167,12 @@ void dkr_clip_project(const dkr_transform *t, const dkr_clip_vertex *in,
     out->b = in->b;
     out->a = in->a;
     /* Les coordonnées de texture sont divisées ici, pas avant : le rastériseur
-       et Glide attendent `s/w` et `t/w`. */
-    out->tmu[0][DKR_TMU_SOW] = in->s * oow;
-    out->tmu[0][DKR_TMU_TOW] = in->t * oow;
+       et Glide attendent `s/w` et `t/w`.
+       L'échelle de 256 est la convention de Glide, mesurée sur la carte — voir
+       `DKR_TEXCOORD_SCALE` dans `backend.h`. Elle est appliquée ici, une fois
+       par sommet, plutôt que par le backend une fois par triangle. */
+    out->tmu[0][DKR_TMU_SOW] = in->s * DKR_TEXCOORD_SCALE * oow;
+    out->tmu[0][DKR_TMU_TOW] = in->t * DKR_TEXCOORD_SCALE * oow;
     out->tmu[0][DKR_TMU_OOW] = oow;
 }
 

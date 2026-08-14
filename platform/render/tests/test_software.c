@@ -13,6 +13,10 @@
  *
  * Une seule source pour l'hôte et la cible, comme les autres suites du dépôt.
  */
+/* Les coordonnees sont posees dans l'espace de 256 texels de Glide, que le
+   contrat impose — voir `DKR_TEXCOORD_SCALE` dans `backend.h`. Les valeurs
+   attendues, elles, restent normalisees : c'est ce que le rastériseur
+   echantillonne apres division, et c'est ce qui se lit. */
 #include "render/software.h"
 
 #include <stdio.h>
@@ -142,12 +146,12 @@ int main(void)
     v[4].x = 100.0f; v[4].y = 40.0f; v[4].oow = 0.25f;
     v[5] = v[2];
     /* `s/w` et non `s` : c'est ce que porte un sommet, ici comme dans Glide. */
-    v[0].tmu[0][DKR_TMU_SOW] = 0.0f  * 1.0f;
-    v[1].tmu[0][DKR_TMU_SOW] = 1.0f  * 0.25f;
-    v[2].tmu[0][DKR_TMU_SOW] = 0.0f  * 1.0f;
-    v[3].tmu[0][DKR_TMU_SOW] = 1.0f  * 0.25f;
-    v[4].tmu[0][DKR_TMU_SOW] = 1.0f  * 0.25f;
-    v[5].tmu[0][DKR_TMU_SOW] = 0.0f  * 1.0f;
+    v[0].tmu[0][DKR_TMU_SOW] = (0.0f  * 1.0f) * DKR_TEXCOORD_SCALE;
+    v[1].tmu[0][DKR_TMU_SOW] = (1.0f  * 0.25f) * DKR_TEXCOORD_SCALE;
+    v[2].tmu[0][DKR_TMU_SOW] = (0.0f  * 1.0f) * DKR_TEXCOORD_SCALE;
+    v[3].tmu[0][DKR_TMU_SOW] = (1.0f  * 0.25f) * DKR_TEXCOORD_SCALE;
+    v[4].tmu[0][DKR_TMU_SOW] = (1.0f  * 0.25f) * DKR_TEXCOORD_SCALE;
+    v[5].tmu[0][DKR_TMU_SOW] = (0.0f  * 1.0f) * DKR_TEXCOORD_SCALE;
     { int i; for (i = 0; i < 6; i++) { v[i].a = 255.0f; } }
     b.draw_triangles(b.self, v, 2);
 
@@ -181,7 +185,7 @@ int main(void)
             v[2].x =  0.0f; v[2].y = 50.0f;
             { int k; for (k = 0; k < 3; k++) {
                 v[k].oow = 1.0f; v[k].a = 255.0f;
-                v[k].tmu[0][DKR_TMU_SOW] = cases[i].s;
+                v[k].tmu[0][DKR_TMU_SOW] = (cases[i].s) * DKR_TEXCOORD_SCALE;
             } }
             b.draw_triangles(b.self, v, 1);
             {
@@ -211,7 +215,7 @@ int main(void)
     { int k; for (k = 0; k < 3; k++) {
         v[k].oow = 1.0f; v[k].a = 255.0f;
         /* Pile entre le texel 100 et le texel 101 : (100,5)/256. */
-        v[k].tmu[0][DKR_TMU_SOW] = 100.5f / 256.0f;
+        v[k].tmu[0][DKR_TMU_SOW] = (100.5f / 256.0f) * DKR_TEXCOORD_SCALE;
     } }
     b.draw_triangles(b.self, v, 1);
     check_near("bilineaire : la moyenne de deux texels voisins",

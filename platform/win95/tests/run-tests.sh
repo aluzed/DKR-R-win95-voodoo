@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -269,4 +269,18 @@ if [[ "$suite" == "all" || "$suite" == "pipeline" ]]; then
         "$R/clip.c" "$R/transform.c" "$R/software.c"
   echo
   ( cd "$tmp" && "$tmp/test_pipeline" )
+fi
+
+# L'allocateur de TMU. Il ne parle pas a Glide — le transfert passe par un
+# pointeur de fonction — et s'eprouve donc entierement sur l'hote. C'est
+# necessaire : la ROM absente interdit de le verifier en jeu, et la carte ne
+# rend aucun code d'erreur sur ce qu'elle recoit.
+if [[ "$suite" == "all" || "$suite" == "tmu" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_tmu" "$R/tests/test_tmu.c" "$R/tmu.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_tmu" )
 fi

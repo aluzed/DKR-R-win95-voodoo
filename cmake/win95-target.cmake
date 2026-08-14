@@ -590,6 +590,22 @@ dkr_win95_verify(DKRWin95Pipeline)
 # `dkr_render_backend` de E04-S01. Les deux sont séparés à dessein : ouvrir la
 # carte et programmer ses registres d'état sont deux savoirs distincts, et la
 # première moitié doit rester utilisable pour un simple diagnostic.
+add_library(win95tmu STATIC "${DKRPORT_ROOT}/platform/render/tmu.c")
+target_include_directories(win95tmu PUBLIC "${DKRPORT_ROOT}/platform")
+target_link_libraries(win95tmu PUBLIC win95compat)
+
+# L'allocateur s'eprouve entierement sur l'hote : la ROM absente interdit de le
+# verifier en jeu, et la carte ne dit rien de ce qu'elle recoit — ni
+# grTexDownloadMipMap ni grTexSource ne rendent de code d'erreur.
+add_executable(DKRWin95Tmu
+    "${DKRPORT_ROOT}/platform/render/tests/test_tmu.c")
+target_link_libraries(DKRWin95Tmu PRIVATE win95tmu)
+set_target_properties(DKRWin95Tmu PROPERTIES
+    OUTPUT_NAME "TMUTEST"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Tmu)
+
 add_library(win95glide STATIC
     "${DKRPORT_ROOT}/platform/render/glide.c"
     "${DKRPORT_ROOT}/platform/render/glide_backend.c")
@@ -597,7 +613,7 @@ target_include_directories(win95glide PUBLIC
     "${DKRPORT_ROOT}/platform"
     "${DKR_WIN95_PLATFORM}"
     "${DKR_WIN95_PLATFORM}/include-shim")
-target_link_libraries(win95glide PUBLIC win95compat)
+target_link_libraries(win95glide PUBLIC win95compat win95tmu)
 # PUBLIC : `backend.h` ne déclare `dkr_render_backend_glide` que sur cette cible,
 # de sorte qu'un hôte qui compile l'oracle ne puisse pas l'appeler par mégarde.
 # Le témoin doit donc voir la définition, pas seulement la bibliothèque.
@@ -632,6 +648,30 @@ set_target_properties(DKRWin95GlideState PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideState)
+
+# La chaine de texture est silencieuse de bout en bout : ni le telechargement ni
+# la liaison ne rendent de code d'erreur. Ce temoin la verifie de la seule facon
+# possible — en relisant l'image — avec un damier dont les quatre coins portent
+# des couleurs distinctes, de sorte qu'une inversion de s et t se voie.
+add_executable(DKRWin95GlideTexture
+    "${DKR_WIN95_TOOLS}/witnesses/glide_texture_probe.c")
+target_link_libraries(DKRWin95GlideTexture PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95GlideTexture PROPERTIES
+    OUTPUT_NAME "GLTEX"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95GlideTexture)
+
+# La mesure qui a decide de la conception de l'allocateur : granularite, espace
+# adressable, cout reel de chaque taille et de chaque format.
+add_executable(DKRWin95TmuProbe
+    "${DKR_WIN95_TOOLS}/witnesses/tmu_probe.c")
+target_link_libraries(DKRWin95TmuProbe PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95TmuProbe PROPERTIES
+    OUTPUT_NAME "TMU"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95TmuProbe)
 
 # Sur une machine sans carte, `glide2x.dll` affiche sa propre boîte modale
 # pendant le LoadLibrary. Ce témoin a servi à établir qu'aucun signal du registre
@@ -724,6 +764,8 @@ dkr_win95_verify(DKRWin95WideStreamProbe)
 #
 # Les deux tournent avec le compilateur de l'hôte et non celui de la cible.
 enable_testing()
+add_test(NAME DKRWin95Tmu2
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" tmu)
 add_test(NAME DKRWin95Tick64
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" tick64)
 add_test(NAME DKRWin95Threading

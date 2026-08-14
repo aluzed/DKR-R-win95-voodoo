@@ -354,10 +354,14 @@ static void raster_triangle(const dkr_render_vertex *v0,
             z  = -oow;
 
             if (tex) {
+                /* Retour en coordonnees normalisees. Les sommets portent
+                   l'espace de 256 texels de Glide — c'est la carte qui impose
+                   le contrat, et c'est l'oracle qui s'adapte, parce qu'il n'a
+                   pas de contrainte de vitesse. Voir `DKR_TEXCOORD_SCALE`. */
                 s = (w0 * v0->tmu[0][DKR_TMU_SOW] + w1 * v1->tmu[0][DKR_TMU_SOW] +
-                     w2 * v2->tmu[0][DKR_TMU_SOW]) * w;
+                     w2 * v2->tmu[0][DKR_TMU_SOW]) * w * (1.0f / DKR_TEXCOORD_SCALE);
                 t = (w0 * v0->tmu[0][DKR_TMU_TOW] + w1 * v1->tmu[0][DKR_TMU_TOW] +
-                     w2 * v2->tmu[0][DKR_TMU_TOW]) * w;
+                     w2 * v2->tmu[0][DKR_TMU_TOW]) * w * (1.0f / DKR_TEXCOORD_SCALE);
                 texel = sample_texture(tex, s, t, st);
             }
 

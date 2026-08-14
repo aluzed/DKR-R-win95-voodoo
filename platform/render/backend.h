@@ -94,9 +94,31 @@ typedef struct {
 } dkr_render_vertex;
 
 /* Indices dans `tmu[n]`, nommés pour que les sites d'appel se lisent. */
-#define DKR_TMU_SOW 0      /* s/w */
-#define DKR_TMU_TOW 1      /* t/w */
+#define DKR_TMU_SOW 0      /* s/w, dans l'espace de 256 texels — voir ci-dessous */
+#define DKR_TMU_TOW 1      /* t/w, idem */
 #define DKR_TMU_OOW 2      /* 1/w */
+
+/* **Les coordonnées de texture sont dans un espace de 256 texels, toujours.**
+ *
+ * Ce n'est ni [0,1] ni la largeur réelle de la texture, et c'est mesuré, pas
+ * choisi : `glide_texture_probe.c` a essayé les échelles 64, 128, 255, 256 et
+ * 512 sur un damier 64x64 dont les quatre coins portent des couleurs
+ * distinctes. Seules 255 et 256 placent les quatre couleurs aux quatre coins.
+ * Glide normalise donc sur 256 **quelle que soit la taille de la texture**.
+ *
+ * Le contrat retient cette convention plutôt que [0,1] pour une raison de coût :
+ * le facteur est une constante, indépendante de la texture liée. Le backend
+ * Glide reçoit ainsi les sommets tels quels — c'est tout l'intérêt d'avoir
+ * calqué `GrVertex` champ pour champ — et c'est le rastériseur de référence, qui
+ * n'a pas de contrainte de vitesse, qui divise pour retrouver du [0,1].
+ *
+ * L'inverse aurait imposé une copie de chaque sommet avant chaque triangle, sur
+ * une machine où le poste de transformation coûte déjà 0,682 µs par sommet.
+ *
+ * Le piège que cela ferme : les deux backends ne parlaient pas la même langue —
+ * le rastériseur échantillonnait en [0,1], la carte en 256 — et la comparaison
+ * de E09-S02 ne l'a pas vu, faute de texture dans la scène. */
+#define DKR_TEXCOORD_SCALE 256.0f
 
 /* --- L'état de rendu ------------------------------------------------------- *
  *
@@ -287,6 +309,10 @@ void dkr_render_backend_software(dkr_render_backend *out);
 #if defined(DKR_TARGET_WIN95)
 void dkr_render_backend_glide(dkr_render_backend *out);
 unsigned long dkr_glide_backend_triangle_count(void);
+/* L'etat de l'allocateur de TMU, pour l'affichage de diagnostic de E08-S01.
+   Rend NULL si la TMU demandee n'existe pas. */
+struct dkr_tmu;
+const struct dkr_tmu *dkr_glide_backend_tmu(int index);
 #endif
 
 #ifdef __cplusplus

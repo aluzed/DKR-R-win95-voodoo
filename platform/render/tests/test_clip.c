@@ -158,9 +158,16 @@ int main(void)
         dkr_clip_project(&t, &cv, &rv);
         check_near("x ecran apres division", rv.x, 50.0 / 100.0 * 320.0 + 320.0, 0.01);
         check_near("1/w",                    rv.oow, 0.01, 0.00001);
-        /* Le rasteriseur et Glide attendent s/w, pas s. */
-        check_near("s est divise par w",     rv.tmu[0][DKR_TMU_SOW], 2.0 / 100.0, 0.0001);
-        check_near("t aussi",                rv.tmu[0][DKR_TMU_TOW], 4.0 / 100.0, 0.0001);
+        /* Le rasteriseur et Glide attendent s/w, pas s — et dans l'espace de
+           256 texels que la carte impose. L'echelle est appliquee ici, une fois
+           par sommet, plutot que par le backend une fois par triangle : voir
+           `DKR_TEXCOORD_SCALE` dans `backend.h`, ou la mesure est rapportee.
+           Cette epreuve verifiait la division sans l'echelle, et c'est le
+           changement de contrat qui l'a fait echouer, non une regression. */
+        check_near("s est divise par w, dans l'espace de 256 texels",
+                   rv.tmu[0][DKR_TMU_SOW], 2.0 / 100.0 * 256.0, 0.001);
+        check_near("t aussi",
+                   rv.tmu[0][DKR_TMU_TOW], 4.0 / 100.0 * 256.0, 0.001);
     }
 
     /* --- Faces arriere ------------------------------------------------------ *
