@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -173,4 +173,23 @@ if [[ "$suite" == "all" || "$suite" == "saves" ]]; then
     echo "  -- save_manager, $label --"
     ( cd "$tmp" && "$tmp/save_manager" )
   done
+fi
+
+# --- E04-S08 : le rasteriseur logiciel de reference ---------------------------
+#
+# L'oracle du rendu. Chaque controle compare un pixel relu a une valeur calculee
+# analytiquement, parce qu'un oracle qu'on verifie a l'oeil n'est pas un oracle :
+# sa valeur entiere tient dans la confiance qu'on lui accorde, et « ca a l'air
+# juste » ne se transmet pas.
+#
+# Le meme binaire construit pour la cible tourne sur la machine, et les deux
+# rendent les memes octets.
+if [[ "$suite" == "all" || "$suite" == "render" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_software" "$R/tests/test_software.c" "$R/software.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_software" )
 fi

@@ -458,6 +458,28 @@ add_library(win95renderbackend STATIC
 target_include_directories(win95renderbackend PUBLIC
     "${DKRPORT_ROOT}/platform/render")
 
+# --- Rastériseur logiciel de référence (E04-S08) ------------------------------
+#
+# L'oracle. Quand une image sera fausse en Glide, il faudra savoir si l'erreur
+# vient du décodeur ou du backend ; avec un second backend implémentant la même
+# interface, la question se tranche en une exécution.
+#
+# Il a le droit d'être lent et pas celui d'être compliqué : sa valeur entière
+# tient dans la confiance qu'on lui accorde comme référence, et un rastériseur
+# optimisé est un rastériseur dont il faut à son tour vérifier la justesse.
+add_library(win95software STATIC "${DKRPORT_ROOT}/platform/render/software.c")
+target_link_libraries(win95software PUBLIC win95renderbackend)
+
+add_executable(DKRWin95SoftRaster
+    "${DKRPORT_ROOT}/platform/render/tests/test_software.c")
+target_include_directories(DKRWin95SoftRaster PRIVATE "${DKRPORT_ROOT}/platform")
+target_link_libraries(DKRWin95SoftRaster PRIVATE win95software)
+set_target_properties(DKRWin95SoftRaster PROPERTIES
+    OUTPUT_NAME "SOFTRAS"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95SoftRaster)
+
 # --- Amorçage Glide (E05-S01) -------------------------------------------------
 #
 # La couche qui ouvre la carte 3dfx et rend la main : détection, contexte,
@@ -558,6 +580,13 @@ add_test(NAME DKRWin95FileIO
 # montage qui a pris l'écart de contrat de `create_directories`.
 add_test(NAME DKRWin95Saves
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" saves)
+
+# `render` (E04-S08) construit le rastériseur de référence avec le compilateur de
+# l'hôte et l'exécute. Le même binaire construit pour la cible tourne sur la
+# machine, et les deux rendent les **mêmes octets** — vérifié. C'est ce qui
+# autorise à comparer une image produite ici à une image produite là-bas.
+add_test(NAME DKRWin95Render
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" render)
 
 # Épreuve du vérificateur. Avec cette option, une unité de compilation est
 # ajoutée et compilée en SSE : le contrôle post-lien doit alors faire échouer

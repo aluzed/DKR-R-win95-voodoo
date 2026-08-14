@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
+| **Statut** | IN_PROGRESS |
 | **Priorité** | P1 |
 | **Estimation** | L |
 | **Dépend de** | E04-S01, E04-S05, E02-S06 |
@@ -61,15 +61,31 @@ backend est un instrument de mesure, pas un mode de jeu.
 
 ## Critères d'acceptation
 
-- [ ] Le rastériseur implémente l'interface de E04-S01 sans dépendance à Glide.
-- [ ] L'interpolation perspective est correcte, vérifiée sur une surface texturée
-      vue en oblique.
-- [ ] Les modes d'échantillonnage et de filtrage de E04-S06 sont couverts.
-- [ ] Le combineur du RDP est implémenté fidèlement, sans contrainte de matériel.
-- [ ] Profondeur, mélange et test alpha fonctionnent.
-- [ ] Le jeu affiche une image reconnaissable : écran-titre, menu, et une course.
-- [ ] Les images produites sont enregistrables en fichier.
-- [ ] Il fonctionne sur l'hôte moderne et sur la cible.
+- [x] Le rastériseur implémente l'interface de E04-S01 sans dépendance à Glide.
+- [x] L'interpolation perspective est correcte, vérifiée sur une surface texturée
+      vue en oblique — **mesurée** contre la valeur analytique : 0,2039 pour 0,20
+      attendu. L'auto-test a corrigé le contrôle au passage : l'oubli de la
+      division ne donne pas 0,50 mais 0,125, de sorte que la première version
+      passait sur un rastériseur cassé.
+- [~] Les modes d'échantillonnage et de filtrage sont couverts — répétition,
+      bornage, miroir, point et bilinéaire, chacun vérifié à une coordonnée
+      connue. **Mais E04-S06 est encore `TODO`** : la liste des modes que DKR
+      emploie réellement n'existe pas, et ce qui est couvert est ce que
+      l'interface définit, pas ce que le jeu demande.
+- [~] Le combineur est implémenté fidèlement, sans contrainte de matériel — pour
+      les quatre modes de l'interface. **Le combineur du RDP a deux étages à
+      quatre entrées**, et l'inventaire de ce que DKR en emploie est le travail
+      de E04-S06.
+- [x] Profondeur, mélange et test alpha fonctionnent — la profondeur y compris
+      son **indépendance à l'ordre d'émission**, qu'un tampon de profondeur
+      promet et qu'on oublie facilement de vérifier.
+- [ ] Le jeu affiche une image reconnaissable : écran-titre, menu, et une course —
+      **bloqué** par E02-S06, qui demande la ROM.
+- [x] Les images produites sont enregistrables en fichier — BMP 24 bits, en-tête
+      et dimensions relus par la suite.
+- [x] Il fonctionne sur l'hôte moderne et sur la cible, et les deux produisent des
+      fichiers **identiques octet pour octet** — ce qui autorise à comparer une
+      image produite ici à une image produite là-bas.
 
 ## Risques
 
