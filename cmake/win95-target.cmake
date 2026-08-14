@@ -445,6 +445,31 @@ set_target_properties(DKRWin95SaveInterchange PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95SaveInterchange)
 
+# --- Amorçage Glide (E05-S01) -------------------------------------------------
+#
+# La couche qui ouvre la carte 3dfx et rend la main : détection, contexte,
+# tampons, présentation, fermeture. Elle n'implémente pas l'interface de backend
+# de E04-S01 — celle-ci n'existe pas encore — et E05-S01 n'est donc pas terminé.
+add_library(win95glide STATIC "${DKRPORT_ROOT}/platform/render/glide.c")
+target_include_directories(win95glide PUBLIC
+    "${DKRPORT_ROOT}/platform"
+    "${DKR_WIN95_PLATFORM}"
+    "${DKR_WIN95_PLATFORM}/include-shim")
+target_link_libraries(win95glide PUBLIC win95compat)
+
+# Le témoin exerce la couche dans l'ordre où le moteur l'emploiera, et mesure la
+# cadence sur cent images. Son mode « crash » éprouve la restitution de
+# l'affichage après un arrêt anormal — sur une Voodoo passthrough, une fermeture
+# manquée laisse l'écran noir jusqu'au redémarrage.
+add_executable(DKRWin95GlideProbe
+    "${DKR_WIN95_TOOLS}/witnesses/glide_backend_probe.c")
+target_link_libraries(DKRWin95GlideProbe PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95GlideProbe PROPERTIES
+    OUTPUT_NAME "GLIDEBK"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95GlideProbe)
+
 # --- Sonde de la coupure de courant (E02-S05) ---------------------------------
 #
 # Ce que la séquence d'écriture durable promet n'est pas « on ne perd jamais la
