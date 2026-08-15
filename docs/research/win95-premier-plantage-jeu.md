@@ -611,3 +611,41 @@ dernière **bloquant** le fil graphique du jeu, puisque DKR y envoie ses tâches
 
 Ce qui reste établi et non expliqué : `curRDPTask` est toujours renseigné quand
 nous déposons le bord DP, et nul quand le jeu le traite.
+
+## Huitième élimination, et une contradiction qui tient
+
+Si `curRDPTask` est renseigné au dépôt et nul au traitement, et que seul
+`__scHandleRDP` l'efface, alors un autre bord DP a dû être traité entre les deux
+— donc en attendre un dans la file.
+
+Compté directement, en parcourant les messages vivants de la file invitée à
+chaque dépôt : **aucun bord DP n'est jamais déjà en attente**. Zéro collision sur
+toute l'exécution.
+
+La contradiction tient donc, et elle est maintenant précise :
+
+- `curRDPTask` est non nul à **chaque** dépôt du bord DP ;
+- aucun second bord DP n'attend jamais dans la file ;
+- `__scHandleRDP` le trouve pourtant nul.
+
+Aucune des trois affirmations n'est une supposition : chacune est mesurée.
+
+### Une erreur d'affichage dans la sonde, sans conséquence sur la conclusion
+
+Les valeurs relevées — `0x405F1280`, `0xB05F1280` — ne ressemblent pas à des
+pointeurs KSEG0, qui commencent par `0x80`. Inversées, elles donnent
+`0x80125F40` : mon inversion d'octets était à l'envers dans l'affichage.
+
+La conclusion « non nul » ne dépend pas de l'ordre des octets et tient donc. Mais
+la valeur imprimée était fausse, et je ne l'ai remarqué qu'en relisant. Une sonde
+qui affiche une valeur invraisemblable mérite qu'on s'arrête sur
+l'invraisemblance avant de se servir du résultat — c'est ce qui avait sauvé la
+mesure Z contre W, où un profil impossible avait révélé un artefact de mise en
+route.
+
+### Ce qu'il faut mesurer ensuite
+
+La seule façon de trancher est de voir la case changer. Une surveillance
+échantillonnée de `gMainSched + 0x278` à chaque bascule de fil invité donnerait la
+chronologie exacte de son passage à zéro — c'est plus intrusif que tout ce qui a
+été fait ici, et c'est désormais la seule question ouverte.
