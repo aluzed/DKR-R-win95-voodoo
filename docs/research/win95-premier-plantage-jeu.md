@@ -154,10 +154,51 @@ rapport devient lisible sans attacher un débogueur à une machine qui n'en a pa
 et `0x400` en `+20`, ressemblent à des tailles ou des drapeaux, pas à des
 pointeurs de file ou de tâche.
 
-`curRSPTask` nul n'est donc pas un accident isolé : **rien n'est renseigné dans
-cette structure**. Ce n'est pas une interruption de trop ni une course, c'est un
-planificateur qui n'a jamais été rempli — ou une adresse qui n'est pas celle que
-le jeu croit.
+> **Cette lecture était fausse, et la correction vaut d'être gardée.** Un
+> `OSSched` commence par ses deux modèles de message — `retraceMsg` et
+> `prenmiMsg`, 32 octets chacun — puis une file, un tampon, une seconde file, un
+> second tampon, et un `OSThread` embarqué de 432 octets. `curRSPTask` vit à
+> l'offset **0x274**. Les soixante-quatre octets vidés ne montraient donc que
+> l'en-tête, et conclure « la structure est vide » revenait à conclure sur autre
+> chose que ce qu'on regardait. Le vidage couvre désormais 640 octets.
+
+L'adresse est la bonne : `eax` vaut `0x024814D4`, soit exactement
+`gMainSched + 0x274` une fois retranchée la base RDRAM. Le code lisait bien
+`curRSPTask`.
+
+## L'état réel du planificateur
+
+Vidé jusqu'à l'offset 0x280, et lu en inversant chaque mot — la RDRAM invitée est
+stockée en octets inversés côté hôte :
+
+| Offset | Champ | Valeur |
+|---|---|---|
+| 0x260 | `clientList` | **0x80116220** |
+| 0x264 | `audioListHead` | 0 |
+| 0x268 | `gfxListHead` | 0 |
+| 0x26C | `audioListTail` | 0 |
+| 0x270 | `gfxListTail` | 0 |
+| 0x274 | `curRSPTask` | 0 |
+| 0x278 | `curRDPTask` | 0 |
+
+**Le planificateur est bien initialisé** : `clientList` pointe sur un client
+enregistré, et l'`OSThread` embarqué est en place. Ce n'est donc ni une structure
+vide ni une mauvaise adresse.
+
+Mais **les quatre listes de tâches sont vides**, en plus des deux tâches
+courantes. Le message de fin de tâche RSP est arrivé alors que le planificateur
+n'avait de tâche **nulle part** — ni en cours, ni en attente.
+
+Cela déplace la question. Elle n'est plus « pourquoi `curRSPTask` a-t-il été
+effacé » mais **« pourquoi le RSP a-t-il démarré une tâche que le planificateur
+n'a jamais prise dans sa file de commandes »**.
+
+Or `submit_rsp_task` n'est appelé que depuis `osSpTaskStart` de librecomp, et
+dans libultra seul `__scExec` l'appelle — après avoir retiré la tâche de `cmdQ`
+et l'avoir chaînée dans une des listes. Les listes étant vides, `__scExec` n'a pas
+tourné.
+
+Quelque chose démarre donc la tâche sans passer par le planificateur.
 
 Les deux pistes qui restent, dans l'ordre où elles se testent :
 

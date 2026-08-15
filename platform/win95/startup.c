@@ -175,16 +175,28 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
            plausible et dont l'ecart avec l'adresse touchee redonne du KSEG0. */
         const DWORD base = c->Ebp;
         int r;
+        int vides = 0;
         for (r = 0; r < 6; r++) {
             const DWORD v = regs[r];
             if ((v & 0xFF000000u) != 0x80000000u) { continue; }
+            if (vides++ > 0) { break; }
             {
                 const unsigned char *p =
                     (const unsigned char *)(base + (v - 0x80000000u));
                 unsigned i;
+                /* **Assez loin pour atteindre les champs qui comptent.**
+                 *
+                 * Une premiere version n'en vidait que quatre lignes, et cela a
+                 * induit en erreur : les seize premiers mots d'un `OSSched` sont
+                 * ses deux modeles de message, et `curRSPTask` vit a l'offset
+                 * 0x274. Conclure « la structure est vide » sur son en-tete,
+                 * c'est conclure sur autre chose que ce qu'on regarde.
+                 *
+                 * Quarante lignes couvrent 640 octets, ce qui suffit pour les
+                 * structures du systeme d'exploitation de la N64. */
                 sprintf(buf, "  %s -> 0x%08lX :", noms[r], (unsigned long)v);
                 dkr_win95_log(buf);
-                for (i = 0; i < 4; i++) {
+                for (i = 0; i < 40; i++) {
                     /* Gros-boutiste : la RDRAM invitee est stockee telle quelle,
                        et l'afficher en petit-boutiste rendrait les pointeurs
                        meconnaissables. */
