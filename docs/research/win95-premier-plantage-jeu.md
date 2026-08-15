@@ -342,3 +342,39 @@ drainée à intervalle régulier**, mais opportunément, quand un fil invité se
 attente. Toute politique de dépôt qui suppose un drainage périodique est donc
 fausse par construction. La bonne forme reste à trouver — probablement en
 réservant des places plutôt qu'en écartant des messages.
+
+## Réserver des places plutôt qu'écarter des messages
+
+La forme correcte était contrainte par l'échec précédent : ne rien retenir entre
+deux passages, puisque notre file externe n'est pas drainée à intervalle
+régulier.
+
+On regarde donc l'état réel de la file invitée **au moment du dépôt**. Si moins
+de deux places restent libres, un retrace n'est pas déposé. Sur le matériel, un
+retrace levé alors que la file est pleine est perdu de la même façon —
+`osSendMesg` y est appelé sans blocage depuis l'interruption.
+
+### Ce que cela change
+
+| | avant | après |
+|---|---|---|
+| tâches soumises | 1 | **170** |
+| bords SP | 1 | **169** |
+| bords DP | 0 | **61** |
+| listes d'affichage | 0 | **547** |
+| voix audio normalisées | 0 | **17** |
+| images présentées | ~780 | **3540** |
+
+Le jeu fait tourner son moteur audio et **soumet des listes d'affichage**. C'est
+le premier moment de ce portage où DKR fait réellement son travail sur Windows 95.
+
+Le plantage subsiste, plus loin, dans `__scHandleRDP` — mais après 170 tâches au
+lieu d'une.
+
+### Ce que la trace disait, et qu'il fallait savoir lire
+
+La saturation ne se voyait pas dans les compteurs de haut niveau : une seule
+tâche soumise, un seul bord SP, tout paraissait cohérent. Elle ne s'est révélée
+qu'en comptant **les dépôts effectifs dans la file invitée**, et en donnant à
+chaque valeur de message son propre plafond de trace — sans quoi le retrace,
+soixante fois par seconde, dévorait le budget avant que l'intéressant n'arrive.

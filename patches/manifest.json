@@ -101,6 +101,10 @@
         {
           "path": "patches/n64-modern-runtime/0024-deliver-sp-and-dp-ahead-of-retrace.patch",
           "sha256": "09287e84e8fbe898dbf5e5e9193fc603943bad9cf0dfe12369cc825e9975c90e"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0025-reserve-queue-slots.patch",
+          "sha256": "303c658d7715dddd139b5df55fcc0e156cca7cf820d16f67d60dc6cca2e60dda"
         }
       ]
     },
