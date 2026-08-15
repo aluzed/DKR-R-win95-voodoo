@@ -213,6 +213,43 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
         }
     }
 
+    /* **La pile hote, pour la chaine d'appel.**
+     *
+     * Windows 95 n'a pas `StackWalk64`, et le code recompile n'a pas de cadre de
+     * pile exploitable : `-fomit-frame-pointer` est la regle sur des fonctions
+     * engendrees par centaines de milliers. Reste le procede le plus ancien et
+     * le plus robuste — parcourir la pile et retenir tout ce qui ressemble a une
+     * adresse de code.
+     *
+     * Ce n'est pas une pile d'appels exacte : il y traine des valeurs mortes de
+     * cadres precedents. Mais sur une faute dont on ignore par ou l'on est
+     * arrive, une liste de candidats vaut infiniment mieux que rien, et les
+     * adresses se resolvent hors ligne avec `nm` sur l'executable. */
+    if (info->ContextRecord != NULL) {
+        const CONTEXT *c = info->ContextRecord;
+        const DWORD *sp = (const DWORD *)c->Esp;
+        DWORD base = 0, taille = 0;
+        MEMORY_BASIC_INFORMATION mbi;
+        /* Les bornes du code : sans elles on retiendrait n'importe quel entier. */
+        if (VirtualQuery((LPCVOID)(ULONG_PTR)c->Eip, &mbi, sizeof(mbi))) {
+            base = (DWORD)(ULONG_PTR)mbi.AllocationBase;
+            taille = 0x00A00000u;         /* l'image tient largement dedans */
+        }
+        if (base != 0) {
+            unsigned i, trouves = 0;
+            dkr_win95_log("  pile (adresses de code plausibles) :");
+            for (i = 0; i < 256u && trouves < 16u; i++) {
+                const DWORD v = sp[i];
+                if (v > base && v < base + taille) {
+                    sprintf(buf, "    esp+%03X  0x%08lX",
+                            i * 4u, (unsigned long)v);
+                    dkr_win95_log(buf);
+                    trouves++;
+                }
+            }
+        }
+    }
+
     /* `EXCEPTION_ILLEGAL_INSTRUCTION` merite un mot : sur cette cible, c'est le
        symptome d'une instruction posterieure au Pentium II qui aurait echappe au
        controle de E01-S01. L'ecrire ici epargne une heure de recherche. */

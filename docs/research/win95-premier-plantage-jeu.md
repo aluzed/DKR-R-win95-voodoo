@@ -211,3 +211,57 @@ Les deux pistes qui restent, dans l'ordre où elles se testent :
 
 La seconde est bon marché à écarter : la trace montre qu'aucune tâche graphique
 n'a encore été soumise au moment de la faute.
+
+## Deux hypothèses de plus, éliminées
+
+**Les messages SP et DP sont distinguables.** Le planificateur enregistre une
+file et un message par événement ; s'ils portaient la même valeur, le jeu
+traiterait une fin de DP comme une fin de RSP et entrerait deux fois dans
+`__scHandleRSP` — dont le premier passage efface `curRSPTask` avant de le
+déréférencer. C'était une explication complète du plantage. Elle est fausse :
+
+    sp.mq=0x801212A0 sp.msg=0x0000029B
+    dp.mq=0x801212A0 dp.msg=0x0000029C
+
+Files identiques — c'est bien l'`interruptQ`, à `gMainSched + 0x40` — mais
+messages distincts.
+
+**`__scExec` écrit bien `curRSPTask`.** Le code recompilé, à l'adresse invitée
+0x8007A030, fait le stockage **dans le créneau de retard** d'un `bne`, donc sur
+les deux chemins :
+
+    bne  $s0, $s1, L_8007A038
+    sw   $s0, 0x274($t9)      <- créneau de retard, exécuté quoi qu'il arrive
+
+Le champ est donc renseigné après le démarrage de la tâche.
+
+## La pile, et ce qu'elle établit
+
+Windows 95 n'a pas `StackWalk64`, et le code recompilé n'a pas de cadre de pile
+exploitable. Le rapport parcourt donc la pile et retient ce qui ressemble à une
+adresse de code — pas une pile d'appels exacte, mais une liste de candidats, ce
+qui vaut infiniment mieux que rien quand on ignore par où l'on est arrivé.
+
+    0x006AB6A6  __scMain + 0x466
+    0x00777101  run_thread_function + 0xE1
+    0x007D9DFA  _thread_func + 0x21A
+    0x00866CBF  dkr::win95::thread::entry<...> + 0x2F
+    0x00834C01  dkr_thread_trampoline + 0x21
+
+La chaîne est confirmée : `__scHandleRSP` est bien appelé depuis `__scMain`, sur
+le fil du planificateur, lui-même porté par la couche de threads de E02-S01.
+
+## Ce qui reste, et pourquoi c'est maintenant le suspect principal
+
+Le compte est le suivant : une soumission, un `sp_complete` de notre côté, des
+messages distinguables, un `curRSPTask` écrit après le démarrage — et pourtant
+`__scHandleRSP` le trouve nul.
+
+Cela ne laisse qu'une possibilité : **le jeu reçoit le message plus d'une fois**.
+Notre trace compte nos appels à `sp_complete`, pas les messages effectivement
+déposés dans la file invitée. Un dépôt en double serait invisible pour elle.
+
+Le correctif 0013 de ce portage remplace précisément le transport des messages
+externes par une file « fiable ». C'est là qu'il faut regarder, et la mesure à
+faire est simple : compter les dépôts dans la file invitée, et non les appels qui
+les demandent.
