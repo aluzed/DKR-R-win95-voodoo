@@ -96,15 +96,11 @@
         },
         {
           "path": "patches/n64-modern-runtime/0023-count-guest-queue-deposits.patch",
-          "sha256": "d7802538a7c82bad91a438cfa9fc4d80220e19803a562665b64219b49010e402"
+          "sha256": "f90f0905cf3ac9aab7dbc08ce169b0ebf0a799fb868d3b661a0bb5b31021811c"
         },
         {
-          "path": "patches/n64-modern-runtime/0024-deliver-sp-and-dp-ahead-of-retrace.patch",
-          "sha256": "09287e84e8fbe898dbf5e5e9193fc603943bad9cf0dfe12369cc825e9975c90e"
-        },
-        {
-          "path": "patches/n64-modern-runtime/0025-reserve-queue-slots.patch",
-          "sha256": "303c658d7715dddd139b5df55fcc0e156cca7cf820d16f67d60dc6cca2e60dda"
+          "path": "patches/n64-modern-runtime/0024-priority-and-reserved-slots.patch",
+          "sha256": "557b303d68a67812877ec219dfbfb6f8f90d7498a9008c7b0c638c64151db745"
         }
       ]
     },

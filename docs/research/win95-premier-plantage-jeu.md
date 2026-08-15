@@ -415,3 +415,36 @@ trace sait déjà faire.
 
 Ce qui est acquis en revanche : le jeu soumet 547 listes d'affichage et fait
 tourner son moteur audio avant d'y arriver.
+
+## La famine est entièrement résorbée, et ce n'est plus l'explication
+
+Les totaux par message, sur toute l'exécution :
+
+| message | déposés | refusés | remis |
+|---|---|---|---|
+| retrace | 2984 | **0** | 0 |
+| SP | 1274 | **0** | 0 |
+| DP | 545 | **0** | 0 |
+
+**Plus un seul refus.** L'hypothèse d'une famine résiduelle sur le bord DP est
+donc éliminée : il n'est jamais écarté. Et 545 bords DP pour 550 listes
+d'affichage est cohérent — pas de doublement non plus.
+
+Restent donc les causes 1 et 2 : un bord DP émis pour une tâche que le jeu n'a
+pas enregistrée comme ayant besoin du RDP, ou une course où le jeu efface
+`curRDPTask` par un autre chemin avant que notre message n'arrive.
+
+### Une fausse alerte, et toujours la même cause
+
+Un instant, les chiffres ont paru accuser une multiplication : 1274 dépôts du
+message SP pour 172 appels à `sp_complete`. C'était un artefact.
+
+Les lignes `[trace][sp]` cessent d'être imprimées au-delà de quelques centaines
+d'événements ; leur dernier affichage montre donc l'état à ce moment-là, pas le
+total. Je comparais **un compteur plafonné à un compteur libre**.
+
+C'est la troisième fois de cette enquête qu'un artefact de mesure imite un
+défaut, et les trois fois la cause est la même : deux grandeurs comparées sans
+que leurs budgets d'observation le soient. La trace garde désormais les deux
+formes — les premières occurrences pour la chronologie, les totaux périodiques
+pour le reste de l'exécution.

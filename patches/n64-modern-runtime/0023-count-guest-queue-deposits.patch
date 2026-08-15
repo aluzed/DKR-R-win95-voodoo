@@ -1,38 +1,122 @@
 From: DKR-R Win95 port
-Subject: [PATCH] Count deposits into the guest queue, not the calls that ask
+Subject: [PATCH] Count deposits into the guest queue, per message and in total
 
 The trace in events.cpp counts calls to sp_complete. It cannot see what happens
 here: a message that fails to land is requeued when its source allows retrying,
 and this is the only place a duplicate deposit could be born.
 
 It answered a different question than the one asked, which is the usual way an
-instrument earns its keep. The scheduler's interrupt queue **saturates**: the
-retrace message is deposited eight times -- OS_SC_MAX_MESGS -- and then refused.
-Refusals are silent drops, retrace having no retry. Five messages were lost over
-sixty frames. A game that counts retraces to pace itself will see time advance in
-jerks, quite apart from the crash under investigation.
+instrument earns its keep. The scheduler's interrupt queue saturates: the retrace
+message was deposited eight times -- OS_SC_MAX_MESGS -- and then refused, with
+refusals being silent drops. That starvation is what delayed the RSP completion
+edge past the point where the game had given up on the task.
 
-The per-message cap matters more than it looks. A single global cap let the most
-frequent event eat the whole budget: retrace at sixty per second consumed forty
-events before the SP edge arrived, and the log then read "the SP message is never
-deposited" where it should have read "it has not been looked at yet". The cap is
-now per message value, which keeps rare events visible when a frequent one
-floods.
+Two lessons are built into the shape of this trace.
+
+A single global cap lets the most frequent event eat the whole budget: retrace at
+sixty per second consumed forty events before the SP edge arrived, and the log
+then read "the SP message is never deposited" where it should have read "it has
+not been looked at yet". The cap is therefore per message value.
+
+And a cap answers the first seconds while a total answers the whole run. The
+per-message cap showed the starvation and then went quiet, exactly when the
+remaining question -- is the DP edge refused, and when? -- needed the rest of the
+run. Both are kept: first occurrences for the chronology, periodic totals that
+cannot be drowned.
 
 Off unless DKR_TRACE_SP is set.
 
 diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
 --- a/ultramodern/src/mesgqueue.cpp
 +++ b/ultramodern/src/mesgqueue.cpp
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++#include <algorithm>
 +#include <cstdio>
 +#include <cstdlib>
  #include <array>
  #include <bitset>
  #include <chrono>
-@@ -174,6 +176,48 @@
+@@ -24,6 +27,10 @@
+     bool jam;
+     bool requeue_if_blocked;
+     std::shared_ptr<MessageDeliveryState> delivery;
++    // La source est deja portee par `delivery`, mais seulement quand il y en a
++    // une. Elle est necessaire ici pour ordonner la delivrance, y compris pour
++    // les messages sans attente — le retrace, precisement.
++    ultramodern::EventMessageSource source = ultramodern::EventMessageSource::Vi;
+ };
+ 
+ // This queue is the wakeup path for emulated hardware events. A conventional
+@@ -145,7 +152,7 @@
+     auto delivery = std::make_shared<MessageDeliveryState>();
+     delivery->source = src;
+     external_messages.enqueue({
+-        mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery});
++        mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery, src});
+     ultramodern::unique_lock lock{ delivery->mutex };
+     while (!delivery->complete && !exited.load()) {
+         delivery->condition.wait_for(lock, std::chrono::milliseconds{1});
+@@ -172,8 +179,126 @@
+     }
+     QueuedMessage to_send;
      std::vector<QueuedMessage> requeued_messages{};
++
++    // **Servir les bords SP et DP avant les autres.**
++    //
++    // La file d'interruptions du planificateur de la N64 tient huit messages.
++    // Nous y deposons un retrace par image ; le jeu ne les consomme pas toujours
++    // aussi vite, et la file sature. Mesure sur Windows 95 : le message de fin
++    // de tache RSP a ete refuse, remis en file, et depose neuf refus plus tard.
++    //
++    // Le jeu, lui, n'attend pas : quelques images sans reponse et son
++    // planificateur abandonne la tache et remet `curRSPTask` a nul. Notre
++    // message arrive apres, et `__scHandleRSP` dereference un pointeur nul.
++    //
++    // Sur le materiel, une interruption SP et un retour de balayage sont deux
++    // evenements independants dont l'ordre relatif n'est pas garanti. Les servir
++    // en premier est donc fidele, et cela suffit a les sortir de la famine. Leur
++    // ordre entre eux est preserve — c'est celui-la que le jeu observe.
++    {
++        std::vector<QueuedMessage> tous{};
++        while (external_messages.try_dequeue(to_send)) {
++            tous.push_back(to_send);
++        }
++        std::stable_partition(tous.begin(), tous.end(), [](const QueuedMessage& m) {
++            return m.source == ultramodern::EventMessageSource::Sp ||
++                   m.source == ultramodern::EventMessageSource::Dp;
++        });
++        for (QueuedMessage& m : tous) {
++            external_messages.enqueue(m);
++        }
++    }
++
      while (external_messages.try_dequeue(to_send)) {
++        // **Reserver deux places pour ce qui ne peut pas etre perdu.**
++        //
++        // La file d'interruptions du planificateur tient huit messages et sert a
++        // la fois nos retraces, nos bords SP et DP, et — par la file de
++        // commandes que `__scHandleRetrace` draine — le demarrage des taches du
++        // jeu. Un retrace de trop y prend la place d'une fin de tache.
++        //
++        // Une premiere tentative refusait le depot d'un retrace tant que le
++        // precedent n'etait pas delivre. Elle a bloque le demarrage : notre file
++        // externe n'est pas drainee a intervalle regulier mais **opportunement**,
++        // quand un fil invite se met en attente, et le drapeau restait pose. Une
++        // politique qui suppose un drainage periodique est fausse par
++        // construction ici.
++        //
++        // On regarde donc l'etat reel de la file invitee au moment du depot,
++        // sans rien retenir entre deux passages. Sur le materiel, un retrace
++        // emis alors que la file est pleine est perdu de la meme facon —
++        // `osSendMesg` y est appele sans blocage depuis l'interruption.
++        if (to_send.source == ultramodern::EventMessageSource::Vi &&
++            to_send.mq != NULLPTR) {
++            const OSMesgQueue* q = TO_PTR(OSMesgQueue, to_send.mq);
++            if (q->msgCount > 2 && q->validCount >= q->msgCount - 2) {
++                complete_delivery(to_send.delivery);
++                continue;
++            }
++        }
          const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
 +        // **Compter les depots, pas les demandes.**
 +        //
@@ -67,6 +151,18 @@ diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
 +            if (k == nb_vus && nb_vus < 8u) {
 +                vus[nb_vus][0] = val; vus[nb_vus][1] = 1; nb_vus++; compte = 1;
 +            }
++            // **Un plafond repond aux premieres secondes ; un total repond a
++            // toute l'execution.** Le plafond par message a montre que le bord
++            // SP etait affame, puis n'a plus rien montre : les refus tardifs
++            // tombaient au-dela. Or la question restante porte justement sur le
++            // bord DP, qui n'echoue qu'apres cent soixante-dix taches.
++            //
++            // On garde donc les deux : les premieres occurrences, qui donnent la
++            // chronologie du demarrage, et un resume periodique des totaux, qui
++            // ne peut pas etre noye.
++            static unsigned tot[8][3];
++            unsigned issue = sent ? 0u : (to_send.requeue_if_blocked ? 2u : 1u);
++            if (k < 8u) { tot[k][issue]++; }
 +            if (compte <= 4u) {
 +                std::fprintf(stderr,
 +                             "[trace][mq] mq=0x%08X msg=0x%08X %s"
@@ -74,6 +170,14 @@ diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
 +                             (unsigned)to_send.mq, (unsigned)(uintptr_t)to_send.mesg,
 +                             sent ? "depose" : (to_send.requeue_if_blocked ? "remis" : "refuse"),
 +                             depots, remises, refus);
++            }
++            if ((depots + refus + remises) % 250u == 0u) {
++                unsigned m;
++                for (m = 0; m < nb_vus; m++) {
++                    std::fprintf(stderr,
++                                 "[trace][mq] total msg=0x%08X deposes=%u refuses=%u remis=%u\n",
++                                 vus[m][0], tot[m][0], tot[m][1], tot[m][2]);
++                }
 +            }
 +        }
          if (!sent && to_send.requeue_if_blocked) {
