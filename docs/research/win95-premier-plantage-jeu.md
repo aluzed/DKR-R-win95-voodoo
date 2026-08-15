@@ -448,3 +448,47 @@ défaut, et les trois fois la cause est la même : deux grandeurs comparées san
 que leurs budgets d'observation le soient. La trace garde désormais les deux
 formes — les premières occurrences pour la chronologie, les totaux périodiques
 pour le reste de l'exécution.
+
+## Un défaut dans mon propre correctif, invisible dans les comptes
+
+La sonde posée pour départager les deux causes restantes n'a **jamais tiré**,
+alors que 544 messages DP étaient déposés. Elle se conditionnait sur la source du
+message ; la trace des dépôts, elle, se conditionnait sur la valeur.
+
+`enqueue_external_message_src` ne recopiait pas la source dans le message mis en
+file. Tout ce qui passe par lui portait donc la valeur par défaut, et **les deux
+politiques écrites juste au-dessus manquaient leur cible** :
+
+- la priorité accordée aux bords SP et DP ne promouvait que SP, le seul à passer
+  par la variante attendue ;
+- la réservation de places destinée aux retraces pouvait écarter un bord DP, qui
+  lui ressemblait alors comme un jumeau.
+
+Le défaut ne se voyait pas dans les comptes : rien n'était refusé, donc rien ne
+paraissait manquer. Il ne s'est vu que parce qu'une sonde a refusé de tirer.
+
+C'est la quatrième fois de cette enquête qu'un instrument révèle autre chose que
+ce qu'il cherchait — et la première où il révèle un défaut du correctif qui le
+précède.
+
+## Ce que la sonde établit une fois réparée
+
+    curRDPTask au depot = 0x405F1280  (nuls=0 poses=1)
+    ...
+    dernier : nuls=0 poses=500
+
+**`curRDPTask` n'est jamais nul au moment où nous déposons le bord DP** — 500
+dépôts, aucun nul. Le pointeur est donc effacé **entre notre dépôt et le
+traitement par le jeu**.
+
+Ce n'est donc ni un message perdu, ni un message de trop, ni un message pour une
+tâche qui n'a pas besoin du RDP : les trois hypothèses tombent. C'est une
+transition d'état du jeu lui-même, entre la mise en file et la prise en charge.
+
+La piste suivante est dans `__scHandleRSP` : il termine en appelant `__scExec`
+pour démarrer la tâche suivante, et `__scExec` n'écrit `curRDPTask` que lorsque
+la tâche RSP et la tâche RDP sont la même. Une tâche RSP seule, démarrée entre
+notre dépôt et son traitement, laisse donc `curRDPTask` à la valeur qu'y a mise
+le dernier `__scHandleRDP` — c'est-à-dire zéro.
+
+À l'état actuel : 555 listes d'affichage, 3720 images, aucun message refusé.

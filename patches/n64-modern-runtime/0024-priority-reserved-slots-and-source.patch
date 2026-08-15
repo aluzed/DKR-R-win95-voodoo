@@ -1,0 +1,100 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Give SP and DP edges priority, reserve queue slots, carry the source
+
+The scheduler's interrupt queue holds eight messages and serves three things at
+once: our retrace edges, our SP and DP edges, and -- through the command queue
+that __scHandleRetrace drains -- the game's own task submissions. One retrace too
+many takes the place of a task completion, and of a task start.
+
+Measured on Windows 95: the RSP completion was refused, requeued, and deposited
+only nine refusals later. The game does not wait that long; a few frames without
+an answer and its scheduler gives up and clears curRSPTask. Our message then
+arrives and __scHandleRSP dereferences null, the assert() that would have caught
+it having been compiled out.
+
+**Priority.** On hardware an SP interrupt and a vertical retrace are independent
+events whose relative order is not guaranteed, so serving SP and DP first is
+faithful. Their order among themselves is preserved.
+
+**Reserved slots.** A first attempt refused to deposit a retrace while the
+previous one was undelivered. It stopped the game booting: our external queue is
+drained opportunistically, when a guest thread happens to wait, not on a
+schedule, so the flag stayed set. Any policy assuming periodic draining is wrong
+here by construction. This version reads the guest queue's state at deposit time
+and keeps nothing between passes -- on hardware a retrace raised while the queue
+is full is lost the same way.
+
+**The source travels with the message.** enqueue_external_message_src did not
+record it, so everything passing through carried the default. Both policies above
+then missed their target: the priority promoted only SP, the one edge that goes
+through the waiting variant, and the reservation meant for retraces could discard
+a DP edge, which looked identical to it.
+
+That defect did not show in the counts -- nothing was refused, so nothing seemed
+missing. It showed because a probe conditioned on the source never fired while
+544 DP messages were being deposited.
+
+Measured before and after the whole change:
+
+    before   1 task, 1 SP edge, 0 display lists
+    after   555 display lists, 3720 frames, no message refused, and
+            curRDPTask non-null at every one of 500 DP deposits
+
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -142,7 +142,18 @@
+     if (mq == NULLPTR) {
+         return;
+     }
+-    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], {}});
++    // **La source doit voyager avec le message.**
++    //
++    // Sans elle, tout ce qui passe par ici porte la valeur par defaut, et deux
++    // politiques ecrites juste au-dessus se trompent de cible : la priorite
++    // accordee aux bords SP et DP ne promeut que SP — le seul a passer par la
++    // variante attendue — et la reservation de places destinee aux retraces peut
++    // ecarter un bord DP, qui lui ressemble alors comme un jumeau.
++    //
++    // Le defaut ne s'est pas vu dans les comptes : rien n'etait refuse, donc
++    // rien ne manquait. Il s'est vu parce qu'une sonde conditionnee sur la
++    // source n'a jamais tire, alors que 544 messages DP etaient deposes.
++    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], {}, src});
+ }
+ 
+ bool ultramodern::enqueue_external_message_src_and_wait(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
+@@ -236,6 +247,34 @@
+                 continue;
+             }
+         }
++        // **Lire l'etat du jeu au moment du depot, pas apres.**
++        //
++        // Le plantage restant trouve `curRDPTask` nul dans `__scHandleRDP`. Deux
++        // causes subsistent et ne se distinguent que la : soit nous emettons un
++        // bord DP pour une tache que le jeu n'a pas enregistree comme ayant
++        // besoin du RDP — il serait alors deja nul quand nous deposons — soit le
++        // jeu l'efface entre notre depot et son traitement.
++        //
++        // L'adresse est celle de `gMainSched` dans DKR, relevee dans la carte
++        // des symboles du decomp. La coder en dur ne serait pas acceptable
++        // ailleurs ; ici c'est un diagnostic derriere une variable
++        // d'environnement, et la seule facon de poser la question.
++        if (to_send.source == ultramodern::EventMessageSource::Dp &&
++            std::getenv("DKR_TRACE_SP") != nullptr) {
++            static unsigned nuls = 0, poses = 0, montres = 0;
++            /* La RDRAM invitee est stockee en octets inverses cote hote : on
++               lit donc le mot a l'envers pour retrouver la valeur du jeu. */
++            const uint8_t* o = rdram + (0x801214D8u - 0x80000000u);
++            const uint32_t cur = (uint32_t)o[3] | ((uint32_t)o[2] << 8) |
++                                 ((uint32_t)o[1] << 16) | ((uint32_t)o[0] << 24);
++            if (cur == 0u) { nuls++; } else { poses++; }
++            if (++montres <= 6u || (nuls + poses) % 100u == 0u) {
++                std::fprintf(stderr,
++                             "[trace][dp] curRDPTask au depot = 0x%08X"
++                             "  (nuls=%u poses=%u)\n",
++                             (unsigned)cur, nuls, poses);
++            }
++        }
+         const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
+         // **Compter les depots, pas les demandes.**
+         //

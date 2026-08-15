@@ -99,8 +99,8 @@
           "sha256": "f90f0905cf3ac9aab7dbc08ce169b0ebf0a799fb868d3b661a0bb5b31021811c"
         },
         {
-          "path": "patches/n64-modern-runtime/0024-priority-and-reserved-slots.patch",
-          "sha256": "557b303d68a67812877ec219dfbfb6f8f90d7498a9008c7b0c638c64151db745"
+          "path": "patches/n64-modern-runtime/0024-priority-reserved-slots-and-source.patch",
+          "sha256": "caac7892a576a61fc23f0ed4664452d543d145f14d7c08f8a0e5a2257201d220"
         }
       ]
     },
