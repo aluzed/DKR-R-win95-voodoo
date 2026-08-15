@@ -649,3 +649,59 @@ La seule façon de trancher est de voir la case changer. Une surveillance
 échantillonnée de `gMainSched + 0x278` à chaque bascule de fil invité donnerait la
 chronologie exacte de son passage à zéro — c'est plus intrusif que tout ce qui a
 été fait ici, et c'est désormais la seule question ouverte.
+
+## Neuvième et dixième éliminations
+
+**Le chemin RDP seul n'est jamais emprunté.** `__scExec` a deux écritures de
+`curRDPTask`, et ma première lecture du code recompilé n'avait vu que la
+première :
+
+```c
+if (sp) { ...; sc->curRSPTask = sp; if (sp == dp) sc->curRDPTask = dp; }
+if (dp && (dp != sp)) { osDpSetNextBuffer(...); sc->curRDPTask = dp; }
+```
+
+Le second chemin programme le RDP seul, et `osDpSetNextBuffer_recomp` est un
+`assert(false)` — **qui disparaît en compilation optimisée**. Le jeu y
+programmerait donc un travail dont aucun bord DP ne viendrait jamais. Compteur
+posé : **aucun appel** sur 532 listes d'affichage. Le cas ne se présente pas.
+
+**Aucune livraison en double.** Comptés au point de passage unique, `do_send` :
+
+| message | envoyés | reçus | écart |
+|---|---|---|---|
+| retrace | 2804 | 2804 | 0 |
+| SP | 1019 | 1019 | 0 |
+| DP | 427 | 427 | 0 |
+
+### La même erreur de mesure, une quatrième fois — mais vue à temps
+
+Une mesure intermédiaire annonçait +463 retraces, +5 SP et +2 DP reçus de plus
+qu'envoyés. Deux DP de trop suffisaient à expliquer le plantage, et la
+conclusion était à portée de main.
+
+Elle était fausse : je comptais les dépôts dans `dequeue_external_messages`, qui
+n'est **qu'un** des chemins menant à `do_send`, tandis que je comptais les
+réceptions sur tout. Le jeu envoie lui aussi certains de ces messages. Compter en
+amont d'un entonnoir, c'est compter une branche en croyant compter le tout.
+
+Les trois fois précédentes, l'erreur a coûté une conclusion fausse. Celle-ci a
+été vue avant, parce que l'écart sur le retrace — 15 % — était trop gros pour un
+mécanisme de duplication ponctuel. **L'invraisemblance de l'ordre de grandeur est
+le garde-fou qui a servi le plus souvent dans cette enquête.**
+
+## L'hypothèse qui reste, et comment la tester
+
+Notre bord SP est publié avant le rendu. Le jeu peut donc, entre notre SP et
+notre DP, démarrer la tâche graphique suivante — `__scExec` y pose
+`curRDPTask` = **la nouvelle tâche**. Notre DP, destiné à l'ancienne, arrive
+alors : `__scHandleRDP` prend la nouvelle, la termine prématurément et remet le
+champ à zéro. Le DP de la nouvelle tâche trouve ensuite un pointeur nul.
+
+Cela expliquerait le caractère occasionnel, et pourquoi accoler les deux bords
+n'a pas suffi — `__scExec` peut encore s'intercaler.
+
+Le test : étiqueter chaque bord DP avec la tâche à laquelle il correspond et
+comparer à `curRDPTask` au moment du traitement. Nos messages ne portent qu'une
+valeur constante ; il faut donc l'étiquette de notre côté, et la comparaison au
+moment du dépôt.
