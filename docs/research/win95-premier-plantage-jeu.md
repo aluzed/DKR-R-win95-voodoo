@@ -492,3 +492,41 @@ notre dépôt et son traitement, laisse donc `curRDPTask` à la valeur qu'y a mi
 le dernier `__scHandleRDP` — c'est-à-dire zéro.
 
 À l'état actuel : 555 listes d'affichage, 3720 images, aucun message refusé.
+
+## L'écart entre les deux bords n'est pas la cause non plus
+
+Le chemin graphique publie le bord SP **avant** d'analyser la liste d'affichage —
+c'est le choix du correctif 0009 — et le bord DP après. L'écart couvre donc tout
+le temps de rendu, pendant lequel le jeu peut démarrer plusieurs tâches, puisque
+`__scHandleRSP` termine en appelant `__scExec`.
+
+Hypothèse plausible, et fausse. Accoler les deux bords ne change **rien** :
+
+    adresse : 0x006AA58C   -> __scHandleRDP + 0x6c   (identique)
+
+Le changement a été retiré : il modifie l'ordonnancement sans bénéfice, et le
+correctif 0009 existe pour une raison.
+
+## L'état de l'enquête
+
+Cinq hypothèses éliminées par la mesure, dans l'ordre où elles ont paru les plus
+probables :
+
+1. livraison en double du bord SP — un seul dépôt pour un seul appel ;
+2. course d'ordonnancement — retarder le bord ne change rien ;
+3. structure du planificateur non initialisée — elle l'est, je regardais son
+   en-tête au lieu du champ ;
+4. messages SP et DP indistinguables — leurs valeurs diffèrent ;
+5. famine résiduelle sur le bord DP — plus aucun message n'est refusé ;
+6. écart entre les bords SP et DP — l'accoler ne change rien.
+
+Ce qui est établi : `curRDPTask` est **toujours renseigné au moment où nous
+déposons** le bord DP, et nul quand le jeu le traite. L'effacement se produit
+donc dans le jeu, entre la mise en file et la prise en charge, et aucune des
+politiques de livraison testées ne l'influence.
+
+La prochaine mesure doit donc porter sur le jeu et non sur nous : instrumenter
+`__scExec` et `__scHandleRDP` côté invité pour voir quelle transition efface le
+champ. Le code recompilé ne se prête pas au `printf`, mais l'adresse de
+`gMainSched + 0x278` est connue — une surveillance de cette case, échantillonnée
+depuis le runtime, dirait quand elle passe à zéro.
