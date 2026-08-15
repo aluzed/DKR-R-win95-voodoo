@@ -21,10 +21,23 @@ immediately, rather than quietly reading whatever is mapped. Committing 4 MiB
 and reserving 8 MiB leaves 4 MiB of protected space above the rdram, so an
 invalid access still traps.
 
-4 MiB is not arbitrary either. DKR's main pool stops at RAM_END, 0x80400000, and
-the decomp sets EXPANSION_PAK_SUPPORT to 0 -- the game never uses the Expansion
-Pak. Committing 8 MiB would commit memory the game never writes, on a machine
-that has 47 MiB free in total.
+The first version committed 4 MiB, sized against the *game's* rdram: DKR's main
+pool stops at RAM_END, 0x80400000, and the decomp sets EXPANSION_PAK_SUPPORT to
+0. That reasoning was right about the game and wrong about librecomp, which
+places its own regions far above the game's -- PI handles at 0x80800000, the
+patch region just after, the mod region at 0x81000000 -- and init_heap() puts the
+recompiled heap at mod_rdram_start, 16 MiB in.
+
+With 4 MiB committed and 8 MiB reserved that write landed outside the reservation
+altogether. Observed on Windows 95 with the real ROM: an access violation in
+o1heapInit, inside the loop that clears the instance bins, i.e. on the very first
+byte of the heap.
+
+The layout is left alone and the sizes follow it: 20 MiB committed puts the heap
+16 MiB in with 4 MiB of usable arena, 24 MiB reserved keeps 4 MiB of protected
+space above so an out-of-range guest address still traps. The target has 47 MiB
+free (ADR 0003), so this is affordable. A static_assert now forbids dropping back
+below mod_rdram_start.
 
 Verified on the target: the scheme works at this size, and reserving is the
 binding constraint rather than committing -- that machine tops out at 1 GiB of
@@ -34,10 +47,10 @@ The 64-bit values are untouched and still evaluate to 536870912 and 4294967296;
 all 26 translation units still compile there.
 
 diff --git a/librecomp/include/librecomp/addresses.hpp b/librecomp/include/librecomp/addresses.hpp
-index b1b50cb..fa6316e 100644
+index b1b50cb..0372074 100644
 --- a/librecomp/include/librecomp/addresses.hpp
 +++ b/librecomp/include/librecomp/addresses.hpp
-@@ -2,14 +2,41 @@
+@@ -2,14 +2,62 @@
  #define __RECOMP_ADDRESSES_HPP__
  
  #include <cstdint>
@@ -72,10 +85,31 @@ index b1b50cb..fa6316e 100644
      // 4GB (the full address space)
      constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;
 +#else
-+    constexpr size_t mem_size = 4ULL * 1024ULL * 1024ULL;
-+    constexpr size_t allocation_size = 8ULL * 1024ULL * 1024ULL;
++    // 4 MiB was sized against the *game's* rdram: DKR's pool stops at RAM_END,
++    // 0x80400000, and the decomp never uses the Expansion Pak. That reasoning
++    // was right about the game and wrong about librecomp, which places its own
++    // regions far above the game's:
++    //
++    //     0x80800000  PI handles          8 MiB in
++    //     0x80801000  patch region
++    //     0x81000000  mod region         16 MiB in
++    //
++    // and init_heap() puts the recompiled heap at mod_rdram_start. With 4 MiB
++    // committed and 8 MiB reserved, that write lands outside the reservation
++    // altogether. The observed failure on Windows 95 was an access violation in
++    // o1heapInit, inside the loop that clears the instance bins -- that is, on
++    // the very first byte of the heap.
++    //
++    // The layout is left alone and the sizes follow it instead: 20 MiB committed
++    // puts the heap 16 MiB in with 4 MiB of usable arena, and 24 MiB reserved
++    // keeps 4 MiB of protected space above so an out-of-range guest address
++    // still traps. The target has 47 MiB free (ADR 0003), so this is affordable.
++    constexpr size_t mem_size = 20ULL * 1024ULL * 1024ULL;
++    constexpr size_t allocation_size = 24ULL * 1024ULL * 1024ULL;
 +    static_assert(allocation_size > mem_size,
 +        "the reservation must exceed the committed rdram, or nothing traps");
++    static_assert(mem_size > 0x01000000ULL,
++        "the committed rdram must reach mod_rdram_start, where the heap begins");
 +#endif
      // We need a place in rdram to hold the PI handles, so pick an address in extended rdram
      constexpr int32_t cart_handle = 0x80800000;

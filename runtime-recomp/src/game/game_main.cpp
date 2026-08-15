@@ -18,6 +18,9 @@
 #include <chrono>
 #include <cinttypes>
 #include <cstdlib>
+#if defined(DKR_TARGET_WIN95)
+#include "win95/startup.h"
+#endif
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -330,6 +333,24 @@ static void RedirectDiagnosticsToFile() {
 int DkrMain(int argc, char** argv) {
 #if defined(DKR_TARGET_WIN95)
     RedirectDiagnosticsToFile();
+    // **Installer la couche de démarrage, qui porte le filtre d'exceptions.**
+    //
+    // Le commentaire de `RuntimeCrashFilter`, plus haut, désactive le filtre du
+    // runtime sur cette cible en expliquant que `platform/win95/startup.c`
+    // « installe déjà son propre filtre ». C'était vrai du témoin de plate-forme
+    // et faux du jeu : `dkr_win95_startup` n'était appelé que par `witness.c`.
+    //
+    // Le jeu tournait donc **sans aucun filtre d'exception**. Le symptôme observé
+    // sur la machine : une boîte « opération non conforme » de Windows, aucune
+    // trace dans le journal, et le mode vidéo non restitué — ce dernier point
+    // étant le plus grave, la carte Voodoo gardant l'écran par relais analogique.
+    {
+        const int rc = dkr_win95_startup("DKR-R");
+        if (rc != DKR_WIN95_STARTUP_OK) {
+            std::fprintf(stderr, "[boot][win95] demarrage refuse : %d\n", rc);
+            return 5;
+        }
+    }
 #endif
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);

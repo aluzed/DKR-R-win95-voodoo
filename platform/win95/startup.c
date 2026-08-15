@@ -113,6 +113,50 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
             (unsigned long)(ULONG_PTR)info->ExceptionRecord->ExceptionAddress);
     dkr_win95_log(buf);
 
+    /* **L'adresse fautive et les registres, pas seulement l'adresse du code.**
+     *
+     * `ExceptionAddress` dit *ou* le programme s'est arrete ; il ne dit pas *ce
+     * qu'il touchait*. Sur un portage dont tout l'espace memoire invite est un
+     * tableau indexe — `mov -0x7ffffff0(%ebp,%ecx,1),%edx` est la forme typique
+     * du code recompile, `ebp` portant la base RDRAM et `ecx` l'adresse invitee
+     * — c'est l'adresse touchee qui nomme le defaut, et les registres qui disent
+     * quelle adresse invitee l'a produite.
+     *
+     * Sans cela, chaque faute demande un desassemblage a la main pour deviner ce
+     * qui manquait. Avec, elle se lit. */
+    if (code == EXCEPTION_ACCESS_VIOLATION &&
+        info->ExceptionRecord->NumberParameters >= 2) {
+        const ULONG_PTR quoi = info->ExceptionRecord->ExceptionInformation[0];
+        const ULONG_PTR ou   = info->ExceptionRecord->ExceptionInformation[1];
+        sprintf(buf, "  touchait: 0x%08lX en %s",
+                (unsigned long)ou,
+                (quoi == 0) ? "lecture" : (quoi == 1) ? "ecriture" : "execution");
+        dkr_win95_log(buf);
+    }
+    if (info->ContextRecord != NULL) {
+        const CONTEXT *c = info->ContextRecord;
+        sprintf(buf, "  eax=%08lX ebx=%08lX ecx=%08lX edx=%08lX",
+                (unsigned long)c->Eax, (unsigned long)c->Ebx,
+                (unsigned long)c->Ecx, (unsigned long)c->Edx);
+        dkr_win95_log(buf);
+        sprintf(buf, "  esi=%08lX edi=%08lX ebp=%08lX esp=%08lX",
+                (unsigned long)c->Esi, (unsigned long)c->Edi,
+                (unsigned long)c->Ebp, (unsigned long)c->Esp);
+        dkr_win95_log(buf);
+        /* L'adresse **invitee**, reconstruite : sur le code recompile, la base
+           RDRAM vit dans un registre et l'adresse touchee moins cette base
+           redonne l'adresse que le jeu croyait lire. C'est celle-la qui se
+           compare a la carte memoire de la N64. */
+        if (info->ExceptionRecord->NumberParameters >= 2) {
+            const ULONG_PTR ou = info->ExceptionRecord->ExceptionInformation[1];
+            sprintf(buf, "  invitee ~ 0x%08lX si la base est ebp,"
+                         " 0x%08lX si c'est ebx",
+                    (unsigned long)(ou - c->Ebp + 0x80000000u),
+                    (unsigned long)(ou - c->Ebx + 0x80000000u));
+            dkr_win95_log(buf);
+        }
+    }
+
     /* `EXCEPTION_ILLEGAL_INSTRUCTION` merite un mot : sur cette cible, c'est le
        symptome d'une instruction posterieure au Pentium II qui aurait echappe au
        controle de E01-S01. L'ecrire ici epargne une heure de recherche. */

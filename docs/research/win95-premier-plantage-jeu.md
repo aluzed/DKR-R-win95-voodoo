@@ -1,0 +1,100 @@
+# Le premier plantage du jeu, et comment il s'est laissé lire
+
+Mesuré le 15 août 2026 sur la machine d'épreuve, avec la ROM.
+
+## Où en est le portage
+
+Le jeu démarre. Le journal du runtime le dit sans ambiguïté :
+
+    [boot][rom] validated and registered
+    [boot] runtime initialized; waiting for first safe VI state
+    [boot][audio] frequency=48000 (diagnostic backend)
+    [boot] VI initialized; starting recompiled DKR entrypoint
+    [boot][audio] frequency=22050 (diagnostic backend)
+    [boot][vi] present=4260
+
+La ROM est validée, l'entrée du code recompilé est atteinte, et le jeu
+reconfigure lui-même la fréquence audio de 48000 à 22050 — c'est-à-dire qu'il
+exécute sa propre initialisation, pas seulement celle du runtime.
+
+## Il a fallu trois outils avant de pouvoir diagnostiquer quoi que ce soit
+
+**`stderr` n'était pas récupérable.** Tout le journal y passe et COMMAND.COM de
+Windows 95 n'a pas de syntaxe `2>&1`. Le runtime le redirige désormais vers un
+fichier sur cette cible, sans mise en mémoire tampon.
+
+**Le jeu n'avait aucun filtre d'exception.** `game_main.cpp` désactive le sien
+sur cette cible au motif que `platform/win95/startup.c` « installe déjà son
+propre filtre ». C'était vrai du témoin de plate-forme et faux du jeu :
+`dkr_win95_startup` n'était appelé que par `witness.c`. Le symptôme était une
+boîte « opération non conforme » de Windows, aucune trace, et **le mode vidéo non
+restitué** — le plus grave, la Voodoo gardant l'écran par relais analogique.
+
+**ScanDisk avalait les frappes** à chaque démarrage suivant un plantage, ce qui
+faisait croire que le programme ne démarrait pas alors qu'il n'avait jamais été
+lancé. `AutoScan=0` supprime la cause.
+
+## Premier défaut : la RDRAM était trop petite pour la disposition de librecomp
+
+    *** exception non rattrapee ***
+      code    : 0xC0000005 (acces memoire invalide)
+      adresse : 0x007B4226        -> o1heapInit + 0x46
+
+L'adresse tombe dans la boucle qui efface les casiers de l'instance
+(`out->bins[i] = NULLFRAGMENT`) — c'est-à-dire sur le **premier octet du tas**.
+
+Le correctif 0017 avait dimensionné la RDRAM sur les besoins du *jeu* : le pool
+de DKR s'arrête à `RAM_END`, 0x80400000, et le decomp n'emploie pas l'Expansion
+Pak. Ce raisonnement est juste sur le jeu et faux sur librecomp, qui place ses
+propres régions bien au-dessus :
+
+    0x80800000  poignées PI         8 Mio
+    0x80801000  zone de correctifs
+    0x81000000  zone de mods       16 Mio
+
+et `init_heap` place le tas à `mod_rdram_start`. Avec 4 Mio engagés et 8 Mio
+réservés, cette écriture tombait **hors de la réservation entière**.
+
+La disposition est laissée telle quelle et les tailles la suivent : 20 Mio
+engagés placent le tas à 16 Mio avec 4 Mio d'arène utilisable, et 24 Mio réservés
+gardent 4 Mio de pages protégées au-dessus, pour qu'une adresse invitée hors
+plage continue de déclencher une faute. L'ADR 0003 relève 47 Mio libres sur cette
+machine : c'est abordable.
+
+Un `static_assert` interdit désormais de redescendre sous `mod_rdram_start`.
+
+## Second défaut : un pointeur nul dans le gestionnaire RSP du jeu
+
+Le filtre d'exception a été enrichi pour rapporter l'adresse **touchée** et les
+registres, et non seulement l'adresse du code. La différence est décisive sur un
+portage dont tout l'espace mémoire invité est un tableau indexé :
+
+    adresse : 0x006A98D7        -> __scHandleRSP + 0x97
+    touchait: 0x82360010 en lecture
+    ecx=00000000   ebp=02360000
+
+L'instruction est `mov -0x7ffffff0(%ebp,%ecx,1),%edx`, la forme typique du code
+recompilé : `ebp` porte la base RDRAM, `ecx` l'adresse invitée, et le déplacement
+replie le biais KSEG0 avec le champ lu.
+
+`ecx` vaut **zéro**. L'adresse invitée est donc `0x80000010`, et le champ à
+l'offset 0x10 d'un `OSScTask` est `list`. Autrement dit :
+
+    sc->curRSPTask->list   avec curRSPTask nul
+
+Le jeu reçoit une fin de tâche RSP **alors qu'il n'a pas de tâche courante**.
+
+Ce n'est pas un défaut du jeu : c'est notre signalisation. Six correctifs de ce
+portage portent déjà sur l'ordre d'achèvement SP et DP — 0006, 0009, 0010, 0011,
+0012, 0013 — parce que cette zone est délicate. Une interruption SP en trop, ou
+délivrée après que le jeu a rendu sa tâche, produit exactement cela.
+
+C'est le prochain point à traiter, et il est désormais **nommé** plutôt que
+soupçonné.
+
+## Ce que cette session a changé dans la méthode
+
+Un filtre d'exception qui rapporte l'adresse du code sans l'adresse touchée
+oblige à désassembler à la main pour deviner ce qui manquait. Avec les deux, plus
+les registres, la faute se lit : ici, trois lignes ont suffi à passer de
+« quelque part dans le gestionnaire RSP » à « `curRSPTask` est nul ».
