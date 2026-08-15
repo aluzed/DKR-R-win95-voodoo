@@ -93,6 +93,10 @@
         {
           "path": "patches/n64-modern-runtime/0022-trace-sp-and-dp-edges.patch",
           "sha256": "d737f49844330f0fa944135a038a6be739456604e9f82fb743eca918dc174b51"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0023-count-guest-queue-deposits.patch",
+          "sha256": "d7802538a7c82bad91a438cfa9fc4d80220e19803a562665b64219b49010e402"
         }
       ]
     },

@@ -1,0 +1,81 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Count deposits into the guest queue, not the calls that ask
+
+The trace in events.cpp counts calls to sp_complete. It cannot see what happens
+here: a message that fails to land is requeued when its source allows retrying,
+and this is the only place a duplicate deposit could be born.
+
+It answered a different question than the one asked, which is the usual way an
+instrument earns its keep. The scheduler's interrupt queue **saturates**: the
+retrace message is deposited eight times -- OS_SC_MAX_MESGS -- and then refused.
+Refusals are silent drops, retrace having no retry. Five messages were lost over
+sixty frames. A game that counts retraces to pace itself will see time advance in
+jerks, quite apart from the crash under investigation.
+
+The per-message cap matters more than it looks. A single global cap let the most
+frequent event eat the whole budget: retrace at sixty per second consumed forty
+events before the SP edge arrived, and the log then read "the SP message is never
+deposited" where it should have read "it has not been looked at yet". The cap is
+now per message value, which keeps rare events visible when a frequent one
+floods.
+
+Off unless DKR_TRACE_SP is set.
+
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -1,3 +1,5 @@
++#include <cstdio>
++#include <cstdlib>
+ #include <array>
+ #include <bitset>
+ #include <chrono>
+@@ -174,6 +176,48 @@
+     std::vector<QueuedMessage> requeued_messages{};
+     while (external_messages.try_dequeue(to_send)) {
+         const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
++        // **Compter les depots, pas les demandes.**
++        //
++        // La trace de `events.cpp` compte les appels a `sp_complete`. Elle ne
++        // voit pas ce qui se passe ici : un message non delivre est remis en
++        // file quand sa source autorise le reessai, et c'est le seul endroit ou
++        // un depot en double pourrait naitre.
++        //
++        // Un plantage sur Windows 95 trouve `curRSPTask` nul dans
++        // `__scHandleRSP`, alors qu'une seule tache a ete soumise et un seul
++        // `sp_complete` appele. Si le compte ci-dessous depasse celui-la, la
++        // question est reglee.
++        if (std::getenv("DKR_TRACE_SP") != nullptr) {
++            static unsigned depots = 0, refus = 0, remises = 0;
++            if (sent) { depots++; } else if (to_send.requeue_if_blocked) { remises++; }
++            else { refus++; }
++            // **Un plafond global laisse le message le plus frequent devorer la
++            // trace.** La premiere version s'arretait apres quarante evenements,
++            // et le retrace — soixante par seconde — les avait tous consommes
++            // avant que le bord SP n'arrive. On aurait conclu que le message SP
++            // n'etait jamais depose, alors qu'il n'avait pas encore ete regarde.
++            //
++            // Le plafond est donc **par valeur de message** : les premieres
++            // occurrences de chacune, ce qui garde les rares visibles.
++            static unsigned vus[8][2];
++            static unsigned nb_vus = 0;
++            unsigned k = 0, compte = 0;
++            const unsigned val = (unsigned)(uintptr_t)to_send.mesg;
++            for (k = 0; k < nb_vus; k++) {
++                if (vus[k][0] == val) { compte = ++vus[k][1]; break; }
++            }
++            if (k == nb_vus && nb_vus < 8u) {
++                vus[nb_vus][0] = val; vus[nb_vus][1] = 1; nb_vus++; compte = 1;
++            }
++            if (compte <= 4u) {
++                std::fprintf(stderr,
++                             "[trace][mq] mq=0x%08X msg=0x%08X %s"
++                             "  depots=%u remises=%u refus=%u\n",
++                             (unsigned)to_send.mq, (unsigned)(uintptr_t)to_send.mesg,
++                             sent ? "depose" : (to_send.requeue_if_blocked ? "remis" : "refuse"),
++                             depots, remises, refus);
++            }
++        }
+         if (!sent && to_send.requeue_if_blocked) {
+             requeued_messages.push_back(to_send);
+         } else if (sent) {
