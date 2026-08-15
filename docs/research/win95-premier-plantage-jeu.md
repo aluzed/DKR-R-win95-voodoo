@@ -378,3 +378,40 @@ tâche soumise, un seul bord SP, tout paraissait cohérent. Elle ne s'est révé
 qu'en comptant **les dépôts effectifs dans la file invitée**, et en donnant à
 chaque valeur de message son propre plafond de trace — sans quoi le retrace,
 soixante fois par seconde, dévorait le budget avant que l'intéressant n'arrive.
+
+## Ce qui reste : le bord DP, et pourquoi il est plus subtil
+
+Le plantage subsiste dans `__scHandleRDP`, avec `curRDPTask` nul lu à l'offset
+0x4. Mais il survient désormais **après 170 tâches**, pas après une : c'est une
+condition occasionnelle, pas un défaut systématique.
+
+Le decomp éclaire pourquoi c'est plus délicat que le cas SP. À la fin de
+`__scHandleRSP`, le planificateur **démarre déjà la tâche suivante** :
+
+```c
+state = ((sc->curRSPTask == 0) << 1) | (sc->curRDPTask == 0);
+if ((__scSchedule(sc, &sp, &dp, state)) != state)
+    __scExec(sc, sp, dp);
+```
+
+Et `__scExec` n'écrit `curRDPTask` que lorsque la tâche RSP et la tâche RDP sont
+**la même** — le stockage est dans le chemin non pris du `bne`, contrairement à
+`curRSPTask` qui est dans le créneau de retard. Une tâche audio, qui ne demande
+que le RSP, laisse donc `curRDPTask` inchangé.
+
+Trois causes possibles, qui ne se distinguent pas sans mesure :
+
+1. Nous émettons un bord DP pour une tâche graphique que le jeu n'a pas
+   enregistrée comme ayant besoin du RDP. Le chemin graphique appelle
+   `dp_complete()` inconditionnellement après `sp_complete()`.
+2. Deux bords DP pour une même tâche.
+3. La même famine que pour SP, mais résiduelle : la réservation garde deux
+   places, or un couple SP+DP en demande exactement deux — si une soumission du
+   jeu en prend une entre les deux, le DP est refusé.
+
+La troisième est la plus probable au vu du profil : occasionnelle, et liée à la
+pression sur la file. Elle se teste en comptant les refus par source, ce que la
+trace sait déjà faire.
+
+Ce qui est acquis en revanche : le jeu soumet 547 listes d'affichage et fait
+tourner son moteur audio avant d'y arriver.
