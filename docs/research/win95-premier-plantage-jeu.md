@@ -530,3 +530,43 @@ La prochaine mesure doit donc porter sur le jeu et non sur nous : instrumenter
 champ. Le code recompilé ne se prête pas au `printf`, mais l'adresse de
 `gMainSched + 0x278` est connue — une surveillance de cette case, échantillonnée
 depuis le runtime, dirait quand elle passe à zéro.
+
+## DKR envoie ses tâches dans la file d'interruptions
+
+`rcp_dkr.c` ne passe pas par la file de commandes du planificateur :
+
+```c
+osScInterruptQ = osScGetInterruptQ(sc);      /* gfxtask_init */
+...
+osSendMesg(osScInterruptQ, dkrtask, OS_MESG_BLOCK);
+```
+
+Les tâches graphiques partent donc **directement dans la file d'interruptions**,
+où `__scMain` les récupère par son cas `default:` et les chaîne avec
+`__scAppendList`.
+
+Cette file de huit places porte ainsi quatre choses à la fois : nos retraces,
+nos bords SP et DP, les messages internes du planificateur, et les pointeurs de
+tâche du jeu — ces derniers en envoi **bloquant**.
+
+Cela explique rétroactivement l'ampleur de l'effet de la réservation de places.
+Ce n'était pas seulement une interruption retardée : quand la file saturait, le
+fil graphique du jeu **se bloquait** en tentant de soumettre sa tâche. Le modèle
+que j'avais en tête — « nos messages retardent les siens » — était trop
+optimiste : nos messages *arrêtaient* le jeu.
+
+## L'autre écart relevé au passage
+
+`func_80079760`, l'ajout de Rare au planificateur, appelle `__scYield` dès que de
+l'audio attend pendant qu'une tâche RSP tourne. DKR **interrompt donc sa tâche
+graphique** pour laisser passer l'audio.
+
+Notre runtime ignore les yields : `osSpTaskYield` est vide et `osSpTaskYielded`
+rend toujours zéro, avec le commentaire « agit comme si la tâche s'était terminée
+avant de recevoir la demande ». Le chemin `if (osSpTaskYielded(...))` de
+`__scHandleRSP` n'est donc jamais pris, et une tâche interrompue est traitée comme
+achevée.
+
+Ce n'est pas nécessairement la cause du plantage restant, mais c'est un endroit
+où le modèle du jeu et le nôtre divergent franchement, sur un mécanisme que DKR
+emploie réellement.
