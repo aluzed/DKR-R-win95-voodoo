@@ -136,3 +136,37 @@ passage dans `__scHandleRSP` que la trace ne voit pas, celle-ci comptant nos
 bords à nous et non les messages que le jeu consomme.
 
 C'est du côté du jeu qu'il faut regarder maintenant, et non du nôtre.
+
+## Le vidage mémoire : la structure est vide
+
+Le filtre vide désormais seize mots depuis tout registre qui ressemble à une
+adresse invitée — poids fort `0x80` — en traduisant par la base RDRAM. Le
+rapport devient lisible sans attacher un débogueur à une machine qui n'en a pas.
+
+    esi -> 0x80121260 :
+      +00  00000100 00000000 00000000 00000000
+      +10  00000000 00000000 00000000 00000000
+      +20  00000400 00000000 00000000 00000000
+      +30  00000000 00000000 00000000 00000000
+
+`esi` est le premier argument de `__scHandleRSP`, donc le `OSSched`. Il est
+**presque entièrement nul**. Les deux seules valeurs non nulles, `0x100` en `+00`
+et `0x400` en `+20`, ressemblent à des tailles ou des drapeaux, pas à des
+pointeurs de file ou de tâche.
+
+`curRSPTask` nul n'est donc pas un accident isolé : **rien n'est renseigné dans
+cette structure**. Ce n'est pas une interruption de trop ni une course, c'est un
+planificateur qui n'a jamais été rempli — ou une adresse qui n'est pas celle que
+le jeu croit.
+
+Les deux pistes qui restent, dans l'ordre où elles se testent :
+
+1. `osCreateScheduler` n'a pas écrit là où le jeu le croit. Le vérifier demande
+   de tracer l'appel côté invité, ce que `librecomp` permet par ses exports.
+2. La structure est bien à cette adresse mais son contenu a été effacé, par
+   exemple par un instantané RDRAM recopié par-dessus — `submit_rsp_task` copie
+   8 Mio de RDRAM à chaque tâche graphique, et l'ordre de ces copies mérite
+   d'être regardé.
+
+La seconde est bon marché à écarter : la trace montre qu'aucune tâche graphique
+n'a encore été soumise au moment de la faute.

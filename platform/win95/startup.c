@@ -157,6 +157,50 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
         }
     }
 
+    /* **Vider la structure invitee que les registres designent.**
+     *
+     * Sur le code recompile, un registre porte la base RDRAM et les autres des
+     * adresses invitees en KSEG0 — reconnaissables a leur poids fort 0x80. Une
+     * faute de pointeur nul ne dit rien de ce qui aurait du s'y trouver ; l'etat
+     * de la structure voisine, si.
+     *
+     * On vide donc seize mots depuis chaque registre qui ressemble a une adresse
+     * invitee, en traduisant par la base supposee. Le rapport devient lisible
+     * sans attacher un debogueur a une machine qui n'en a pas. */
+    if (info->ContextRecord != NULL) {
+        const CONTEXT *c = info->ContextRecord;
+        const DWORD regs[6] = { c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi };
+        const char  *noms[6] = { "eax", "ebx", "ecx", "edx", "esi", "edi" };
+        /* La base RDRAM est le registre dont la valeur est un pointeur hote
+           plausible et dont l'ecart avec l'adresse touchee redonne du KSEG0. */
+        const DWORD base = c->Ebp;
+        int r;
+        for (r = 0; r < 6; r++) {
+            const DWORD v = regs[r];
+            if ((v & 0xFF000000u) != 0x80000000u) { continue; }
+            {
+                const unsigned char *p =
+                    (const unsigned char *)(base + (v - 0x80000000u));
+                unsigned i;
+                sprintf(buf, "  %s -> 0x%08lX :", noms[r], (unsigned long)v);
+                dkr_win95_log(buf);
+                for (i = 0; i < 4; i++) {
+                    /* Gros-boutiste : la RDRAM invitee est stockee telle quelle,
+                       et l'afficher en petit-boutiste rendrait les pointeurs
+                       meconnaissables. */
+                    sprintf(buf, "    +%02X  %02X%02X%02X%02X %02X%02X%02X%02X "
+                                 "%02X%02X%02X%02X %02X%02X%02X%02X",
+                            i * 16,
+                            p[i*16+0], p[i*16+1], p[i*16+2], p[i*16+3],
+                            p[i*16+4], p[i*16+5], p[i*16+6], p[i*16+7],
+                            p[i*16+8], p[i*16+9], p[i*16+10], p[i*16+11],
+                            p[i*16+12], p[i*16+13], p[i*16+14], p[i*16+15]);
+                    dkr_win95_log(buf);
+                }
+            }
+        }
+    }
+
     /* `EXCEPTION_ILLEGAL_INSTRUCTION` merite un mot : sur cette cible, c'est le
        symptome d'une instruction posterieure au Pentium II qui aurait echappe au
        controle de E01-S01. L'ecrire ici epargne une heure de recherche. */
