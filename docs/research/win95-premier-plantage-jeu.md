@@ -265,3 +265,52 @@ Le correctif 0013 de ce portage remplace précisément le transport des messages
 externes par une file « fiable ». C'est là qu'il faut regarder, et la mesure à
 faire est simple : compter les dépôts dans la file invitée, et non les appels qui
 les demandent.
+
+## La famine était réelle, et elle est corrigée
+
+Le compteur de dépôts, une fois son plafond rendu **par valeur de message**,
+donne la réponse :
+
+    msg=0x0000029B remis   depots=68 remises=1 refus=26
+    msg=0x0000029B depose  depots=71 remises=1 refus=35
+
+Un seul `sp_complete`, un seul dépôt — pas de doublon. Mais le bord SP a d'abord
+été **refusé et remis en file**, puis déposé neuf refus plus tard. Il était coincé
+derrière le flot de retraces dans une file de huit places.
+
+Le jeu, lui, n'attend pas : quelques images sans réponse et son planificateur
+abandonne la tâche et remet `curRSPTask` à nul. Notre message arrive après, et
+`__scHandleRSP` déréférence un pointeur nul.
+
+Sur le matériel, une interruption SP et un retour de balayage sont deux
+événements indépendants dont l'ordre relatif n'est pas garanti. Les servir avant
+les retraces est donc fidèle, et suffit à les sortir de la famine — leur ordre
+entre eux est préservé, c'est celui-là que le jeu observe.
+
+**Effet mesuré** : le message SP est désormais déposé du premier coup, sans
+remise en file. Et la faute **se déplace** vers `__scHandleRDP`, ce qui est la
+meilleure preuve que la famine était réelle : le jeu va plus loin et rencontre le
+problème suivant.
+
+## Un journal de zéro octet qui contenait tout
+
+Le plantage suivant a produit un `DKRR.LOG` vide — alors que la trace qu'il
+contenait était exactement ce qu'on cherchait.
+
+Le runtime redirige `stderr` sans mise en mémoire tampon, donc les octets partent
+au système au fil de l'eau. Mais Windows 95 ne met à jour la **taille dans
+l'entrée de répertoire** qu'à la fermeture : un processus qui meurt laisse un
+fichier de zéro octet dont le contenu est pourtant sur le disque, et invisible
+pour tout outil qui lit la table.
+
+Le filtre d'exception ferme donc `stderr` avant d'écrire son propre rapport. Le
+journal est passé de 0 à 1446 octets sur le plantage suivant.
+
+## Où en est le compte
+
+Après correction, sur la dernière exécution : quatre retraces, **un** bord SP
+déposé du premier coup, **aucun** bord DP jamais déposé — et pourtant une faute
+qui passe par `__scHandleRDP` avant de revenir sur `__scHandleRSP`.
+
+Le jeu attend donc une fin de RDP que nous n'émettons pas. La tâche audio de DKR
+porte `OS_TASK_DP_WAIT` dans ses drapeaux de tâche, ce qui est la piste à suivre.

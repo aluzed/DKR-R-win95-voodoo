@@ -105,6 +105,18 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
     char buf[256];
     DWORD code = info->ExceptionRecord->ExceptionCode;
 
+    /* **Fermer le journal de diagnostic avant tout le reste.**
+     *
+     * Le runtime redirige `stderr` vers un fichier sans mise en memoire tampon,
+     * donc les octets partent au systeme au fil de l'eau. Mais Windows 95 ne met
+     * a jour la **taille dans l'entree de repertoire** qu'a la fermeture : un
+     * processus qui meurt laisse un fichier de zero octet, dont le contenu est
+     * pourtant sur le disque et perdu pour l'outillage qui lit la table.
+     *
+     * Constate ici meme : un plantage a produit un `DKRR.LOG` vide alors que la
+     * trace qu'il contenait etait precisement ce qu'on cherchait. */
+    fclose(stderr);
+
     dkr_win95_log("");
     dkr_win95_log("*** exception non rattrapee ***");
     sprintf(buf, "  code    : 0x%08lX (%s)", (unsigned long)code, exception_name(code));

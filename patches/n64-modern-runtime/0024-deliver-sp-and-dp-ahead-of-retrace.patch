@@ -1,0 +1,84 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Deliver SP and DP edges ahead of retrace
+
+The N64 scheduler's interrupt queue holds eight messages. We deposit one retrace
+per frame; the game does not always drain them that fast, and the queue fills.
+
+Measured on Windows 95: the RSP task completion was refused, requeued, and only
+deposited nine refusals later. The game does not wait that long -- a few frames
+without an answer and its scheduler gives up on the task and clears curRSPTask.
+Our message then arrives and __scHandleRSP dereferences a null pointer.
+
+On hardware an SP interrupt and a vertical retrace are independent events whose
+relative order is not guaranteed, so serving SP and DP first is faithful. Their
+order among themselves is preserved, which is the one the game observes.
+
+Effect: the SP message is now deposited on the first attempt, no requeue. The
+crash moves to __scHandleRDP, which is what says the starvation was real -- the
+game gets further and meets the next problem.
+
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -1,3 +1,4 @@
++#include <algorithm>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <array>
+@@ -26,6 +27,10 @@
+     bool jam;
+     bool requeue_if_blocked;
+     std::shared_ptr<MessageDeliveryState> delivery;
++    // La source est deja portee par `delivery`, mais seulement quand il y en a
++    // une. Elle est necessaire ici pour ordonner la delivrance, y compris pour
++    // les messages sans attente — le retrace, precisement.
++    ultramodern::EventMessageSource source = ultramodern::EventMessageSource::Vi;
+ };
+ 
+ // This queue is the wakeup path for emulated hardware events. A conventional
+@@ -147,7 +152,7 @@
+     auto delivery = std::make_shared<MessageDeliveryState>();
+     delivery->source = src;
+     external_messages.enqueue({
+-        mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery});
++        mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery, src});
+     ultramodern::unique_lock lock{ delivery->mutex };
+     while (!delivery->complete && !exited.load()) {
+         delivery->condition.wait_for(lock, std::chrono::milliseconds{1});
+@@ -174,6 +179,36 @@
+     }
+     QueuedMessage to_send;
+     std::vector<QueuedMessage> requeued_messages{};
++
++    // **Servir les bords SP et DP avant les autres.**
++    //
++    // La file d'interruptions du planificateur de la N64 tient huit messages.
++    // Nous y deposons un retrace par image ; le jeu ne les consomme pas toujours
++    // aussi vite, et la file sature. Mesure sur Windows 95 : le message de fin
++    // de tache RSP a ete refuse, remis en file, et depose neuf refus plus tard.
++    //
++    // Le jeu, lui, n'attend pas : quelques images sans reponse et son
++    // planificateur abandonne la tache et remet `curRSPTask` a nul. Notre
++    // message arrive apres, et `__scHandleRSP` dereference un pointeur nul.
++    //
++    // Sur le materiel, une interruption SP et un retour de balayage sont deux
++    // evenements independants dont l'ordre relatif n'est pas garanti. Les servir
++    // en premier est donc fidele, et cela suffit a les sortir de la famine. Leur
++    // ordre entre eux est preserve — c'est celui-la que le jeu observe.
++    {
++        std::vector<QueuedMessage> tous{};
++        while (external_messages.try_dequeue(to_send)) {
++            tous.push_back(to_send);
++        }
++        std::stable_partition(tous.begin(), tous.end(), [](const QueuedMessage& m) {
++            return m.source == ultramodern::EventMessageSource::Sp ||
++                   m.source == ultramodern::EventMessageSource::Dp;
++        });
++        for (QueuedMessage& m : tous) {
++            external_messages.enqueue(m);
++        }
++    }
++
+     while (external_messages.try_dequeue(to_send)) {
+         const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
+         // **Compter les depots, pas les demandes.**

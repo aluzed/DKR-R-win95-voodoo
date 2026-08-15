@@ -97,6 +97,10 @@
         {
           "path": "patches/n64-modern-runtime/0023-count-guest-queue-deposits.patch",
           "sha256": "d7802538a7c82bad91a438cfa9fc4d80220e19803a562665b64219b49010e402"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0024-deliver-sp-and-dp-ahead-of-retrace.patch",
+          "sha256": "09287e84e8fbe898dbf5e5e9193fc603943bad9cf0dfe12369cc825e9975c90e"
         }
       ]
     },
