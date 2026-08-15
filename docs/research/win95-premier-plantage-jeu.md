@@ -98,3 +98,41 @@ Un filtre d'exception qui rapporte l'adresse du code sans l'adresse touchée
 oblige à désassembler à la main pour deviner ce qui manquait. Avec les deux, plus
 les registres, la faute se lit : ici, trois lignes ont suffi à passer de
 « quelque part dans le gestionnaire RSP » à « `curRSPTask` est nul ».
+
+## La trace élimine l'hypothèse la plus probable
+
+`DKR_TRACE_SP` compte les soumissions de tâche et les bords SP et DP. Sur la
+machine, avant le plantage :
+
+    [trace][sp] soumis   type=2  soumis=1 sp=0 dp=0
+    [trace][sp] sp       type=0  soumis=1 sp=1 dp=0
+
+**Une seule soumission, un seul bord SP**, puis la faute. Il n'y a pas de
+livraison en double.
+
+`type=2` est `M_AUDTASK` : la toute première tâche que DKR soumet est **audio**,
+pas graphique. Elle part dans la file de commandes du planificateur
+(`osSendMesg(osScGetCmdQ(gAudioSched), t)`, `audiomgr.c:363`), donc c'est bien
+`__scExec` de libultra qui la démarre — et c'est lui qui pose `sc->curRSPTask`.
+
+Reste l'hypothèse de course : le RSP émulé termine avant que le fil
+soumissionnaire n'ait fini sa comptabilité, ce que le matériel réel ne permet
+pas — l'interruption y arrive des microsecondes plus tard. Six correctifs de ce
+portage portent déjà sur cet ordonnancement, ce qui la rendait plausible.
+
+Elle est fausse. Publier le bord une milliseconde plus tard ne change **rien** :
+
+    adresse : 0x006A98D7        (identique)
+    touchait: 0x82360010        (identique)
+    ecx=00000000 ebp=02360000   (identiques)
+
+Faute identique, registres identiques. L'état est **déterministe**, pas une
+course. Le retard a donc été retiré : un changement qui ne corrige rien mais
+modifie l'ordonnancement est pire qu'aucun changement.
+
+Ce que cela laisse : soit `curRSPTask` n'est jamais posé — donc `__scExec` ne
+prend pas le chemin qu'on croit — soit il est effacé entre-temps par un second
+passage dans `__scHandleRSP` que la trace ne voit pas, celle-ci comptant nos
+bords à nous et non les messages que le jeu consomme.
+
+C'est du côté du jeu qu'il faut regarder maintenant, et non du nôtre.

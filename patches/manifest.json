@@ -89,6 +89,10 @@
         {
           "path": "patches/n64-modern-runtime/0021-route-threads-through-the-sync-seam.patch",
           "sha256": "2240df0e07e06056e196cadea357ed241baef9056fcf9f4475460158bb8433a8"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0022-trace-sp-and-dp-edges.patch",
+          "sha256": "d737f49844330f0fa944135a038a6be739456604e9f82fb743eca918dc174b51"
         }
       ]
     },

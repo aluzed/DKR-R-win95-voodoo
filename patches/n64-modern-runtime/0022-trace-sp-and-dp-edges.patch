@@ -1,0 +1,78 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Trace SP and DP edges behind an environment variable
+
+DKR schedules its next task on the SP edge, which makes the interrupt order
+observable from inside the game. A crash on Windows 95 shows sc->curRSPTask null
+inside __scHandleRSP: the game receives an RSP task completion while it has no
+current task.
+
+Reasoning about that sequence without seeing it is guesswork, and this project
+already carries six patches about SP and DP completion ordering, which is enough
+to say the area resists reasoning.
+
+What the trace established immediately, and what no amount of reading would have:
+the crash follows exactly one submission and exactly one SP edge. There is no
+duplicate delivery, and adding a delay before publishing the edge changes nothing
+-- same fault, same registers -- so it is not a timing race either.
+
+The trace is off unless DKR_TRACE_SP is set, and stops after a few hundred lines.
+
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -256,7 +256,37 @@
+     }
+ }
+ 
++// --- Trace des bords SP et DP, activee par DKR_TRACE_SP ------------------------
++//
++// DKR planifie sa tache suivante sur le bord SP, ce qui rend l'ordre des
++// interruptions observable depuis le jeu. Un plantage sur Windows 95 montre
++// `sc->curRSPTask` nul dans `__scHandleRSP` : le jeu recoit une fin de tache RSP
++// alors qu'il n'en a pas en cours.
++//
++// Raisonner sur cette sequence sans la voir revient a deviner, et ce portage
++// porte deja six correctifs sur l'ordre d'achevement SP et DP.
++//
++// La trace s'arrete d'elle-meme apres quelques centaines de lignes : la machine
++// cible ecrit sur une disquette emulee.
++static std::atomic<unsigned> g_trace_submits{0};
++static std::atomic<unsigned> g_trace_sp{0};
++static std::atomic<unsigned> g_trace_dp{0};
++static bool trace_sp_enabled() {
++    static const bool on = (std::getenv("DKR_TRACE_SP") != nullptr);
++    return on;
++}
++static void trace_sp(const char* quoi, unsigned type) {
++    if (!trace_sp_enabled()) { return; }
++    const unsigned n = g_trace_submits.load() + g_trace_sp.load() + g_trace_dp.load();
++    if (n > 400u) { return; }
++    std::fprintf(stderr, "[trace][sp] %-8s type=%u  soumis=%u sp=%u dp=%u\n",
++                 quoi, type, g_trace_submits.load(), g_trace_sp.load(),
++                 g_trace_dp.load());
++}
++
+ void sp_complete() {
++    g_trace_sp.fetch_add(1);
++    trace_sp("sp", 0);
+     PTR(OSMesgQueue) mq;
+     OSMesg msg;
+     {
+@@ -271,6 +301,8 @@
+ }
+ 
+ void dp_complete() {
++    g_trace_dp.fetch_add(1);
++    trace_sp("dp", 0);
+     uint8_t* rdram = events_context.rdram;
+     ultramodern::lock_guard lock{ events_context.message_mutex };
+     ultramodern::enqueue_external_message_src(events_context.dp.mq, events_context.dp.msg, false, ultramodern::EventMessageSource::Dp);
+@@ -571,6 +603,8 @@
+ 
+ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
+     OSTask* task = TO_PTR(OSTask, task_);
++    g_trace_submits.fetch_add(1);
++    trace_sp("soumis", task->t.type);
+ 
+     // Send gfx tasks to the graphics action queue
+     if (task->t.type == M_GFXTASK) {
