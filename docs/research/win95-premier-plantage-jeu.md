@@ -570,3 +570,44 @@ achevée.
 Ce n'est pas nécessairement la cause du plantage restant, mais c'est un endroit
 où le modèle du jeu et le nôtre divergent franchement, sur un mécanisme que DKR
 emploie réellement.
+
+## Le yield n'est pas emprunté
+
+`func_80079760` appelle `__scYield` dès que de l'audio attend pendant qu'une
+tâche RSP tourne, et notre runtime ignore les yields. La divergence est réelle
+dans le code ; reste à savoir si le jeu l'emprunte.
+
+Compteurs posés dans `osSpTaskYield_recomp` et `osSpTaskYielded_recomp` :
+**aucune des deux fonctions n'est appelée** sur une séquence de 577 listes
+d'affichage.
+
+Septième hypothèse éliminée. La divergence existe mais dort — elle pourrait se
+réveiller en course, où l'audio est plus chargé, et il faudra y repenser à ce
+moment-là. Elle n'explique pas le plantage actuel.
+
+Les compteurs ont été retirés : garder une sonde permanente sur un chemin mort
+coûte un correctif de dépendance pour rien. Le raisonnement, lui, reste consigné
+ici — c'est ce qui évitera de refaire la mesure.
+
+## Bilan de l'enquête
+
+Sept hypothèses éliminées par la mesure, chacune ayant paru la plus probable au
+moment d'être testée :
+
+| # | Hypothèse | Ce qui l'a écartée |
+|---|---|---|
+| 1 | livraison en double du bord SP | un dépôt pour un appel |
+| 2 | course d'ordonnancement | retarder le bord ne change rien |
+| 3 | planificateur non initialisé | il l'est ; je lisais son en-tête |
+| 4 | messages SP et DP confondus | leurs valeurs diffèrent |
+| 5 | famine résiduelle sur DP | plus aucun message refusé |
+| 6 | écart entre les bords SP et DP | les accoler ne change rien |
+| 7 | yield ignoré | le jeu ne yield pas |
+
+Deux causes réelles trouvées et corrigées en chemin : la RDRAM trop petite pour
+la disposition de librecomp, et la saturation de la file d'interruptions — cette
+dernière **bloquant** le fil graphique du jeu, puisque DKR y envoie ses tâches en
+`OS_MESG_BLOCK`.
+
+Ce qui reste établi et non expliqué : `curRDPTask` est toujours renseigné quand
+nous déposons le bord DP, et nul quand le jeu le traite.
