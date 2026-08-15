@@ -314,3 +314,31 @@ qui passe par `__scHandleRDP` avant de revenir sur `__scHandleRSP`.
 
 Le jeu attend donc une fin de RDP que nous n'émettons pas. La tâche audio de DKR
 porte `OS_TASK_DP_WAIT` dans ses drapeaux de tâche, ce qui est la piste à suivre.
+
+## La coalescence des retraces : une correction qui régresse
+
+L'analyse suggérait la suite : puisque la file sature de retraces, ne pas en
+déposer un second tant que le premier n'est pas délivré. Sur le matériel, un
+retrace manqué pendant que le processeur est occupé est simplement manqué.
+
+**Le jeu ne démarre plus.** Il s'arrête à l'initialisation du tas :
+
+    Initializing recomp heap at offset 0x01000000 with size 0x00400000
+
+et n'affiche plus une seule image. Le drapeau « un retrace attend » reste à un,
+et tous les suivants sont écartés : le jeu attend un réveil qui ne vient jamais.
+
+La cause probable est que `dequeue_external_messages` n'est appelé que depuis un
+fil invité en attente. Avant que le jeu ne tourne, personne ne draine — le
+premier retrace pose le drapeau et rien ne le lève. Auparavant les retraces
+s'empilaient dans notre file et étaient délivrés en rafale au premier drainage.
+
+Le changement est retiré. Une correction qui régresse est pire que le défaut
+qu'elle vise, et celle-ci échangeait un plantage tardif contre un blocage
+immédiat.
+
+Ce que l'échec apprend, et qui vaut d'être gardé : **notre file externe n'est pas
+drainée à intervalle régulier**, mais opportunément, quand un fil invité se met en
+attente. Toute politique de dépôt qui suppose un drainage périodique est donc
+fausse par construction. La bonne forme reste à trouver — probablement en
+réservant des places plutôt qu'en écartant des messages.
