@@ -4,9 +4,10 @@
     LC_ALL=C <failing link> 2>&1 | tools/win95/oracle/generate-stubs.py > stubs.c
 
 `LC_ALL=C` is not decoration. GNU ld translates its diagnostics, and this machine
-runs a French system: without it the linker says "reference indefinie vers" and
-this script recognises nothing. Rather than carry one pattern per language - a
-list that is wrong the day someone links under a third locale - it matches the
+runs a French system: without it the linker phrases the undefined reference in
+French and this script recognises nothing. Rather than carry one pattern per
+language - a list that is wrong the day someone links under a third locale - it
+matches the
 untranslated form only, and **stops loudly** if it read a non-empty input without
 finding a single symbol. That is the same reasoning as the stubs themselves:
 better a stop than a silent empty result.
