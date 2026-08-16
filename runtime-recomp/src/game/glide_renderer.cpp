@@ -201,6 +201,16 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_refusees_ += context_.state.textures_refusees;
     total_tex_remplies_ += context_.state.textures_remplies;
     total_emis_texture_ += context_.state.emis_avec_texture;
+    // **Accumuler à chaque image, pas dans le bloc de rapport.**
+    //
+    // La première version de ce compteur additionnait à l'intérieur du `if` qui
+    // n'imprime qu'une liste sur soixante : il ne voyait donc qu'un soixantième
+    // des images, et le total était soixante fois trop bas. Il l'était de façon
+    // *cohérente*, ce qui est le pire cas — 5 731 contre 380 000 émis se lit
+    // comme « le mélange n'est presque jamais posé » plutôt que comme une erreur
+    // d'échantillonnage.
+    for (int m = 0; m < 8; m++) { melange_[m] += context_.state.emis_par_melange[m]; }
+    total_test_alpha_ += context_.state.emis_avec_test_alpha;
     for (int i = 0; i < 4; i++) {
         aire_[i] += context_.state.aire[i];
         profondeur_[i] += context_.state.emis_par_profondeur[i];
@@ -345,6 +355,26 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "[gfx]   profondeur: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
                      profondeur_[0], profondeur_[1], profondeur_[2],
                      profondeur_[3]);
+        {
+            char l2[128];
+            std::size_t e2 = 0;
+            int m;
+            l2[0] = '\0';
+            for (m = 0; m < 8; m++) {
+                if (melange_[m] != 0) {
+                    e2 += static_cast<std::size_t>(std::snprintf(
+                        l2 + e2, sizeof(l2) - e2, " %d:%lu", m, melange_[m]));
+                }
+            }
+            std::fprintf(stderr,
+                         "[gfx]   melange:%s | test-alpha=%lu ref-max=%u\n",
+                         l2, total_test_alpha_, context_.state.alpha_ref_max);
+        }
+        if (context_.state.oow_max > context_.state.oow_min) {
+            std::fprintf(stderr, "[gfx]   oow=[%d..%d]/1000000\n",
+                         static_cast<int>(context_.state.oow_min * 1000000.0F),
+                         static_cast<int>(context_.state.oow_max * 1000000.0F));
+        }
         {
             char ligne[128];
             std::size_t ecrit = 0;

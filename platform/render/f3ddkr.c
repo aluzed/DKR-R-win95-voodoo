@@ -482,6 +482,42 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             if (c->render_state.depth < 4) {
                 c->state.emis_par_profondeur[c->render_state.depth]++;
             }
+            /* **La plage des profondeurs transmises.**
+             *
+             * Glide en mode tampon W consomme `oow` directement. L'écran est
+             * noir depuis que le test s'active, et deux causes très différentes
+             * donnent exactement ce symptôme : un sens de comparaison inversé —
+             * déjà consigné dans `win95-glide-etats.md` — ou des profondeurs
+             * dégénérées. Ouvrir le masque d'écriture pendant l'effacement n'a
+             * rien changé, donc la première est écartée d'un cran.
+             *
+             * On relève donc l'entrée du test. Des `oow` tous égaux, négatifs,
+             * ou hors de la plage que Glide encode expliqueraient le noir sans
+             * qu'aucune convention ne soit en cause. */
+            /* **Le mélange et le test alpha, comptés comme la profondeur.**
+             *
+             * Le correctif de `G_RDPSETOTHERMODE` n'a pas réécrit que le mode de
+             * cycle : la moitié basse porte aussi le mélangeur et la comparaison
+             * alpha. Trois causes peuvent noircir l'écran et j'en ai vérifié une
+             * seule — c'est exactement la faute qui a coûté un correctif inutile
+             * sur les refus de texture. On les sépare avant d'en corriger une. */
+            if (c->render_state.blend < 8) {
+                c->state.emis_par_melange[c->render_state.blend]++;
+            }
+            if (c->render_state.alpha_test) {
+                c->state.emis_avec_test_alpha++;
+                if (c->render_state.alpha_reference > c->state.alpha_ref_max) {
+                    c->state.alpha_ref_max = c->render_state.alpha_reference;
+                }
+            }
+            {
+                int q;
+                for (q = 0; q < 3; q++) {
+                    const float o = v[q].oow;
+                    if (o < c->state.oow_min) { c->state.oow_min = o; }
+                    if (o > c->state.oow_max) { c->state.oow_max = o; }
+                }
+            }
             if (c->backend && c->backend->draw_triangles) {
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }
@@ -1258,6 +1294,8 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
     ctx->state.s_min = 1.0e30f;
     ctx->state.t_min = 1.0e30f;
     ctx->state.s_max = -1.0e30f;
+    ctx->state.oow_min = 1.0e30f;
+    ctx->state.oow_max = -1.0e30f;
     ctx->state.t_max = -1.0e30f;
     ctx->rdram      = rdram;
     ctx->rdram_size = rdram_size;

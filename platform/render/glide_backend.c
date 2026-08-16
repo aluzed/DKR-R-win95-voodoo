@@ -498,6 +498,33 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
         int i;
         for (i = 0; i < g_tmu_count; i++) { dkr_tmu_begin_frame(&g_tmu[i]); }
     }
+
+    /* --- Glide n'efface la profondeur que si l'écriture y est autorisée ------ *
+     *
+     * `grBufferClear` prend une valeur de profondeur, mais elle n'est écrite que
+     * si `grDepthMask` est ouvert. L'état laissé par la fin de l'image
+     * précédente le referme dès que le dernier triangle était en
+     * `DKR_DEPTH_DISABLED` ou en test-sans-écriture — c'est-à-dire presque
+     * toujours, l'interface se dessinant par-dessus la scène.
+     *
+     * Tant que le test de profondeur était inactif, cela ne se voyait pas : rien
+     * ne lisait le tampon. Dès qu'il s'est activé, le tampon a gardé les
+     * profondeurs de la première image pour toutes les suivantes, et **l'écran
+     * est devenu noir** — tout échouait au test contre une scène figée.
+     *
+     * Le symptôme est le même que celui d'un sens de comparaison inversé, déjà
+     * consigné dans `win95-glide-etats.md`, et c'est ce qui rend ce défaut
+     * coûteux : on va vérifier la comparaison, on la trouve juste, et l'on
+     * cherche ailleurs que dans l'effacement.
+     *
+     * On ouvre donc le masque le temps de l'effacement. `has_state` est invalidé
+     * pour que le prochain `set_state` repose l'état réel plutôt que de le
+     * croire déjà en place — sans quoi la comparaison de blocs sauterait la
+     * remise en ordre. */
+    if (gs.depth_mask) {
+        gs.depth_mask(1);
+        b.has_state = 0;
+    }
     dkr_glide_clear(clear_argb);
 }
 

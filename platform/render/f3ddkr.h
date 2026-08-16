@@ -152,6 +152,16 @@ typedef struct {
     /* Les triangles émis par mode de profondeur. Un tri absent produit
        exactement l'image observée : le dernier grand polygone recouvre tout. */
     unsigned long     emis_par_profondeur[4];
+    /* La plage des profondeurs remises à la carte. Glide en tampon W consomme
+       `oow` telle quelle ; des valeurs dégénérées donnent un écran noir sans
+       qu'aucune convention de comparaison ne soit en cause. */
+    float             oow_min, oow_max;
+    /* Le mélange et le test alpha. Trois causes peuvent noircir un écran —
+       profondeur, mélange, seuil alpha — et les confondre fait corriger la
+       mauvaise. */
+    unsigned long     emis_par_melange[8];
+    unsigned long     emis_avec_test_alpha;
+    unsigned          alpha_ref_max;
     /* Les configurations de combineur, répertoriées ou non. `rdp_state.h`
        insiste : un cas manquant ne se voit pas au décodage, il se voit à
        l'écran sous forme d'une couleur inattendue, éventuellement dans un seul
