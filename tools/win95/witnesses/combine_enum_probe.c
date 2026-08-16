@@ -1,14 +1,14 @@
-/* Quelles valeurs ont reellement GR_COMBINE_FUNCTION_* et GR_COMBINE_FACTOR_* ?
+/* What values do GR_COMBINE_FUNCTION_* and GR_COMBINE_FACTOR_* really have?
  *
- * Le harnais de E05-S03 a montre un ecart de 140 a 156 unites sur toute la
- * famille BLEND. Ces valeurs-la sont les seules du projet a n'avoir jamais ete
- * mesurees : `glide_state_probe.c` a verifie le melange, la profondeur, les
- * ciseaux et le test alpha, mais pas le combineur.
+ * E05-S03's harness showed a deviation of 140 to 156 units across the whole BLEND
+ * family. Those values are the only ones in the project never to have been
+ * measured: `glide_state_probe.c` checked blending, depth, scissoring and the
+ * alpha test, but not the combiner.
  *
- * On ne devine donc pas : on balaie. Pour chaque valeur de fonction, on dessine
- * avec des entrees connues et l'on relit le pixel. La fonction cherchee est
- * celle qui produit `f x (other - local) + local` — et le balayage dira aussi ce
- * que font les autres, ce qui vaut d'etre consigne.
+ * So we do not guess: we sweep. For each function value, we draw with known inputs
+ * and read the pixel back. The function we are after is the one that produces
+ * `f x (other - local) + local` - and the sweep will also say what the others do,
+ * which is worth recording.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -25,13 +25,13 @@ static void say(const char *fmt, ...)
     if (g_out) { fputs(l, g_out); fflush(g_out); }
 }
 
-/* Entrees choisies pour que chaque formule candidate donne un resultat
-   distinct. `other` est la constante, `local` la couleur du sommet, et le
-   facteur vaudra l'alpha de la constante — trois valeurs bien separees. */
+/* Inputs chosen so that each candidate formula gives a distinct result. `other`
+   is the constant, `local` the vertex colour, and the factor will be the
+   constant's alpha - three well-separated values. */
 #define OTH_R 40
 #define OTH_G 80
 #define OTH_B 120
-#define OTH_A 64        /* facteur = 64/255 = 0,251 */
+#define OTH_A 64        /* factor = 64/255 = 0.251 */
 #define LOC_R 200
 #define LOC_G 160
 #define LOC_B 240
@@ -61,22 +61,22 @@ int main(void)
     const int W = 640, H = 480;
 
     g_out = fopen("D:\\CCENUM.TXT", "w");
-    say("balayage des fonctions de combineur de Glide\n\n");
-    say("  entrees : other = constante (%d,%d,%d) alpha %d\n",
+    say("sweep of Glide's combiner functions\n\n");
+    say("  inputs: other = constant (%d,%d,%d) alpha %d\n",
         OTH_R, OTH_G, OTH_B, OTH_A);
-    say("            local = couleur du sommet (%d,%d,%d)\n\n",
+    say("          local = vertex colour (%d,%d,%d)\n\n",
         LOC_R, LOC_G, LOC_B);
-    say("  candidates, en rouge :\n");
+    say("  candidates, on the red channel:\n");
     say("    LOCAL                     = %d\n", LOC_R);
     say("    SCALE_OTHER (f x other)   = %d\n", OTH_R * OTH_A / 255);
     say("    SCALE_OTHER_ADD_LOCAL     = %d\n", OTH_R * OTH_A / 255 + LOC_R);
     say("    BLEND f(other-local)+local= %d\n",
         (OTH_R - LOC_R) * OTH_A / 255 + LOC_R);
-    say("\n-- balayage du FACTEUR, fonction BLEND (7) --\n");
-    say("%-4s %-8s %s\n", "fac", "lu", "interpretation");
+    say("\n-- sweep of the FACTOR, function BLEND (7) --\n");
+    say("%-4s %-8s %s\n", "fac", "read", "reading");
 
     dkr_render_backend_glide(&bk);
-    if (!bk.open(bk.self, W, H)) { say("ECHEC ouverture\n"); return 1; }
+    if (!bk.open(bk.self, W, H)) { say("FAILED to open\n"); return 1; }
     memset(&st, 0, sizeof(st));
     st.blend = DKR_BLEND_OPAQUE; st.depth = DKR_DEPTH_DISABLED;
     st.cull = DKR_CULL_NONE;
@@ -85,9 +85,9 @@ int main(void)
     for (fn = 0; fn <= 15; fn++) {
         dkr_cc_setup r;
         unsigned c;
-        int lu, attendu_blend, attendu_scale, attendu_local, attendu_add;
+        int got, want_blend, want_scale, want_local, want_add;
         memset(&r, 0, sizeof(r));
-        /* facteur = OTHER_ALPHA (candidat 2), local itere, other constant */
+        /* factor = OTHER_ALPHA (candidate 2), local iterated, other constant */
         r.cc_function = 7; r.cc_factor = (unsigned char)fn;
         r.cc_local = 0; r.cc_other = 2;
         r.ac_function = 1; r.ac_factor = 8; r.ac_local = 0; r.ac_other = 0;
@@ -102,21 +102,21 @@ int main(void)
         bk.present(bk.self);
         if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) <= 0) { continue; }
         c = g_px[(size_t)(rh/2) * (size_t)rw + (size_t)(rw/2)];
-        lu = (int)((c >> 16) & 0xFF);
+        got = (int)((c >> 16) & 0xFF);
 
-        attendu_local = LOC_R;
-        attendu_scale = OTH_R * OTH_A / 255;
-        attendu_add   = attendu_scale + LOC_R;
-        attendu_blend = (OTH_R - LOC_R) * OTH_A / 255 + LOC_R;
+        want_local = LOC_R;
+        want_scale = OTH_R * OTH_A / 255;
+        want_add   = want_scale + LOC_R;
+        want_blend = (OTH_R - LOC_R) * OTH_A / 255 + LOC_R;
         say("%-4d %06X   %s\n", fn, c & 0x00FFFFFFu,
-            (lu > attendu_blend - 12 && lu < attendu_blend + 12) ? "<== BLEND" :
-            (lu > attendu_local - 12 && lu < attendu_local + 12) ? "LOCAL" :
-            (lu > attendu_scale - 12 && lu < attendu_scale + 12) ? "SCALE_OTHER" :
-            (lu > attendu_add   - 12 && lu < attendu_add   + 12) ? "SCALE_OTHER_ADD_LOCAL" :
-            (lu == 0) ? "zero" : "autre");
+            (got > want_blend - 12 && got < want_blend + 12) ? "<== BLEND" :
+            (got > want_local - 12 && got < want_local + 12) ? "LOCAL" :
+            (got > want_scale - 12 && got < want_scale + 12) ? "SCALE_OTHER" :
+            (got > want_add   - 12 && got < want_add   + 12) ? "SCALE_OTHER_ADD_LOCAL" :
+            (got == 0) ? "zero" : "other");
     }
     bk.close(bk.self);
-    say("\nfin\n");
+    say("\nend\n");
     if (g_out) { fclose(g_out); }
     return 0;
 }
