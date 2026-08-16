@@ -1,6 +1,6 @@
 # La machine de test émulait un Voodoo 1, et pourquoi on ne l'avait pas vu
 
-Relevé de [E00-S05](../stories/E00-cadrage/E00-S05-adr-cible-materielle-glide.md),
+Relevé de [E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md),
 14 août 2026.
 
 ## Le fichier ne mentait pas — on ne lisait pas la bonne section

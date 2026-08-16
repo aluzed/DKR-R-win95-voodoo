@@ -4,7 +4,7 @@ Ces listes recensent les symboles que Windows 95 **exporte sans les
 implémenter**. Elles complètent `../` — qui répond à « ce symbole existe-t-il ? »
 — en répondant à « et fait-il quelque chose ? ».
 
-Livrable de [E02-S01](../../../../docs/stories/E02-systeme/E02-S01-couche-threads-synchronisation.md).
+Livrable de [E02-S01](../../../../docs/stories/E02-system/E02-S01-threading-and-synchronisation-layer.md).
 
 ## Pourquoi cette liste existe
 
@@ -59,7 +59,7 @@ Deux enseignements au-delà du cas qui a motivé le relevé :
 - **`ADVAPI32` est décorative à 79 %.** Tout ticket qui la viserait — registre,
   sécurité, services — doit vérifier chaque entrée avant de s'y fier.
 - **`MSVCRT` et `WINMM` n'ont aucun bouchon.** La sortie audio de
-  [E06-S03](../../../../docs/stories/E06-plateforme/E06-S03-sortie-audio.md) par
+  [E06-S03](../../../../docs/stories/E06-platform/E06-S03-audio-output.md) par
   `waveOut` ne rencontrera pas ce piège.
 
 Le motif n'est pas propre aux variantes `...W` : `BackupRead`, `CreateNamedPipeA`,

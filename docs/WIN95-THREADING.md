@@ -1,6 +1,6 @@
 # Fils d'exécution et synchronisation sous Windows 95
 
-Livré par [E02-S01](stories/E02-systeme/E02-S01-couche-threads-synchronisation.md).
+Livré par [E02-S01](stories/E02-system/E02-S01-threading-and-synchronisation-layer.md).
 Implémentation : `platform/win95/threading.{h,cpp}`.
 
 Même règle que pour [la couche de compatibilité](WIN95-COMPAT.md) : **un

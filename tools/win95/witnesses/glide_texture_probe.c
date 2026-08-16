@@ -3,7 +3,7 @@
  * `grTexDownloadMipMap` ne rend aucun code d'erreur. `grTexSource` non plus.
  * Toute la chaîne de texture — allocation, transfert, liaison, combineur — est
  * donc **silencieuse de bout en bout** : elle ne peut être vérifiée qu'en
- * regardant l'image. La relecture du tampon (`win95-glide-amorcage.md`) rend
+ * regardant l'image. La relecture du tampon (`win95-glide-bringup.md`) rend
  * cette vérification possible, et c'est la seule qui existe.
  *
  * ## L'épreuve est construite pour distinguer les fautes, pas pour réussir

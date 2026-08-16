@@ -1,7 +1,7 @@
 # Environnement de test émulé
 
 Recette de la machine Windows 95 / 3dfx sur laquelle le portage se met au point.
-Livrable de [E09-S01](stories/E09-qa/E09-S01-environnement-test-emule.md).
+Livrable de [E09-S01](stories/E09-qa/E09-S01-emulated-test-environment.md).
 
 ## Pourquoi cet environnement passe avant le reste
 
@@ -9,10 +9,10 @@ Le cycle « modifier, exécuter, observer » du portage passe par une machine
 Windows 95 avec une carte 3dfx. Sur du matériel réel, chaque itération coûte une
 copie de fichier, un redémarrage, et — quand Glide plante en plein écran — une
 réinstallation. L'émulateur ramène ce cycle à quelques secondes, et c'est ce qui
-rend praticable le tâtonnement inévitable de [E05-S01](stories/E05-glide/E05-S01-initialisation-glide-buffers.md).
+rend praticable le tâtonnement inévitable de [E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md).
 
 Il ne remplace pas la validation sur matériel réel
-([E09-S04](stories/E09-qa/E09-S04-validation-materiel-reel.md)) : il la rend rare.
+([E09-S04](stories/E09-qa/E09-S04-real-hardware-validation.md)) : il la rend rare.
 
 ## Montage
 
@@ -96,7 +96,7 @@ Le poste de développement n'a pas forcément de session graphique. `Drive-Win95
 fait tourner 86Box sur un affichage X virtuel, capture l'écran et injecte des
 touches — ce qui rend l'environnement pilotable depuis un terminal, et fournit le
 socle du harnais de comparaison visuelle de
-[E09-S02](stories/E09-qa/E09-S02-harnais-comparaison-visuelle.md).
+[E09-S02](stories/E09-qa/E09-S02-visual-comparison-harness.md).
 
 ```bash
 scripts/Drive-Win95-VM.sh start                  # Xvfb + 86Box + capture clavier
@@ -154,7 +154,7 @@ sain, chaque essai raté coûterait une réinstallation complète.
 ## Configuration de la machine
 
 Conforme à la cible du projet, sous réserve de l'ADR 0002
-([E00-S05](stories/E00-cadrage/E00-S05-adr-cible-materielle-glide.md)) :
+([E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md)) :
 
 | Élément | Valeur | Remarque |
 |---|---|---|
@@ -201,7 +201,7 @@ Deux points de vigilance :
   lui.
 - **FAT16 impose le 8.3.** Le script prévient quand un nom sera tronqué. C'est
   la même contrainte que celle qui pèse sur les fichiers de sauvegarde
-  ([E02-S05](stories/E02-systeme/E02-S05-sauvegardes-eeprom-controller-pak.md)).
+  ([E02-S05](stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md)).
 
 ## Limites connues
 
@@ -264,7 +264,7 @@ et y choisir « 3Dfx Voodoo 2 », 4 Mo de tampon d'images, 4 Mo de textures. Apr
 ce passage, les mêmes valeurs dans le fichier sont honorées, et Windows redétecte
 un nouveau matériel au démarrage suivant.
 
-Conséquence pour [E00-S05](stories/E00-cadrage/E00-S05-adr-cible-materielle-glide.md) :
+Conséquence pour [E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md) :
 **le modèle de carte émulé doit être vérifié dans le dialogue, pas déduit du
 fichier de configuration.** Une mesure de budget de texture faite sur 2 Mo au
 lieu de 4, ou un test de multitexture fait sur une seule TMU, serait faux sans
@@ -287,7 +287,7 @@ Correction : ajouter la liaison `DEV_0001` à côté de celle d'origine, aux tro
 endroits où l'INF la déclare (`[Mfg]`, la clé `Enum`, et les chaînes de
 description). `scripts/patch_voodoo2_inf.py` le fait.
 
-À retenir pour [E05-S01](stories/E05-glide/E05-S01-initialisation-glide-buffers.md) :
+À retenir pour [E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md) :
 la détection de carte à l'exécution ne doit pas se fier au seul identifiant PCI,
 puisqu'il ment sur cette plate-forme de test. C'est `grGet` /
 `grSstQueryBoards` qui font foi.
@@ -375,7 +375,7 @@ et y choisir « 3Dfx Voodoo 2 », 4 Mo de tampon d'images, 4 Mo de textures. Apr
 ce passage, les mêmes valeurs dans le fichier sont honorées, et Windows redétecte
 un nouveau matériel au démarrage suivant.
 
-Conséquence pour [E00-S05](stories/E00-cadrage/E00-S05-adr-cible-materielle-glide.md) :
+Conséquence pour [E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md) :
 **le modèle de carte émulé doit être vérifié dans le dialogue, pas déduit du
 fichier de configuration.** Une mesure de budget de texture faite sur 2 Mo au
 lieu de 4, ou un test de multitexture fait sur une seule TMU, serait faux sans
@@ -398,7 +398,7 @@ Correction : ajouter la liaison `DEV_0001` à côté de celle d'origine, aux tro
 endroits où l'INF la déclare (`[Mfg]`, la clé `Enum`, et les chaînes de
 description). `scripts/patch_voodoo2_inf.py` le fait.
 
-À retenir pour [E05-S01](stories/E05-glide/E05-S01-initialisation-glide-buffers.md) :
+À retenir pour [E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md) :
 la détection de carte à l'exécution ne doit pas se fier au seul identifiant PCI,
 puisqu'il ment sur cette plate-forme de test. C'est `grGet` /
 `grSstQueryBoards` qui font foi.
@@ -451,7 +451,7 @@ Le binaire n'importe que `kernel32` et `user32`, et charge Glide par
 `LoadLibrary` : il ne dépend d'aucun redistribuable et écarte le démarrage du CRT
 de mingw-w64, qui est le point d'achoppement attendu sous Windows 95. À ce titre
 il sert aussi de premier témoin pour
-[E00-S02](stories/E00-cadrage/E00-S02-spike-toolchain-pe-win95.md).
+[E00-S02](stories/E00-scoping/E00-S02-spike-pe-win95-toolchain.md).
 
 Résultat obtenu :
 
@@ -473,5 +473,5 @@ oow` — `ooz` et `a` s'intercalent entre les couleurs et `oow`. Une structure
 un triangle impeccable, **aux couleurs permutées** : Glide lit simplement les
 flottants aux mauvais décalages. Un sommet rouge sort vert. Rien dans le code, le
 compilateur ou Glide ne le signale — seule la comparaison visuelle l'attrape.
-C'est l'argument de [E04-S08](stories/E04-hle-f3ddkr/E04-S08-rasteriseur-logiciel-reference.md)
+C'est l'argument de [E04-S08](stories/E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md)
 en miniature.

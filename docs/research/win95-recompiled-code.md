@@ -1,6 +1,6 @@
 # Ce que coûte le code recompilé sur la cible Windows 95
 
-Mesures de [E01-S05](../stories/E01-build/E01-S05-compilation-code-recompile.md),
+Mesures de [E01-S05](../stories/E01-build/E01-S05-compiling-the-recompiled-code.md),
 prises sur les sources générées présentes dans le dépôt.
 
 ## Le volume

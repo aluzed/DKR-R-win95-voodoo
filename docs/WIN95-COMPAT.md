@@ -1,6 +1,6 @@
 # Ce que la couche de compatibilité Windows 95 change
 
-Livré par [E01-S03](stories/E01-build/E01-S03-crt-startup-compatibilite-api.md).
+Livré par [E01-S03](stories/E01-build/E01-S03-crt-startup-api-compatibility.md).
 Implémentation : `platform/win95/`.
 
 Ce document existe pour une raison précise : **un contournement dont la
@@ -218,7 +218,7 @@ par le paquet.
 
 Le coût est la taille du binaire : 501 Ko pour un témoin qui en ferait 51 avec
 Open Watcom. Sans objet au regard des 14 Mio de marge de
-[l'ADR 0003](adr/0003-budget-memoire.md).
+[l'ADR 0003](adr/0003-memory-budget.md).
 
 ## Démarrage
 

@@ -1,6 +1,6 @@
 # Ce qui empêche DKR-R de tourner sous Windows 95
 
-Inventaire de [E00-S01](../stories/E00-cadrage/E00-S01-inventaire-dependances-incompatibles.md).
+Inventaire de [E00-S01](../stories/E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md).
 Date : 2026-08-12.
 
 ## Résumé
@@ -63,7 +63,7 @@ tools/win95/check-win95-imports.sh build/DKR-R.EXE   # controle d'un binaire
 
 Le contrôleur renvoie un code de retour non nul s'il manque un symbole : il est
 utilisable tel quel comme garde-fou de build
-([E01-S04](../stories/E01-build/E01-S04-garde-fou-imports-pe.md)).
+([E01-S04](../stories/E01-build/E01-S04-pe-import-guard-rail.md)).
 
 ## 1. Appels Win32 directs du runtime — **aucun bloquant**
 
@@ -168,7 +168,7 @@ C'est le genre de conclusion qu'on ne tire pas d'un tableau de compatibilité.
 
 ### Le piège que les sondes ne pouvaient pas voir : les exports vides
 
-> **Ajout du 2026-08-12, par [E02-S01](../stories/E02-systeme/E02-S01-couche-threads-synchronisation.md).**
+> **Ajout du 2026-08-12, par [E02-S01](../stories/E02-system/E02-S01-threading-and-synchronisation-layer.md).**
 
 La méthode par table d'imports répond à une question — « ce symbole existe-t-il ? »
 — et **la limite annoncée en fin de document s'est matérialisée** : elle ne dit
@@ -363,7 +363,7 @@ ne peut pas trancher :
 | **Validation R/W maximale** | **256 Mio** |
 | Schéma de `librecomp` à 8 Mio | **OK** |
 
-Deux enseignements pour [E00-S06](../stories/E00-cadrage/E00-S06-adr-budget-memoire.md) :
+Deux enseignements pour [E00-S06](../stories/E00-scoping/E00-S06-adr-memory-budget.md) :
 
 - même corrigée de la troncature, la réservation de 4 Gio est impossible : le
   plafond mesuré est de 1 Gio ;
@@ -389,7 +389,7 @@ Et le bloc `if(DKR_RUNTIME_BUILD_RT64)` exclut, avec lui, `f3ddkr_rt64.cpp`,
 `rt64_renderer.cpp`, `runtime_crt_overlay.cpp`, `runtime_rice_texture_import.cpp`,
 `runtime_texture_packs.cpp`, `runtime_ui.cpp` et le pont ImGui/SDL.
 
-**Conséquence directe : une bonne part de [E07-S02](../stories/E07-perimetre/E07-S02-depose-imgui-texture-packs-telemetrie.md)
+**Conséquence directe : une bonne part de [E07-S02](../stories/E07-scope/E07-S02-dropping-imgui-texture-packs-telemetry.md)
 est déjà faite par un interrupteur qui existe.** Le ticket doit être réduit.
 
 RT64 exige D3D12, Vulkan ou Metal ; aucun n'existe sous Windows 95, et une
@@ -452,7 +452,7 @@ la valeur conservée du projet :
   révélera au premier essai.
 - La référence d'exports est celle de **cette** installation (Win95 OSR2 + un
   `MSVCRT.DLL` de novembre 1997). Une machine réelle du même âge peut différer
-  légèrement — [E09-S04](../stories/E09-qa/E09-S04-validation-materiel-reel.md)
+  légèrement — [E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md)
   le dira.
 - Le comptage par fichier repose sur des expressions régulières, pas sur l'arbre
   syntaxique : il donne un ordre de grandeur fiable, pas un décompte exact.

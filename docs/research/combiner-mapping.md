@@ -51,7 +51,7 @@ ticket met en garde.
 > l'alpha du sommet, sur les 74 modes de rendu `G_RM_FOG_SHADE_A` — le plus
 > fréquent du jeu. L'issue n'est donc pas générale : elle ne vaut que pour les
 > configurations sans brouillard, ce qui la rend conditionnelle plutôt
-> qu'impossible. Voir `win95-brouillard.md`.
+> qu'impossible. Voir `win95-fog.md`.
 
 ## Le combineur tronque
 

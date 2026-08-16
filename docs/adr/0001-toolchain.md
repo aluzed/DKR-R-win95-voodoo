@@ -2,7 +2,7 @@
 
 - **Statut** : accepté
 - **Date** : 2026-08-12
-- **Ticket** : [E00-S02](../stories/E00-cadrage/E00-S02-spike-toolchain-pe-win95.md)
+- **Ticket** : [E00-S02](../stories/E00-scoping/E00-S02-spike-pe-win95-toolchain.md)
 
 ## Contexte
 
@@ -93,7 +93,7 @@ absents — l'émulation POSIX de `winpthreads` ne tient pas sur Windows 95.
 
 C'est le résultat le plus utile de ce spike, parce qu'il transforme une hypothèse
 en certitude : **la couche de fils d'exécution doit être réécrite sur les
-primitives Win32** ([E02-S01](../stories/E02-systeme/E02-S01-couche-threads-synchronisation.md)).
+primitives Win32** ([E02-S01](../stories/E02-system/E02-S01-threading-and-synchronisation-layer.md)).
 Ce n'était jusqu'ici qu'un plan plausible ; c'est maintenant une contrainte
 mesurée.
 
@@ -121,7 +121,7 @@ explicitement comme le risque à écarter, « plusieurs semaines qui ne figurent
 dans aucun ticket ».
 
 Le surcoût de mingw est un binaire dix fois plus gros et un pont de 150 lignes.
-Le budget mémoire ([ADR 0003](0003-budget-memoire.md)) a 14 Mio de marge : la
+Le budget mémoire ([ADR 0003](0003-memory-budget.md)) a 14 Mio de marge : la
 taille n'est pas un problème.
 
 **Watcom reste le repli documenté.** Si le portage de `ultramodern` dérape au
@@ -160,19 +160,19 @@ Le coût est la taille : 501 Ko pour T3b. Sans objet au regard du budget.
 - **`ultramodern` et `librecomp` sont patchables**, pas à réécrire. Le risque
   majeur identifié par le ticket ne s'est pas matérialisé, et c'est le principal
   acquis de ce spike.
-- **[E02-S01](../stories/E02-systeme/E02-S01-couche-threads-synchronisation.md)
+- **[E02-S01](../stories/E02-system/E02-S01-threading-and-synchronisation-layer.md)
   devient obligatoire et non optionnel** : `std::thread` ne fonctionne pas sur la
   cible. La couche de fils doit reposer sur `CreateThread`, `CRITICAL_SECTION` et
   les événements — ce que T3b valide.
 - **`tools/win95/win95compat/` est le point de départ de cette couche.** Il est
   écrit, lié et éprouvé sur la machine ; E02-S01 l'étend plutôt que de partir de
   rien.
-- **[E01-S01](../stories/E01-build/E01-S01-toolchain-cmake-i686-sans-sse.md)**
+- **[E01-S01](../stories/E01-build/E01-S01-cmake-i686-toolchain-without-sse.md)**
   hérite des drapeaux exacts :
   `-march=pentium2 -mtune=pentium3 -mfpmath=387 -mno-sse -mno-sse2 -static
   -static-libgcc -static-libstdc++`, plus
   `-Wl,--whole-archive -lwin95compat -Wl,--no-whole-archive`.
-- **[E01-S04](../stories/E01-build/E01-S04-garde-fou-imports-pe.md)** devient
+- **[E01-S04](../stories/E01-build/E01-S04-pe-import-guard-rail.md)** devient
   indispensable, pas confortable : le seul symbole oublié rend le binaire
   inchargeable, sans avertissement au lien.
 - Le contrôle « aucune instruction SSE » doit porter sur le **binaire lié**, pas
@@ -194,4 +194,4 @@ une archive zip, qui s'extrait dans `~/.local/dkr-win95/opt/watcom`.
 - [`docs/research/win95-blockers.md`](../research/win95-blockers.md) — inventaire des manques, comptes par fichier
 - `tools/win95/witnesses/` — les quatre témoins et leur banc
 - `tools/win95/win95compat/win95compat.c` — le pont
-- [ADR 0003](0003-budget-memoire.md) — budget mémoire, qui rend la taille des binaires indifférente
+- [ADR 0003](0003-memory-budget.md) — budget mémoire, qui rend la taille des binaires indifférente

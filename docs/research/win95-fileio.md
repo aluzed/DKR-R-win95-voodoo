@@ -1,6 +1,6 @@
 # Ce que Windows 95 permet pour écrire une sauvegarde
 
-Mesures de [E02-S05](../stories/E02-systeme/E02-S05-sauvegardes-eeprom-controller-pak.md),
+Mesures de [E02-S05](../stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md),
 prises sur la machine de test. Sonde : `tools/win95/witnesses/fileio_probe.cpp`,
 relevé écrit sur le volume **FAT16** du disque de transfert — c'est-à-dire le
 système de fichiers qui nous intéresse.

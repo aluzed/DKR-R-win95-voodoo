@@ -1,6 +1,6 @@
 # Sous-ensemble C++ de la cible Windows 95
 
-Livré par [E01-S02](stories/E01-build/E01-S02-sous-ensemble-cpp-impose.md).
+Livré par [E01-S02](stories/E01-build/E01-S02-enforced-cpp-subset.md).
 Vérifié par `tools/win95/check-cpp-subset.py`, en pré-build.
 
 ## La question de départ était mal posée
@@ -70,7 +70,7 @@ virtuelle, un `typeid`, un `throw`/`catch` — et affiche `RTTI : ok`,
 `exception : exception rattrapee`.
 
 Les désactiver réduirait la taille du binaire, ce qui compte peu au regard des
-14 Mio de marge de [l'ADR 0003](adr/0003-budget-memoire.md), et coûterait cher :
+14 Mio de marge de [l'ADR 0003](adr/0003-memory-budget.md), et coûterait cher :
 `librecomp` et `ultramodern` en dépendent, et les retirer imposerait de réécrire
 leur gestion d'erreurs — exactement le travail que ce projet cherche à éviter.
 
@@ -81,7 +81,7 @@ peut donc pas échapper à la couche de compatibilité en évitant `std::thread`
 
 ## État de compilation des dépendances
 
-Mesuré avec la toolchain de [E01-S01](stories/E01-build/E01-S01-toolchain-cmake-i686-sans-sse.md).
+Mesuré avec la toolchain de [E01-S01](stories/E01-build/E01-S01-cmake-i686-toolchain-without-sse.md).
 C'est la seule mesure d'avancement honnête ici.
 
 | Dépendance | Fichiers | Erreurs | Reste |

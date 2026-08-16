@@ -675,7 +675,7 @@ dkr_win95_verify(DKRWin95StateProbe)
 #
 # Ce témoin exerce chaque mode isolément et **relit le tampon d'image**, ce qui
 # transforme une supposition en fait daté. Il a déjà attrapé une faute : le sens
-# de comparaison du tampon w. Voir `docs/research/win95-glide-etats.md`.
+# de comparaison du tampon w. Voir `docs/research/win95-glide-states.md`.
 add_executable(DKRWin95GlideState
     "${DKR_WIN95_TOOLS}/witnesses/glide_state_probe.c")
 target_link_libraries(DKRWin95GlideState PRIVATE win95glide win95clock winmm)

@@ -1,6 +1,6 @@
 # Ce que `<filesystem>` coûte réellement sous Windows 95
 
-Mesures de [E02-S05](../stories/E02-systeme/E02-S05-sauvegardes-eeprom-controller-pak.md),
+Mesures de [E02-S05](../stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md),
 prises sur la machine de test.
 
 Ce dépôt bannissait `<filesystem>` en bloc, en lui attribuant treize symboles

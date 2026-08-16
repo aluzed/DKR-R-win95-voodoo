@@ -43,7 +43,7 @@ get_filename_component(DKRPORT_ROOT "${DKRPORT_ROOT}" ABSOLUTE)
 # librecomp do not compile for it yet (E01-S02, E01-S03), and RT64 and SDL2 have
 # no place on it at all. It therefore lives in its own file and returns here,
 # so the Windows, Linux and macOS targets cross a single false `if()` and are
-# unchanged by construction. See docs/adr/0004-strategie-depot.md.
+# unchanged by construction. See docs/adr/0004-repository-strategy.md.
 if(DKR_RUNTIME_TARGET_WIN95)
     include("${DKRPORT_ROOT}/cmake/win95-target.cmake")
     return()

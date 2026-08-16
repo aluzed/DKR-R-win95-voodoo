@@ -1,6 +1,6 @@
 # Coût CPU du code recompilé en 32 bits sans SSE
 
-Mesures de [E00-S03](../stories/E00-cadrage/E00-S03-spike-budget-cpu-recompilation.md).
+Mesures de [E00-S03](../stories/E00-scoping/E00-S03-spike-recompilation-cpu-budget.md).
 Date : 2026-08-11.
 
 ## Résumé
@@ -180,7 +180,7 @@ d'instruction du processeur, et la mesure est prise dans le temps *émulé*
 reflète donc ce que le modèle de 86Box prédit d'un Pentium II 400 — un modèle
 raisonnable, mais qui ne reproduit ni les caches réels, ni la prédiction de
 branchement, ni la bande passante mémoire d'époque. La validation sur matériel
-réel ([E09-S04](../stories/E09-qa/E09-S04-validation-materiel-reel.md)) reste
+réel ([E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md)) reste
 indispensable, et c'est elle qui dira de combien ce modèle se trompe.
 
 ## Limites de ces chiffres
@@ -209,14 +209,14 @@ Le banc mesure des fonctions feuilles appelées isolément. Il donne le coût
 *relatif* d'une machine à l'autre, ce qui était l'objet du ticket, mais pas le
 coût *absolu* d'une image de jeu. Pour prononcer le go/no-go il faut :
 
-1. **Faire tourner le jeu sous Windows 95** ([E02-S06](../stories/E02-systeme/E02-S06-amorcage-jeu.md)),
+1. **Faire tourner le jeu sous Windows 95** ([E02-S06](../stories/E02-system/E02-S06-game-bring-up.md)),
    avec le renderer de diagnostic, et mesurer le temps CPU par image. C'est le
    chiffre qui manque, et lui seul se compare aux 33,3 ms.
-2. **Chiffrer le microcode audio** ([E00-S04](../stories/E00-cadrage/E00-S04-spike-cout-rsp-sans-sse.md)).
+2. **Chiffrer le microcode audio** ([E00-S04](../stories/E00-scoping/E00-S04-spike-rsp-cost-without-sse.md)).
    C'est le poste le plus inquiétant du budget : la console le confiait à un DSP
    vectoriel dédié à 62,5 MHz, il tombe ici sur le même processeur. La génération
    de son code est possible — `RSPRecomp` lit la ROM directement.
-3. **Confronter au matériel réel** ([E09-S04](../stories/E09-qa/E09-S04-validation-materiel-reel.md)),
+3. **Confronter au matériel réel** ([E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md)),
    pour mesurer l'écart entre le modèle de 86Box et un vrai Pentium II.
 
 En attendant, le facteur **38×** permet de transposer sur la cible toute mesure
@@ -235,7 +235,7 @@ Aucun élément mesuré ne condamne l'approche, et deux la soutiennent :
 Le poste qui reste entièrement non mesuré, et qui est le plus inquiétant, n'est
 pas le CPU du jeu : c'est le microcode audio `aspMain`, exécuté ici sur le
 processeur hôte alors que la console le confiait à un DSP vectoriel dédié à
-62,5 MHz. Il fait l'objet de [E00-S04](../stories/E00-cadrage/E00-S04-spike-cout-rsp-sans-sse.md),
+62,5 MHz. Il fait l'objet de [E00-S04](../stories/E00-scoping/E00-S04-spike-rsp-cost-without-sse.md),
 et la génération de son code est désormais possible — `RSPRecomp` lit la ROM
 directement, sans passer par l'ELF.
 

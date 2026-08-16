@@ -10,8 +10,8 @@ Windows 95, rendu par une carte 3dfx via Glide. Le joueur fournit sa propre
 ROM ; aucun asset n'est redistribué (`docs/ASSET_POLICY.md`).
 
 **Cible retenue** : Pentium II / III, Voodoo 2 ou 3, 64 Mo de RAM, Windows 95
-OSR2.5 — actée par [E00-S05](E00-cadrage/E00-S05-adr-cible-materielle-glide.md)
-et [l'ADR 0002](../adr/0002-cible-materielle.md). Le plancher **matériel** est
+OSR2.5 — actée par [E00-S05](E00-scoping/E00-S05-adr-hardware-target-glide.md)
+et [l'ADR 0002](../adr/0002-hardware-target.md). Le plancher **matériel** est
 fixé et la machine de test y est désormais alignée : Voodoo 2, 2 Mo de tampon
 d'images, 2 Mo par TMU. Seul le plancher **CPU** reste provisoire, le go/no-go
 de E00-S03 attendant une vraie session de jeu.
@@ -37,14 +37,14 @@ reste de la pile est spécifique aux systèmes modernes.
 
 | Épic | Titre | Tickets | TODO | En cours |
 |---|---|---|---|---|
-| [E00](E00-cadrage/) | Cadrage, mesures et décisions | 7 | 5 | **2** |
+| [E00](E00-scoping/) | Cadrage, mesures et décisions | 7 | 5 | **2** |
 | [E01](E01-build/) | Chaîne de build 32 bits Win95 | 6 | 5 | **1** |
-| [E02](E02-systeme/) | Substrat système Win95 | 6 | 2 | **4** |
+| [E02](E02-system/) | Substrat système Win95 | 6 | 2 | **4** |
 | [E03](E03-rsp/) | RSP sur x86 sans SSE | 3 | 3 | 0 |
 | [E04](E04-hle-f3ddkr/) | HLE F3DDKR indépendant de RT64 | 8 | 8 | 0 |
 | [E05](E05-glide/) | Backend Glide | 8 | 8 | 0 |
-| [E06](E06-plateforme/) | Plateforme Win95 | 6 | 6 | 0 |
-| [E07](E07-perimetre/) | Réduction de périmètre | 3 | 2 | **1** |
+| [E06](E06-platform/) | Plateforme Win95 | 6 | 6 | 0 |
+| [E07](E07-scope/) | Réduction de périmètre | 3 | 2 | **1** |
 | [E08](E08-perf/) | Performance | 4 | 4 | 0 |
 | [E09](E09-qa/) | Intégration, QA et distribution | 5 | 4 | **1** |
 | | **Total** | **56** | **48** | **8** |
@@ -53,15 +53,15 @@ reste de la pile est spécifique aux systèmes modernes.
 
 | Ticket | État |
 |---|---|
-| [E09-S01](E09-qa/E09-S01-environnement-test-emule.md) | `REVIEW` — **environnement complet** : Windows 95 OSR2.5 sur Pentium II / Voodoo 2, pilote 3dfx installé, **démonstration Glide rendant un triangle Gouraud**, instantané de référence figé, machine pilotable sans écran. |
-| [E00-S04](E00-cadrage/E00-S04-spike-cout-rsp-sans-sse.md) | `REVIEW` — **le microcode audio recompilé ne peut pas tenir le temps réel** : la cible n'atteint que **3,9 %** du débit vectoriel du RSP. Le repli scalaire existait déjà ; MMX ne sauverait pas ce chemin. **[E03-S03](E03-rsp/E03-S03-repli-mixeur-haut-niveau.md) passe de contingence à chemin critique.** |
-| [E07-S03](E07-perimetre/E07-S03-decouplage-sdl2.md) | `IN_PROGRESS` — le lien avec SDL2 est coupé : **un seul fichier en dépendait hors garde RT64**, et il n'en voulait que la taille de la fenêtre. Une fonction, `platform::window_size`, suffit ; `runtime_stubs.cpp` passe par le même accesseur plutôt que de dupliquer. **Les 17 sources du jeu compilent pour Windows 95**, et les 18 suites de la cible moderne passent. |
-| [E01-S05](E01-build/E01-S05-compilation-code-recompile.md) | `IN_PROGRESS` — **le code recompilé compile et se lie pour Windows 95** : 37 fichiers sur 37, un PE de 4,23 Mo qui passe les deux garde-fous, `aspMain.cpp` compris et sans bouchon. Aucune extension absente — l'arithmétique 64 bits passe par libgcc. La comparaison à l'oracle **concorde bit à bit sur les fonctions atteintes**, fautes comprises ; elle s'interrompt sur une faute que Windows 95 ne délivre pas comme signal. **`librecomp` compile également** — 26 unités sur 26 — les « six erreurs » de E01-S02 se réduisant à un seul `static_assert` plus des chemins d'inclusion, et `allocation_size`, qui valait **zéro** en 32 bits, suit désormais la cible. |
-| [E02-S05](E02-systeme/E02-S05-sauvegardes-eeprom-controller-pak.md) | `DONE` — couche d'écriture durable livrée, **40 contrôles sans échec sur la cible**, les coupures étant simulées plutôt qu'attendues. Le ticket avait raison sur `MoveFileEx`, mais sa forme d'indisponibilité révèle une **troisième catégorie d'API absente** : exportée, avec du vrai code, et refusant à l'exécution — que ni le contrôle d'imports ni le relevé des bouchons ne peuvent voir. **La règle bannissant `<filesystem>` était fausse** : l'inclusion et le type `path` ne coûtent rien et `path` fonctionne sur la machine ; seules les ~140 opérations comptent, pas les 250 usages du type. `ultramodern` n'a plus aucune inclusion interdite. Le patch 0018 route les **10 opérations du cœur de `librecomp`** sans toucher au type ; reste le système de mods, dont ce portage n'a pas besoin. |
-| [E02-S03](E02-systeme/E02-S03-horloge-timers-cadence.md) | `IN_PROGRESS` — base de temps livrée et mesurée : `QueryPerformanceCounter` à **1 193 180 Hz, soit le PIT 8254**, 4,19 µs, 200 000 lectures sans un recul, et une **dérive de −0,0000 % sur 300 s** sur la cible. Deux suppositions du ticket sont démenties (`GetTickCount` est à 9 ms et cent fois moins chère ; `timeBeginPeriod(1)` ne change rien ici). Défaut trouvé en chemin : `ultramodern` dérive `osGetCount` de `high_resolution_clock`, qui est **l'horloge murale** sur cette chaîne — le brancher sur cette base est donc justifié par la mesure. |
-| [E02-S02](E02-systeme/E02-S02-ordonnanceur-ultramodern.md) | `IN_PROGRESS` — patch 0015 : les cinq primitives d'`ultramodern` passent par un point d'indirection que la cible remplit avec la couche de E02-S01. **`ultramodern` compile pour Windows 95, 15 fichiers sur 15**, cibles modernes inchangées, inclusions interdites de **9 à 1**. `thread_local` fonctionne sur la cible, mesuré. Les points 5 à 7 restent bloqués par E01-S05, E02-S05 et E07-S03. |
-| [E02-S01](E02-systeme/E02-S01-couche-threads-synchronisation.md) | `REVIEW` — couche de fils complète : fils, verrous, sémaphore, **variable de condition**, événements, TLS. **48 contrôles sans échec sous Windows 95 émulé**, endurance de 600 s (8 437 tours). Deux bloquants invisibles trouvés : `CreateSemaphoreW` et `GetHandleInformation` sont exportées par Windows 95 mais **vides**, ce qui casse le sémaphore de `moodycamel` et `std::thread::join()` ; le garde-fou des imports contrôle désormais aussi les exports vides. Le relevé initial, fait sur un worktree que `apply-dependency-patches.sh` — cassé — laissait sans ses treize premiers patchs, avait conclu à tort qu'aucune variable de condition n'était nécessaire. |
-| [E00-S03](E00-cadrage/E00-S03-spike-budget-cpu-recompilation.md) | Les deux facteurs sont mesurés : **2,16×** pour le passage 64 → 32 bits sans SSE, **17,7×** pour la normalisation vers le Pentium II 400 MHz — soit **≈ 38×** entre le poste de développement et la cible. Go/no-go non prononcé : il manque désormais le coût CPU d'une image de jeu, qui exige [E02-S06](E02-systeme/E02-S06-amorcage-jeu.md). |
+| [E09-S01](E09-qa/E09-S01-emulated-test-environment.md) | `REVIEW` — **environnement complet** : Windows 95 OSR2.5 sur Pentium II / Voodoo 2, pilote 3dfx installé, **démonstration Glide rendant un triangle Gouraud**, instantané de référence figé, machine pilotable sans écran. |
+| [E00-S04](E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) | `REVIEW` — **le microcode audio recompilé ne peut pas tenir le temps réel** : la cible n'atteint que **3,9 %** du débit vectoriel du RSP. Le repli scalaire existait déjà ; MMX ne sauverait pas ce chemin. **[E03-S03](E03-rsp/E03-S03-high-level-mixer-fallback.md) passe de contingence à chemin critique.** |
+| [E07-S03](E07-scope/E07-S03-sdl2-decoupling.md) | `IN_PROGRESS` — le lien avec SDL2 est coupé : **un seul fichier en dépendait hors garde RT64**, et il n'en voulait que la taille de la fenêtre. Une fonction, `platform::window_size`, suffit ; `runtime_stubs.cpp` passe par le même accesseur plutôt que de dupliquer. **Les 17 sources du jeu compilent pour Windows 95**, et les 18 suites de la cible moderne passent. |
+| [E01-S05](E01-build/E01-S05-compiling-the-recompiled-code.md) | `IN_PROGRESS` — **le code recompilé compile et se lie pour Windows 95** : 37 fichiers sur 37, un PE de 4,23 Mo qui passe les deux garde-fous, `aspMain.cpp` compris et sans bouchon. Aucune extension absente — l'arithmétique 64 bits passe par libgcc. La comparaison à l'oracle **concorde bit à bit sur les fonctions atteintes**, fautes comprises ; elle s'interrompt sur une faute que Windows 95 ne délivre pas comme signal. **`librecomp` compile également** — 26 unités sur 26 — les « six erreurs » de E01-S02 se réduisant à un seul `static_assert` plus des chemins d'inclusion, et `allocation_size`, qui valait **zéro** en 32 bits, suit désormais la cible. |
+| [E02-S05](E02-system/E02-S05-eeprom-and-controller-pak-saves.md) | `DONE` — couche d'écriture durable livrée, **40 contrôles sans échec sur la cible**, les coupures étant simulées plutôt qu'attendues. Le ticket avait raison sur `MoveFileEx`, mais sa forme d'indisponibilité révèle une **troisième catégorie d'API absente** : exportée, avec du vrai code, et refusant à l'exécution — que ni le contrôle d'imports ni le relevé des bouchons ne peuvent voir. **La règle bannissant `<filesystem>` était fausse** : l'inclusion et le type `path` ne coûtent rien et `path` fonctionne sur la machine ; seules les ~140 opérations comptent, pas les 250 usages du type. `ultramodern` n'a plus aucune inclusion interdite. Le patch 0018 route les **10 opérations du cœur de `librecomp`** sans toucher au type ; reste le système de mods, dont ce portage n'a pas besoin. |
+| [E02-S03](E02-system/E02-S03-clock-timers-and-pacing.md) | `IN_PROGRESS` — base de temps livrée et mesurée : `QueryPerformanceCounter` à **1 193 180 Hz, soit le PIT 8254**, 4,19 µs, 200 000 lectures sans un recul, et une **dérive de −0,0000 % sur 300 s** sur la cible. Deux suppositions du ticket sont démenties (`GetTickCount` est à 9 ms et cent fois moins chère ; `timeBeginPeriod(1)` ne change rien ici). Défaut trouvé en chemin : `ultramodern` dérive `osGetCount` de `high_resolution_clock`, qui est **l'horloge murale** sur cette chaîne — le brancher sur cette base est donc justifié par la mesure. |
+| [E02-S02](E02-system/E02-S02-ultramodern-scheduler.md) | `IN_PROGRESS` — patch 0015 : les cinq primitives d'`ultramodern` passent par un point d'indirection que la cible remplit avec la couche de E02-S01. **`ultramodern` compile pour Windows 95, 15 fichiers sur 15**, cibles modernes inchangées, inclusions interdites de **9 à 1**. `thread_local` fonctionne sur la cible, mesuré. Les points 5 à 7 restent bloqués par E01-S05, E02-S05 et E07-S03. |
+| [E02-S01](E02-system/E02-S01-threading-and-synchronisation-layer.md) | `REVIEW` — couche de fils complète : fils, verrous, sémaphore, **variable de condition**, événements, TLS. **48 contrôles sans échec sous Windows 95 émulé**, endurance de 600 s (8 437 tours). Deux bloquants invisibles trouvés : `CreateSemaphoreW` et `GetHandleInformation` sont exportées par Windows 95 mais **vides**, ce qui casse le sémaphore de `moodycamel` et `std::thread::join()` ; le garde-fou des imports contrôle désormais aussi les exports vides. Le relevé initial, fait sur un worktree que `apply-dependency-patches.sh` — cassé — laissait sans ses treize premiers patchs, avait conclu à tort qu'aucune variable de condition n'était nécessaire. |
+| [E00-S03](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) | Les deux facteurs sont mesurés : **2,16×** pour le passage 64 → 32 bits sans SSE, **17,7×** pour la normalisation vers le Pentium II 400 MHz — soit **≈ 38×** entre le poste de développement et la cible. Go/no-go non prononcé : il manque désormais le coût CPU d'une image de jeu, qui exige [E02-S06](E02-system/E02-S06-game-bring-up.md). |
 
 ### Acquis en chemin
 
@@ -71,11 +71,11 @@ reste de la pile est spécifique aux systèmes modernes.
 | [`docs/research/rsp-audio-budget.md`](../research/rsp-audio-budget.md) | Mesures de E00-S04 — le chiffre qui déclenche E03-S03 |
 | [`docs/TEST-ENVIRONMENT.md`](../TEST-ENVIRONMENT.md) | Recette de l'environnement émulé et ses limites connues |
 | `scripts/Setup-Win95-Toolchain.sh` | Toolchain MIPS, cmake, ninja, uv — **sans droits root** |
-| `scripts/generate_recomp_toml.py` | Configuration N64Recomp depuis la politique, portage Linux du script PowerShell — avance [E01-S06](E01-build/E01-S06-generation-sources-hors-windows.md) |
+| `scripts/generate_recomp_toml.py` | Configuration N64Recomp depuis la politique, portage Linux du script PowerShell — avance [E01-S06](E01-build/E01-S06-generating-sources-off-windows.md) |
 | `scripts/Setup-Win95-TestVM.sh`, `prepare_win95_install.py`, `Run-Win95-VM.sh`, `Drive-Win95-VM.sh`, `Push-To-Win95-VM.sh` | Machine de test : montage, préparation de l'installation depuis l'ISO du joueur, lancement, pilotage sans écran, transfert de fichiers |
 | `tools/win95/azerty_keys.py` | Traduit un texte en touches physiques pour un invité AZERTY — sans quoi aucun chemin de fichier n'est saisissable |
 | `scripts/patch_voodoo2_inf.py` | 86Box expose sa Voodoo 2 avec l'identifiant PCI de la Voodoo 1 ; le pilote d'origine ne la reconnaît pas sans cette correction |
-| `tools/win95/glidetest.c` + `build-glidetest.sh` | Démonstration Glide — et **premier PE 32 bits sans CRT ni SSE tournant sous Windows 95**, ce qui avance [E00-S02](E00-cadrage/E00-S02-spike-toolchain-pe-win95.md) |
+| `tools/win95/glidetest.c` + `build-glidetest.sh` | Démonstration Glide — et **premier PE 32 bits sans CRT ni SSE tournant sous Windows 95**, ce qui avance [E00-S02](E00-scoping/E00-S02-spike-pe-win95-toolchain.md) |
 | `tools/cpu-budget/` | Banc d'essai rejouable du code recompilé, **sur l'hôte et sur la machine cible** |
 | `patches/n64recomp/0002-…` | Multiplication 64×64→128 portable : **débloque toute la cible 32 bits** |
 
@@ -88,12 +88,12 @@ absente.
 
 Deux tickets se font **avant tout le reste**, et pour des raisons opposées.
 
-[**E09-S01**](E09-qa/E09-S01-environnement-test-emule.md) — l'environnement de
+[**E09-S01**](E09-qa/E09-S01-emulated-test-environment.md) — l'environnement de
 test émulé. Il est classé en QA par thème, mais c'est un prérequis pratique :
 sans machine Windows 95 restaurable en quelques secondes, tout le reste se
 développe à l'aveugle. Il conditionne même E00-S02.
 
-[**E00-S03**](E00-cadrage/E00-S03-spike-budget-cpu-recompilation.md) — le budget
+[**E00-S03**](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) — le budget
 CPU. Il décide si le projet est faisable sur cette classe de machine, et il porte
 un **go / no-go** explicite. Le découvrir maintenant coûte une semaine ; le
 découvrir après E04 et E05 en coûte trois mois.
@@ -132,20 +132,20 @@ E03 (RSP / audio) est largement indépendant et peut être mené en parallèle.
 
 | Jalon | Ticket | Ce qu'il prouve |
 |---|---|---|
-| Le jeu s'exécute | [E02-S06](E02-systeme/E02-S06-amorcage-jeu.md) | Build, substrat système et ordonnanceur tiennent. Pas d'image, mais des tâches graphiques soumises à cadence mesurable. |
-| La première image | [E04-S08](E04-hle-f3ddkr/E04-S08-rasteriseur-logiciel-reference.md) | Le décodeur F3DDKR est juste, indépendamment de Glide. Devient l'oracle de E05. |
+| Le jeu s'exécute | [E02-S06](E02-system/E02-S06-game-bring-up.md) | Build, substrat système et ordonnanceur tiennent. Pas d'image, mais des tâches graphiques soumises à cadence mesurable. |
+| La première image | [E04-S08](E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) | Le décodeur F3DDKR est juste, indépendamment de Glide. Devient l'oracle de E05. |
 | Le jeu est jouable | E05 + E06 | Rendu accéléré, entrées, audio, cadence. |
 
 ## Le point dur
 
-[**E05-S03**](E05-glide/E05-S03-traduction-color-combiner.md) — la traduction du
+[**E05-S03**](E05-glide/E05-S03-color-combiner-translation.md) — la traduction du
 combineur de couleurs. Le combineur du RDP est programmable ; celui de Glide est
 fixe. C'est le seul ticket estimé XL de la partie graphique.
 
 Ce qui le rend traitable : DKR n'utilise que **33 configurations**, dont **3
 seulement lisent deux texels** — inventaire déjà établi par le portage natif
 voisin (`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`), à
-revérifier par [E04-S06](E04-hle-f3ddkr/E04-S06-etat-rdp.md). Trente-trois cas
+revérifier par [E04-S06](E04-hle-f3ddkr/E04-S06-rdp-state.md). Trente-trois cas
 énumérés, dont on connaît la fréquence et la surface d'écran : un problème fini.
 
 C'est aussi pourquoi E04-S08 est un prérequis et non un confort. Sans oracle
@@ -170,11 +170,11 @@ l'erreur se cumule sans être imputable.
 2. **Aucun asset redistribué.** La ROM vient du joueur ; le paquet est scanné
    avant distribution.
 3. **32 bits, sans SSE.** Deux garde-fous automatiques l'imposent : vérification
-   du jeu d'instructions ([E01-S01](E01-build/E01-S01-toolchain-cmake-i686-sans-sse.md))
-   et vérification des imports PE ([E01-S04](E01-build/E01-S04-garde-fou-imports-pe.md)).
+   du jeu d'instructions ([E01-S01](E01-build/E01-S01-cmake-i686-toolchain-without-sse.md))
+   et vérification des imports PE ([E01-S04](E01-build/E01-S04-pe-import-guard-rail.md)).
 4. **L'oracle reste constructible.** La cible moderne est l'unique référence
    exécutable permettant de savoir si le portage est *juste*. Sa conservation est
-   tranchée par [E00-S07](E00-cadrage/E00-S07-adr-strategie-branche-oracle.md) ;
+   tranchée par [E00-S07](E00-scoping/E00-S07-adr-oracle-branch-strategy.md) ;
    la casser sans nécessité, c'est perdre le moyen de vérifier.
 
 ## Ce que le dépôt voisin apporte déjà

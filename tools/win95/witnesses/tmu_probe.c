@@ -22,7 +22,7 @@
  *
  * ## Ce témoin valide aussi ses propres constantes
  *
- * Comme pour les états (`win95-glide-etats.md`), il n'y a pas de `glide.h` sur
+ * Comme pour les états (`win95-glide-states.md`), il n'y a pas de `glide.h` sur
  * cette machine et les énumérations sont écrites de mémoire. Elles sont ici
  * vérifiables sans matériel supplémentaire : pour une texture 16 bits sans
  * mipmap, la taille attendue est connue analytiquement. Si `GR_LOD_*` ou

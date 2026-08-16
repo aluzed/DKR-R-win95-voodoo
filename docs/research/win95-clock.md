@@ -1,6 +1,6 @@
 # Quelle base de temps Windows 95 offre réellement
 
-Mesures de [E02-S03](../stories/E02-systeme/E02-S03-horloge-timers-cadence.md),
+Mesures de [E02-S03](../stories/E02-system/E02-S03-clock-timers-and-pacing.md),
 prises sur la machine de test — Windows 95 OSR2, Pentium II 400 MHz émulé.
 Sonde : `tools/win95/witnesses/clock_probe.cpp`.
 
@@ -80,12 +80,12 @@ Elle reste trop grossière pour cadencer 30 images par seconde — un pas de 9 m
 représente plus du quart d'une image — mais elle est le bon outil partout où une
 datation grossière suffit, et l'écart de coût est assez large pour que la
 question se pose à chaque site d'appel. Le chiffre est versé au budget de
-[E08-S01](../stories/E08-perf/E08-S01-instrumentation-budget-image.md).
+[E08-S01](../stories/E08-perf/E08-S01-frame-budget-instrumentation.md).
 
 > **Réserve.** Les 9 ms sont mesurés sous 86Box. La granularité de
 > `GetTickCount` sous Windows 9x dépend du minuteur système, que l'émulateur
 > reproduit fonctionnellement et non temporellement. C'est
-> [E09-S04](../stories/E09-qa/E09-S04-validation-materiel-reel.md) qui tranchera
+> [E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md) qui tranchera
 > sur matériel réel. Le choix de conception n'en dépend pas : `GetTickCount`
 > n'est retenue comme source principale dans aucun cas.
 

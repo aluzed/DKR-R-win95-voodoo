@@ -1,6 +1,6 @@
 # Coût du microcode audio RSP sur la machine cible
 
-Mesures de [E00-S04](../stories/E00-cadrage/E00-S04-spike-cout-rsp-sans-sse.md).
+Mesures de [E00-S04](../stories/E00-scoping/E00-S04-spike-rsp-cost-without-sse.md).
 Date : 2026-08-11.
 
 ## Résumé
@@ -18,7 +18,7 @@ Date : 2026-08-11.
 | **Ce que la cible atteint du RSP** | **3,9 %** |
 
 **Conclusion : le microcode audio recompilé ne peut pas tenir le temps réel sur
-la cible.** [E03-S03](../stories/E03-rsp/E03-S03-repli-mixeur-haut-niveau.md) —
+la cible.** [E03-S03](../stories/E03-rsp/E03-S03-high-level-mixer-fallback.md) —
 le mixeur audio de haut niveau — cesse d'être une contingence et devient
 nécessaire.
 
@@ -131,15 +131,15 @@ d'effort utile à acter maintenant.
 
 ## Décision
 
-[E03-S03](../stories/E03-rsp/E03-S03-repli-mixeur-haut-niveau.md) — interpréter
+[E03-S03](../stories/E03-rsp/E03-S03-high-level-mixer-fallback.md) — interpréter
 les commandes audio à haut niveau plutôt qu'exécuter le microcode — **passe de
 contingence à chemin critique**. Sa condition de déclenchement, écrite dans
-[E03-S02](../stories/E03-rsp/E03-S02-microcode-audio-aspmain.md), est remplie
+[E03-S02](../stories/E03-rsp/E03-S02-aspmain-audio-microcode.md), est remplie
 avec une marge qui ne laisse pas de doute.
 
 Conséquences sur le backlog :
 
-- [E03-S01](../stories/E03-rsp/E03-S01-emulation-vectorielle-sans-sse.md)
+- [E03-S01](../stories/E03-rsp/E03-S01-vector-emulation-without-sse.md)
   (réimplémentation vectorielle) perd sa raison d'être pour l'audio. Le chemin
   scalaire existe et suffit à *exécuter* le microcode — hors temps réel, ce qui
   reste utile comme **oracle** pour valider le mixeur de E03-S03 : il produit la
@@ -151,7 +151,7 @@ Conséquences sur le backlog :
 ## Limites
 
 - La cible est un Pentium II **émulé**. Le facteur machine de 17,7× vient du
-  modèle de 86Box ([E09-S04](../stories/E09-qa/E09-S04-validation-materiel-reel.md)
+  modèle de 86Box ([E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md)
   dira de combien il se trompe). Mais l'écart mesuré ici — un facteur 26 sur le
   débit — est trop grand pour qu'une imprécision de modèle le renverse.
 - Le banc mesure les opérations isolément, hors du microcode réel. Il ne tient
