@@ -801,3 +801,35 @@ du jeu. La sonde d'étiquetage existe déjà et rapportait 300 concordances sur
 300 — mais elle mesure **au dépôt**, et le cas fautif se produit **à la
 réception**. Il faut donc étiqueter le message lui-même, ou consigner l'attendue
 au moment du dépôt pour la relire à la réception.
+
+## L'état de la tâche visée, et une correction posée au mauvais endroit
+
+L'étiquette portée jusqu'à la réception donne le tableau complet du cas fautif :
+
+    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
+    visee=0x80125FB0 state=0x00000001 flags=0x00000023
+
+`state = 1` vaut `OS_SC_NEEDS_RDP` : **la tâche attend encore le RDP**. Elle n'a
+donc pas été conclue — l'hypothèse du bord tardif sur une tâche déjà terminée
+tombe. Le planificateur ne lui avait simplement **jamais accordé le RDP** :
+`__scExec` ne pose `curRDPTask` que lorsque la tâche RSP et la tâche RDP sont la
+même, et quand le RDP est occupé au moment de l'ordonnancement, la tâche démarre
+sur le RSP seul.
+
+Correction tentée : différer le bord DP tant que `curRDPTask` ne désigne pas
+notre tâche, en réutilisant la file de réessai.
+
+**Sans effet.** Et la raison se lit dans les mesures déjà faites : au dépôt,
+`curRDPTask` désigne toujours la bonne tâche — trois cents fois sur trois cents.
+La condition de report n'est donc jamais vraie. L'écart naît **entre le dépôt et
+la réception**, et une garde posée au dépôt ne peut rien y voir.
+
+C'est la même erreur de placement que celle commise cinq fois sur les sondes,
+transposée à un correctif : **agir là où l'on observe, plutôt que là où le
+phénomène se produit.**
+
+La garde devrait être à la réception — mais nous n'avons pas la main sur le
+moment où le jeu retire son message, sauf à altérer la sémantique de sa file.
+Une autre forme reste à trouver : par exemple ne publier le bord DP qu'une fois
+que le jeu a effectivement accordé le RDP, ce qui suppose d'attendre côté fil
+graphique plutôt que de déposer et différer.
