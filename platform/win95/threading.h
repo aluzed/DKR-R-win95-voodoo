@@ -1,36 +1,35 @@
-/* E02-S01 — fils d'execution et synchronisation pour Windows 95.
+/* E02-S01 - threads and synchronisation for Windows 95.
  *
- * Interface minimale batie uniquement sur des API que Windows 95 exporte *et
- * implemente*, sur laquelle `ultramodern` sera repose en E02-S02.
+ * A minimal interface built only on APIs that Windows 95 exports *and*
+ * implements, on which `ultramodern` will be rested in E02-S02.
  *
- * Le perimetre n'est pas deduit d'un modele generique : il est releve dans le
- * code d'`ultramodern`, parce que tout surplus se paie en travail de portage.
- * Ce qui y est reellement utilise, et rien d'autre :
+ * The scope is not deduced from a generic model: it is measured from
+ * `ultramodern`'s code, because every surplus is paid for in porting work. What
+ * is actually used there, and nothing else:
  *
- *   std::thread                  x12   creation, jonction, detachement
- *   std::mutex + lock_guard      x5    exclusion mutuelle, non recursive
- *   LightweightSemaphore         xN    *le* primitif de blocage du planificateur
- *   thread_local                 x3    threads.cpp : deux drapeaux, un pointeur
- *   this_thread::sleep_for/until       temporisation
- *   set_native_thread_priority         5 niveaux, purement indicatifs
+ *   std::thread                  x12   creation, joining, detaching
+ *   std::mutex + lock_guard      x5    mutual exclusion, non-recursive
+ *   LightweightSemaphore         xN    *the* scheduler's blocking primitive
+ *   thread_local                 x3    threads.cpp: two flags, one pointer
+ *   this_thread::sleep_for/until       delays
+ *   set_native_thread_priority         5 levels, purely advisory
  *
- * Deux absences meritent d'etre notees, parce qu'elles reduisent le ticket :
+ * Two absences are worth noting, because they shrink the ticket:
  *
- *   - **Aucune variable de condition.** `ultramodern` n'en declare pas une
- *     seule. Son attente conditionnelle est un *semaphore de comptage*, et rien
- *     d'autre. La reimplementation delicate que le ticket redoutait — evenements
- *     par attendeur plus compteur protege, ou l'on perd des reveils — est donc
- *     sans objet. On fournit le semaphore, qui est ce qui est demande.
+ *   - **No condition variable at all.** `ultramodern` declares not one. Its
+ *     conditional wait is a *counting semaphore*, and nothing else. The delicate
+ *     reimplementation the ticket feared - per-waiter events plus a guarded
+ *     counter, where wake-ups get lost - is therefore moot. We supply the
+ *     semaphore, which is what is asked for.
  *
- *   - **Aucune correspondance de priorite N64 -> Win32.** L'ordre de priorite
- *     de la N64 est tenu par la file d'attente logicielle d'`ultramodern`
- *     (`thread_queue_insert` insere en ordre de `OSPri`), et un seul fil de jeu
- *     court a la fois. Le systeme hote n'arbitre jamais entre deux fils de jeu.
- *     Voir `docs/WIN95-THREADING.md`.
+ *   - **No N64 -> Win32 priority mapping.** The N64's priority order is held by
+ *     `ultramodern`'s software queue (`thread_queue_insert` inserts in `OSPri`
+ *     order), and only one game thread runs at a time. The host system never
+ *     arbitrates between two game threads. See `docs/WIN95-THREADING.md`.
  *
- * La semantique perdue par chaque primitive est ecrite dans
- * `docs/WIN95-THREADING.md`. Un contournement dont la difference n'est pas
- * ecrite est un bogue en attente.
+ * The semantics lost by each primitive is written down in
+ * `docs/WIN95-THREADING.md`. A workaround whose difference is not written down
+ * is a bug waiting to happen.
  */
 #ifndef DKR_WIN95_THREADING_H
 #define DKR_WIN95_THREADING_H
@@ -39,45 +38,45 @@
 extern "C" {
 #endif
 
-/* --- Mise en service ------------------------------------------------------ *
+/* --- Bringing the layer up ------------------------------------------------ *
  *
- * A appeler une fois, depuis le fil principal, avant tout autre appel de cette
- * couche — en pratique juste apres `dkr_win95_startup`. Elle reserve l'unique
- * emplacement TLS (voir plus bas) et prend note du fil appelant.
+ * To be called once, from the main thread, before any other call into this layer
+ * - in practice right after `dkr_win95_startup`. It reserves the single TLS slot
+ * (see below) and takes note of the calling thread.
  */
 int  dkr_threading_init(void);
 void dkr_threading_shutdown(void);
 
-/* --- Fils ----------------------------------------------------------------- */
+/* --- Threads -------------------------------------------------------------- */
 
 typedef struct dkr_thread dkr_thread;
 typedef void (*dkr_thread_fn)(void *arg);
 
-/* Demarre un fil. `stack_bytes` a 0 laisse la taille par defaut du systeme.
-   Rend NULL en cas d'echec. Le fil rendu doit etre soit joint, soit relache. */
+/* Starts a thread. `stack_bytes` at 0 leaves the system's default size. Returns
+   NULL on failure. The returned thread must be either joined or released. */
 dkr_thread *dkr_thread_start(dkr_thread_fn fn, void *arg, unsigned long stack_bytes);
 
-/* Attend la fin du fil, puis libere le descripteur. Rend 1 en cas de succes. */
+/* Waits for the thread to end, then frees the handle. Returns 1 on success. */
 int  dkr_thread_join(dkr_thread *t);
 
-/* Libere le descripteur sans attendre. Le fil continue. Equivalent de
+/* Frees the handle without waiting. The thread carries on. The equivalent of
    `std::thread::detach`.
 
-   Peut etre appelee immediatement apres `dkr_thread_start`, y compris avant que
-   le fil n'ait execute sa premiere instruction — ce qui, sur un monoprocesseur,
-   est le cas ordinaire et non le cas rare. Le fil cree ne partage aucune
-   allocation avec ce descripteur, precisement pour cela. */
+   May be called immediately after `dkr_thread_start`, including before the
+   thread has run its first instruction - which, on a single processor, is the
+   ordinary case and not the rare one. The created thread shares no allocation
+   with this handle, precisely for that reason. */
 void dkr_thread_release(dkr_thread *t);
 
-/* Identifiant du fil courant. Jamais 0 pour un fil vivant. */
+/* The current thread's identifier. Never 0 for a live thread. */
 unsigned long dkr_thread_id(void);
 
-/* --- Priorites ------------------------------------------------------------ *
+/* --- Priorities ----------------------------------------------------------- *
  *
- * Ces cinq niveaux reproduisent `ultramodern::ThreadPriority` a l'identique, y
- * compris l'ordre, pour que E02-S02 n'ait qu'une conversion triviale a ecrire.
+ * These five levels reproduce `ultramodern::ThreadPriority` exactly, order
+ * included, so that E02-S02 only has a trivial conversion to write.
  *
- * Ils ne portent **pas** les priorites N64 : voir l'en-tete de ce fichier.
+ * They do **not** carry the N64 priorities: see the top of this file.
  */
 typedef enum {
     DKR_THREAD_PRIORITY_LOW = 0,
@@ -87,40 +86,40 @@ typedef enum {
     DKR_THREAD_PRIORITY_CRITICAL
 } dkr_thread_priority;
 
-/* La correspondance, isolee en fonction pure pour etre testable sur l'hote sans
-   Windows. Rend la constante `THREAD_PRIORITY_*` correspondante, ou
-   DKR_THREAD_PRIORITY_INVALID pour une entree hors domaine. */
+/* The mapping, isolated as a pure function so that it can be tested on the host
+   without Windows. Returns the matching `THREAD_PRIORITY_*` constant, or
+   DKR_THREAD_PRIORITY_INVALID for an out-of-range input. */
 #define DKR_THREAD_PRIORITY_INVALID (-32768)
 int  dkr_thread_priority_to_win32(int priority);
 
-/* Applique la priorite au fil courant. Sans effet mesurable sur l'ordre des
-   fils de jeu ; utile pour les fils d'infrastructure. */
+/* Applies the priority to the current thread. No measurable effect on the order
+   of game threads; useful for infrastructure threads. */
 void dkr_thread_set_priority(dkr_thread_priority priority);
 
-/* --- Temporisation -------------------------------------------------------- */
+/* --- Delays --------------------------------------------------------------- */
 
 void dkr_sleep_ms(unsigned long ms);
 void dkr_yield(void);
 
-/* --- Exclusion mutuelle --------------------------------------------------- *
+/* --- Mutual exclusion ----------------------------------------------------- *
  *
- * Bati sur CRITICAL_SECTION — celle de `platform/win95/compat.c`, puisque
- * E01-S03 fournit les cinq fonctions et possede donc la structure.
+ * Built on CRITICAL_SECTION - the one from `platform/win95/compat.c`, since
+ * E01-S03 supplies all five functions and therefore owns the structure.
  *
- * **Non recursif, et verifie.** Les sections critiques de Win32 sont
- * recursives, `std::mutex` ne l'est pas. Un code qui comptait sur l'interblocage
- * d'un `std::mutex` reentrant pour reveler un defaut ne le revelerait plus, et
- * le defaut passerait en production. Cette couche retablit la propriete : une
- * reentrance est detectee et signalee immediatement, au lieu de s'interbloquer
- * silencieusement. Le diagnostic est meilleur que celui de `std::mutex`, pour
- * un cout de deux instructions.
+ * **Non-recursive, and checked.** Win32's critical sections are recursive,
+ * `std::mutex` is not. Code that relied on a reentrant `std::mutex` deadlocking
+ * to reveal a defect would no longer reveal it, and the defect would ship. This
+ * layer restores the property: reentrancy is detected and reported immediately,
+ * instead of deadlocking silently. The diagnosis is better than `std::mutex`'s,
+ * at a cost of two instructions.
  *
- * La taille reservee est verifiee contre `sizeof(CRITICAL_SECTION)` par un
- * `static_assert` dans `threading.cpp` : l'en-tete n'a pas a inclure windows.h.
+ * The reserved size is checked against `sizeof(CRITICAL_SECTION)` by a
+ * `static_assert` in `threading.cpp`: the header does not have to include
+ * windows.h.
  */
 typedef struct {
-    void          *reserved[16];  /* CRITICAL_SECTION, ou son equivalent hote */
-    unsigned long  owner;         /* identifiant du proprietaire, 0 si libre */
+    void          *reserved[16];  /* CRITICAL_SECTION, or its host equivalent */
+    unsigned long  owner;         /* the owner's identifier, 0 if free */
     int            initialised;
 } dkr_mutex;
 
@@ -129,26 +128,26 @@ void dkr_mutex_destroy(dkr_mutex *m);
 void dkr_mutex_lock(dkr_mutex *m);
 void dkr_mutex_unlock(dkr_mutex *m);
 
-/* Rend 1 si le verrou a ete pris, 0 sinon. Ne signale pas la reentrance : un
-   appelant de `try` a deja prevu l'echec, on lui rend simplement 0. */
+/* Returns 1 if the lock was taken, 0 otherwise. Does not report reentrancy: a
+   caller of `try` has already allowed for failure, so we simply return 0. */
 int  dkr_mutex_try_lock(dkr_mutex *m);
 
-/* --- Semaphore de comptage ------------------------------------------------ *
+/* --- Counting semaphore --------------------------------------------------- *
  *
- * C'est *le* primitif de blocage du planificateur d'`ultramodern` : chaque fil
- * de jeu dort sur `running.wait()` et est reveille par `running.signal()`.
+ * This is *the* blocking primitive of `ultramodern`'s scheduler: every game
+ * thread sleeps on `running.wait()` and is woken by `running.signal()`.
  *
- * Semantique de reveil, a comparer a ce qu'`ultramodern` suppose :
+ * Wake-up semantics, to be compared with what `ultramodern` assumes:
  *
- *   - `signal(n)` reveille **exactement n** attendeurs, jamais plus.
- *   - Un `signal` qui precede le `wait` n'est **pas perdu** : il est compte.
- *     C'est la propriete dont depend le demarrage des fils de jeu, ou le
- *     `signal` du fil createur peut devancer le `wait` du fil cree.
- *   - **L'ordre de reveil n'est pas garanti.** Windows 95 ne promet pas le
- *     FIFO sur un semaphore. `ultramodern` n'en a pas besoin : chacun de ses
- *     semaphores n'a **qu'un seul attendeur possible** — le fil proprietaire du
- *     contexte — de sorte que la question ne se pose pas.
- *   - Pas de reveil intempestif : `wait` ne rend 1 que sur un jeton consomme.
+ *   - `signal(n)` wakes **exactly n** waiters, never more.
+ *   - A `signal` that precedes the `wait` is **not lost**: it is counted. That
+ *     is the property game-thread startup depends on, where the creating
+ *     thread's `signal` can get ahead of the created thread's `wait`.
+ *   - **Wake-up order is not guaranteed.** Windows 95 does not promise FIFO on a
+ *     semaphore. `ultramodern` does not need it: each of its semaphores has
+ *     **only one possible waiter** - the thread that owns the context - so the
+ *     question does not arise.
+ *   - No spurious wake-ups: `wait` only returns 1 on a consumed token.
  */
 typedef struct {
     void *handle;
@@ -157,25 +156,25 @@ typedef struct {
 int  dkr_sem_init(dkr_sem *s, long initial_count);
 void dkr_sem_destroy(dkr_sem *s);
 
-/* Bloque jusqu'a obtenir un jeton. Rend 1 en cas de succes, 0 si le semaphore
-   est invalide — jamais un retour silencieux sans jeton. */
+/* Blocks until a token is obtained. Returns 1 on success, 0 if the semaphore is
+   invalid - never a silent return without a token. */
 int  dkr_sem_wait(dkr_sem *s);
 
-/* Rend 1 si un jeton a ete pris avant l'echeance, 0 sinon. */
+/* Returns 1 if a token was taken before the deadline, 0 otherwise. */
 int  dkr_sem_wait_timeout(dkr_sem *s, unsigned long ms);
 
-/* Rend 1 si un jeton etait disponible, 0 sinon. Ne bloque jamais. */
+/* Returns 1 if a token was available, 0 otherwise. Never blocks. */
 int  dkr_sem_try_wait(dkr_sem *s);
 
-/* Depose `count` jetons. Rend 1 en cas de succes. */
+/* Deposits `count` tokens. Returns 1 on success. */
 int  dkr_sem_signal(dkr_sem *s, long count);
 
-/* --- Evenement a reinitialisation manuelle -------------------------------- *
+/* --- Manual-reset event --------------------------------------------------- *
  *
- * Ce que le semaphore ne sait pas exprimer : reveiller **tous** les attendeurs
- * d'un coup, et rester ouvert pour ceux qui arriveront apres. C'est la forme
- * juste d'un signal « une fois pour toutes » — fin d'initialisation, demande
- * d'arret — la ou un semaphore obligerait a connaitre le nombre d'attendeurs.
+ * What the semaphore cannot express: waking **every** waiter at once, and
+ * staying open for those who arrive later. It is the right shape for a
+ * "once and for all" signal - end of initialisation, shutdown request - where a
+ * semaphore would force us to know the number of waiters.
  */
 typedef struct {
     void *handle;
@@ -188,55 +187,53 @@ void dkr_event_reset(dkr_event *e);
 int  dkr_event_wait(dkr_event *e);
 int  dkr_event_wait_timeout(dkr_event *e, unsigned long ms);
 
-/* --- Variable de condition ------------------------------------------------ *
+/* --- Condition variable --------------------------------------------------- *
  *
- * Windows 95 n'en a pas : les siennes datent de Vista. Celle-ci est batie sur
- * le semaphore ci-dessus et un compteur d'attendeurs protege par un verrou.
+ * Windows 95 has none: its own date from Vista. This one is built on the
+ * semaphore above and a waiter counter guarded by a lock.
  *
- * C'est le morceau que le ticket E02-S01 redoutait — « un exercice ou l'on perd
- * des reveils ». Il s'est avere necessaire non pas a cause d'`ultramodern`
- * amont, qui n'en emploie aucune, mais a cause du patch 0013 du depot, qui en
- * introduit deux dans `mesgqueue.cpp`.
+ * It is the piece ticket E02-S01 feared - "an exercise where wake-ups get lost".
+ * It turned out to be necessary not because of upstream `ultramodern`, which
+ * uses none, but because of the repository's patch 0013, which introduces two of
+ * them in `mesgqueue.cpp`.
  *
- * ## Pourquoi aucun reveil ne se perd
+ * ## Why no wake-up is lost
  *
- * La fenetre dangereuse d'une variable de condition est celle-ci : l'attendeur
- * relache le verrou de l'appelant, puis se met en attente. Un signal emis
- * *entre les deux* doit lui parvenir quand meme.
+ * A condition variable's dangerous window is this one: the waiter releases the
+ * caller's lock, then goes to wait. A signal emitted *between the two* must
+ * still reach it.
  *
- * Ici il lui parvient, parce que le primitif d'attente est un **semaphore de
- * comptage** : `notify` depose un jeton, et le jeton attend l'attendeur.
+ * Here it does reach it, because the waiting primitive is a **counting
+ * semaphore**: `notify` deposits a token, and the token waits for the waiter.
  *
- * Et surtout : le compteur d'attendeurs est incremente **avant** que le verrou
- * de l'appelant ne soit relache. Cet ordre n'est pas une precaution, c'est la
- * demonstration. Un signaleur ne peut signaler qu'apres avoir modifie l'etat
- * que l'attendeur teste, et il ne peut le modifier qu'en tenant ce meme verrou.
- * Il ne peut donc pas prendre le verrou tant que nous ne l'avons pas relache —
- * or a cet instant nous sommes deja inscrits. Il n'existe aucun entrelacement
- * ou il nous manque.
+ * And above all: the waiter counter is incremented **before** the caller's lock
+ * is released. That order is not a precaution, it is the proof. A signaller can
+ * only signal after modifying the state the waiter tests, and it can only modify
+ * that state while holding the same lock. So it cannot take the lock until we
+ * have released it - and by that moment we are already registered. There is no
+ * interleaving in which it misses us.
  *
- * **Cette propriete tient par l'argument, non par le test.** L'ordre inverse a
- * ete essaye : la suite passe quand meme, 20 000 relais compris. La raison est
- * instructive — le chemin du signaleur jusqu'a `notify` (prendre le verrou,
- * modifier l'etat, le relacher) est plus long que celui de l'attendeur jusqu'a
- * son inscription, de sorte qu'il perd presque toujours la course. Presque.
- * C'est exactement la forme de defaut que le ticket decrit : rare, non
- * deterministe, et qui se manifeste en gel aleatoire chez le joueur. On ne le
- * traite donc pas par le test mais par la construction.
+ * **This property holds by the argument, not by the test.** The reverse order
+ * was tried: the suite passes all the same, 20,000 relays included. The reason
+ * is instructive - the signaller's path to `notify` (take the lock, modify the
+ * state, release it) is longer than the waiter's path to registration, so it
+ * almost always loses the race. Almost. That is exactly the shape of defect the
+ * ticket describes: rare, non-deterministic, and showing up as a random freeze
+ * at the player's machine. So we handle it by construction and not by testing.
  *
- * ## Ce qui n'est pas garanti, et qui ne l'est pas non plus ailleurs
+ * ## What is not guaranteed, and is not guaranteed elsewhere either
  *
- * Un reveil peut etre **derobe** : si deux fils attendent et qu'un troisieme
- * signale, rien ne dit lequel des deux repart. `std::condition_variable` ne le
- * dit pas davantage, et c'est pourquoi tout appelant correct enveloppe son
- * attente dans une boucle sur un predicat. Les deux sites d'appel du depot le
- * font — `wait(lock, predicat)` et `while (!complete && !exited)`.
+ * A wake-up can be **stolen**: if two threads wait and a third signals, nothing
+ * says which of the two leaves. `std::condition_variable` says no more, and that
+ * is why every correct caller wraps its wait in a loop over a predicate. Both
+ * call sites in the repository do - `wait(lock, predicate)` and
+ * `while (!complete && !exited)`.
  *
- * `notify` emis alors que personne n'attend est perdu, comme il se doit.
+ * A `notify` emitted while nobody waits is lost, as it should be.
  */
 typedef struct {
-    dkr_mutex  guard;        /* protege `waiters` */
-    dkr_sem    sem;          /* le primitif d'attente proprement dit */
+    dkr_mutex  guard;        /* guards `waiters` */
+    dkr_sem    sem;          /* the waiting primitive proper */
     long       waiters;
     int        initialised;
 } dkr_condvar;
@@ -244,63 +241,61 @@ typedef struct {
 int  dkr_condvar_init(dkr_condvar *cv);
 void dkr_condvar_destroy(dkr_condvar *cv);
 
-/* Reveille au plus un attendeur, au plus tous. Sans effet s'il n'y en a aucun. */
+/* Wakes at most one waiter, at most all of them. No effect if there are none. */
 void dkr_condvar_notify_one(dkr_condvar *cv);
 void dkr_condvar_notify_all(dkr_condvar *cv);
 
-/* Relache `external`, attend, puis le reprend avant de rendre la main — y
-   compris en cas d'expiration, comme `std::condition_variable`.
-   `wait` rend 1 ; `wait_timeout` rend 1 s'il a ete reveille, 0 s'il a expire. */
+/* Releases `external`, waits, then retakes it before returning - including on a
+   timeout, like `std::condition_variable`.
+   `wait` returns 1; `wait_timeout` returns 1 if woken, 0 if it timed out. */
 int  dkr_condvar_wait(dkr_condvar *cv, dkr_mutex *external);
 int  dkr_condvar_wait_timeout(dkr_condvar *cv, dkr_mutex *external,
                               unsigned long ms);
 
-/* --- Variables locales au fil --------------------------------------------- *
+/* --- Thread-local variables ----------------------------------------------- *
  *
- * Windows 95 n'offre que 64 emplacements TLS pour tout le processus, et
- * libstdc++ comme winpthreads en consomment deja. Cette couche n'en prend donc
- * **qu'un seul**, qui designe un tableau de pointeurs : le nombre de variables
- * par fil devient une affaire de constante et non de ressource systeme.
+ * Windows 95 offers only 64 TLS slots for the whole process, and libstdc++ and
+ * winpthreads already consume some. This layer therefore takes **only one**,
+ * which designates an array of pointers: the number of per-thread variables
+ * becomes a matter of a constant and not of a system resource.
  *
- * `ultramodern` en utilise trois (`is_entrypoint_thread`, `is_game_thread`,
- * `thread_self`). La marge est deliberement courte : ce n'est pas un magasin
- * general, et chaque nouvel emplacement doit se justifier.
+ * `ultramodern` uses three (`is_entrypoint_thread`, `is_game_thread`,
+ * `thread_self`). The margin is deliberately short: this is not a general store,
+ * and every new slot has to justify itself.
  */
 #define DKR_TLS_SLOTS 8
 
-/* Reserve un emplacement. Rend son indice, ou -1 s'il n'en reste plus.
-   A appeler une fois par variable, typiquement au demarrage. */
+/* Reserves a slot. Returns its index, or -1 if none is left. To be called once
+   per variable, typically at startup. */
 int   dkr_tls_reserve(void);
 
 void *dkr_tls_get(int slot);
 void  dkr_tls_set(int slot, void *value);
 
-/* Libere le bloc du fil courant. Appelee automatiquement a la fin des fils
-   demarres par `dkr_thread_start` ; a appeler a la main pour un fil que cette
-   couche n'a pas cree et qui se termine. */
+/* Frees the current thread's block. Called automatically at the end of threads
+   started by `dkr_thread_start`; to be called by hand for a thread this layer
+   did not create and which is ending. */
 void  dkr_tls_release_current(void);
 
-/* --- Diagnostic ----------------------------------------------------------- *
+/* --- Diagnostics ---------------------------------------------------------- *
  *
- * Appelee quand la couche constate une faute qu'elle ne peut pas rattraper —
- * aujourd'hui la reentrance sur un `dkr_mutex`. Par defaut le message part dans
- * le journal de demarrage puis le processus s'arrete : sur la machine cible,
- * continuer apres une faute de synchronisation ne produit qu'un gel plus loin,
- * sans rapport visible avec sa cause.
+ * Called when the layer observes a fault it cannot recover from - today,
+ * reentrancy on a `dkr_mutex`. By default the message goes into the startup log
+ * and then the process stops: on the target machine, carrying on after a
+ * synchronisation fault only produces a freeze further along, with no visible
+ * connection to its cause.
  *
- * Les tests l'interceptent pour verifier que la detection fonctionne.
+ * The tests intercept it to check that the detection works.
  */
 typedef void (*dkr_threading_fatal_fn)(const char *message);
 void dkr_threading_set_fatal_handler(dkr_threading_fatal_fn handler);
 
-/* Signale une faute par ce meme canal. Publique parce que le pont C++ de
-   E02-S02 (`threading.hpp`) en a besoin : un `thread` detruit encore joignable
-   est la meme classe de faute qu'une reentrance, et doit se signaler et se
-   tester de la meme facon.
+/* Reports a fault through the same channel. Public because E02-S02's C++ bridge
+   (`threading.hpp`) needs it: a destroyed `thread` that is still joinable is the
+   same class of fault as reentrancy, and must report and test the same way.
 
-   Ne rend la main que si un gestionnaire l'a interceptee — le comportement par
-   defaut est d'arreter le processus. Les appelants doivent donc rester corrects
-   dans les deux cas. */
+   Only returns if a handler intercepted it - the default behaviour is to stop
+   the process. Callers must therefore stay correct in both cases. */
 void dkr_threading_fatal(const char *message);
 
 #ifdef __cplusplus

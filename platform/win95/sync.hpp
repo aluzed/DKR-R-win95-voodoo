@@ -1,33 +1,33 @@
-/* E02-S02 — point d'indirection des primitives de synchronisation.
+/* E02-S02 - indirection point for the synchronisation primitives.
  *
- * Meme forme que `fileio.hpp`, et pour la meme raison : le code appelant garde
- * ses habitudes, et seule la resolution des noms change selon la cible.
+ * The same shape as `fileio.hpp`, and for the same reason: the calling code
+ * keeps its habits, and only name resolution changes with the target.
  *
- *   sur Windows 95   `dkr::sync::mutex` est celui de E02-S01, bati sur
- *                    CRITICAL_SECTION et _beginthreadex
- *   ailleurs         ce sont les types de la bibliotheque standard, sans la
- *                    moindre couche entre eux et l'appelant
+ *   on Windows 95   `dkr::sync::mutex` is E02-S01's, built on CRITICAL_SECTION
+ *                   and _beginthreadex
+ *   elsewhere       these are the standard library's types, with not a single
+ *                   layer between them and the caller
  *
- * La difference avec le systeme de fichiers vaut d'etre notee. La, le **type**
- * `std::filesystem::path` fonctionnait et seules ses operations posaient
- * probleme ; ici c'est l'inverse : ce sont les types eux-memes qui ne passent
- * pas, parce que l'inclusion de `<mutex>` ou de `<thread>` fait entrer dans la
- * table d'imports des symboles que Windows 95 n'exporte pas — et le binaire
- * cesse alors de se charger. Le nom doit donc changer aux points de
- * declaration, ce qui touche plus de code, sans qu'il y ait de choix.
+ * The difference from the file system is worth noting. There, the **type**
+ * `std::filesystem::path` worked and only its operations were a problem; here it
+ * is the reverse: it is the types themselves that do not pass, because including
+ * `<mutex>` or `<thread>` brings symbols Windows 95 does not export into the
+ * import table - and the binary then stops loading. The name therefore has to
+ * change at the declaration sites, which touches more code, with no choice in
+ * the matter.
  *
- * `<chrono>`, lui, fonctionne : les durees passent inchangees.
+ * `<chrono>` does work: durations pass through unchanged.
  *
- * Ce qui est fourni est ce que les sources du jeu emploient, et rien de plus :
+ * What is supplied is what the game's sources use, and nothing more:
  *
- *     scoped_lock   95 emplois, tous sur un seul verrou
+ *     scoped_lock   95 uses, all on a single lock
  *     mutex         11
  *     lock_guard     3
  *     thread         1
  *     sleep_for      1
  *
- * `condition_variable` et `unique_lock` viennent avec, parce que le pont les
- * porte deja pour `ultramodern`.
+ * `condition_variable` and `unique_lock` come with them, because the bridge
+ * already carries them for `ultramodern`.
  */
 #ifndef DKR_WIN95_SYNC_HPP
 #define DKR_WIN95_SYNC_HPP
@@ -55,34 +55,34 @@ namespace this_thread = dkr::win95::this_thread;
 
 } // namespace dkr::sync
 
-/* Le controleur de sous-ensemble surveille ces deux en-tetes, et il a raison de
- * les voir ici : ce sont bien elles. Mais cette branche est celle des cibles
- * modernes, que Windows 95 ne compile jamais — la derogation porte donc sur
- * chaque ligne, avec son motif, comme pour `fileio.hpp`. */
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+/* The subset checker watches these two headers, and it is right to see them
+ * here: these are indeed them. But this branch is the modern targets' branch,
+ * which Windows 95 never compiles - so the waiver is granted line by line, with
+ * its reason, as for `fileio.hpp`. */
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 #include <mutex>
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 #include <thread>
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 #include <condition_variable>
 
 namespace dkr::sync {
 
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::condition_variable;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::cv_status;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::lock_guard;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::mutex;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::scoped_lock;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::thread;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::unique_lock;
-// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 namespace this_thread = std::this_thread;
 
 #endif

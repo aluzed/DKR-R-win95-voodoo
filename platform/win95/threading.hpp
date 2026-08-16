@@ -1,54 +1,54 @@
-/* E02-S02 — pont C++ entre `ultramodern` et la couche de fils de E02-S01.
+/* E02-S02 - C++ bridge between `ultramodern` and E02-S01's threading layer.
  *
- * `ultramodern` emploie `std::thread`, `std::mutex` et `std::lock_guard`. Sous
- * Windows 95, les inclure suffit a rendre le binaire inchargeable : `<thread>`
- * et `<mutex>` font apparaitre six symboles que le systeme n'exporte pas, et
- * cela **sans qu'aucune de leurs fonctions ne soit appelee** (E00-S01).
+ * `ultramodern` uses `std::thread`, `std::mutex` and `std::lock_guard`. Under
+ * Windows 95, including them is enough to make the binary unloadable:
+ * `<thread>` and `<mutex>` bring in six symbols the system does not export, and
+ * that **without any of their functions being called** (E00-S01).
  *
- * Ce fichier fournit les trois types, avec exactement la surface qu'`ultramodern`
- * utilise et pas davantage, au-dessus de l'interface C de `threading.h`.
+ * This file supplies the three types, with exactly the surface `ultramodern`
+ * uses and no more, on top of `threading.h`'s C interface.
  *
- * ## Ce qu'`ultramodern` demande reellement, releve dans son code **patche**
+ * ## What `ultramodern` actually asks for, surveyed in its **patched** code
  *
- * Le releve porte sur l'arbre avec les quatorze patchs du depot appliques,
- * c'est-a-dire celui qu'on compile. Le faire sur l'arbre amont a d'abord conduit
- * a une conclusion fausse : voir la correction en tete de
+ * The survey covers the tree with the repository's fourteen patches applied,
+ * that is, the one we compile. Doing it on the upstream tree first led to a
+ * wrong conclusion: see the correction at the top of
  * `docs/WIN95-THREADING.md`.
  *
- *   thread              construction par defaut (membre de structure)
- *                       construction variadique  std::thread{f, a, b, c}
- *                       affectation par deplacement
+ *   thread              default construction (struct member)
+ *                       variadic construction  std::thread{f, a, b, c}
+ *                       move assignment
  *                       join, detach
- *   mutex               construction par defaut, plus lock/unlock pour la
- *                       variable de condition
- *   lock_guard          les deux formes, `lock_guard lock{m}` (deduction) et
+ *   mutex               default construction, plus lock/unlock for the
+ *                       condition variable
+ *   lock_guard          both forms, `lock_guard lock{m}` (deduction) and
  *                       `lock_guard<mutex> lock(m)`
- *   unique_lock         construction par deduction, et le passage a `wait`
- *   condition_variable  notify_one, notify_all, wait(lock, predicat), wait_for
- *                       — introduites par le patch 0013 du depot, dans
+ *   unique_lock         construction by deduction, and passing to `wait`
+ *   condition_variable  notify_one, notify_all, wait(lock, predicate), wait_for
+ *                       - introduced by the repository's patch 0013, in
  *                       `mesgqueue.cpp`
  *
- * Ce qui n'y est **pas**, et qui n'est donc pas fourni :
+ * What is **not** there, and is therefore not supplied:
  *
- *   - `this_thread::sleep_for` / `sleep_until` — `timer.cpp` a deja une branche
- *     `#ifdef _WIN32` qui appelle `Sleep` directement, precisement parce que la
- *     STL de Microsoft s'est mal comportee sur un recul de l'horloge. La cible
- *     Windows 95 emprunte cette branche.
- *   - `unique_lock` cessible pour de bon — ni `try_lock`, ni `defer_lock`, ni
- *     transfert de propriete : aucun site d'appel n'en fait usage.
+ *   - `this_thread::sleep_for` / `sleep_until` - `timer.cpp` already has an
+ *     `#ifdef _WIN32` branch that calls `Sleep` directly, precisely because
+ *     Microsoft's STL misbehaved on a clock backstep. The Windows 95 target
+ *     takes that branch.
+ *   - a fully transferable `unique_lock` - no `try_lock`, no `defer_lock`, no
+ *     ownership transfer: no call site uses them.
  *
- * ## Ce qui differe de la bibliotheque standard
+ * ## What differs from the standard library
  *
- * `std::thread` **appelle `std::terminate`** si on le detruit encore joignable.
- * Ce pont fait de meme, par le gestionnaire de faute de `threading.h`, pour ne
- * pas transformer un defaut de cycle de vie en fuite silencieuse.
+ * `std::thread` **calls `std::terminate`** if it is destroyed while still
+ * joinable. This bridge does the same, through `threading.h`'s fault handler, so
+ * as not to turn a lifetime defect into a silent leak.
  *
- * `std::thread::join` sur un fil non joignable leve `std::system_error` ; ici
- * c'est aussi une faute signalee. `ultramodern` ne le fait pas.
+ * `std::thread::join` on a non-joinable thread throws `std::system_error`; here
+ * it is also a reported fault. `ultramodern` does not do it.
  *
- * La difference de reentrance de `mutex` est celle de `dkr_mutex`, decrite dans
- * `docs/WIN95-THREADING.md` : une reentrance est signalee au lieu de reussir
- * silencieusement comme le ferait une CRITICAL_SECTION nue.
+ * `mutex`'s reentrancy difference is `dkr_mutex`'s, described in
+ * `docs/WIN95-THREADING.md`: a reentrancy is reported instead of succeeding
+ * silently as a bare CRITICAL_SECTION would.
  */
 #ifndef DKR_WIN95_THREADING_HPP
 #define DKR_WIN95_THREADING_HPP
@@ -65,23 +65,24 @@
 namespace dkr {
 namespace win95 {
 
-/* --- Fil ------------------------------------------------------------------ */
+/* --- Thread --------------------------------------------------------------- */
 
 class thread {
 public:
     thread() noexcept : handle_(nullptr) {}
 
-    /* Le garde `enable_if` empeche ce constructeur de capturer les
-       constructions par copie et par deplacement, qu'il serait sinon meilleur
-       candidat a satisfaire. C'est la meme precaution que celle de la
-       bibliotheque standard, et son absence produit des erreurs illisibles. */
+    /* The `enable_if` guard stops this constructor from capturing the copy and
+       move constructions, which it would otherwise be a better candidate for.
+       It is the same precaution the standard library takes, and its absence
+       produces unreadable errors. */
     template <class Fn, class... Args,
               class = typename std::enable_if<
                   !std::is_same<typename std::decay<Fn>::type, thread>::value>::type>
     explicit thread(Fn &&fn, Args &&...args)
     {
-        /* Les arguments sont **copies**, comme le fait `std::thread` : le fil
-           cree survit a la portee qui l'a lance, et une reference y pendrait. */
+        /* The arguments are **copied**, as `std::thread` does: the created
+           thread outlives the scope that launched it, and a reference would
+           dangle. */
         using pack_t = std::tuple<typename std::decay<Fn>::type,
                                   typename std::decay<Args>::type...>;
         pack_t *pack = new pack_t(std::forward<Fn>(fn), std::forward<Args>(args)...);
@@ -89,7 +90,7 @@ public:
         handle_ = dkr_thread_start(&thread::entry<pack_t>, pack, 0);
         if (handle_ == nullptr) {
             delete pack;
-            dkr_threading_fatal("dkr::win95::thread : creation de fil impossible");
+            dkr_threading_fatal("dkr::win95::thread: cannot create thread");
         }
     }
 
@@ -101,15 +102,15 @@ public:
     thread &operator=(thread &&other) noexcept
     {
         if (this != &other) {
-            /* `std::thread` termine le programme si on ecrase un fil encore
-               joignable. On ne fait pas mieux en silence. */
+            /* `std::thread` terminates the program if a still-joinable thread
+               is overwritten. We do no better in silence. */
             if (handle_ != nullptr) {
                 dkr_threading_fatal(
-                    "dkr::win95::thread : affectation sur un fil encore joignable");
-                /* Le gestionnaire par defaut ne rend pas la main. Un test qui
-                   l'intercepte, si : il faut alors relacher l'ancien fil plutot
-                   que d'en perdre le descripteur. Attendre ne serait pas une
-                   option — on ignore combien de temps il tournera encore. */
+                    "dkr::win95::thread: assignment over a still-joinable thread");
+                /* The default handler does not return. A test that intercepts it
+                   does: the old thread must then be released rather than have
+                   its handle lost. Waiting would not be an option - we do not
+                   know how much longer it will run. */
                 dkr_thread_release(handle_);
             }
             handle_       = other.handle_;
@@ -125,8 +126,8 @@ public:
     {
         if (handle_ != nullptr) {
             dkr_threading_fatal(
-                "dkr::win95::thread : detruit alors qu'il est encore joignable");
-            dkr_thread_release(handle_);   /* idem : voir l'affectation */
+                "dkr::win95::thread: destroyed while still joinable");
+            dkr_thread_release(handle_);   /* likewise: see the assignment */
         }
     }
 
@@ -135,7 +136,7 @@ public:
     void join()
     {
         if (handle_ == nullptr) {
-            dkr_threading_fatal("dkr::win95::thread : join sur un fil non joignable");
+            dkr_threading_fatal("dkr::win95::thread: join on a non-joinable thread");
             return;
         }
         dkr_thread_join(handle_);
@@ -145,7 +146,7 @@ public:
     void detach()
     {
         if (handle_ == nullptr) {
-            dkr_threading_fatal("dkr::win95::thread : detach sur un fil non joignable");
+            dkr_threading_fatal("dkr::win95::thread: detach on a non-joinable thread");
             return;
         }
         dkr_thread_release(handle_);
@@ -161,19 +162,18 @@ private:
         delete pack;
     }
 
-    /* L'element 0 du paquet est l'appelable, les suivants ses arguments.
+    /* Element 0 of the pack is the callable, the rest are its arguments.
      *
-     * Ce code appelait directement, `std::get<0>(pack)(...)`, en s'appuyant sur
-     * une remarque exacte mais trop etroite : aucun appel d'`ultramodern`
-     * n'etait un pointeur sur membre. `librecomp` en a un — `mods.cpp` demarre
-     * un fil sur `&ModContext::dirty_mod_configuration_thread_process` — et la
-     * forme directe ne compile pas pour lui.
+     * This code called directly, `std::get<0>(pack)(...)`, resting on a remark
+     * that was accurate but too narrow: none of `ultramodern`'s calls was a
+     * pointer to member. `librecomp` has one - `mods.cpp` starts a thread on
+     * `&ModContext::dirty_mod_configuration_thread_process` - and the direct
+     * form does not compile for it.
      *
-     * `std::invoke` est ce que `std::thread` emploie, et c'est le contrat qu'on
-     * reproduit ici. `<functional>` est de la bibliotheque pure : il ne demande
-     * rien au systeme et n'ajoute aucun import. La supposition d'origine
-     * economisait un en-tete au prix d'une divergence de contrat — le mauvais
-     * cote du marche. */
+     * `std::invoke` is what `std::thread` uses, and it is the contract we
+     * reproduce here. `<functional>` is pure library: it asks nothing of the
+     * system and adds no import. The original assumption saved a header at the
+     * price of a contract divergence - the wrong side of that bargain. */
     template <class Pack, std::size_t... I>
     static void call(Pack &pack, std::index_sequence<I...>)
     {
@@ -183,14 +183,14 @@ private:
     dkr_thread *handle_;
 };
 
-/* --- Exclusion mutuelle --------------------------------------------------- */
+/* --- Mutual exclusion ----------------------------------------------------- */
 
 class mutex {
 public:
     mutex()
     {
         if (!dkr_mutex_init(&m_)) {
-            dkr_threading_fatal("dkr::win95::mutex : initialisation impossible");
+            dkr_threading_fatal("dkr::win95::mutex: cannot initialise");
         }
     }
 
@@ -203,25 +203,25 @@ public:
     void unlock()   { dkr_mutex_unlock(&m_); }
     bool try_lock() { return dkr_mutex_try_lock(&m_) != 0; }
 
-    /* Reserve a `condition_variable`, qui doit relacher puis reprendre ce
-       verrou pendant l'attente. `std::mutex::native_handle` existe pour la
-       meme raison. */
+    /* Reserved for `condition_variable`, which must release and then retake this
+       lock during the wait. `std::mutex::native_handle` exists for the same
+       reason. */
     dkr_mutex *native_handle() { return &m_; }
 
 private:
     dkr_mutex m_;
 };
 
-/* --- Temporisation --------------------------------------------------------- *
+/* --- Delays ---------------------------------------------------------------- *
  *
- * `std::this_thread::sleep_for` prend une duree de `<chrono>`, en-tete qui
- * fonctionne sur la cible — ce sont `<thread>` et `<mutex>` qui n'y passent pas.
- * La duree est donc acceptee telle quelle et convertie en millisecondes, la
- * seule granularite que `Sleep` de Windows 95 connaisse.
+ * `std::this_thread::sleep_for` takes a `<chrono>` duration, a header that works
+ * on the target - it is `<thread>` and `<mutex>` that do not. The duration is
+ * therefore accepted as it is and converted to milliseconds, the only
+ * granularity Windows 95's `Sleep` knows.
  *
- * Une duree inferieure a la milliseconde ne s'arrondit pas a zero mais a un :
- * un appelant qui demande a ceder la main brievement doit ceder la main, et
- * `Sleep(0)` ne rend pas forcement le processeur a un autre fil.
+ * A duration shorter than a millisecond does not round to zero but to one: a
+ * caller asking to yield briefly must yield, and `Sleep(0)` does not necessarily
+ * hand the processor to another thread.
  */
 namespace this_thread {
 
@@ -237,10 +237,10 @@ inline void sleep_for(const std::chrono::duration<Rep, Period> &d)
     dkr_sleep_ms(static_cast<unsigned long>(ms));
 }
 
-/* `sleep_until` est exprimee sur `sleep_for` plutot que sur une horloge
-   absolue : Windows 95 n'a pas d'attente jusqu'a une date, et la difference
-   entre les deux se reduit ici a une soustraction. Une date deja passee rend la
-   main immediatement, comme la bibliotheque standard. */
+/* `sleep_until` is expressed in terms of `sleep_for` rather than an absolute
+   clock: Windows 95 has no wait-until-a-date, and the difference between the two
+   reduces here to a subtraction. A date already past returns immediately, like
+   the standard library. */
 template <class Clock, class Duration>
 inline void sleep_until(const std::chrono::time_point<Clock, Duration> &when)
 {
@@ -250,9 +250,9 @@ inline void sleep_until(const std::chrono::time_point<Clock, Duration> &when)
     }
 }
 
-/* `yield` cede le reste du quantum. `Sleep(0)` ne le rend qu'a un fil de meme
-   priorite pret a s'executer, et rien du tout sinon — c'est le comportement de
-   Windows 95, et `dkr_yield` en fait ce qu'il peut. */
+/* `yield` gives up the rest of the quantum. `Sleep(0)` only hands it to a
+   runnable thread of the same priority, and to nothing at all otherwise - that
+   is Windows 95's behaviour, and `dkr_yield` makes of it what it can. */
 inline void yield()
 {
     dkr_yield();
@@ -260,7 +260,7 @@ inline void yield()
 
 } // namespace this_thread
 
-/* --- Garde de verrou ------------------------------------------------------ */
+/* --- Lock guard ----------------------------------------------------------- */
 
 template <class Mutex>
 class lock_guard {
@@ -275,27 +275,27 @@ private:
     Mutex &m_;
 };
 
-/* `lock_guard lock{ mutex }` sans parametre explicite : `ultramodern` emploie
-   les deux formes, et la deduction est celle que C++17 donne gratuitement. */
+/* `lock_guard lock{ mutex }` with no explicit parameter: `ultramodern` uses both
+   forms, and the deduction is the one C++17 gives for free. */
 template <class Mutex>
 lock_guard(Mutex &) -> lock_guard<Mutex>;
 
-/* --- Garde a un seul verrou ------------------------------------------------ *
+/* --- Single-lock guard ----------------------------------------------------- *
  *
- * `std::scoped_lock` est variadique, et c'est la forme dominante dans les
- * sources du jeu : 95 emplois, tous sur **un seul** verrou.
+ * `std::scoped_lock` is variadic, and it is the dominant form in the game's
+ * sources: 95 uses, all on **one** lock.
  *
- * Elle n'est donc fournie que pour un verrou, et le choix merite d'etre dit,
- * parce que l'alternative parait plus complete et serait pire. Une version
- * variadique naive verrouillerait dans l'ordre des arguments — ce que
- * `std::scoped_lock` ne fait justement pas : elle emploie l'algorithme de
- * `std::lock`, qui evite l'interblocage par acquisitions et abandons repetes.
- * Reproduire la signature sans reproduire cet algorithme donnerait du code qui
- * compile, marche a l'essai, et interbloque un jour sous cadence.
+ * It is therefore only supplied for one lock, and the choice is worth stating,
+ * because the alternative looks more complete and would be worse. A naive
+ * variadic version would lock in argument order - which is precisely what
+ * `std::scoped_lock` does not do: it uses `std::lock`'s algorithm, which avoids
+ * deadlock through repeated acquisition and back-off. Reproducing the signature
+ * without reproducing that algorithm would give code that compiles, works in
+ * trials, and deadlocks one day under load.
  *
- * Avec un seul parametre, deux verrous ne compilent pas. L'echec est visible,
- * a l'endroit fautif, et le jour ou le code du jeu en aura besoin il faudra
- * ecrire l'algorithme — pas le contourner sans le savoir.
+ * With a single parameter, two locks do not compile. The failure is visible, at
+ * the offending place, and the day the game's code needs it the algorithm will
+ * have to be written - not worked around unknowingly.
  */
 template <class Mutex>
 class scoped_lock {
@@ -313,12 +313,12 @@ private:
 template <class Mutex>
 scoped_lock(Mutex &) -> scoped_lock<Mutex>;
 
-/* --- Verrou cessible ------------------------------------------------------ *
+/* --- Transferable lock ----------------------------------------------------- *
  *
- * `std::unique_lock` a une large surface ; `mesgqueue.cpp` n'en emploie que la
- * construction — trois fois, toujours par deduction — et le passage a
- * `condition_variable::wait`. C'est donc tout ce qui est fourni, plus
- * `lock`/`unlock`, dont la variable de condition a besoin.
+ * `std::unique_lock` has a wide surface; `mesgqueue.cpp` only uses its
+ * construction - three times, always by deduction - and passing it to
+ * `condition_variable::wait`. That is therefore all that is supplied, plus
+ * `lock`/`unlock`, which the condition variable needs.
  */
 template <class Mutex>
 class unique_lock {
@@ -339,8 +339,8 @@ public:
     void unlock()              { m_->unlock(); owns_ = false; }
     bool owns_lock() const     { return owns_; }
 
-    /* Reserve a `condition_variable`, qui doit atteindre le verrou nu pour le
-       relacher pendant l'attente. */
+    /* Reserved for `condition_variable`, which must reach the bare lock in order
+       to release it during the wait. */
     Mutex *release_to_condvar() const { return m_; }
 
 private:
@@ -351,11 +351,11 @@ private:
 template <class Mutex>
 unique_lock(Mutex &) -> unique_lock<Mutex>;
 
-/* --- Variable de condition ------------------------------------------------ *
+/* --- Condition variable --------------------------------------------------- *
  *
- * Le raisonnement de correction — pourquoi aucun reveil ne se perd, et ce qui
- * n'est deliberement pas garanti — est dans `threading.h`, au-dessus de
- * `dkr_condvar`. Ici il n'y a que l'habillage.
+ * The correctness argument - why no wake-up is lost, and what is deliberately
+ * not guaranteed - is in `threading.h`, above `dkr_condvar`. Here there is only
+ * the wrapper.
  */
 enum class cv_status { no_timeout, timeout };
 
@@ -365,7 +365,7 @@ public:
     {
         if (!dkr_condvar_init(&cv_)) {
             dkr_threading_fatal(
-                "dkr::win95::condition_variable : initialisation impossible");
+                "dkr::win95::condition_variable: cannot initialise");
         }
     }
 
@@ -383,9 +383,9 @@ public:
         dkr_condvar_wait(&cv_, lock.release_to_condvar()->native_handle());
     }
 
-    /* La forme a predicat, celle qu'emploie `ExternalMessageQueue::wait_dequeue`.
-       La boucle n'est pas une precaution : un reveil peut etre derobe par un
-       autre attendeur, ici comme avec la bibliotheque standard. */
+    /* The predicate form, the one `ExternalMessageQueue::wait_dequeue` uses.
+       The loop is not a precaution: a wake-up can be stolen by another waiter,
+       here as with the standard library. */
     template <class Lock, class Predicate>
     void wait(Lock &lock, Predicate stop_waiting)
     {
@@ -407,14 +407,14 @@ public:
         return woken ? cv_status::no_timeout : cv_status::timeout;
     }
 
-    /* La forme a predicat, employee par `ExternalMessageQueue::wait_dequeue_timed`.
-       Elle rend la valeur du predicat, comme la bibliotheque standard, et non
-       « ai-je ete reveille » : un reveil derobe ne doit pas se traduire par un
-       faux positif chez l'appelant.
+    /* The predicate form, used by `ExternalMessageQueue::wait_dequeue_timed`.
+       It returns the predicate's value, like the standard library, and not
+       "was I woken": a stolen wake-up must not turn into a false positive at the
+       caller.
 
-       L'echeance est **globale** et non par tour. La reprendre a chaque tour
-       serait le defaut classique de cette fonction : sous des reveils repetes,
-       l'attente ne finirait jamais. */
+       The deadline is **global** and not per turn. Restarting it on every turn
+       would be this function's classic defect: under repeated wake-ups, the wait
+       would never end. */
     template <class Lock, class Rep, class Period, class Predicate>
     bool wait_for(Lock &lock, const std::chrono::duration<Rep, Period> &d,
                   Predicate stop_waiting)
