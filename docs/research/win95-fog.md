@@ -1,104 +1,101 @@
-# Le brouillard
+# Fog
 
-Relevé dans le decomp et mesuré le 14 août 2026 sur la machine d'épreuve, par
+Recorded in the decomp and measured on 14 August 2026 on the test machine, by
 `tools/win95/witnesses/fog_probe.c`.
 
-## Le modèle de la N64, relevé et non supposé
+## The N64's model, recorded and not assumed
 
-`gSPFogPosition(min, max)` de `gbi.h` charge deux valeurs :
+`gbi.h`'s `gSPFogPosition(min, max)` loads two values:
 
-    multiplicateur = 128000 / (max - min)
-    decalage       = (500 - min) * 256 / (max - min)
+    multiplier = 128000 / (max - min)
+    offset     = (500 - min) * 256 / (max - min)
 
-Le RSP en tire un facteur par sommet qu'il range dans **l'alpha du sommet**. Le
-mélangeur l'applique ensuite par `G_RM_FOG_SHADE_A`, défini comme
-`GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, G_BL_CLR_IN, G_BL_1MA)` : mélange la couleur
-de brouillard avec le pixel, dosé par l'alpha du sommet.
+The RSP derives from them a per-vertex factor which it stores in **the vertex
+alpha**. The blender then applies it through `G_RM_FOG_SHADE_A`, defined as
+`GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, G_BL_CLR_IN, G_BL_1MA)`: blend the fog colour
+with the pixel, in the proportion given by the vertex alpha.
 
-Le jeu appelle `set_fog(index, near, far, r, g, b)` depuis l'en-tête de niveau, et
-la météo le remplace en course — `rain_fog()` recalcule near et far selon
-l'intensité de l'orage. La couleur de brouillard vient donc de l'état du jeu et
-n'est jamais fixée à la construction.
+The game calls `set_fog(index, near, far, r, g, b)` from the level header, and the
+weather replaces it mid-race — `rain_fog()` recomputes near and far according to
+the storm's intensity. The fog colour therefore comes from the game's state and is
+never fixed at build time.
 
-## Le brouillard n'a pas de bit propre
+## Fog has no bit of its own
 
-Il se déduit de la configuration du mélangeur : source de couleur `G_BL_CLR_FOG`
-en position `m1a`, facteur `G_BL_A_SHADE` en position `m1b`. Notre décodeur
-laissait ce bit à zéro en dur, alors que `G_RM_FOG_SHADE_A` est **le mode de
-rendu le plus fréquent de DKR** — 74 occurrences dans la source.
+It is deduced from the blender's configuration: colour source `G_BL_CLR_FOG` in
+position `m1a`, factor `G_BL_A_SHADE` in position `m1b`. Our decoder left that bit
+hard-wired to zero, whereas `G_RM_FOG_SHADE_A` is **DKR's most frequent render
+mode** — 74 occurrences in the source.
 
-Et l'on retrouve le piège du RDP : la valeur 3 signifie `G_BL_CLR_FOG` en
-position `m1a` mais `G_BL_0` en position `m1b`. Lire les deux avec le même
-dictionnaire déclarerait du brouillard là où il n'y en a pas. Une épreuve
-vérifie explicitement ce cas.
+And the RDP's trap turns up again: the value 3 means `G_BL_CLR_FOG` in position
+`m1a` but `G_BL_0` in position `m1b`. Reading both with the same dictionary would
+declare fog where there is none. A trial checks that case explicitly.
 
-## La voie retenue : le facteur par sommet
+## The route chosen: the per-vertex factor
 
-Le ticket demande de trancher entre `GR_FOG_WITH_ITERATED_ALPHA` et la table de
-64 entrées. La mesure tranche sans hésitation :
+The ticket asks for a decision between `GR_FOG_WITH_ITERATED_ALPHA` and the
+64-entry table. The measurement decides without hesitation:
 
-    couleur de brouillard vert, surface rouge, alpha de 0 a gauche a 255 a droite
+    green fog colour, red surface, alpha from 0 on the left to 255 on the right
 
-    sans brouillard : FF0000 partout — l'alpha du sommet n'y change rien
-    avec           : DE1C00 a gauche, 7B7D00 au milieu, 18DB00 a droite
+    without fog : FF0000 everywhere - the vertex alpha changes nothing
+    with        : DE1C00 on the left, 7B7D00 in the middle, 18DB00 on the right
 
-Le dégradé est régulier et le sens est le bon : alpha 255 vaut plein brouillard,
-ce qui correspond au facteur de la N64, lequel croît avec la distance. Se
-tromper de sens donnerait un brouillard **inversé** — opaque de près, clair au
-loin — spectaculaire, et facile à attribuer à la courbe plutôt qu'au sens.
+The gradient is regular and the direction is the right one: alpha 255 means full
+fog, which matches the N64's factor, itself increasing with distance. Getting the
+direction wrong would give an **inverted** fog — opaque up close, clear far away —
+spectacular, and easy to blame on the curve rather than on the direction.
 
-La table de 64 entrées n'est donc pas construite : elle n'apporterait qu'une
-approximation d'une courbe qu'on possède déjà exactement, par sommet. La question
-de son erreur d'approximation devient sans objet.
+The 64-entry table is therefore not built: it would bring nothing but an
+approximation of a curve we already hold exactly, per vertex. The question of its
+approximation error becomes moot.
 
-## Ce que la mesure a révélé au-delà de la question posée
+## What the measurement revealed beyond the question asked
 
-**L'alpha du sommet sert simultanément au brouillard et à la transparence.**
+**The vertex alpha serves the fog and the transparency at the same time.**
 
-Mesuré en activant les deux à la fois, sur fond bleu :
+Measured by enabling both at once, on a blue background:
 
-    gauche 0x1804DE — le bleu du fond transparait : la surface est translucide
-    droite 0x18BE18 — vert : plein brouillard
+    left  0x1804DE - the background's blue shows through: the surface is translucent
+    right 0x18BE18 - green: full fog
 
-Les deux usages fonctionnent, et c'est précisément le problème : ils sont
-**couplés**. Une surface translucide dans le brouillard tire sa transparence et
-son dosage de brouillard de la même valeur, et l'on ne peut pas régler l'un sans
-déranger l'autre. Le jeu emploie 78 modes translucides pour 74 modes de
-brouillard : la rencontre est certaine.
+Both uses work, and that is precisely the problem: they are **coupled**. A
+translucent surface in fog draws its transparency and its fog proportion from the
+same value, and one cannot set one without disturbing the other. The game uses 78
+translucent modes against 74 fog modes: the meeting is certain.
 
-### Une conséquence sur E05-S03
+### A consequence for E05-S03
 
-E05-S03 proposait de faire voyager la seconde couleur constante dans l'alpha du
-sommet, pour contourner l'unique registre constant de Glide. **Cette issue entre
-en conflit avec le brouillard**, qui occupe déjà cette place sur 74 modes de
-rendu.
+E05-S03 proposed carrying the second constant colour in the vertex alpha, in order
+to work around Glide's single constant register. **That way out conflicts with the
+fog**, which already occupies that place on 74 render modes.
 
-L'issue n'est donc pas générale. Elle reste envisageable sur les configurations
-sans brouillard, ce qui la rend conditionnelle plutôt qu'impossible — mais la
-classification de E05-S03 ne doit pas s'appuyer dessus sans le dire.
+The way out is therefore not general. It stays conceivable on the configurations
+without fog, which makes it conditional rather than impossible — but E05-S03's
+classification must not rest on it without saying so.
 
-Il vaut mieux avoir découvert cela ici, sur un témoin, que sur un décor faux.
+Better to have discovered this here, on a witness, than on a wrong piece of
+scenery.
 
-## Le coût, et pourquoi la mesure ne le résout pas
+## The cost, and why the measurement does not settle it
 
-    100 images sans brouillard : 1538 ms
-    100 images avec            : 1662 ms
+    100 frames without fog : 1538 ms
+    100 frames with        : 1662 ms
 
-Soit 8 %. Le ticket attendait un coût négligeable, « puisque l'unité est
-matérielle ». Ce chiffre ne permet pas de le confirmer ni de l'infirmer : les
-deux durées correspondent à 15,4 ms et 16,6 ms par image, c'est-à-dire à des
-multiples différents de la période de balayage. **La mesure est quantifiée par
-l'échange de tampons**, et ne peut pas résoudre un coût inférieur à une période.
+That is 8 %. The ticket expected a negligible cost, "since the unit is in
+hardware". This figure allows that neither to be confirmed nor denied: the two
+durations correspond to 15.4 ms and 16.6 ms per frame, that is to different
+multiples of the scan period. **The measurement is quantised by the buffer swap**,
+and cannot resolve a cost smaller than one period.
 
-Ce qu'on peut affirmer : le brouillard ne fait pas franchir plus d'une période, ce
-qui borne son coût par le haut. Le mesurer finement demanderait de désactiver la
-synchronisation, ou une scène assez chargée pour sortir du régime synchronisé.
+What can be asserted: the fog does not push past more than one period, which bounds
+its cost from above. Measuring it finely would require disabling the
+synchronisation, or a scene heavy enough to leave the synchronised regime.
 
-## Ce qui reste ouvert
+## What remains open
 
-- La comparaison de la transition à la référence **sur une caméra qui s'éloigne**.
-  Le ticket a raison d'insister : une courbe fausse ne se voit pas sur une image
-  fixe. Cela demande la ROM.
-- Le comportement à choisir quand brouillard et transparence se disputent l'alpha
-  du sommet. La mesure dit qu'ils coexistent ; elle ne dit pas ce que le jeu
-  attend.
+- The comparison of the transition against the reference **on a receding camera**.
+  The ticket is right to insist: a wrong curve does not show on a still image. That
+  requires the ROM.
+- The behaviour to choose when fog and transparency compete for the vertex alpha.
+  The measurement says they coexist; it does not say what the game expects.

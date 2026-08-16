@@ -1,100 +1,99 @@
-# Profondeur, test alpha et mélange
+# Depth, alpha test and blending
 
-Mesuré le 14 août 2026 sur la machine d'épreuve, par
-`tools/win95/witnesses/depth_probe.c` et `glide_state_probe.c`.
+Measured on 14 August 2026 on the test machine, by
+`tools/win95/witnesses/depth_probe.c` and `glide_state_probe.c`.
 
-## Z ou W : la mesure ne les départage pas
+## Z or W: the measurement does not separate them
 
-Le ticket annonce que « le W offre une bien meilleure répartition de la précision
-en profondeur ». La mesure ne le confirme pas.
+The ticket announces that "W offers a far better distribution of depth precision".
+The measurement does not confirm it.
 
-Scène construite pour être le pire cas — deux surfaces quasi coplanaires, très
-loin, dans une plage de piste de course (plan proche 10, plan lointain 20000) :
+A scene built to be the worst case — two nearly coplanar surfaces, very far away,
+within a race track's range (near plane 10, far plane 20000):
 
-| Écart | Distance | Tampon W | Tampon Z |
+| Gap | Distance | W buffer | Z buffer |
 |---|---|---|---|
-| 2 ‰ | 5000 | 0 pixel en combat | 0 pixel |
-| 2 ‰ | 15000 | 0 pixel | 0 pixel |
-| 0,2 ‰ | 15000 | **307200 (tout)** | **307200 (tout)** |
+| 2 ‰ | 5000 | 0 fighting pixels | 0 pixels |
+| 2 ‰ | 15000 | 0 pixels | 0 pixels |
+| 0.2 ‰ | 15000 | **307200 (all)** | **307200 (all)** |
 
-Les deux tampons résolvent deux pour mille à toute distance de la plage, et les
-deux cèdent entièrement à deux dixièmes de pour mille. **Le mur est au même
-endroit.**
+Both buffers resolve two parts per thousand at any distance within the range, and
+both give way entirely at two tenths of a part per thousand. **The wall is in the
+same place.**
 
-Le cas de saturation a été ajouté exprès : une comparaison sans point de rupture
-ne dit pas où est la limite, seulement que les deux candidats passent les cas
-faciles. C'est ce cas-là qui établit que le résultat n'est pas « les deux sont
-parfaits » mais « les deux ont la même limite ».
+The saturation case was added on purpose: a comparison with no breaking point does
+not say where the limit is, only that both candidates pass the easy cases. It is
+that case which establishes that the result is not "both are perfect" but "both
+have the same limit".
 
-Le choix reste donc le tampon en W, **pour une raison qui n'est pas la
-précision** : `dkr_render_vertex` porte déjà `oow = 1/w`, que Glide consomme
-telle quelle en mode W. Le mode Z lit `ooz` sur [0, 65535] alors que la chaîne
-produit une profondeur sur [0, 1], et il faudrait remettre chaque sommet à
-l'échelle — donc les recopier, donc perdre le bénéfice d'avoir calqué `GrVertex`
-champ pour champ.
+The choice therefore stays the W buffer, **for a reason that is not precision**:
+`dkr_render_vertex` already carries `oow = 1/w`, which Glide consumes as it stands
+in W mode. Z mode reads `ooz` over [0, 65535] whereas the chain produces a depth
+over [0, 1], and every vertex would have to be rescaled — hence copied, hence the
+benefit of having mirrored `GrVertex` field for field would be lost.
 
-## Un piège de mesure qui a failli inverser la conclusion
+## A measurement trap that nearly inverted the conclusion
 
-La première mesure donnait un résultat impossible : le W échouait sur 11 % de
-l'écran à 5000 et réussissait parfaitement à 10000 et 15000. La précision d'un
-tampon de profondeur se dégrade avec la distance et ne s'améliore jamais.
+The first measurement gave an impossible result: W failed on 11 % of the screen at
+5000 and succeeded perfectly at 10000 and 15000. A depth buffer's precision
+degrades with distance and never improves.
 
-L'anomalie ne frappait que le **tout premier cas mesuré**, ce qui désignait
-l'état de la carte à l'ouverture plutôt que la profondeur. Deux images jetées
-avant de mesurer l'ont fait disparaître, et les deux tampons se sont révélés
-équivalents.
+The anomaly struck only the **very first case measured**, which pointed at the
+card's state on opening rather than at depth. Two frames thrown away before
+measuring made it disappear, and the two buffers turned out to be equivalent.
 
-**Mesurer la première image après l'ouverture d'un contexte Glide, c'est mesurer
-une machine qui n'a pas fini de s'installer.** Sans le doute qu'a levé
-l'invraisemblance du profil — meilleur au loin qu'au près — la conclusion aurait
-été « le Z est supérieur au W », consignée et fausse.
+**Measuring the first frame after opening a Glide context is measuring a machine
+that has not finished settling in.** Without the doubt raised by the profile's
+implausibility — better far away than close up — the conclusion would have been "Z
+is superior to W", recorded and false.
 
-## L'accord avec la chaîne de transformation
+## Agreement with the transformation chain
 
-La profondeur normalisée produite par la projection va de 0,50025 à 20 unités
-jusqu'à 0,99983 à 15000. Sur toute cette plage, le proche masque le lointain.
+The normalised depth the projection produces runs from 0.50025 at 20 units to
+0.99983 at 15000. Over that whole range, the near hides the far.
 
-C'est un point d'accord entre deux tickets, et un désaccord y produirait un tri
-globalement faux — donc un décor passant devant un autre, défaut très visible
-qu'on attribuerait au décodeur plutôt qu'à la plage.
+It is a point of agreement between two tickets, and a disagreement there would
+produce a globally wrong sort — hence one piece of scenery passing in front of
+another, a very visible defect that would be blamed on the decoder rather than on
+the range.
 
-## Les modes de rendu que DKR emploie
+## The render modes DKR uses
 
-Relevés dans la source du portage voisin, par fréquence d'apparition :
+Recorded in the neighbouring port's source, by frequency of appearance:
 
-| Famille | Occurrences | Ce que c'est | Traduction Glide |
+| Family | Occurrences | What it is | Glide translation |
 |---|---|---|---|
-| `FOG_SHADE_A` | 74 | brouillard sur alpha itérée | E05-S06 — **mesuré**, facteur par sommet |
-| `XLU_SURF` | 78 | translucide | `SRC_ALPHA` / `ONE_MINUS_SRC_ALPHA` |
+| `FOG_SHADE_A` | 74 | fog on iterated alpha | E05-S06 — **measured**, per-vertex factor |
+| `XLU_SURF` | 78 | translucent | `SRC_ALPHA` / `ONE_MINUS_SRC_ALPHA` |
 | `OPA_SURF` | 47 | opaque | `ONE` / `ZERO` |
-| `TEX_EDGE` | 25 | découpe par seuil alpha | test alpha — la végétation |
-| `DECAL` | 21 | surface collée, même profondeur | biais de profondeur |
-| `INTER` | 12 | surfaces s'interpénétrant | biais de profondeur |
-| `XLU_LINE_MOD` | 9 | lignes translucides | — |
-| préfixe `AA_` | fréquent | anti-crénelage par couverture | **sans équivalent** |
+| `TEX_EDGE` | 25 | cut-out by alpha threshold | alpha test — the vegetation |
+| `DECAL` | 21 | surface stuck on, same depth | depth bias |
+| `INTER` | 12 | interpenetrating surfaces | depth bias |
+| `XLU_LINE_MOD` | 9 | translucent lines | — |
+| `AA_` prefix | frequent | coverage-based anti-aliasing | **no equivalent** |
 
-Le préfixe `AA_` est le seul écart structurel. Le RDP fait un anti-crénelage par
-couverture de pixel, intégré au mélangeur ; Glide 2 n'offre que
-`grAADrawTriangle`, dont le coût est sans rapport. Ces modes sont donc rendus
-sans anti-crénelage, ce qui est une dégradation visible sur les bords et **non
-une erreur de couleur** — elle ne se cumule pas et ne se propage pas.
+The `AA_` prefix is the only structural deviation. The RDP does anti-aliasing by
+pixel coverage, integrated into the blender; Glide 2 offers nothing but
+`grAADrawTriangle`, whose cost bears no relation. Those modes are therefore
+rendered without anti-aliasing, which is a degradation visible on edges and **not
+a colour error** — it does not accumulate and does not spread.
 
-## Ce qui est déjà mesuré ailleurs
+## What is already measured elsewhere
 
-`glide_state_probe.c` a confirmé sur la carte, le même jour :
+`glide_state_probe.c` confirmed on the card, the same day:
 
-- mélange opaque, alpha et additif, à la quantification près ;
-- test alpha, dans les deux sens — 0 pixel sous le seuil, 112000 au-dessus, soit
-  exactement l'aire analytique du triangle ;
-- fenêtre de ciseaux, bornes incluses à gauche et exclues à droite.
+- opaque, alpha and additive blending, to within the quantisation;
+- the alpha test, in both directions — 0 pixels below the threshold, 112000 above,
+  that is exactly the triangle's analytical area;
+- the scissor window, bounds inclusive on the left and exclusive on the right.
 
-## Ce qui reste ouvert
+## What remains open
 
-- **`grChromakeyMode`** contre le test alpha : le ticket demande de comparer coût
-  et résultat. Non mesuré.
-- **Le biais de profondeur** pour les modes `DECAL` et `INTER` : `grDepthBiasLevel`
-  existe, sa valeur utile se règle sur une scène réelle.
-- **L'ordre de rendu des surfaces translucides** est vérifié structurellement —
-  le décodeur émet dans l'ordre de la display list et ne regroupe rien — mais pas
-  sur une scène du jeu.
-- **Ombres, eau, particules et reflets** : demandent la ROM.
+- **`grChromakeyMode`** against the alpha test: the ticket asks for cost and result
+  to be compared. Not measured.
+- **The depth bias** for the `DECAL` and `INTER` modes: `grDepthBiasLevel` exists,
+  its useful value is set on a real scene.
+- **The rendering order of translucent surfaces** is verified structurally — the
+  decoder emits in display-list order and groups nothing — but not on a scene from
+  the game.
+- **Shadows, water, particles and reflections**: require the ROM.
