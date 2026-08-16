@@ -122,6 +122,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // décodeur lirait des opcodes plausibles à des adresses absurdes.
     context_.rdram_native = 1;
     context_.trace = trace_decodeur;
+    // La résolution réellement ouverte : le décodeur en a besoin pour porter le
+    // tampon du jeu (320 de large) à l'écran, aussi bien pour les rectangles 2D
+    // que pour la fenêtre d'affichage 3D.
+    context_.screen_width = static_cast<unsigned>(width_);
+    context_.screen_height = static_cast<unsigned>(height_);
 
     // **Une liste entière, vidée une seule fois.**
     //
@@ -155,6 +160,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     }
     for (int i = 0; i < 256; i++) { opcodes_[i] += context_.state.opcodes[i]; }
     total_rects_ += context_.state.rects;
+    total_viewports_ += context_.state.viewports;
     total_etats_ += context_.state.etats_appliques;
     total_approches_ += context_.state.etats_approches;
     total_fill_hors_cycle_ += context_.state.fill_hors_cycle;
@@ -246,9 +252,10 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // FILL, donc toute autre valeur accuse le decodage du mot de mode.
         std::fprintf(stderr,
                      "[gfx]   etat: appliques=%lu approches=%lu "
-                     "remplissages-hors-cycle=%lu cycle=%u\n",
+                     "remplissages-hors-cycle=%lu cycle=%u fenetres=%lu\n",
                      total_etats_, total_approches_, total_fill_hors_cycle_,
-                     static_cast<unsigned>(context_.state.cycle_courant));
+                     static_cast<unsigned>(context_.state.cycle_courant),
+                     total_viewports_);
     }
 #else
     (void)task;

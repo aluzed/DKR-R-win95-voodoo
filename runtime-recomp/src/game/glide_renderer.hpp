@@ -70,6 +70,8 @@ private:
     // n'en demande pas » de « on les décode et on les perd ».
     unsigned long total_rects_ = 0;
     unsigned long total_etats_ = 0;
+    // Zéro ici signifierait qu'on dessine encore à une échelle inventée.
+    unsigned long total_viewports_ = 0;
     unsigned long total_approches_ = 0;
     unsigned long total_fill_hors_cycle_ = 0;
     // Par catégorie, parce que le total ne dit pas quoi corriger : une adresse

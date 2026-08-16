@@ -26,6 +26,8 @@
 #define OP_SETOTHERMODE_L 0xB9
 #define OP_SETOTHERMODE_H 0xBA
 #define OP_SETCOMBINE     0xFC
+#define MOVEMEM_VIEWPORT  0x80
+#define VIEWPORT_BYTES    16u
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -171,6 +173,21 @@ static void reject(dkr_f3d_context *c, dkr_f3d_reject why, const char *detail)
     if (c->state.rejects[why] <= MAX_LOGGED_REJECTS) {
         trace(c, "REJET %s : %s", dkr_f3d_reject_text(why), detail);
     }
+}
+
+/* --- Du tampon du jeu vers l'écran -----------------------------------------
+ *
+ * Le jeu raisonne dans son tampon de couleur — 320 pixels de large pour DKR — et
+ * la carte affiche en 640x480. Le facteur est **lu** dans `SETCOLORIMAGE` plutôt
+ * que supposé, et il sert à deux endroits : les rectangles pleins et la fenêtre
+ * d'affichage. Les faire diverger donnerait une interface 2D et une géométrie 3D
+ * à deux échelles différentes, ce qui se voit mais ne se comprend pas. */
+static float echelle_ecran(const dkr_f3d_context *c)
+{
+    if (c->screen_width == 0u || c->state.color_image_width == 0u) {
+        return 1.0f;
+    }
+    return (float)c->screen_width / (float)c->state.color_image_width;
 }
 
 /* Declaree ici parce que le dessin de triangles la precede dans ce fichier : la
@@ -479,6 +496,54 @@ static void appliquer_etat(dkr_f3d_context *c)
     }
 }
 
+
+/* --- La fenêtre d'affichage, celle du jeu et non celle qu'on suppose -------- *
+ *
+ * Jusqu'ici la fenêtre venait du défaut de `dkr_transform_init` — 640x480,
+ * plausible et faux. Le symptôme mesuré : un unique triangle couvrant la moitié
+ * de l'écran, alors que la géométrie et l'ombrage étaient corrects.
+ *
+ * `MOVEMEM` d'index `0x80` la porte, en seize octets. L'échantillon relevé sur
+ * la machine :
+ *
+ *     opcode 0x03 w0=0x03800010 w1=0x000DD148
+ *                    ^^ index   ^^^^ seize octets
+ *
+ * La structure est `short vscale[4]` puis `short vtrans[4]`, en virgule fixe
+ * 2.2 — d'où la division par quatre. Les deux dernières composantes portent la
+ * profondeur et ne servent pas ici : notre plage de profondeur est celle du
+ * backend, établie par E05-S05.
+ *
+ * **Le signe en y s'inverse.** Le jeu donne une échelle positive ; la convention
+ * de `dkr_transform` la veut négative, comme son propre défaut. S'en dispenser
+ * retournerait l'image de haut en bas — visible, mais facile à attribuer à la
+ * projection plutôt qu'à une convention de signe. */
+static void cmd_viewport(dkr_f3d_context *c, unsigned int address)
+{
+    const short sx = read_s16(c, address + 0u);
+    const short sy = read_s16(c, address + 2u);
+    const short tx = read_s16(c, address + 8u);
+    const short ty = read_s16(c, address + 10u);
+    const float echelle = echelle_ecran(c);
+
+    /* Une fenêtre nulle n'est pas une fenêtre : elle projetterait tous les
+       sommets au même point, ce qui ressemble à une matrice fausse. On garde
+       alors celle qu'on avait plutôt que d'en installer une inutilisable. */
+    if (sx == 0 || sy == 0) {
+        trace(c, "Viewport ignore : echelle nulle");
+        return;
+    }
+
+    dkr_transform_set_viewport(&c->transform,
+                               ((float)sx / 4.0f) * echelle,
+                               -((float)sy / 4.0f) * echelle,
+                               ((float)tx / 4.0f) * echelle,
+                               ((float)ty / 4.0f) * echelle);
+    c->state.viewports++;
+    trace(c, "Viewport echelle=%d,%d translation=%d,%d (x%d/100)",
+          sx / 4, sy / 4, tx / 4, ty / 4, (int)(echelle * 100.0f));
+}
+
 /* --- Le rectangle plein ----------------------------------------------------- *
  *
  * Mesuré sur la machine avant d'être écrit : sur les 47 000 commandes de la
@@ -548,7 +613,7 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
 
     if (c->state.color_image_width > 0u && ecran_w > 0.0f) {
-        echelle_x = ecran_w / (float)c->state.color_image_width;
+        echelle_x = echelle_ecran(c);
         /* La hauteur du tampon n'est portée par aucune commande — le RDP ne la
            connaît pas, il n'a que la largeur et l'adresse. On applique donc le
            même facteur qu'en x, ce qui est juste tant que le tampon a le rapport
@@ -760,7 +825,20 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                   c->state.color_image_width, w1 & RDRAM_MASK);
             break;
 
-        case OP_MOVEMEM:
+        case OP_MOVEMEM: {
+            const unsigned int index = (w0 >> 16) & 0xFFu;
+            const unsigned int taille = w0 & 0xFFFFu;
+            const unsigned int source = w1 & RDRAM_MASK;
+            if (index == MOVEMEM_VIEWPORT && taille >= VIEWPORT_BYTES &&
+                in_range(c, source, VIEWPORT_BYTES)) {
+                cmd_viewport(c, source);
+            } else {
+                trace(c, "MoveMem index=0x%02X taille=%u a 0x%06X",
+                      index, taille, source);
+            }
+            break;
+        }
+
         case OP_LOADBLOCK:
         case OP_SETTEXIMAGE:
             /* Decodees comme commandes, mais leur effet appartient aux etages

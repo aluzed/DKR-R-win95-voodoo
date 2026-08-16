@@ -118,6 +118,9 @@ typedef struct {
        le décalage — et le dit en chiffres plutôt qu'à l'écran. */
     unsigned long fill_hors_cycle;
     unsigned char cycle_courant;
+    /* Fenêtres d'affichage installées par le jeu. Zéro signifie qu'on dessine
+       encore avec le défaut, donc à une échelle inventée. */
+    unsigned long viewports;
 
     /* Combien de fois chaque opcode a été vu.
      *
@@ -166,6 +169,12 @@ typedef struct {
     unsigned int         mode_l;
     dkr_combiner         combiner;
     unsigned char        etat_sale;
+
+    /* La résolution réellement ouverte par le backend. Le décodeur en a besoin
+       pour porter le tampon du jeu à l'écran, et la déduire de la fenêtre
+       courante ne marcherait plus dès qu'il la remplace. */
+    unsigned int         screen_width;
+    unsigned int         screen_height;
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne
