@@ -144,6 +144,14 @@ typedef struct {
        surface blanche ; ces deux compteurs en séparent deux. */
     unsigned long     emis_par_combine[DKR_COMBINE_COUNT];
     unsigned long     emis_avec_texture;
+    /* Les triangles émis par ordre de grandeur d'aire à l'écran : moins d'un
+       pixel, moins de cent, moins de dix mille, au-delà. Une distribution
+       dominée par le dernier seau accuse la projection ou les matrices ; une
+       distribution normale dit que la géométrie est juste. */
+    unsigned long     aire[4];
+    /* Les triangles émis par mode de profondeur. Un tri absent produit
+       exactement l'image observée : le dernier grand polygone recouvre tout. */
+    unsigned long     emis_par_profondeur[4];
 
     /* Combien de fois chaque opcode a été vu.
      *

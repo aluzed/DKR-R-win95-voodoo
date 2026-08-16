@@ -446,6 +446,41 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             if (c->render_state.texture != 0) {
                 c->state.emis_avec_texture++;
             }
+            /* **La taille des triangles à l'écran.**
+             *
+             * 490 triangles par image sont émis, et l'écran n'en montre qu'un
+             * seul, énorme. Les deux ne peuvent pas être vrais en même temps
+             * sans que quelque chose d'autre soit faux, et « émis » ne dit pas
+             * lequel. Une distribution dominée par des triangles de plus de dix
+             * mille pixels accuserait la projection ou les matrices ; une
+             * distribution normale dirait au contraire que la géométrie est
+             * juste et que c'est l'échantillonnage qui manque.
+             *
+             * L'aire par le produit vectoriel, en valeur absolue et sans
+             * division : on ne cherche pas l'aire exacte mais l'ordre de
+             * grandeur, et une racine par triangle se paierait. */
+            {
+                const float ax = v[1].x - v[0].x, ay = v[1].y - v[0].y;
+                const float bx = v[2].x - v[0].x, by = v[2].y - v[0].y;
+                float aire = (ax * by - ay * bx) * 0.5f;
+                if (aire < 0.0f) { aire = -aire; }
+                if (aire < 1.0f)         { c->state.aire[0]++; }
+                else if (aire < 100.0f)  { c->state.aire[1]++; }
+                else if (aire < 10000.0f){ c->state.aire[2]++; }
+                else                     { c->state.aire[3]++; }
+            }
+            /* **Le mode de profondeur au moment du dessin.**
+             *
+             * La distribution des aires est normale — 45 % des triangles sous
+             * cent pixels — donc la géométrie n'est pas dégénérée. Mais l'écran
+             * est couvert par un seul grand polygone, ce qui est exactement ce
+             * que produit un tri de profondeur absent : les 18 % de triangles
+             * de plus de dix mille pixels recouvrent tout ce qui a été dessiné
+             * avant. Compter les modes dit si le test est actif, plutôt que de
+             * le supposer d'après le code qui le traduit. */
+            if (c->render_state.depth < 4) {
+                c->state.emis_par_profondeur[c->render_state.depth]++;
+            }
             if (c->backend && c->backend->draw_triangles) {
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }

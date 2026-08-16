@@ -166,6 +166,10 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_refusees_ += context_.state.textures_refusees;
     total_tex_remplies_ += context_.state.textures_remplies;
     total_emis_texture_ += context_.state.emis_avec_texture;
+    for (int i = 0; i < 4; i++) {
+        aire_[i] += context_.state.aire[i];
+        profondeur_[i] += context_.state.emis_par_profondeur[i];
+    }
     for (int i = 0; i < DKR_COMBINE_COUNT; i++) {
         emis_par_combine_[i] += context_.state.emis_par_combine[i];
     }
@@ -296,6 +300,14 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      total_emis_texture_, emis_par_combine_[0],
                      emis_par_combine_[1], emis_par_combine_[2],
                      emis_par_combine_[3]);
+        std::fprintf(stderr,
+                     "[gfx]   aires: <1px=%lu <100px=%lu <10000px=%lu "
+                     ">=10000px=%lu\n",
+                     aire_[0], aire_[1], aire_[2], aire_[3]);
+        std::fprintf(stderr,
+                     "[gfx]   profondeur: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
+                     profondeur_[0], profondeur_[1], profondeur_[2],
+                     profondeur_[3]);
         if (context_.state.s_max > context_.state.s_min) {
             std::fprintf(stderr,
                          "[gfx]   coords: s=[%d..%d]/1000 t=[%d..%d]/1000\n",
