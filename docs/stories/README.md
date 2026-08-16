@@ -1,233 +1,236 @@
-# Portage DKR-R vers Windows 95 + 3dfx Voodoo
+# Porting DKR-R to Windows 95 + 3dfx Voodoo
 
-Backlog de développement. Chaque ticket est un fichier autonome sous
+The development backlog. Every ticket is a self-contained file under
 `docs/stories/<epic>/`.
 
-## Objectif du projet
+## The project's aim
 
-Faire tourner DKR-R — la recompilation statique de Diddy Kong Racing — sous
-Windows 95, rendu par une carte 3dfx via Glide. Le joueur fournit sa propre
-ROM ; aucun asset n'est redistribué (`docs/ASSET_POLICY.md`).
+To run DKR-R — the static recompilation of Diddy Kong Racing — under Windows 95,
+rendered by a 3dfx card through Glide. The player supplies their own ROM; no asset
+is redistributed (`docs/ASSET_POLICY.md`).
 
-**Cible retenue** : Pentium II / III, Voodoo 2 ou 3, 64 Mo de RAM, Windows 95
-OSR2.5 — actée par [E00-S05](E00-scoping/E00-S05-adr-hardware-target-glide.md)
-et [l'ADR 0002](../adr/0002-hardware-target.md). Le plancher **matériel** est
-fixé et la machine de test y est désormais alignée : Voodoo 2, 2 Mo de tampon
-d'images, 2 Mo par TMU. Seul le plancher **CPU** reste provisoire, le go/no-go
-de E00-S03 attendant une vraie session de jeu.
+**The chosen target**: Pentium II / III, Voodoo 2 or 3, 64 MB of RAM, Windows 95
+OSR2.5 — settled by
+[E00-S05](E00-scoping/E00-S05-adr-hardware-target-glide.md) and
+[ADR 0002](../adr/0002-hardware-target.md). The **hardware** floor is fixed and the
+test machine is now aligned with it: Voodoo 2, 2 MB of frame buffer, 2 MB per TMU.
+Only the **CPU** floor stays provisional, E00-S03's go/no-go awaiting a real play
+session.
 
-## Ce qui est conservé, ce qui tombe
+## What is kept, what falls
 
-La valeur de ce dépôt est dans son code généré et dans son décodeur F3DDKR. Le
-reste de la pile est spécifique aux systèmes modernes.
+This repository's value lies in its generated code and in its F3DDKR decoder. The
+rest of the stack is specific to modern systems.
 
-| Couche | Devenir |
+| Layer | Fate |
 |---|---|
-| Sortie N64Recomp (`RecompiledFuncs`) | **conservée** — du C portable manipulant des entiers |
-| Microcode audio recompilé (`aspMain`) | **conservé**, émulation vectorielle réécrite sans SSE (E03) |
-| Décodeur F3DDKR (`f3ddkr_rt64.cpp`) | **extrait** de RT64, reposé sur une interface propre (E04) |
-| Codec de sauvegarde, Controller Pak, politique audio | **conservés** — code portable du projet |
-| `ultramodern` / `librecomp` | **patchés** — primitives système substituées (E02) |
-| RT64 | **remplacé** par un backend Glide (E05) |
-| SDL2 | **remplacé** par du Win32 brut (E06) |
-| Dear ImGui, texture packs, overlay CRT | **retirés** (E07) |
-| Mode Moderne, interpolation, identités de présentation | **retirés** (E07-S01) |
+| N64Recomp output (`RecompiledFuncs`) | **kept** — portable C manipulating integers |
+| Recompiled audio microcode (`aspMain`) | **kept**, vector emulation rewritten without SSE (E03) |
+| F3DDKR decoder (`f3ddkr_rt64.cpp`) | **extracted** from RT64, rested on a clean interface (E04) |
+| Save codec, Controller Pak, audio policy | **kept** — the project's portable code |
+| `ultramodern` / `librecomp` | **patched** — system primitives substituted (E02) |
+| RT64 | **replaced** by a Glide backend (E05) |
+| SDL2 | **replaced** by bare Win32 (E06) |
+| Dear ImGui, texture packs, CRT overlay | **removed** (E07) |
+| Modern mode, interpolation, presentation identities | **removed** (E07-S01) |
 
-## Statut global
+## Overall status
 
-| Épic | Titre | Tickets | TODO | En cours |
+| Epic | Title | Tickets | TODO | In progress |
 |---|---|---|---|---|
-| [E00](E00-scoping/) | Cadrage, mesures et décisions | 7 | 5 | **2** |
-| [E01](E01-build/) | Chaîne de build 32 bits Win95 | 6 | 5 | **1** |
-| [E02](E02-system/) | Substrat système Win95 | 6 | 2 | **4** |
-| [E03](E03-rsp/) | RSP sur x86 sans SSE | 3 | 3 | 0 |
-| [E04](E04-hle-f3ddkr/) | HLE F3DDKR indépendant de RT64 | 8 | 8 | 0 |
-| [E05](E05-glide/) | Backend Glide | 8 | 8 | 0 |
-| [E06](E06-platform/) | Plateforme Win95 | 6 | 6 | 0 |
-| [E07](E07-scope/) | Réduction de périmètre | 3 | 2 | **1** |
+| [E00](E00-scoping/) | Scoping, measurements and decisions | 7 | 5 | **2** |
+| [E01](E01-build/) | 32-bit Win95 build chain | 6 | 5 | **1** |
+| [E02](E02-system/) | Win95 system substrate | 6 | 2 | **4** |
+| [E03](E03-rsp/) | RSP on x86 without SSE | 3 | 3 | 0 |
+| [E04](E04-hle-f3ddkr/) | RT64-independent F3DDKR HLE | 8 | 8 | 0 |
+| [E05](E05-glide/) | Glide backend | 8 | 8 | 0 |
+| [E06](E06-platform/) | Win95 platform | 6 | 6 | 0 |
+| [E07](E07-scope/) | Scope reduction | 3 | 2 | **1** |
 | [E08](E08-perf/) | Performance | 4 | 4 | 0 |
-| [E09](E09-qa/) | Intégration, QA et distribution | 5 | 4 | **1** |
+| [E09](E09-qa/) | Integration, QA and distribution | 5 | 4 | **1** |
 | | **Total** | **56** | **48** | **8** |
 
-### En cours
+### In progress
 
-| Ticket | État |
+| Ticket | State |
 |---|---|
-| [E09-S01](E09-qa/E09-S01-emulated-test-environment.md) | `REVIEW` — **environnement complet** : Windows 95 OSR2.5 sur Pentium II / Voodoo 2, pilote 3dfx installé, **démonstration Glide rendant un triangle Gouraud**, instantané de référence figé, machine pilotable sans écran. |
-| [E00-S04](E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) | `REVIEW` — **le microcode audio recompilé ne peut pas tenir le temps réel** : la cible n'atteint que **3,9 %** du débit vectoriel du RSP. Le repli scalaire existait déjà ; MMX ne sauverait pas ce chemin. **[E03-S03](E03-rsp/E03-S03-high-level-mixer-fallback.md) passe de contingence à chemin critique.** |
-| [E07-S03](E07-scope/E07-S03-sdl2-decoupling.md) | `IN_PROGRESS` — le lien avec SDL2 est coupé : **un seul fichier en dépendait hors garde RT64**, et il n'en voulait que la taille de la fenêtre. Une fonction, `platform::window_size`, suffit ; `runtime_stubs.cpp` passe par le même accesseur plutôt que de dupliquer. **Les 17 sources du jeu compilent pour Windows 95**, et les 18 suites de la cible moderne passent. |
-| [E01-S05](E01-build/E01-S05-compiling-the-recompiled-code.md) | `IN_PROGRESS` — **le code recompilé compile et se lie pour Windows 95** : 37 fichiers sur 37, un PE de 4,23 Mo qui passe les deux garde-fous, `aspMain.cpp` compris et sans bouchon. Aucune extension absente — l'arithmétique 64 bits passe par libgcc. La comparaison à l'oracle **concorde bit à bit sur les fonctions atteintes**, fautes comprises ; elle s'interrompt sur une faute que Windows 95 ne délivre pas comme signal. **`librecomp` compile également** — 26 unités sur 26 — les « six erreurs » de E01-S02 se réduisant à un seul `static_assert` plus des chemins d'inclusion, et `allocation_size`, qui valait **zéro** en 32 bits, suit désormais la cible. |
-| [E02-S05](E02-system/E02-S05-eeprom-and-controller-pak-saves.md) | `DONE` — couche d'écriture durable livrée, **40 contrôles sans échec sur la cible**, les coupures étant simulées plutôt qu'attendues. Le ticket avait raison sur `MoveFileEx`, mais sa forme d'indisponibilité révèle une **troisième catégorie d'API absente** : exportée, avec du vrai code, et refusant à l'exécution — que ni le contrôle d'imports ni le relevé des bouchons ne peuvent voir. **La règle bannissant `<filesystem>` était fausse** : l'inclusion et le type `path` ne coûtent rien et `path` fonctionne sur la machine ; seules les ~140 opérations comptent, pas les 250 usages du type. `ultramodern` n'a plus aucune inclusion interdite. Le patch 0018 route les **10 opérations du cœur de `librecomp`** sans toucher au type ; reste le système de mods, dont ce portage n'a pas besoin. |
-| [E02-S03](E02-system/E02-S03-clock-timers-and-pacing.md) | `IN_PROGRESS` — base de temps livrée et mesurée : `QueryPerformanceCounter` à **1 193 180 Hz, soit le PIT 8254**, 4,19 µs, 200 000 lectures sans un recul, et une **dérive de −0,0000 % sur 300 s** sur la cible. Deux suppositions du ticket sont démenties (`GetTickCount` est à 9 ms et cent fois moins chère ; `timeBeginPeriod(1)` ne change rien ici). Défaut trouvé en chemin : `ultramodern` dérive `osGetCount` de `high_resolution_clock`, qui est **l'horloge murale** sur cette chaîne — le brancher sur cette base est donc justifié par la mesure. |
-| [E02-S02](E02-system/E02-S02-ultramodern-scheduler.md) | `IN_PROGRESS` — patch 0015 : les cinq primitives d'`ultramodern` passent par un point d'indirection que la cible remplit avec la couche de E02-S01. **`ultramodern` compile pour Windows 95, 15 fichiers sur 15**, cibles modernes inchangées, inclusions interdites de **9 à 1**. `thread_local` fonctionne sur la cible, mesuré. Les points 5 à 7 restent bloqués par E01-S05, E02-S05 et E07-S03. |
-| [E02-S01](E02-system/E02-S01-threading-and-synchronisation-layer.md) | `REVIEW` — couche de fils complète : fils, verrous, sémaphore, **variable de condition**, événements, TLS. **48 contrôles sans échec sous Windows 95 émulé**, endurance de 600 s (8 437 tours). Deux bloquants invisibles trouvés : `CreateSemaphoreW` et `GetHandleInformation` sont exportées par Windows 95 mais **vides**, ce qui casse le sémaphore de `moodycamel` et `std::thread::join()` ; le garde-fou des imports contrôle désormais aussi les exports vides. Le relevé initial, fait sur un worktree que `apply-dependency-patches.sh` — cassé — laissait sans ses treize premiers patchs, avait conclu à tort qu'aucune variable de condition n'était nécessaire. |
-| [E00-S03](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) | Les deux facteurs sont mesurés : **2,16×** pour le passage 64 → 32 bits sans SSE, **17,7×** pour la normalisation vers le Pentium II 400 MHz — soit **≈ 38×** entre le poste de développement et la cible. Go/no-go non prononcé : il manque désormais le coût CPU d'une image de jeu, qui exige [E02-S06](E02-system/E02-S06-game-bring-up.md). |
+| [E09-S01](E09-qa/E09-S01-emulated-test-environment.md) | `REVIEW` — **a complete environment**: Windows 95 OSR2.5 on a Pentium II / Voodoo 2, 3dfx driver installed, **a Glide demonstration rendering a Gouraud triangle**, a reference snapshot frozen, and a machine drivable without a screen. |
+| [E00-S04](E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) | `REVIEW` — **the recompiled audio microcode cannot hold real time**: the target reaches only **3.9 %** of the RSP's vector throughput. The scalar fallback already existed; MMX would not save this path. **[E03-S03](E03-rsp/E03-S03-high-level-mixer-fallback.md) moves from contingency to critical path.** |
+| [E07-S03](E07-scope/E07-S03-sdl2-decoupling.md) | `IN_PROGRESS` — the link with SDL2 is cut: **a single file depended on it outside the RT64 guard**, and all it wanted was the window's size. One function, `platform::window_size`, suffices; `runtime_stubs.cpp` goes through the same accessor rather than duplicating it. **The game's 17 sources compile for Windows 95**, and the modern target's 18 suites pass. |
+| [E01-S05](E01-build/E01-S05-compiling-the-recompiled-code.md) | `IN_PROGRESS` — **the recompiled code compiles and links for Windows 95**: 37 files out of 37, a 4.23 MB PE that passes both guard rails, `aspMain.cpp` included and without a stub. No absent extension — the 64-bit arithmetic goes through libgcc. The comparison against the oracle **agrees bit for bit on the functions it reaches**, faults included; it stops on a fault Windows 95 does not deliver as a signal. **`librecomp` compiles as well** — 26 units out of 26 — E01-S02's "six errors" coming down to a single `static_assert` plus include paths, and `allocation_size`, which was **zero** in 32-bit, now follows the target. |
+| [E02-S05](E02-system/E02-S05-eeprom-and-controller-pak-saves.md) | `DONE` — the durable-write layer is delivered, **40 checks without a failure on the target**, the power cuts being simulated rather than waited for. The ticket was right about `MoveFileEx`, but the form of its unavailability reveals a **third category of absent API**: exported, with real code, and refusing at run time — which neither the import check nor the stub survey can see. **The rule banning `<filesystem>` was wrong**: the include and the `path` type cost nothing and `path` works on the machine; only the ~140 operations count, not the 250 uses of the type. `ultramodern` no longer has a single forbidden include. Patch 0018 routes **the 10 operations at `librecomp`'s core** without touching the type; what remains is the mod system, which this port does not need. |
+| [E02-S03](E02-system/E02-S03-clock-timers-and-pacing.md) | `IN_PROGRESS` — the time base is delivered and measured: `QueryPerformanceCounter` at **1,193,180 Hz, that is the 8254 PIT**, 4.19 µs, 200,000 reads without a single step backwards, and a **drift of −0.0000 % over 300 s** on the target. Two of the ticket's assumptions are disproved (`GetTickCount` is at 9 ms and a hundred times cheaper; `timeBeginPeriod(1)` changes nothing here). A defect found along the way: `ultramodern` derives `osGetCount` from `high_resolution_clock`, which is **the wall clock** on this toolchain — wiring it onto this base is therefore justified by measurement. |
+| [E02-S02](E02-system/E02-S02-ultramodern-scheduler.md) | `IN_PROGRESS` — patch 0015: `ultramodern`'s five primitives go through a seam that the target fills with E02-S01's layer. **`ultramodern` compiles for Windows 95, 15 files out of 15**, the modern targets unchanged, forbidden includes down from **9 to 1**. `thread_local` works on the target, measured. Points 5 to 7 stay blocked by E01-S05, E02-S05 and E07-S03. |
+| [E02-S01](E02-system/E02-S01-threading-and-synchronisation-layer.md) | `REVIEW` — the threading layer is complete: threads, locks, semaphore, **condition variable**, events, TLS. **48 checks without a failure under emulated Windows 95**, a 600 s endurance run (8,437 rounds). Two invisible blockers found: `CreateSemaphoreW` and `GetHandleInformation` are exported by Windows 95 but **empty**, which breaks moodycamel's semaphore and `std::thread::join()`; the import guard rail now checks the empty exports too. The initial survey, made on a worktree that a broken `apply-dependency-patches.sh` left without its first thirteen patches, had wrongly concluded that no condition variable was needed. |
+| [E00-S03](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) | Both factors are measured: **2.16×** for the 64 → 32 bit move without SSE, **17.7×** for the normalisation towards the 400 MHz Pentium II — that is **≈ 38×** between the development machine and the target. Go/no-go not pronounced: what is now missing is the CPU cost of a game frame, which requires [E02-S06](E02-system/E02-S06-game-bring-up.md). |
 
-### Acquis en chemin
+### Gained along the way
 
-| Livrable | Portée |
+| Deliverable | Scope |
 |---|---|
-| [`docs/research/cpu-budget.md`](../research/cpu-budget.md) | Mesures de E00-S03, méthode et limites |
-| [`docs/research/rsp-audio-budget.md`](../research/rsp-audio-budget.md) | Mesures de E00-S04 — le chiffre qui déclenche E03-S03 |
-| [`docs/TEST-ENVIRONMENT.md`](../TEST-ENVIRONMENT.md) | Recette de l'environnement émulé et ses limites connues |
-| `scripts/Setup-Win95-Toolchain.sh` | Toolchain MIPS, cmake, ninja, uv — **sans droits root** |
-| `scripts/generate_recomp_toml.py` | Configuration N64Recomp depuis la politique, portage Linux du script PowerShell — avance [E01-S06](E01-build/E01-S06-generating-sources-off-windows.md) |
-| `scripts/Setup-Win95-TestVM.sh`, `prepare_win95_install.py`, `Run-Win95-VM.sh`, `Drive-Win95-VM.sh`, `Push-To-Win95-VM.sh` | Machine de test : montage, préparation de l'installation depuis l'ISO du joueur, lancement, pilotage sans écran, transfert de fichiers |
-| `tools/win95/azerty_keys.py` | Traduit un texte en touches physiques pour un invité AZERTY — sans quoi aucun chemin de fichier n'est saisissable |
-| `scripts/patch_voodoo2_inf.py` | 86Box expose sa Voodoo 2 avec l'identifiant PCI de la Voodoo 1 ; le pilote d'origine ne la reconnaît pas sans cette correction |
-| `tools/win95/glidetest.c` + `build-glidetest.sh` | Démonstration Glide — et **premier PE 32 bits sans CRT ni SSE tournant sous Windows 95**, ce qui avance [E00-S02](E00-scoping/E00-S02-spike-pe-win95-toolchain.md) |
-| `tools/cpu-budget/` | Banc d'essai rejouable du code recompilé, **sur l'hôte et sur la machine cible** |
-| `patches/n64recomp/0002-…` | Multiplication 64×64→128 portable : **débloque toute la cible 32 bits** |
+| [`docs/research/cpu-budget.md`](../research/cpu-budget.md) | E00-S03's measurements, method and limits |
+| [`docs/research/rsp-audio-budget.md`](../research/rsp-audio-budget.md) | E00-S04's measurements — the figure that triggers E03-S03 |
+| [`docs/TEST-ENVIRONMENT.md`](../TEST-ENVIRONMENT.md) | The recipe for the emulated environment and its known limits |
+| `scripts/Setup-Win95-Toolchain.sh` | MIPS toolchain, cmake, ninja, uv — **without root privileges** |
+| `scripts/generate_recomp_toml.py` | N64Recomp configuration from the policy, a Linux port of the PowerShell script — advances [E01-S06](E01-build/E01-S06-generating-sources-off-windows.md) |
+| `scripts/Setup-Win95-TestVM.sh`, `prepare_win95_install.py`, `Run-Win95-VM.sh`, `Drive-Win95-VM.sh`, `Push-To-Win95-VM.sh` | The test machine: setting up, preparing the installation from the player's ISO, launching, driving without a screen, transferring files |
+| `tools/win95/azerty_keys.py` | Translates text into physical keys for an AZERTY guest — without which no file path can be typed |
+| `scripts/patch_voodoo2_inf.py` | 86Box exposes its Voodoo 2 with the Voodoo 1's PCI identifier; the original driver does not recognise it without this fix |
+| `tools/win95/glidetest.c` + `build-glidetest.sh` | The Glide demonstration — and the **first 32-bit PE without a CRT or SSE to run under Windows 95**, which advances [E00-S02](E00-scoping/E00-S02-spike-pe-win95-toolchain.md) |
+| `tools/cpu-budget/` | A replayable bench for the recompiled code, **on the host and on the target machine** |
+| `patches/n64recomp/0002-…` | Portable 64×64→128 multiplication: **unblocks the whole 32-bit target** |
 
-**L'oracle du projet est constructible sous Linux.** L'ELF du decomp de référence
-se bâtit désormais sans Windows, et la ROM produite est identique au bit près à
-celle du joueur — le decomp voisin donnait pourtant sa toolchain MIPS pour
-absente.
+**The project's oracle is buildable under Linux.** The reference decomp's ELF now
+builds without Windows, and the ROM produced is identical to the bit to the
+player's — the neighbouring decomp nonetheless gave its MIPS toolchain up as
+absent.
 
-## Ordre d'attaque
+## Order of attack
 
-Deux tickets se font **avant tout le reste**, et pour des raisons opposées.
+Two tickets come **before everything else**, and for opposite reasons.
 
-[**E09-S01**](E09-qa/E09-S01-emulated-test-environment.md) — l'environnement de
-test émulé. Il est classé en QA par thème, mais c'est un prérequis pratique :
-sans machine Windows 95 restaurable en quelques secondes, tout le reste se
-développe à l'aveugle. Il conditionne même E00-S02.
+[**E09-S01**](E09-qa/E09-S01-emulated-test-environment.md) — the emulated test
+environment. It is classed under QA by theme, but it is a practical prerequisite:
+without a Windows 95 machine restorable in a few seconds, everything else is
+developed blind. It even conditions E00-S02.
 
-[**E00-S03**](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) — le budget
-CPU. Il décide si le projet est faisable sur cette classe de machine, et il porte
-un **go / no-go** explicite. Le découvrir maintenant coûte une semaine ; le
-découvrir après E04 et E05 en coûte trois mois.
+[**E00-S03**](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) — the CPU
+budget. It decides whether the project is feasible on this class of machine, and it
+carries an explicit **go / no-go**. Discovering it now costs a week; discovering it
+after E04 and E05 costs three months.
 
 ```
-E09-S01 (machine de test)
+E09-S01 (test machine)
    │
-E00 (cadrage) ── E00-S03 : GO / NO-GO ──┐
-   │                                     │ si no-go : plancher relevé,
-   │                                     │ ou bascule vers le portage natif
-   ├──> E01 (build 32 bits) ──> E02 (substrat système)
+E00 (scoping) ── E00-S03: GO / NO-GO ───┐
+   │                                     │ if no-go: floor raised,
+   │                                     │ or a switch to the native port
+   ├──> E01 (32-bit build) ──> E02 (system substrate)
    │                                │
-   │                          E02-S06 : le jeu tourne sous Win95
-   │                                │   (sans image — renderer de diagnostic)
+   │                          E02-S06: the game runs under Win95
+   │                                │   (without an image - diagnostic renderer)
    │                                │
-   ├──> E07 (réduction de périmètre, en parallèle)
+   ├──> E07 (scope reduction, in parallel)
    │                                │
-   │            E04 (HLE F3DDKR) ───┤
+   │            E04 (F3DDKR HLE) ───┤
    │                  │             │
-   │            E04-S08 (rastériseur logiciel)
+   │            E04-S08 (software rasteriser)
    │                  │
-   │            [PREMIÈRE IMAGE]
+   │            [FIRST IMAGE]
    │                  │
-   │            E05 (backend Glide) <── E09-S02 (comparaison visuelle)
+   │            E05 (Glide backend) <── E09-S02 (visual comparison)
    │                  │
-   ├──> E03 (RSP) ──> E06 (plateforme Win95)
+   ├──> E03 (RSP) ──> E06 (Win95 platform)
    │                  │
-   │            [JEU JOUABLE]
+   │            [PLAYABLE GAME]
    │                  │
    └──> E08 (performance) ──> E09 (validation, packaging)
 ```
 
-E03 (RSP / audio) est largement indépendant et peut être mené en parallèle.
+E03 (RSP / audio) is largely independent and can be carried out in parallel.
 
-### Les trois jalons vérifiables
+### The three verifiable milestones
 
-| Jalon | Ticket | Ce qu'il prouve |
+| Milestone | Ticket | What it proves |
 |---|---|---|
-| Le jeu s'exécute | [E02-S06](E02-system/E02-S06-game-bring-up.md) | Build, substrat système et ordonnanceur tiennent. Pas d'image, mais des tâches graphiques soumises à cadence mesurable. |
-| La première image | [E04-S08](E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) | Le décodeur F3DDKR est juste, indépendamment de Glide. Devient l'oracle de E05. |
-| Le jeu est jouable | E05 + E06 | Rendu accéléré, entrées, audio, cadence. |
+| The game runs | [E02-S06](E02-system/E02-S06-game-bring-up.md) | The build, the system substrate and the scheduler hold. No image, but graphics tasks submitted at a measurable rate. |
+| The first image | [E04-S08](E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) | The F3DDKR decoder is right, independently of Glide. Becomes E05's oracle. |
+| The game is playable | E05 + E06 | Accelerated rendering, input, audio, pacing. |
 
-## Le point dur
+## The hard point
 
-[**E05-S03**](E05-glide/E05-S03-color-combiner-translation.md) — la traduction du
-combineur de couleurs. Le combineur du RDP est programmable ; celui de Glide est
-fixe. C'est le seul ticket estimé XL de la partie graphique.
+[**E05-S03**](E05-glide/E05-S03-color-combiner-translation.md) — the colour
+combiner's translation. The RDP's combiner is programmable; Glide's is fixed. It is
+the only ticket estimated XL in the graphics part.
 
-Ce qui le rend traitable : DKR n'utilise que **33 configurations**, dont **3
-seulement lisent deux texels** — inventaire déjà établi par le portage natif
-voisin (`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`), à
-revérifier par [E04-S06](E04-hle-f3ddkr/E04-S06-rdp-state.md). Trente-trois cas
-énumérés, dont on connaît la fréquence et la surface d'écran : un problème fini.
+What makes it tractable: DKR uses only **33 configurations**, of which **only 3
+read two texels** — an inventory already established by the neighbouring native port
+(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`), to be rechecked by
+[E04-S06](E04-hle-f3ddkr/E04-S06-rdp-state.md). Thirty-three enumerated cases, whose
+frequency and screen area are known: a finite problem.
 
-C'est aussi pourquoi E04-S08 est un prérequis et non un confort. Sans oracle
-implémentant le combineur fidèlement, E05-S03 se fait à l'appréciation, et
-l'erreur se cumule sans être imputable.
+That is also why E04-S08 is a prerequisite and not a comfort. Without an oracle
+implementing the combiner faithfully, E05-S03 is done by judgement, and the error
+accumulates without being attributable.
 
-## Répartition d'effort estimée
+## Estimated distribution of effort
 
-| Domaine | Part |
+| Area | Share |
 |---|---|
-| HLE F3DDKR + backend Glide (E04, E05) | ~35 % |
-| Build, substrat système, RSP (E01, E02, E03) | ~30 % |
-| Plateforme et réduction de périmètre (E06, E07) | ~15 % |
-| Cadrage, performance, QA (E00, E08, E09) | ~20 % |
+| F3DDKR HLE + Glide backend (E04, E05) | ~35 % |
+| Build, system substrate, RSP (E01, E02, E03) | ~30 % |
+| Platform and scope reduction (E06, E07) | ~15 % |
+| Scoping, performance, QA (E00, E08, E09) | ~20 % |
 
-## Contraintes non négociables
+## Non-negotiable constraints
 
-1. **Jamais de modification directe des worktrees de dépendances.** `ultramodern`,
-   `librecomp`, `N64Recomp`, RT64, `RecompiledFuncs` et `RecompiledPatches` sont
-   régénérés — une édition directe disparaît sans prévenir. Tout passe par
+1. **Never modify a dependency worktree directly.** `ultramodern`, `librecomp`,
+   `N64Recomp`, RT64, `RecompiledFuncs` and `RecompiledPatches` are regenerated — a
+   direct edit disappears without warning. Everything goes through
    `patches/manifest.json` (`docs/ARCHITECTURE.md`).
-2. **Aucun asset redistribué.** La ROM vient du joueur ; le paquet est scanné
-   avant distribution.
-3. **32 bits, sans SSE.** Deux garde-fous automatiques l'imposent : vérification
-   du jeu d'instructions ([E01-S01](E01-build/E01-S01-cmake-i686-toolchain-without-sse.md))
-   et vérification des imports PE ([E01-S04](E01-build/E01-S04-pe-import-guard-rail.md)).
-4. **L'oracle reste constructible.** La cible moderne est l'unique référence
-   exécutable permettant de savoir si le portage est *juste*. Sa conservation est
-   tranchée par [E00-S07](E00-scoping/E00-S07-adr-oracle-branch-strategy.md) ;
-   la casser sans nécessité, c'est perdre le moyen de vérifier.
+2. **No asset redistributed.** The ROM comes from the player; the package is
+   scanned before distribution.
+3. **32-bit, without SSE.** Two automatic guard rails impose it: the instruction-set
+   check
+   ([E01-S01](E01-build/E01-S01-cmake-i686-toolchain-without-sse.md)) and the PE
+   import check
+   ([E01-S04](E01-build/E01-S04-pe-import-guard-rail.md)).
+4. **The oracle stays buildable.** The modern target is the only executable
+   reference that tells us whether the port is *right*. Keeping it is settled by
+   [E00-S07](E00-scoping/E00-S07-adr-oracle-branch-strategy.md); breaking it without
+   need is losing the means of verification.
 
-## Ce que le dépôt voisin apporte déjà
+## What the neighbouring repository already brings
 
-`/var/www/Diddy-Kong-Racing` porte un portage **natif** du même jeu vers la même
-cible, depuis le decomp plutôt que par recompilation statique. Son backlog
-« Voodoo95 » a plusieurs livrables directement réutilisables ici :
+`/var/www/Diddy-Kong-Racing` carries a **native** port of the same game to the same
+target, from the decomp rather than by static recompilation. Its "Voodoo95" backlog
+has several deliverables directly reusable here:
 
-| Livrable | Utilisé par |
+| Deliverable | Used by |
 |---|---|
-| `docs/research/combiner-inventory.md` — 33 configurations, 3 à deux texels | E04-S06, E05-S03, E05-S04 |
-| `docs/research/level-working-set.md` — pic de 1,20 Mo par niveau | E00-S05, E05-S02 |
-| Défauts du C `NON_MATCHING` du decomp | E08-S02 |
-| Arbitrages d'architecture (fork, oracle, rastériseur de référence) | E00-S07, E04-S08 |
+| `docs/research/combiner-inventory.md` — 33 configurations, 3 with two texels | E04-S06, E05-S03, E05-S04 |
+| `docs/research/level-working-set.md` — peak of 1.20 MB per level | E00-S05, E05-S02 |
+| Defects in the decomp's `NON_MATCHING` C | E08-S02 |
+| Architectural arbitrations (fork, oracle, reference rasteriser) | E00-S07, E04-S08 |
 
-C'est aussi le **repli** si E00-S03 conclut au no-go : son approche ne porte pas
-le surcoût de traduction du code recompilé, au prix d'un travail bien plus lourd
-sur le reste.
+It is also the **fallback** if E00-S03 concludes no-go: its approach does not carry
+the recompiled code's translation overhead, at the price of far heavier work on
+everything else.
 
 ## Conventions
 
-### Statuts
+### Statuses
 
-| Statut | Signification |
+| Status | Meaning |
 |---|---|
-| `TODO` | Pas commencé |
-| `IN_PROGRESS` | En cours |
-| `BLOCKED` | Bloqué — raison et ticket bloquant notés dans le ticket |
-| `REVIEW` | Implémenté, en attente de validation |
-| `DONE` | Validé contre ses critères d'acceptation |
+| `TODO` | Not started |
+| `IN_PROGRESS` | Under way |
+| `BLOCKED` | Blocked — the reason and the blocking ticket are noted in the ticket |
+| `REVIEW` | Implemented, awaiting validation |
+| `DONE` | Validated against its acceptance criteria |
 
-Le statut se met à jour **dans le fichier du ticket** (champ `Statut`) **et** dans
-le tableau ci-dessus. Un ticket passe en `DONE` uniquement quand tous ses critères
-d'acceptation sont cochés.
+The status is updated **in the ticket's own file** (the `Status` field) **and** in
+the table above. A ticket moves to `DONE` only when all of its acceptance criteria
+are ticked.
 
-### Priorités
+### Priorities
 
-- **P0** — chemin critique, bloque d'autres épics
-- **P1** — nécessaire au jeu jouable
-- **P2** — qualité, confort, optimisation
-- **P3** — optionnel
+- **P0** — critical path, blocks other epics
+- **P1** — necessary for a playable game
+- **P2** — quality, comfort, optimisation
+- **P3** — optional
 
-### Estimations
+### Estimates
 
-`S` ≤ 1 jour · `M` 2–4 jours · `L` 1–2 semaines · `XL` > 2 semaines
+`S` ≤ 1 day · `M` 2–4 days · `L` 1–2 weeks · `XL` > 2 weeks
 
-## Références transverses
+## Cross-cutting references
 
-- `docs/ARCHITECTURE.md` — chemin d'exécution et frontières protégées
-- `docs/F3DDKR.md` — pont microcode → renderer
-- `docs/RENDER_SNAPSHOT_ARCHITECTURE.md` — instantané RDRAM et identités
+- `docs/ARCHITECTURE.md` — execution path and protected boundaries
+- `docs/F3DDKR.md` — microcode → renderer bridge
+- `docs/RENDER_SNAPSHOT_ARCHITECTURE.md` — RDRAM snapshot and identities
 - `docs/BUILDING.md`, `docs/ASSET_POLICY.md`
-- [Sources Glide 3dfx](https://sourceforge.net/projects/glide/) ·
+- [3dfx Glide sources](https://sourceforge.net/projects/glide/) ·
   [sezero/glide](https://github.com/sezero/glide) ·
   [hatarch/glide3x](https://github.com/hatarch/glide3x)
-- PCem · 86Box — émulation de machines d'époque avec cartes 3dfx
+- PCem · 86Box — emulation of period machines with 3dfx cards
