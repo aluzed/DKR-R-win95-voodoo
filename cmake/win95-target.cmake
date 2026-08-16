@@ -506,7 +506,9 @@ dkr_win95_verify(DKRWin95Transform)
 add_library(win95f3ddkr STATIC "${DKRPORT_ROOT}/platform/render/f3ddkr.c")
 # La chaîne : le décodeur émet désormais, donc il dépend du découpage, qui dépend
 # lui-même de la transformation.
-target_link_libraries(win95f3ddkr PUBLIC win95clip)
+#  : le decodeur traduit desormais l'etat RDP et le remet au
+# backend, donc la dependance est reelle et non plus optionnelle.
+target_link_libraries(win95f3ddkr PUBLIC win95clip win95rdpstate)
 
 # La suite injecte des display lists **volontairement corrompues**. C'est ce qui
 # la rend possible sans ROM : une liste corrompue s'écrit, une vraie se capture.

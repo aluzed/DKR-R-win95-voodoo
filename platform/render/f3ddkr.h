@@ -34,6 +34,7 @@
 
 #include "backend.h"
 #include "clip.h"
+#include "rdp_state.h"
 #include "transform.h"
 
 #ifdef __cplusplus
@@ -106,6 +107,18 @@ typedef struct {
     unsigned int  color_image_width;  /* la largeur du tampon, lue et non supposée */
     unsigned long rects;              /* rectangles réellement remis au backend */
 
+    /* --- L'état RDP, et ce qu'il coûte en fidélité -------------------------- */
+    unsigned long etats_appliques;    /* traductions réellement remises au backend */
+    /* Traductions **approchées**. `rdp_state.h` insiste : une approximation qui
+       ne s'annonce pas est pire qu'un échec, parce qu'elle produit une image
+       plausible et fausse. Ce compteur est ce filet. */
+    unsigned long etats_approches;
+    /* Remplissages survenus hors du mode `FILL`. Le RDP ne remplit qu'en mode
+       FILL ; toute autre valeur accuse l'écriture partielle du mot de mode, donc
+       le décalage — et le dit en chiffres plutôt qu'à l'écran. */
+    unsigned long fill_hors_cycle;
+    unsigned char cycle_courant;
+
     /* Combien de fois chaque opcode a été vu.
      *
      * Mille octets pour répondre à une question qu'aucun raisonnement ne tranche :
@@ -145,6 +158,14 @@ typedef struct {
     dkr_clip_vertex      cache[32];
     unsigned char        cache_valid[32];
     dkr_render_state     render_state;
+
+    /* Le mot d'autre-mode du RDP, accumulé par écritures partielles, et le
+       combineur. Ils vivent dans le contexte et non dans l'état parce qu'ils
+       sont de la mémoire de travail du décodeur, pas une mesure. */
+    unsigned int         mode_h;
+    unsigned int         mode_l;
+    dkr_combiner         combiner;
+    unsigned char        etat_sale;
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne

@@ -69,6 +69,9 @@ private:
     // FILLRECT décodées. L'écart entre les deux est ce qui distingue « le jeu
     // n'en demande pas » de « on les décode et on les perd ».
     unsigned long total_rects_ = 0;
+    unsigned long total_etats_ = 0;
+    unsigned long total_approches_ = 0;
+    unsigned long total_fill_hors_cycle_ = 0;
     // Par catégorie, parce que le total ne dit pas quoi corriger : une adresse
     // hors RDRAM accuse l'adressage, un opcode inconnu accuse le décodage, un
     // index de sommet accuse une commande manquée en amont.

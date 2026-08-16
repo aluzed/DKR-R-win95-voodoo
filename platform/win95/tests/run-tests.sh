@@ -219,7 +219,7 @@ if [[ "$suite" == "all" || "$suite" == "f3ddkr" ]]; then
   R="$HERE/../../render"
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
         -o "$tmp/test_f3ddkr" "$R/tests/test_f3ddkr.c" "$R/f3ddkr.c" \
-        "$R/clip.c" "$R/transform.c"
+        "$R/clip.c" "$R/transform.c" "$R/rdp_state.c" "$R/combiner.c"
   echo
   ( cd "$tmp" && "$tmp/test_f3ddkr" )
 fi
@@ -266,7 +266,8 @@ if [[ "$suite" == "all" || "$suite" == "pipeline" ]]; then
   R="$HERE/../../render"
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
         -o "$tmp/test_pipeline" "$R/tests/test_pipeline.c" "$R/f3ddkr.c" \
-        "$R/clip.c" "$R/transform.c" "$R/software.c"
+        "$R/clip.c" "$R/transform.c" "$R/software.c" "$R/rdp_state.c" \
+        "$R/combiner.c"
   echo
   ( cd "$tmp" && "$tmp/test_pipeline" )
 fi

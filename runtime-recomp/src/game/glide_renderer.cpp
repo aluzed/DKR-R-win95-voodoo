@@ -155,6 +155,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     }
     for (int i = 0; i < 256; i++) { opcodes_[i] += context_.state.opcodes[i]; }
     total_rects_ += context_.state.rects;
+    total_etats_ += context_.state.etats_appliques;
+    total_approches_ += context_.state.etats_approches;
+    total_fill_hors_cycle_ += context_.state.fill_hors_cycle;
     total_deferred_ += context_.state.deferred;
     total_commands_ += context_.state.commands;
     total_triangles_ += context_.state.triangles;
@@ -236,6 +239,16 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      opcodes_[0xE5], opcodes_[0xF6], total_rects_,
                      context_.state.fill_color_argb,
                      context_.state.color_image_width);
+        // L'etat RDP. `approches` est le chiffre a surveiller : une traduction
+        // approximative qui ne s'annonce pas produit une image plausible et
+        // fausse, ce qui est pire qu'un echec franc. `hors-cycle` est un
+        // controle qui se declenche tout seul — le RDP ne remplit qu'en mode
+        // FILL, donc toute autre valeur accuse le decodage du mot de mode.
+        std::fprintf(stderr,
+                     "[gfx]   etat: appliques=%lu approches=%lu "
+                     "remplissages-hors-cycle=%lu cycle=%u\n",
+                     total_etats_, total_approches_, total_fill_hors_cycle_,
+                     static_cast<unsigned>(context_.state.cycle_courant));
     }
 #else
     (void)task;

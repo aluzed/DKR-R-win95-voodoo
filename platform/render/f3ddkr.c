@@ -1,6 +1,7 @@
 /* E04-S02 — mise en œuvre. La cartographie est dans
  * `docs/research/f3ddkr-commands.md`, le contrat dans `f3ddkr.h`. */
 #include "f3ddkr.h"
+#include "rdp_state.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,6 +23,9 @@
 #define OP_SETFILLCOLOR  0xF7
 #define OP_SETTEXIMAGE   0xFD
 #define OP_SETCOLORIMAGE 0xFF
+#define OP_SETOTHERMODE_L 0xB9
+#define OP_SETOTHERMODE_H 0xBA
+#define OP_SETCOMBINE     0xFC
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -168,6 +172,10 @@ static void reject(dkr_f3d_context *c, dkr_f3d_reject why, const char *detail)
         trace(c, "REJET %s : %s", dkr_f3d_reject_text(why), detail);
     }
 }
+
+/* Declaree ici parce que le dessin de triangles la precede dans ce fichier : la
+   traduction d'etat vit avec le reste du chemin 2D, plus bas. */
+static void appliquer_etat(dkr_f3d_context *c);
 
 /* --- Les commandes --------------------------------------------------------- */
 
@@ -372,6 +380,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 c->state.clipped_away++;
                 continue;
             }
+            appliquer_etat(c);
             if (c->backend && c->backend->draw_triangles) {
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }
@@ -400,6 +409,73 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         trace(c, "MoveWord matrice=%u", m);
     } else {
         trace(c, "MoveWord type=0x%02X valeur=0x%08X", type, w1);
+    }
+}
+
+
+/* --- L'état RDP, accumulé puis traduit -------------------------------------- *
+ *
+ * `SETOTHERMODE_H` et `_L` sont des **écritures partielles** : chaque commande
+ * remplace un champ du mot de mode, sans toucher au reste. Le codage est celui
+ * de F3D — décalage en bits 8..15, longueur en bits 0..7, donnée **déjà
+ * décalée** dans `w1` :
+ *
+ *     0xBA001402 w1=0x00000000   décalage 20, longueur 2  -> type de cycle
+ *     0xBA001701 w1=0x00800000   décalage 23, longueur 1  -> le bit y est deja
+ *     0xB900031D w1=0x0F0A4000   décalage  3, longueur 29 -> mode de rendu
+ *
+ * Les trois échantillons viennent de la machine, pas d'un en-tête : F3DEX2
+ * inverse le décalage, et se tromper de famille donnerait des champs voisins de
+ * ceux visés — un filtrage à la place d'un type de cycle, par exemple, c'est-à-
+ * dire une image plausible et fausse plutôt qu'une erreur franche.
+ *
+ * L'état n'est traduit qu'au moment de dessiner. Le faire à chaque écriture
+ * coûterait une traduction complète par commande, et il y en a plus de six mille
+ * par image ; le faire au dessin la fait payer une fois par changement réel. */
+static void ecrire_othermode(unsigned int *mot, unsigned int w0, unsigned int w1)
+{
+    const unsigned int sft = (w0 >> 8) & 0xFFu;
+    const unsigned int len = w0 & 0xFFu;
+    unsigned int masque;
+    if (len == 0u || len > 32u || sft >= 32u) {
+        return;
+    }
+    masque = (len >= 32u) ? 0xFFFFFFFFu : (((1u << len) - 1u) << sft);
+    *mot = (*mot & ~masque) | (w1 & masque);
+}
+
+/* Traduit l'état RDP accumulé et le remet au backend, si quelque chose a changé
+   depuis le dernier dessin. */
+static void appliquer_etat(dkr_f3d_context *c)
+{
+    dkr_rdp_state rdp;
+    int exact = 1;
+
+    if (!c->etat_sale) {
+        return;
+    }
+    c->etat_sale = 0;
+
+    memset(&rdp, 0, sizeof(rdp));
+    dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &rdp);
+    rdp.combiner = c->combiner;
+
+    /* Le type de cycle décodé se vérifie tout seul : pendant un `FILLRECT` il
+       doit valoir `FILL`. Un décalage mal placé le mettrait ailleurs, et ce
+       compteur le dirait sans qu'on ait à regarder l'écran. */
+    c->state.cycle_courant = (unsigned char)rdp.cycle;
+
+    dkr_rdp_to_render_state(&rdp, &c->render_state, &exact);
+    if (!exact) {
+        /* **Une traduction approchée qui ne s'annonce pas est pire qu'un
+           échec** : elle produit une image plausible et fausse. Le compteur est
+           le filet que `rdp_state.h` réclame explicitement. */
+        c->state.etats_approches++;
+    }
+    c->state.etats_appliques++;
+
+    if (c->backend && c->backend->set_state) {
+        c->backend->set_state(c->backend->self, &c->render_state);
     }
 }
 
@@ -488,6 +564,16 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     x1 = (int)((float)(lrx + 1) * echelle_x);
     y1 = (int)((float)(lry + 1) * echelle_y);
 
+    /* Contrôle qui ne coûte rien et qui se déclenche tout seul : le RDP ne
+       remplit qu'en mode `FILL`. Un décalage mal placé dans l'écriture du mot de
+       mode se verrait ici, en chiffres, plutôt qu'à l'écran sous forme d'une
+       surface d'une couleur inattendue. */
+    {
+        dkr_rdp_state verif;
+        memset(&verif, 0, sizeof(verif));
+        dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &verif);
+        if (verif.cycle != DKR_CYCLE_FILL) { c->state.fill_hors_cycle++; }
+    }
     c->backend->fill_rect(c->backend->self, x0, y0, x1, y1,
                           c->state.fill_color_argb);
     c->state.rects++;
@@ -641,6 +727,21 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         case OP_FILLRECT:
             cmd_fill_rect(c, w0, w1);
+            break;
+
+        case OP_SETOTHERMODE_H:
+            ecrire_othermode(&c->mode_h, w0, w1);
+            c->etat_sale = 1;
+            break;
+
+        case OP_SETOTHERMODE_L:
+            ecrire_othermode(&c->mode_l, w0, w1);
+            c->etat_sale = 1;
+            break;
+
+        case OP_SETCOMBINE:
+            dkr_rdp_decode_combine(w0, w1, &c->combiner);
+            c->etat_sale = 1;
             break;
 
         case OP_SETFILLCOLOR:
