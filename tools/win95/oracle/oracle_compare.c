@@ -1,60 +1,58 @@
-/* E01-S05 — l'arithmetique du code recompile, comparee a l'oracle 64 bits.
+/* E01-S05 - the recompiled code's arithmetic, compared against the 64-bit
+ * oracle.
  *
- * Le C produit par N64Recomp manipule les registres du VR4300 comme des entiers
- * de 64 bits. Sur l'hote, ce sont des registres machine ; en 32 bits, chaque
- * operation devient une paire, et les divisions et decalages passent par les
- * auxiliaires de libgcc — `__divdi3`, `__moddi3`, `__ashrdi3`. Le compilateur
- * s'en charge, mais « le compilateur s'en charge » n'est pas une verification.
+ * The C that N64Recomp produces manipulates the VR4300's registers as 64-bit
+ * integers. On the host these are machine registers; in 32-bit, every operation
+ * becomes a pair, and divisions and shifts go through libgcc's helpers -
+ * `__divdi3`, `__moddi3`, `__ashrdi3`. The compiler takes care of it, but "the
+ * compiler takes care of it" is not a verification.
  *
- * Le ticket demande donc mieux qu'une relecture : « un test cible sur quelques
- * fonctions arithmetiques du jeu, compare a la sortie de l'oracle 64 bits ».
- * C'est ce que fait ce programme.
+ * The ticket therefore asks for better than a code review: "a targeted test on a
+ * few of the game's arithmetic functions, compared against the 64-bit oracle's
+ * output". That is what this program does.
  *
- * ## Comment
+ * ## How
  *
- * Chaque fonction retenue est executee sur un etat **entierement determine** :
- * une RDRAM remplie par un generateur a graine fixe, et un contexte dont chaque
- * registre recoit une valeur tiree du meme generateur. On resume ensuite l'etat
- * final — contexte complet plus la RDRAM — par une empreinte FNV-1a de 64 bits.
+ * Each chosen function is run on an **entirely determined** state: an RDRAM
+ * filled by a fixed-seed generator, and a context whose every register receives
+ * a value drawn from the same generator. The final state - the whole context
+ * plus RDRAM - is then summarised by a 64-bit FNV-1a digest.
  *
- * Le meme programme, compile pour l'hote 64 bits et pour la cible 32 bits, doit
- * produire **les memes empreintes**. Toute divergence est un defaut de portage,
- * et l'empreinte dit laquelle des fonctions l'a produit.
+ * The same program, compiled for the 64-bit host and for the 32-bit target, must
+ * produce **the same digests**. Any divergence is a porting defect, and the
+ * digest says which function produced it.
  *
- * ## Les registres pointent dans la RDRAM, a dessein
+ * ## The registers point into RDRAM, by design
  *
- * Les acces memoire du code genere sont de la forme
- * `rdram + (registre + decalage) - 0xFFFFFFFF80000000`. Pour qu'ils tombent
- * dans la zone allouee, les registres recoivent donc une valeur voisine de
- * `0xFFFFFFFF80000000`, decalee de quelques kilo-octets. Sans cela le programme
- * lirait n'importe ou et la comparaison ne porterait sur rien.
+ * The generated code's memory accesses are of the form
+ * `rdram + (register + offset) - 0xFFFFFFFF80000000`. For them to land inside
+ * the allocated region, the registers therefore receive a value near
+ * `0xFFFFFFFF80000000`, offset by a few kilobytes. Without that the program
+ * would read anywhere and the comparison would bear on nothing.
  *
- * Certaines fonctions calculent malgre tout une adresse hors zone. Elles ne sont
- * pas ecartees : la faute est **rattrapee**, et « cette fonction fait faute »
- * devient une observation comme une autre, qui doit elle aussi concorder entre
- * les deux cibles.
+ * Some functions nonetheless compute an address outside the region. They are not
+ * discarded: the fault is **caught**, and "this function faults" becomes an
+ * observation like any other, which must also agree between the two targets.
  *
- * ## Limite connue, et ou elle mord
+ * ## A known limit, and where it bites
  *
- * Le rattrapage repose sur `signal(SIGSEGV)`. Sur l'hote c'est fiable, une pile
- * de secours reglant meme le debordement de pile. **Sous Windows 95, il ne
- * l'est pas** : la faute d'`obj_animate` est bien delivree, celle de
- * `func_8001CD28` ne l'est pas et le processus meurt. Ce n'est pas un
- * debordement de pile — une reserve de 64 Mio ne change rien — mais une faute
- * que le CRT de mingw ne traduit pas en signal sur cette cible.
+ * The catching rests on `signal(SIGSEGV)`. On the host that is reliable, an
+ * alternate stack even settling stack overflow. **Under Windows 95 it is not**:
+ * `obj_animate`'s fault is duly delivered, `func_8001CD28`'s is not and the
+ * process dies. It is not a stack overflow - a 64 MiB reserve changes nothing -
+ * but a fault mingw's CRT does not translate into a signal on this target.
  *
- * La comparaison s'arrete donc a la premiere fonction de ce genre. Sur les
- * fonctions atteintes, elle **concorde exactement**, fautes comprises.
+ * The comparison therefore stops at the first function of that kind. On the
+ * functions it reaches, it **agrees exactly**, faults included.
  *
- * Pour aller au bout il faudra un pilote qui reprend : le programme note dans un
- * fichier la fonction qu'il s'apprete a executer, et une relance repart apres
- * elle. Cela fonctionne sur les deux cibles et ne demande aucune acrobatie
- * d'exception — ce qui vaut mieux que de faire dependre le harnais de ce que
- * Windows 95 veut bien delivrer.
+ * To go all the way a resuming driver will be needed: the program notes in a
+ * file the function it is about to run, and a relaunch restarts after it. That
+ * works on both targets and demands no exception acrobatics - which beats making
+ * the harness depend on what Windows 95 is willing to deliver.
  */
-/* `sigsetjmp` est POSIX et non ISO : en `-std=c17` strict, l'en-tete le cache.
-   Le harnais se compile a la meme norme que le code recompile, on demande donc
-   explicitement l'extension plutot que de relacher la norme. */
+/* `sigsetjmp` is POSIX and not ISO: under strict `-std=c17` the header hides it.
+   The harness compiles to the same standard as the recompiled code, so we ask
+   for the extension explicitly rather than relax the standard. */
 #if !defined(_WIN32)
 #  define _GNU_SOURCE 1
 #endif
@@ -73,31 +71,31 @@
 
 #include "recomp.h"
 
-/* --- Terrain ------------------------------------------------------------- *
+/* --- The ground ---------------------------------------------------------- *
  *
- * 8 Mio, la RDRAM d'une N64 avec Expansion Pak — la meme quantite dont E00-S01
- * a verifie qu'elle s'alloue sous Windows 95.
+ * 8 MiB, the RDRAM of an N64 with the Expansion Pak - the same amount E00-S01
+ * verified allocates under Windows 95.
  */
 #define RDRAM_SIZE   (8u * 1024u * 1024u)
 #define RDRAM_BASE   0xFFFFFFFF80000000ULL
-/* Les registres visent le milieu de la zone : un decalage negatif du code
-   genere reste alors dans les clous. */
+/* The registers aim at the middle of the region: a negative offset from the
+   generated code then stays within bounds. */
 #define REG_POINT    (RDRAM_BASE + (RDRAM_SIZE / 2))
 
 static uint8_t *rdram;
 
-/* --- Une RDRAM encadree de pages interdites -------------------------------- *
+/* --- An RDRAM framed by forbidden pages ------------------------------------ *
  *
- * Toutes les fonctions ne restent pas dans la zone : certaines calculent une
- * adresse a partir d'un registre qui, dans une vraie partie, pointerait
- * ailleurs. Avec une simple allocation, ces ecritures abiment le tas et le
- * programme meurt bien plus tard, en un endroit sans rapport — ce qui s'est
- * produit, et qui donnait a croire que la quatrieme fonction etait fautive.
+ * Not every function stays inside the region: some compute an address from a
+ * register which, in a real session, would point elsewhere. With a plain
+ * allocation, those writes damage the heap and the program dies much later, in
+ * an unrelated place - which is what happened, and led to the belief that the
+ * fourth function was at fault.
  *
- * On reserve donc largement, on ne rend accessible que la fenetre de 8 Mio, et
- * tout ce qui deborde tombe sur une page interdite. La faute devient immediate,
- * rattrapable, et attribuee a la bonne fonction. C'est aussi le schema que
- * `librecomp` emploie pour de bon — reserver, valider une fenetre.
+ * So we reserve generously, make only the 8 MiB window accessible, and anything
+ * that overruns lands on a forbidden page. The fault becomes immediate,
+ * catchable, and attributed to the right function. It is also the scheme
+ * `librecomp` uses for real - reserve, commit a window.
  */
 #define GUARD_BYTES  (64u * 1024u * 1024u)
 
@@ -126,23 +124,23 @@ static uint8_t *reserve_rdram(void)
 #endif
 }
 
-/* Generateur a graine fixe. Volontairement trivial et ecrit ici plutot
-   qu'emprunte a la bibliotheque : `rand` differe d'une implementation a
-   l'autre, et l'un des deux cotes de la comparaison n'est pas Linux. */
+/* A fixed-seed generator. Deliberately trivial and written here rather than
+   borrowed from the library: `rand` differs from one implementation to another,
+   and one of the two sides of the comparison is not Linux. */
 static uint64_t rng_state;
 
 static void rng_seed(uint64_t seed) { rng_state = seed; }
 
 static uint64_t rng_next(void)
 {
-    /* xorshift64. Identique partout, sans dependre du CRT. */
+    /* xorshift64. Identical everywhere, with no dependency on the CRT. */
     rng_state ^= rng_state << 13;
     rng_state ^= rng_state >> 7;
     rng_state ^= rng_state << 17;
     return rng_state;
 }
 
-/* --- Empreinte ------------------------------------------------------------ */
+/* --- The digest ----------------------------------------------------------- */
 
 #define FNV_OFFSET 1469598103934665603ULL
 #define FNV_PRIME  1099511628211ULL
@@ -158,17 +156,18 @@ static uint64_t fnv1a(uint64_t hash, const void *data, size_t size)
     return hash;
 }
 
-/* --- Rattrapage des fautes ------------------------------------------------ *
+/* --- Catching faults ------------------------------------------------------ *
  *
- * `signal` plutot que SEH : mingw n'offre pas `__try` en C sur i686, et le CRT
- * traduit deja l'acces fautif en SIGSEGV. Le meme code vaut donc pour les deux
- * cibles, ce qui est exactement ce qu'on veut d'un harnais de comparaison.
+ * `signal` rather than SEH: mingw offers no `__try` in C on i686, and the CRT
+ * already translates a faulting access into SIGSEGV. The same code therefore
+ * serves both targets, which is exactly what one wants from a comparison
+ * harness.
  */
-/* Sous POSIX, `longjmp` depuis un gestionnaire laisse le signal **bloque** : la
-   seconde faute tue alors le processus, et l'on croirait a tort que la premiere
-   fonction fautive est la derniere. `sigsetjmp` avec sauvegarde du masque est la
-   seule forme correcte. Windows n'a pas de masque de signaux, et `setjmp` y
-   suffit — d'ou les deux ecritures. */
+/* Under POSIX, `longjmp` from a handler leaves the signal **blocked**: the second
+   fault then kills the process, and one would wrongly believe the first faulting
+   function is the last. `sigsetjmp` with mask saving is the only correct form.
+   Windows has no signal mask, and `setjmp` suffices there - hence the two
+   spellings. */
 #if defined(_WIN32)
 #  define FAULT_SETJMP(buf)   setjmp(buf)
 #  define FAULT_LONGJMP(buf)  longjmp((buf), 1)
@@ -192,7 +191,7 @@ static void on_fault(int sig)
     _exit(3);
 }
 
-/* --- Le contexte, pose de facon reproductible ----------------------------- */
+/* --- The context, laid down reproducibly ---------------------------------- */
 
 static void prepare(recomp_context *ctx, uint64_t seed)
 {
@@ -201,7 +200,7 @@ static void prepare(recomp_context *ctx, uint64_t seed)
 
     rng_seed(seed);
 
-    /* La RDRAM d'abord : c'est elle que les fonctions liront. */
+    /* RDRAM first: it is what the functions will read. */
     for (i = 0; i < RDRAM_SIZE; i += 8) {
         uint64_t v = rng_next();
         memcpy(rdram + i, &v, 8);
@@ -209,54 +208,54 @@ static void prepare(recomp_context *ctx, uint64_t seed)
 
     memset(ctx, 0, sizeof(*ctx));
 
-    /* Les 32 registres generaux. r0 reste nul — c'est le registre cable a zero
-       du MIPS, et lui donner une valeur produirait des resultats que le
-       materiel ne produit jamais. */
+    /* The 32 general registers. r0 stays zero - it is MIPS's hard-wired zero
+       register, and giving it a value would produce results the hardware never
+       produces. */
     slot = &ctx->r1;
     for (i = 0; i < 31; i++) {
-        /* Une valeur voisine du point de visee, pour que les acces memoire
-           tombent dans la zone, avec assez d'entropie dans les bits bas pour
-           que l'arithmetique ait quelque chose a se mettre sous la dent. */
+        /* A value near the aiming point, so that memory accesses land inside
+           the region, with enough entropy in the low bits for the arithmetic to
+           have something to get its teeth into. */
         slot[i] = REG_POINT + (int64_t)(int16_t)(rng_next() & 0x1FFF);
     }
 
-    /* Les registres flottants, en tant que motifs binaires : ce sont les
-       conversions entier <-> flottant qui divergent le plus volontiers entre
-       x87 et SSE, et il faut donc leur donner de quoi diverger.
+    /* The floating-point registers, as bit patterns: it is the integer <->
+       float conversions that diverge most readily between x87 and SSE, so they
+       must be given something to diverge on.
 
-       On evite les motifs qui font un NaN ou un infini : leur propagation est
-       une question de comportement flottant et non de portage 32 bits, et elle
-       noierait le signal qu'on cherche. Les exposants sont donc bornes. */
+       We avoid patterns that make a NaN or an infinity: their propagation is a
+       question of floating-point behaviour and not of 32-bit porting, and it
+       would drown the signal we are after. The exponents are therefore
+       bounded. */
     {
         fpr *f = &ctx->f0;
         for (i = 0; i < 32; i++) {
             uint64_t v = rng_next();
-            v &= 0x3FFFFFFFFFFFFFFFULL;      /* exposant modeste */
-            v |= 0x3F00000000000000ULL;      /* et non denormalise */
+            v &= 0x3FFFFFFFFFFFFFFFULL;      /* a modest exponent */
+            v |= 0x3F00000000000000ULL;      /* and not denormal */
             f[i].u64 = v;
         }
     }
 
-    /* `f_odd` n'est pas un tableau mais un **pointeur** vers la moitie haute de
-       f0 : c'est par lui que le code genere atteint les demi-registres impairs
-       en mode 32 bits du MIPS. Le laisser nul, comme le faisait la premiere
-       version de ce harnais, fait sauter le programme avant sa premiere ligne.
-       librecomp le pose de la meme facon (`recomp.cpp:471`). */
+    /* `f_odd` is not an array but a **pointer** to the high half of f0: it is
+       through it that the generated code reaches the odd half-registers in MIPS
+       32-bit mode. Leaving it null, as the first version of this harness did,
+       blows the program up before its first line. librecomp sets it the same way
+       (`recomp.cpp:471`). */
     ctx->f_odd = &ctx->f0.u32h;
 }
 
-/* L'empreinte porte sur l'etat **architectural**, champ par champ, et jamais sur
- * la structure brute. Deux raisons, et chacune suffirait :
+/* The digest bears on the **architectural** state, field by field, and never on
+ * the raw structure. Two reasons, and either would suffice:
  *
- *  - `recomp_context` contient `f_odd`, un **pointeur**. Sa valeur change d'une
- *    execution a l'autre ; resumer la structure entiere donnait donc une
- *    empreinte differente a chaque essai, y compris sur la meme machine.
- *  - Sa taille et sa disposition **different entre 32 et 64 bits**, a cause de
- *    ce meme pointeur et du remplissage. Une empreinte de la structure brute
- *    n'aurait jamais pu se comparer entre les deux cibles, ce qui est pourtant
- *    tout l'objet de ce programme.
+ *  - `recomp_context` contains `f_odd`, a **pointer**. Its value changes from one
+ *    run to the next; summarising the whole structure therefore gave a different
+ *    digest on every attempt, including on the same machine.
+ *  - Its size and layout **differ between 32 and 64 bits**, because of that same
+ *    pointer and of padding. A digest of the raw structure could never have been
+ *    compared between the two targets, which is the whole point of this program.
  *
- * Chaque quantite est donc resumee dans une largeur fixe et un ordre fixe.
+ * Every quantity is therefore summarised at a fixed width and in a fixed order.
  */
 static uint64_t digest(const recomp_context *ctx)
 {
@@ -282,13 +281,13 @@ static uint64_t digest(const recomp_context *ctx)
         h = fnv1a(h, &status, sizeof(status));
         h = fnv1a(h, &mode, sizeof(mode));
     }
-    /* Toute la RDRAM, pour attraper une ecriture au mauvais endroit autant
-       qu'un mauvais calcul. */
+    /* The whole of RDRAM, to catch a write in the wrong place as much as a
+       wrong computation. */
     h = fnv1a(h, rdram, RDRAM_SIZE);
     return h;
 }
 
-/* --- Les fonctions soumises ------------------------------------------------ */
+/* --- The functions under test --------------------------------------------- */
 
 #define DKR_ORACLE_FN(name) void name(uint8_t *rdram, recomp_context *ctx);
 #include "functions.inc"
@@ -316,15 +315,15 @@ int main(void)
 
     rdram = reserve_rdram();
     if (!rdram) {
-        printf("ECHEC : RDRAM impossible a reserver\n");
+        printf("FAILED: cannot reserve RDRAM\n");
         return 2;
     }
 
-    /* Une pile de secours, sans quoi le debordement de pile est irrattrapable :
-       le gestionnaire aurait besoin de la pile qui vient justement de manquer.
-       C'est ce qui tuait le harnais sur `func_8001CD28`, et le faisait passer
-       pour un defaut du code recompile alors que c'en est une propriete — cette
-       fonction descend profond, et l'etat aleatoire du harnais l'y pousse. */
+    /* An alternate stack, without which a stack overflow is uncatchable: the
+       handler would need the very stack that has just run out. That is what
+       killed the harness on `func_8001CD28`, and made it look like a defect of
+       the recompiled code when it is a property of it - that function goes deep,
+       and the harness's random state pushes it there. */
 #if !defined(_WIN32)
     {
         static char alt[262144];
@@ -350,21 +349,20 @@ int main(void)
 #endif
 
     setvbuf(stdout, NULL, _IOLBF, 0);
-    printf("# empreintes du code recompile — %u fonctions\n",
+    printf("# digests of the recompiled code - %u functions\n",
            (unsigned)ENTRY_COUNT);
-    printf("# %u bits\n", (unsigned)(sizeof(void *) * 8));
+    printf("# %u-bit\n", (unsigned)(sizeof(void *) * 8));
 
     for (i = 0; i < ENTRY_COUNT; i++) {
         uint64_t h;
 
-        /* Une graine par fonction, derivee de son rang : deux executions du
-           programme posent le meme etat, et deux fonctions n'en partagent pas
-           un. */
+        /* One seed per function, derived from its index: two runs of the program
+           lay down the same state, and two functions do not share one. */
         prepare(&ctx, 0x9E3779B97F4A7C15ULL ^ (uint64_t)(i + 1));
 
-        /* Le nom est annonce **avant** l'appel : si la fonction sort du cadre
-           sans que la faute soit rattrapee, la derniere ligne du releve la
-           nomme quand meme. Sans cela on cherche longtemps. */
+        /* The name is announced **before** the call: if the function leaves the
+           frame without the fault being caught, the report's last line names it
+           all the same. Without that, one searches for a long time. */
         fprintf(stderr, "  -> %s\n", entries[i].name);
         fault_armed = 1;
         if (FAULT_SETJMP(fault_return) == 0) {
@@ -373,15 +371,15 @@ int main(void)
             h = digest(&ctx);
             printf("%-32s %016llX\n", entries[i].name, (unsigned long long)h);
         } else {
-            /* Une faute est une observation, pas un echec : elle doit
-               simplement se produire des deux cotes. */
+            /* A fault is an observation, not a failure: it simply has to happen
+               on both sides. */
             faults++;
-            printf("%-32s FAUTE\n", entries[i].name);
+            printf("%-32s FAULT\n", entries[i].name);
         }
         fflush(stdout);
     }
 
-    printf("# %u faute(s) sur %u\n", faults, (unsigned)ENTRY_COUNT);
+    printf("# %u fault(s) out of %u\n", faults, (unsigned)ENTRY_COUNT);
 
 #if defined(_WIN32)
     report = fopen("D:\\ORACLE.TXT", "w");
@@ -389,8 +387,8 @@ int main(void)
     report = fopen("oracle-host.txt", "w");
 #endif
     if (report) {
-        /* Le releve est reecrit dans le fichier, pour etre compare octet a
-           octet entre les deux cibles. */
+        /* The report is rewritten into the file, to be compared byte for byte
+           between the two targets. */
         for (i = 0; i < ENTRY_COUNT; i++) {
             uint64_t h;
             prepare(&ctx, 0x9E3779B97F4A7C15ULL ^ (uint64_t)(i + 1));
@@ -402,7 +400,7 @@ int main(void)
                 fprintf(report, "%-32s %016llX\n", entries[i].name,
                         (unsigned long long)h);
             } else {
-                fprintf(report, "%-32s FAUTE\n", entries[i].name);
+                fprintf(report, "%-32s FAULT\n", entries[i].name);
             }
         }
         fclose(report);

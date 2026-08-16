@@ -91,7 +91,7 @@ deux côtés sur les mêmes fonctions :
 |---|---|---|
 | `func_80014B50` | `4C4E693D94850625` | `4C4E693D94850625` |
 | `collision_get_y` | `F1415FD72BFC0752` | `F1415FD72BFC0752` |
-| `obj_animate` | `FAUTE` | `FAUTE` |
+| `obj_animate` | `FAULT` | `FAULT` |
 
 ### Ce qui empêche d'aller au bout, et pourquoi ce n'est pas un défaut du portage
 
