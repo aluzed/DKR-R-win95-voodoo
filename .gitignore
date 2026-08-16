@@ -66,3 +66,9 @@ build/runtime-tools/
 # Python caches of the tools (tools/win95/check_imports.py imports pe_symbols)
 __pycache__/
 *.pyc
+
+# Witness output written to a DOS path. On the target these land on D:; run on the
+# host, the whole path becomes the file name and the file appears at the root of
+# the worktree. Two of them had been committed that way, in French, read by
+# nothing - see platform/render/tests/test_tmu.c and test_combiner.c.
+D:\\*
