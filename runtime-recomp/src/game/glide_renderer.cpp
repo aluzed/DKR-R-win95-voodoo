@@ -5,6 +5,7 @@
 #include "librecomp/game.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <memory>
 
 namespace {
@@ -25,6 +26,40 @@ constexpr unsigned kSnapshotBytes = 0x800000u;
 // que ce portage ouvre pour l'instant.
 constexpr int kWidth = 640;
 constexpr int kHeight = 480;
+
+// --- Lire l'état du jeu, plutôt que de le déduire du rendu -------------------
+//
+// Toutes les mesures jusqu'ici décrivaient le même état stationnaire — même
+// nombre de commandes par liste, même couleur de fond, aucun tri de profondeur.
+// Elles disent ce que le jeu dessine, jamais **où il en est**. Continuer à
+// perfectionner le rendu d'une image que le jeu n'a peut-être pas l'intention
+// de faire évoluer serait mal employer l'effort.
+//
+// `gGameMode` est la variable que DKR lui-même consulte pour savoir quoi faire.
+// Son adresse vient de la carte des symboles du décomp :
+//
+//     0x801234ec  gGameMode          -1 INTRO, 0 INGAME, 1 MENU, 5 LOCKUP
+//     0x800dd394  gLevelLoadTimer
+//     0x80121168  gCurrentLevelHeader
+//
+// `GAMEMODE_LOCKUP` mérite une mention : le jeu s'y met lui-même quand
+// `get_lockup_status()` répond vrai, et il affiche alors un écran de plantage.
+// S'il y est, aucune correction de rendu n'y changera rien.
+//
+// **La lecture est native, sans permutation d'octets.** La RDRAM de librecomp
+// est entrelacée par XOR-3, et pour un mot de 32 bits aligné l'entrelacement et
+// le petit-boutisme de l'hôte s'annulent exactement. Retourner les octets « pour
+// corriger le boutisme » est l'erreur déjà commise une fois cette session, sur
+// la lecture de `curRDPTask`.
+constexpr unsigned kAdrGameMode = 0x1234ECu;
+constexpr unsigned kAdrLevelLoadTimer = 0x0DD394u;
+constexpr unsigned kAdrLevelHeader = 0x121168u;
+
+int lire_mot(const std::uint8_t* rdram, unsigned adresse) {
+    int v = 0;
+    std::memcpy(&v, rdram + adresse, sizeof(v));
+    return v;
+}
 
 // La trace du décodeur, bornée.
 //
@@ -308,6 +343,20 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "[gfx]   profondeur: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
                      profondeur_[0], profondeur_[1], profondeur_[2],
                      profondeur_[3]);
+        // L'état du jeu, lu chez lui. C'est la seule mesure de cette série qui
+        // ne parle pas du rendu.
+        {
+            const int mode = lire_mot(rdram_snapshot, kAdrGameMode);
+            static const char* noms[] = { "INGAME", "MENU", "UNUSED2",
+                                          "UNUSED3", "UNUSED4", "LOCKUP" };
+            const char* nom = (mode == -1) ? "INTRO"
+                            : (mode >= 0 && mode <= 5) ? noms[mode] : "?";
+            std::fprintf(stderr,
+                         "[jeu] gGameMode=%d (%s) chargement=%d niveau=0x%08X\n",
+                         mode, nom, lire_mot(rdram_snapshot, kAdrLevelLoadTimer),
+                         static_cast<unsigned>(
+                             lire_mot(rdram_snapshot, kAdrLevelHeader)));
+        }
         if (context_.state.s_max > context_.state.s_min) {
             std::fprintf(stderr,
                          "[gfx]   coords: s=[%d..%d]/1000 t=[%d..%d]/1000\n",
