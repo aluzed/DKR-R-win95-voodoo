@@ -165,16 +165,16 @@ int main(void)
         report("  configurations dans la table : %lu", (unsigned long)n, 0ul);
 
         for (i = 0; i < n; i++) {
-            const dkr_cc_entree *e = dkr_cc_table_at(i);
-            const unsigned long long k = dkr_cc_entree_key(e);
-            par_cat[e->categorie]++;
-            poids[e->categorie] += e->entrees;
+            const dkr_cc_entry *e = dkr_cc_table_at(i);
+            const unsigned long long k = dkr_cc_entry_key(e);
+            par_cat[e->category]++;
+            poids[e->category] += e->entries;
             /* Retrouvee par sa propre cle : c'est ce qui garantit que
                l'indexation par forme canonique fonctionne reellement, et non
                seulement que la table existe. */
             if (dkr_cc_lookup(k) != 0) { retrouvees++; }
             for (j = i + 1; j < n; j++) {
-                if (dkr_cc_entree_key(dkr_cc_table_at(j)) == k) { doublons++; }
+                if (dkr_cc_entry_key(dkr_cc_table_at(j)) == k) { doublons++; }
             }
         }
         /* **Le controle qui compte.** Deux entrees de meme cle canonique se
@@ -185,13 +185,13 @@ int main(void)
         check("chaque entree est retrouvable par sa cle", retrouvees == n);
 
         report("  exactes %lu, multipasse %lu",
-               (unsigned long)par_cat[DKR_CC_EXACTE],
-               (unsigned long)par_cat[DKR_CC_MULTIPASSE]);
+               (unsigned long)par_cat[DKR_CC_EXACT],
+               (unsigned long)par_cat[DKR_CC_MULTIPASS]);
         report("  approchees %lu, deux texels %lu",
-               (unsigned long)par_cat[DKR_CC_APPROCHEE],
-               (unsigned long)par_cat[DKR_CC_DEUX_TEXELS]);
+               (unsigned long)par_cat[DKR_CC_APPROXIMATE],
+               (unsigned long)par_cat[DKR_CC_TWO_TEXELS]);
         report("  pondere par les entrees de table : exactes %lu sur %lu",
-               (unsigned long)poids[DKR_CC_EXACTE],
+               (unsigned long)poids[DKR_CC_EXACT],
                (unsigned long)(poids[0] + poids[1] + poids[2] + poids[3]));
 
         /* **Ce seuil portait d'abord sur la mauvaise grandeur.**
@@ -212,7 +212,7 @@ int main(void)
          * la carte paie. */
         check("le multipasse reste minoritaire : c'est lui qui double le "
               "remplissage, et le remplissage limite la carte",
-              poids[DKR_CC_MULTIPASSE] * 2 <
+              poids[DKR_CC_MULTIPASS] * 2 <
               (poids[0] + poids[1] + poids[2] + poids[3]));
 
         /* Toute configuration multipasse ou approchee doit porter une note
@@ -220,8 +220,8 @@ int main(void)
         {
             int justifiees = 0, a_justifier = 0;
             for (i = 0; i < n; i++) {
-                const dkr_cc_entree *e = dkr_cc_table_at(i);
-                if (e->categorie == DKR_CC_EXACTE) { continue; }
+                const dkr_cc_entry *e = dkr_cc_table_at(i);
+                if (e->category == DKR_CC_EXACT) { continue; }
                 a_justifier++;
                 if (e->note && e->note[0]) { justifiees++; }
             }
@@ -232,11 +232,11 @@ int main(void)
 
     /* --- Le repli ------------------------------------------------------------ */
     {
-        const dkr_cc_reglage *r = dkr_cc_repli();
+        const dkr_cc_setup *r = dkr_cc_fallback();
         check("une configuration inconnue n'est pas trouvee",
               dkr_cc_lookup(0xFFFFFFFFFFFFFFFFull) == 0);
         check("le repli existe et emploie la texture",
-              r != 0 && r->utilise_texture != 0);
+              r != 0 && r->uses_texture != 0);
         /* **Non aberrant** : le repli ne doit ni tout effacer ni peindre en
            couleur d'alerte. Le facteur nul serait le premier cas. */
         check("et il ne met pas le facteur a zero", r->cc_factor != 0);

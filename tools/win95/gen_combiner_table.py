@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
-"""E05-S03 — engendre la table de correspondance combineur RDP -> Glide.
+"""E05-S03 - generates the RDP -> Glide combiner mapping table.
 
-Les 33 configurations viennent de l'inventaire du portage voisin
-(`combiner-inventory.md`), lui-meme engendre depuis les tables statiques du jeu.
-Leurs definitions viennent de `include/PR/gbi.h` et `include/f3ddkr.h`.
+The 33 configurations come from the neighbouring port's inventory
+(`combiner-inventory.md`), itself generated from the game's static tables.
+Their definitions come from `include/PR/gbi.h` and `include/f3ddkr.h`.
 
-**Pourquoi engendrer plutot qu'ecrire.** Trente-trois quadruplets recopies a la
-main invitent la faute de frappe, et une faute ici ne provoque aucune erreur :
-elle produit un rendu faux sur une seule configuration, donc sur un seul type de
-surface, ce qui se remarque tard et s'impute mal. La conversion nom -> valeur
-numerique est mecanique ; elle doit l'etre.
+**Why generate rather than write.** Thirty-three quadruples copied by hand
+invite typos, and a typo here raises no error: it renders one configuration
+wrongly, hence one kind of surface, which gets noticed late and blamed on the
+wrong thing. The name -> numeric value conversion is mechanical; it should be.
 
-**La classification est faite ici par regles explicites**, pas cas par cas. Le
-ticket met en garde contre la tentation de traiter les configurations une par une
-« jusqu'a ce que ca ressemble ». Des regles se relisent, se discutent, et
-s'appliquent uniformement.
+**The classification is done here by explicit rules**, not case by case. The
+ticket warns against the temptation to handle configurations one at a time
+"until it looks about right". Rules can be re-read, argued with, and applied
+uniformly.
 """
 import sys
 
-# --- Les definitions, relevees dans la source du jeu -------------------------
+# --- The definitions, taken from the game's source ---------------------------
 SRC = {
  "G_CC_PRIMITIVE":            "0,0,0,PRIMITIVE, 0,0,0,PRIMITIVE",
  "G_CC_SHADE":                "0,0,0,SHADE, 0,0,0,SHADE",
@@ -52,10 +51,10 @@ SRC = {
  "G_CC_MODULATEIDECALA2":     "COMBINED,0,SHADE,0, 0,0,0,COMBINED",
 }
 
-# --- Les valeurs numeriques, par position ------------------------------------
-# Le meme nom n'a pas la meme valeur selon la position : c'est le piege que le
-# decodeur de E04-S06 documente deja, et le reproduire ici serait une facon
-# silencieuse de le reintroduire.
+# --- The numeric values, per position ----------------------------------------
+# The same name does not have the same value depending on its position: that is
+# the trap the E04-S06 decoder already documents, and reproducing it here would
+# be a silent way of reintroducing it.
 A = {"COMBINED":0,"TEXEL0":1,"TEXEL1":2,"PRIMITIVE":3,"SHADE":4,"ENVIRONMENT":5,"1":6,"NOISE":7,"0":8}
 B = {"COMBINED":0,"TEXEL0":1,"TEXEL1":2,"PRIMITIVE":3,"SHADE":4,"ENVIRONMENT":5,"CENTER":6,"K4":7,"0":8}
 C = {"COMBINED":0,"TEXEL0":1,"TEXEL1":2,"PRIMITIVE":3,"SHADE":4,"ENVIRONMENT":5,"SCALE":6,
@@ -74,8 +73,8 @@ def parse(name):
             [AA[p[4]], AA[p[5]], AC[p[6]], AA[p[7]]],
             p)
 
-# --- Les configurations employees, d'apres l'inventaire ----------------------
-# (cycle1, cycle2 ou None, entrees de table)
+# --- The configurations in use, according to the inventory -------------------
+# (cycle1, cycle2 or None, table entries)
 CONFIGS = [
  ("G_CC_BLENDTEX_PRIM", "G_CC_MODULATEIDECALA2", 32),
  ("G_CC_MODULATEIDECALA", None, 32),
@@ -108,196 +107,194 @@ CONFIGS = [
  ("G_CC_BLENDT_ENV_ALPHA_A_PRIM", "G_CC_MODULATEIDECALA2", 1),
 ]
 
-# --- Les enumerations de Glide 2.x, telles que glide_backend.c les emploie ---
+# --- The Glide 2.x enumerations, as glide_backend.c uses them ----------------
 FN  = {"ZERO":0, "LOCAL":1, "SCALE_OTHER":3, "SCALE_OTHER_ADD_LOCAL":4, "BLEND":7}
 FAC = {"ZERO":0, "LOCAL":1, "OTHER_ALPHA":2, "LOCAL_ALPHA":3, "TEXTURE_ALPHA":4, "ONE":8}
 LOC = {"ITERATED":0, "CONSTANT":1}
 OTH = {"ITERATED":0, "TEXTURE":1, "CONSTANT":2}
 
 def _base(part):
-    """Le registre que designe une entree, sans son suffixe d'alpha."""
+    """The register an input designates, without its alpha suffix."""
     if part.startswith("ENV_ALPHA"):
         return "ENVIRONMENT"
     if part.startswith("SHADE"):
         return "SHADE"
     return part.replace("_ALPHA", "")
 
-def sources(names, terme="tout"):
-    """Quelles sources RDP la configuration lit.
+def sources(names, term="all"):
+    """Which RDP sources the configuration reads.
 
-    `terme` vaut « rgb », « alpha » ou « tout ». **Les distinguer est ce qui
-    permet de ne pas declarer le mur trop tot** : Glide n'a qu'un registre
-    constant, mais si le terme de couleur n'en lit qu'un et le terme d'alpha
-    l'autre, le second peut etre porte autrement — voir `classify`."""
+    `term` is "rgb", "alpha" or "all". **Telling them apart is what keeps us
+    from declaring the wall too early**: Glide has only one constant register,
+    but if the colour term reads only one and the alpha term the other, the
+    second can be carried differently - see `classify`."""
     used = set()
     for n in names:
         parts = [x.strip() for x in SRC[n].replace(" ", "").split(",")]
-        champ = parts[0:4] if terme == "rgb" else parts[4:8] if terme == "alpha" else parts
-        for part in champ:
+        field = parts[0:4] if term == "rgb" else parts[4:8] if term == "alpha" else parts
+        for part in field:
             if part not in ("0", "1"):
                 used.add(_base(part))
     return used
 
 def fold(c1, c2):
-    """Replie le second cycle quand il est reductible.
+    """Folds the second cycle away when it is reducible.
 
-    Le ticket nomme lui-meme cette sortie : « simplification quand le second
-    etage est neutre ». Deux cas se replient, et les reconnaitre change la
-    classification de la moitie de l'inventaire :
+    The ticket names this way out itself: "simplification when the second stage
+    is neutral". Two cases fold, and recognising them changes the classification
+    of half the inventory:
 
-    - `G_CC_PASS2` vaut `(0,0,0,COMBINED)`, c'est-a-dire **l'identite**. La
-      configuration a deux cycles se comporte exactement comme son premier.
-    - un second etage de la forme `(COMBINED, 0, X, 0)` est une mise a l'echelle
-      du resultat precedent. Si le premier cycle tient dans le « other » de
-      Glide, le compose vaut `other x X`, qui est un `SCALE_OTHER` — donc une
-      seule passe.
+    - `G_CC_PASS2` is `(0,0,0,COMBINED)`, that is, **the identity**. The
+      two-cycle configuration behaves exactly like its first cycle.
+    - a second stage of the form `(COMBINED, 0, X, 0)` scales the previous
+      result. If the first cycle fits in Glide's "other", the composition is
+      `other x X`, which is a `SCALE_OTHER` - hence a single pass.
 
-    Rend le nom du cycle a classer, et le facteur replie s'il y en a un. Sans ce
-    repliage, tout second cycle serait declare multipasse, ce qui doublerait le
-    remplissage sur les surfaces les plus courantes du jeu pour rien.
+    Returns the name of the cycle to classify, and the folded factor if there is
+    one. Without this folding, every second cycle would be declared multipass,
+    which would double the fill on the game's most common surfaces for nothing.
     """
     if c2 is None:
         return c1, None
     r2, a2, p2 = parse(c2)
     if p2[0] == "0" and p2[1] == "0" and p2[2] == "0" and p2[3] == "COMBINED":
-        return c1, None                       # identite
+        return c1, None                       # identity
     if p2[0] == "COMBINED" and p2[1] == "0" and p2[3] == "0":
-        return c1, p2[2]                      # mise a l'echelle par p2[2]
-    return c1, "IRREDUCTIBLE"
+        return c1, p2[2]                      # scaling by p2[2]
+    return c1, "IRREDUCIBLE"
 
 def classify(c1, c2):
-    """Range la configuration. Les regles, dans l'ordre ou elles s'appliquent."""
+    """Files the configuration. The rules, in the order they apply."""
     names = [c1] + ([c2] if c2 else [])
     used = sources(names)
 
-    # 1. Deux texels : c'est la seconde TMU, donc E05-S04. Ce n'est pas une
-    #    approximation, c'est un renvoi.
+    # 1. Two texels: that is the second TMU, hence E05-S04. This is not an
+    #    approximation, it is a referral.
     if "TEXEL1" in used:
-        return ("DKR_CC_DEUX_TEXELS", "DKR_CONST_AUCUNE",
-                "lit TEXEL1 : renvoye a E05-S04, seconde TMU")
+        return ("DKR_CC_TWO_TEXELS", "DKR_CONST_NONE",
+                "reads TEXEL1: deferred to E05-S04, second TMU")
 
-    # 2. Les deux registres constants a la fois. **C'est le mur** : le RDP en a
-    #    deux, Glide un seul.
+    # 2. Both constant registers at once. **This is the wall**: the RDP has two,
+    #    Glide only one.
     #
-    #    Mais il ne faut pas le declarer trop tot. Glide a un combineur de
-    #    couleur et un combineur d'alpha **separes**, et la valeur d'alpha d'un
-    #    sommet nous appartient — la chaine l'ecrit. Si le terme de couleur ne
-    #    lit qu'un registre constant et le terme d'alpha l'autre, le second peut
-    #    etre **porte par la couleur du sommet** : les deux sont constants par
-    #    appel de dessin, donc connus du processeur au moment d'ecrire les
-    #    sommets. Cela ne coute rien et evite une passe entiere.
+    #    But it must not be declared too early. Glide has **separate** colour and
+    #    alpha combiners, and a vertex's alpha value belongs to us - the chain
+    #    writes it. If the colour term reads only one constant register and the
+    #    alpha term the other, the second can be **carried by the vertex
+    #    colour**: both are constant per draw call, hence known to the CPU at the
+    #    time the vertices are written. It costs nothing and saves a whole pass.
     #
-    #    La manoeuvre a un prix, et il est nomme : l'alpha du sommet ne peut plus
-    #    porter autre chose. Elle ne s'applique donc que si le terme d'alpha ne
-    #    lit pas SHADE par ailleurs.
+    #    The manoeuvre has a price, and it is named: the vertex alpha can no
+    #    longer carry anything else. It therefore only applies if the alpha term
+    #    does not otherwise read SHADE.
     rgb_used   = sources(names, "rgb")
     alpha_used = sources(names, "alpha")
-    deux = "PRIMITIVE" in used and "ENVIRONMENT" in used
-    if deux:
+    both = "PRIMITIVE" in used and "ENVIRONMENT" in used
+    if both:
         rgb_c   = {x for x in rgb_used   if x in ("PRIMITIVE", "ENVIRONMENT")}
         alpha_c = {x for x in alpha_used if x in ("PRIMITIVE", "ENVIRONMENT")}
-        portable = (len(rgb_c) <= 1 and len(alpha_c) <= 1 and rgb_c != alpha_c
-                    and "SHADE" not in alpha_used)
-        if not portable:
-            return ("DKR_CC_MULTIPASSE", "DKR_CONST_LES_DEUX",
-                    "lit PRIMITIVE et ENVIRONMENT dans le meme terme : "
-                    "Glide n'a qu'un registre constant")
+        carriable = (len(rgb_c) <= 1 and len(alpha_c) <= 1 and rgb_c != alpha_c
+                     and "SHADE" not in alpha_used)
+        if not carriable:
+            return ("DKR_CC_MULTIPASS", "DKR_CONST_BOTH",
+                    "reads PRIMITIVE and ENVIRONMENT in the same term: "
+                    "Glide has only one constant register")
         const = ("DKR_CONST_PRIMITIVE" if "PRIMITIVE" in rgb_c
                  else "DKR_CONST_ENVIRONMENT")
-        # on continue la classification : la seconde constante est portee par
-        # l'alpha du sommet, qui n'est plus disponible pour autre chose.
+        # classification continues: the second constant is carried by the vertex
+        # alpha, which is no longer available for anything else.
     else:
         const = ("DKR_CONST_PRIMITIVE" if "PRIMITIVE" in used else
                  "DKR_CONST_ENVIRONMENT" if "ENVIRONMENT" in used else
-                 "DKR_CONST_AUCUNE")
+                 "DKR_CONST_NONE")
 
     rgb, alpha, parts = parse(c1)
 
-    # 3a. **La forme degeneree `(0, 0, 0, X)`.** Le resultat vaut X, sans calcul.
-    #     Elle ne peut pas satisfaire le test `d == b` qui suit — b vaut zero et
-    #     d ne vaut pas zero — et la premiere version de ces regles la rangeait
-    #     donc en « approchee ». `G_CC_PRIMITIVE`, une simple couleur constante,
-    #     s'y retrouvait classee inatteignable, ce qui est absurde et signalait
-    #     que l'ordre des regles etait faux plutot que les regles elles-memes.
+    # 3a. **The degenerate form `(0, 0, 0, X)`.** The result is X, with no
+    #     computation. It cannot satisfy the `d == b` test that follows - b is
+    #     zero and d is not - and the first version of these rules therefore
+    #     filed it under "approximate". `G_CC_PRIMITIVE`, a plain constant
+    #     colour, ended up classified as unreachable, which is absurd and
+    #     signalled that the order of the rules was wrong rather than the rules
+    #     themselves.
     if parts[0] == "0" and parts[1] == "0" and parts[2] == "0":
         if c2:
-            _, facteur = fold(c1, c2)
-            if facteur is not None and facteur != "IRREDUCTIBLE":
-                return ("DKR_CC_EXACTE", const,
-                        "resultat direct, second etage replie en SCALE_OTHER")
-            if facteur == "IRREDUCTIBLE":
-                return ("DKR_CC_MULTIPASSE", const,
-                        "resultat direct, mais second cycle irreductible")
-        return ("DKR_CC_EXACTE", const,
-                "forme degeneree (0,0,0,X) : le resultat vaut X, sans calcul")
-    # 3. `d == b` : la forme du RDP tombe alors exactement sur la fonction BLEND
-    #    de Glide, `f x (other - local) + local`.
+            _, factor = fold(c1, c2)
+            if factor is not None and factor != "IRREDUCIBLE":
+                return ("DKR_CC_EXACT", const,
+                        "direct result, second stage folded into SCALE_OTHER")
+            if factor == "IRREDUCIBLE":
+                return ("DKR_CC_MULTIPASS", const,
+                        "direct result, but irreducible second cycle")
+        return ("DKR_CC_EXACT", const,
+                "degenerate form (0,0,0,X): the result is X, with no computation")
+    # 3. `d == b`: the RDP form then lands exactly on Glide's BLEND function,
+    #    `f x (other - local) + local`.
     zero_b = parts[1] == "0"
     zero_d = parts[3] == "0"
-    forme_ok = (parts[1] == parts[3]) or (zero_b and zero_d)
-    if not forme_ok:
-        return ("DKR_CC_APPROCHEE", const,
-                "d different de b : la forme ne tombe pas sur BLEND")
+    form_ok = (parts[1] == parts[3]) or (zero_b and zero_d)
+    if not form_ok:
+        return ("DKR_CC_APPROXIMATE", const,
+                "d differs from b: the form does not land on BLEND")
 
-    # 4. Le facteur `c` doit etre exprimable. Glide n'offre en facteur que la
-    #    couleur locale ou une alpha ; une couleur *de texture* en facteur n'y
-    #    est pas.
+    # 4. The factor `c` must be expressible. Glide only offers the local colour
+    #    or an alpha as a factor; a *texture* colour as a factor is not there.
     c_name = parts[2]
     if c_name in ("TEXEL0", "TEXEL1"):
-        return ("DKR_CC_APPROCHEE", const,
-                "facteur = couleur de texture : Glide n'offre que TEXTURE_ALPHA")
-    # **Mesure, et non deduction.** Le balayage des seize valeurs de facteur sur
-    # la carte (`combine_enum_probe.c`) a etabli qu'*aucune* ne delivre l'alpha
-    # du registre constant : les facteurs confirmes sont ONE, LOCAL et
-    # ONE_MINUS_LOCAL, tous fonctions de la couleur locale ou de rien.
+        return ("DKR_CC_APPROXIMATE", const,
+                "factor = texture colour: Glide only offers TEXTURE_ALPHA")
+    # **Measured, not deduced.** Sweeping the sixteen factor values on the card
+    # (`combine_enum_probe.c`) established that *none* delivers the constant
+    # register's alpha: the confirmed factors are ONE, LOCAL and ONE_MINUS_LOCAL,
+    # all functions of the local colour or of nothing.
     #
-    # Toute la famille BLENDI/BLENDT repose sur `ENV_ALPHA` en facteur, et se
-    # trouve donc hors d'atteinte en l'etat. Elle etait classee « exacte » sur la
-    # foi de valeurs d'enumeration ecrites de memoire ; le harnais de mesure l'a
-    # prise en defaut avec 140 a 156 unites d'ecart, et c'est exactement ce qu'on
-    # lui demandait de faire.
+    # The whole BLENDI/BLENDT family rests on `ENV_ALPHA` as a factor, and is
+    # therefore out of reach as things stand. It was classified as "exact" on the
+    # strength of enumeration values written from memory; the measurement harness
+    # caught it out with a gap of 140 to 156 units, and that is exactly what it
+    # was asked to do.
     #
-    # Une issue existe et n'est pas encore eprouvee : ENV_ALPHA est une constante
-    # connue du processeur, donc portable dans l'alpha du sommet, ou
-    # `LOCAL_ALPHA` irait la chercher. Tant que ce n'est pas mesure, la
-    # configuration reste approchee — annoncer exact ce qui ne l'est pas est
-    # precisement le defaut contre lequel ce ticket met en garde.
+    # A way out exists and is not yet tested: ENV_ALPHA is a constant known to
+    # the CPU, hence carriable in the vertex alpha, where `LOCAL_ALPHA` would go
+    # and fetch it. Until that is measured, the configuration stays approximate -
+    # announcing as exact what is not is precisely the failing this ticket warns
+    # against.
     if c_name in ("ENV_ALPHA", "PRIMITIVE_ALPHA"):
-        return ("DKR_CC_APPROCHEE", const,
-                "facteur = alpha d'un registre constant : mesure sur la carte, "
-                "aucun facteur Glide ne le delivre")
-    if c_name == "SHADE_ALPHA" and const != "DKR_CONST_AUCUNE":
-        # local est la constante, donc LOCAL_ALPHA vaut l'alpha de la constante
-        # et non celle du sommet.
-        return ("DKR_CC_APPROCHEE", const,
-                "facteur = alpha du sommet alors que local est la constante")
+        return ("DKR_CC_APPROXIMATE", const,
+                "factor = alpha of a constant register: measured on the card, "
+                "no Glide factor delivers it")
+    if c_name == "SHADE_ALPHA" and const != "DKR_CONST_NONE":
+        # local is the constant, so LOCAL_ALPHA is the constant's alpha and not
+        # the vertex's.
+        return ("DKR_CC_APPROXIMATE", const,
+                "factor = vertex alpha while local is the constant")
     if c_name == "SCALE":
-        return ("DKR_CC_APPROCHEE", const,
-                "SCALE : registre de mise a l'echelle du RDP, sans equivalent")
+        return ("DKR_CC_APPROXIMATE", const,
+                "SCALE: the RDP's scaling register, with no equivalent")
     if c2:
-        _, facteur = fold(c1, c2)
-        if facteur is None:
-            return ("DKR_CC_EXACTE", const,
-                    "second etage neutre (PASS2) : se replie sur le premier")
-        if facteur == "IRREDUCTIBLE":
-            return ("DKR_CC_MULTIPASSE", const,
-                    "second cycle irreductible : un etage de plus que Glide n'en offre")
-        if facteur in ("SHADE", "PRIMITIVE", "ENVIRONMENT", "TEXEL0_ALPHA"):
-            return ("DKR_CC_EXACTE", const,
-                    "second etage = mise a l'echelle : se replie en SCALE_OTHER")
-        return ("DKR_CC_APPROCHEE", const,
-                "second etage a l'echelle par une source inexprimable en facteur")
-    return ("DKR_CC_EXACTE", const, "forme (a-b)c+d avec d=b, facteur exprimable")
+        _, factor = fold(c1, c2)
+        if factor is None:
+            return ("DKR_CC_EXACT", const,
+                    "neutral second stage (PASS2): folds onto the first")
+        if factor == "IRREDUCIBLE":
+            return ("DKR_CC_MULTIPASS", const,
+                    "irreducible second cycle: one stage more than Glide offers")
+        if factor in ("SHADE", "PRIMITIVE", "ENVIRONMENT", "TEXEL0_ALPHA"):
+            return ("DKR_CC_EXACT", const,
+                    "second stage = scaling: folds into SCALE_OTHER")
+        return ("DKR_CC_APPROXIMATE", const,
+                "second stage scaled by a source inexpressible as a factor")
+    return ("DKR_CC_EXACT", const, "form (a-b)c+d with d=b, expressible factor")
 
 def recipe(c1, cat):
-    """Le reglage Glide. Seules les configurations exactes en recoivent un
-    complet ; les autres portent celui de leur approximation, qui est mesuree."""
+    """The Glide setup. Only exact configurations get a complete one; the others
+    carry the setup of their approximation, which is measured."""
     rgb, alpha, parts = parse(c1)
     a, b, c, d = parts[0], parts[1], parts[2], parts[3]
     use_tex = 1 if "TEXEL" in (a + b + c + d) else 0
 
     if a == "0" and b == "0" and c == "0":
-        # Resultat = d, une constante ou une source simple.
+        # Result = d, a constant or a simple source.
         if d == "TEXEL0":
             return (FN["SCALE_OTHER"], FAC["ONE"], LOC["ITERATED"], OTH["TEXTURE"], 1)
         if d == "SHADE":
@@ -305,14 +302,14 @@ def recipe(c1, cat):
         return (FN["LOCAL"], FAC["ONE"], LOC["CONSTANT"], OTH["CONSTANT"], 0)
 
     if b == "0" and d == "0":
-        # Resultat = a x c : une simple mise a l'echelle.
+        # Result = a x c: a plain scaling.
         fac = (FAC["LOCAL"] if c in ("SHADE", "PRIMITIVE", "ENVIRONMENT")
                else FAC["TEXTURE_ALPHA"] if c == "TEXEL0_ALPHA" else FAC["LOCAL"])
         loc = LOC["ITERATED"] if c == "SHADE" else LOC["CONSTANT"]
         oth = OTH["TEXTURE"] if a == "TEXEL0" else OTH["ITERATED"]
         return (FN["SCALE_OTHER"], fac, loc, oth, use_tex)
 
-    # Forme BLEND : f x (other - local) + local.
+    # BLEND form: f x (other - local) + local.
     oth = (OTH["TEXTURE"] if a == "TEXEL0" else
            OTH["CONSTANT"] if a in ("PRIMITIVE", "ENVIRONMENT") else OTH["ITERATED"])
     loc = LOC["ITERATED"] if b == "SHADE" else LOC["CONSTANT"]
@@ -324,15 +321,15 @@ def recipe(c1, cat):
 
 def emit():
     out = []
-    out.append("/* ENGENDRE par tools/win95/gen_combiner_table.py — ne pas editer. */")
-    out.append("/* Les definitions viennent de include/PR/gbi.h et include/f3ddkr.h du")
-    out.append("   portage voisin ; la liste des configurations employees vient de")
-    out.append("   docs/research/combiner-inventory.md, engendre depuis les tables")
-    out.append("   statiques du jeu. */")
-    out.append("static const dkr_cc_entree CC_TABLE[] = {")
+    out.append("/* GENERATED by tools/win95/gen_combiner_table.py - do not edit. */")
+    out.append("/* The definitions come from include/PR/gbi.h and include/f3ddkr.h of the")
+    out.append("   neighbouring port; the list of configurations in use comes from")
+    out.append("   docs/research/combiner-inventory.md, generated from the game's")
+    out.append("   static tables. */")
+    out.append("static const dkr_cc_entry CC_TABLE[] = {")
     seen = set()
     stats = {}
-    for c1, c2, entrees in CONFIGS:
+    for c1, c2, entries in CONFIGS:
         key = (c1, c2)
         if key in seen:
             continue
@@ -351,9 +348,9 @@ def emit():
         out.append(f'      {{ {{{a1[0]},{a1[1]},{a1[2]},{a1[3]}}}, {{{a2[0]},{a2[1]},{a2[2]},{a2[3]}}} }},')
         out.append(f'      {cyc}, {cat}, {const},')
         out.append(f'      {{ {fn}, {fac}, {loc}, {oth}, {fn}, {fac}, {loc}, {oth}, 1, 0, {use_tex} }},')
-        out.append(f'      "{note}", {entrees} }},')
+        out.append(f'      "{note}", {entries} }},')
     out.append("};")
-    sys.stderr.write("classification :\n")
+    sys.stderr.write("classification:\n")
     for k in sorted(stats):
         sys.stderr.write(f"  {k:22s} {stats[k]}\n")
     sys.stderr.write(f"  total                  {len(seen)}\n")

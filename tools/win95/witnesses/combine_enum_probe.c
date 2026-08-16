@@ -83,7 +83,7 @@ int main(void)
     bk.set_state(bk.self, &st);
 
     for (fn = 0; fn <= 15; fn++) {
-        dkr_cc_reglage r;
+        dkr_cc_setup r;
         unsigned c;
         int lu, attendu_blend, attendu_scale, attendu_local, attendu_add;
         memset(&r, 0, sizeof(r));
@@ -91,7 +91,7 @@ int main(void)
         r.cc_function = 7; r.cc_factor = (unsigned char)fn;
         r.cc_local = 0; r.cc_other = 2;
         r.ac_function = 1; r.ac_factor = 8; r.ac_local = 0; r.ac_other = 0;
-        r.utilise_texture = 0;
+        r.uses_texture = 0;
 
         bk.begin_frame(bk.self, 0x000000);
         bk.set_state(bk.self, &st);

@@ -212,7 +212,7 @@ int main(void)
         "configuration", "categorie", "attendu", "obtenu", "ecart");
 
     for (i = 0; i < n; i++) {
-        const dkr_cc_entree *e = dkr_cc_table_at(i);
+        const dkr_cc_entry *e = dkr_cc_table_at(i);
         dkr_combiner_inputs in;
         dkr_combiner comb;
         float attendu[4];
@@ -234,21 +234,21 @@ int main(void)
         /* Le registre constant reçoit ce que la table a décidé. C'est là que se
            lit le mur : une configuration marquée `LES_DEUX` ne peut pas être
            servie, et son écart le dira. */
-        constante = (e->constante == DKR_CONST_PRIMITIVE) ? pack(PRIM)
-                  : (e->constante == DKR_CONST_ENVIRONMENT) ? pack(ENVI)
+        constante = (e->constant == DKR_CONST_PRIMITIVE) ? pack(PRIM)
+                  : (e->constant == DKR_CONST_ENVIRONMENT) ? pack(ENVI)
                   : 0xFFFFFFFFu;
 
         dkr_glide_backend_bind(handle);
-        dkr_glide_backend_set_recipe(&e->reglage, constante);
+        dkr_glide_backend_set_recipe(&e->setup, constante);
 
         bk.begin_frame(bk.self, 0x000000);
         dkr_glide_backend_bind(handle);
-        dkr_glide_backend_set_recipe(&e->reglage, constante);
+        dkr_glide_backend_set_recipe(&e->setup, constante);
         draw_quad(&bk, W, H);
         bk.present(bk.self);
 
         if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) <= 0) {
-            say("  %-32s relecture impossible\n", e->nom);
+            say("  %-32s relecture impossible\n", e->name);
             continue;
         }
         ca = q565(tronque_glide(pack(attendu) & 0x00FFFFFFu));
@@ -256,17 +256,17 @@ int main(void)
         d  = ecart(ca, cb);
 
         say("%-34s %-12s %06X %06X %5d %s\n",
-            e->nom, dkr_cc_categorie_texte(e->categorie), ca, cb, d,
-            (e->categorie == DKR_CC_EXACTE && d > 8) ? "<-- EXACTE MAIS FAUSSE" : "");
+            e->name, dkr_cc_category_text(e->category), ca, cb, d,
+            (e->category == DKR_CC_EXACT && d > 8) ? "<-- EXACTE MAIS FAUSSE" : "");
 
         /* **Le contrôle qui compte.** Une configuration déclarée exacte doit
            l'être : au-delà de la quantification, elle a été mal classée, et la
            table ment. Les catégories `multipasse` et `approchee` annoncent au
            contraire un écart — le mesurer est leur raison d'être, et il est
            rapporté sans être compté en échec. */
-        if (e->categorie == DKR_CC_EXACTE && d > pire_exacte) {
+        if (e->category == DKR_CC_EXACT && d > pire_exacte) {
             pire_exacte = d;
-            pire_nom = e->nom;
+            pire_nom = e->name;
         }
     }
 

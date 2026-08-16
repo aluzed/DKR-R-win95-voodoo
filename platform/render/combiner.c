@@ -1,20 +1,20 @@
-/* E05-S03 — mise en œuvre. Le contrat et l'analyse sont dans `combiner.h`. */
+/* E05-S03 — implementation. The contract and the analysis live in `combiner.h`. */
 #include "combiner.h"
 #include "combiner_table.h"
 
 #include <string.h>
 
-/* --- Les sources, lues position par position -------------------------------- *
+/* --- The sources, read position by position --------------------------------- *
  *
- * Une seule table de correspondance serait fausse. La valeur 6 signifie `1` en
- * position `a`, `CENTER` en `b`, `SCALE` en `c` et `1` en `d` ; la valeur 1
- * signifie `TEXEL0` en couleur mais `TEXEL0_ALPHA` en alpha. Chaque position a
- * donc sa fonction, et c'est délibérément verbeux : la version compacte de ce
- * code serait la version fausse.
+ * A single lookup table would be wrong. The value 6 means `1` in position `a`,
+ * `CENTER` in `b`, `SCALE` in `c` and `1` in `d`; the value 1 means `TEXEL0` in
+ * colour but `TEXEL0_ALPHA` in alpha. Each position therefore has its own
+ * function, and that is deliberately verbose: the compact version of this code
+ * would be the wrong version.
  *
- * `out[3]` reçoit une couleur ; les sources scalaires remplissent les quatre
- * composantes, ce qui permet à l'appelant de multiplier sans se demander s'il
- * tient une couleur ou un scalaire. */
+ * `out[3]` receives a colour; scalar sources fill all four components, which
+ * lets the caller multiply without wondering whether it is holding a colour or
+ * a scalar. */
 
 static void splat(float v, float out[4])
 {
@@ -36,10 +36,10 @@ static void rgb_a(const dkr_combiner_inputs *in, unsigned v, float out[4])
     case 4:  copy4(in->shade, out);       break;
     case 5:  copy4(in->environment, out); break;
     case 6:  splat(255.0f, out);          break;   /* 1 */
-    /* 7 = NOISE. Le rastériseur n'en produit pas : une source aléatoire rendrait
-       la comparaison avec la carte impossible, et DKR ne l'emploie pas. Zéro
-       est le choix qui se remarque le moins si elle apparaissait un jour, et
-       l'inventaire dirait qu'elle est apparue. */
+    /* 7 = NOISE. The rasteriser produces none: a random source would make the
+       comparison against the card impossible, and DKR does not use it. Zero is
+       the choice that shows up least if it ever did appear, and the inventory
+       would say that it had. */
     default: splat(0.0f, out);            break;
     }
 }
@@ -53,8 +53,8 @@ static void rgb_b(const dkr_combiner_inputs *in, unsigned v, float out[4])
     case 3:  copy4(in->primitive, out);   break;
     case 4:  copy4(in->shade, out);       break;
     case 5:  copy4(in->environment, out); break;
-    /* 6 = CENTER, 7 = K4 : registres de conversion de chrominance, que DKR
-       n'emploie pas. */
+    /* 6 = CENTER, 7 = K4: chroma-conversion registers, which DKR does not
+       use. */
     default: splat(0.0f, out);            break;
     }
 }
@@ -68,7 +68,7 @@ static void rgb_c(const dkr_combiner_inputs *in, unsigned v, float out[4])
     case 3:  copy4(in->primitive, out);   break;
     case 4:  copy4(in->shade, out);       break;
     case 5:  copy4(in->environment, out); break;
-    case 6:  splat(255.0f, out);          break;   /* SCALE, sans registre ici */
+    case 6:  splat(255.0f, out);          break;   /* SCALE, no register here */
     case 7:  splat(in->combined[3], out);    break;
     case 8:  splat(in->texel0[3], out);      break;
     case 9:  splat(in->texel1[3], out);      break;
@@ -96,8 +96,8 @@ static void rgb_d(const dkr_combiner_inputs *in, unsigned v, float out[4])
     }
 }
 
-/* Les termes d'alpha. `a`, `b` et `d` partagent une table ; `c` en a une autre,
-   où la valeur 0 signifie `LOD_FRACTION` et non `COMBINED`. */
+/* The alpha terms. `a`, `b` and `d` share one table; `c` has another, where the
+   value 0 means `LOD_FRACTION` and not `COMBINED`. */
 static float alpha_abd(const dkr_combiner_inputs *in, unsigned v)
 {
     switch (v) {
@@ -147,8 +147,8 @@ void dkr_combiner_eval(const dkr_combiner *c, int cycle,
     rgb_c(in, rs->c, k);
     rgb_d(in, rs->d, d);
 
-    /* `(a - b) * c + d`, en 0..255. Le facteur `c` est lui-même en 0..255 et
-       doit donc être ramené : le RDP le traite comme une fraction. */
+    /* `(a - b) * c + d`, in 0..255. The factor `c` is itself in 0..255 and must
+       therefore be scaled down: the RDP treats it as a fraction. */
     for (i = 0; i < 3; i++) {
         out[i] = clamp255((a[i] - b[i]) * (k[i] / 255.0f) + d[i]);
     }
@@ -168,10 +168,10 @@ void dkr_combiner_eval_all(const dkr_combiner *c, dkr_cycle_type cycle_type,
 
     if (!c || !in || !out) { return; }
     work = *in;
-    /* Au premier cycle, `COMBINED` n'a pas de valeur. Le RDP y lit le résultat
-       du triangle précédent, ce qui est indéfini du point de vue du programme ;
-       zéro est la seule valeur qui rende le rendu reproductible, et c'est ce
-       que la comparaison avec la carte exige. */
+    /* On the first cycle, `COMBINED` has no value. The RDP reads the previous
+       triangle's result there, which is undefined from the program's point of
+       view; zero is the only value that makes rendering reproducible, and that
+       is what comparison against the card demands. */
     work.combined[0] = work.combined[1] = work.combined[2] = work.combined[3] = 0.0f;
 
     dkr_combiner_eval(c, 0, &work, out);
@@ -181,15 +181,15 @@ void dkr_combiner_eval_all(const dkr_combiner *c, dkr_cycle_type cycle_type,
     }
 }
 
-/* --- La table ---------------------------------------------------------------- */
+/* --- The table --------------------------------------------------------------- */
 
-const char *dkr_cc_categorie_texte(dkr_cc_categorie c)
+const char *dkr_cc_category_text(dkr_cc_category c)
 {
     switch (c) {
-    case DKR_CC_EXACTE:      return "exacte";
-    case DKR_CC_MULTIPASSE:  return "multipasse";
-    case DKR_CC_APPROCHEE:   return "approchee";
-    default:                 return "deux texels (E05-S04)";
+    case DKR_CC_EXACT:       return "exact";
+    case DKR_CC_MULTIPASS:   return "multipass";
+    case DKR_CC_APPROXIMATE: return "approximate";
+    default:                 return "two texels (E05-S04)";
     }
 }
 
@@ -197,13 +197,13 @@ const char *dkr_cc_categorie_texte(dkr_cc_categorie c)
 
 int dkr_cc_table_count(void) { return CC_COUNT; }
 
-const dkr_cc_entree *dkr_cc_table_at(int index)
+const dkr_cc_entry *dkr_cc_table_at(int index)
 {
     if (index < 0 || index >= CC_COUNT) { return 0; }
     return &CC_TABLE[index];
 }
 
-unsigned long long dkr_cc_entree_key(const dkr_cc_entree *e)
+unsigned long long dkr_cc_entry_key(const dkr_cc_entry *e)
 {
     dkr_combiner c;
     if (!e) { return 0; }
@@ -213,36 +213,37 @@ unsigned long long dkr_cc_entree_key(const dkr_cc_entree *e)
     return dkr_rdp_combiner_key(&c, e->cycle);
 }
 
-const dkr_cc_entree *dkr_cc_lookup(unsigned long long key)
+const dkr_cc_entry *dkr_cc_lookup(unsigned long long key)
 {
     int i;
-    /* Une recherche linéaire sur vingt-neuf entrées, appelée au changement
-       d'état et non par triangle. Une table de hachage ne gagnerait rien de
-       mesurable et se relirait moins bien. */
+    /* A linear search over twenty-nine entries, called on state changes and not
+       per triangle. A hash table would gain nothing measurable and would read
+       less well. */
     for (i = 0; i < CC_COUNT; i++) {
-        if (dkr_cc_entree_key(&CC_TABLE[i]) == key) {
+        if (dkr_cc_entry_key(&CC_TABLE[i]) == key) {
             return &CC_TABLE[i];
         }
     }
     return 0;
 }
 
-const dkr_cc_reglage *dkr_cc_repli(void)
+const dkr_cc_setup *dkr_cc_fallback(void)
 {
-    /* Texture modulée par la couleur du sommet : `SCALE_OTHER` avec la couleur
-       locale en facteur. C'est le comportement le plus fréquent de l'inventaire,
-       donc celui qui a le plus de chances d'être juste sur une configuration
-       qu'on n'a pas prévue.
+    /* Texture modulated by the vertex colour: `SCALE_OTHER` with the local
+       colour as factor. That is the most frequent behaviour in the inventory,
+       hence the one most likely to be right on a configuration we did not
+       anticipate.
      *
-     * Le choix se lit contre ses deux alternatives, écartées toutes deux :
-     * ne rien dessiner ferait disparaître un décor sans laisser de trace, et
-     * peindre en magenta vif rendrait le jeu injouable au premier combineur
-     * oublié. « Visible mais non aberrant » est ce que le ticket demande. */
-    static const dkr_cc_reglage repli = {
-        3, 1, 0, 1,      /* couleur : SCALE_OTHER, facteur LOCAL, local itéré, other texture */
-        3, 1, 0, 1,      /* alpha : idem */
-        1, 0,            /* étage de texture : DECAL */
+     * The choice reads against its two alternatives, both discarded: drawing
+     * nothing would make a piece of scenery vanish without leaving a trace, and
+     * painting in bright magenta would make the game unplayable at the first
+     * forgotten combiner. "Visible but not absurd" is what the ticket asks
+     * for. */
+    static const dkr_cc_setup fallback = {
+        3, 1, 0, 1,      /* colour: SCALE_OTHER, factor LOCAL, local iterated, other texture */
+        3, 1, 0, 1,      /* alpha: likewise */
+        1, 0,            /* texture stage: DECAL */
         1
     };
-    return &repli;
+    return &fallback;
 }

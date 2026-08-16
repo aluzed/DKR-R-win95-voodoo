@@ -1,24 +1,23 @@
-/* E04-S03 — pile de matrices et transformation des sommets.
+/* E04-S03 — matrix stack and vertex transformation.
  *
- * Sur la N64 c'est le RSP qui transforme. Ici cela revient au processeur hôte —
- * comme sur toute carte 3dfx, qui ne transforme rien. **C'est le poste de calcul
- * graphique le plus lourd du portage**, et il tombe intégralement dans le budget
- * de E00-S03.
+ * On the N64 the RSP does the transforming. Here it falls to the host CPU — as
+ * on any 3dfx card, which transforms nothing. **It is the heaviest graphics
+ * computation of the port**, and it lands entirely inside the E00-S03 budget.
  *
- * ## Les matrices de la N64 ne sont pas des matrices ordinaires
+ * ## N64 matrices are not ordinary matrices
  *
- * Elles sont en virgule fixe 16.16, et **stockées en deux moitiés séparées** :
- * les seize parties entières d'abord, les seize parties fractionnaires ensuite.
- * `gbi.h` le dit en une phrase — « First 8 words are integer portion of the 4x4
- * matrix, last 8 words are the fraction portion » — et s'en écarter ne produit
- * pas une erreur mais une géométrie fausse.
+ * They are 16.16 fixed point, and **stored as two separate halves**: the sixteen
+ * integer parts first, the sixteen fractional parts next. `gbi.h` says it in one
+ * sentence — "First 8 words are integer portion of the 4x4 matrix, last 8 words
+ * are the fraction portion" — and departing from it produces not an error but
+ * wrong geometry.
  *
- * ## La profondeur de pile est relevée, pas supposée
+ * ## The stack depth is measured, not assumed
  *
- * `f3ddkr_rt64.cpp` borne l'index de matrice à 2 dans `Matrix` comme dans
- * `MoveWord` : **DKR emploie trois emplacements**. En prévoir seize par prudence
- * coûterait de la mémoire sur une machine qui n'en a pas, et masquerait une
- * commande mal décodée qui viserait un emplacement inexistant.
+ * `f3ddkr_rt64.cpp` clamps the matrix index to 2 in `Matrix` as in `MoveWord`:
+ * **DKR uses three slots**. Providing sixteen out of caution would cost memory
+ * on a machine that has none, and would hide a mis-decoded command aiming at a
+ * slot that does not exist.
  */
 #ifndef DKR_RENDER_TRANSFORM_H
 #define DKR_RENDER_TRANSFORM_H
@@ -29,37 +28,37 @@
 extern "C" {
 #endif
 
-/* Déclaration anticipée : `clip.h` inclut ce fichier, l'inverse ferait un
-   cycle. Le type complet est défini là-bas. */
+/* Forward declaration: `clip.h` includes this file, and the reverse would make
+   a cycle. The complete type is defined over there. */
 struct dkr_clip_vertex_;
 
 #define DKR_MATRIX_SLOTS 3
 
 typedef struct {
-    /* Rangée par colonne majeure, comme le microcode : `m[colonne][ligne]`. */
+    /* Stored column-major, like the microcode: `m[column][row]`. */
     float m[4][4];
 } dkr_matrix;
 
-/* --- Conversion 16.16 ------------------------------------------------------- *
+/* --- 16.16 conversion ------------------------------------------------------- *
  *
- * `data` fait 64 octets : 32 pour les parties entières, 32 pour les
- * fractionnaires. La lecture est **gros-boutiste**, comme la RDRAM.
+ * `data` is 64 bytes: 32 for the integer parts, 32 for the fractional ones. The
+ * read is **big-endian**, like RDRAM.
  *
- * Rend 0 si `data` est nul. Aucune autre façon d'échouer : toutes les
- * combinaisons de 64 octets décrivent une matrice, même absurde. */
+ * Returns 0 if `data` is null. There is no other way to fail: every combination
+ * of 64 bytes describes a matrix, however absurd. */
 int dkr_matrix_from_fixed(const unsigned char *data, dkr_matrix *out);
 
-/* --- La pile ---------------------------------------------------------------- */
+/* --- The stack -------------------------------------------------------------- */
 typedef struct {
     dkr_matrix slot[DKR_MATRIX_SLOTS];
     dkr_matrix projection;
-    dkr_matrix mvp;              /* produit, recalculé à la demande */
+    dkr_matrix mvp;              /* product, recomputed on demand */
     int        selected;         /* 0..2 */
     int        mvp_valid;
 
-    /* Fenêtre d'affichage. L'échelle en x porte le signe qui décide du sens de
-       culling — c'est ainsi que le microcode l'exprime, et le décodeur en
-       dépend. */
+    /* Viewport. The x scale carries the sign that decides the culling
+       direction — that is how the microcode expresses it, and the decoder
+       depends on it. */
     float viewport_scale_x, viewport_scale_y;
     float viewport_trans_x, viewport_trans_y;
 } dkr_transform;
@@ -71,41 +70,41 @@ void dkr_transform_set_projection(dkr_transform *t, const dkr_matrix *m);
 void dkr_transform_set_viewport(dkr_transform *t, float sx, float sy,
                                 float tx, float ty);
 
-/* --- Le sommet -------------------------------------------------------------- *
+/* --- The vertex ------------------------------------------------------------- *
  *
- * Le sommet DKR tel qu'il est en RDRAM : dix octets, position en entiers 16 bits
- * signés puis couleur en octets. **Aucune coordonnée de texture** — elles
- * arrivent par coin au moment du triangle. */
+ * The DKR vertex as it sits in RDRAM: ten bytes, position as signed 16-bit
+ * integers then colour as bytes. **No texture coordinates** — they arrive per
+ * corner when the triangle is emitted. */
 typedef struct {
     short         x, y, z;
     unsigned char r, g, b, a;
 } dkr_source_vertex;
 
-/* Transforme et **écrit directement le format du backend**, sans recopie
-   intermédiaire : `dkr_render_vertex` a la disposition de `GrVertex`, et une
-   conversion par sommet coûterait cher sur un Pentium II qui en voit des
-   dizaines de milliers par image.
+/* Transforms and **writes the backend format directly**, with no intermediate
+   copy: `dkr_render_vertex` has the layout of `GrVertex`, and a per-vertex
+   conversion would cost dearly on a Pentium II that sees tens of thousands of
+   them per frame.
  *
- * Rend 0 si le sommet est derrière le plan de projection — `w <= 0` — auquel cas
- * `out` n'est pas écrit. Le découpage proprement dit est E04-S05 ; ici on se
- * contente de ne pas diviser par une valeur qui n'a pas de sens. */
+ * Returns 0 if the vertex is behind the projection plane — `w <= 0` — in which
+ * case `out` is not written. Clipping proper is E04-S05; here we merely refrain
+ * from dividing by a value that means nothing. */
 int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
                          dkr_render_vertex *out);
 
-/* Transforme vers l'**espace homogène**, sans diviser.
+/* Transforms into **homogeneous space**, without dividing.
  *
- * C'est ce qu'il faut au découpage : diviser avant de découper produit des
- * coordonnées sans signification pour les sommets derrière la caméra, et c'est
- * précisément ce que E04-S05 existe pour éviter. `dkr_transform_vertex` reste
- * disponible pour les cas où l'on sait qu'aucun découpage n'est nécessaire.
+ * That is what clipping needs: dividing before clipping produces meaningless
+ * coordinates for vertices behind the camera, and that is precisely what E04-S05
+ * exists to avoid. `dkr_transform_vertex` stays available for the cases where we
+ * know no clipping is needed.
  *
- * `s` et `t` sont posés tels quels — non divisés — parce qu'ils arrivent au
- * moment du triangle et non du sommet. */
+ * `s` and `t` are laid down as they are — not divided — because they arrive with
+ * the triangle and not with the vertex. */
 void dkr_transform_to_clip(dkr_transform *t, const dkr_source_vertex *in,
                            float s, float tc, struct dkr_clip_vertex_ *out);
 
-/* La matrice modèle-vue-projection courante, recalculée si nécessaire. Exposée
-   pour les épreuves et pour E08-S03, qui voudra la traiter par lots. */
+/* The current model-view-projection matrix, recomputed if needed. Exposed for
+   the tests and for E08-S03, which will want to process it in batches. */
 const dkr_matrix *dkr_transform_mvp(dkr_transform *t);
 
 #ifdef __cplusplus

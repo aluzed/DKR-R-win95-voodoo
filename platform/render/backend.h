@@ -332,8 +332,8 @@ const struct dkr_tmu *dkr_glide_backend_tmu(int index);
 /* Applique un reglage de la table de E05-S03 et lie une texture. Employes par
    le harnais de mesure, et destines au moteur : les quatre modes de
    `dkr_combine_mode` ne sont qu'un raccourci devant vingt-neuf configurations. */
-struct dkr_cc_reglage;
-void dkr_glide_backend_set_recipe(const struct dkr_cc_reglage *r,
+struct dkr_cc_setup;
+void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
                                   unsigned constant_argb);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
 /* Chaine les deux unites de texture (E05-S04). Sans effet sur une carte a une

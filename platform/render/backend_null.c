@@ -1,16 +1,16 @@
-/* E04-S01 — l'implémentation vide.
+/* E04-S01 — the empty implementation.
  *
- * Elle accepte tout et ne dessine rien. Deux raisons de l'écrire, et aucune
- * n'est la complaisance :
+ * It accepts everything and draws nothing. There are two reasons to write it,
+ * and neither of them is indulgence:
  *
- *   - elle établit que l'interface **se compile et se lie** sans backend réel,
- *     ce que E04-S01 demande explicitement ;
- *   - elle donne au décodeur une cible pendant que Glide (E05) et le rastériseur
- *     logiciel (E04-S08) s'écrivent, de sorte que E04-S02 n'attende personne.
+ *   - it establishes that the interface **compiles and links** without a real
+ *     backend, which is what E04-S01 explicitly asks for;
+ *   - it gives the decoder a target while Glide (E05) and the software
+ *     rasteriser (E04-S08) are being written, so that E04-S02 waits for nobody.
  *
- * Elle compte ce qu'elle reçoit. Un décodeur qui n'émet aucun triangle et un
- * backend qui n'en dessine aucun se ressemblent beaucoup vus de l'écran ; le
- * compteur les distingue.
+ * It counts what it receives. A decoder that emits no triangle and a backend
+ * that draws none look very much alike from the screen; the counter tells them
+ * apart.
  */
 #include "backend.h"
 
@@ -27,9 +27,9 @@ typedef struct {
     dkr_render_state   state;
 } null_backend;
 
-/* Un seul exemplaire : l'implémentation vide n'a aucune raison d'être
-   instanciée deux fois, et lui donner un allocateur ferait dépendre de `malloc`
-   un objet dont le rôle est de ne rien faire. */
+/* A single instance: the empty implementation has no reason to be instantiated
+   twice, and giving it an allocator would make an object whose whole job is to
+   do nothing depend on `malloc`. */
 static null_backend g_null;
 
 static int null_open(void *self, int width, int height)
@@ -63,9 +63,9 @@ static void null_set_state(void *self, const dkr_render_state *state)
     if (!state) {
         return;
     }
-    /* Le bloc est comparable par `memcmp` — c'est une propriété de l'interface,
-       et l'exercer ici la met à l'épreuve : si quelqu'un y glissait un jour un
-       remplissage implicite, ce compteur deviendrait erratique. */
+    /* The block is comparable with `memcmp` — that is a property of the
+       interface, and exercising it here puts it to the test: should anyone ever
+       slip implicit padding into it, this counter would turn erratic. */
     if (memcmp(&b->state, state, sizeof(*state)) != 0) {
         b->state = *state;
         b->state_changes++;
@@ -98,7 +98,7 @@ static dkr_texture_handle null_texture_upload(void *self,
 {
     null_backend *b = (null_backend *)self;
     (void)desc;
-    /* Les handles commencent à 1 : zéro veut dire « aucune texture ». */
+    /* Handles start at 1: zero means "no texture". */
     return ++b->next_handle;
 }
 

@@ -820,7 +820,7 @@ unsigned long dkr_glide_backend_triangle_count(void)
  * RDP y placer est une decision de la table** — `DKR_CONST_PRIMITIVE` ou
  * `DKR_CONST_ENVIRONMENT` — et la seconde constante, quand elle est necessaire,
  * voyage dans l'alpha du sommet. */
-void dkr_glide_backend_set_recipe(const dkr_cc_reglage *r, unsigned constant_argb)
+void dkr_glide_backend_set_recipe(const dkr_cc_setup *r, unsigned constant_argb)
 {
     if (!r) { return; }
     if (gs.constant_color) { gs.constant_color(constant_argb); }
@@ -830,7 +830,7 @@ void dkr_glide_backend_set_recipe(const dkr_cc_reglage *r, unsigned constant_arg
     if (gs.alpha_combine) {
         gs.alpha_combine(r->ac_function, r->ac_factor, r->ac_local, r->ac_other, 0);
     }
-    if (gs.tex_combine && r->utilise_texture) {
+    if (gs.tex_combine && r->uses_texture) {
         gs.tex_combine(GR_TMU0, r->tc_function, r->tc_factor,
                        r->tc_function, r->tc_factor, 0, 0);
     }

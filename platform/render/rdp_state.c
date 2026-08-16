@@ -1,24 +1,24 @@
-/* E04-S06 — mise en œuvre. Le contrat est dans `rdp_state.h`. */
+/* E04-S06 — implementation. The contract lives in `rdp_state.h`. */
 #include "rdp_state.h"
 
 #include <string.h>
 
-/* --- Décodage du combineur -------------------------------------------------- *
+/* --- Combiner decoding ------------------------------------------------------ *
  *
- * Les décalages viennent des macros `GCCc0w0`, `GCCc1w0`, `GCCc0w1` et `GCCc1w1`
- * de `gbi.h`, **lues et non récitées**. Ils sont entrelacés au point qu'aucune
- * mémoire ne les rend correctement :
+ * The shifts come from the `GCCc0w0`, `GCCc1w0`, `GCCc0w1` and `GCCc1w1` macros
+ * in `gbi.h`, **read rather than recited**. They are interleaved to the point
+ * that no memory reproduces them correctly:
  *
- *   w0 (24 bits bas)   a0 << 20 (4)   c0 << 15 (5)   Aa0 << 12 (3)   Ac0 << 9 (3)
+ *   w0 (low 24 bits)   a0 << 20 (4)   c0 << 15 (5)   Aa0 << 12 (3)   Ac0 << 9 (3)
  *                      a1 <<  5 (4)   c1 <<  0 (5)
  *
  *   w1                 b0 << 28 (4)   b1 << 24 (4)   Aa1 << 21 (3)   Ac1 << 18 (3)
  *                      d0 << 15 (3)   Ab0 << 12 (3)  Ad0 <<  9 (3)   d1 <<  6 (3)
  *                      Ab1 << 3 (3)   Ad1 <<  0 (3)
  *
- * Noter que les champs RGB `a` et `b` font quatre bits, `c` cinq, `d` trois —
- * et que les champs alpha en font trois. Une largeur uniforme supposée est
- * l'erreur qui fait décoder juste les cas simples et faux les autres.
+ * Note that the RGB fields `a` and `b` are four bits wide, `c` five, `d` three —
+ * and that the alpha fields are three. Assuming a uniform width is the mistake
+ * that decodes the simple cases right and the rest wrong.
  */
 static unsigned field(unsigned word, int shift, int bits)
 {
@@ -51,9 +51,9 @@ void dkr_rdp_decode_combine(unsigned int w0, unsigned int w1, dkr_combiner *out)
     out->alpha[1].d = (unsigned char)field(w1,  0, 3);
 }
 
-/* --- Décodage des autres modes ---------------------------------------------- *
+/* --- Decoding the other modes ----------------------------------------------- *
  *
- * Décalages de `G_MDSFT_*`, également lus dans `gbi.h` :
+ * Shifts from `G_MDSFT_*`, likewise read out of `gbi.h`:
  *
  *   mode_h   TEXTFILT 12 (2)   TEXTLOD 16 (1)   TEXTPERSP 19 (1)
  *            CYCLETYPE 20 (2)  TEXTDETAIL 17 (2)
@@ -69,11 +69,11 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
     }
     out->cycle = (dkr_cycle_type)field(mode_h, 20, 2);
 
-    /* G_TF_POINT vaut 0, G_TF_BILERP 2, G_TF_AVERAGE 3 — et **il n'y a pas de
-       valeur 1**. Traiter le champ comme un booléen donnerait le filtrage
-       bilinéaire pour `AVERAGE`, ce qui est presque juste et donc difficile à
-       voir. On distingue, et `AVERAGE` tombe sur bilinéaire faute de mieux côté
-       Glide, ce que la traduction signale. */
+    /* G_TF_POINT is 0, G_TF_BILERP 2, G_TF_AVERAGE 3 — and **there is no value
+       1**. Treating the field as a boolean would give bilinear filtering for
+       `AVERAGE`, which is almost right and therefore hard to spot. We tell them
+       apart, and `AVERAGE` lands on bilinear for want of anything better on the
+       Glide side, which the translation reports. */
     filt = field(mode_h, 12, 2);
     out->filter = (filt == 0) ? DKR_FILTER_POINT : DKR_FILTER_BILINEAR;
 
@@ -85,41 +85,42 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
     out->z_source      = (unsigned char)field(mode_l, 2, 1);
     out->render_mode   = mode_l >> 3;
 
-    /* Les bits du blender. `Z_CMP` et `Z_UPD` sont à 4 et 5 du mot complet,
-       donc à 1 et 2 une fois `RENDERMODE` décalé. `G_RM_FOG_SHADE_A` se
-       reconnaît à sa source de mélange, que l'on ne décode pas ici : le
-       brouillard est signalé par le bit `G_FOG` du mode géométrique du RSP, et
-       c'est le décodeur qui le porte. */
+    /* The blender bits. `Z_CMP` and `Z_UPD` sit at 4 and 5 of the full word,
+       hence at 1 and 2 once `RENDERMODE` is shifted. `G_RM_FOG_SHADE_A` is
+       recognised by its blend source, which we do not decode here: fog is
+       signalled by the `G_FOG` bit of the RSP's geometry mode, and the decoder
+       is what carries it. */
     out->z_test  = (unsigned char)((mode_l >> 4) & 1u);
     out->z_write = (unsigned char)((mode_l >> 5) & 1u);
-    /* --- Le brouillard, lu dans le melangeur -------------------------------- *
+    /* --- Fog, read out of the blender -------------------------------------- *
      *
-     * Il n'a pas de bit propre. Il se deduit de la configuration du melangeur au
-     * premier cycle : source de couleur `G_BL_CLR_FOG`, facteur `G_BL_A_SHADE`.
-     * C'est la definition meme de `G_RM_FOG_SHADE_A`, le mode de rendu **le plus
-     * frequent de DKR** — 74 occurrences dans la source du jeu.
+     * It has no bit of its own. It follows from the blender's configuration on
+     * the first cycle: colour source `G_BL_CLR_FOG`, factor `G_BL_A_SHADE`.
+     * That is the very definition of `G_RM_FOG_SHADE_A`, **DKR's most frequent
+     * render mode** — 74 occurrences in the game's source.
      *
-     * Les champs sont a des positions fixes du mot de mode de rendu :
-     * `m1a` sur deux bits en 30, `m1b` en 26. Et l'on retrouve ici le piege du
-     * RDP : la valeur 3 signifie `G_BL_CLR_FOG` en position `m1a` mais `G_BL_0`
-     * en position `m1b`. Lire les deux avec le meme dictionnaire ferait declarer
-     * du brouillard la ou il n'y en a pas.
+     * The fields sit at fixed positions in the render-mode word: `m1a` two bits
+     * at 30, `m1b` at 26. And here the RDP's trap shows up again: the value 3
+     * means `G_BL_CLR_FOG` in position `m1a` but `G_BL_0` in position `m1b`.
+     * Reading both with the same dictionary would declare fog where there is
+     * none.
      *
-     * **Consequence qui depasse ce decodeur** : le facteur de brouillard occupe
-     * l'alpha du sommet. Tout ce qui voudrait y ranger autre chose entre en
-     * conflit avec lui — voir la note de `docs/research/win95-brouillard.md`. */
+     * **A consequence that reaches beyond this decoder**: the fog factor takes
+     * up the vertex alpha. Anything that would like to store something else
+     * there conflicts with it — see the note in
+     * `docs/research/win95-fog.md`. */
     {
-        const unsigned m1a = (mode_l >> 30) & 3u;   /* source de couleur */
-        const unsigned m1b = (mode_l >> 26) & 3u;   /* facteur alpha */
+        const unsigned m1a = (mode_l >> 30) & 3u;   /* colour source */
+        const unsigned m1b = (mode_l >> 26) & 3u;   /* alpha factor */
         out->fog = (unsigned char)(m1a == 3u && m1b == 2u);
     }
 }
 
-/* --- Forme canonique -------------------------------------------------------- *
+/* --- Canonical form --------------------------------------------------------- *
  *
- * Une clé de 64 bits. Les seize champs y sont rangés à des positions fixes,
- * sans compression : deux configurations différentes ne peuvent pas collisionner,
- * et l'on peut relire une clé à la main quand il le faut.
+ * A 64-bit key. The sixteen fields are laid out at fixed positions, with no
+ * compression: two different configurations cannot collide, and a key can be
+ * read back by hand when it has to be.
  *
  *   bits  0..3   rgb0.a      bits 32..35  rgb1.a
  *   bits  4..8   rgb0.c      bits 36..40  rgb1.c
@@ -129,12 +130,12 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
  *   bits 19..21  a0.b        bits 51..53  a1.b
  *   bits 22..24  a0.c        bits 54..56  a1.c
  *   bits 25..27  a0.d        bits 57..59  a1.d
- *   bits 28..29  le mode de cycle
+ *   bits 28..29  the cycle mode
  *
- * **Le mode de cycle en fait partie**, et ce n'est pas un détail : le même mot
- * de combineur en un cycle et en deux ne produit pas la même image, le second
- * étage n'étant pas évalué dans le premier cas. Les confondre donnerait une
- * table de correspondance qui rend la mauvaise image sans jamais se plaindre.
+ * **The cycle mode is part of it**, and that is not a detail: the same combiner
+ * word in one cycle and in two does not produce the same image, the second stage
+ * not being evaluated in the first case. Conflating them would give a mapping
+ * table that renders the wrong image without ever complaining.
  */
 unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
                                         dkr_cycle_type cycle)
@@ -164,23 +165,22 @@ unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
     return k;
 }
 
-/* --- Les configurations répertoriées ---------------------------------------- *
+/* --- The catalogued configurations ------------------------------------------ *
  *
- * Cette table est **importée** de l'inventaire du portage natif voisin, et pas
- * encore vérifiée sur ce portage. La distinction est importante et le ticket la
- * pose : « l'inventaire est un point de départ solide, pas une vérité
- * importée ».
+ * This table is **imported** from the neighbouring native port's inventory, and
+ * not yet verified on this port. The distinction matters and the ticket makes
+ * it: "the inventory is a solid starting point, not an imported truth".
  *
- * Elle ne peut d'ailleurs pas être vérifiée ici par la même méthode. Le voisin
- * l'a dérivée des **sources C de la décomposition**, en résolvant les macros
- * `G_CC_*` des tables de réglages ; ce portage-ci n'a pas ces sources — il
- * travaille depuis du MIPS recompilé. Son équivalent est l'instrumentation à
- * l'exécution, qui demande une partie complète, donc la ROM.
+ * Nor can it be verified here by the same method. The neighbour derived it from
+ * the **decompilation's C sources**, resolving the `G_CC_*` macros of the setup
+ * tables; this port does not have those sources — it works from recompiled MIPS.
+ * Its equivalent is run-time instrumentation, which needs a complete race, hence
+ * the ROM.
  *
- * D'ici là, `dkr_rdp_combiner_name` rend `NULL` pour tout ce qu'elle ne connaît
- * pas, et c'est ce signalement qui compte : une configuration manquée ne se voit
- * pas au décodage mais à l'écran, sous forme d'une surface d'une couleur
- * inattendue, éventuellement dans un seul niveau.
+ * Until then, `dkr_rdp_combiner_name` returns `NULL` for everything it does not
+ * know, and it is that signal which counts: a missed configuration is invisible
+ * at decode time but visible on screen, as a surface in an unexpected colour,
+ * possibly in a single level.
  */
 typedef struct {
     const char        *name;
@@ -189,40 +189,40 @@ typedef struct {
     int                texel_count;
 } known_combiner;
 
-/* Les entrées sont écrites sous la forme `(a, b, c, d)` du RDP, dans l'ordre où
-   `gDPSetCombineLERP` les prend. Seules les configurations dont l'inventaire
-   voisin donne la composition exacte figurent ici ; les autres attendent la
-   vérification à l'exécution plutôt que d'être devinées. */
+/* The entries are written in the RDP's `(a, b, c, d)` form, in the order
+   `gDPSetCombineLERP` takes them. Only the configurations whose exact
+   composition the neighbouring inventory gives appear here; the others wait for
+   run-time verification rather than being guessed. */
 static const known_combiner KNOWN[] = {
-    /* G_CC_SHADE : (0, 0, 0, SHADE), alpha (0, 0, 0, SHADE) */
+    /* G_CC_SHADE: (0, 0, 0, SHADE), alpha (0, 0, 0, SHADE) */
     { "G_CC_SHADE",
       { 0, 0, 0, 4 }, { 0, 0, 0, 4 }, { 0, 0, 0, 4 }, { 0, 0, 0, 4 },
       DKR_CYCLE_1, 0 },
-    /* G_CC_PRIMITIVE : (0, 0, 0, PRIMITIVE) */
+    /* G_CC_PRIMITIVE: (0, 0, 0, PRIMITIVE) */
     { "G_CC_PRIMITIVE",
       { 0, 0, 0, 3 }, { 0, 0, 0, 3 }, { 0, 0, 0, 3 }, { 0, 0, 0, 3 },
       DKR_CYCLE_1, 0 },
-    /* G_CC_ENVIRONMENT : (0, 0, 0, ENVIRONMENT) */
+    /* G_CC_ENVIRONMENT: (0, 0, 0, ENVIRONMENT) */
     { "G_CC_ENVIRONMENT",
       { 0, 0, 0, 5 }, { 0, 0, 0, 5 }, { 0, 0, 0, 5 }, { 0, 0, 0, 5 },
       DKR_CYCLE_1, 0 },
-    /* G_CC_DECALRGB : (0, 0, 0, TEXEL0), alpha (0, 0, 0, SHADE) */
+    /* G_CC_DECALRGB: (0, 0, 0, TEXEL0), alpha (0, 0, 0, SHADE) */
     { "G_CC_DECALRGB",
       { 0, 0, 0, 1 }, { 0, 0, 0, 4 }, { 0, 0, 0, 1 }, { 0, 0, 0, 4 },
       DKR_CYCLE_1, 1 },
-    /* G_CC_DECALRGBA : (0, 0, 0, TEXEL0), alpha (0, 0, 0, TEXEL0) */
+    /* G_CC_DECALRGBA: (0, 0, 0, TEXEL0), alpha (0, 0, 0, TEXEL0) */
     { "G_CC_DECALRGBA",
       { 0, 0, 0, 1 }, { 0, 0, 0, 1 }, { 0, 0, 0, 1 }, { 0, 0, 0, 1 },
       DKR_CYCLE_1, 1 },
-    /* G_CC_MODULATEIA : (TEXEL0, 0, SHADE, 0), alpha (TEXEL0, 0, SHADE, 0) */
+    /* G_CC_MODULATEIA: (TEXEL0, 0, SHADE, 0), alpha (TEXEL0, 0, SHADE, 0) */
     { "G_CC_MODULATEIA",
       { 1, 0, 4, 0 }, { 1, 0, 4, 0 }, { 1, 0, 4, 0 }, { 1, 0, 4, 0 },
       DKR_CYCLE_1, 1 },
-    /* G_CC_MODULATEIDECALA : (TEXEL0, 0, SHADE, 0), alpha (0, 0, 0, TEXEL0) */
+    /* G_CC_MODULATEIDECALA: (TEXEL0, 0, SHADE, 0), alpha (0, 0, 0, TEXEL0) */
     { "G_CC_MODULATEIDECALA",
       { 1, 0, 4, 0 }, { 0, 0, 0, 1 }, { 1, 0, 4, 0 }, { 0, 0, 0, 1 },
       DKR_CYCLE_1, 1 },
-    /* G_CC_MODULATERGBA : identique a MODULATEIA pour le RGB. */
+    /* G_CC_MODULATERGBA: identical to MODULATEIA for RGB. */
     { "G_CC_MODULATERGBA",
       { 1, 0, 4, 0 }, { 1, 0, 4, 0 }, { 1, 0, 4, 0 }, { 1, 0, 4, 0 },
       DKR_CYCLE_2, 1 },
@@ -270,9 +270,9 @@ int dkr_rdp_known_at(int index, unsigned long long *key, const char **name,
     return 1;
 }
 
-/* --- Traduction vers l'état abstrait ---------------------------------------- */
+/* --- Translation to the abstract state -------------------------------------- */
 
-/* Un étage lit-il un texel, et lequel ? */
+/* Does a stage read a texel, and which one? */
 static int stage_reads(const dkr_cc_stage *s, unsigned char input)
 {
     return s->a == input || s->b == input || s->c == input || s->d == input;
@@ -297,9 +297,9 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
                   stage_reads(&rdp->combiner.rgb[1], DKR_CC_SHADE);
 
     if (uses_texel0 && uses_shade) {
-        /* L'alpha vient-il du texel ou du shading ? La distinction décide de la
-           transparence des découpes, et se tromper donne des bords francs là où
-           le jeu attend un dégradé. */
+        /* Does alpha come from the texel or from shading? The distinction
+           decides the transparency of cut-outs, and getting it wrong gives hard
+           edges where the game expects a gradient. */
         const int alpha_from_texel =
             stage_reads(&rdp->combiner.alpha[0], DKR_CC_TEXEL0) ||
             stage_reads(&rdp->combiner.alpha[1], DKR_CC_TEXEL0);
@@ -311,12 +311,12 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
         out->combine = DKR_COMBINE_SHADE;
     }
 
-    /* **Ce que l'interface ne sait pas dire.** Deux texels demandent deux TMU ou
-       une seconde passe (E05-S04) ; un second étage arbitraire n'a pas
-       d'équivalent dans les quatre modes de E04-S01. On rend le mode le plus
-       proche et l'on **prévient**, parce qu'une traduction approchée qui ne
-       s'annonce pas produit une image plausible et fausse — le pire des
-       résultats pour un portage dont l'oracle est l'image. */
+    /* **What the interface cannot express.** Two texels need two TMUs or a
+       second pass (E05-S04); an arbitrary second stage has no equivalent among
+       E04-S01's four modes. We return the nearest mode and **give warning**,
+       because an approximate translation that does not announce itself produces
+       a plausible, wrong image — the worst outcome for a port whose oracle is
+       the image. */
     if (uses_texel1) {
         faithful = 0;
     }
@@ -329,38 +329,38 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
                                               : DKR_DEPTH_TEST_ONLY)
                               : DKR_DEPTH_DISABLED;
     out->alpha_test      = (unsigned char)(rdp->alpha_compare != 0);
-    out->alpha_reference = 128;      /* le seuil réel vient de G_SETPRIMCOLOR */
+    out->alpha_reference = 128;      /* the real threshold comes from G_SETPRIMCOLOR */
     out->fog_enabled     = rdp->fog;
-    /* --- Le mélange, dérivé du mélangeur au lieu d'être supposé -------------- *
+    /* --- Blending, derived from the blender instead of assumed -------------- *
      *
-     * Cette ligne valait `DKR_BLEND_ALPHA` **sans condition**. Le mot de
-     * mélangeur était décodé dans `rdp->render_mode` juste au-dessus, et jamais
-     * consulté : toutes les surfaces du jeu étaient donc mélangées, y compris
-     * les opaques, ce qui rend l'image invisible dès qu'un alpha manque.
+     * This line used to be `DKR_BLEND_ALPHA` **unconditionally**. The blender
+     * word was decoded into `rdp->render_mode` just above, and never consulted:
+     * every surface in the game was therefore blended, opaque ones included,
+     * which makes the image invisible as soon as an alpha is missing.
      *
-     * Le défaut est resté caché tant que la profondeur était inactive — sans
-     * test, chaque triangle recouvrait le précédent et l'on voyait le dernier.
-     * Il s'est manifesté au moment où `G_RDPSETOTHERMODE` a été branché, ce qui
-     * en a fait un symptôme de ce correctif-là. Deux défauts dont l'un masque
-     * l'autre, et c'est le second qu'on accuse.
+     * The defect stayed hidden as long as depth was inactive — with no test,
+     * each triangle covered the previous one and the last one showed. It came
+     * out at the moment `G_RDPSETOTHERMODE` was wired up, which made it look
+     * like a symptom of that fix. Two defects, one masking the other, and it is
+     * the second one that gets blamed.
      *
-     * `FORCE_BL` — bit 14 du mot bas — est ce qui distingue une surface
-     * réellement mélangée d'une surface opaque : le RDP l'exige pour que le
-     * mélangeur agisse au second cycle. `G_RM_OPA_SURF` ne le porte pas,
-     * `G_RM_XLU_SURF` et `G_RM_AA_ZB_XLU_SURF` le portent.
+     * `FORCE_BL` — bit 14 of the low word — is what distinguishes a genuinely
+     * blended surface from an opaque one: the RDP requires it for the blender to
+     * act on the second cycle. `G_RM_OPA_SURF` does not carry it,
+     * `G_RM_XLU_SURF` and `G_RM_AA_ZB_XLU_SURF` do.
      *
-     * Le facteur `B` du second cycle départage ensuite les deux mélanges que ce
-     * portage sait faire : `G_BL_1MA` (valeur 0) est le mélange alpha
-     * classique ; le reste est ramené à l'additif, faute de mieux, et cette
-     * approximation est signalée par `faithful`.
+     * The second cycle's `B` factor then separates the two blends this port can
+     * do: `G_BL_1MA` (value 0) is classic alpha blending; the rest is reduced to
+     * additive for want of anything better, and that approximation is reported
+     * through `faithful`.
      *
-     * **Les positions tiennent compte du décalage de trois.** `render_mode` est
-     * le mot bas décalé de 3 — voir son affectation plus haut — donc `FORCE_BL`,
-     * qui est le bit 14 du mot complet, se trouve ici au bit 11, et le champ
-     * `B` du second cycle, bits 16 et 17 du mot complet, aux bits 13 et 14.
-     * Écrire les positions du mot complet aurait lu des champs voisins : le
-     * résultat aurait été plausible — un mélange choisi, différent selon les
-     * surfaces — et faux, donc invisible au contrôle. */
+     * **The positions account for the shift of three.** `render_mode` is the low
+     * word shifted by 3 — see its assignment above — so `FORCE_BL`, which is bit
+     * 14 of the full word, sits here at bit 11, and the second cycle's `B`
+     * field, bits 16 and 17 of the full word, at bits 13 and 14. Writing the
+     * full word's positions would have read neighbouring fields: the result
+     * would have been plausible — a chosen blend, differing between surfaces —
+     * and wrong, hence invisible to inspection. */
     {
         const unsigned int force_bl = rdp->render_mode & 0x800u;
         const unsigned int b2 = (rdp->render_mode >> 13) & 3u;
@@ -373,7 +373,7 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
             faithful = 0;
         }
     }
-    out->cull            = DKR_CULL_NONE;   /* porté par le mode géométrique */
+    out->cull            = DKR_CULL_NONE;   /* carried by the geometry mode */
     out->wrap_s = out->wrap_t = DKR_WRAP_REPEAT;
 
     if (exact) {

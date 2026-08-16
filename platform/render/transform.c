@@ -1,4 +1,4 @@
-/* E04-S03 — mise en œuvre. Le contrat est dans `transform.h`. */
+/* E04-S03 — implementation. The contract lives in `transform.h`. */
 #include "transform.h"
 #include "clip.h"
 
@@ -25,14 +25,14 @@ int dkr_matrix_from_fixed(const unsigned char *data, dkr_matrix *out)
     for (i = 0; i < 4; i++) {
         for (j = 0; j < 4; j++) {
             const int k = i * 4 + j;
-            /* Les deux moitiés sont à 32 octets d'écart, et l'élément se
-               recompose en un entier 32 bits **signé** :
-               `(entier << 16) | fraction`, divisé par 65536.
+            /* The two halves sit 32 bytes apart, and the element recomposes
+               into a **signed** 32-bit integer:
+               `(integer << 16) | fraction`, divided by 65536.
              *
-               Écrire `entier + fraction / 65536.0` donne le même résultat — la
-               décomposition en complément à deux est exacte — mais **traiter la
-               fraction comme signée ne le donnerait pas**. C'est l'erreur que
-               l'épreuve cherche. */
+               Writing `integer + fraction / 65536.0` gives the same result —
+               the two's-complement decomposition is exact — but **treating the
+               fraction as signed would not**. That is the mistake the test is
+               looking for. */
             const short          hi = read_s16_be(data + k * 2);
             const unsigned short lo = read_u16_be(data + 32 + k * 2);
             const int combined = (int)(((unsigned int)(unsigned short)hi << 16) |
@@ -43,7 +43,7 @@ int dkr_matrix_from_fixed(const unsigned char *data, dkr_matrix *out)
     return 1;
 }
 
-/* --- La pile ---------------------------------------------------------------- */
+/* --- The stack -------------------------------------------------------------- */
 
 static void identity(dkr_matrix *m)
 {
@@ -66,9 +66,9 @@ void dkr_transform_init(dkr_transform *t)
     identity(&t->projection);
     identity(&t->mvp);
     t->mvp_valid = 1;
-    /* Une fenêtre plausible par défaut : 640x480, origine au centre. Elle sera
-       remplacée par celle du jeu ; l'avoir non nulle évite qu'un oubli produise
-       tous les sommets au même point, ce qui ressemble à un bug de matrice. */
+    /* A plausible default window: 640x480, origin at the centre. The game will
+       replace it; keeping it non-zero stops an oversight from collapsing every
+       vertex onto the same point, which looks just like a matrix bug. */
     t->viewport_scale_x = 320.0f;
     t->viewport_scale_y = -240.0f;
     t->viewport_trans_x = 320.0f;
@@ -130,16 +130,16 @@ const dkr_matrix *dkr_transform_mvp(dkr_transform *t)
 {
     if (!t) { return NULL; }
     if (!t->mvp_valid) {
-        /* Le produit n'est recalculé qu'au changement. Sur un Pentium II,
-           soixante-quatre multiplications par sommet plutôt que par matrice
-           serait le genre de dépense qui décide d'un portage. */
+        /* The product is only recomputed when something changes. On a Pentium
+           II, sixty-four multiplications per vertex rather than per matrix
+           would be the kind of expense that decides a port. */
         multiply(&t->slot[t->selected], &t->projection, &t->mvp);
         t->mvp_valid = 1;
     }
     return &t->mvp;
 }
 
-/* --- Le sommet -------------------------------------------------------------- */
+/* --- The vertex ------------------------------------------------------------- */
 
 int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
                          dkr_render_vertex *out)
@@ -164,10 +164,10 @@ int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
         x = cx; y = cy; z = cz; w = cw;
     }
 
-    /* Derrière le plan de projection : on ne divise pas. Le découpage est
-       E04-S05 ; ici on refuse simplement de produire un sommet dont les
-       coordonnées n'auraient aucun sens — et un sommet aberrant qui traverse
-       l'écran est bien plus visible qu'un sommet absent. */
+    /* Behind the projection plane: do not divide. Clipping is E04-S05; here we
+       simply refuse to produce a vertex whose coordinates would mean nothing —
+       and a stray vertex shooting across the screen is far more visible than a
+       missing one. */
     if (w <= 0.0f) {
         return 0;
     }
@@ -177,9 +177,9 @@ int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
     out->y = y * oow * t->viewport_scale_y + t->viewport_trans_y;
     out->z = z * oow;
 
-    /* `oow` est ce que Glide appelle `1/w`, et `ooz` la valeur du tampon de
-       profondeur. Les écrire ici plutôt que plus loin évite la recopie que
-       E04-S01 cherche justement à supprimer. */
+    /* `oow` is what Glide calls `1/w`, and `ooz` the depth-buffer value.
+       Writing them here rather than further down avoids the copy that E04-S01
+       set out to remove in the first place. */
     out->oow = oow;
     out->ooz = out->z;
 
@@ -188,10 +188,9 @@ int dkr_transform_vertex(dkr_transform *t, const dkr_source_vertex *in,
     out->b = (float)in->b;
     out->a = (float)in->a;
 
-    /* Les coordonnées de texture ne viennent pas du sommet — elles arrivent par
-       coin au moment du triangle. On les laisse à zéro plutôt que d'inventer :
-       une valeur plausible masquerait un triangle qui aurait oublié de les
-       poser. */
+    /* Texture coordinates do not come from the vertex — they arrive per corner
+       when the triangle is emitted. We leave them at zero rather than invent
+       them: a plausible value would hide a triangle that forgot to set them. */
     memset(out->tmu, 0, sizeof(out->tmu));
     out->tmu[0][DKR_TMU_OOW] = oow;
 
