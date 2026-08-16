@@ -1,136 +1,134 @@
-# E05-S01 — Initialisation de Glide, contexte et tampons
+# E05-S01 — Glide initialisation, context and buffers
 
 | | |
 |---|---|
-| **Épic** | E05 — Backend Glide |
-| **Statut** | DONE |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E00-S05, E04-S01, E04-S08 |
-| **Bloque** | E05-S02, E05-S03, E05-S05, E05-S07 |
+| **Epic** | E05 — Glide backend |
+| **Status** | DONE |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E00-S05, E04-S01, E04-S08 |
+| **Blocks** | E05-S02, E05-S03, E05-S05, E05-S07 |
 
-## Contexte
+## Context
 
-Glide est une API de bas niveau, spécifique à 3dfx, sans couche d'abstraction :
-elle expose directement le matériel. C'est une bonne nouvelle pour ce projet — la
-correspondance avec le RDP est plus directe qu'avec Direct3D de l'époque — mais
-cela signifie que chaque détail de configuration compte.
+Glide is a low-level API, specific to 3dfx, with no abstraction layer: it exposes the
+hardware directly. That is good news for this project — the correspondence with the
+RDP is more direct than with the Direct3D of the period — but it means every
+configuration detail counts.
 
-Les points structurants de l'initialisation :
+The structuring points of the initialisation:
 
-- **Le mode d'affichage.** Sur Voodoo 1 et 2, la carte est un accélérateur
-  *passthrough* : elle prend la main en plein écran et n'a pas de mode fenêtré.
-  Banshee et Voodoo 3, en revanche, sont des cartes 2D/3D complètes. Cela change
-  la nature de l'intégration avec la fenêtre Win32 de E06-S01.
-- **Les tampons.** Double ou triple buffering, tampon de profondeur en 16 bits,
-  le tout devant tenir dans la mémoire de tampon d'image de la carte — ce qui, sur
-  une Voodoo 2, limite les résolutions disponibles.
-- **La résolution.** Fixée par l'ADR de E00-S05, avec les résolutions inférieures
-  comme repli si le budget de remplissage ne tient pas.
+- **The display mode.** On Voodoo 1 and 2, the card is a *passthrough* accelerator:
+  it takes over full screen and has no windowed mode. Banshee and Voodoo 3, by
+  contrast, are complete 2D/3D cards. That changes the nature of the integration with
+  E06-S01's Win32 window.
+- **The buffers.** Double or triple buffering, a 16-bit depth buffer, all of it having
+  to fit in the card's frame-buffer memory — which, on a Voodoo 2, limits the
+  resolutions available.
+- **The resolution.** Fixed by E00-S05's ADR, with the lower resolutions as a fallback
+  if the fill budget does not hold.
 
-## Objectif
+## Objective
 
-Livrer `platform/render/glide_backend.{h,cpp}` : l'ouverture du contexte Glide, la
-configuration des tampons, la présentation, et la fermeture propre.
+To deliver `platform/render/glide_backend.{h,cpp}`: opening the Glide context,
+configuring the buffers, presenting, and closing cleanly.
 
-## Périmètre
+## Scope
 
-**Dans :** initialisation, tampons, échange, fermeture, détection de la carte.
+**In:** initialisation, buffers, swap, shutdown, card detection.
 
-**Hors :** textures (E05-S02), combineur (E05-S03), et tout le rendu.
+**Out:** textures (E05-S02), combiner (E05-S03), and all of the rendering.
 
-## Travail
+## Work
 
-1. Se lier à Glide. Décider entre édition de liens statique à l'import et
-   chargement dynamique par `LoadLibrary` : le chargement dynamique permet un
-   message d'erreur explicite quand la carte est absente, plutôt qu'un refus de
-   chargement par l'OS. Vu que le garde-fou de E01-S04 distingue déjà les DLL
-   fournies par un pilote, le chargement dynamique est probablement le bon choix.
-2. Implémenter la détection : présence de la bibliothèque, nombre de cartes,
-   nombre de TMU, mémoire disponible par TMU et pour le tampon d'image. Ces
-   chiffres pilotent E05-S02 et E05-S04 à l'exécution ; ils ne doivent pas être
-   codés en dur.
-3. Ouvrir le contexte à la résolution retenue, avec le format de tampon de
-   profondeur choisi. Vérifier que la configuration demandée tient dans la mémoire
-   de la carte détectée, et se replier proprement sinon.
-4. Implémenter le cycle d'image : effacement, dessin, échange de tampons. Décider
-   entre échange synchronisé sur le balayage et échange immédiat — le premier
-   évite le déchirement, le second évite de perdre une image entière quand on rate
-   l'échéance, ce qui compte quand le budget est serré. Cette décision se mesure
-   (E06-S04).
-5. Traduire la fenêtre de ciseaux de E04-S05 vers `grClipWindow`.
-6. Implémenter la fermeture : restitution du mode d'affichage, libération du
-   contexte. Sur une Voodoo passthrough, une fermeture incorrecte laisse l'écran
-   dans un état inutilisable et impose un redémarrage — c'est un défaut très
-   pénalisant en phase de mise au point, où les arrêts anormaux sont fréquents.
-7. Traiter l'arrêt anormal : installer un gestionnaire qui restitue l'affichage
-   même en cas de plantage.
-8. Afficher un triangle. C'est le premier pixel Glide du projet, et il vaut
-   plusieurs jours de lecture de documentation.
+1. Link against Glide. Decide between static import linking and dynamic loading
+   through `LoadLibrary`: dynamic loading allows an explicit error message when the
+   card is absent, rather than a load refusal by the OS. Given that E01-S04's guard
+   rail already distinguishes DLLs supplied by a driver, dynamic loading is probably
+   the right choice.
+2. Implement detection: presence of the library, number of cards, number of TMUs,
+   memory available per TMU and for the frame buffer. Those figures drive E05-S02 and
+   E05-S04 at run time; they must not be hard-coded.
+3. Open the context at the retained resolution, with the chosen depth-buffer format.
+   Check that the requested configuration fits in the detected card's memory, and fall
+   back cleanly otherwise.
+4. Implement the frame cycle: clear, draw, buffer swap. Decide between a swap
+   synchronised on the scan and an immediate swap — the first avoids tearing, the
+   second avoids losing a whole frame when the deadline is missed, which counts when
+   the budget is tight. That decision is measured (E06-S04).
+5. Translate E04-S05's scissor window into `grClipWindow`.
+6. Implement shutdown: restoring the display mode, releasing the context. On a
+   passthrough Voodoo, an incorrect shutdown leaves the screen in an unusable state
+   and forces a reboot — a very penalising defect during debugging, where abnormal
+   stops are frequent.
+7. Deal with the abnormal stop: install a handler that restores the display even in
+   the event of a crash.
+8. Display a triangle. It is the project's first Glide pixel, and it is worth several
+   days of reading documentation.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] La détection rapporte carte, nombre de TMU et mémoires disponibles —
-      relevé sur la machine : 1 carte, 2 TMU, 2048 Ko d'image, 2048 Ko par TMU.
-- [x] L'absence de carte produit un message clair, pas un refus de chargement par
-      l'OS — **exercé** en retirant la Voodoo de la configuration de l'émulateur,
-      puis en la remettant, configuration restaurée octet pour octet. Le chemin
-      propre est atteint et `DKR_GLIDE_ERR_NO_BOARD` remonte.
-      Mais la mesure a révélé mieux que ce que le critère demandait : **Glide
-      affiche sa propre boîte modale anglaise pendant le `LoadLibrary`**, avant
-      que notre code ne voie quoi que ce soit. Le registre ne permet pas de la
-      devancer — les relevés avec et sans carte sont identiques, et une Voodoo 1
-      qui n'a jamais existé y figure comme la carte présente. Le texte d'erreur
-      rattache donc explicitement la boîte qui le précède.
-      Voir `docs/research/win95-glide-no-card.md`.
-- [~] Le contexte s'ouvre à la résolution de l'ADR — 640×480, double tampon,
-      profondeur — **le repli reste non vérifié** : 86Box ne propose pas de
-      Voodoo assez pauvre pour faire échouer 640×480, et la mémoire a toujours
-      suffi. Le calcul est écrit et relu, il n'est pas éprouvé. Le
-      budget est calculé plutôt que deviné, pour que l'échec dise « 640×480 ne
-      tient pas dans 2 Mo » au lieu d'un refus muet.
-- [x] Un triangle coloré s'affiche sous Windows 95 sur la cible, **et l'image a
-      été relue**. `grLfbLock` contourne l'obstacle de la Voodoo passthrough, dont
-      la sortie n'apparaît dans aucune capture de l'émulateur : 75264 pixels
-      peints sur 307200, soit exactement l'aire analytique du triangle
-      (½ × 448 × 336). Le centre est rouge-dominant, ce qui est la bonne réponse
-      et non l'évidente — le centre de l'écran n'est pas le centre de gravité du
-      triangle. L'image entière est ramenée en BMP.
-- [x] Le cycle d'image tourne à cadence stable — 100 images en 1573 ms, soit
-      63 images/s, échange synchronisé sur le balayage. Cela montre que le cycle
-      n'est pas le goulot à charge triviale, et rien du taux de remplissage réel.
-- [x] La fermeture restitue l'affichage, y compris après un arrêt anormal —
-      éprouvé dans les deux sens, le mode « crash » du témoin déréférençant un
-      pointeur nul contexte ouvert. Le bureau revient avant la boîte du filtre.
-- [x] La fenêtre de ciseaux fonctionne, mesurée plutôt que constatée : un
-      triangle symétrique de 112000 pixels, restreint à la moitié droite, en
-      garde 55960 sur 56000. Les 40 manquants sont la colonne frontière comptée
-      une fois — la fenêtre de Glide est donc incluse à gauche et exclue à droite,
-      ce que `backend.h` supposait sans l'avoir vérifié. `dkr_scissor_for_player`
-      de E04-S05 fournit les rectangles.
-- [x] La couche implémente `dkr_render_backend` de E04-S01 : mélange, profondeur,
-      ciseaux, test alpha et brouillard sont traduits, et **les huit modes sans
-      texture sont confirmés par relecture du tampon d'image**. Les textures
-      restent à E05-S02/E05-S03, et `texture_upload` rend zéro plutôt qu'un
-      handle bidon. Voir `docs/research/win95-glide-states.md`.
-- [x] Aucune capacité matérielle n'est codée en dur — TMU et mémoires viennent de
-      `grSstQueryHardware`, et le repli de résolution du budget calculé.
+- [x] Detection reports the card, the number of TMUs and the memories available —
+      recorded on the machine: 1 card, 2 TMUs, 2048 KB of frame buffer, 2048 KB per
+      TMU.
+- [x] The absence of a card produces a clear message, not a load refusal by the OS —
+      **exercised** by removing the Voodoo from the emulator's configuration, then
+      putting it back, the configuration restored byte for byte. The clean path is
+      reached and `DKR_GLIDE_ERR_NO_BOARD` comes back.
+      But the measurement revealed better than what the criterion asked for: **Glide
+      displays its own modal English box during the `LoadLibrary`**, before our code
+      sees anything at all. The registry does not allow us to get ahead of it — the
+      readings with and without the card are identical, and a Voodoo 1 that never
+      existed figures there as the card present. The error text therefore explicitly
+      ties in the box that precedes it.
+      See `docs/research/win95-glide-no-card.md`.
+- [~] The context opens at the ADR's resolution — 640×480, double buffer, depth — **the
+      fallback stays unverified**: 86Box offers no Voodoo poor enough to make 640×480
+      fail, and the memory has always sufficed. The computation is written and
+      reread, it is not exercised. The budget is computed rather than guessed, so that
+      the failure says "640×480 does not fit in 2 MB" instead of a mute refusal.
+- [x] A coloured triangle is displayed under Windows 95 on the target, **and the image
+      has been read back**. `grLfbLock` gets round the obstacle of the passthrough
+      Voodoo, whose output appears in no capture from the emulator: 75,264 pixels
+      painted out of 307,200, that is exactly the triangle's analytic area
+      (½ × 448 × 336). The centre is red-dominant, which is the right answer and not
+      the obvious one — the centre of the screen is not the triangle's centroid. The
+      whole image is brought back as a BMP.
+- [x] The frame cycle runs at a stable rate — 100 frames in 1573 ms, that is 63
+      frames/s, swap synchronised on the scan. That shows the cycle is not the
+      bottleneck at trivial load, and nothing about the real fill rate.
+- [x] Shutdown restores the display, including after an abnormal stop — exercised in
+      both directions, the witness's "crash" mode dereferencing a null pointer with
+      the context open. The desktop comes back before the filter's box.
+- [x] The scissor window works, measured rather than observed: a symmetric triangle of
+      112,000 pixels, restricted to the right half, keeps 55,960 of 56,000. The 40
+      missing are the boundary column counted once — Glide's window is therefore
+      inclusive on the left and exclusive on the right, which `backend.h` assumed
+      without having checked it. E04-S05's `dkr_scissor_for_player` supplies the
+      rectangles.
+- [x] The layer implements E04-S01's `dkr_render_backend`: blending, depth, scissor,
+      alpha test and fog are translated, and **the eight texture-free modes are
+      confirmed by reading the frame buffer back**. The textures are left to
+      E05-S02/E05-S03, and `texture_upload` returns zero rather than a bogus handle.
+      See `docs/research/win95-glide-states.md`.
+- [x] No hardware capability is hard-coded — TMUs and memories come from
+      `grSstQueryHardware`, and the resolution fallback from the computed budget.
 
-## Risques
+## Risks
 
-Glide n'est plus une API vivante : la documentation officielle est d'époque, et
-les implémentations disponibles sont les sources ouvertes de 3dfx et leurs forks.
-Prévoir du temps de lecture de ces sources — l'écart entre la documentation et le
-comportement réel du pilote sera à trancher par l'expérimentation.
+Glide is no longer a living API: the official documentation is of its period, and the
+implementations available are 3dfx's open sources and their forks. Allow time for
+reading those sources — the gap between the documentation and the driver's real
+behaviour will have to be settled by experiment.
 
-Le développement sous émulateur (E09-S01) est indispensable ici : le cycle
-« modifier, exécuter, redémarrer la machine » sur du matériel réel serait
-insoutenable au rythme où l'on tâtonne à ce stade.
+Development under an emulator (E09-S01) is indispensable here: the "modify, run,
+reboot the machine" cycle on real hardware would be unbearable at the rate we grope
+around at this stage.
 
-## Références
+## References
 
-- [Sources Glide 3dfx](https://sourceforge.net/projects/glide/) ·
+- [3dfx Glide sources](https://sourceforge.net/projects/glide/) ·
   [sezero/glide](https://github.com/sezero/glide) ·
   [hatarch/glide3x](https://github.com/hatarch/glide3x)
-- E00-S05 — cible matérielle et version de Glide
-- E04-S01 — interface à implémenter
+- E00-S05 — hardware target and Glide version
+- E04-S01 — interface to implement

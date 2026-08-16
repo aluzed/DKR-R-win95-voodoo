@@ -1,116 +1,111 @@
-# E05-S08 — Filtrage, enveloppement et niveaux de détail
+# E05-S08 — Filtering, wrapping and levels of detail
 
 | | |
 |---|---|
-| **Épic** | E05 — Backend Glide |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E05-S02, E04-S07 |
-| **Bloque** | — |
+| **Epic** | E05 — Glide backend |
+| **Status** | IN_PROGRESS |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E05-S02, E04-S07 |
+| **Blocks** | — |
 
-## Contexte
+## Context
 
-Les modes d'échantillonnage de texture décident d'une part importante de
-l'apparence, et la N64 comme la Voodoo ont chacune leurs particularités.
+The texture sampling modes decide an important part of the appearance, and the N64 and
+the Voodoo each have their peculiarities.
 
-**Le filtrage.** La N64 pratique un filtrage à trois points, sur un triangle de
-texels, là où la Voodoo fait un filtrage bilinéaire classique sur quatre. La
-différence est réelle et visible sur les textures de faible résolution — c'est-à-dire
-sur la plupart de celles de DKR, dont la mémoire de texture de la console était
-très limitée. Le rendu ne sera pas identique, et il faut décider quoi en faire.
+**Filtering.** The N64 practises a three-point filter, over a triangle of texels, where
+the Voodoo does a classic bilinear filter over four. The difference is real and visible
+on low-resolution textures — that is, on most of DKR's, the console's texture memory
+having been very limited. The rendering will not be identical, and we have to decide
+what to do about it.
 
-**L'enveloppement.** La N64 propose l'enveloppement, le bornage et le miroir, ce
-dernier étant très utilisé pour économiser de la mémoire de texture. Glide propose
-les mêmes modes, avec des contraintes de dimensions.
+**Wrapping.** The N64 offers wrap, clamp and mirror, the last being much used to save
+texture memory. Glide offers the same modes, with dimension constraints.
 
-**Les niveaux de détail.** DKR utilise-t-il des mipmaps ? À vérifier plutôt qu'à
-supposer. S'ils sont utilisés, ils consomment un tiers de mémoire de texture en
-plus, ce qui pèse sur le budget de E05-S02 ; s'ils ne le sont pas, les textures
-lointaines scintilleront, exactement comme sur la console.
+**Levels of detail.** Does DKR use mipmaps? To be checked rather than assumed. If they
+are used, they consume a third more texture memory, which weighs on E05-S02's budget;
+if they are not, distant textures will shimmer, exactly as on the console.
 
-## Objectif
+## Objective
 
-Régler les modes d'échantillonnage pour approcher le rendu de la N64 aussi près
-que la carte le permet, en connaissant et en documentant les écarts.
+To set the sampling modes so as to approach the N64's rendering as closely as the card
+allows, knowing and documenting the differences.
 
-## Périmètre
+## Scope
 
-**Dans :** filtrage, enveloppement, miroir, bornage, niveaux de détail.
+**In:** filtering, wrapping, mirroring, clamping, levels of detail.
 
-**Hors :** le décodage des textures (E04-S07) et leur allocation (E05-S02).
+**Out:** decoding the textures (E04-S07) and allocating them (E05-S02).
 
-## Travail
+## Work
 
-1. Déterminer si DKR utilise des mipmaps, par examen de l'état RDP relevé en
-   E04-S06. Si oui, chiffrer leur coût en mémoire de texture et le remonter à
-   E05-S02.
-2. Implémenter enveloppement, bornage et miroir, et vérifier que le miroir
-   fonctionne pour toutes les tailles de texture utilisées.
-3. Régler le filtrage. Comparer le filtrage bilinéaire de Glide au filtrage à trois
-   points de la N64 sur des textures de faible résolution, et décider : accepter la
-   différence, ou proposer un filtrage au plus proche voisin en option pour un
-   rendu plus proche de la console sur certains éléments.
-4. Traiter l'interface séparément. Les éléments 2D sont souvent mieux rendus sans
-   filtrage — le filtrage rend le texte flou. Vérifier quel mode le jeu demande
-   pour ces éléments et le respecter (E05-S07).
-5. Mesurer le coût de chaque mode. Le filtrage bilinéaire est gratuit sur Voodoo ;
-   le trilinéaire, s'il est utilisé, ne l'est pas et consomme une TMU, ce qui entre
-   en conflit avec le multitexturage de E05-S04.
-6. Documenter les écarts assumés dans `docs/RENDER-DIFFERENCES.md` : ce qui ne
-   ressemblera pas à la console, et pourquoi.
-7. Vérifier visuellement sur des surfaces qui révèlent ces réglages : une route
-   vue en oblique, une texture répétée en miroir, du texte d'interface.
+1. Determine whether DKR uses mipmaps, by examining the RDP state surveyed in E04-S06.
+   If so, quantify their cost in texture memory and report it to E05-S02.
+2. Implement wrap, clamp and mirror, and check that mirroring works for every texture
+   size used.
+3. Set the filtering. Compare Glide's bilinear filter against the N64's three-point
+   filter on low-resolution textures, and decide: accept the difference, or offer
+   nearest-neighbour filtering as an option for a rendering closer to the console on
+   certain elements.
+4. Deal with the interface separately. 2D elements are often better rendered without
+   filtering — filtering makes text blurry. Check which mode the game asks for on those
+   elements and respect it (E05-S07).
+5. Measure the cost of each mode. Bilinear filtering is free on the Voodoo; trilinear,
+   if it is used, is not and consumes a TMU, which conflicts with E05-S04's
+   multitexturing.
+6. Document the accepted differences in `docs/RENDER-DIFFERENCES.md`: what will not
+   look like the console, and why.
+7. Check visually on surfaces that reveal these settings: a road seen obliquely, a
+   texture repeated in mirror, interface text.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] Déterminé depuis la source, sans ambiguïté : **DKR n'emploie pas de
-      mipmaps**. `G_TL_TILE` apparaît quinze fois, `G_TL_LOD` aucune. Le tiers de
-      mémoire de texture supplémentaire que le ticket redoutait pour E05-S02
-      n'existe pas, et les textures lointaines scintilleront exactement comme sur
-      la console — ce qui est consigné dans `RENDER-DIFFERENCES.md` précisément
-      parce que c'est le genre de chose qu'on prend pour un défaut du portage.
-- [x] Enveloppement et bornage vérifiés sur la carte pour les sept tailles de 4
-      à 256 : trois répétitions en enveloppement, une seule en bornage, dans tous
-      les cas.
-      **Le miroir n'est pas vérifié parce que DKR ne l'emploie pas** — le ticket
-      le décrit comme « très utilisé pour économiser de la mémoire de texture »,
-      et la source n'en contient pas une seule occurrence. Dix-huit `G_TX_WRAP`,
-      seize `G_TX_NOMIRROR`, quatre `G_TX_CLAMP`.
-- [~] L'écart est documenté dans `RENDER-DIFFERENCES.md` : filtrage à trois
-      points contre bilinéaire à quatre, irréductible parce qu'inexprimable avec
-      les modes de Glide. **La comparaison visuelle elle-même demande la ROM** —
-      l'écart se juge sur les textures du jeu, pas sur une mire.
-      Le mode point à point reste disponible, et le jeu le demande déjà pour 30
-      entrées de table sur 214 : ces surfaces seront identiques à la console.
-- [x] Le mode vient de l'état de rendu décodé et non d'un choix du backend ;
-      `DKR_OMH_1CYC_POINT` et `DKR_OMH_2CYC_POINT` totalisent 30 entrées de table
-      et donnent bien du point à point. E05-S07 a vérifié qu'en point à point
-      l'alignement est exact au texel.
-- [~] Mesuré : 1538 ms au point contre 1662 ms en bilinéaire sur cent images.
-      **Ce sont exactement les deux mêmes valeurs que la mesure du brouillard**,
-      ce qui confirme que la mesure est quantifiée par l'échange de tampons et ne
-      résout pas un coût inférieur à une période de balayage. Le bilinéaire ne
-      coûte donc rien de mesurable ici, conformément à ce que le ticket annonce.
-      Le conflit avec E05-S04 est identifié et **n'a pas lieu** : il ne
-      surviendrait qu'avec le filtrage trilinéaire, qui consomme une TMU, et le
-      trilinéaire suppose des mipmaps que DKR n'emploie pas.
-- [x] `docs/RENDER-DIFFERENCES.md` est écrit : six écarts, chacun disant ce qui
-      diffère, pourquoi c'est irréductible, et ce que cela donne à l'écran. Un
-      écart documenté est une caractéristique connue du portage ; le même écart
-      non documenté sera signalé comme un défaut à chaque comparaison.
+- [x] Determined from the source, unambiguously: **DKR does not use mipmaps**.
+      `G_TL_TILE` appears fifteen times, `G_TL_LOD` none. The extra third of texture
+      memory the ticket feared for E05-S02 does not exist, and distant textures will
+      shimmer exactly as on the console — which is recorded in `RENDER-DIFFERENCES.md`
+      precisely because it is the kind of thing taken for a defect of the port.
+- [x] Wrap and clamp verified on the card for the seven sizes from 4 to 256: three
+      repetitions when wrapping, a single one when clamping, in every case.
+      **Mirroring is not verified because DKR does not use it** — the ticket describes
+      it as "much used to save texture memory", and the source contains not a single
+      occurrence of it. Eighteen `G_TX_WRAP`, sixteen `G_TX_NOMIRROR`, four
+      `G_TX_CLAMP`.
+- [~] The difference is documented in `RENDER-DIFFERENCES.md`: three-point filtering
+      against bilinear over four, irreducible because inexpressible with Glide's modes.
+      **The visual comparison itself requires the ROM** — the difference is judged on
+      the game's textures, not on a test pattern.
+      Point sampling stays available, and the game already asks for it in 30 table
+      entries out of 214: those surfaces will be identical to the console.
+- [x] The mode comes from the decoded render state and not from a backend choice;
+      `DKR_OMH_1CYC_POINT` and `DKR_OMH_2CYC_POINT` total 30 table entries and do give
+      point sampling. E05-S07 verified that in point sampling the alignment is exact to
+      the texel.
+- [~] Measured: 1538 ms at point against 1662 ms in bilinear over a hundred frames.
+      **They are exactly the same two values as the fog measurement**, which confirms
+      that the measurement is quantised by the buffer swap and does not resolve a cost
+      below one scan period. Bilinear therefore costs nothing measurable here, in
+      accordance with what the ticket announces.
+      The conflict with E05-S04 is identified and **does not occur**: it would arise
+      only with trilinear filtering, which consumes a TMU, and trilinear presupposes
+      mipmaps that DKR does not use.
+- [x] `docs/RENDER-DIFFERENCES.md` is written: six differences, each saying what
+      differs, why it is irreducible, and what it gives on screen. A documented
+      difference is a known characteristic of the port; the same difference undocumented
+      will be reported as a defect at every comparison.
 
-> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-available.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+> **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
-## Risques
+## Risks
 
-Le filtrage à trois points de la N64 ne peut pas être reproduit exactement sur
-Voodoo. C'est une différence irréductible, et elle doit être annoncée plutôt que
-subie : si elle est documentée, c'est une caractéristique connue du portage ; si
-elle ne l'est pas, elle sera signalée comme un défaut à chaque comparaison.
+The N64's three-point filter cannot be reproduced exactly on the Voodoo. It is an
+irreducible difference, and it must be announced rather than endured: if it is
+documented, it is a known characteristic of the port; if it is not, it will be reported
+as a defect at every comparison.
 
-## Références
+## References
 
-- E04-S06 — modes de texture dans l'inventaire RDP
-- E05-S02 — budget de mémoire de texture, impacté par les mipmaps
-- E05-S04 — conflit potentiel sur l'usage des TMU
+- E04-S06 — texture modes in the RDP inventory
+- E05-S02 — texture memory budget, impacted by mipmaps
+- E05-S04 — potential conflict over TMU usage

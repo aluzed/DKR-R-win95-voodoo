@@ -1,137 +1,132 @@
-# E05-S03 — Traduction du combineur de couleurs N64 vers Glide
+# E05-S03 — Translating the N64 colour combiner to Glide
 
 | | |
 |---|---|
-| **Épic** | E05 — Backend Glide |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | XL |
-| **Dépend de** | E04-S06, E05-S01 |
-| **Bloque** | E05-S04, E09-S02 |
+| **Epic** | E05 — Glide backend |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | XL |
+| **Depends on** | E04-S06, E05-S01 |
+| **Blocks** | E05-S04, E09-S02 |
 
-## Contexte
+## Context
 
-C'est le ticket le plus difficile du projet.
+This is the project's hardest ticket.
 
-Le combineur du RDP est une unité **programmable** : pour chaque terme — couleur
-et alpha — il choisit quatre entrées parmi seize sources possibles, et calcule
-`(a - b) × c + d`, sur un ou deux cycles. L'espace des configurations se compte en
-milliers.
+The RDP's combiner is a **programmable** unit: for each term — colour and alpha — it
+chooses four inputs among sixteen possible sources, and computes `(a - b) × c + d`,
+over one or two cycles. The configuration space runs into the thousands.
 
-Le combineur de Glide est **fixe**. `grColorCombine` et `grAlphaCombine` offrent
-une liste close de fonctions et de facteurs, et `grTexCombine` en offre une autre
-pour l'étage de texture. Ce qui n'entre pas dans cette liste doit être obtenu
-autrement : par plusieurs passes de rendu avec mélange, par la seconde TMU, ou par
-une approximation.
+Glide's combiner is **fixed**. `grColorCombine` and `grAlphaCombine` offer a closed
+list of functions and factors, and `grTexCombine` offers another for the texture
+stage. What does not fit in that list has to be obtained otherwise: by several render
+passes with blending, by the second TMU, or by an approximation.
 
-Ce qui rend le problème traitable, c'est qu'il ne s'agit pas de traduire le
-combineur en général. DKR n'utilise que **33 configurations**, inventoriées par le
-portage natif voisin, dont **3 seulement lisent deux texels**
-(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`) — chiffre à
-revérifier par E04-S06 sur ce portage. Trente-trois cas concrets, énumérés, dont
-on connaît la fréquence et la surface d'écran : c'est un problème fini.
+What makes the problem tractable is that it is not a matter of translating the
+combiner in general. DKR uses only **33 configurations**, inventoried by the
+neighbouring native port, of which **only 3 read two texels**
+(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`) — a figure to be
+rechecked by E04-S06 on this port. Thirty-three concrete, enumerated cases, whose
+frequency and screen area are known: it is a finite problem.
 
-## Objectif
+## Objective
 
-Réaliser chacune des configurations de combineur utilisées par DKR, avec un écart
-visuel mesuré et jugé acceptable pour chacune.
+To realise each of the combiner configurations DKR uses, with a visual deviation
+measured and judged acceptable for each.
 
-## Périmètre
+## Scope
 
-**Dans :** la correspondance configuration RDP → réglage Glide, le multipasse, et
-la mesure de l'écart.
+**In:** the RDP configuration → Glide setting mapping, multipass, and measuring the
+deviation.
 
-**Hors :** le multitexturage sur deux TMU (E05-S04) et le brouillard (E05-S06).
+**Out:** multitexturing on two TMUs (E05-S04) and fog (E05-S06).
 
-## Travail
+## Work
 
-1. Partir de l'inventaire de E04-S06, trié par surface d'écran couverte. Traiter
-   dans cet ordre : la configuration qui couvre le plus de pixels est celle dont
-   l'erreur se verra le plus.
-2. Classer chaque configuration en trois catégories :
-   - **exacte** — un réglage Glide produit le même résultat ;
-   - **multipasse** — plusieurs passes avec mélange y parviennent, au prix du
-     budget de remplissage ;
-   - **approchée** — aucune combinaison n'y parvient, et l'écart doit être mesuré
-     puis accepté ou refusé.
-3. Écrire la table de correspondance sous forme de données, indexée par la forme
-   canonique de E04-S06 : une recherche, pas une cascade de conditions. Cela rend
-   la table lisible, testable, et complétable sans toucher au code.
-4. Pour chaque configuration, mesurer l'écart par rapport au rastériseur logiciel
-   de référence (E04-S08), qui implémente le combineur fidèlement. La mesure se
-   fait par différence d'image, pas à l'œil.
-5. Traiter le double cycle, qui correspond à deux étages de combinaison. Selon la
-   configuration, il se résout par la seconde TMU (E05-S04), par une seconde
-   passe, ou par simplification quand le second étage est neutre.
-6. Mesurer le coût du multipasse. Chaque passe supplémentaire double le
-   remplissage de la surface concernée, et le remplissage est précisément ce qui
-   limite une Voodoo 2 en 640 × 480. Une configuration multipasse couvrant un grand
-   nombre de pixels doit être reconsidérée en approchée.
-7. Documenter le résultat dans `docs/research/combiner-mapping.md` : par
-   configuration, la catégorie, le réglage Glide, l'écart mesuré, et le coût.
-8. Journaliser à l'exécution toute configuration absente de la table, avec un
-   rendu de repli visible mais non aberrant.
+1. Start from E04-S06's inventory, sorted by screen area covered. Work in that order:
+   the configuration that covers the most pixels is the one whose error will show the
+   most.
+2. Classify each configuration in three categories:
+   - **exact** — a Glide setting produces the same result;
+   - **multipass** — several passes with blending achieve it, at the price of the fill
+     budget;
+   - **approximate** — no combination achieves it, and the deviation must be measured
+     then accepted or refused.
+3. Write the mapping table as data, indexed by E04-S06's canonical form: a lookup, not
+   a cascade of conditions. That makes the table legible, testable, and completable
+   without touching the code.
+4. For each configuration, measure the deviation from the reference software
+   rasteriser (E04-S08), which implements the combiner faithfully. The measurement is
+   made by image difference, not by eye.
+5. Deal with two-cycle, which corresponds to two combination stages. Depending on the
+   configuration, it is resolved by the second TMU (E05-S04), by a second pass, or by
+   simplification when the second stage is neutral.
+6. Measure the cost of multipass. Each additional pass doubles the fill of the surface
+   concerned, and fill is precisely what limits a Voodoo 2 at 640 × 480. A multipass
+   configuration covering a large number of pixels must be reconsidered as
+   approximate.
+7. Document the result in `docs/research/combiner-mapping.md`: per configuration, the
+   category, the Glide setting, the measured deviation, and the cost.
+8. Log at run time any configuration absent from the table, with a fallback rendering
+   that is visible but not aberrant.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] Les 29 configurations distinctes de l'inventaire sont traitées et classées
-      — 12 exactes, 10 multipasse, 4 approchées, 3 renvoyées à E05-S04. Le ticket
-      annonçait 33 : l'inventaire du portage voisin en dénombre 21 dans les
-      tables plus 12 hors tables, dont plusieurs coïncident.
-- [x] La table est une structure de données indexée par forme canonique, et
-      **engendrée** depuis les définitions de la source du jeu. Vérifiée par
-      propriétés : aucune clé en double — deux entrées de même clé se
-      masqueraient, et une configuration serait rendue par le réglage d'une autre
-      sans qu'aucun message ne le signale.
-- [x] L'écart de chaque configuration est mesuré sur la carte, par relecture du
-      tampon d'image. L'oracle est **la formule** et non un second programme :
-      comparer deux programmes ne fait que déplacer la question de savoir lequel
-      a raison. La scène exclut toute interpolation, de sorte qu'un écart ne
-      puisse venir que du combineur.
-      Le ticket supposait que le rastériseur de E04-S08 implémentait le combineur
-      fidèlement ; **ce n'était pas le cas**, et `dkr_combiner_eval` a dû être
-      écrit pour que ce critère ait un sens.
-- [x] Le double cycle est traité et chaque cas indique sa stratégie. Deux formes
-      se replient — `PASS2` est l'identité, `(COMBINED,0,X,0)` est une mise à
-      l'échelle qui compose — ce qui évite de déclarer multipasse tout second
-      cycle et de doubler le remplissage sur les surfaces les plus courantes.
-- [ ] Le coût de remplissage du multipasse est mesuré — **bloqué par la ROM**.
-      La part multipasse est en revanche bornée et surveillée : une épreuve
-      échoue si elle dépasse la moitié des entrées de table, parce que c'est le
-      remplissage qui limite une Voodoo 2 en 640×480.
-- [~] `docs/research/combiner-mapping.md` documente catégorie, réglage et
-      justification par configuration, ainsi que les valeurs d'énumération
-      mesurées. **Le coût de remplissage du multipasse n'y figure pas** : il
-      demande une scène représentative, donc la ROM.
-- [x] Une configuration inconnue rend NULL à la recherche, et le repli est
-      défini : texture modulée par la couleur du sommet, le comportement le plus
-      fréquent de l'inventaire. Les deux réflexes opposés sont écartés — ne rien
-      dessiner ferait disparaître un décor sans trace, peindre en couleur
-      d'alerte rendrait le jeu injouable au premier combineur oublié.
-- [~] L'écart de chaque approchée est mesuré et rapporté, mais **aucun seuil
-      n'est encore accepté** : la famille `ENV_ALPHA` vient d'être reclassée sur
-      la foi d'une mesure, et une issue non éprouvée subsiste — porter la
-      constante dans l'alpha du sommet, où `LOCAL_ALPHA` irait la chercher.
-      Fixer un seuil avant d'avoir tenté cette issue reviendrait à accepter un
-      écart qu'on sait peut-être évitable.
+- [x] The inventory's 29 distinct configurations are handled and classified — 12
+      exact, 10 multipass, 4 approximate, 3 referred to E05-S04. The ticket announced
+      33: the neighbouring port's inventory counts 21 in the tables plus 12 outside
+      them, several of which coincide.
+- [x] The table is a data structure indexed by canonical form, and **generated** from
+      the definitions in the game's source. Verified by properties: no duplicate key —
+      two entries with the same key would mask each other, and one configuration would
+      be rendered by another's setting with no message to say so.
+- [x] Each configuration's deviation is measured on the card, by reading the frame
+      buffer back. The oracle is **the formula** and not a second program: comparing
+      two programs merely displaces the question of which one is right. The scene
+      excludes all interpolation, so that a deviation can only come from the combiner.
+      The ticket assumed E04-S08's rasteriser implemented the combiner faithfully;
+      **that was not the case**, and `dkr_combiner_eval` had to be written for this
+      criterion to have any meaning.
+- [x] Two-cycle is handled and each case states its strategy. Two forms fall back —
+      `PASS2` is the identity, `(COMBINED,0,X,0)` is a scaling that composes — which
+      avoids declaring every second cycle multipass and doubling the fill on the most
+      common surfaces.
+- [ ] The multipass fill cost is measured — **blocked by the ROM**. The multipass
+      share is, on the other hand, bounded and watched: a check fails if it exceeds
+      half the table's entries, because it is fill that limits a Voodoo 2 at 640×480.
+- [~] `docs/research/combiner-mapping.md` documents category, setting and
+      justification per configuration, as well as the measured enumeration values.
+      **The multipass fill cost does not appear there**: it requires a representative
+      scene, hence the ROM.
+- [x] An unknown configuration returns NULL from the lookup, and the fallback is
+      defined: texture modulated by the vertex colour, the inventory's most frequent
+      behaviour. The two opposite reflexes are set aside — drawing nothing would make
+      a piece of scenery disappear without a trace, painting in an alert colour would
+      make the game unplayable at the first forgotten combiner.
+- [~] Each approximate configuration's deviation is measured and reported, but **no
+      threshold is accepted yet**: the `ENV_ALPHA` family has just been reclassified on
+      the strength of a measurement, and one untried way out remains — carrying the
+      constant in the vertex alpha, where `LOCAL_ALPHA` would go and fetch it. Setting
+      a threshold before having tried that way out would amount to accepting a
+      deviation we know may be avoidable.
 
-> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-available.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+> **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
-## Risques
+## Risks
 
-C'est le ticket qui peut déraper. La tentation sera de traiter les 33
-configurations une par une jusqu'à ce que « ça ressemble », sans mesure. L'écart
-visuel se cumule alors silencieusement, et le rendu final est diffusément faux
-sans qu'aucune erreur ne soit imputable.
+This is the ticket that can go off the rails. The temptation will be to work through
+the 33 configurations one by one until "it looks about right", with no measurement.
+The visual deviation then accumulates silently, and the final rendering is diffusely
+wrong without any error being attributable.
 
-La discipline de mesure contre E04-S08 n'est pas une formalité : c'est ce qui
-transforme ce ticket d'un travail d'appréciation en un travail vérifiable. C'est
-aussi pourquoi E04-S08 est un prérequis et non un confort.
+The discipline of measuring against E04-S08 is not a formality: it is what turns this
+ticket from a work of appreciation into a verifiable one. It is also why E04-S08 is a
+prerequisite and not a comfort.
 
-## Références
+## References
 
 - `../../Diddy-Kong-Racing/docs/research/combiner-inventory.md` — 33 configurations
-- E04-S06 — inventaire revérifié et forme canonique
-- E04-S08 — oracle de comparaison
-- [Sources Glide 3dfx](https://sourceforge.net/projects/glide/) —
+- E04-S06 — rechecked inventory and canonical form
+- E04-S08 — comparison oracle
+- [3dfx Glide sources](https://sourceforge.net/projects/glide/) —
   `grColorCombine`, `grAlphaCombine`, `grTexCombine`

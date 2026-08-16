@@ -1,112 +1,104 @@
-# E05-S04 — Multitexturage sur deux TMU
+# E05-S04 — Multitexturing on two TMUs
 
 | | |
 |---|---|
-| **Épic** | E05 — Backend Glide |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E05-S02, E05-S03 |
-| **Bloque** | E08-S01 |
+| **Epic** | E05 — Glide backend |
+| **Status** | IN_PROGRESS |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E05-S02, E05-S03 |
+| **Blocks** | E08-S01 |
 
-## Contexte
+## Context
 
-Trois des configurations de combineur utilisées par DKR lisent **deux texels**
-(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`). Sur une carte à
-une seule TMU, elles imposent deux passes de rendu. Sur une Voodoo 2, qui en a
-deux, elles se font en une seule passe : `grTexCombine` chaîne la sortie de la
-TMU 1 vers la TMU 0.
+Three of the combiner configurations DKR uses read **two texels**
+(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`). On a card with a
+single TMU, they impose two render passes. On a Voodoo 2, which has two, they are done
+in a single pass: `grTexCombine` chains TMU 1's output into TMU 0.
 
-Trois configurations sur trente-trois, cela paraît anecdotique. Ça ne l'est pas :
-il faut regarder la **surface d'écran** qu'elles couvrent, pas leur nombre. Les
-combinaisons à deux texels servent typiquement au mélange de textures de terrain
-et aux effets de surface — c'est-à-dire à de grandes étendues de pixels. E04-S06
-fournit ce chiffre, et c'est lui qui décide de la priorité de ce ticket.
+Three configurations out of thirty-three seems anecdotal. It is not: what has to be
+looked at is the **screen area** they cover, not their number. Two-texel combinations
+typically serve for blending terrain textures and for surface effects — that is, for
+large expanses of pixels. E04-S06 supplies that figure, and it is what decides this
+ticket's priority.
 
-Ce ticket est aussi ce qui rend le repli sur une TMU acceptable : le rendu doit
-rester correct sur Voodoo 1 ou Banshee, en deux passes, même si la cible
-recommandée en a deux.
+This ticket is also what makes the fallback to one TMU acceptable: the rendering must
+stay correct on a Voodoo 1 or a Banshee, in two passes, even though the recommended
+target has two.
 
-## Objectif
+## Objective
 
-Réaliser les configurations à deux texels en une seule passe sur deux TMU, avec un
-repli multipasse correct sur une TMU.
+To realise the two-texel configurations in a single pass on two TMUs, with a correct
+multipass fallback on one TMU.
 
-## Périmètre
+## Scope
 
-**Dans :** le chaînage des TMU, le placement des textures, le repli.
+**In:** chaining the TMUs, placing the textures, the fallback.
 
-**Hors :** la traduction générale du combineur (E05-S03).
+**Out:** the general translation of the combiner (E05-S03).
 
-## Travail
+## Work
 
-1. Mesurer la surface d'écran couverte par les configurations à deux texels, à
-   partir de l'inventaire de E04-S06. Ce chiffre est le seul juge de la priorité
-   de ce ticket.
-2. Implémenter le chaînage : la TMU 1 échantillonne, sa sortie devient une entrée
-   de la TMU 0, dont la sortie alimente le combineur de couleurs.
-3. Étendre l'allocateur de E05-S02 : une texture destinée à la TMU 1 doit y être
-   résidente. Deux espaces, donc, et une politique de placement qui évite de
-   dupliquer inutilement une texture sur les deux unités — la mémoire est la
-   ressource rare.
-4. Implémenter le repli à une TMU en deux passes, et vérifier qu'il produit le
-   même résultat visuel que la passe unique à deux TMU. Comparer par différence
-   d'image, pas à l'œil.
-5. Sélectionner le chemin à l'exécution selon le nombre de TMU détecté en E05-S01.
-   Aucune capacité codée en dur.
-6. Mesurer le gain : temps par image sur une scène représentative, une passe
-   contre deux.
-7. Vérifier la cohérence des coordonnées de texture entre les deux unités. Chaque
-   TMU a son propre jeu de coordonnées dans le vertex Glide, et une erreur ici
-   produit un décalage entre les deux couches — visible, et facile à confondre avec
-   un problème de combineur.
+1. Measure the screen area covered by the two-texel configurations, from E04-S06's
+   inventory. That figure is the only judge of this ticket's priority.
+2. Implement the chaining: TMU 1 samples, its output becomes an input of TMU 0, whose
+   output feeds the colour combiner.
+3. Extend E05-S02's allocator: a texture intended for TMU 1 must be resident there.
+   Two spaces, then, and a placement policy that avoids needlessly duplicating a
+   texture on both units — memory is the scarce resource.
+4. Implement the one-TMU fallback in two passes, and check that it produces the same
+   visual result as the single two-TMU pass. Compare by image difference, not by eye.
+5. Select the path at run time according to the number of TMUs detected in E05-S01. No
+   hard-coded capability.
+6. Measure the gain: time per frame on a representative scene, one pass against two.
+7. Check the consistency of the texture coordinates between the two units. Each TMU has
+   its own set of coordinates in the Glide vertex, and an error here produces an offset
+   between the two layers — visible, and easy to confuse with a combiner problem.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [~] Le **poids** des configurations à deux texels est relevé : 34 entrées de
-      table sur 214, soit 15 %, et la plus lourde du jeu entier
-      (`G_CC_BLENDTEX_PRIM`, 32 entrées) en fait partie. Ce n'est pas
-      anecdotique. La **surface d'écran** réelle, elle, demande une mesure à
-      l'exécution, donc la ROM.
-- [x] Le chaînage fonctionne en une passe sur deux TMU, vérifié par relecture :
-      `DECAL`, `OTHER` et `ADD` produisent chacun l'image attendue. Les valeurs
-      d'énumération sont **mesurées** — `OTHER` vaut 3 et `ADD` vaut 4, décalées
-      d'un cran par rapport à ce qui avait été écrit de mémoire.
-- [x] Le repli à une TMU produit une image **strictement identique** : 0 pixel
-      différent sur 307200, vérifié par différence et non à l'œil.
-- [x] L'allocateur gère les deux espaces : `dkr_texture_desc` porte la TMU
-      visée, et `bind_texture` lie sur l'unité où la texture réside — lier une
-      adresse de la TMU 1 sur la TMU 0 ne provoque aucune erreur, la TMU 0
-      échantillonnant ce qui traîne à cette adresse chez elle. Vérifié : chaque
-      unité occupe exactement 8192 octets après un chargement.
-      La duplication n'a lieu que dans le repli, où elle est le prix à payer —
-      et c'est une raison de plus pour que le repli ne soit pas le défaut.
-- [x] Le chemin est choisi à l'exécution par `dkr_glide_backend_tmu_count`, qui
-      lit la détection de E05-S01 — et le forçage d'épreuve. Aucune capacité
-      codée en dur.
-- [~] Mesuré : 1552 ms en une passe contre 1662 ms en deux, sur cent images,
-      soit 7 % de surcoût. **Ce chiffre demande une réserve** : à 64 images par
-      seconde l'échange est synchronisé sur le balayage et la carte attend, donc
-      une passe de plus se glisse dans un temps mort. Sept pour cent est le coût
-      du repli sur une scène qui ne sature pas le remplissage, pas le coût du
-      multipasse en général. Le mesurer sur une scène représentative demande la
-      ROM.
-- [x] Les coordonnées des deux unités sont cohérentes, vérifiées sur deux motifs
-      complémentaires additionnés : 0 pixel non couvert sur 307200, et chaque
-      moitié vient bien d'une unité différente. Ce second contrôle n'est pas
-      redondant — la première version du témoin comptait zéro pixel noir sur un
-      écran entièrement blanc, et réussissait sans rien établir.
+- [~] The **weight** of the two-texel configurations is recorded: 34 table entries out
+      of 214, that is 15 %, and the heaviest of the whole game
+      (`G_CC_BLENDTEX_PRIM`, 32 entries) is one of them. That is not anecdotal. The
+      real **screen area**, on the other hand, requires a measurement at run time,
+      hence the ROM.
+- [x] The chaining works in one pass on two TMUs, verified by reading back: `DECAL`,
+      `OTHER` and `ADD` each produce the expected image. The enumeration values are
+      **measured** — `OTHER` is 3 and `ADD` is 4, shifted by one from what had been
+      written from memory.
+- [x] The one-TMU fallback produces a **strictly identical** image: 0 pixels different
+      out of 307,200, verified by difference and not by eye.
+- [x] The allocator manages both spaces: `dkr_texture_desc` carries the TMU aimed at,
+      and `bind_texture` binds on the unit where the texture resides — binding a TMU 1
+      address on TMU 0 causes no error, TMU 0 sampling whatever is lying at that
+      address in its own memory. Verified: each unit occupies exactly 8192 bytes after
+      a load.
+      Duplication happens only in the fallback, where it is the price to pay — and
+      that is one more reason for the fallback not to be the default.
+- [x] The path is chosen at run time by `dkr_glide_backend_tmu_count`, which reads
+      E05-S01's detection — and the test override. No hard-coded capability.
+- [~] Measured: 1552 ms in one pass against 1662 ms in two, over a hundred frames,
+      that is 7 % of overhead. **That figure calls for a reservation**: at 64 frames
+      per second the swap is synchronised on the scan and the card waits, so one more
+      pass slips into dead time. Seven per cent is the cost of the fallback on a scene
+      that does not saturate fill, not the cost of multipass in general. Measuring it
+      on a representative scene requires the ROM.
+- [x] The two units' coordinates are consistent, verified on two complementary patterns
+      added together: 0 pixels uncovered out of 307,200, and each half does come from a
+      different unit. That second check is not redundant — the witness's first version
+      counted zero black pixels on an entirely white screen, and passed without
+      establishing anything.
 
-## Risques
+## Risks
 
-Le repli à une TMU est facile à écrire et facile à ne jamais tester, faute de
-matériel à une seule TMU sous la main. Il doit être testable par configuration —
-un réglage qui force le chemin multipasse même sur une carte à deux TMU — sans
-quoi il ne sera vérifié qu'après une remontée d'utilisateur.
+The one-TMU fallback is easy to write and easy never to test, for want of single-TMU
+hardware to hand. It must be testable by configuration — a setting that forces the
+multipass path even on a two-TMU card — failing which it will only be checked after a
+user reports it.
 
-## Références
+## References
 
-- `../../Diddy-Kong-Racing/docs/research/combiner-inventory.md` — 3 configurations
-  à deux texels
-- E05-S02 — allocateur, à étendre aux deux espaces
-- E05-S03 — table de correspondance
+- `../../Diddy-Kong-Racing/docs/research/combiner-inventory.md` — 3 two-texel
+  configurations
+- E05-S02 — allocator, to be extended to the two spaces
+- E05-S03 — mapping table
