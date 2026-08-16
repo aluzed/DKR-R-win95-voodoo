@@ -1,14 +1,14 @@
-/* E01-S05 — cale pour `miniz`, qui attend un en-tete genere par CMake.
+/* E01-S05 - shim for `miniz`, which expects a CMake-generated header.
  *
- * `miniz.h` inclut `miniz_export.h`, que le CMake de miniz fabrique a la
- * configuration pour decider des attributs d'export d'une bibliotheque
- * partagee. La cible Windows 95 ne construit pas miniz par son CMake : elle
- * compile `librecomp` directement, et tout y est statique (ADR 0001).
+ * `miniz.h` includes `miniz_export.h`, which miniz's CMake produces at
+ * configure time to decide the export attributes of a shared library. The
+ * Windows 95 target does not build miniz through its CMake: it compiles
+ * `librecomp` directly, and everything there is static (ADR 0001).
  *
- * Les deux macros sont donc vides, ce qui est exactement ce que le CMake de
- * miniz produit pour une bibliotheque statique. Ce fichier n'est pas un
- * contournement d'une limite de Windows 95 — c'est une piece manquante du
- * chemin de construction, au meme titre que la cale de casse de `Windows.h`.
+ * Both macros are therefore empty, which is exactly what miniz's CMake produces
+ * for a static library. This file is not a workaround for a Windows 95
+ * limitation - it is a missing piece of the build path, just like the `Windows.h`
+ * case shim.
  */
 #ifndef MINIZ_EXPORT_H
 #define MINIZ_EXPORT_H

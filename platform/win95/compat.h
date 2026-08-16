@@ -1,16 +1,15 @@
-/* E01-S03 — couche de compatibilite d'API Windows 95.
+/* E01-S03 - Windows 95 API compatibility layer.
  *
- * Ce fichier n'a pas besoin d'etre inclus pour que la couche agisse : les
- * fonctions manquantes sont fournies au lieur, et redirigees vers nos
- * implementations par les pointeurs `__imp__X@n`. Le reste du projet ne s'en
- * apercoit pas, ce qui est le but — aucun autre ticket ne doit avoir a s'en
- * preoccuper.
+ * This file does not need to be included for the layer to act: the missing
+ * functions are supplied to the linker, and redirected to our implementations
+ * through the `__imp__X@n` pointers. The rest of the project does not notice,
+ * which is the point - no other ticket should have to care.
  *
- * Il expose ce qui doit etre testable ou appelable explicitement.
+ * It exposes what has to be testable or explicitly callable.
  *
- * La semantique perdue par chaque contournement est ecrite dans
- * `docs/WIN95-COMPAT.md`. Un contournement dont la difference n'est pas ecrite
- * est un bogue en attente.
+ * The semantics lost by each workaround is written down in
+ * `docs/WIN95-COMPAT.md`. A workaround whose difference is not written down is a
+ * bug waiting to happen.
  */
 #ifndef DKR_WIN95_COMPAT_H
 #define DKR_WIN95_COMPAT_H
@@ -19,42 +18,42 @@
 extern "C" {
 #endif
 
-/* --- API que la couche fournit et que les en-tetes masquent --------------- *
+/* --- APIs the layer supplies and the headers hide ------------------------- *
  *
- * La toolchain pose `_WIN32_WINNT=0x0400` pour qu'une API posterieure a
- * Windows 95 echoue a la compilation plutot qu'au chargement (E01-S01). Le
- * garde ne fait pas de difference entre une API qu'on utiliserait par
- * inadvertance et une que cette couche fournit : il masque les deux.
+ * The toolchain sets `_WIN32_WINNT=0x0400` so that an API later than Windows 95
+ * fails at compile time rather than at load time (E01-S01). The guard does not
+ * tell an API we might use by accident from one this layer supplies: it hides
+ * both.
  *
- * Il faut donc redeclarer ce que nous implementons. La declaration est
- * conditionnee a la valeur du garde, pour ne pas entrer en conflit sur une
- * cible ou l'en-tete du systeme la fournit deja.
+ * We therefore have to redeclare what we implement. The declaration is
+ * conditioned on the guard's value, so as not to conflict on a target where the
+ * system header already provides it.
  *
- * Les trois autres — `IsDebuggerPresent`, `SetProcessAffinityMask` et
- * `TryEnterCriticalSection` — sont declarees sans garde par mingw, malgre leur
- * absence de Windows 95 : rien a redeclarer pour elles.
+ * The other three - `IsDebuggerPresent`, `SetProcessAffinityMask` and
+ * `TryEnterCriticalSection` - are declared unguarded by mingw, despite being
+ * absent from Windows 95: nothing to redeclare for them.
  */
 #if defined(_WIN32) && (!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600)
 __declspec(dllimport) unsigned long long __stdcall GetTickCount64(void);
 #endif
 
-/* --- Horloge monotone 64 bits -------------------------------------------- *
+/* --- 64-bit monotonic clock ---------------------------------------------- *
  *
- * `GetTickCount` revient a zero apres 49,7 jours. Le cas ne se rencontre jamais
- * en test et se rencontre chez un joueur qui laisse sa machine allumee — c'est
- * exactement le genre de defaut qu'on ne trouve pas en le cherchant.
+ * `GetTickCount` returns to zero after 49.7 days. The case is never met in
+ * testing and is met at a player who leaves their machine on - exactly the kind
+ * of defect one does not find by looking for it.
  *
- * La logique d'accumulation est isolee ici sous forme de fonction pure, de sorte
- * que le passage a zero puisse etre simule dans un test au lieu d'etre attendu
- * pendant sept semaines.
+ * The accumulation logic is isolated here as a pure function, so that the
+ * wraparound can be simulated in a test instead of being waited out for seven
+ * weeks.
  */
 typedef struct {
-    unsigned long high;   /* nombre de rebouclages observes */
-    unsigned long last;   /* derniere valeur 32 bits vue */
+    unsigned long high;   /* number of wraparounds observed */
+    unsigned long last;   /* last 32-bit value seen */
 } dkr_tick64_state;
 
-/* Avance l'etat avec une lecture 32 bits et rend le compteur 64 bits.
-   `now32` est ce que `GetTickCount` a renvoye. */
+/* Advances the state with a 32-bit reading and returns the 64-bit counter.
+   `now32` is what `GetTickCount` returned. */
 unsigned long long dkr_tick64_step(dkr_tick64_state *state, unsigned long now32);
 
 #ifdef __cplusplus

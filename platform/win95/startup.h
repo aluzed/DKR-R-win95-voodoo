@@ -1,22 +1,20 @@
-/* E01-S03 — demarrage de la cible Windows 95.
+/* E01-S03 - startup for the Windows 95 target.
  *
- * A appeler en premiere ligne de `main`. Trois choses que personne d'autre ne
- * fera, et dont l'absence coute cher :
+ * To be called on the first line of `main`. Three things nobody else will do,
+ * and whose absence is expensive:
  *
- *  1. Un **journal de demarrage dans un fichier**. Il n'y a pas de console
- *     utilisable sur la machine cible : un jeu plein ecran qui meurt avant son
- *     premier affichage ne laisse rien a lire. Le journal est ecrit a cote de
- *     l'executable et vide a chaque ligne, de sorte que la derniere ligne
- *     survive au plantage qui l'a interrompue.
+ *  1. A **startup log in a file**. There is no usable console on the target
+ *     machine: a full-screen game that dies before its first display leaves
+ *     nothing to read. The log is written next to the executable and flushed on
+ *     every line, so that the last line survives the crash that interrupted it.
  *
- *  2. Un **filtre d'exceptions structurees**. Sans lui, une instruction
- *     invalide ou un acces fautif produit une boite de dialogue de Windows 95
- *     qui ne nomme rien d'exploitable. Avec lui, le code et l'adresse partent
- *     dans le journal.
+ *  2. A **structured exception filter**. Without it, an invalid instruction or a
+ *     faulty access produces a Windows 95 dialog box that names nothing usable.
+ *     With it, the code and the address go into the log.
  *
- *  3. Un **controle de version**. Le plancher retenu est Windows 95
- *     (ADR 0002) ; refuser proprement vaut mieux que planter sur une API
- *     absente, et infiniment mieux que de planter au hasard plus tard.
+ *  3. A **version check**. The floor chosen is Windows 95 (ADR 0002); refusing
+ *     cleanly beats crashing on a missing API, and beats crashing at random
+ *     later by a very wide margin.
  */
 #ifndef DKR_WIN95_STARTUP_H
 #define DKR_WIN95_STARTUP_H
@@ -25,63 +23,60 @@
 extern "C" {
 #endif
 
-/* Codes de retour, pour que `main` puisse rendre autre chose que 1. */
+/* Return codes, so that `main` can return something other than 1. */
 enum {
     DKR_WIN95_STARTUP_OK          = 0,
-    DKR_WIN95_STARTUP_TOO_OLD     = 2,   /* systeme anterieur au plancher */
-    DKR_WIN95_STARTUP_NO_LOG      = 3    /* journal impossible a ouvrir */
+    DKR_WIN95_STARTUP_TOO_OLD     = 2,   /* system older than the floor */
+    DKR_WIN95_STARTUP_NO_LOG      = 3    /* log impossible to open */
 };
 
-/* Prepare le journal, le filtre d'exceptions et verifie la version du systeme.
-   Renvoie DKR_WIN95_STARTUP_OK, ou un code d'erreur apres avoir affiche un
-   message comprehensible. `app_name` apparait dans le journal et les boites de
-   dialogue. */
+/* Prepares the log and the exception filter, and checks the system version.
+   Returns DKR_WIN95_STARTUP_OK, or an error code after showing a comprehensible
+   message. `app_name` appears in the log and in the dialog boxes. */
 int dkr_win95_startup(const char *app_name);
 
-/* Ecrit une ligne dans le journal de demarrage. Sans effet avant
-   `dkr_win95_startup`. Le fichier est vide apres chaque ligne : une ligne ecrite
-   est une ligne qui survivra au plantage suivant. */
+/* Writes one line to the startup log. No effect before `dkr_win95_startup`. The
+   file is flushed after every line: a written line is a line that will survive
+   the next crash. */
 void dkr_win95_log(const char *message);
 
-/* Idem, avec un entier a la suite — de quoi tracer un code d'erreur sans
-   embarquer de printf. */
+/* Likewise, with an integer appended - enough to trace an error code without
+   pulling in printf. */
 void dkr_win95_log_num(const char *message, long value);
 
-/* Ferme le journal. Facultatif : le systeme le fera. */
+/* Closes the log. Optional: the system will do it. */
 void dkr_win95_shutdown(void);
 
-/* --- Nettoyages a executer meme sur un arret anormal ---------------------- *
+/* --- Cleanups to run even on an abnormal exit ----------------------------- *
  *
- * Certains reglages survivent au processus qui les a poses, et les laisser en
- * place degrade la machine jusqu'au redemarrage. `timeBeginPeriod` de E02-S03
- * en est un ; le mode plein ecran de Glide en sera un autre (E05).
+ * Some settings outlive the process that made them, and leaving them in place
+ * degrades the machine until reboot. E02-S03's `timeBeginPeriod` is one; Glide's
+ * full-screen mode will be another (E05).
  *
- * Le systeme ne les defait pas. Il faut donc les defaire soi-meme, y compris
- * quand on meurt sur une exception — c'est-a-dire depuis le filtre installe par
+ * The system does not undo them. They therefore have to be undone by hand,
+ * including when we die on an exception - that is, from the filter installed by
  * `dkr_win95_startup`.
  *
- * Le sens de la dependance est ce qui impose ce registre plutot qu'un appel
- * direct : `startup.c` est la couche du bas, et ne peut pas connaitre l'horloge
- * sans que tout temoin qui se contente du journal ne traine `winmm` avec lui.
- * C'est donc l'horloge qui s'annonce.
+ * The direction of the dependency is what forces this registry rather than a
+ * direct call: `startup.c` is the bottom layer, and cannot know about the clock
+ * without every witness that merely wants the log dragging `winmm` along with
+ * it. So it is the clock that announces itself.
  *
- * Contraintes du contexte, parce qu'un nettoyage appele depuis un filtre
- * d'exception s'execute dans un processus deja abime : la fonction ne doit rien
- * allouer, ne rien attendre, et supporter d'etre appelee alors que son propre
- * sous-systeme est a moitie detruit. Le registre est donc de taille fixe, sans
- * allocation.
+ * Constraints of the context, because a cleanup called from an exception filter
+ * runs inside an already damaged process: the function must allocate nothing,
+ * wait for nothing, and tolerate being called while its own subsystem is half
+ * destroyed. The registry is therefore fixed in size, with no allocation.
  *
- * Rend 1 si le nettoyage a ete enregistre, 0 si le registre est plein. */
+ * Returns 1 if the cleanup was registered, 0 if the registry is full. */
 typedef void (*dkr_win95_cleanup_fn)(void);
 
 #define DKR_WIN95_MAX_CLEANUPS 8
 
 int  dkr_win95_at_abnormal_exit(dkr_win95_cleanup_fn cleanup);
 
-/* Execute les nettoyages enregistres, dans l'ordre inverse de leur
-   enregistrement, et une seule fois quel que soit le nombre d'appels. Appelee
-   par le filtre d'exceptions ; a appeler aussi depuis tout autre chemin d'arret
-   brutal — `dkr_threading_fatal` le fait. */
+/* Runs the registered cleanups, in reverse order of registration, and once only
+   however many times it is called. Called by the exception filter; to be called
+   as well from any other abrupt-exit path - `dkr_threading_fatal` does. */
 void dkr_win95_run_cleanups(void);
 
 #ifdef __cplusplus

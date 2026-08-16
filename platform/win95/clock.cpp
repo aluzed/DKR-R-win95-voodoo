@@ -1,13 +1,13 @@
-/* E02-S03 — base de temps monotone pour Windows 95.
+/* E02-S03 - monotonic time base for Windows 95.
  *
- * Le contrat, les mesures qui l'ont dicte et ce qui differe de ce que le ticket
- * supposait sont dans `clock.h` et `docs/research/win95-clock.md`. Ce fichier
- * ne contient que la mise en oeuvre.
+ * The contract, the measurements that dictated it and what differs from what the
+ * ticket assumed are in `clock.h` and `docs/research/win95-clock.md`. This file
+ * contains only the implementation.
  *
- * Comme `threading.cpp`, il porte deux implementations : Windows, la cible, et
- * un vehicule POSIX qui n'existe que pour faire tourner la meme suite de tests
- * sur l'hote. La conversion vers le compteur du VR4300 et l'accumulation des
- * 32 bits, elles, sont communes — ce sont des fonctions pures.
+ * Like `threading.cpp`, it carries two implementations: Windows, the target, and
+ * a POSIX vehicle that exists only to run the same test suite on the host. The
+ * conversion to the VR4300 counter and the 32-bit accumulation are shared - they
+ * are pure functions.
  */
 #include "clock.h"
 #include "compat.h"
@@ -15,7 +15,7 @@
 #include <stddef.h>
 
 /* ========================================================================== *
- * Commun : la conversion vers le compteur du VR4300
+ * Shared: the conversion to the VR4300 counter
  * ========================================================================== */
 
 unsigned long long dkr_clock_ticks_to_vr4300(unsigned long long ticks,
@@ -26,10 +26,10 @@ unsigned long long dkr_clock_ticks_to_vr4300(unsigned long long ticks,
     if (frequency == 0) {
         return 0;
     }
-    /* `ticks * 46875000` deborderait au-dela d'environ 46 heures. On separe le
-       quotient du reste : `remainder` est plus petit que `frequency`, donc son
-       produit par 46 875 000 tient dans 64 bits avec une marge enorme tant que
-       la frequence reste sous 393 GHz. */
+    /* `ticks * 46875000` would overflow beyond about 46 hours. We separate the
+       quotient from the remainder: `remainder` is smaller than `frequency`, so
+       its product by 46,875,000 fits in 64 bits with an enormous margin as long
+       as the frequency stays under 393 GHz. */
     whole     = ticks / frequency;
     remainder = ticks % frequency;
 
@@ -41,7 +41,7 @@ unsigned long long dkr_clock_ticks_to_vr4300(unsigned long long ticks,
 #if defined(_WIN32)
 
 /* ========================================================================== *
- * Windows — la cible
+ * Windows - the target
  * ========================================================================== */
 
 #include <windows.h>
@@ -54,10 +54,10 @@ static unsigned long long clock_frequency = 0;
 static unsigned long long clock_origin    = 0;
 static int                period_begun    = 0;
 
-/* Le seul geste qui doit survivre a un arret anormal. Isole de
-   `dkr_clock_shutdown` parce qu'un nettoyage appele depuis un filtre
-   d'exception doit faire le strict minimum : pas d'etat a remettre a zero, pas
-   d'allocation, rien qui puisse bloquer. */
+/* The only action that must survive an abnormal exit. Kept apart from
+   `dkr_clock_shutdown` because a cleanup called from an exception filter must do
+   the strict minimum: no state to reset, no allocation, nothing that could
+   block. */
 static void dkr_clock_release_period(void)
 {
     if (period_begun) {
@@ -66,17 +66,16 @@ static void dkr_clock_release_period(void)
     }
 }
 
-/* Etat d'accumulation du repli 32 bits. Voir `tick64.c` : meme raisonnement,
-   meme fonction, un seul exemplaire. */
+/* Accumulation state for the 32-bit fallback. See `tick64.c`: same reasoning,
+   same function, a single copy. */
 static dkr_tick64_state   timegettime_state = { 0, 0 };
 
 /* --- Validation ------------------------------------------------------------ *
  *
- * Une source ne se retient pas parce qu'elle repond, mais parce qu'elle se
- * comporte. On lui demande donc de ne jamais reculer sur un echantillonnage
- * serre. C'est bon marche — quelques milliers de lectures — et cela ecarte au
- * lancement une source dont le defaut se manifesterait autrement en cours de
- * partie, sous la forme d'un chronometre qui saute.
+ * A source is not chosen because it answers, but because it behaves. So we ask
+ * it never to step backwards over a tight sampling. It is cheap - a few thousand
+ * readings - and it discards at startup a source whose defect would otherwise
+ * show up mid-game, as a timer that jumps.
  */
 #define VALIDATION_SAMPLES 4096
 
@@ -96,7 +95,7 @@ static int qpc_is_sane(unsigned long long *frequency_out)
             return 0;
         }
         if (now.QuadPart < previous.QuadPart) {
-            return 0;                       /* un recul suffit a la disqualifier */
+            return 0;                       /* one backstep disqualifies it */
         }
         previous = now;
     }
@@ -113,7 +112,7 @@ static unsigned long long qpc_raw(void)
 
 static unsigned long long timegettime_raw(void)
 {
-    /* 32 bits, rebouclage a 49,7 jours, accumule par la fonction de E01-S03. */
+    /* 32 bits, wraps at 49.7 days, accumulated by E01-S03's function. */
     return dkr_tick64_step(&timegettime_state, (unsigned long)timeGetTime());
 }
 
@@ -122,19 +121,19 @@ int dkr_clock_init(void)
     unsigned long long frequency = 0;
 
     if (clock_source != DKR_CLOCK_SOURCE_NONE) {
-        return 1;                           /* deja en service */
+        return 1;                           /* already in service */
     }
 
-    /* `timeBeginPeriod(1)` d'abord, parce que le repli en depend et parce que
-       la mesure sur la cible montre qu'il ne coute rien. Sur cette machine il
-       ne change rien non plus — `timeGetTime` rend deja la milliseconde — mais
-       rien ne garantit qu'il en aille de meme ailleurs. */
+    /* `timeBeginPeriod(1)` first, because the fallback depends on it and because
+       measurement on the target shows it costs nothing. On this machine it
+       changes nothing either - `timeGetTime` already returns the millisecond -
+       but nothing guarantees it will be so elsewhere. */
     if (timeBeginPeriod(1) == TIMERR_NOERROR) {
         period_begun = 1;
-        /* Un `timeBeginPeriod` laisse en place degrade tout le systeme jusqu'au
-           redemarrage, et survit donc au processus. Il ne suffit pas de le
-           relacher a l'arret normal : on s'annonce aupres du filtre
-           d'exceptions, pour qu'il soit defait meme si l'on meurt. */
+        /* A `timeBeginPeriod` left in place degrades the whole system until
+           reboot, and therefore outlives the process. Releasing it on a normal
+           exit is not enough: we announce ourselves to the exception filter, so
+           that it is undone even if we die. */
         dkr_win95_at_abnormal_exit(&dkr_clock_release_period);
     }
 
@@ -143,11 +142,11 @@ int dkr_clock_init(void)
         clock_frequency = frequency;
         clock_origin    = qpc_raw();
     } else {
-        /* Le repli n'est pas un pis-aller silencieux : il est nomme dans le
-           journal, parce qu'une partie qui tourne sur une horloge a la
-           milliseconde plutot qu'a la microseconde se comporte differemment et
-           qu'il faut pouvoir le savoir sans deviner. */
-        dkr_win95_log("horloge : QueryPerformanceCounter ecartee, repli timeGetTime");
+        /* The fallback is not a silent makeshift: it is named in the log,
+           because a session running on a millisecond clock rather than a
+           microsecond one behaves differently and that has to be knowable
+           without guessing. */
+        dkr_win95_log("clock: QueryPerformanceCounter discarded, timeGetTime fallback");
         clock_source    = DKR_CLOCK_SOURCE_TIMEGETTIME;
         clock_frequency = 1000;
         timegettime_state.high = 0;
@@ -155,15 +154,15 @@ int dkr_clock_init(void)
         clock_origin    = timegettime_raw();
     }
 
-    dkr_win95_log_num("horloge : frequence (Hz)", (long)clock_frequency);
+    dkr_win95_log_num("clock: frequency (Hz)", (long)clock_frequency);
     return 1;
 }
 
 void dkr_clock_shutdown(void)
 {
-    /* Sous Windows 9x, un `timeBeginPeriod` laisse en place degrade tout le
-       systeme jusqu'au redemarrage — y compris apres la fin du processus. Le
-       relacher n'est donc pas une politesse. */
+    /* Under Windows 9x, a `timeBeginPeriod` left in place degrades the whole
+       system until reboot - including after the process has ended. Releasing it
+       is therefore not a courtesy. */
     dkr_clock_release_period();
     clock_source    = DKR_CLOCK_SOURCE_NONE;
     clock_frequency = 0;
@@ -184,7 +183,7 @@ unsigned long long dkr_clock_now(void)
 #else
 
 /* ========================================================================== *
- * POSIX — vehicule de test, pas une plate-forme supportee
+ * POSIX - a test vehicle, not a supported platform
  * ========================================================================== */
 
 #include <time.h>
@@ -206,7 +205,7 @@ int dkr_clock_init(void)
     if (clock_source != DKR_CLOCK_SOURCE_NONE) {
         return 1;
     }
-    clock_source    = DKR_CLOCK_SOURCE_QPC;   /* l'equivalent le plus proche */
+    clock_source    = DKR_CLOCK_SOURCE_QPC;   /* the closest equivalent */
     clock_frequency = 1000000000ULL;
     clock_origin    = monotonic_ns();
     return 1;
@@ -230,7 +229,7 @@ unsigned long long dkr_clock_now(void)
 
 
 /* ========================================================================== *
- * Commun : ce qui se deduit de `dkr_clock_now`
+ * Shared: what follows from `dkr_clock_now`
  * ========================================================================== */
 
 dkr_clock_source dkr_clock_source_in_use(void) { return clock_source; }
@@ -241,7 +240,7 @@ const char *dkr_clock_source_name(void)
     switch (clock_source) {
     case DKR_CLOCK_SOURCE_QPC:         return "QueryPerformanceCounter";
     case DKR_CLOCK_SOURCE_TIMEGETTIME: return "timeGetTime";
-    default:                           return "aucune";
+    default:                           return "none";
     }
 }
 
@@ -251,8 +250,8 @@ unsigned long long dkr_clock_now_us(void)
     if (clock_frequency == 0) {
         return 0;
     }
-    /* Meme precaution de debordement que pour le VR4300, et pour la meme
-       raison : le produit naif plafonnerait a quelques heures. */
+    /* The same overflow precaution as for the VR4300, and for the same reason:
+       the naive product would cap out at a few hours. */
     return (ticks / clock_frequency) * 1000000ULL
          + ((ticks % clock_frequency) * 1000000ULL) / clock_frequency;
 }

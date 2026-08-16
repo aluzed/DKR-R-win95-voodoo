@@ -1,26 +1,25 @@
-/* E01-S03 — couche de compatibilite d'API Windows 95.
+/* E01-S03 - Windows 95 API compatibility layer.
  *
- * La bibliotheque standard de GCC 13 reclame six fonctions que KERNEL32 de
- * Windows 95 n'exporte pas. Aucune n'est appelee par le code du projet : c'est
- * libstdc++ et winpthreads qui les importent. Mais Windows 95 resout *tous* les
- * imports au chargement, donc leur seule presence dans la table suffit a
- * empecher le programme de demarrer — « lie a une exportation manquante ».
+ * GCC 13's standard library asks for six functions that Windows 95's KERNEL32
+ * does not export. None is called by the project's own code: it is libstdc++ and
+ * winpthreads that import them. But Windows 95 resolves *every* import at load
+ * time, so their mere presence in the table is enough to stop the program from
+ * starting - "linked to a missing export".
  *
- * Ce fichier les fournit. Il se place avant `libkernel32.a` dans l'ordre de
- * resolution du lieur, qui retient alors ces definitions plutot que les
- * declarations d'import.
+ * This file supplies them. It sits before `libkernel32.a` in the linker's
+ * resolution order, which then keeps these definitions rather than the import
+ * declarations.
  *
- * Les six manques, et leur origine :
+ * The six gaps, and where they come from:
  *
- *   AddVectoredExceptionHandler      XP      libgcc, gestion d'exceptions
- *   RemoveVectoredExceptionHandler   XP      idem
- *   GetTickCount64                   Vista   winpthreads, horloge monotone
- *   IsDebuggerPresent                98/NT4  libstdc++, diagnostic
- *   SetProcessAffinityMask           NT      winpthreads, placement des fils
+ *   AddVectoredExceptionHandler      XP      libgcc, exception handling
+ *   RemoveVectoredExceptionHandler   XP      likewise
+ *   GetTickCount64                   Vista   winpthreads, monotonic clock
+ *   IsDebuggerPresent                98/NT4  libstdc++, diagnostics
+ *   SetProcessAffinityMask           NT      winpthreads, thread placement
  *   TryEnterCriticalSection          98/NT4  std::mutex::try_lock
  *
- * Cinq sur six sont sans consequence. La sixieme demande une explication, plus
- * bas.
+ * Five of the six are inconsequential. The sixth needs an explanation, below.
  */
 #include <windows.h>
 
@@ -33,26 +32,26 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-/* --- Les quatre autres manques de MSVCRT, et un de KERNEL32 ---------------- *
+/* --- The four other MSVCRT gaps, and one from KERNEL32 --------------------- *
  *
- * Trouves a la premiere edition de liens du jeu, et tous de la meme famille que
- * `_fstat64` : des fonctions que les MSVCRT ulterieures ont ajoutees et que
- * celle de Windows 95 n'a pas. Absentes, donc bloquantes au chargement.
+ * Found at the game's first link, and all of the same family as `_fstat64`:
+ * functions that later MSVCRTs added and Windows 95's does not have. Absent,
+ * hence blocking at load time.
  *
- *   _wfopen_s, _wfreopen_s   basic_file.o de libstdc++, ouverture par nom large
- *   _strtoi64, _strtoui64    conversion 64 bits
- *   GetModuleHandleExW       atexit_thread.o de libstdc++
+ *   _wfopen_s, _wfreopen_s   libstdc++'s basic_file.o, opening by wide name
+ *   _strtoi64, _strtoui64    64-bit conversion
+ *   GetModuleHandleExW       libstdc++'s atexit_thread.o
  */
 
-/* Les deux ouvertures larges ne sont jamais atteintes par le code du projet :
-   E02-S05 a etabli que passer un `path` a un flux ouvre par l'API large, qui est
-   bouchonnee ici, et tous les sites d'appel passent desormais `.string()`.
-   L'import, lui, reste — d'ou ces definitions.
+/* The two wide opens are never reached by the project's code: E02-S05
+   established that handing a `path` to a stream opens through the wide API,
+   which is stubbed here, and every call site now passes `.string()`. The import,
+   though, remains - hence these definitions.
 
-   Elles ne se contentent pas d'echouer. Convertir le nom en octets etroits et
-   appeler `fopen` est aussi court a ecrire, et rend la fonction juste pour tout
-   nom representable dans la page de codes du systeme. Un echec silencieux aurait
-   ete un piege pour qui les appellerait un jour sans le savoir. */
+   They do not merely fail. Converting the name to narrow bytes and calling
+   `fopen` is just as short to write, and makes the function correct for any name
+   representable in the system code page. A silent failure would have been a trap
+   for whoever called them one day without knowing. */
 static int widen_to_ansi(const wchar_t *w, char *out, int out_size)
 {
     BOOL used_default = FALSE;
@@ -62,8 +61,8 @@ static int widen_to_ansi(const wchar_t *w, char *out, int out_size)
         return 0;
     }
     n = WideCharToMultiByte(CP_ACP, 0, w, -1, out, out_size, NULL, &used_default);
-    /* Un caractere de remplacement designerait un autre fichier que celui
-       demande : mieux vaut refuser que d'ouvrir le mauvais. */
+    /* A replacement character would designate a different file from the one
+       asked for: better to refuse than to open the wrong one. */
     return (n > 0 && !used_default) ? 1 : 0;
 }
 
@@ -100,16 +99,16 @@ int _wfreopen_s(FILE **stream, const wchar_t *filename, const wchar_t *mode,
     return *stream ? 0 : errno;
 }
 
-/* L'analyse est ecrite ici plutot que deleguee a `strtoll`, et ce n'est pas par
-   gout : sous mingw, `strtoll` est un renvoi vers `_strtoi64` **importe de
-   MSVCRT**. S'appuyer dessus rendait la definition circulaire — elle compilait,
-   se liait, et le symbole absent reapparaissait dans la table d'imports sans que
-   rien ne le signale. Le controle des imports l'a vu ; une lecture du code, non.
+/* The parsing is written here rather than delegated to `strtoll`, and not out of
+   taste: under mingw, `strtoll` is a redirection to `_strtoi64` **imported from
+   MSVCRT**. Relying on it made the definition circular - it compiled, it linked,
+   and the missing symbol reappeared in the import table with nothing reporting
+   it. The import check saw it; reading the code did not.
  *
- * Le contrat suivi est celui de `strtoull` de C99 : espaces en tete, signe
- * facultatif, prefixe `0x` pour la base 16 et base 0 deduite, `endptr` pose sur
- * le premier caractere non consomme — et sur `nptr` si rien n'a ete consomme —
- * et `ERANGE` avec saturation en cas de debordement. */
+ * The contract followed is C99's `strtoull`: leading whitespace, optional sign,
+ * `0x` prefix for base 16 and base 0 deduced, `endptr` set to the first
+ * unconsumed character - and to `nptr` if nothing was consumed - and `ERANGE`
+ * with saturation on overflow. */
 static unsigned __int64 parse_u64(const char *s, char **end, int base,
                                   int *negative, int *overflow)
 {
@@ -156,7 +155,7 @@ static unsigned __int64 parse_u64(const char *s, char **end, int base,
         }
         any = 1;
     }
-    /* Rien de consommable : `endptr` revient au depart, prefixe compris. */
+    /* Nothing consumable: `endptr` goes back to the start, prefix included. */
     if (end) { *end = (char *)(any ? p : s); }
     (void)digits_begin;
     return value;
@@ -200,20 +199,22 @@ unsigned __int64 _strtoui64(const char *s, char **end, int base)
         errno = ERANGE;
         return ~(unsigned __int64)0;
     }
-    /* `strtoull` rend la negation modulaire, et non une erreur. */
+    /* `strtoull` returns the modular negation, not an error. */
     return negative ? (unsigned __int64)(-(__int64)v) : v;
 }
 
-/* `strtoll` et `strtoull` viennent avec, et c'est la partie qui manquait.
+/* `strtoll` and `strtoull` come with them, and that is the part that was
+ * missing.
  *
- * Sous mingw ce ne sont pas des fonctions mais des renvois vers `_strtoi64` et
- * `_strtoui64` **importes de MSVCRT**. Definir les deux precedentes ne suffisait
- * donc pas : `mod_manifest.cpp` et `mods.cpp` appellent `strtoll`, le renvoi
- * etait tire de `libmsvcrt.a`, et l'import absent revenait par cette porte.
+ * Under mingw these are not functions but redirections to `_strtoi64` and
+ * `_strtoui64` **imported from MSVCRT**. Defining the previous two was therefore
+ * not enough: `mod_manifest.cpp` and `mods.cpp` call `strtoll`, the redirection
+ * was pulled from `libmsvcrt.a`, and the missing import came back through that
+ * door.
  *
- * C'est le meme piege que la premiere version de `_strtoi64`, vu d'un autre
- * cote : sur cette cible, une fonction de la bibliotheque C peut en cacher une
- * autre, et seule la table d'imports du binaire fini le dit. */
+ * It is the same trap as the first version of `_strtoi64`, seen from another
+ * side: on this target, one C library function can hide another, and only the
+ * finished binary's import table says so. */
 long long strtoll(const char *s, char **end, int base)
 {
     return (long long)_strtoi64(s, end, base);
@@ -224,14 +225,14 @@ unsigned long long strtoull(const char *s, char **end, int base)
     return (unsigned long long)_strtoui64(s, end, base);
 }
 
-/* Reclamee par `atexit_thread.o` de libstdc++, qui s'en sert pour epingler le
-   module portant un destructeur de variable locale au fil, afin qu'il ne soit
-   pas decharge avant la fin du fil.
+/* Asked for by libstdc++'s `atexit_thread.o`, which uses it to pin the module
+   carrying a thread-local destructor so that it is not unloaded before the
+   thread ends.
  *
- * Ce binaire est entierement statique : il n'y a pas de DLL a maintenir en vie,
- * et le module portant le code est l'executable lui-meme. Rendre son descripteur
- * est donc la reponse juste, et non un pis-aller. L'epinglage demande n'a rien a
- * faire — un executable ne se decharge pas. */
+ * This binary is entirely static: there is no DLL to keep alive, and the module
+ * carrying the code is the executable itself. Returning its handle is therefore
+ * the right answer, not a makeshift one. The requested pinning has nothing to do
+ * - an executable does not unload. */
 BOOL WINAPI GetModuleHandleExW(DWORD flags, LPCWSTR name, HMODULE *module)
 {
     (void)flags;
@@ -243,25 +244,25 @@ BOOL WINAPI GetModuleHandleExW(DWORD flags, LPCWSTR name, HMODULE *module)
     return *module != NULL;
 }
 
-/* --- <fstream> : `_fstat64` de MSVCRT ------------------------------------- *
+/* --- <fstream>: MSVCRT's `_fstat64` --------------------------------------- *
  *
- * Le seul manque qui ne vienne pas de KERNEL32, et il coute cher : la simple
- * inclusion de `<fstream>` rend le binaire inchargeable sous Windows 95.
+ * The only gap that does not come from KERNEL32, and it is an expensive one:
+ * merely including `<fstream>` makes the binary unloadable under Windows 95.
  *
- * `basic_file.o` de libstdc++ importe `__imp___fstat64`. La MSVCRT.DLL de
- * Windows 95 n'exporte que la famille `_fstat` d'origine — les variantes 64 bits
- * sont arrivees bien plus tard. Mesure : un binaire qui n'inclut que `<cstdio>`
- * se charge, un binaire qui inclut `<fstream>` ne se charge pas.
+ * libstdc++'s `basic_file.o` imports `__imp___fstat64`. Windows 95's MSVCRT.DLL
+ * only exports the original `_fstat` family - the 64-bit variants arrived much
+ * later. Measured: a binary that only includes `<cstdio>` loads, a binary that
+ * includes `<fstream>` does not.
  *
- * L'enjeu depasse les suites d'epreuve. Treize fichiers du projet emploient
- * `<fstream>`, dont le coeur de `librecomp` — `recomp.cpp`, `pi.cpp`, `sp.cpp`.
- * Sans cette fonction, le jeu ne se lierait pas pour cette cible.
+ * The stakes reach beyond the test suites. Thirteen of the project's files use
+ * `<fstream>`, including the core of `librecomp` - `recomp.cpp`, `pi.cpp`,
+ * `sp.cpp`. Without this function, the game would not link for this target.
  *
- * Ce dont libstdc++ se sert reellement est etroit : `showmanyc()` demande
- * `st_mode` pour savoir si le descripteur designe un fichier ordinaire, et
- * `st_size` pour dire combien d'octets restent a lire. Le reste de la structure
- * est mis a zero plutot que rempli au jugé — une date fausse serait pire qu'une
- * date absente, parce qu'elle aurait l'air d'une donnee.
+ * What libstdc++ actually uses is narrow: `showmanyc()` asks for `st_mode` to
+ * know whether the descriptor designates an ordinary file, and `st_size` to say
+ * how many bytes are left to read. The rest of the structure is zeroed rather
+ * than filled in by guesswork - a wrong date would be worse than a missing one,
+ * because it would look like data.
  */
 
 int _fstat64(int fd, struct _stat64 *st)
@@ -291,8 +292,8 @@ int _fstat64(int fd, struct _stat64 *st)
         }
         st->st_size = ((__int64)high << 32) | (__int64)low;
     } else if (type == FILE_TYPE_CHAR) {
-        /* La console et NUL. `showmanyc` doit alors rendre « je ne sais pas »,
-           ce qu'il fait des lors que ce n'est pas un fichier ordinaire. */
+        /* The console and NUL. `showmanyc` must then answer "I do not know",
+           which it does as soon as this is not an ordinary file. */
         st->st_mode = _S_IFCHR;
     } else if (type == FILE_TYPE_PIPE) {
         st->st_mode = _S_IFIFO;
@@ -304,32 +305,32 @@ int _fstat64(int fd, struct _stat64 *st)
 }
 
 
-/* --- diagnostic ---------------------------------------------------------- */
+/* --- diagnostics --------------------------------------------------------- */
 
-/* Il n'y a pas de debogueur attache : la reponse est toujours la meme, et elle
-   est vraie. */
+/* There is no debugger attached: the answer is always the same, and it is
+   true. */
 BOOL WINAPI IsDebuggerPresent(void)
 {
     return FALSE;
 }
 
-/* --- placement des fils -------------------------------------------------- */
+/* --- thread placement ---------------------------------------------------- */
 
-/* La cible est monoprocesseur. Accepter sans rien faire est le comportement
-   correct, pas une approximation. */
+/* The target is single-processor. Accepting and doing nothing is the correct
+   behaviour, not an approximation. */
 BOOL WINAPI SetProcessAffinityMask(HANDLE process, DWORD_PTR mask)
 {
     (void)process; (void)mask;
     return TRUE;
 }
 
-/* --- gestionnaires d'exceptions vectorises ------------------------------- */
+/* --- vectored exception handlers ----------------------------------------- */
 
-/* Windows 95 n'a que `SetUnhandledExceptionFilter`, qui est un point unique et
-   non une chaine. libgcc s'en sert de facon optionnelle et teste le retour :
-   renvoyer NULL signifie « je n'ai pas pu enregistrer », ce qu'il sait traiter.
-   Mentir en renvoyant un jeton non nul serait pire — le desenregistrement
-   suivant porterait sur rien. */
+/* Windows 95 only has `SetUnhandledExceptionFilter`, which is a single point and
+   not a chain. libgcc uses it optionally and tests the return: returning NULL
+   means "I could not register", which it knows how to handle. Lying by returning
+   a non-null token would be worse - the following unregistration would bear on
+   nothing. */
 PVOID WINAPI AddVectoredExceptionHandler(ULONG first,
                                          PVECTORED_EXCEPTION_HANDLER handler)
 {
@@ -343,66 +344,65 @@ ULONG WINAPI RemoveVectoredExceptionHandler(PVOID handle)
     return 0;
 }
 
-/* --- horloge monotone 64 bits -------------------------------------------- */
+/* --- 64-bit monotonic clock ---------------------------------------------- */
 
-/* `GetTickCount` revient a zero apres 49,7 jours. On accumule les rebouclages
-   pour rendre un compteur qui, lui, ne revient pas.
+/* `GetTickCount` returns to zero after 49.7 days. We accumulate the wraparounds
+   to return a counter that does not.
  *
- * La logique est isolee en fonction pure pour que le passage a zero se teste au
- * lieu de s'attendre sept semaines : `platform/win95/tests/test_tick64.c` la
- * pilote avec des valeurs choisies, sur l'hote, sans Windows.
+ * The logic is isolated as a pure function so that the wraparound can be tested
+ * instead of waited out for seven weeks:
+ * `platform/win95/tests/test_tick64.c` drives it with chosen values, on the
+ * host, without Windows.
  *
- * Condition de validite : etre appele au moins une fois par periode de 49 jours.
- * Une boucle de jeu la tient largement ; un programme qui dormirait plus
- * longtemps entre deux lectures verrait un rebouclage lui echapper. C'est une
- * limite reelle, ecrite dans docs/WIN95-COMPAT.md.
+ * Validity condition: being called at least once per 49-day period. A game loop
+ * meets it comfortably; a program that slept longer between two readings would
+ * miss a wraparound. That is a real limit, written down in
+ * docs/WIN95-COMPAT.md.
  */
-/* `dkr_tick64_step` vit dans `tick64.c` : sans dependance a Windows, elle est
-   pilotable par un test sur l'hote. */
+/* `dkr_tick64_step` lives in `tick64.c`: free of any Windows dependency, it can
+   be driven by a host test. */
 
 
-/* Un verrou tournant plutot qu'une section critique : `GetTickCount64` peut
-   etre appelee depuis n'importe quel fil, y compris pendant l'initialisation ou
-   aucune section critique n'est encore prete. `__sync_*` se compile en
-   `lock cmpxchg`, sans appel systeme. */
+/* A spin lock rather than a critical section: `GetTickCount64` can be called
+   from any thread, including during initialisation where no critical section is
+   ready yet. `__sync_*` compiles to `lock cmpxchg`, with no system call. */
 static volatile long   dkr_tick_lock  = 0;
 static dkr_tick64_state dkr_tick_state = { 0, 0 };
 
 ULONGLONG WINAPI GetTickCount64(void)
 {
     unsigned long long v;
-    while (!__sync_bool_compare_and_swap(&dkr_tick_lock, 0, 1)) { /* attente */ }
+    while (!__sync_bool_compare_and_swap(&dkr_tick_lock, 0, 1)) { /* spin */ }
     v = dkr_tick64_step(&dkr_tick_state, (unsigned long)GetTickCount());
     __sync_lock_release(&dkr_tick_lock);
     return v;
 }
 
-/* --- sections critiques --------------------------------------------------- *
+/* --- critical sections ---------------------------------------------------- *
  *
- * Windows 95 n'offre aucun moyen fiable de *tenter* une entree en section
- * critique, et la premiere version de ce fichier s'est contentee de renvoyer
- * FALSE — reponse licite du contrat, puisque tout appelant doit prevoir l'echec.
+ * Windows 95 offers no reliable way to *attempt* entry into a critical section,
+ * and the first version of this file simply returned FALSE - a legitimate answer
+ * under the contract, since every caller must allow for failure.
  *
- * Elle a fige la machine entiere. `winpthreads` boucle sur
- * `TryEnterCriticalSection` pour prendre ses verrous ; un echec perpetuel donne
- * une attente active qui, sous Windows 95, affame l'ordonnanceur au point que
- * meme l'horloge de la barre des taches s'arrete. Le symptome est spectaculaire
- * et la lecon vaut d'etre gardee : un bouchon « licite » n'est pas un bouchon
- * inoffensif.
+ * It froze the whole machine. `winpthreads` loops on `TryEnterCriticalSection`
+ * to take its locks; a perpetual failure gives a busy wait which, under
+ * Windows 95, starves the scheduler to the point where even the taskbar clock
+ * stops. The symptom is spectacular and the lesson is worth keeping: a
+ * "legitimate" stub is not a harmless stub.
  *
- * On fournit donc les **cinq** fonctions de section critique, ce qui permet de
- * disposer librement des 24 octets de CRITICAL_SECTION : puisque tout le binaire
- * passe par nous, leur signification n'appartient qu'a nous.
+ * We therefore supply **all five** critical-section functions, which lets us
+ * dispose freely of CRITICAL_SECTION's 24 bytes: since the whole binary goes
+ * through us, their meaning belongs to us alone.
  *
- *   LockCount      -> mot de verrou : 0 libre, 1 pris
- *   RecursionCount -> profondeur de reentrance
- *   OwningThread   -> identifiant du fil proprietaire
- *   LockSemaphore  -> semaphore de reveil
+ *   LockCount      -> lock word: 0 free, 1 taken
+ *   RecursionCount -> reentrancy depth
+ *   OwningThread   -> owning thread's identifier
+ *   LockSemaphore  -> wake-up semaphore
  *
- * L'echange atomique passe par `__sync_bool_compare_and_swap`, que GCC traduit
- * en `lock cmpxchg` — une instruction du 486, sans appel systeme. C'est ce qui
- * rend l'ensemble possible : Windows 95 n'exporte pas
- * `InterlockedCompareExchange`, mais le processeur, lui, sait le faire.
+ * The atomic exchange goes through `__sync_bool_compare_and_swap`, which GCC
+ * translates to `lock cmpxchg` - a 486 instruction, with no system call. That is
+ * what makes the whole thing possible: Windows 95 does not export
+ * `InterlockedCompareExchange`, but the processor does know how to do it.
  */
 void WINAPI InitializeCriticalSection(LPCRITICAL_SECTION cs)
 {
@@ -418,7 +418,7 @@ BOOL WINAPI TryEnterCriticalSection(LPCRITICAL_SECTION cs)
 {
     DWORD me = GetCurrentThreadId();
 
-    if ((DWORD)(ULONG_PTR)cs->OwningThread == me) {   /* deja proprietaire */
+    if ((DWORD)(ULONG_PTR)cs->OwningThread == me) {   /* already the owner */
         cs->RecursionCount++;
         return TRUE;
     }
@@ -432,9 +432,9 @@ BOOL WINAPI TryEnterCriticalSection(LPCRITICAL_SECTION cs)
 
 void WINAPI EnterCriticalSection(LPCRITICAL_SECTION cs)
 {
-    /* Attente avec delai plutot qu'infinie : si un reveil se perd entre le test
-       et la mise en attente, la boucle le rattrape au tour suivant au lieu de
-       dormir pour toujours. */
+    /* A timed wait rather than an infinite one: if a wake-up is lost between the
+       test and the wait, the loop catches it on the next turn instead of
+       sleeping forever. */
     while (!TryEnterCriticalSection(cs)) {
         if (cs->LockSemaphore) {
             WaitForSingleObject(cs->LockSemaphore, 1);
@@ -468,71 +468,70 @@ void WINAPI DeleteCriticalSection(LPCRITICAL_SECTION cs)
 }
 
 
-/* --- CreateSemaphoreW : exportee, mais vide (E02-S01) --------------------- *
+/* --- CreateSemaphoreW: exported, but empty (E02-S01) ---------------------- *
  *
- * Celle-ci n'est pas du meme genre que les six precedentes. Les six manquaient a
- * la table d'exports, et leur absence est bruyante : le programme ne demarre
- * pas, et Windows nomme le symbole. `CreateSemaphoreW`, elle, *est* exportee.
- * Elle ne fait simplement rien :
+ * This one is not of the same kind as the previous six. Those six were missing
+ * from the export table, and their absence is loud: the program does not start,
+ * and Windows names the symbol. `CreateSemaphoreW`, by contrast, *is* exported.
+ * It simply does nothing:
  *
- *     0x03500a:  33 c0              xor  eax,eax     ; retour 0
- *                b1 04              mov  cl,0x4      ; index du bouchon
- *                e9 06 c3 fc ff     jmp  0x1319      ; queue commune
+ *     0x03500a:  33 c0              xor  eax,eax     ; return 0
+ *                b1 04              mov  cl,0x4      ; stub index
+ *                e9 06 c3 fc ff     jmp  0x1319      ; common tail
  *     0x001319:  51                 push ecx
  *                68 78 00 00 00     push 0x78        ; ERROR_CALL_NOT_IMPLEMENTED
  *                e8 be c7 00 00     call SetLastError
  *
- * Elle partage son adresse avec `CreateEventW`, ce qui ne laisse aucun doute :
- * aucune des deux n'a de code. Releve sur la KERNEL32.DLL de la machine de test.
+ * It shares its address with `CreateEventW`, which leaves no doubt: neither has
+ * any code. Measured on the test machine's KERNEL32.DLL.
  *
- * Pourquoi cela compte : `moodycamel::LightweightSemaphore` l'appelle, et c'est
- * le primitif de blocage sur lequel repose *tout* le planificateur
- * d'`ultramodern` — le semaphore `running` de chaque fil de jeu, et chaque
- * `BlockingConcurrentQueue`. Avec un descripteur nul, les deux cotes cassent, et
- * differemment :
+ * Why this matters: `moodycamel::LightweightSemaphore` calls it, and it is the
+ * blocking primitive *all* of `ultramodern`'s scheduler rests on - each game
+ * thread's `running` semaphore, and every `BlockingConcurrentQueue`. With a null
+ * handle, both sides break, and differently:
  *
- *   - `wait()`  -> `WaitForSingleObject(NULL, INFINITE)` echoue au lieu de
- *     bloquer. `ultramodern` ignore le retour : le fil poursuit comme s'il avait
- *     ete reveille. Les fils de jeu, qui doivent courir un par un, courent alors
- *     tous en meme temps.
- *   - `signal()` -> `while (!ReleaseSemaphore(NULL, ...));` — une boucle qui ne
- *     se termine jamais. C'est la meme famine d'ordonnanceur que la premiere
- *     version de `TryEnterCriticalSection`, et le meme symptome : la machine
- *     entiere se fige.
+ *   - `wait()`  -> `WaitForSingleObject(NULL, INFINITE)` fails instead of
+ *     blocking. `ultramodern` ignores the return: the thread carries on as if it
+ *     had been woken. The game threads, which must run one at a time, then all
+ *     run at once.
+ *   - `signal()` -> `while (!ReleaseSemaphore(NULL, ...));` - a loop that never
+ *     ends. It is the same scheduler starvation as the first version of
+ *     `TryEnterCriticalSection`, and the same symptom: the whole machine
+ *     freezes.
  *
- * Le controle d'imports de E01-S04 ne peut rien y voir, puisque le symbole est
- * bien exporte. C'est pourquoi il est desormais double d'une liste de bouchons
- * connus (`tools/win95/exports/stubs.json`).
+ * E01-S04's import check can see nothing here, since the symbol is properly
+ * exported. That is why it is now paired with a list of known stubs
+ * (`tools/win95/exports/stubs.json`).
  *
- * Le contournement est immediat : `CreateSemaphoreA` existe et fonctionne. Le
- * nom, quand il y en a un, est converti. `ultramodern` n'en pose aucun — ses
- * semaphores sont anonymes — mais rendre un semaphore anonyme la ou l'appelant
- * en a demande un nomme casserait le partage entre processus sans le dire.
+ * The workaround is immediate: `CreateSemaphoreA` exists and works. The name,
+ * when there is one, is converted. `ultramodern` sets none - its semaphores are
+ * anonymous - but returning an anonymous semaphore where the caller asked for a
+ * named one would break sharing between processes without saying so.
  */
 HANDLE WINAPI CreateSemaphoreW(LPSECURITY_ATTRIBUTES attributes,
                                LONG initial_count, LONG maximum_count,
                                LPCWSTR name)
 {
-    /* MAX_PATH est la longueur maximale d'un nom d'objet noyau : un tampon plus
-       court ferait echouer la couche la ou l'API d'origine aurait reussi. */
+    /* MAX_PATH is the maximum length of a kernel object name: a shorter buffer
+       would make the layer fail where the original API would have succeeded. */
     char  narrow[MAX_PATH + 1];
     char *narrow_name = NULL;
     BOOL  substituted = FALSE;
 
     if (name) {
-        /* Le tampon borne la conversion : au-dela, WideCharToMultiByte echoue
-           avec ERROR_INSUFFICIENT_BUFFER plutot que d'ecrire hors limites. On
-           laisse son code d'erreur en place au lieu d'en poser un autre — il
-           dit precisement ce qui s'est passe, et c'est tout ce que l'appelant
-           pourra lire.
+        /* The buffer bounds the conversion: beyond it, WideCharToMultiByte
+           fails with ERROR_INSUFFICIENT_BUFFER rather than writing out of
+           bounds. We leave its error code in place instead of setting another -
+           it says precisely what happened, and that is all the caller will be
+           able to read.
 
-           `substituted` n'est pas un ornement. Sans lui, un caractere absent de
-           la page de codes du systeme devient « ? » en silence, et deux noms
-           larges differents s'effondrent sur un meme nom etroit : deux
-           processus croiraient ouvrir des semaphores distincts et
-           partageraient le meme. Puisque la conversion du nom n'a d'autre
-           raison d'etre que de preserver ce partage, une substitution la vide
-           de son sens — et on echoue plutot que de mentir. */
+           `substituted` is not an ornament. Without it, a character absent from
+           the system code page silently becomes "?", and two different wide
+           names collapse onto the same narrow name: two processes would believe
+           they were opening distinct semaphores and would share one. Since
+           converting the name has no purpose other than preserving that
+           sharing, a substitution empties it of meaning - and we fail rather
+           than lie. */
         int n = WideCharToMultiByte(CP_ACP, 0, name, -1, narrow,
                                     (int)sizeof(narrow), NULL, &substituted);
         if (n <= 0) {
@@ -548,22 +547,22 @@ HANDLE WINAPI CreateSemaphoreW(LPSECURITY_ATTRIBUTES attributes,
 }
 
 
-/* --- redirection des pointeurs d'import ---------------------------------- *
+/* --- redirecting the import pointers -------------------------------------- *
  *
- * Definir les fonctions ne suffit pas. `winpthreads` et `libstdc++` sont
- * compilees avec `__declspec(dllimport)` : leurs appels ne visent pas le
- * symbole `_X@n` mais le pointeur `__imp__X@n`, que la bibliotheque d'import
- * `libkernel32.a` fournirait normalement — et qui designerait une fonction que
- * Windows 95 n'a pas.
+ * Defining the functions is not enough. `winpthreads` and `libstdc++` are
+ * compiled with `__declspec(dllimport)`: their calls do not target the `_X@n`
+ * symbol but the `__imp__X@n` pointer, which the `libkernel32.a` import library
+ * would normally supply - and which would designate a function Windows 95 does
+ * not have.
  *
- * On definit donc nous-memes ces pointeurs, en les faisant designer nos
- * implementations. Le nom porte la decoration stdcall complete, taille des
- * arguments comprise, d'ou les suffixes @0, @4 et @8.
+ * We therefore define those pointers ourselves, making them designate our
+ * implementations. The name carries the full stdcall decoration, argument size
+ * included, hence the @0, @4 and @8 suffixes.
  *
- * A lier avec `-Wl,--whole-archive` : sans cela l'archive n'est consultee qu'au
- * moment ou elle apparait sur la ligne de commande, avant que `libwinpthread`
- * n'ait introduit les references — et `libkernel32.a`, placee en dernier par
- * les specs du compilateur, l'emporterait.
+ * To be linked with `-Wl,--whole-archive`: without it the archive is only
+ * consulted at the point where it appears on the command line, before
+ * `libwinpthread` has introduced the references - and `libkernel32.a`, placed
+ * last by the compiler's specs, would win.
  */
 #define REDIRECT(name, deco)                                                   \
     void *const __imp_##name __asm__("__imp__" #name deco) = (void *)&name
@@ -579,8 +578,7 @@ REDIRECT(TryEnterCriticalSection,        "@4");
 REDIRECT(AddVectoredExceptionHandler,    "@8");
 REDIRECT(RemoveVectoredExceptionHandler, "@4");
 REDIRECT(CreateSemaphoreW,               "@16");
-/* cdecl : pas de suffixe de taille d'arguments, a la difference des
-   fonctions de KERNEL32 ci-dessus. */
+/* cdecl: no argument-size suffix, unlike the KERNEL32 functions above. */
 REDIRECT(_fstat64,                       "");
 REDIRECT(_wfopen_s,                      "");
 REDIRECT(_wfreopen_s,                    "");

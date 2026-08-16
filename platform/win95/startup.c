@@ -1,13 +1,13 @@
-/* E01-S03 — demarrage de la cible Windows 95. Voir startup.h. */
+/* E01-S03 - startup for the Windows 95 target. See startup.h. */
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "startup.h"
 
-/* Le journal vit a cote de l'executable et non dans le repertoire courant :
-   lance depuis le menu Demarrer, un programme herite d'un repertoire courant
-   qui n'a rien a voir avec l'endroit ou l'utilisateur ira chercher le fichier. */
+/* The log lives next to the executable and not in the current directory:
+   launched from the Start menu, a program inherits a current directory that has
+   nothing to do with where the user will go looking for the file. */
 #define DKR_LOG_NAME "DKR-BOOT.LOG"
 
 static HANDLE g_log = INVALID_HANDLE_VALUE;
@@ -18,9 +18,9 @@ static void write_raw(const char *s, DWORD n)
     DWORD written = 0;
     if (g_log != INVALID_HANDLE_VALUE) {
         WriteFile(g_log, s, n, &written, NULL);
-        /* Vidange immediate. Sans elle, la derniere ligne — celle qui dirait
-           ou le programme est mort — resterait dans le cache et disparaitrait
-           avec le processus. C'est exactement la ligne qui compte. */
+        /* Immediate flush. Without it, the last line - the one that would say
+           where the program died - would stay in the cache and vanish with the
+           process. That is exactly the line that matters. */
         FlushFileBuffers(g_log);
     }
 }
@@ -41,12 +41,12 @@ void dkr_win95_log_num(const char *message, long value)
     write_raw(buf, (DWORD)n);
 }
 
-/* --- nettoyages d'arret anormal -------------------------------------------- *
+/* --- abnormal-exit cleanups ------------------------------------------------ *
  *
- * Voir startup.h pour le pourquoi. Ici, seulement les contraintes du contexte :
- * on peut etre appele depuis un filtre d'exception, donc sans rien allouer, et
- * la garde `g_cleanups_done` evite qu'un second passage — filtre puis sortie
- * normale, ou deux fils qui plantent ensemble — ne rejoue les nettoyages.
+ * See startup.h for the why. Here, only the constraints of the context: we may
+ * be called from an exception filter, hence without allocating anything, and the
+ * `g_cleanups_done` guard stops a second pass - filter then normal exit, or two
+ * threads crashing together - from replaying the cleanups.
  */
 static dkr_win95_cleanup_fn g_cleanups[DKR_WIN95_MAX_CLEANUPS];
 static int                  g_cleanup_count = 0;
@@ -65,38 +65,38 @@ void dkr_win95_run_cleanups(void)
 {
     int i;
 
-    /* Un seul passage, quel que soit le nombre d'appelants. `lock cmpxchg`
-       plutot qu'une section critique : on peut etre ici parce que le processus
-       est deja abime, et prendre un verrou serait le meilleur moyen de finir
-       bloque au lieu de mourir proprement. */
+    /* One pass only, however many callers there are. `lock cmpxchg` rather than
+       a critical section: we may be here because the process is already damaged,
+       and taking a lock would be the best way to end up stuck instead of dying
+       cleanly. */
     if (!__sync_bool_compare_and_swap(&g_cleanups_done, 0, 1)) {
         return;
     }
-    /* Ordre inverse de l'enregistrement : un sous-systeme defait avant celui
-       dont il depend. */
+    /* Reverse order of registration: a subsystem undone before the one it
+       depends on. */
     for (i = g_cleanup_count - 1; i >= 0; i--) {
         g_cleanups[i]();
     }
 }
 
-/* --- filtre d'exceptions ---------------------------------------------------
+/* --- exception filter ------------------------------------------------------
  *
- * Windows 95 n'a pas les gestionnaires vectorises ; `SetUnhandledExceptionFilter`
- * est le seul point d'accroche, et il suffit : on ne cherche pas a rattraper
- * l'exception, seulement a en laisser une trace lisible avant de mourir.
+ * Windows 95 does not have vectored handlers; `SetUnhandledExceptionFilter` is
+ * the only hook, and it is enough: we do not try to recover from the exception,
+ * only to leave a readable trace of it before dying.
  */
 static const char *exception_name(DWORD code)
 {
     switch (code) {
-    case EXCEPTION_ACCESS_VIOLATION:      return "acces memoire invalide";
-    case EXCEPTION_ILLEGAL_INSTRUCTION:   return "instruction illegale";
-    case EXCEPTION_PRIV_INSTRUCTION:      return "instruction privilegiee";
-    case EXCEPTION_INT_DIVIDE_BY_ZERO:    return "division entiere par zero";
-    case EXCEPTION_FLT_DIVIDE_BY_ZERO:    return "division flottante par zero";
-    case EXCEPTION_FLT_INVALID_OPERATION: return "operation flottante invalide";
-    case EXCEPTION_STACK_OVERFLOW:        return "debordement de pile";
-    case EXCEPTION_IN_PAGE_ERROR:         return "erreur de pagination";
-    default:                              return "exception inconnue";
+    case EXCEPTION_ACCESS_VIOLATION:      return "invalid memory access";
+    case EXCEPTION_ILLEGAL_INSTRUCTION:   return "illegal instruction";
+    case EXCEPTION_PRIV_INSTRUCTION:      return "privileged instruction";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:    return "integer divide by zero";
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:    return "floating-point divide by zero";
+    case EXCEPTION_FLT_INVALID_OPERATION: return "invalid floating-point operation";
+    case EXCEPTION_STACK_OVERFLOW:        return "stack overflow";
+    case EXCEPTION_IN_PAGE_ERROR:         return "paging error";
+    default:                              return "unknown exception";
     }
 }
 
@@ -105,44 +105,44 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
     char buf[256];
     DWORD code = info->ExceptionRecord->ExceptionCode;
 
-    /* **Fermer le journal de diagnostic avant tout le reste.**
+    /* **Close the diagnostic log before anything else.**
      *
-     * Le runtime redirige `stderr` vers un fichier sans mise en memoire tampon,
-     * donc les octets partent au systeme au fil de l'eau. Mais Windows 95 ne met
-     * a jour la **taille dans l'entree de repertoire** qu'a la fermeture : un
-     * processus qui meurt laisse un fichier de zero octet, dont le contenu est
-     * pourtant sur le disque et perdu pour l'outillage qui lit la table.
+     * The runtime redirects `stderr` to a file with no buffering, so the bytes go
+     * to the system as they come. But Windows 95 only updates the **size in the
+     * directory entry** on close: a process that dies leaves a zero-byte file
+     * whose contents are nonetheless on the disk and lost to any tooling that
+     * reads the table.
      *
-     * Constate ici meme : un plantage a produit un `DKRR.LOG` vide alors que la
-     * trace qu'il contenait etait precisement ce qu'on cherchait. */
+     * Observed right here: a crash produced an empty `DKRR.LOG` while the trace
+     * it contained was precisely what we were looking for. */
     fclose(stderr);
 
     dkr_win95_log("");
-    dkr_win95_log("*** exception non rattrapee ***");
+    dkr_win95_log("*** unhandled exception ***");
     sprintf(buf, "  code    : 0x%08lX (%s)", (unsigned long)code, exception_name(code));
     dkr_win95_log(buf);
-    sprintf(buf, "  adresse : 0x%08lX",
+    sprintf(buf, "  address : 0x%08lX",
             (unsigned long)(ULONG_PTR)info->ExceptionRecord->ExceptionAddress);
     dkr_win95_log(buf);
 
-    /* **L'adresse fautive et les registres, pas seulement l'adresse du code.**
+    /* **The faulting address and the registers, not only the code address.**
      *
-     * `ExceptionAddress` dit *ou* le programme s'est arrete ; il ne dit pas *ce
-     * qu'il touchait*. Sur un portage dont tout l'espace memoire invite est un
-     * tableau indexe — `mov -0x7ffffff0(%ebp,%ecx,1),%edx` est la forme typique
-     * du code recompile, `ebp` portant la base RDRAM et `ecx` l'adresse invitee
-     * — c'est l'adresse touchee qui nomme le defaut, et les registres qui disent
-     * quelle adresse invitee l'a produite.
+     * `ExceptionAddress` says *where* the program stopped; it does not say *what
+     * it was touching*. On a port whose entire guest address space is an indexed
+     * array - `mov -0x7ffffff0(%ebp,%ecx,1),%edx` is the typical shape of
+     * recompiled code, `ebp` carrying the RDRAM base and `ecx` the guest address
+     * - it is the touched address that names the defect, and the registers that
+     * say which guest address produced it.
      *
-     * Sans cela, chaque faute demande un desassemblage a la main pour deviner ce
-     * qui manquait. Avec, elle se lit. */
+     * Without that, every fault needs a disassembly by hand to guess what was
+     * missing. With it, it reads. */
     if (code == EXCEPTION_ACCESS_VIOLATION &&
         info->ExceptionRecord->NumberParameters >= 2) {
-        const ULONG_PTR quoi = info->ExceptionRecord->ExceptionInformation[0];
-        const ULONG_PTR ou   = info->ExceptionRecord->ExceptionInformation[1];
-        sprintf(buf, "  touchait: 0x%08lX en %s",
-                (unsigned long)ou,
-                (quoi == 0) ? "lecture" : (quoi == 1) ? "ecriture" : "execution");
+        const ULONG_PTR what  = info->ExceptionRecord->ExceptionInformation[0];
+        const ULONG_PTR where = info->ExceptionRecord->ExceptionInformation[1];
+        sprintf(buf, "  touching: 0x%08lX on %s",
+                (unsigned long)where,
+                (what == 0) ? "read" : (what == 1) ? "write" : "execute");
         dkr_win95_log(buf);
     }
     if (info->ContextRecord != NULL) {
@@ -155,63 +155,62 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
                 (unsigned long)c->Esi, (unsigned long)c->Edi,
                 (unsigned long)c->Ebp, (unsigned long)c->Esp);
         dkr_win95_log(buf);
-        /* L'adresse **invitee**, reconstruite : sur le code recompile, la base
-           RDRAM vit dans un registre et l'adresse touchee moins cette base
-           redonne l'adresse que le jeu croyait lire. C'est celle-la qui se
-           compare a la carte memoire de la N64. */
+        /* The **guest** address, reconstructed: in recompiled code the RDRAM
+           base lives in a register, and the touched address minus that base
+           gives back the address the game believed it was reading. That is the
+           one to compare against the N64's memory map. */
         if (info->ExceptionRecord->NumberParameters >= 2) {
-            const ULONG_PTR ou = info->ExceptionRecord->ExceptionInformation[1];
-            sprintf(buf, "  invitee ~ 0x%08lX si la base est ebp,"
-                         " 0x%08lX si c'est ebx",
-                    (unsigned long)(ou - c->Ebp + 0x80000000u),
-                    (unsigned long)(ou - c->Ebx + 0x80000000u));
+            const ULONG_PTR where = info->ExceptionRecord->ExceptionInformation[1];
+            sprintf(buf, "  guest  ~ 0x%08lX if the base is ebp,"
+                         " 0x%08lX if it is ebx",
+                    (unsigned long)(where - c->Ebp + 0x80000000u),
+                    (unsigned long)(where - c->Ebx + 0x80000000u));
             dkr_win95_log(buf);
         }
     }
 
-    /* **Vider la structure invitee que les registres designent.**
+    /* **Dump the guest structure the registers designate.**
      *
-     * Sur le code recompile, un registre porte la base RDRAM et les autres des
-     * adresses invitees en KSEG0 — reconnaissables a leur poids fort 0x80. Une
-     * faute de pointeur nul ne dit rien de ce qui aurait du s'y trouver ; l'etat
-     * de la structure voisine, si.
+     * In recompiled code one register carries the RDRAM base and the others
+     * carry guest addresses in KSEG0 - recognisable by their 0x80 high byte. A
+     * null-pointer fault says nothing about what should have been there; the
+     * state of the neighbouring structure does.
      *
-     * On vide donc seize mots depuis chaque registre qui ressemble a une adresse
-     * invitee, en traduisant par la base supposee. Le rapport devient lisible
-     * sans attacher un debogueur a une machine qui n'en a pas. */
+     * So we dump sixteen words from every register that looks like a guest
+     * address, translating through the assumed base. The report becomes readable
+     * without attaching a debugger to a machine that does not have one. */
     if (info->ContextRecord != NULL) {
         const CONTEXT *c = info->ContextRecord;
         const DWORD regs[6] = { c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi };
-        const char  *noms[6] = { "eax", "ebx", "ecx", "edx", "esi", "edi" };
-        /* La base RDRAM est le registre dont la valeur est un pointeur hote
-           plausible et dont l'ecart avec l'adresse touchee redonne du KSEG0. */
+        const char  *names[6] = { "eax", "ebx", "ecx", "edx", "esi", "edi" };
+        /* The RDRAM base is the register whose value is a plausible host pointer
+           and whose distance from the touched address gives back KSEG0. */
         const DWORD base = c->Ebp;
         int r;
-        int vides = 0;
+        int dumped = 0;
         for (r = 0; r < 6; r++) {
             const DWORD v = regs[r];
             if ((v & 0xFF000000u) != 0x80000000u) { continue; }
-            if (vides++ > 0) { break; }
+            if (dumped++ > 0) { break; }
             {
                 const unsigned char *p =
                     (const unsigned char *)(base + (v - 0x80000000u));
                 unsigned i;
-                /* **Assez loin pour atteindre les champs qui comptent.**
+                /* **Far enough to reach the fields that matter.**
                  *
-                 * Une premiere version n'en vidait que quatre lignes, et cela a
-                 * induit en erreur : les seize premiers mots d'un `OSSched` sont
-                 * ses deux modeles de message, et `curRSPTask` vit a l'offset
-                 * 0x274. Conclure « la structure est vide » sur son en-tete,
-                 * c'est conclure sur autre chose que ce qu'on regarde.
+                 * A first version dumped only four lines, and that misled: the
+                 * first sixteen words of an `OSSched` are its two message
+                 * templates, and `curRSPTask` lives at offset 0x274. Concluding
+                 * "the structure is empty" from its header is concluding about
+                 * something other than what is being looked at.
                  *
-                 * Quarante lignes couvrent 640 octets, ce qui suffit pour les
-                 * structures du systeme d'exploitation de la N64. */
-                sprintf(buf, "  %s -> 0x%08lX :", noms[r], (unsigned long)v);
+                 * Forty lines cover 640 bytes, which is enough for the N64
+                 * operating system's structures. */
+                sprintf(buf, "  %s -> 0x%08lX :", names[r], (unsigned long)v);
                 dkr_win95_log(buf);
                 for (i = 0; i < 40; i++) {
-                    /* Gros-boutiste : la RDRAM invitee est stockee telle quelle,
-                       et l'afficher en petit-boutiste rendrait les pointeurs
-                       meconnaissables. */
+                    /* Big-endian: guest RDRAM is stored as it is, and displaying
+                       it little-endian would make pointers unrecognisable. */
                     sprintf(buf, "    +%02X  %02X%02X%02X%02X %02X%02X%02X%02X "
                                  "%02X%02X%02X%02X %02X%02X%02X%02X",
                             i * 16,
@@ -225,65 +224,64 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
         }
     }
 
-    /* **La pile hote, pour la chaine d'appel.**
+    /* **The host stack, for the call chain.**
      *
-     * Windows 95 n'a pas `StackWalk64`, et le code recompile n'a pas de cadre de
-     * pile exploitable : `-fomit-frame-pointer` est la regle sur des fonctions
-     * engendrees par centaines de milliers. Reste le procede le plus ancien et
-     * le plus robuste — parcourir la pile et retenir tout ce qui ressemble a une
-     * adresse de code.
+     * Windows 95 does not have `StackWalk64`, and recompiled code has no usable
+     * stack frame: `-fomit-frame-pointer` is the rule on functions generated by
+     * the hundreds of thousands. What remains is the oldest and most robust
+     * method - walk the stack and keep everything that looks like a code
+     * address.
      *
-     * Ce n'est pas une pile d'appels exacte : il y traine des valeurs mortes de
-     * cadres precedents. Mais sur une faute dont on ignore par ou l'on est
-     * arrive, une liste de candidats vaut infiniment mieux que rien, et les
-     * adresses se resolvent hors ligne avec `nm` sur l'executable. */
+     * This is not an exact call stack: dead values from earlier frames linger in
+     * it. But on a fault where we do not know how we got there, a list of
+     * candidates beats nothing by a very wide margin, and the addresses resolve
+     * offline with `nm` on the executable. */
     if (info->ContextRecord != NULL) {
         const CONTEXT *c = info->ContextRecord;
         const DWORD *sp = (const DWORD *)c->Esp;
-        DWORD base = 0, taille = 0;
+        DWORD base = 0, size = 0;
         MEMORY_BASIC_INFORMATION mbi;
-        /* Les bornes du code : sans elles on retiendrait n'importe quel entier. */
+        /* The code's bounds: without them we would keep any integer at all. */
         if (VirtualQuery((LPCVOID)(ULONG_PTR)c->Eip, &mbi, sizeof(mbi))) {
             base = (DWORD)(ULONG_PTR)mbi.AllocationBase;
-            taille = 0x00A00000u;         /* l'image tient largement dedans */
+            size = 0x00A00000u;           /* the image fits comfortably inside */
         }
         if (base != 0) {
-            unsigned i, trouves = 0;
-            dkr_win95_log("  pile (adresses de code plausibles) :");
-            for (i = 0; i < 256u && trouves < 16u; i++) {
+            unsigned i, found = 0;
+            dkr_win95_log("  stack (plausible code addresses):");
+            for (i = 0; i < 256u && found < 16u; i++) {
                 const DWORD v = sp[i];
-                if (v > base && v < base + taille) {
+                if (v > base && v < base + size) {
                     sprintf(buf, "    esp+%03X  0x%08lX",
                             i * 4u, (unsigned long)v);
                     dkr_win95_log(buf);
-                    trouves++;
+                    found++;
                 }
             }
         }
     }
 
-    /* `EXCEPTION_ILLEGAL_INSTRUCTION` merite un mot : sur cette cible, c'est le
-       symptome d'une instruction posterieure au Pentium II qui aurait echappe au
-       controle de E01-S01. L'ecrire ici epargne une heure de recherche. */
+    /* `EXCEPTION_ILLEGAL_INSTRUCTION` deserves a word: on this target it is the
+       symptom of an instruction later than the Pentium II having escaped
+       E01-S01's check. Writing it here saves an hour of searching. */
     if (code == EXCEPTION_ILLEGAL_INSTRUCTION) {
-        dkr_win95_log("  piste   : instruction hors Pentium II ? "
-                      "voir tools/win95/check-instruction-set.sh");
+        dkr_win95_log("  lead    : instruction outside the Pentium II set? "
+                      "see tools/win95/check-instruction-set.sh");
     }
 
-    /* Avant la boite de dialogue, et non apres : l'utilisateur peut la laisser
-       ouverte des heures, et les reglages a defaire degradent la machine tant
-       qu'ils tiennent. */
+    /* Before the dialog box, not after: the user may leave it open for hours,
+       and the settings to undo degrade the machine for as long as they hold. */
     dkr_win95_run_cleanups();
-    dkr_win95_log("  nettoyages d'arret anormal executes");
+    dkr_win95_log("  abnormal-exit cleanups run");
 
-    sprintf(buf, "%s s'est arrete sur une %s.\n\nDetails dans " DKR_LOG_NAME ".",
+    sprintf(buf, "%s stopped on a %s.\n\nDetails in " DKR_LOG_NAME ".",
             g_app, exception_name(code));
     MessageBoxA(NULL, buf, g_app, MB_ICONERROR | MB_OK);
 
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-/* --- controle de version --------------------------------------------------- */
+/* --- version check --------------------------------------------------------- */
 
 static int check_version(void)
 {
@@ -292,50 +290,50 @@ static int check_version(void)
 
     v.dwOSVersionInfoSize = sizeof(v);
     if (!GetVersionExA(&v)) {
-        /* Ne pas savoir n'est pas une raison de refuser : sur un systeme trop
-           ancien pour repondre, on aurait deja echoue au chargement. */
-        dkr_win95_log("version du systeme : indeterminee, on continue");
+        /* Not knowing is no reason to refuse: on a system too old to answer, we
+           would already have failed at load time. */
+        dkr_win95_log("system version: undetermined, carrying on");
         return DKR_WIN95_STARTUP_OK;
     }
 
-    sprintf(buf, "systeme : plate-forme %lu, version %lu.%lu build %lu",
+    sprintf(buf, "system: platform %lu, version %lu.%lu build %lu",
             (unsigned long)v.dwPlatformId, (unsigned long)v.dwMajorVersion,
             (unsigned long)v.dwMinorVersion, (unsigned long)(v.dwBuildNumber & 0xFFFF));
     dkr_win95_log(buf);
     if (v.szCSDVersion[0]) { dkr_win95_log(v.szCSDVersion); }
 
-    /* Win32s est une couche 32 bits posee sur Windows 3.1 : elle n'a ni fils
-       d'execution ni la moitie de KERNEL32. Le refus doit etre explicite. */
+    /* Win32s is a 32-bit layer laid over Windows 3.1: it has neither threads nor
+       half of KERNEL32. The refusal must be explicit. */
     if (v.dwPlatformId == VER_PLATFORM_WIN32s) {
         MessageBoxA(NULL,
-                    "Win32s sur Windows 3.1 n'est pas supporte.\n\n"
-                    "Ce programme demande Windows 95 ou plus recent.",
+                    "Win32s on Windows 3.1 is not supported.\n\n"
+                    "This program requires Windows 95 or later.",
                     g_app, MB_ICONERROR | MB_OK);
-        dkr_win95_log("REFUS : Win32s");
+        dkr_win95_log("REFUSED: Win32s");
         return DKR_WIN95_STARTUP_TOO_OLD;
     }
 
-    /* Windows 95 est 4.0. Toute version 4.0 et au-dela convient, NT compris —
-       le binaire y tourne aussi, ce qui rend le developpement moins penible. */
+    /* Windows 95 is 4.0. Any version 4.0 and above will do, NT included - the
+       binary runs there too, which makes development less painful. */
     if (v.dwMajorVersion < 4) {
-        sprintf(buf, "Windows %lu.%lu est anterieur a Windows 95.\n\n"
-                     "Ce programme demande Windows 95 ou plus recent.",
+        sprintf(buf, "Windows %lu.%lu is older than Windows 95.\n\n"
+                     "This program requires Windows 95 or later.",
                 (unsigned long)v.dwMajorVersion, (unsigned long)v.dwMinorVersion);
         MessageBoxA(NULL, buf, g_app, MB_ICONERROR | MB_OK);
-        dkr_win95_log("REFUS : systeme anterieur a Windows 95");
+        dkr_win95_log("REFUSED: system older than Windows 95");
         return DKR_WIN95_STARTUP_TOO_OLD;
     }
 
     return DKR_WIN95_STARTUP_OK;
 }
 
-/* --- demarrage -------------------------------------------------------------- */
+/* --- startup ---------------------------------------------------------------- */
 
 static void log_path_next_to_exe(char *out, DWORD cap)
 {
     DWORD n = GetModuleFileNameA(NULL, out, cap);
     if (n == 0 || n >= cap) {
-        strcpy(out, DKR_LOG_NAME);       /* repli : repertoire courant */
+        strcpy(out, DKR_LOG_NAME);       /* fallback: current directory */
         return;
     }
     while (n > 0 && out[n - 1] != '\\' && out[n - 1] != '/') { n--; }
@@ -355,40 +353,40 @@ int dkr_win95_startup(const char *app_name)
         g_app[sizeof(g_app) - 1] = '\0';
     }
 
-    /* `CreateFileA`, pas `fopen` : le journal doit pouvoir s'ouvrir avant toute
-       initialisation du CRT, puisqu'il sert justement a diagnostiquer ce qui
-       echoue tot. Et `...A`, jamais `...W` — sous Windows 9x, la famille Unicode
-       est un bouchon qui echoue avec ERROR_CALL_NOT_IMPLEMENTED. */
+    /* `CreateFileA`, not `fopen`: the log must be able to open before any CRT
+       initialisation, since its very purpose is to diagnose what fails early.
+       And `...A`, never `...W` - under Windows 9x the Unicode family is a stub
+       that fails with ERROR_CALL_NOT_IMPLEMENTED. */
     log_path_next_to_exe(path, sizeof(path));
     g_log = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (g_log == INVALID_HANDLE_VALUE) {
-        /* Un journal impossible a ouvrir n'est pas fatal en soi, mais il annonce
-           un probleme de droits ou de chemin qu'il vaut mieux signaler tout de
-           suite que decouvrir plus tard sans trace. */
-        sprintf(buf, "Impossible d'ecrire le journal de demarrage :\n%s", path);
+        /* A log that cannot be opened is not fatal in itself, but it announces a
+           permissions or path problem better reported at once than discovered
+           later with no trace. */
+        sprintf(buf, "Cannot write the startup log:\n%s", path);
         MessageBoxA(NULL, buf, g_app, MB_ICONWARNING | MB_OK);
         return DKR_WIN95_STARTUP_NO_LOG;
     }
 
-    dkr_win95_log("=== journal de demarrage ===");
+    dkr_win95_log("=== startup log ===");
     dkr_win95_log(g_app);
     dkr_win95_log(path);
 
     SetUnhandledExceptionFilter(on_unhandled);
-    dkr_win95_log("filtre d'exceptions installe");
+    dkr_win95_log("exception filter installed");
 
     rc = check_version();
     if (rc != DKR_WIN95_STARTUP_OK) { return rc; }
 
-    dkr_win95_log("demarrage termine");
+    dkr_win95_log("startup complete");
     return DKR_WIN95_STARTUP_OK;
 }
 
 void dkr_win95_shutdown(void)
 {
     if (g_log != INVALID_HANDLE_VALUE) {
-        dkr_win95_log("=== fin ===");
+        dkr_win95_log("=== end ===");
         CloseHandle(g_log);
         g_log = INVALID_HANDLE_VALUE;
     }

@@ -1,12 +1,11 @@
-/* E07-S03 — cale de casse, comme celle de `Windows.h`.
+/* E07-S03 - case shim, like the `Windows.h` one.
  *
- * `game_main.cpp` ecrit `#include <DbgHelp.h>`, avec deux majuscules, ce qui est
- * l'usage de Microsoft. Le systeme de fichiers de Windows etant insensible a la
- * casse, cela fonctionne avec MSVC comme avec mingw sur Windows.
+ * `game_main.cpp` writes `#include <DbgHelp.h>`, with two capitals, which is
+ * Microsoft's usage. Windows' file system being case-insensitive, that works
+ * with MSVC as with mingw on Windows.
  *
- * mingw-w64 ne fournit que `dbghelp.h` en minuscules, et un systeme de fichiers
- * Linux ne les confond pas. Ce fichier n'est donc pas un contournement d'une
- * limite de Windows 95 : c'est une propriete de la machine sur laquelle on
- * compile.
+ * mingw-w64 only provides `dbghelp.h` in lower case, and a Linux file system
+ * does not conflate the two. This file is therefore not a workaround for a
+ * Windows 95 limitation: it is a property of the machine we compile on.
  */
 #include <dbghelp.h>

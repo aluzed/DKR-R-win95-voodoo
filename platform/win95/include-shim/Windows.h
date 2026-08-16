@@ -1,12 +1,12 @@
-/* E01-S02 — cale de casse pour la compilation croisee depuis Linux.
+/* E01-S02 - case shim for cross-compiling from Linux.
  *
- * `ultramodern` ecrit `#include <Windows.h>` avec une majuscule, ce qui est
- * l'usage de Microsoft. Le systeme de fichiers de Windows etant insensible a la
- * casse, cela fonctionne avec MSVC comme avec mingw sur Windows.
+ * `ultramodern` writes `#include <Windows.h>` with a capital, which is
+ * Microsoft's usage. Windows' file system being case-insensitive, that works
+ * with MSVC as with mingw on Windows.
  *
- * mingw-w64 ne fournit que `windows.h` en minuscules, et un systeme de fichiers
- * Linux ne les confond pas. Ce fichier n'est donc pas un contournement d'une
- * limite de Windows 95 : c'est une propriete de la machine sur laquelle on
- * compile, et il n'a pas sa place dans un patch de dependance.
+ * mingw-w64 only provides `windows.h` in lower case, and a Linux file system
+ * does not conflate the two. This file is therefore not a workaround for a
+ * Windows 95 limitation: it is a property of the machine we compile on, and it
+ * has no place in a dependency patch.
  */
 #include <windows.h>
