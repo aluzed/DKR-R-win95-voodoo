@@ -48,8 +48,8 @@ need_running() {
 
 case "${1:-}" in
   start)
-    [[ -x "$XVFB" ]] || die "Xvfb absent sous $PREFIX/opt/xvfb"
-    [[ -x "$XDO" ]]  || die "xdotool absent sous $PREFIX/bin"
+    [[ -x "$XVFB" ]] || die "Xvfb absent under $PREFIX/opt/xvfb"
+    [[ -x "$XDO" ]]  || die "xdotool absent under $PREFIX/bin"
     [[ -f "$VM/86box.cfg" ]] || die "machine absent: $VM"
     # **One instance at a time.**
     #
