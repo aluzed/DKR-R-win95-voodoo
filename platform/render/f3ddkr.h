@@ -223,6 +223,9 @@ typedef struct {
     unsigned int         mode_l;
     dkr_combiner         combiner;
     unsigned char        etat_sale;
+    /* Force la profondeur inactive, pour isoler le tri d'un défaut de rendu.
+       Posé par l'appelant ; zéro par défaut. */
+    unsigned char        sans_profondeur;
 
     /* La résolution réellement ouverte par le backend. Le décodeur en a besoin
        pour porter le tampon du jeu à l'écran, et la déduire de la fenêtre

@@ -157,6 +157,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // décodeur lirait des opcodes plausibles à des adresses absurdes.
     context_.rdram_native = 1;
     context_.trace = trace_decodeur;
+    // `DKR_NO_DEPTH=1` désactive le tri de profondeur. Diagnostic : il répond en
+    // une course à une question que l'inspection du code ne tranche pas.
+    {
+        static const bool sans = (std::getenv("DKR_NO_DEPTH") != nullptr);
+        context_.sans_profondeur = sans ? 1 : 0;
+    }
     // La résolution réellement ouverte : le décodeur en a besoin pour porter le
     // tampon du jeu (320 de large) à l'écran, aussi bien pour les rectangles 2D
     // que pour la fenêtre d'affichage 3D.

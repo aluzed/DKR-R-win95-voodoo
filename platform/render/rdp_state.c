@@ -331,7 +331,48 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
     out->alpha_test      = (unsigned char)(rdp->alpha_compare != 0);
     out->alpha_reference = 128;      /* le seuil réel vient de G_SETPRIMCOLOR */
     out->fog_enabled     = rdp->fog;
-    out->blend           = DKR_BLEND_ALPHA;
+    /* --- Le mélange, dérivé du mélangeur au lieu d'être supposé -------------- *
+     *
+     * Cette ligne valait `DKR_BLEND_ALPHA` **sans condition**. Le mot de
+     * mélangeur était décodé dans `rdp->render_mode` juste au-dessus, et jamais
+     * consulté : toutes les surfaces du jeu étaient donc mélangées, y compris
+     * les opaques, ce qui rend l'image invisible dès qu'un alpha manque.
+     *
+     * Le défaut est resté caché tant que la profondeur était inactive — sans
+     * test, chaque triangle recouvrait le précédent et l'on voyait le dernier.
+     * Il s'est manifesté au moment où `G_RDPSETOTHERMODE` a été branché, ce qui
+     * en a fait un symptôme de ce correctif-là. Deux défauts dont l'un masque
+     * l'autre, et c'est le second qu'on accuse.
+     *
+     * `FORCE_BL` — bit 14 du mot bas — est ce qui distingue une surface
+     * réellement mélangée d'une surface opaque : le RDP l'exige pour que le
+     * mélangeur agisse au second cycle. `G_RM_OPA_SURF` ne le porte pas,
+     * `G_RM_XLU_SURF` et `G_RM_AA_ZB_XLU_SURF` le portent.
+     *
+     * Le facteur `B` du second cycle départage ensuite les deux mélanges que ce
+     * portage sait faire : `G_BL_1MA` (valeur 0) est le mélange alpha
+     * classique ; le reste est ramené à l'additif, faute de mieux, et cette
+     * approximation est signalée par `faithful`.
+     *
+     * **Les positions tiennent compte du décalage de trois.** `render_mode` est
+     * le mot bas décalé de 3 — voir son affectation plus haut — donc `FORCE_BL`,
+     * qui est le bit 14 du mot complet, se trouve ici au bit 11, et le champ
+     * `B` du second cycle, bits 16 et 17 du mot complet, aux bits 13 et 14.
+     * Écrire les positions du mot complet aurait lu des champs voisins : le
+     * résultat aurait été plausible — un mélange choisi, différent selon les
+     * surfaces — et faux, donc invisible au contrôle. */
+    {
+        const unsigned int force_bl = rdp->render_mode & 0x800u;
+        const unsigned int b2 = (rdp->render_mode >> 13) & 3u;
+        if (force_bl == 0u) {
+            out->blend = DKR_BLEND_OPAQUE;
+        } else if (b2 == 0u) {
+            out->blend = DKR_BLEND_ALPHA;
+        } else {
+            out->blend = DKR_BLEND_ADDITIVE;
+            faithful = 0;
+        }
+    }
     out->cull            = DKR_CULL_NONE;   /* porté par le mode géométrique */
     out->wrap_s = out->wrap_t = DKR_WRAP_REPEAT;
 

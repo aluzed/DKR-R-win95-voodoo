@@ -640,6 +640,18 @@ static void appliquer_etat(dkr_f3d_context *c)
     }
 
     dkr_rdp_to_render_state(&rdp, &c->render_state, &exact);
+    /* Interrupteur de diagnostic, pas un contournement.
+     *
+     * Trois causes peuvent noircir l'écran et deux ont été écartées par la
+     * mesure. La troisième — la profondeur — ne se réfute pas en la regardant :
+     * ses entrées sont saines, sa configuration est celle que E05-S05 a
+     * mesurée, et elle noircit quand même. La désactiver d'un cran répond en
+     * une course à une question que l'inspection ne tranche pas, et l'on garde
+     * l'interrupteur : il resservira à chaque fois qu'un doute portera sur le
+     * tri plutôt que sur ce qui est dessiné. */
+    if (c->sans_profondeur) {
+        c->render_state.depth = DKR_DEPTH_DISABLED;
+    }
     /* --- Le handle de texture ne survit pas à la traduction ------------------ *
      *
      * `dkr_rdp_to_render_state` remplit **tout** le bloc depuis l'état RDP, et
