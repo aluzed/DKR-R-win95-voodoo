@@ -1,51 +1,51 @@
-# Provenance du relevé des exports vides
+# Provenance of the empty-export survey
 
-Ces listes recensent les symboles que Windows 95 **exporte sans les
-implémenter**. Elles complètent `../` — qui répond à « ce symbole existe-t-il ? »
-— en répondant à « et fait-il quelque chose ? ».
+These lists record the symbols Windows 95 **exports without implementing**. They
+complement `../` — which answers "does this symbol exist?" — by answering "and
+does it do anything?".
 
-Livrable de [E02-S01](../../../../docs/stories/E02-system/E02-S01-threading-and-synchronisation-layer.md).
+Deliverable of [E02-S01](../../../../docs/stories/E02-system/E02-S01-threading-and-synchronisation-layer.md).
 
-## Pourquoi cette liste existe
+## Why this list exists
 
-Un symbole **absent** est un problème bruyant : Windows 95 refuse de charger le
-programme et nomme la DLL et le symbole. C'est ce que vérifie
-`check_imports.py`, et c'est le garde-fou de E01-S04.
+An **absent** symbol is a loud problem: Windows 95 refuses to load the program
+and names the DLL and the symbol. That is what `check_imports.py` checks, and it
+is E01-S04's guard rail.
 
-Un symbole **exporté et vide** est silencieux, et donc pire. Le lien réussit, le
-chargement réussit, le contrôle des imports est satisfait — et la fonction ne
-fait rien, en posant `ERROR_CALL_NOT_IMPLEMENTED` que personne ne lit.
+An **exported and empty** symbol is silent, and therefore worse. The link
+succeeds, the load succeeds, the import check is satisfied — and the function
+does nothing, while setting an `ERROR_CALL_NOT_IMPLEMENTED` nobody reads.
 
-C'est ainsi que `CreateSemaphoreW` a failli emporter tout le planificateur
-d'`ultramodern` : `moodycamel::LightweightSemaphore` l'appelle, reçoit un
-descripteur nul, et ni son attente ni son signal ne fonctionnent ensuite —
-l'attente cesse de bloquer, le signal boucle sans fin et fige la machine.
-Détail dans [`docs/research/win95-blockers.md`](../../../../docs/research/win95-blockers.md).
+That is how `CreateSemaphoreW` nearly carried off the whole of `ultramodern`'s
+scheduler: `moodycamel::LightweightSemaphore` calls it, receives a null handle,
+and neither its wait nor its signal works afterwards — the wait stops blocking,
+the signal loops forever and freezes the machine. Details in
+[`docs/research/win95-blockers.md`](../../../../docs/research/win95-blockers.md).
 
-## Comment un bouchon est reconnu
+## How a stub is recognised
 
-Par sa forme, au désassemblage — pas par son nom, ni par une documentation :
+By its shape, in the disassembly — not by its name, and not from documentation:
 
 ```asm
-33 c0              xor  eax,eax     ; valeur de retour = 0 (échec)
-b1 XX              mov  cl,index    ; numéro du bouchon
-e9 XX XX XX XX     jmp  queue       ; queue commune -> SetLastError(120)
+33 c0              xor  eax,eax     ; return value = 0 (failure)
+b1 XX              mov  cl,index    ; stub number
+e9 XX XX XX XX     jmp  tail        ; common tail -> SetLastError(120)
 ```
 
-Il n'y a pas de faux positif plausible : aucune vraie fonction ne commence par
-mettre son retour à zéro pour sauter aussitôt ailleurs.
+There is no plausible false positive: no real function begins by setting its
+return value to zero in order to jump straight elsewhere.
 
-Preuve supplémentaire quand on en veut une : plusieurs bouchons **partagent la
-même adresse**. `LoadLibraryExW` et `MoveFileExW` sont à la même,
-`CreateEventW` et `CreateSemaphoreW` aussi. Deux fonctions au comportement
-radicalement différent ne partagent du code que lorsqu'aucune des deux n'en a.
+Further proof when one wants it: several stubs **share the same address**.
+`LoadLibraryExW` and `MoveFileExW` are at the same one, `CreateEventW` and
+`CreateSemaphoreW` too. Two functions with radically different behaviour only
+share code when neither has any.
 
-## Relevé
+## The survey
 
-Mêmes DLL, même machine et même date que `../PROVENANCE.md` — Windows 95 OSR2
-français, extrait le 2026-08-12.
+Same DLLs, same machine and same date as `../PROVENANCE.md` — French Windows 95
+OSR2, extracted on 2026-08-12.
 
-| DLL | Bouchons | Exports nommés | Part |
+| DLL | Stubs | Named exports | Share |
 |---|---:|---:|---:|
 | `ADVAPI32` | 176 | 224 | **79 %** |
 | `KERNEL32` | 179 | 682 | 26 % |
@@ -54,49 +54,48 @@ français, extrait le 2026-08-12.
 | `MSVCRT` | 0 | 756 | 0 % |
 | `WINMM` | 0 | 182 | 0 % |
 
-Deux enseignements au-delà du cas qui a motivé le relevé :
+Two lessons beyond the case that prompted the survey:
 
-- **`ADVAPI32` est décorative à 79 %.** Tout ticket qui la viserait — registre,
-  sécurité, services — doit vérifier chaque entrée avant de s'y fier.
-- **`MSVCRT` et `WINMM` n'ont aucun bouchon.** La sortie audio de
-  [E06-S03](../../../../docs/stories/E06-platform/E06-S03-audio-output.md) par
-  `waveOut` ne rencontrera pas ce piège.
+- **`ADVAPI32` is 79 % decorative.** Any ticket aiming at it — registry,
+  security, services — must check every entry before relying on it.
+- **`MSVCRT` and `WINMM` have no stub at all.** The audio output of
+  [E06-S03](../../../../docs/stories/E06-platform/E06-S03-audio-output.md)
+  through `waveOut` will not meet this trap.
 
-Le motif n'est pas propre aux variantes `...W` : `BackupRead`, `CreateNamedPipeA`,
-`CreateIoCompletionPort`, `GetBinaryTypeA` et `FoldStringA` en sont aussi, sans
-être des API Unicode. C'est la raison pour laquelle le relevé est **mesuré et non
-déduit du suffixe du nom**.
+The pattern is not peculiar to the `...W` variants: `BackupRead`,
+`CreateNamedPipeA`, `CreateIoCompletionPort`, `GetBinaryTypeA` and `FoldStringA`
+are stubs too, without being Unicode APIs. That is why the survey is **measured
+and not deduced from the name's suffix**.
 
-## Ce que ce relevé ne peut pas voir
+## What this survey cannot see
 
-Il existe une **troisième** catégorie, que ni la table d'exports ni ce relevé
-n'attrapent, et il faut le savoir avant de faire confiance aux deux.
+There is a **third** category, which neither the export table nor this survey
+catches, and it must be known before trusting either.
 
-`MoveFileExA` est exportée, a du **vrai code** — même prologue que `MoveFileA`,
-avec sa chaîne SEH — et n'apparaît donc pas ci-dessus. Elle échoue pourtant à
-l'exécution avec `ERROR_CALL_NOT_IMPLEMENTED` : c'est une fonction qui décide de
-refuser, pas une entrée vide. Mesuré par
-`tools/win95/witnesses/fileio_probe.cpp` sur la machine (E02-S05).
+`MoveFileExA` is exported, has **real code** — the same prologue as `MoveFileA`,
+with its SEH chain — and therefore does not appear above. It nonetheless fails at
+run time with `ERROR_CALL_NOT_IMPLEMENTED`: it is a function that decides to
+refuse, not an empty entry. Measured by
+`tools/win95/witnesses/fileio_probe.cpp` on the machine (E02-S05).
 
-Résumé des trois catégories, et de ce qui les révèle :
+A summary of the three categories, and of what reveals each:
 
-| Catégorie | Exemple | Ce qui la révèle |
+| Category | Example | What reveals it |
 |---|---|---|
-| Absente de la table d'exports | `TryEnterCriticalSection` | le contrôle d'imports — bruyant, le programme ne démarre pas |
-| Exportée, entrée vide | `CreateSemaphoreW` | ce relevé, par le motif au désassemblage |
-| Exportée, vrai code, refuse | `MoveFileExA` | **rien d'autre que l'exécution** |
+| Absent from the export table | `TryEnterCriticalSection` | the import check — loud, the program does not start |
+| Exported, empty entry | `CreateSemaphoreW` | this survey, by the pattern in the disassembly |
+| Exported, real code, refuses | `MoveFileExA` | **nothing but execution** |
 
-La troisième ne se déduit d'aucune analyse statique. C'est la raison pour
-laquelle ce dépôt fait tourner des sondes sur la machine plutôt que de raisonner
-sur des tableaux, et pourquoi un ticket qui suppose qu'une API est disponible
-doit le vérifier avant de bâtir dessus.
+The third follows from no static analysis at all. That is why this repository
+runs probes on the machine rather than reasoning over tables, and why a ticket
+that assumes an API is available must check before building on it.
 
-## Régénérer
+## Regenerating
 
 ```sh
-tools/win95/find_stubs.py --write /chemin/vers/KERNEL32.DLL USER32.DLL ...
+tools/win95/find_stubs.py --write /path/to/KERNEL32.DLL USER32.DLL ...
 ```
 
-Les DLL sont celles extraites de la machine de test par
-`tools/win95/check_imports.py --refresh`. À refaire si le système de référence
-change — et alors ce fichier doit être mis à jour avec lui.
+The DLLs are those extracted from the test machine by
+`tools/win95/check_imports.py --refresh`. To be redone if the reference system
+changes — and then this file must be updated with it.

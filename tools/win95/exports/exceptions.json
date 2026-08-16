@@ -1,37 +1,38 @@
 {
   "_comment": [
-    "Exceptions au controle des imports. Chaque entree doit porter une",
-    "justification ecrite d'au moins vingt caracteres : l'outil refuse de",
-    "demarrer si une entree n'en a pas. Sans cette regle, cette liste devient",
-    "l'endroit ou l'on fait taire le controle plutot que de corriger le code.",
+    "Exceptions to the import check. Every entry must carry a written",
+    "justification of at least twenty characters: the tool refuses to start if",
+    "an entry has none. Without that rule, this list becomes the place where",
+    "the check gets silenced instead of the code getting fixed.",
     "",
-    "Une exception se justifie quand le symbole est fourni autrement que par",
-    "l'OS — par le pont win95compat, par exemple. Elle ne se justifie jamais",
-    "par « ca a l'air de marcher ».",
+    "An exception is justified when the symbol is supplied other than by the",
+    "OS - by the win95compat bridge, for instance. It is never justified by",
+    "\"it seems to work\".",
     "",
-    "Le champ facultatif 'binaries' restreint la portee a certains",
-    "executables. Une API toleree dans un temoin qui l'exerce expres ne doit",
-    "pas l'etre dans le jeu : sans ce champ, l'exception vaut partout."
+    "The optional 'binaries' field restricts the scope to certain",
+    "executables. An API tolerated in a witness that exercises it on purpose",
+    "must not be tolerated in the game: without this field, the exception",
+    "applies everywhere."
   ],
   "exceptions": [
     {
       "symbol": "GetModuleHandleW",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par _vscprintf.o, _scprintf.o et wassert.o de libmsvcrt. Le desassemblage de _init_vscprintf montre que l'echec est prevu : GetModuleHandleW nul fait brancher mingw sur sa propre implementation _emu_vscprintf, batie sur strlen/malloc/vsnprintf. Le bouchon selectionne donc le repli portable, ce qui est le comportement voulu ici. Rien n'est perdu.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libmsvcrt's _vscprintf.o, _scprintf.o and wassert.o. The disassembly of _init_vscprintf shows the failure is anticipated: a null GetModuleHandleW makes mingw branch to its own _emu_vscprintf implementation, built on strlen/malloc/vsnprintf. The stub therefore selects the portable fallback, which is the intended behaviour here. Nothing is lost.",
       "binaries": []
     },
     {
       "symbol": "GetHandleInformation",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par thread.o et sched.o de libwinpthread, que le modele de threads posix et la liaison statique de libstdc++ font entrer dans tout binaire C++ — y compris par <chrono> seul. Il n'est atteint que par pthread_join et pthread_cancel, ou il est loin d'etre benin : pthread_join teste son retour et part sur son chemin d'erreur, de sorte que std::thread::join() leve une exception sous Windows 95. C'est une des raisons d'etre de la couche de E02-S01, dont dkr_thread_join passe par WaitForSingleObject. Ce qui rend l'import inoffensif est structurel et non esperé : check-cpp-subset.py interdit <thread> sur la cible, donc aucun code du projet ne peut atteindre pthread_join. Les deux garde-fous se composent. WITNESS.EXE fait exception dans l'exception — c'est le temoin de E00-S02, dont le role est justement d'exercer std::thread, et la ou le symbole est reellement atteignable.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread's thread.o and sched.o, which the posix threading model and libstdc++'s static linking bring into every C++ binary - including through <chrono> alone. It is only reached through pthread_join and pthread_cancel, where it is far from harmless: pthread_join tests its return and takes its error path, so std::thread::join() throws under Windows 95. That is one of the reasons the E02-S01 layer exists, whose dkr_thread_join goes through WaitForSingleObject. What makes the import harmless is structural and not hoped for: check-cpp-subset.py forbids <thread> on the target, so no project code can reach pthread_join. The two guard rails compose. WITNESS.EXE is the exception within the exception - it is E00-S02's witness, whose role is precisely to exercise std::thread, and where the symbol is genuinely reachable.",
       "binaries": []
     },
     {
       "symbol": "LoadLibraryW",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par rand_s.o de libmsvcrt, lui-meme tire par std::random_device::_M_getentropy de libstdc++ — que la simple presence de std::filesystem::path dans un binaire fait entrer. rand_s appelle LoadLibraryW puis GetProcAddress pour atteindre le generateur du systeme ; sous Windows 95 il obtient donc un pointeur de fonction nul. Ce qui est tolere ici est la *presence* de l'import, qui n'empeche pas le chargement. Ce qui ne l'est pas, et qui doit etre retenu : **std::random_device ne fonctionne pas sur cette cible**, et l'appeler sauterait dans un pointeur nul. Aucun code du projet ne l'emploie ; verifie que la manipulation de std::filesystem::path, elle, n'y touche pas — la sonde FSPATH.EXE rend des resultats corrects sur la machine.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libmsvcrt's rand_s.o, itself pulled in by libstdc++'s std::random_device::_M_getentropy - which the mere presence of std::filesystem::path in a binary brings in. rand_s calls LoadLibraryW then GetProcAddress to reach the system generator; under Windows 95 it therefore obtains a null function pointer. What is tolerated here is the *presence* of the import, which does not stop the load. What is not, and must be remembered: **std::random_device does not work on this target**, and calling it would jump through a null pointer. No project code uses it; verified that manipulating std::filesystem::path does not touch it - the FSPATH.EXE probe returns correct results on the machine.",
       "binaries": []
     },
     {
       "symbol": "GetProcessTimes",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par libwinpthread_la-clock.o, que <chrono> fait entrer en bloc — le fichier porte clock_gettime et clock_getres ensemble. Le desassemblage de clock.o dit lequel sert a quoi : clock_gettime appelle QueryPerformanceCounter pour CLOCK_MONOTONIC, et GetProcessTimes ou GetThreadTimes seulement pour les identifiants de temps processeur ; clock_getres appelle GetSystemTimeAdjustment pour CLOCK_REALTIME. std::chrono::steady_clock, la seule horloge que ce code emploie, prend la branche QueryPerformanceCounter — celle que E02-S03 a mesuree sur la machine. Les identifiants de temps processeur ne sont demandes ni par libstdc++ ni par le projet. La tolerance porte sur les binaires d'epreuve, qui emploient <chrono> ; elle ne vaut pas pour le jeu.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
@@ -41,7 +42,7 @@
     },
     {
       "symbol": "GetThreadTimes",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par libwinpthread_la-clock.o, que <chrono> fait entrer en bloc — le fichier porte clock_gettime et clock_getres ensemble. Le desassemblage de clock.o dit lequel sert a quoi : clock_gettime appelle QueryPerformanceCounter pour CLOCK_MONOTONIC, et GetProcessTimes ou GetThreadTimes seulement pour les identifiants de temps processeur ; clock_getres appelle GetSystemTimeAdjustment pour CLOCK_REALTIME. std::chrono::steady_clock, la seule horloge que ce code emploie, prend la branche QueryPerformanceCounter — celle que E02-S03 a mesuree sur la machine. Les identifiants de temps processeur ne sont demandes ni par libstdc++ ni par le projet. La tolerance porte sur les binaires d'epreuve, qui emploient <chrono> ; elle ne vaut pas pour le jeu.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
@@ -51,7 +52,7 @@
     },
     {
       "symbol": "GetSystemTimeAdjustment",
-      "justification": "Bouchon de Windows 95 (rend 0), reclame par libwinpthread_la-clock.o, que <chrono> fait entrer en bloc — le fichier porte clock_gettime et clock_getres ensemble. Le desassemblage de clock.o dit lequel sert a quoi : clock_gettime appelle QueryPerformanceCounter pour CLOCK_MONOTONIC, et GetProcessTimes ou GetThreadTimes seulement pour les identifiants de temps processeur ; clock_getres appelle GetSystemTimeAdjustment pour CLOCK_REALTIME. std::chrono::steady_clock, la seule horloge que ce code emploie, prend la branche QueryPerformanceCounter — celle que E02-S03 a mesuree sur la machine. Les identifiants de temps processeur ne sont demandes ni par libstdc++ ni par le projet. La tolerance porte sur les binaires d'epreuve, qui emploient <chrono> ; elle ne vaut pas pour le jeu.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
@@ -61,7 +62,7 @@
     },
     {
       "symbol": "MoveFileExW",
-      "justification": "Exportee avec du vrai code, et elle refuse quand meme : E02-S05 l'a mesuree sur la machine, MoveFileExA(REPLACE_EXISTING) rend ERROR_CALL_NOT_IMPLEMENTED. C'est la troisieme categorie d'API indisponible, celle qu'aucune analyse statique ne voit. Elle est reclamee par fs_ops.o de libstdc++, c'est-a-dire par std::filesystem::rename — que ce code n'appelle pas sur cette cible, le point d'indirection de E02-S05 passant par dkr_file_rename et sa sequence effacer-puis-renommer. L'import est donc present et inatteignable. Le jeu est desormais lie, et le reexamen a eu lieu : save_manager appelait MoveFileExW directement sous #if defined(_WIN32), ce que E02-S06 a corrige en le faisant passer par le point d'indirection. L'import qui reste vient de fs_ops.o de libstdc++, atteint par la seule std::filesystem::rename, que plus aucun code du projet n'appelle sur cette cible.",
+      "justification": "Exported with real code, and it refuses all the same: E02-S05 measured it on the machine, MoveFileExA(REPLACE_EXISTING) returns ERROR_CALL_NOT_IMPLEMENTED. It is the third category of unavailable API, the one no static analysis sees. It is asked for by libstdc++'s fs_ops.o, that is, by std::filesystem::rename - which this code does not call on this target, E02-S05's indirection point going through dkr_file_rename and its delete-then-rename sequence. The import is therefore present and unreachable. The game is now linked, and the re-examination has taken place: save_manager called MoveFileExW directly under #if defined(_WIN32), which E02-S06 fixed by routing it through the indirection point. The import that remains comes from libstdc++'s fs_ops.o, reached only through std::filesystem::rename, which no project code calls any more on this target.",
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",
@@ -71,14 +72,14 @@
     },
     {
       "symbol": "LoadLibraryExW",
-      "justification": "Bouchon de Windows 95 (rend 0). Reclamee par mods.cpp de librecomp pour charger un mod natif — une DLL compilee. La fonction elle-meme n'existe qu'a partir de Windows NT4/98 dans cette forme, et ses drapeaux LOAD_LIBRARY_SEARCH_* datent de Windows 7. Le bouchon rend donc un descripteur nul, et le chargement du mod echoue proprement par le chemin d'erreur deja prevu. C'est le comportement voulu : les mods natifs ne peuvent pas fonctionner sur cette cible, et le systeme de mods est hors perimetre depuis E00-S01. Ce qui compte est que l'echec soit celui d'une operation, pas celui du chargement du programme.",
+      "justification": "A Windows 95 stub (returns 0). Asked for by librecomp's mods.cpp to load a native mod - a compiled DLL. The function itself only exists from Windows NT4/98 in this form, and its LOAD_LIBRARY_SEARCH_* flags date from Windows 7. The stub therefore returns a null handle, and loading the mod fails cleanly through the error path already provided. That is the intended behaviour: native mods cannot work on this target, and the mod system has been out of scope since E00-S01. What matters is that the failure is an operation's, not the program's load.",
       "binaries": [
         "DKRR.EXE"
       ]
     },
     {
       "symbol": "WriteConsoleW",
-      "justification": "Bouchon de Windows 95 (rend 0). Reclamee par analysis.cpp, cgenerator.cpp et recompilation.cpp de N64Recomp — non par leur code, mais par fmt, l'en-tete de formatage qu'ils emploient, qui ecrit sur la console par l'API large quand elle detecte un terminal. Le bouchon fait echouer cette ecriture, et fmt ne le teste pas : les messages de diagnostic du recompilateur a la volee n'apparaitront pas sur cette machine. C'est une degradation, et elle est acceptee comme telle — ces messages ne concernent que la recompilation de mods, deja hors perimetre. Rien de ce que le joueur voit ne passe par la.",
+      "justification": "A Windows 95 stub (returns 0). Asked for by N64Recomp's analysis.cpp, cgenerator.cpp and recompilation.cpp - not by their code, but by fmt, the formatting header they use, which writes to the console through the wide API when it detects a terminal. The stub makes that write fail, and fmt does not test it: the on-the-fly recompiler's diagnostic messages will not appear on this machine. It is a degradation, and it is accepted as such - those messages concern only mod recompilation, already out of scope. Nothing the player sees goes through there.",
       "binaries": [
         "DKRR.EXE"
       ]
