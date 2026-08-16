@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# E09-S01 — Monte l'environnement de test emule : 86Box, jeu de BIOS, machine
-# Pentium II / Voodoo 2 conforme a la cible, et disque de transfert hote<->invite.
+# E09-S01 - sets up the emulated test environment: 86Box, BIOS set, a Pentium II /
+# Voodoo 2 machine matching the target, and a host<->guest transfer disk.
 #
-# N'installe rien a l'echelle du systeme : tout va dans un prefixe utilisateur.
-# Le media d'installation de Windows 95 n'est PAS telecharge : c'est un logiciel
-# proprietaire de Microsoft, que l'utilisateur doit fournir lui-meme.
+# Installs nothing system-wide: everything goes into a user prefix. The Windows 95
+# installation medium is NOT downloaded: it is proprietary Microsoft software, which
+# the user must supply.
 set -euo pipefail
 
 PREFIX="${DKR_WIN95_PREFIX:-$HOME/.local/dkr-win95}"
@@ -13,32 +13,33 @@ VM="$PREFIX/vm/$VM_NAME"
 BOX_VERSION="v6.0"
 BOX_BUILD="b9001"
 
-# Cible arretee par l'ADR 0002 (E00-S05). Modifiable pour eprouver les replis.
+# The target settled by ADR 0002 (E00-S05). Changeable in order to try the
+# fallbacks.
 #
-# ATTENTION : les trois reglages Voodoo ci-dessous sont ecrits dans 86box.cfg,
-# mais 86Box ne les a PAS appliques lors du premier montage de cette machine —
-# il a conserve le texte tel quel tout en emulant une Voodoo 1 avec 2 Mo + 2 Mo.
-# Constate a l'ecran : le dialogue de reglages affichait « Graphique 3dfx
-# Voodoo » alors que le fichier disait type = 1, et Glide repondait « expected
-# Voodoo, none detected ».
+# WARNING: the three Voodoo settings below are written into 86box.cfg, but 86Box
+# did NOT apply them when this machine was first set up - it kept the text as it
+# was while emulating a Voodoo 1 with 2 MB + 2 MB. Observed on screen: the settings
+# dialog showed a plain 3dfx Voodoo Graphics board while the file said type = 1,
+# and Glide answered "expected Voodoo, none detected".
 #
-# Il faut donc VERIFIER le modele une fois, par le dialogue :
+# So the model must be CHECKED once, through the dialog:
 #
-#   86Box -S   ->   Affichage -> Graphique Voodoo 1 ou 2 -> Configurer
+#   86Box -S   ->   Display -> Voodoo Graphics board -> Configure
 #
-# et y choisir « 3Dfx Voodoo 2 », 4 Mo de tampon d'images, 4 Mo de textures.
-# Apres ce passage, les memes valeurs dans le fichier sont honorees.
+# (the labels appear in the interface's own language) and "3Dfx Voodoo 2" chosen
+# there, with 4 MB of frame buffer and 4 MB of texture memory. After that passage,
+# the same values in the file are honoured.
 CPU_FAMILY="${DKR_WIN95_CPU_FAMILY:-pentium2_deschutes}"
 CPU_SPEED="${DKR_WIN95_CPU_SPEED:-400000000}"
-MEM_KB="${DKR_WIN95_MEM_KB:-65536}"          # 64 Mo
+MEM_KB="${DKR_WIN95_MEM_KB:-65536}"          # 64 MB
 VOODOO_TYPE="${DKR_WIN95_VOODOO_TYPE:-1}"    # 0 = Voodoo Graphics, 1 = Voodoo 2
 VOODOO_FB_MB="${DKR_WIN95_VOODOO_FB:-4}"
 VOODOO_TEX_MB="${DKR_WIN95_VOODOO_TEX:-4}"
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31merreur:\033[0m %s\n' "$*" >&2; exit 1; }
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-need() { command -v "$1" >/dev/null 2>&1 || die "$1 est requis mais absent"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but absent"; }
 need curl
 need tar
 need python3
@@ -47,20 +48,20 @@ mkdir -p "$PREFIX/bin" "$PREFIX/opt" "$VM"
 
 # --- 86Box -------------------------------------------------------------------
 if [[ ! -x "$PREFIX/opt/86box/squashfs-root/AppRun" ]]; then
-  say "Recuperation de 86Box $BOX_VERSION"
+  say "Fetching 86Box $BOX_VERSION"
   mkdir -p "$PREFIX/opt/86box"
   curl -fsSL -o "$PREFIX/opt/86box/86Box.AppImage" \
     "https://github.com/86Box/86Box/releases/download/$BOX_VERSION/86Box-Linux-x86_64-$BOX_BUILD.AppImage"
   chmod +x "$PREFIX/opt/86box/86Box.AppImage"
-  # Extraction plutot que montage : FUSE est souvent absent des postes de build.
+  # Extraction rather than mounting: FUSE is often absent from build machines.
   ( cd "$PREFIX/opt/86box" && ./86Box.AppImage --appimage-extract >/dev/null )
 else
-  say "86Box deja present"
+  say "86Box already present"
 fi
 
-# --- jeu de BIOS -------------------------------------------------------------
+# --- BIOS set ----------------------------------------------------------------
 if [[ ! -d "$PREFIX/opt/86box/roms/machines" ]]; then
-  say "Recuperation du jeu de BIOS 86Box"
+  say "Fetching the 86Box BIOS set"
   mkdir -p "$PREFIX/opt/86box/roms"
   tmp="$(mktemp -d)"
   curl -fsSL -o "$tmp/roms.tar.gz" https://github.com/86Box/roms/archive/refs/heads/master.tar.gz
@@ -68,17 +69,17 @@ if [[ ! -d "$PREFIX/opt/86box/roms/machines" ]]; then
   cp -r "$tmp/roms-master/." "$PREFIX/opt/86box/roms/"
   rm -rf "$tmp"
 else
-  say "Jeu de BIOS deja present"
+  say "BIOS set already present"
 fi
 [[ -d "$PREFIX/opt/86box/roms/machines/p2bls" ]] \
-  || die "Le jeu de BIOS ne contient pas la carte mere p2bls (Asus P2B-LS, 440BX)"
+  || die "The BIOS set does not contain the p2bls motherboard (Asus P2B-LS, 440BX)"
 
-# --- mtools, pour ecrire dans le disque de transfert sans droits root --------
+# --- mtools, to write into the transfer disk without root --------------------
 if [[ ! -x "$PREFIX/bin/mcopy" ]]; then
-  say "Installation locale de mtools"
+  say "Local installation of mtools"
   tmp="$(mktemp -d)"
   ( cd "$tmp" && apt-get download mtools >/dev/null 2>&1 ) \
-    || die "apt-get download mtools a echoue ; installez mtools autrement"
+    || die "apt-get download mtools failed; install mtools some other way"
   dpkg-deb -x "$tmp"/mtools_*.deb "$PREFIX/opt/mtools"
   for t in mcopy mformat mmd mdir mdel mtype; do
     ln -sf "$PREFIX/opt/mtools/usr/bin/$t" "$PREFIX/bin/$t"
@@ -86,24 +87,23 @@ if [[ ! -x "$PREFIX/bin/mcopy" ]]; then
   rm -rf "$tmp"
 fi
 
-# --- images disque -----------------------------------------------------------
-# Creees, partitionnees et formatees par scripts/prepare_win95_install.py, qui a
-# besoin de l'ISO de l'utilisateur pour remplir le disque source.
+# --- disk images -------------------------------------------------------------
+# Created, partitioned and formatted by scripts/prepare_win95_install.py, which
+# needs the user's ISO in order to fill the source disk.
 #
-# Un disque dur DOS exige une table de partition : un volume FAT brut, sans MBR,
-# n'est tout simplement pas vu par DOS. C'est pour cela que la creation des
-# images n'est pas faite ici.
+# A DOS hard disk requires a partition table: a raw FAT volume, without an MBR, is
+# simply not seen by DOS. That is why the images are not created here.
 if [[ ! -f "$VM/install.img" ]]; then
-  say "Images disque non preparees — etape suivante :"
-  echo "    scripts/prepare_win95_install.py --iso /chemin/vers/W95.iso"
+  say "Disk images not prepared - next step:"
+  echo "    scripts/prepare_win95_install.py --iso /path/to/W95.iso"
 fi
 
-# --- configuration de la machine --------------------------------------------
-say "Ecriture de $VM/86box.cfg"
+# --- machine configuration ---------------------------------------------------
+say "Writing $VM/86box.cfg"
 cat > "$VM/86box.cfg" <<EOF
-# Machine de test du portage DKR-R vers Windows 95 + 3dfx.
-# Generee par scripts/Setup-Win95-TestVM.sh — voir docs/TEST-ENVIRONMENT.md.
-# Cible arretee par l'ADR 0002 (E00-S05).
+# Test machine for the DKR-R port to Windows 95 + 3dfx.
+# Generated by scripts/Setup-Win95-TestVM.sh - see docs/TEST-ENVIRONMENT.md.
+# The target settled by ADR 0002 (E00-S05).
 
 [General]
 vid_renderer = qt_software
@@ -172,24 +172,24 @@ EOF
 
 cat <<EOF
 
-$(say "Environnement pret")
+$(say "Environment ready")
 
   86Box       : $PREFIX/opt/86box/squashfs-root/AppRun
   BIOS        : $PREFIX/opt/86box/roms
   Machine     : $VM
-  Disque C:   : $VM/win95.img    (systeme, a installer)
-  Disque D:   : $VM/transfer.img (transfert hote <-> invite)
-  Disque E:   : $VM/install.img   (source Windows 95)
-  Disquette   : $VM/freedos-boot.img (demarrage FreeDOS)
+  Disk C:     : $VM/win95.img    (system, to be installed)
+  Disk D:     : $VM/transfer.img (host <-> guest transfer)
+  Disk E:     : $VM/install.img   (Windows 95 source)
+  Floppy      : $VM/freedos-boot.img (FreeDOS boot)
 
-Etape suivante — elle a besoin de VOTRE media Windows 95, qui est un logiciel
-proprietaire de Microsoft et n'est pas telecharge par ces scripts :
+Next step - it needs YOUR Windows 95 medium, which is proprietary Microsoft
+software and is not downloaded by these scripts:
 
-  scripts/prepare_win95_install.py --iso /chemin/vers/W95.iso
+  scripts/prepare_win95_install.py --iso /path/to/W95.iso
   scripts/Run-Win95-VM.sh
 
-Puis, dans l'invite FreeDOS : FDISK, redemarrer, FORMAT C: /U, et
-E:\WIN95\INSTALL.EXE. Ensuite les pilotes 3dfx, puis --snapshot.
+Then, at the FreeDOS prompt: FDISK, reboot, FORMAT C: /U, and
+E:\WIN95\INSTALL.EXE. Next the 3dfx drivers, then --snapshot.
 
-Voir docs/TEST-ENVIRONMENT.md.
+See docs/TEST-ENVIRONMENT.md.
 EOF

@@ -59,10 +59,10 @@ extern/rt64/
 runtime-recomp/RecompiledFuncs/
 build/runtime-tools/
 
-# Sorties de build des outils Win95 (produites par tools/win95/build-glidetest.sh)
+# Build outputs of the Win95 tools (produced by tools/win95/build-glidetest.sh)
 /tools/win95/*.EXE
 /tools/win95/*.exe
 
-# Caches Python des outils (tools/win95/check_imports.py importe pe_symbols)
+# Python caches of the tools (tools/win95/check_imports.py imports pe_symbols)
 __pycache__/
 *.pyc

@@ -19,29 +19,28 @@ if data.get("schemaVersion") != 1:
 
 for dependency in data["dependencies"]:
     repo = root / dependency["repositoryPath"]
-    # Une dépendance non récupérée n'est pas une dépendance en échec. RT64 par
-    # exemple n'est pas cloné sur un poste qui ne vise que Windows 95, où il
-    # n'a de toute façon pas de place (aucun de D3D12, Vulkan ou Metal n'y
-    # existe). Le dire et passer, plutôt que de s'arrêter sur une trace Python.
+    # A dependency that was not fetched is not a failed dependency. RT64, for
+    # instance, is not cloned on a machine that only targets Windows 95, where it
+    # has no place anyway (none of D3D12, Vulkan or Metal exists there). Say so and
+    # move on, rather than stopping on a Python traceback.
     if not (repo / ".git").exists():
-        print(f"[--] {dependency['name']}: worktree absent ({repo}) — ignoré")
+        print(f"[--] {dependency['name']}: worktree absent ({repo}) - skipped")
         continue
     commit = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     if commit != dependency["expectedCommit"]:
         raise SystemExit(f"{dependency['name']} commit mismatch: expected {dependency['expectedCommit']}, got {commit}")
-    # La propreté se constate UNE FOIS, avant d'appliquer quoi que ce soit.
+    # Cleanliness is established ONCE, before anything is applied.
     #
-    # Ce contrôle était à l'intérieur de la boucle, ce qui le rendait impossible
-    # à satisfaire au-delà du premier patch : dès qu'un patch s'applique,
-    # l'arbre porte des modifications suivies, et le patch suivant les prenait
-    # pour des éditions locales. La pile entière ne pouvait donc jamais
-    # s'appliquer d'un coup — seulement patch par patch, à la main.
+    # This check used to be inside the loop, which made it impossible to satisfy
+    # beyond the first patch: as soon as one patch applies, the tree carries tracked
+    # modifications, and the next patch took them for local edits. The whole stack
+    # could therefore never be applied in one go - only patch by patch, by hand.
     #
-    # L'intention du garde-fou est conservée, et sa règle est maintenant simple
-    # à énoncer : un arbre sale alors qu'aucun patch n'est encore appliqué ne
-    # peut être que le fruit d'une édition directe, que l'ADR 0004 interdit.
-    # Sitôt qu'un patch est appliqué, la saleté est la nôtre, et c'est
-    # `git apply --check` qui juge la suite — lui ne se trompe pas.
+    # The guard rail's intent is preserved, and its rule is now simple to state: a
+    # dirty tree while no patch has yet been applied can only be the fruit of a
+    # direct edit, which ADR 0004 forbids. As soon as one patch is applied, the dirt
+    # is ours, and it is `git apply --check` that judges the rest - it does not get
+    # it wrong.
     pending = []
     applied_already = 0
     for entry in dependency["patches"]:
@@ -66,19 +65,19 @@ for dependency in data["dependencies"]:
         check = subprocess.run(["git", "-C", str(repo), "apply", "--check", str(patch)],
                                capture_output=True, text=True)
         if check.returncode != 0:
-            # Cas courant et sans gravite : l'arbre porte deja la pile, mais un
-            # patch anterieur ne se detecte plus comme applique parce qu'un
-            # patch ulterieur a deplace son contexte. `git apply --reverse`
-            # raisonne fichier par fichier et ne sait pas defaire une pile qui
-            # se recouvre — ni patch par patch, ni en bloc.
+            # A common and harmless case: the tree already carries the stack, but
+            # an earlier patch no longer detects as applied because a later one
+            # moved its context. `git apply --reverse` reasons file by file and
+            # cannot undo an overlapping stack - neither patch by patch nor as a
+            # whole.
             #
-            # On ne devine donc pas : on le dit, et on donne le geste sur.
+            # So we do not guess: we say so, and give the safe move.
             raise SystemExit(
-                f"{dependency['name']}: {entry['path']} ne s'applique pas.\n"
+                f"{dependency['name']}: {entry['path']} does not apply.\n"
                 f"{check.stderr.strip()}\n"
-                f"L'arbre porte probablement deja la pile : les patchs qui se\n"
-                f"recouvrent ne se detectent pas un par un. Pour repartir d'un\n"
-                f"etat certain :\n"
+                f"The tree probably already carries the stack: overlapping\n"
+                f"patches do not detect one by one. To start again from a\n"
+                f"known state:\n"
                 f"    git -C {repo} checkout -- .\n"
                 f"    bash scripts/apply-dependency-patches.sh")
         subprocess.run(["git", "-C", str(repo), "apply", str(patch)], check=True)

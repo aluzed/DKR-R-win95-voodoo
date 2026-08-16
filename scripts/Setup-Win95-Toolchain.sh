@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Installe, sans droits root, les outils nécessaires à la génération des sources
-# recompilées et aux mesures de E00-S03 / E00-S04 sous Linux.
+# Installs, without root privileges, the tools needed to generate the recompiled
+# sources and to run E00-S03 / E00-S04's measurements under Linux.
 #
-# Rien n'est installé à l'échelle du système : tout va dans un préfixe
-# utilisateur, ajouté au PATH par la ligne affichée en fin d'exécution.
+# Nothing is installed system-wide: everything goes into a user prefix, added to
+# the PATH by the line printed at the end of the run.
 #
-# Ce script existe parce que le chemin de préparation amont exige Windows,
-# Visual Studio et WSL2 (docs/BUILDING.md), alors que la cible Win95 se construit
-# par compilation croisée depuis Linux. Voir E01-S06.
+# This script exists because the upstream preparation path requires Windows,
+# Visual Studio and WSL2 (docs/BUILDING.md), whereas the Win95 target is built by
+# cross-compilation from Linux. See E01-S06.
 set -euo pipefail
 
 PREFIX="${DKR_WIN95_PREFIX:-$HOME/.local/dkr-win95}"
@@ -15,23 +15,23 @@ CMAKE_VERSION="3.31.6"
 NINJA_VERSION="1.12.1"
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31merreur:\033[0m %s\n' "$*" >&2; exit 1; }
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-have curl || die "curl est requis"
-have tar  || die "tar est requis"
-have dpkg-deb || die "dpkg-deb est requis pour extraire les paquets sans root"
+have curl || die "curl is required"
+have tar  || die "tar is required"
+have dpkg-deb || die "dpkg-deb is required to extract the packages without root"
 
 mkdir -p "$PREFIX/bin" "$PREFIX/opt"
 tmp="$(mktemp -d)"; trap 'rm -rf -- "$tmp"' EXIT
 
 # --- binutils MIPS -----------------------------------------------------------
-# Le paquet Ubuntu et ses bibliothèques partagées sont extraits dans le préfixe ;
-# des enveloppes fixent LD_LIBRARY_PATH pour que les binaires se retrouvent.
+# The Ubuntu package and its shared libraries are extracted into the prefix;
+# wrappers set LD_LIBRARY_PATH so that the binaries find each other.
 if [[ ! -x "$PREFIX/bin/mips-linux-gnu-as" ]]; then
   say "binutils MIPS"
   ( cd "$tmp" && apt-get download binutils-mips-linux-gnu binutils-common >/dev/null 2>&1 ) \
-    || die "apt-get download a échoué ; installez binutils-mips-linux-gnu autrement"
+    || die "apt-get download failed; install binutils-mips-linux-gnu some other way"
   dpkg-deb -x "$tmp"/binutils-mips-linux-gnu_*.deb "$PREFIX/opt/mips-binutils"
   dpkg-deb -x "$tmp"/binutils-common_*.deb         "$PREFIX/opt/mips-binutils"
   for t in as ld objcopy objdump nm readelf ar ranlib strip size addr2line; do
@@ -43,7 +43,7 @@ EOF
     chmod +x "$PREFIX/bin/mips-linux-gnu-$t"
   done
 else
-  say "binutils MIPS déjà présents"
+  say "MIPS binutils already present"
 fi
 
 # --- cmake -------------------------------------------------------------------
@@ -56,7 +56,7 @@ if [[ ! -x "$PREFIX/opt/cmake/bin/cmake" ]]; then
   ln -sf "$PREFIX/opt/cmake/bin/cmake" "$PREFIX/bin/cmake"
   ln -sf "$PREFIX/opt/cmake/bin/ctest" "$PREFIX/bin/ctest"
 else
-  say "cmake déjà présent"
+  say "cmake already present"
 fi
 
 # --- ninja -------------------------------------------------------------------
@@ -68,42 +68,42 @@ if [[ ! -x "$PREFIX/bin/ninja" ]]; then
     "$tmp/ninja.zip" "$PREFIX/bin"
   chmod +x "$PREFIX/bin/ninja"
 else
-  say "ninja déjà présent"
+  say "ninja already present"
 fi
 
 # --- uv ----------------------------------------------------------------------
-# Le decomp crée son environnement Python avec `python3 -m venv`, qui exige le
-# paquet python3-venv, donc apt, donc root. uv crée le même environnement sans
-# ensurepip et sans élévation.
+# The decomp creates its Python environment with `python3 -m venv`, which requires
+# the python3-venv package, hence apt, hence root. uv creates the same environment
+# without ensurepip and without elevation.
 if [[ ! -x "$PREFIX/bin/uv" ]]; then
   say "uv"
   curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$PREFIX/bin" sh >/dev/null 2>&1
 else
-  say "uv déjà présent"
+  say "uv already present"
 fi
 
-# --- vérification ------------------------------------------------------------
+# --- verification ------------------------------------------------------------
 export PATH="$PREFIX/bin:$PATH"
-say "Vérification"
+say "Verification"
 printf '  %-24s %s\n' "cmake"              "$(cmake --version | head -1)"
 printf '  %-24s %s\n' "ninja"              "$(ninja --version)"
 printf '  %-24s %s\n' "mips-linux-gnu-as"  "$(mips-linux-gnu-as --version | head -1)"
 printf '  %-24s %s\n' "uv"                 "$(uv --version)"
-printf '  %-24s %s\n' "gcc -m32"           "$(echo 'int main(void){return 0;}' > "$tmp/t.c" && gcc -m32 "$tmp/t.c" -o "$tmp/t" 2>/dev/null && echo "fonctionnel" || echo "ABSENT — installez gcc-multilib")"
+printf '  %-24s %s\n' "gcc -m32"           "$(echo 'int main(void){return 0;}' > "$tmp/t.c" && gcc -m32 "$tmp/t.c" -o "$tmp/t" 2>/dev/null && echo "working" || echo "ABSENT - install gcc-multilib")"
 
 cat <<EOF
 
-$(say "Prêt")
+$(say "Ready")
 
-Ajoutez le préfixe au PATH :
+Add the prefix to the PATH:
 
   export PATH="$PREFIX/bin:\$PATH"
 
-Puis, pour produire les sources recompilées depuis Linux :
+Then, to produce the recompiled sources from Linux:
 
-  1. construire l'ELF de référence dans le decomp (make setup / extract / -j)
-  2. scripts/generate_recomp_toml.py --elf … --rom … --policy … --output …
+  1. build the reference ELF in the decomp (make setup / extract / -j)
+  2. scripts/generate_recomp_toml.py --elf ... --rom ... --policy ... --output ...
   3. extern/n64-modern-runtime/N64Recomp/build-linux/N64Recomp <toml>
 
-Voir docs/research/cpu-budget.md pour la marche complète et ses mesures.
+See docs/research/cpu-budget.md for the full procedure and its measurements.
 EOF

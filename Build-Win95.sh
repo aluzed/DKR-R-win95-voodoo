@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# E01-S01 — construit la cible Windows 95 / 3dfx Voodoo.
+# E01-S01 - builds the Windows 95 / 3dfx Voodoo target.
 #
 #   ./Build-Win95.sh
 #   DKR_WIN95_BUILD_DIR=/tmp/w95 ./Build-Win95.sh
 #
-# Sur le modèle de Build-Linux.sh, avec les mêmes vérifications de prérequis en
-# tête de script : sur cette cible, un outil manquant se manifeste autrement par
-# une erreur de compilation obscure une minute plus tard.
+# Modelled on Build-Linux.sh, with the same prerequisite checks at the head of the
+# script: on this target, a missing tool otherwise shows up as an obscure
+# compilation error a minute later.
 #
-# Ce que ce script construit aujourd'hui : le pont de compatibilité et le
-# témoin. Le jeu lui-même n'est pas encore compilable pour cette cible —
-# `ultramodern` et `librecomp` attendent E01-S02 et E01-S03, le code recompilé
-# attend E01-S05.
+# What this script builds today: the compatibility bridge and the witness. The
+# game itself is not compilable for this target yet - `ultramodern` and
+# `librecomp` are waiting on E01-S02 and E01-S03, the recompiled code on
+# E01-S05.
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,45 +19,45 @@ build_dir="${DKR_WIN95_BUILD_DIR:-${project_root}/build/win95}"
 prefix="${DKR_WIN95_PREFIX:-${HOME}/.local/dkr-win95}"
 export PATH="${prefix}/bin:${prefix}/opt/mingw/usr/bin:${PATH}"
 
-fail() { printf '\033[1;31merreur:\033[0m %s\n' "$*" >&2; exit 1; }
+fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
-# --- Prérequis ---------------------------------------------------------------
+# --- Prerequisites -----------------------------------------------------------
 
 command -v cmake >/dev/null || fail \
-  "cmake est absent. Installez-le sans droits avec scripts/Setup-Win95-Toolchain.sh"
+  "cmake is absent. Install it without privileges with scripts/Setup-Win95-Toolchain.sh"
 command -v ninja >/dev/null || fail \
-  "ninja est absent. Installez-le sans droits avec scripts/Setup-Win95-Toolchain.sh"
+  "ninja is absent. Install it without privileges with scripts/Setup-Win95-Toolchain.sh"
 
 for tool in i686-w64-mingw32-gcc-posix i686-w64-mingw32-g++-posix i686-w64-mingw32-objdump; do
   command -v "$tool" >/dev/null || fail \
-    "${tool} est absent. La cible exige mingw-w64 i686, modèle de threads posix :
+    "${tool} is absent. The target requires mingw-w64 i686, posix threading model:
     apt-get download g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix \\
                      gcc-mingw-w64-i686-posix-runtime
-    puis dpkg-deb -x chaque paquet dans ${prefix}/opt/mingw/
-  Le suffixe -posix n'est pas facultatif : voir docs/adr/0001-toolchain.md."
+    then dpkg-deb -x each package into ${prefix}/opt/mingw/
+  The -posix suffix is not optional: see docs/adr/0001-toolchain.md."
 done
 
 [[ -f "${project_root}/cmake/toolchain-win95.cmake" ]] || fail \
-  "cmake/toolchain-win95.cmake est absent."
+  "cmake/toolchain-win95.cmake is absent."
 [[ -x "${project_root}/tools/win95/check-instruction-set.sh" ]] || fail \
-  "tools/win95/check-instruction-set.sh est absent ou non exécutable."
+  "tools/win95/check-instruction-set.sh is absent or not executable."
 
-# Le vérificateur est éprouvé avant d'être employé : un vérificateur cassé et un
-# vérificateur satisfait se taisent de la même manière.
-say "Épreuve du vérificateur de jeu d'instructions"
+# The verifier is put to the test before being used: a broken verifier and a
+# satisfied one keep quiet in the same way.
+say "Trial of the instruction-set verifier"
 "${project_root}/tools/win95/check-instruction-set.sh" --self-test >/dev/null \
-  || fail "le vérificateur de jeu d'instructions ne détecte pas le SSE injecté."
+  || fail "the instruction-set verifier does not detect the injected SSE."
 
-# Même raison pour le contrôle des imports, et une de plus depuis E02-S01 : il
-# doit refuser deux choses de natures différentes — un symbole *absent*, dont
-# l'absence est bruyante, et un symbole *exporté mais vide*, dont l'échec est
-# silencieux. La seconde est celle qui avait échappé à tout le monde.
-say "Épreuve du contrôle des imports et des bouchons"
+# Same reason for the import check, and one more since E02-S01: it must refuse two
+# things of different natures - an *absent* symbol, whose absence is loud, and a
+# symbol *exported but empty*, whose failure is silent. The second is the one that
+# had escaped everyone.
+say "Trial of the import and stub checks"
 python3 "${project_root}/tools/win95/check_imports.py" --self-test >/dev/null \
-  || fail "le contrôle des imports ne détecte pas le témoin sale ou le témoin creux."
+  || fail "the import check does not detect the dirty witness or the hollow one."
 
-# --- Configuration et compilation --------------------------------------------
+# --- Configuration and compilation -------------------------------------------
 
 say "Configuration (${build_dir})"
 cmake -S "${project_root}/runtime-recomp" -B "${build_dir}" -G Ninja \
@@ -66,28 +66,28 @@ cmake -S "${project_root}/runtime-recomp" -B "${build_dir}" -G Ninja \
   -DDKRPORT_ROOT="${project_root}" \
   -DDKR_RUNTIME_TARGET_WIN95=ON
 
-say "Compilation"
+say "Building"
 cmake --build "${build_dir}" --parallel
 
-# --- Contrôles de sortie -----------------------------------------------------
+# --- Output checks -----------------------------------------------------------
 #
-# Le contrôle du jeu d'instructions est déjà passé, en étape post-lien de la
-# cible. Reste celui des imports : sous Windows 95 le chargeur résout tous les
-# imports au démarrage, donc un symbole absent est fatal même si la fonction
-# n'est jamais appelée — et rien ne le signale au lien.
+# The instruction-set check has already run, as the target's post-link step. What
+# remains is the import check: under Windows 95 the loader resolves every import at
+# startup, so a missing symbol is fatal even if the function is never called - and
+# nothing flags it at link time.
 
 witness="${build_dir}/bin/WITNESS.EXE"
-[[ -f "${witness}" ]] || fail "témoin absent après compilation : ${witness}"
+[[ -f "${witness}" ]] || fail "witness absent after the build: ${witness}"
 
-# Les deux contrôles sont déjà passés en étape post-lien de chaque cible ; on les
-# rejoue ici sur le binaire final, parce que c'est celui-là qui sera copié sur la
-# machine et que le script doit pouvoir être lancé sur un build existant.
-say "Contrôle des imports contre les exports réels de Windows 95"
+# Both checks have already run as each target's post-link step; we replay them here
+# on the final binary, because that is the one which will be copied to the machine
+# and because the script must be runnable on an existing build.
+say "Checking the imports against Windows 95's real exports"
 python3 "${project_root}/tools/win95/check_imports.py" \
         --objects "${build_dir}" "${witness}" \
-  || fail "le témoin réclame des symboles absents de Windows 95."
+  || fail "the witness requires symbols absent from Windows 95."
 
-printf '\n\033[1;32mCible Windows 95 construite.\033[0m\n'
-printf 'Témoin : %s\n' "${witness}"
-printf 'À exécuter sur la machine de test :\n'
+printf '\n\033[1;32mWindows 95 target built.\033[0m\n'
+printf 'Witness: %s\n' "${witness}"
+printf 'To run on the test machine:\n'
 printf '  scripts/Push-To-Win95-VM.sh %s\n' "${witness}"
