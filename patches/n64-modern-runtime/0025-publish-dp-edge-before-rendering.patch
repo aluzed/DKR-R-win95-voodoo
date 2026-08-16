@@ -1,0 +1,115 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Publish the DP edge before rendering, not after
+
+DKR crashes in __scHandleRDP with sc->curRDPTask null. Twelve hypotheses about
+ordering were eliminated one by one -- duplicate edges, SP/DP races, queue
+saturation, wrong target task -- and every one of them was wrong, because the
+defect is not an ordering defect at all.
+
+DKR's scheduler carries a watchdog that stock libultra does not have. In
+__scHandleRetrace (libultra/src/sc/sched.c):
+
+    if (sc->curRDPTask) gCurRDPTaskCounter++;
+
+    if ((gCurRDPTaskCounter > 10) && (sc->curRDPTask)) {
+        set_curRDPTask_NULL = TRUE;
+        osDpSetStatus(... DPC_CLR_PIPE_CTR | DPC_CLR_CMD_CTR);
+    }
+    ...
+    if (set_curRDPTask_NULL) sc->curRDPTask = NULL;
+
+Past ten retraces with an outstanding RDP task, Rare's code declares the RDP
+hung: it nulls curRDPTask and resets the DP registers, but it does NOT clear
+OS_SC_NEEDS_RDP on the task. A DP edge arriving after that walks into
+__scHandleRDP, reads curRDPTask == 0 and dereferences null.
+
+That is exactly the state the probe captured at the instant of reception:
+
+    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
+    visee=0x80125FB0 state=0x00000001 flags=0x00000023
+
+curRDPTask null while the targeted task still carries NEEDS_RDP (state = 1).
+Only two code paths null curRDPTask, and __scHandleRDP clears NEEDS_RDP when it
+does. The watchdog is the only path that leaves this combination behind.
+
+Ten retraces is 167 ms. The DP edge was published after send_dl, and a software
+Glide frame on an emulated Pentium II exceeds that budget, so the watchdog was
+guaranteed to fire eventually -- no ordering fix could have helped.
+
+Publishing the edge before rendering is safe for exactly the reason the SP edge
+already is: the queued task owns an immutable RDRAM snapshot, so the renderer
+never reads memory the game may recycle, and presenting to the screen is the
+port's business rather than the game's.
+
+The patch also records how long send_dl actually takes -- worst case and the
+count of frames over the 167 ms budget -- because that measurement is what makes
+the diagnosis checkable rather than merely plausible.
+
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -284,6 +284,31 @@
+                  g_trace_dp.load());
+ }
+ 
++// Combien de temps dure reellement un rendu de liste d'affichage ?
++//
++// C'est la mesure qui decide du diagnostic : le chien de garde de DKR abandonne
++// le RDP au bout de onze retraces, soit 167 ms. Si le rendu depasse ce budget,
++// publier le bord DP a la fin du rendu condamne le jeu, quel que soit l'ordre
++// des messages. On releve le pire cas plutot que la moyenne, parce que c'est un
++// seul depassement qui declenche le chien de garde.
++static std::atomic<unsigned> g_dl_pire_ms{0};
++static std::atomic<unsigned> g_dl_hors_budget{0};
++static std::atomic<unsigned> g_dl_total{0};
++static void trace_dl_duration(std::chrono::high_resolution_clock::time_point debut,
++                              std::chrono::high_resolution_clock::time_point fin) {
++    const unsigned ms = static_cast<unsigned>(
++        std::chrono::duration_cast<std::chrono::milliseconds>(fin - debut).count());
++    const unsigned n = g_dl_total.fetch_add(1) + 1;
++    unsigned pire = g_dl_pire_ms.load();
++    while (ms > pire && !g_dl_pire_ms.compare_exchange_weak(pire, ms)) {}
++    // 167 ms = onze retraces a 60 Hz, le seuil exact du chien de garde.
++    if (ms > 167u) { g_dl_hors_budget.fetch_add(1); }
++    if (!trace_sp_enabled()) { return; }
++    if (n % 60u != 0u) { return; }
++    std::fprintf(stderr, "[trace][dl] rendus=%u pire=%u ms hors-budget(>167ms)=%u\n",
++                 n, g_dl_pire_ms.load(), g_dl_hors_budget.load());
++}
++
+ void sp_complete() {
+     g_trace_sp.fetch_add(1);
+     trace_sp("sp", 0);
+@@ -416,11 +441,30 @@
+                 PTR(u64) displaylist = task_action->task.t.data_ptr;
+                 ultramodern::extensions::on_displaylist_submitted(displaylist);
+ 
++                // Publish the DP edge BEFORE rendering, not after.
++                //
++                // DKR's scheduler carries a watchdog that stock libultra does not
++                // have (__scHandleRetrace, sched.c): it counts retraces while an
++                // RDP task is outstanding, and past ten of them it declares the
++                // RDP hung -- it nulls curRDPTask and resets the DP registers,
++                // WITHOUT clearing OS_SC_NEEDS_RDP on the task. A DP edge landing
++                // after that point walks into __scHandleRDP with curRDPTask == 0
++                // and dereferences null.
++                //
++                // Ten retraces is 167 ms. A software Glide frame on an emulated
++                // Pentium II exceeds that, so tying the DP edge to the end of
++                // send_dl guarantees the watchdog fires eventually.
++                //
++                // Publishing early is safe for exactly the reason sp_complete()
++                // is: the queued task owns an immutable RDRAM snapshot, so the
++                // renderer never reads memory the game may recycle, and the swap
++                // to the screen is ours to schedule rather than the game's.
++                dp_complete();
++
+                 [[maybe_unused]] auto renderer_start = std::chrono::high_resolution_clock::now();
+                 renderer_context->send_dl(&task_action->task, task_action->rdram_snapshot.get());
+                 [[maybe_unused]] auto renderer_end = std::chrono::high_resolution_clock::now();
+-
+-                dp_complete();
++                trace_dl_duration(renderer_start, renderer_end);
+                 // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
+                 ultramodern::extensions::on_displaylist_parsed(displaylist);
+                 ultramodern::extensions::on_displaylist_completed(displaylist);

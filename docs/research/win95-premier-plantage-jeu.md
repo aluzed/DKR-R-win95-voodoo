@@ -833,3 +833,64 @@ moment où le jeu retire son message, sauf à altérer la sémantique de sa file
 Une autre forme reste à trouver : par exemple ne publier le bord DP qu'une fois
 que le jeu a effectivement accordé le RDP, ce qui suppose d'attendre côté fil
 graphique plutôt que de déposer et différer.
+
+## La cause : un chien de garde, pas un ordonnancement
+
+Douze hypothèses éliminées, toutes sur l'**ordre** des messages, toutes fausses —
+parce que le défaut n'est pas un défaut d'ordre. Il fallait cesser de lire notre
+code et lire le sien.
+
+`__scHandleRetrace`, dans `libultra/src/sc/sched.c` du décomp, porte un chien de
+garde que la libultra d'origine n'a pas. Rare l'a ajouté :
+
+```c
+if (sc->curRDPTask) gCurRDPTaskCounter++;
+
+if ((gCurRDPTaskCounter > 10) && (sc->curRDPTask)) {
+    if (sc->curRDPTask->unk68 == 0) {
+        osSendMesg(sc->curRDPTask->msgQ, &gBootBlackoutMesg, OS_MESG_BLOCK);
+    }
+    set_curRDPTask_NULL = TRUE;
+    gCurRDPTaskCounter = 0;
+    osDpSetStatus(DPC_SET_XBUS_DMEM_DMA | DPC_CLR_FREEZE | DPC_CLR_FLUSH |
+                  DPC_CLR_TMEM_CTR | DPC_CLR_PIPE_CTR | DPC_CLR_CMD_CTR);
+}
+...
+if (set_curRDPTask_NULL) { sc->curRDPTask = NULL; }
+```
+
+Au-delà de dix retraces avec une tâche RDP en cours, le jeu **déclare le RDP
+planté** : il remet `curRDPTask` à zéro et réinitialise les registres DP — mais
+il **n'efface pas `OS_SC_NEEDS_RDP` sur la tâche**. Notre bord DP, arrivant
+après, entre dans `__scHandleRDP`, y lit `curRDPTask == 0` et déréférence zéro.
+
+C'est mot pour mot l'état que la sonde avait capturé :
+
+    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
+    visee=0x80125FB0 state=0x00000001 flags=0x00000023
+
+`curRDPTask` nul **et** la tâche visée portant encore `NEEDS_RDP`. Deux chemins
+seulement mettent `curRDPTask` à zéro, et `__scHandleRDP` efface `NEEDS_RDP`
+quand il le fait. Le chien de garde est le seul qui laisse cette combinaison
+derrière lui. La mesure désignait la cause depuis le début ; c'est sa lecture qui
+manquait.
+
+### Pourquoi aucun correctif d'ordre ne pouvait marcher
+
+Dix retraces valent **167 ms**. Le bord DP était publié après `send_dl`, et un
+rendu logiciel Glide sur un Pentium II émulé dépasse ce budget. Le chien de garde
+devait donc finir par se déclencher, quel que soit l'ordre des messages, quelle
+que soit la file, quel que soit le ciblage. Les douze hypothèses cherchaient une
+faute de séquence là où il n'y avait qu'un **budget de temps dépassé**.
+
+### Le correctif
+
+Publier le bord DP **avant** le rendu plutôt qu'après, exactement comme le bord
+SP l'est déjà — et pour la même raison, écrite deux lignes plus haut dans
+`events.cpp` : la tâche en file possède un instantané immuable de la RDRAM, donc
+le rendu ne lit jamais de mémoire que le jeu pourrait recycler, et l'échange vers
+l'écran nous appartient, pas au jeu.
+
+Le correctif emporte la mesure qui le justifie : durée de `send_dl`, pire cas, et
+compte des images au-delà des 167 ms. Sans elle, le diagnostic serait plausible
+au lieu d'être vérifiable.

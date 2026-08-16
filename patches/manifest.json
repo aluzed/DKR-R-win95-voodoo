@@ -101,6 +101,10 @@
         {
           "path": "patches/n64-modern-runtime/0024-priority-reserved-slots-and-source.patch",
           "sha256": "caac7892a576a61fc23f0ed4664452d543d145f14d7c08f8a0e5a2257201d220"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0025-publish-dp-edge-before-rendering.patch",
+          "sha256": "45b5912057a50b27e3a387023894561bddb249214cf95683d27348b81a779334"
         }
       ]
     },
