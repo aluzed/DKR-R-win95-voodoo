@@ -1,138 +1,137 @@
-# Quelle base de temps Windows 95 offre réellement
+# What time base Windows 95 really offers
 
-Mesures de [E02-S03](../stories/E02-system/E02-S03-clock-timers-and-pacing.md),
-prises sur la machine de test — Windows 95 OSR2, Pentium II 400 MHz émulé.
-Sonde : `tools/win95/witnesses/clock_probe.cpp`.
+Measurements from
+[E02-S03](../stories/E02-system/E02-S03-clock-timers-and-pacing.md), taken on the
+test machine — Windows 95 OSR2, emulated Pentium II 400 MHz. Probe:
+`tools/win95/witnesses/clock_probe.cpp`.
 
-Le ticket dressait un tableau des sources candidates avec, pour chacune, une
-résolution *supposée*. Deux de ces suppositions sont fausses, et elles changent
-la conception.
+The ticket drew up a table of candidate sources with, for each, an *assumed*
+resolution. Two of those assumptions are false, and they change the design.
 
-## Le relevé
+## The report
 
 ```text
 QueryPerformanceFrequency : 1193180 Hz
-timeGetDevCaps            : periode de 1 a 65535 ms
+timeGetDevCaps            : period from 1 to 65535 ms
 
-Resolution observee (plus petit pas non nul)
+Observed resolution (smallest non-zero step)
   GetTickCount            : 9 ms
-  timeGetTime  (avant)    : 1 ms
-  timeGetTime  (apres timeBeginPeriod(1)) : 1 ms
-  QueryPerformanceCounter : 5 pas = 4.190 us
+  timeGetTime  (before)   : 1 ms
+  timeGetTime  (after timeBeginPeriod(1)) : 1 ms
+  QueryPerformanceCounter : 5 ticks = 4.190 us
 
-Monotonie sur 200000 lectures consecutives
-  QueryPerformanceCounter : 0 recul(s)
-  timeGetTime             : 0 recul(s)
+Monotonicity over 200000 consecutive reads
+  QueryPerformanceCounter : 0 step(s) backwards
+  timeGetTime             : 0 step(s) backwards
 
-Cout par appel — ordre de grandeur sous emulation, NON transposable
+Cost per call - order of magnitude under emulation, NOT transferable
   GetTickCount            : 45 ns
   timeGetTime             : 6085 ns
   QueryPerformanceCounter : 4685 ns
 ```
 
-La résolution n'est pas demandée au système, elle est **constatée** : on lit la
-source en boucle jusqu'à ce que sa valeur change, et l'écart observé est la vraie
-granularité. Une source qui annonce la microseconde et n'avance que toutes les
-55 ms est précisément le piège que cette méthode évite.
+The resolution is not asked of the system, it is **observed**: the source is read
+in a loop until its value changes, and the observed gap is the real granularity. A
+source that announces the microsecond and only advances every 55 ms is precisely
+the trap this method avoids.
 
-## Ce que la fréquence dit de l'origine du compteur
+## What the frequency says about the counter's origin
 
-`QueryPerformanceFrequency` rend **1 193 180 Hz**. Ce n'est pas une valeur
-quelconque : c'est la fréquence du **PIT 8254**, 1,193182 MHz, l'oscillateur à
-14,31818 MHz divisé par douze. Windows 95 ne bâtit donc pas `QueryPerformanceCounter`
-sur le compteur de cycles du processeur mais sur le minuteur d'intervalle
-programmable, lu par accès d'entrée-sortie.
+`QueryPerformanceFrequency` returns **1,193,180 Hz**. That is not just any value:
+it is the **8254 PIT**'s frequency, 1.193182 MHz, the 14.31818 MHz oscillator
+divided by twelve. Windows 95 therefore does not build
+`QueryPerformanceCounter` on the processor's cycle counter but on the programmable
+interval timer, read through I/O accesses.
 
-Trois conséquences, et la troisième est la plus importante :
+Three consequences, and the third is the most important:
 
-1. **La résolution mesurée, 4,19 µs, vaut 5 pas de PIT.** Ce n'est pas la
-   période du compteur — un pas vaut 0,838 µs — mais le temps que prend une
-   lecture. On ne peut pas dater plus finement que le coût de la mesure.
+1. **The measured resolution, 4.19 µs, is 5 PIT ticks.** That is not the counter's
+   period — one tick is 0.838 µs — but the time a read takes. One cannot timestamp
+   more finely than the cost of measuring.
 
-2. **Le coût s'explique** : lire le PIT passe par des accès d'entrée-sortie ISA,
-   lents par nature. `GetTickCount`, elle, lit une variable en mémoire partagée
-   sans changement de contexte, d'où les deux ordres de grandeur d'écart.
+2. **The cost is explained**: reading the PIT goes through ISA I/O accesses, slow
+   by nature. `GetTickCount`, for its part, reads a variable in shared memory
+   without a context switch, hence the two orders of magnitude between them.
 
-3. **Les 32 bits de poids faible rebouclent en exactement 60 minutes.**
-   2³² ÷ 1 193 180 = 3 600 s. L'API rend 64 bits et Windows 95 étend le
-   compteur, mais c'est un fait qu'il vaut mieux connaître avant qu'après : une
-   session de jeu dépasse couramment l'heure.
+3. **The low 32 bits wrap in exactly 60 minutes.** 2³² ÷ 1,193,180 = 3,600 s. The
+   API returns 64 bits and Windows 95 extends the counter, but it is a fact better
+   known before than after: a play session commonly exceeds an hour.
 
-## Les deux suppositions démenties
+## The two assumptions disproved
 
-### `timeBeginPeriod(1)` ne change rien ici
+### `timeBeginPeriod(1)` changes nothing here
 
-Le ticket le donnait comme le moyen d'obtenir la milliseconde. `timeGetTime`
-rend déjà la milliseconde **avant** tout réglage, et `timeGetDevCaps` annonce une
-période minimale de 1 ms.
+The ticket gave it as the means of obtaining the millisecond. `timeGetTime`
+already returns the millisecond **before** any setting, and `timeGetDevCaps`
+announces a minimum period of 1 ms.
 
-L'appel est néanmoins fait, et surtout **relâché** : rien ne garantit qu'il en
-aille de même sur une autre machine, et sous Windows 9x un réglage laissé en
-place dégrade tout le système jusqu'au redémarrage — y compris après la fin du
-processus qui l'a posé.
+The call is made nonetheless, and above all **released**: nothing guarantees the
+same holds on another machine, and under Windows 9x a setting left in place
+degrades the whole system until the next reboot — including after the end of the
+process that set it.
 
-### `GetTickCount` est bien plus fine que 55 ms — et bien moins chère
+### `GetTickCount` is far finer than 55 ms — and far cheaper
 
-Le ticket l'annonçait à « ~55 ms », la période du tick DOS à 18,2 Hz. La mesure
-donne **9 ms**, et un coût **cent fois moindre** que les deux autres sources.
+The ticket announced it at "~55 ms", the DOS tick period at 18.2 Hz. The
+measurement gives **9 ms**, and a cost **a hundred times lower** than the two
+other sources.
 
-Elle reste trop grossière pour cadencer 30 images par seconde — un pas de 9 ms
-représente plus du quart d'une image — mais elle est le bon outil partout où une
-datation grossière suffit, et l'écart de coût est assez large pour que la
-question se pose à chaque site d'appel. Le chiffre est versé au budget de
-[E08-S01](../stories/E08-perf/E08-S01-frame-budget-instrumentation.md).
+It stays too coarse to pace 30 frames per second — a 9 ms step is more than a
+quarter of a frame — but it is the right tool wherever coarse timestamping
+suffices, and the cost difference is wide enough for the question to arise at every
+call site. The figure goes into
+[E08-S01](../stories/E08-perf/E08-S01-frame-budget-instrumentation.md)'s budget.
 
-> **Réserve.** Les 9 ms sont mesurés sous 86Box. La granularité de
-> `GetTickCount` sous Windows 9x dépend du minuteur système, que l'émulateur
-> reproduit fonctionnellement et non temporellement. C'est
-> [E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md) qui tranchera
-> sur matériel réel. Le choix de conception n'en dépend pas : `GetTickCount`
-> n'est retenue comme source principale dans aucun cas.
+> **A reservation.** The 9 ms are measured under 86Box. `GetTickCount`'s
+> granularity under Windows 9x depends on the system timer, which the emulator
+> reproduces functionally and not temporally.
+> [E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md) will settle it
+> on real hardware. The design choice does not depend on it: `GetTickCount` is
+> retained as the main source in no case.
 
-## Ce qui a été retenu
+## What was retained
 
-`QueryPerformanceCounter` comme source principale — 4,19 µs, monotone sur
-200 000 lectures — avec repli sur `timeGetTime` si elle s'avère absente ou
-incohérente au lancement. La validation n'est pas une formalité : une source qui
-recule, même d'un pas, est écartée au profit du repli plutôt que de produire un
-chronomètre qui saute en cours de partie.
+`QueryPerformanceCounter` as the main source — 4.19 µs, monotonic over 200,000
+reads — with a fallback to `timeGetTime` if it turns out to be absent or
+inconsistent at startup. The validation is not a formality: a source that steps
+backwards, even by one tick, is set aside in favour of the fallback rather than
+producing a stopwatch that jumps mid-game.
 
-Le repli, lui, est un compteur de 32 bits qui reboucle après 49,7 jours. Il est
-accumulé par `dkr_tick64_step`, la fonction pure de
-[E01-S03](../WIN95-COMPAT.md) — reprise et non recopiée, parce qu'un second
-exemplaire du même raisonnement finit toujours par diverger du premier.
+The fallback is a 32-bit counter that wraps after 49.7 days. It is accumulated by
+`dkr_tick64_step`, [E01-S03](../WIN95-COMPAT.md)'s pure function — reused and not
+copied, because a second copy of the same reasoning always ends up diverging from
+the first.
 
-Implémentation et contrat : `platform/win95/clock.{h,cpp}`.
+Implementation and contract: `platform/win95/clock.{h,cpp}`.
 
-## Le défaut que cette mesure a fait apparaître
+## The defect this measurement brought to light
 
-`ultramodern` dérive `osGetCount` — donc **toute** la mesure du temps de DKR —
-de `std::chrono::high_resolution_clock` (`timer.cpp:65`). Reste à savoir quelle
-horloge c'est réellement. Mesuré sur la cible :
+`ultramodern` derives `osGetCount` — hence **all** of DKR's timekeeping — from
+`std::chrono::high_resolution_clock` (`timer.cpp:65`). What remains is to know
+which clock that really is. Measured on the target:
 
 ```text
-is_steady=false  system_clock=OUI  steady_clock=non
+is_steady=false  system_clock=YES  steady_clock=no
 ```
 
-**C'est l'horloge murale.** Sur cette chaîne, `high_resolution_clock` est un
-alias de `system_clock`, et `is_steady` vaut faux : elle recule quand
-l'utilisateur change l'heure, et quand Windows applique le passage à l'heure
-d'hiver. Le compteur de cycles du VR4300, sur lequel reposent la cadence, les
-chronométrages de course et la temporisation audio, hérite de ces sauts.
+**It is the wall clock.** On this toolchain, `high_resolution_clock` is an alias of
+`system_clock`, and `is_steady` is false: it steps backwards when the user changes
+the time, and when Windows applies the switch to winter time. The VR4300's cycle
+counter, on which the pacing, the race timings and the audio timing all rest,
+inherits those jumps.
 
-L'ironie est instructive : `timer.cpp` porte, dix lignes plus bas, un
-commentaire expliquant que la branche Windows évite `std::chrono::sleep_until`
-*précisément* parce que les implémentations « ont été affectées par un recul de
-l'horloge système ». La précaution a été prise sur l'attente, pas sur le
-compteur.
+The irony is instructive: `timer.cpp` carries, ten lines below, a comment
+explaining that the Windows branch avoids `std::chrono::sleep_until` *precisely*
+because the implementations "have been affected by the system clock stepping
+backwards". The precaution was taken on the wait, not on the counter.
 
-Ce n'est pas propre à Windows 95 — c'est vrai sur toutes les plates-formes
-d'`ultramodern` — mais c'est ici qu'on peut le corriger sans risque, puisque
-`platform/win95/clock.{h,cpp}` offre une base monotone dont la dérive est
-mesurée. **Brancher `osGetCount` dessus est donc justifié par une mesure et non
-par un souci de propreté**, et c'est le point 4 de E02-S03.
+This is not specific to Windows 95 — it is true on all of `ultramodern`'s
+platforms — but it is here that it can be corrected without risk, since
+`platform/win95/clock.{h,cpp}` offers a monotonic base whose drift is measured.
+**Wiring `osGetCount` onto it is therefore justified by a measurement and not by a
+concern for tidiness**, and it is E02-S03's point 4.
 
-## Reproduire
+## Reproducing
 
 ```sh
 i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
@@ -140,5 +139,5 @@ i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
   -o CLOCK.EXE tools/win95/witnesses/clock_probe.cpp \
   -Wl,--whole-archive build/win95/libwin95compat.a -Wl,--no-whole-archive -lwinmm
 scripts/Push-To-Win95-VM.sh CLOCK.EXE
-# dans l'invité : d:\clock.exe — le relevé atterrit dans D:\CLOCK.TXT
+# in the guest: d:\clock.exe - the report lands in D:\CLOCK.TXT
 ```

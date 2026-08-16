@@ -1,31 +1,31 @@
-# Coût du microcode audio RSP sur la machine cible
+# Cost of the RSP audio microcode on the target machine
 
-Mesures de [E00-S04](../stories/E00-scoping/E00-S04-spike-rsp-cost-without-sse.md).
-Date : 2026-08-11.
+Measurements from
+[E00-S04](../stories/E00-scoping/E00-S04-spike-rsp-cost-without-sse.md).
+Date: 2026-08-11.
 
-## Résumé
+## Summary
 
-| Grandeur | Mesure |
+| Quantity | Measurement |
 |---|---|
-| Repli scalaire dans `librecomp` | **existe déjà**, sélectionné automatiquement en 32 bits |
-| Jeu d'instructions exigé par le chemin SIMD | **SSE4.1** — hors de portée de tout Pentium |
-| Compilation du microcode en 32 bits sans SSE | ✅ sans modification, sans instruction SSE |
-| Coût d'une opération vectorielle, hôte SIMD | **2,22 ns** (moyenne pondérée) |
-| Coût d'une opération vectorielle, cible SISD | **410 ns** (moyenne pondérée) |
-| Pénalité du chemin scalaire seul | **10,4×** |
-| Débit vectoriel de la cible | **2,44 M op/s** |
-| Débit vectoriel du RSP réel | ~62,5 M op/s |
-| **Ce que la cible atteint du RSP** | **3,9 %** |
+| Scalar fallback in `librecomp` | **already exists**, selected automatically in 32-bit |
+| Instruction set the SIMD path requires | **SSE4.1** — out of reach of any Pentium |
+| Compiling the microcode in 32-bit without SSE | ✅ unmodified, with no SSE instruction |
+| Cost of one vector operation, SIMD host | **2.22 ns** (weighted mean) |
+| Cost of one vector operation, SISD target | **410 ns** (weighted mean) |
+| Penalty of the scalar path alone | **10.4×** |
+| The target's vector throughput | **2.44 M op/s** |
+| The real RSP's vector throughput | ~62.5 M op/s |
+| **What the target reaches of the RSP** | **3.9 %** |
 
-**Conclusion : le microcode audio recompilé ne peut pas tenir le temps réel sur
-la cible.** [E03-S03](../stories/E03-rsp/E03-S03-high-level-mixer-fallback.md) —
-le mixeur audio de haut niveau — cesse d'être une contingence et devient
-nécessaire.
+**Conclusion: the recompiled audio microcode cannot hold real time on the
+target.** [E03-S03](../stories/E03-rsp/E03-S03-high-level-mixer-fallback.md) — the
+high-level audio mixer — stops being a contingency and becomes necessary.
 
-## Le repli scalaire existait déjà
+## The scalar fallback already existed
 
-L'étape 1 du ticket demandait si `librecomp/rsp_vu_impl.hpp` offre une
-alternative au SIMD. La réponse est dans `rsp_vu.hpp` :
+The ticket's step 1 asked whether `librecomp/rsp_vu_impl.hpp` offers an
+alternative to SIMD. The answer is in `rsp_vu.hpp`:
 
 ```c
 #if defined(__x86_64__) || defined(_M_X64)
@@ -45,24 +45,24 @@ namespace Accuracy { namespace RSP {
 }}
 ```
 
-Sur x86 **32 bits**, aucune des deux conditions d'architecture n'est vraie : la
-macro reste indéfinie et `Accuracy::RSP::SISD` vaut `true`. Le chemin scalaire —
-une boucle sur les huit voies de 16 bits — est donc retenu **automatiquement**,
-sans une ligne à écrire. `aspMain.cpp` compile pour Pentium II sans SSE du
-premier coup, et le désassemblage ne contient aucune instruction SSE.
+On **32-bit** x86, neither architecture condition is true: the macro stays
+undefined and `Accuracy::RSP::SISD` is `true`. The scalar path — a loop over the
+eight 16-bit lanes — is therefore selected **automatically**, without a line to
+write. `aspMain.cpp` compiles for the Pentium II without SSE at the first attempt,
+and the disassembly contains no SSE instruction.
 
-Détail qui clôt une question du ticket : le chemin vectoriel exige **SSE4.1**
-(`_mm_shuffle_epi8`, `<nmmintrin.h>`), pas seulement SSE2. Il était hors de
-portée de toute la gamme Pentium, pas seulement du Pentium II. La question
-« MMX ou scalaire » ne se posait donc jamais comme un choix entre deux
-implémentations existantes : il n'y a jamais eu que le scalaire.
+A detail that closes one of the ticket's questions: the vector path requires
+**SSE4.1** (`_mm_shuffle_epi8`, `<nmmintrin.h>`), not merely SSE2. It was out of
+reach of the entire Pentium range, not only the Pentium II. The question "MMX or
+scalar" therefore never arose as a choice between two existing implementations:
+there has only ever been the scalar one.
 
-## Profil du microcode
+## Profile of the microcode
 
-`aspMain.cpp` compte **1 061 instructions de microcode**, dont **184
-vectorielles** (17 %). Distribution :
+`aspMain.cpp` counts **1,061 microcode instructions**, of which **184 are vector**
+(17 %). Distribution:
 
-| Opération | Occurrences | | Opération | Occurrences |
+| Operation | Occurrences | | Operation | Occurrences |
 |---|---:|---|---|---:|
 | `vmadh` | 33 | | `vmadm` | 6 |
 | `vmulf` | 26 | | `vmudm` | 5 |
@@ -74,88 +74,86 @@ vectorielles** (17 %). Distribution :
 | `vand` | 8 | | `vsub` | 2 |
 | `vsar` | 6 | | | |
 
-Les huit opérations les plus fréquentes couvrent 80 % du total. C'est le profil
-d'un mixeur : multiplication-accumulation sur des échantillons 16 bits.
+The eight most frequent operations cover 80 % of the total. That is a mixer's
+profile: multiply-accumulate over 16-bit samples.
 
-## Mesure
+## Measurement
 
-`tools/cpu-budget/bench_rspvu.cpp` appelle ces huit opérations dans les mêmes
-proportions, sur des registres remplis de valeurs de l'ordre des échantillons
-audio — pas de motifs dégénérés, dont les saturations ne seraient pas
-représentatives. Le même source se compile pour l'hôte (SIMD) et pour la cible
-(SISD) sans changement : seule l'architecture décide.
+`tools/cpu-budget/bench_rspvu.cpp` calls those eight operations in the same
+proportions, on registers filled with values on the order of audio samples — no
+degenerate patterns, whose saturations would not be representative. The same source
+compiles for the host (SIMD) and for the target (SISD) unchanged: only the
+architecture decides.
 
-| Opération | Hôte SIMD | Cible SISD | Facteur | Poids |
+| Operation | SIMD host | SISD target | Factor | Weight |
 |---|---:|---:|---:|---:|
-| `vadd` | 1,37 ns | 420,79 ns | 307× | 13 |
-| `vxor` | 0,58 ns | 143,55 ns | 248× | 24 |
-| `vmacf` | 3,33 ns | 641,64 ns | 193× | 14 |
-| `vmulf` | 2,34 ns | 443,45 ns | 190× | 26 |
-| `vmadn` | 3,27 ns | 584,15 ns | 179× | 17 |
-| `vmadh` | 3,10 ns | 498,74 ns | 161× | 33 |
-| `vand` | 0,91 ns | 145,38 ns | 160× | 8 |
-| `vmudn` | 1,75 ns | 248,07 ns | 142× | 10 |
-| **Pondéré** | **2,22 ns** | **410,07 ns** | **185×** | |
+| `vadd` | 1.37 ns | 420.79 ns | 307× | 13 |
+| `vxor` | 0.58 ns | 143.55 ns | 248× | 24 |
+| `vmacf` | 3.33 ns | 641.64 ns | 193× | 14 |
+| `vmulf` | 2.34 ns | 443.45 ns | 190× | 26 |
+| `vmadn` | 3.27 ns | 584.15 ns | 179× | 17 |
+| `vmadh` | 3.10 ns | 498.74 ns | 161× | 33 |
+| `vand` | 0.91 ns | 145.38 ns | 160× | 8 |
+| `vmudn` | 1.75 ns | 248.07 ns | 142× | 10 |
+| **Weighted** | **2.22 ns** | **410.07 ns** | **185×** | |
 
-Le facteur brut de 185× se décompose : **17,7×** viennent de la machine (mesurés
-indépendamment par [E00-S03](cpu-budget.md)), le reste — **10,4×** — est la
-pénalité propre au chemin scalaire face aux huit voies traitées d'un coup par
-SSE4.1. Les deux termes se recoupent proprement, ce qui donne confiance dans la
-mesure.
+The raw factor of 185× breaks down: **17.7×** comes from the machine (measured
+independently by [E00-S03](cpu-budget.md)), the rest — **10.4×** — is the penalty
+proper to the scalar path against the eight lanes SSE4.1 handles at once. The two
+terms tally cleanly, which gives confidence in the measurement.
 
-## Ce que cela veut dire
+## What that means
 
-Le RSP tourne à 62,5 MHz et émet jusqu'à une opération vectorielle par cycle,
-soit **~62,5 millions par seconde**. La cible en soutient **2,44 millions** :
-elle atteint **3,9 %** du débit vectoriel de la puce qu'elle doit remplacer.
+The RSP runs at 62.5 MHz and issues up to one vector operation per cycle, that is
+**~62.5 million per second**. The target sustains **2.44 million**: it reaches
+**3.9 %** of the vector throughput of the chip it must replace.
 
-Exprimé en budget d'image, à 30 images par seconde :
+Expressed as a frame budget, at 30 frames per second:
 
-| Part du RSP consommée par l'audio sur console | Coût sur la cible | Budget de 33,3 ms |
+| Share of the RSP the audio consumes on console | Cost on the target | 33.3 ms budget |
 |---|---:|---:|
 | 5 % | 43 ms | **128 %** |
 | 10 % | 85 ms | **256 %** |
 | 20 % | 171 ms | **513 %** |
 
-Même dans l'hypothèse la plus favorable, l'audio à lui seul dépasse le budget
-d'une image entière. Il faudrait que DKR n'utilise que **moins de 4 %** du RSP
-pour son audio, ce qui n'est pas crédible pour un jeu avec musique, moteurs et
-effets simultanés.
+Even under the most favourable hypothesis, the audio alone exceeds a whole frame's
+budget. DKR would have to use **less than 4 %** of the RSP for its audio, which is
+not credible for a game with music, engines and effects at the same time.
 
-Une implémentation MMX, envisagée par le ticket, ne change pas la conclusion :
-MMX offre quatre voies de 16 bits contre huit pour SSE, et ne dispose ni des
-permutations d'octets ni des saturations 32 bits dont le chemin SIMD se sert. Un
-gain de 3 à 4× amènerait la cible à ~15 % du débit du RSP — toujours cinq fois
-trop lent. **Écrire du MMX ne sauverait pas ce chemin**, et c'est une économie
-d'effort utile à acter maintenant.
+An MMX implementation, which the ticket considered, does not change the
+conclusion: MMX offers four 16-bit lanes against eight for SSE, and has neither the
+byte permutations nor the 32-bit saturations the SIMD path uses. A gain of 3 to 4×
+would bring the target to ~15 % of the RSP's throughput — still five times too
+slow. **Writing MMX would not save this path**, and that is a saving of effort
+worth recording now.
 
-## Décision
+## Decision
 
-[E03-S03](../stories/E03-rsp/E03-S03-high-level-mixer-fallback.md) — interpréter
-les commandes audio à haut niveau plutôt qu'exécuter le microcode — **passe de
-contingence à chemin critique**. Sa condition de déclenchement, écrite dans
-[E03-S02](../stories/E03-rsp/E03-S02-aspmain-audio-microcode.md), est remplie
-avec une marge qui ne laisse pas de doute.
+[E03-S03](../stories/E03-rsp/E03-S03-high-level-mixer-fallback.md) — interpreting
+the audio commands at a high level rather than executing the microcode — **moves
+from contingency to critical path**. Its triggering condition, written in
+[E03-S02](../stories/E03-rsp/E03-S02-aspmain-audio-microcode.md), is met with a
+margin that leaves no doubt.
 
-Conséquences sur le backlog :
+Consequences for the backlog:
 
-- [E03-S01](../stories/E03-rsp/E03-S01-vector-emulation-without-sse.md)
-  (réimplémentation vectorielle) perd sa raison d'être pour l'audio. Le chemin
-  scalaire existe et suffit à *exécuter* le microcode — hors temps réel, ce qui
-  reste utile comme **oracle** pour valider le mixeur de E03-S03 : il produit la
-  sortie exacte, lentement.
-- L'effort estimé de E03 se déplace de « optimiser l'émulation vectorielle » vers
-  « écrire un mixeur », ce qui est un poste bien plus lourd — le ticket le classe
-  XL.
+- [E03-S01](../stories/E03-rsp/E03-S01-vector-emulation-without-sse.md) (vector
+  reimplementation) loses its reason for being as far as audio is concerned. The
+  scalar path exists and suffices to *execute* the microcode — outside real time,
+  which stays useful as an **oracle** for validating E03-S03's mixer: it produces
+  the exact output, slowly.
+- E03's estimated effort moves from "optimise the vector emulation" to "write a
+  mixer", which is a far heavier item — the ticket classes it XL.
 
-## Limites
+## Limits
 
-- La cible est un Pentium II **émulé**. Le facteur machine de 17,7× vient du
-  modèle de 86Box ([E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md)
-  dira de combien il se trompe). Mais l'écart mesuré ici — un facteur 26 sur le
-  débit — est trop grand pour qu'une imprécision de modèle le renverse.
-- Le banc mesure les opérations isolément, hors du microcode réel. Il ne tient
-  pas compte des instructions scalaires du RSP, qui s'ajoutent au coût. La
-  mesure est donc **optimiste** : le microcode complet coûterait davantage.
-- La part du RSP réellement consommée par l'audio de DKR n'est pas mesurée ; le
-  tableau ci-dessus la fait varier plutôt que de la supposer.
+- The target is an **emulated** Pentium II. The machine factor of 17.7× comes from
+  86Box's model
+  ([E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md) will say by how
+  much it is wrong). But the gap measured here — a factor of 26 on throughput — is
+  too large for a modelling inaccuracy to overturn.
+- The bench measures the operations in isolation, outside the real microcode. It
+  does not account for the RSP's scalar instructions, which add to the cost. The
+  measurement is therefore **optimistic**: the complete microcode would cost more.
+- The share of the RSP DKR's audio really consumes is not measured; the table above
+  varies it rather than assuming it.
