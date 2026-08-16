@@ -1,19 +1,19 @@
-/* E05-S02 — l'allocateur de TMU, éprouvé sans carte.
+/* E05-S02 — the TMU allocator, tested without a card.
  *
- * La ROM absente interdit d'éprouver l'allocateur en jeu, et la carte ne dit
- * rien de ce qu'elle reçoit : `grTexDownloadMipMap` ne rend aucun code d'erreur.
- * Cette suite est donc la seule vérification disponible du raisonnement, et elle
- * doit être exhaustive là où elle le peut.
+ * The missing ROM forbids testing the allocator in the game, and the card says
+ * nothing about what it receives: `grTexDownloadMipMap` returns no error code.
+ * This suite is therefore the only available check on the reasoning, and it must
+ * be exhaustive where it can be.
  *
- * Elle vérifie trois choses de nature différente :
+ * It checks three things of different natures:
  *
- *   - **les invariants de l'arbre** — deux allocations ne se recouvrent jamais,
- *     et aucune ne sort de la mémoire réelle. C'est vérifié par force brute sur
- *     toutes les allocations vivantes, pas par échantillonnage ;
- *   - **l'absence de fragmentation externe**, la propriété qui a justifié le
- *     choix du buddy plutôt qu'un allocateur par classes ;
- *   - **la politique d'éviction**, dont le cas intéressant n'est pas « évincer
- *     le plus ancien » mais « ne pas évincer ce dont l'image en cours a besoin ».
+ *   - **the tree's invariants** — two allocations never overlap, and none leaves
+ *     real memory. This is checked by brute force over every live allocation,
+ *     not by sampling;
+ *   - **the absence of external fragmentation**, the property that justified
+ *     choosing the buddy over a size-class allocator;
+ *   - **the eviction policy**, whose interesting case is not "evict the oldest"
+ *     but "do not evict what the current frame needs".
  */
 #include "render/tmu.h"
 
@@ -25,9 +25,9 @@ static FILE *g_out;
 
 static void check(const char *what, int ok)
 {
-    printf("  %s %s\n", ok ? "ok   " : "ECHEC", what);
+    printf("  %s %s\n", ok ? "ok   " : "FAIL ", what);
     if (g_out) {
-        fprintf(g_out, "  %s %s\n", ok ? "ok   " : "ECHEC", what);
+        fprintf(g_out, "  %s %s\n", ok ? "ok   " : "FAIL ", what);
         fflush(g_out);
     }
     if (!ok) { g_fails++; }
@@ -41,12 +41,12 @@ static void report(const char *fmt, unsigned long a, unsigned long b)
     if (g_out) { fprintf(g_out, "%s\n", line); fflush(g_out); }
 }
 
-/* --- Le faux transfert -------------------------------------------------------- *
+/* --- The fake transfer -------------------------------------------------------- *
  *
- * Il enregistre ce qu'on lui donne, ce qui permet de vérifier non seulement que
- * l'allocateur rend des adresses cohérentes, mais qu'il **télécharge la bonne
- * quantité au bon endroit** — deux choses qu'un allocateur peut réussir
- * séparément et rater ensemble. */
+ * It records what it is given, which allows checking not only that the allocator
+ * returns coherent addresses, but that it **downloads the right amount to the
+ * right place** — two things an allocator can get right separately and wrong
+ * together. */
 typedef struct { unsigned int address, bytes; } transfer;
 static transfer g_transfers[4096];
 static int      g_transfer_count;
@@ -65,9 +65,9 @@ static int fake_download(void *user, int tmu, unsigned int address,
     return 1;
 }
 
-/* --- Les invariants ----------------------------------------------------------- */
+/* --- The invariants ----------------------------------------------------------- */
 
-/* Les blocs vivants ne se recouvrent pas et tiennent dans [base, limit). */
+/* The live blocks do not overlap and fit inside [base, limit). */
 static int no_overlap(const dkr_tmu *t)
 {
     int i, j;
@@ -101,82 +101,82 @@ static int live_count(const dkr_tmu *t)
 int main(void)
 {
     dkr_tmu t;
-    /* Les bornes réellement mesurées sur la carte : voir `win95-tmu.md`.
-       0x1FFFF8 et non 0x200000 — il manque huit octets, et c'est précisément ce
-       qui rend la réserve du haut de l'arbre nécessaire. */
+    /* The bounds actually measured on the card: see `win95-tmu.md`.
+       0x1FFFF8 and not 0x200000 — eight bytes are missing, and that is precisely
+       what makes reserving the top of the tree necessary. */
     const unsigned int BASE = 0x00000000u, LIMIT = 0x001FFFF8u;
 
     g_out = fopen("D:\\TMUTEST.TXT", "w");
 
-    /* --- Allocation élémentaire --------------------------------------------- */
+    /* --- Elementary allocation ---------------------------------------------- */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     {
         const unsigned int a = dkr_tmu_alloc(&t, 8192u);
         const unsigned int b = dkr_tmu_alloc(&t, 8192u);
-        check("deux allocations reussissent",
+        check("two allocations succeed",
               a != DKR_TMU_NONE && b != DKR_TMU_NONE);
-        check("et donnent des adresses distinctes", a != b);
-        check("alignees sur la granularite materielle",
+        check("and give distinct addresses", a != b);
+        check("aligned to the hardware granularity",
               (a % DKR_TMU_GRANULARITY) == 0u && (b % DKR_TMU_GRANULARITY) == 0u);
-        check("l'occupation suit", dkr_tmu_used(&t) == 16384u);
+        check("occupancy follows", dkr_tmu_used(&t) == 16384u);
         dkr_tmu_free(&t, a, 8192u);
         dkr_tmu_free(&t, b, 8192u);
-        check("et revient a zero apres liberation", dkr_tmu_used(&t) == 0u);
+        check("and returns to zero after freeing", dkr_tmu_used(&t) == 0u);
     }
 
-    /* --- Le huitième octet manquant ------------------------------------------ *
+    /* --- The missing eighth byte --------------------------------------------- *
      *
-     * L'arbre couvre 2 Mio pleins, la carte n'en offre que 0x1FFFF8. Le bloc de
-     * tête de 2 Mio ne doit donc **pas** être allouable : il déborderait de huit
-     * octets. Le défaut serait rare — mémoire presque vide, une seule texture
-     * enorme — donc découvert tard. */
+     * The tree covers a full 2 MiB, the card only offers 0x1FFFF8. The 2 MiB head
+     * block must therefore **not** be allocatable: it would overrun by eight
+     * bytes. The defect would be rare — nearly empty memory, a single enormous
+     * texture — hence discovered late. */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
-    check("le bloc de 2 Mio entier est refuse : il deborde de 8 octets",
+    check("the whole 2 MiB block is refused: it overruns by 8 bytes",
           dkr_tmu_alloc(&t, 0x200000u) == DKR_TMU_NONE);
-    check("mais celui de 1 Mio passe", dkr_tmu_alloc(&t, 0x100000u) != DKR_TMU_NONE);
+    check("but the 1 MiB one passes", dkr_tmu_alloc(&t, 0x100000u) != DKR_TMU_NONE);
 
-    /* --- Aucune fragmentation externe ---------------------------------------- *
+    /* --- No external fragmentation ------------------------------------------- *
      *
-     * C'est la propriete qui a justifie le buddy. On remplit de 64x64, on libere
-     * une allocation sur deux, puis on redemande des 128x128 : chacun doit
-     * trouver sa place dans deux 64x64 voisins fusionnes. Un allocateur par
-     * classes de taille sans fusion echouerait ici, et c'est exactement le
-     * scenario d'un changement de niveau. */
+     * This is the property that justified the buddy. We fill with 64x64s, free
+     * every other allocation, then ask for 128x128s again: each must find its
+     * place in two coalesced neighbouring 64x64s. A size-class allocator without
+     * coalescing would fail here, and this is exactly the level-change
+     * scenario. */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     {
         unsigned int got[256];
         int i, n = 0, reused = 0;
         for (i = 0; i < 256; i++) {
-            got[i] = dkr_tmu_alloc(&t, 8192u);        /* 64x64 en 16 bits */
+            got[i] = dkr_tmu_alloc(&t, 8192u);        /* 64x64 at 16 bits */
             if (got[i] != DKR_TMU_NONE) { n++; }
         }
-        report("  64x64 places : %lu sur %lu demandes", (unsigned long)n, 256ul);
-        /* **255, et non 256.** Deux Mio contiennent exactement 256 blocs de
-           8 Kio, mais la carte n'en offre que 0x1FFFF8 : les huit derniers
-           octets manquent, et ils tombent dans le dernier bloc de 8 Kio. Celui-ci
-           est donc coupe, et n'est plus allouable en entier.
-           Cette suite affirmait 256 et se trompait — c'est l'allocateur qui avait
-           raison. Le meme huitieme octet a deja fait mentir une supposition plus
-           haut dans ce fichier ; il vaut d'etre retenu. */
-        check("la TMU tient 255 textures de 64x64 : les 8 octets manquants "
-              "amputent le dernier bloc", n == 255);
+        report("  64x64 placed: %lu out of %lu requested", (unsigned long)n, 256ul);
+        /* **255, not 256.** Two MiB hold exactly 256 blocks of 8 KiB, but the
+           card only offers 0x1FFFF8: the last eight bytes are missing, and they
+           fall inside the last 8 KiB block. That block is therefore split, and no
+           longer allocatable whole.
+           This suite asserted 256 and was wrong — the allocator was right. The
+           same eighth byte has already made an assumption lie further up this
+           file; it is worth remembering. */
+        check("the TMU holds 255 64x64 textures: the 8 missing bytes "
+              "amputate the last block", n == 255);
 
-        /* **Ce que coute vraiment la reserve : 128 octets, pas 8 Kio.**
+        /* **What the reserve really costs: 128 bytes, not 8 KiB.**
          *
-         * Le dernier bloc de 8 Kio n'est pas perdu — il est coupe. Seul le
-         * dernier bloc de la taille minimale, celui qui contient reellement la
-         * frontiere, est reserve. Le reste demeure disponible a grain plus fin,
-         * et la distinction est loin d'etre academique : perdre 8 Kio par TMU
-         * serait le prix de quatre textures 32x32. */
+         * The last 8 KiB block is not lost — it is split. Only the last
+         * minimum-size block, the one that actually contains the boundary, is
+         * reserved. The rest stays available at a finer grain, and the
+         * distinction is far from academic: losing 8 KiB per TMU would be the
+         * price of four 32x32 textures. */
         {
             int small = 0;
             while (dkr_tmu_alloc(&t, DKR_TMU_MIN_BLOCK) != DKR_TMU_NONE) {
                 small++;
             }
-            report("  puis %lu blocs de %lu octets dans la queue",
+            report("  then %lu blocks of %lu bytes in the tail",
                    (unsigned long)small, (unsigned long)DKR_TMU_MIN_BLOCK);
-            check("la queue du dernier bloc reste utilisable a grain fin : "
-                  "le cout de la reserve est de 128 octets, pas de 8 Kio",
+            check("the last block's tail stays usable at a fine grain: "
+                  "the reserve costs 128 bytes, not 8 KiB",
                   small == 63);
         }
         dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
@@ -187,22 +187,22 @@ int main(void)
         for (i = 0; i < 128; i++) {
             if (dkr_tmu_alloc(&t, 8192u) != DKR_TMU_NONE) { reused++; }
         }
-        check("les 128 blocs liberes se reprennent entierement", reused == 128);
+        check("the 128 freed blocks are entirely taken back", reused == 128);
     }
 
-    /* La fusion elle-même : liberer *tout*, puis demander le plus gros bloc que
-       la memoire permette. Sans fusion, l'arbre resterait en miettes. */
+    /* Coalescing itself: free *everything*, then ask for the largest block memory
+       allows. Without coalescing, the tree would stay in pieces. */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     {
         unsigned int got[256];
         int i;
         for (i = 0; i < 256; i++) { got[i] = dkr_tmu_alloc(&t, 8192u); }
         for (i = 0; i < 256; i++) { dkr_tmu_free(&t, got[i], 8192u); }
-        check("apres 256 liberations, un bloc de 1 Mio est de nouveau possible",
+        check("after 256 frees, a 1 MiB block is possible again",
               dkr_tmu_alloc(&t, 0x100000u) != DKR_TMU_NONE);
     }
 
-    /* --- Le cache : succes et defauts ---------------------------------------- */
+    /* --- The cache: hits and misses ------------------------------------------ */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     g_transfer_count = 0;
     {
@@ -211,77 +211,77 @@ int main(void)
         dkr_tmu_begin_frame(&t);
         a1 = dkr_tmu_acquire(&t, 0x1111ull, data, 8192u);
         a2 = dkr_tmu_acquire(&t, 0x1111ull, data, 8192u);
-        check("la meme cle rend la meme adresse", a1 == a2 && a1 != DKR_TMU_NONE);
-        check("et n'a ete telechargee qu'une fois", g_transfer_count == 1);
-        check("les compteurs distinguent succes et defaut",
+        check("the same key returns the same address", a1 == a2 && a1 != DKR_TMU_NONE);
+        check("and it was downloaded only once", g_transfer_count == 1);
+        check("the counters tell hits from misses",
               t.stats.hits == 1 && t.stats.misses == 1);
-        check("le transfert porte la bonne adresse et la bonne taille",
+        check("the transfer carries the right address and the right size",
               g_transfers[0].address == a1 && g_transfers[0].bytes == 8192u);
     }
 
-    /* --- L'eviction, et son cas interessant ----------------------------------- *
+    /* --- Eviction, and its interesting case ----------------------------------- *
      *
-     * Le cas facile est « evincer le plus ancien ». Le cas qui compte est
-     * l'inverse : **ne pas evincer ce dont l'image en cours a besoin**. Une image
-     * qui demande plus que la TMU ne tient evincerait sinon ce qu'elle vient de
-     * telecharger, et l'on paierait le bus a chaque texture pour n'afficher rien
-     * de plus — le pire regime possible. */
+     * The easy case is "evict the oldest". The case that counts is the reverse:
+     * **do not evict what the current frame needs**. A frame asking for more than
+     * the TMU holds would otherwise evict what it has just downloaded, and we
+     * would pay the bus for every texture to display nothing more — the worst
+     * possible regime. */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     g_transfer_count = 0;
     {
         static unsigned char data[8192];
         int i, placed = 0;
         dkr_tmu_begin_frame(&t);
-        /* 300 textures de 8 Kio demandent 2,4 Mio : la TMU n'en tient que 256.
-           Toutes etant protegees par l'image en cours, les 44 dernieres doivent
-           **echouer** plutot que de chasser les precedentes. */
+        /* 300 textures of 8 KiB ask for 2.4 MiB: the TMU only holds 256. All
+           being pinned by the current frame, the last 44 must **fail** rather
+           than chase out the earlier ones. */
         for (i = 0; i < 300; i++) {
             if (dkr_tmu_acquire(&t, (unsigned long long)i, data, 8192u)
                 != DKR_TMU_NONE) {
                 placed++;
             }
         }
-        report("  placees %lu, echecs %lu", (unsigned long)placed,
+        report("  placed %lu, failures %lu", (unsigned long)placed,
                t.stats.failures);
-        check("l'image sature proprement plutot que de se chasser elle-meme",
+        check("the frame saturates cleanly rather than chasing itself out",
               placed == 255 && t.stats.failures == 45);
-        check("aucune eviction pendant l'image", t.stats.evictions == 0);
-        check("les blocs vivants ne se recouvrent pas", no_overlap(&t));
+        check("no eviction during the frame", t.stats.evictions == 0);
+        check("the live blocks do not overlap", no_overlap(&t));
 
-        /* Image suivante : les protections tombent, l'eviction redevient
-           possible, et une texture nouvelle trouve sa place. */
+        /* Next frame: the pins are lifted, eviction becomes possible again, and
+           a new texture finds its place. */
         dkr_tmu_begin_frame(&t);
-        check("a l'image suivante, une texture nouvelle passe",
+        check("on the next frame, a new texture gets through",
               dkr_tmu_acquire(&t, 0xDEADull, data, 8192u) != DKR_TMU_NONE);
-        check("au prix d'une eviction", t.stats.evictions == 1);
-        check("et les compteurs par image sont repartis de zero",
+        check("at the price of one eviction", t.stats.evictions == 1);
+        check("and the per-frame counters restarted from zero",
               t.stats.downloads_this_frame == 1);
     }
 
-    /* --- Le moindre recemment utilise ----------------------------------------- */
+    /* --- Least recently used --------------------------------------------------- */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     {
         static unsigned char data[0x80000];
         unsigned int a, b, c;
         dkr_tmu_begin_frame(&t);
-        a = dkr_tmu_acquire(&t, 1ull, data, 0x80000u);   /* 512 Kio chacune */
+        a = dkr_tmu_acquire(&t, 1ull, data, 0x80000u);   /* 512 KiB each */
         b = dkr_tmu_acquire(&t, 2ull, data, 0x80000u);
         (void)dkr_tmu_acquire(&t, 3ull, data, 0x80000u);
         dkr_tmu_begin_frame(&t);
-        /* On reemploie 1, ce qui rajeunit sa date. 2 devient la plus ancienne. */
+        /* We reuse 1, which refreshes its timestamp. 2 becomes the oldest. */
         (void)dkr_tmu_acquire(&t, 1ull, data, 0x80000u);
         c = dkr_tmu_acquire(&t, 4ull, data, 0x80000u);
-        check("la quatrieme texture trouve la place de la deuxieme",
+        check("the fourth texture finds the second one's place",
               c != DKR_TMU_NONE && c == b);
-        check("et la premiere, reemployee, est toujours la",
+        check("and the first, reused, is still there",
               dkr_tmu_acquire(&t, 1ull, data, 0x80000u) == a);
     }
 
-    /* --- Un transfert refuse doit rendre le bloc ------------------------------ *
+    /* --- A refused transfer must give the block back -------------------------- *
      *
-     * Sinon la memoire fuit a chaque echec, et l'echec suivant arrive plus tot
-     * que le precedent — une degradation qui s'accelere et qu'on diagnostique
-     * mal. */
+     * Otherwise memory leaks on every failure, and the next failure arrives
+     * sooner than the previous one — a degradation that accelerates and is badly
+     * diagnosed. */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     {
         static unsigned char data[8192];
@@ -289,13 +289,13 @@ int main(void)
         dkr_tmu_begin_frame(&t);
         before = dkr_tmu_used(&t);
         g_refuse_next = 1;
-        check("un transfert refuse rend DKR_TMU_NONE",
+        check("a refused transfer returns DKR_TMU_NONE",
               dkr_tmu_acquire(&t, 7ull, data, 8192u) == DKR_TMU_NONE);
-        check("et ne laisse pas le bloc alloue", dkr_tmu_used(&t) == before);
-        check("l'echec est compte", t.stats.failures == 1);
+        check("and does not leave the block allocated", dkr_tmu_used(&t) == before);
+        check("the failure is counted", t.stats.failures == 1);
     }
 
-    /* --- Le changement de niveau ---------------------------------------------- */
+    /* --- The level change ------------------------------------------------------ */
     dkr_tmu_init(&t, 0, BASE, LIMIT, fake_download, 0);
     {
         static unsigned char data[8192];
@@ -304,25 +304,25 @@ int main(void)
         for (i = 0; i < 100; i++) {
             (void)dkr_tmu_acquire(&t, (unsigned long long)i, data, 8192u);
         }
-        check("cent textures resident", live_count(&t) == 100);
+        check("a hundred textures are resident", live_count(&t) == 100);
         dkr_tmu_reset(&t);
-        check("la remise a zero vide la TMU", dkr_tmu_used(&t) == 0u &&
-                                              live_count(&t) == 0);
-        check("mais les compteurs cumules survivent : ils diront a la fin si "
-              "le portage a telecharge pendant les courses",
+        check("the reset empties the TMU", dkr_tmu_used(&t) == 0u &&
+                                           live_count(&t) == 0);
+        check("but the cumulative counters survive: they will say in the end "
+              "whether the port downloaded during the races",
               t.stats.downloads == 100);
     }
 
-    /* --- La ligne d'etat, lisible en jeu -------------------------------------- */
+    /* --- The status line, readable in game ------------------------------------ */
     {
         char line[160];
         dkr_tmu_format_status(&t, line, sizeof(line));
-        printf("  etat : %s\n", line);
-        if (g_out) { fprintf(g_out, "  etat : %s\n", line); }
-        check("la ligne d'etat n'est pas vide", line[0] != 0);
+        printf("  status: %s\n", line);
+        if (g_out) { fprintf(g_out, "  status: %s\n", line); }
+        check("the status line is not empty", line[0] != 0);
     }
 
-    printf("\n%d echec(s)\n", g_fails);
-    if (g_out) { fprintf(g_out, "\n%d echec(s)\n", g_fails); fclose(g_out); }
+    printf("\n%d failure(s)\n", g_fails);
+    if (g_out) { fprintf(g_out, "\n%d failure(s)\n", g_fails); fclose(g_out); }
     return g_fails != 0;
 }

@@ -1,20 +1,21 @@
-/* E04 — la chaîne complète, sur une scène synthétique.
+/* E04 — the complete chain, on a synthetic scene.
  *
- * Cinq modules s'emboîtent ici pour la première fois :
+ * Five modules fit together here for the first time:
  *
- *     f3ddkr    lit la display list et valide
- *     transform applique la matrice modèle-vue-projection
- *     clip      découpe au plan proche, élimine les faces arrière
- *     backend   l'interface de E04-S01
- *     software  le rastériseur de référence, qui écrit l'image
+ *     f3ddkr    reads the display list and validates
+ *     transform applies the model-view-projection matrix
+ *     clip      clips at the near plane, culls back faces
+ *     backend   the E04-S01 interface
+ *     software  the reference rasteriser, which writes the image
  *
- * Ce qui est établi n'est pas que le rendu soit *juste* — il faudra le jeu pour
- * cela — mais que **la chaîne est continue** : une commande écrite en RDRAM
- * ressort en pixels, et chaque étage passe à son voisin ce que celui-ci attend.
+ * What is established is not that the rendering is *right* — the game will be
+ * needed for that — but that **the chain is continuous**: a command written in
+ * RDRAM comes back out as pixels, and every stage hands its neighbour what that
+ * neighbour expects.
  *
- * La scène est construite à la main dans une fausse RDRAM. C'est ce qui rend
- * l'épreuve possible sans ROM, et ce qui la rend concluante : on connaît la
- * réponse d'avance, donc on peut la vérifier au pixel plutôt qu'à l'œil.
+ * The scene is built by hand in a fake RDRAM. That is what makes the test
+ * possible without the ROM, and what makes it conclusive: we know the answer in
+ * advance, so we can check it pixel by pixel rather than by eye.
  */
 #include "render/software.h"
 #include "scene_synthetic.h"
@@ -27,9 +28,9 @@ static FILE *g_out;
 
 static void check(const char *what, int condition)
 {
-    printf("  %s %s\n", condition ? "ok   " : "ECHEC", what);
+    printf("  %s %s\n", condition ? "ok   " : "FAIL ", what);
     if (g_out) {
-        fprintf(g_out, "  %s %s\n", condition ? "ok   " : "ECHEC", what);
+        fprintf(g_out, "  %s %s\n", condition ? "ok   " : "FAIL ", what);
         fflush(g_out);
     }
     if (!condition) { g_fails++; }
@@ -43,9 +44,9 @@ static void report(const char *fmt, unsigned long a, unsigned long b)
     if (g_out) { fprintf(g_out, "%s\n", line); fflush(g_out); }
 }
 
-/* La scène est dans `scene_synthetic.h`, partagée avec le comparateur de
-   E09-S02. Deux copies dériveraient, et la divergence serait attribuée au
-   matériel plutôt qu'à la copie. */
+/* The scene lives in `scene_synthetic.h`, shared with the E09-S02 comparator.
+   Two copies would drift, and the divergence would be blamed on the hardware
+   rather than on the copy. */
 static unsigned char g_ram[DKR_SCENE_RAM];
 
 static unsigned pixel(int x, int y)
@@ -63,8 +64,8 @@ int main(void)
     g_out = fopen("D:\\PIPELINE.TXT", "w");
 
     dkr_render_backend_software(&backend);
-    check("le rasteriseur s'ouvre en 320x240", backend.open(backend.self, 320, 240) != 0);
-    backend.begin_frame(backend.self, 0x001030);   /* un bleu sombre reconnaissable */
+    check("the rasteriser opens at 320x240", backend.open(backend.self, 320, 240) != 0);
+    backend.begin_frame(backend.self, 0x001030);   /* a recognisable dark blue */
 
     {
         dkr_render_state st;
@@ -75,68 +76,66 @@ int main(void)
     scene_build(g_ram);
     scene_setup(&ctx, g_ram, &backend, 320, 240);
 
-    check("la display list s'execute", dkr_f3d_run(&ctx, 0) == 5);
-    check("les six sommets sont charges",  ctx.state.vertices  == 6);
-    check("les trois triangles sont lus",  ctx.state.triangles == 3);
+    check("the display list runs", dkr_f3d_run(&ctx, 0) == 5);
+    check("the six vertices are loaded",  ctx.state.vertices  == 6);
+    check("the three triangles are read", ctx.state.triangles == 3);
 
-    report("  triangles demandes : %lu, emis : %lu",
+    report("  triangles requested: %lu, emitted: %lu",
            ctx.state.triangles, ctx.state.emitted);
-    report("  decoupes en deux : %lu, ecartes : %lu",
+    report("  split in two: %lu, discarded: %lu",
            ctx.state.clip_split, ctx.state.clipped_away);
 
-    /* Le triangle a cheval doit avoir ete decoupe : un sommet derriere donne un
-       quadrilatere, donc deux triangles. C'est le controle qui prouve que le
-       decoupage est bien **dans** la chaine et pas seulement dans sa suite
-       d'epreuve. */
-    check("le triangle a cheval a ete decoupe en deux", ctx.state.clip_split == 1);
-    check("la chaine a emis plus de triangles qu'elle n'en a lu",
+    /* The straddling triangle must have been clipped: one vertex behind gives a
+       quadrilateral, hence two triangles. This is the check that proves clipping
+       is genuinely **inside** the chain and not merely in its test suite. */
+    check("the straddling triangle was clipped in two", ctx.state.clip_split == 1);
+    check("the chain emitted more triangles than it read",
           ctx.state.emitted > ctx.state.triangles);
-    check("aucun rejet de plage", ctx.state.rejects[DKR_F3D_REJECT_ADDRESS] == 0 &&
-                                  ctx.state.rejects[DKR_F3D_REJECT_INDEX]   == 0);
+    check("no range rejection", ctx.state.rejects[DKR_F3D_REJECT_ADDRESS] == 0 &&
+                                ctx.state.rejects[DKR_F3D_REJECT_INDEX]   == 0);
 
-    /* --- L'image ------------------------------------------------------------- *
+    /* --- The image ----------------------------------------------------------- *
      *
-     * Le carre est centre et couvre de -60 a +60 en x, a z = 200. Avec une
-     * echelle de 160 et w = z, il occupe 160 +/- 48 pixels. Le centre doit donc
-     * etre peint, et un coin de l'ecran rester au fond. */
-    check("le centre de l'ecran est peint",
+     * The square is centred and spans -60 to +60 in x, at z = 200. With a scale
+     * of 160 and w = z, it occupies 160 +/- 48 pixels. The centre must therefore
+     * be painted, and a corner of the screen stay at the background colour. */
+    check("the centre of the screen is painted",
           (pixel(160, 120) & 0x00FFFFFFu) != 0x001030u);
-    check("un coin reste au fond",
+    check("a corner stays at the background",
           (pixel(4, 4) & 0x00FFFFFFu) == 0x001030u);
-    /* Les couleurs des sommets sont interpolees : le centre du carre est un
-       melange, donc aucune composante ne domine a 255. */
+    /* The vertex colours are interpolated: the centre of the square is a
+       mixture, so no component dominates at 255. */
     {
-        /* **Ou echantillonner compte autant que ce qu'on y cherche.**
+        /* **Where to sample matters as much as what is looked for there.**
          *
-         * Ce controle visait le degrade du quadrilatere et lisait le centre de
-         * l'ecran. Il y trouvait du rouge tant que la couleur etait interpolee
-         * avec correction perspective ; depuis qu'elle est iteree comme sur le
-         * materiel, c'est le polygone decoupe — vert et cyan — qui occupe le
-         * centre, et le rouge a disparu sans qu'aucune regression n'ait eu lieu.
+         * This check aimed at the quad's gradient and read the centre of the
+         * screen. It found red there as long as the colour was interpolated with
+         * perspective correction; since it is iterated as on the hardware, it is
+         * the clipped polygon — green and cyan — that occupies the centre, and
+         * the red vanished with no regression having taken place.
          *
-         * Le quadrilatere s'etend de y = 72 a y = 168 ; le polygone decoupe
-         * n'entame que sa moitie basse. On lit donc a y = 85, ou le
-         * quadrilatere est seul, et l'on verifie en outre que deux points
-         * distincts different — sans quoi un aplat passerait pour un degrade. */
+         * The quad spans y = 72 to y = 168; the clipped polygon only bites into
+         * its lower half. So we read at y = 85, where the quad is alone, and we
+         * additionally check that two distinct points differ — otherwise a flat
+         * fill would pass for a gradient. */
         const unsigned c  = pixel(160, 85);
         const unsigned c2 = pixel(200, 85);
         const unsigned r  = (c >> 16) & 0xFF;
-        check("le quadrilatere porte du rouge, que le fond n'a pas", r > 20);
-        check("et sa couleur varie d'un point a l'autre : c'est un degrade",
+        check("the quad carries red, which the background does not", r > 20);
+        check("and its colour varies from point to point: it is a gradient",
               (c & 0x00FFFFFFu) != (c2 & 0x00FFFFFFu));
     }
 
-    /* --- L'ordre de rendu des surfaces translucides --------------------------- *
+    /* --- The rendering order of translucent surfaces -------------------------- *
      *
-     * La N64 dessinait dans l'ordre de la display list, et le jeu en depend :
-     * il faut reproduire cet ordre plutot que trier. Le piege que le ticket
-     * E05-S05 nomme est classique de tout regroupement d'etat — une
-     * optimisation par lot qui reordonne les primitives pour economiser des
-     * changements de registre casse silencieusement la superposition.
+     * The N64 drew in display-list order, and the game depends on it: that order
+     * has to be reproduced rather than sorted. The trap ticket E05-S05 names is
+     * classic to any state grouping — a batching optimisation that reorders
+     * primitives to save register changes silently breaks the layering.
      *
-     * On l'eprouve ici plutot que de l'affirmer : trois triangles translucides
-     * a la *meme* profondeur, emis dans un ordre connu. Le dernier emis doit
-     * gagner. Un tri, quel qu'il soit, changerait le resultat. */
+     * We test it here rather than assert it: three translucent triangles at the
+     * *same* depth, emitted in a known order. The last emitted must win. Any
+     * sort at all would change the result. */
     {
         dkr_render_state st;
         dkr_render_vertex v[9];
@@ -144,13 +143,13 @@ int main(void)
         const unsigned char R[3] = { 255, 0, 0 };
         const unsigned char G[3] = { 0, 255, 0 };
         const unsigned char B[3] = { 0, 0, 255 };
-        const unsigned char *couleurs[3];
-        couleurs[0] = R; couleurs[1] = G; couleurs[2] = B;
+        const unsigned char *colours[3];
+        colours[0] = R; colours[1] = G; colours[2] = B;
 
         memset(&st, 0, sizeof(st));
         st.combine = DKR_COMBINE_SHADE;
         st.blend   = DKR_BLEND_OPAQUE;
-        st.depth   = DKR_DEPTH_DISABLED;   /* rien ne doit trier a notre place */
+        st.depth   = DKR_DEPTH_DISABLED;   /* nothing must sort on our behalf */
         st.cull    = DKR_CULL_NONE;
         backend.begin_frame(backend.self, 0x000000);
         backend.set_state(backend.self, &st);
@@ -161,29 +160,29 @@ int main(void)
             const float xs[3] = { 40.0f, 280.0f, 40.0f };
             const float ys[3] = { 40.0f, 40.0f, 200.0f };
             v[i].x = xs[i % 3]; v[i].y = ys[i % 3];
-            v[i].r = (float)couleurs[tri][0];
-            v[i].g = (float)couleurs[tri][1];
-            v[i].b = (float)couleurs[tri][2];
+            v[i].r = (float)colours[tri][0];
+            v[i].g = (float)colours[tri][1];
+            v[i].b = (float)colours[tri][2];
             v[i].a = 255.0f;
             v[i].oow = 1.0f;
-            v[i].z = 0.5f;                  /* strictement la meme profondeur */
+            v[i].z = 0.5f;                  /* strictly the same depth */
         }
         backend.draw_triangles(backend.self, v, 3);
 
-        /* Le troisieme emis est bleu : c'est lui qui doit rester. */
-        check("l'ordre de la display list est respecte : le dernier emis gagne",
+        /* The third emitted is blue: it is the one that must remain. */
+        check("display-list order is honoured: the last emitted wins",
               (pixel(80, 60) & 0x00FFFFFFu) == 0x0000FFu);
-        /* Et le controle negatif, sans lequel le precedent passerait sur un
-           rendu qui ne dessinerait que le dernier triangle. */
-        check("et les trois ont bien ete dessines, pas seulement le dernier",
+        /* And the negative check, without which the previous one would pass on a
+           renderer that only drew the last triangle. */
+        check("and all three were indeed drawn, not just the last",
               ctx.state.emitted > 0);
     }
 
-    check("l'image s'ecrit", dkr_software_write_bmp("D:\\PIPELINE.BMP") != 0);
+    check("the image writes out", dkr_software_write_bmp("D:\\PIPELINE.BMP") != 0);
 
     backend.close(backend.self);
 
-    printf("\n%d echec(s)\n", g_fails);
-    if (g_out) { fprintf(g_out, "\n%d echec(s)\n", g_fails); fclose(g_out); }
+    printf("\n%d failure(s)\n", g_fails);
+    if (g_out) { fprintf(g_out, "\n%d failure(s)\n", g_fails); fclose(g_out); }
     return g_fails != 0;
 }

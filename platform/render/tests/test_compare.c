@@ -1,36 +1,36 @@
-/* E09-S02 — la même scène dans les deux backends, comparée au pixel.
+/* E09-S02 — the same scene in both backends, compared pixel by pixel.
  *
- * C'est la raison d'être de tout ce qui précède. Le rastériseur logiciel de
- * E04-S08 n'existe pas pour dessiner le jeu : il existe pour dire ce que la
- * carte *aurait dû* dessiner. Tant qu'on ne pouvait pas lire le tampon d'image
- * de la Voodoo, l'oracle n'avait rien à comparer et restait une intention.
+ * This is the reason everything above it exists. The E04-S08 software rasteriser
+ * does not exist to draw the game: it exists to say what the card *should have*
+ * drawn. As long as the Voodoo's frame buffer could not be read, the oracle had
+ * nothing to compare against and remained an intention.
  *
- * L'entrée est unique et partagée : `scene_synthetic.h`. Deux copies de la scène
- * dériveraient, et la divergence serait attribuée au matériel.
+ * The input is single and shared: `scene_synthetic.h`. Two copies of the scene
+ * would drift, and the divergence would be blamed on the hardware.
  *
- * ## Ce que cette comparaison peut et ne peut pas établir
+ * ## What this comparison can and cannot establish
  *
- * Elle ne peut pas prouver que le rendu est *juste* — il faudra le jeu. Elle
- * établit que deux implémentations indépendantes de la même spécification
- * tombent d'accord, ce qui est la seule vérification disponible sans ROM et qui
- * attrape la classe d'erreurs la plus coûteuse : celles où un étage se déclare
- * satisfait en produisant autre chose que ce qu'il annonce.
+ * It cannot prove that the rendering is *right* — the game will be needed. It
+ * establishes that two independent implementations of the same specification
+ * agree, which is the only check available without the ROM and which catches the
+ * most expensive class of errors: those where a stage declares itself satisfied
+ * while producing something other than what it announces.
  *
- * ## Une divergence est attendue, et il faut savoir laquelle
+ * ## A divergence is expected, and one must know which
  *
- * Trois écarts sont structurels et ne signalent rien :
+ * Three gaps are structural and signal nothing:
  *
- *   - **la quantification 565** de la carte, cinq bits de rouge et de bleu, six
- *     de vert, contre les huit du rastériseur ;
- *   - **le tri en profondeur**, z sur [0,1] d'un côté, tampon w encodé de
- *     l'autre — les deux ordonnent pareil mais ne quantifient pas pareil ;
- *   - **les bords**, où une règle de remplissage qui diffère d'un demi-pixel
- *     déplace une colonne entière de pixels.
+ *   - **the card's 565 quantisation**, five bits of red and blue, six of green,
+ *     against the rasteriser's eight;
+ *   - **depth sorting**, z over [0,1] on one side, an encoded w buffer on the
+ *     other — the two order the same way but do not quantise the same way;
+ *   - **edges**, where a fill rule differing by half a pixel shifts a whole
+ *     column of pixels.
  *
- * Le seuil retenu porte donc sur la proportion de pixels *franchement*
- * différents, et les pixels de bord sont comptés à part. Un seuil unique et
- * serré rendrait l'épreuve ininterprétable : elle échouerait toujours, pour la
- * bonne raison, et l'on finirait par ne plus la lire.
+ * The chosen threshold therefore bears on the proportion of *frankly* different
+ * pixels, and edge pixels are counted separately. A single tight threshold would
+ * make the test uninterpretable: it would always fail, for a good reason, and
+ * one would end up not reading it any more.
  */
 #include "render/software.h"
 #include "render/glide.h"
@@ -59,7 +59,7 @@ static void say(const char *fmt, ...)
 
 static void check(const char *what, int ok)
 {
-    say("  %s %s\n", ok ? "ok   " : "ECHEC", what);
+    say("  %s %s\n", ok ? "ok   " : "FAIL ", what);
     if (!ok) { g_fails++; }
 }
 
@@ -67,10 +67,10 @@ static unsigned char g_ram[DKR_SCENE_RAM];
 static unsigned      g_soft[W * H];
 static unsigned      g_card[W * H];
 
-/* Quantifie une couleur 24 bits comme le ferait la carte, pour que la
-   comparaison ne compte pas la quantification comme une divergence. La
-   réplication des bits de poids fort est la même que dans la relecture — sans
-   quoi le blanc du rastériseur et celui de la carte ne coïncideraient pas. */
+/* Quantises a 24-bit colour the way the card would, so that the comparison does
+   not count quantisation as a divergence. The high-bit replication is the same
+   as in the read-back — otherwise the rasteriser's white and the card's would
+   not coincide. */
 static unsigned to565(unsigned c)
 {
     const unsigned r = ((c >> 16) & 0xFF) >> 3;
@@ -92,10 +92,10 @@ static int channel_gap(unsigned a, unsigned b)
     return worst;
 }
 
-/* Un pixel est « de bord » si l'un de ses quatre voisins diffère nettement dans
-   l'image de référence. Les compter à part n'est pas une indulgence : un écart
-   d'un demi-pixel dans la règle de remplissage déplace une colonne entière, et
-   noyer cela dans le total masquerait une vraie divergence de surface. */
+/* A pixel is an "edge" pixel if one of its four neighbours differs markedly in
+   the reference image. Counting them separately is not indulgence: a half-pixel
+   difference in the fill rule shifts a whole column, and drowning that in the
+   total would mask a real surface divergence. */
 static int is_edge(const unsigned *img, int x, int y)
 {
     const unsigned c = img[(size_t)y * W + (size_t)x];
@@ -120,12 +120,12 @@ int main(void)
     unsigned long      soft_emitted, card_emitted;
 
     g_out = fopen("D:\\COMPARE.TXT", "w");
-    say("la meme scene, deux rendus, compares au pixel\n\n");
+    say("the same scene, two renderings, compared pixel by pixel\n\n");
 
-    /* --- Le rastériseur de référence ---------------------------------------- */
+    /* --- The reference rasteriser ------------------------------------------- */
     dkr_render_backend_software(&soft);
     if (!soft.open(soft.self, W, H)) {
-        say("ECHEC : le rasteriseur ne s'ouvre pas\n");
+        say("FAIL: the rasteriser does not open\n");
         return 1;
     }
     soft.begin_frame(soft.self, 0x000000);
@@ -143,10 +143,10 @@ int main(void)
     dkr_software_write_bmp("D:\\CMPSOFT.BMP");
     soft.close(soft.self);
 
-    /* --- La carte ------------------------------------------------------------ */
+    /* --- The card ------------------------------------------------------------ */
     dkr_render_backend_glide(&card);
     if (!card.open(card.self, W, H)) {
-        say("ECHEC : la carte ne s'ouvre pas\n");
+        say("FAIL: the card does not open\n");
         if (g_out) { fclose(g_out); }
         return 1;
     }
@@ -161,7 +161,7 @@ int main(void)
     {
         int w = 0, h = 0;
         if (dkr_glide_read_framebuffer(g_card, W * H, &w, &h) <= 0) {
-            say("ECHEC : relecture impossible\n");
+            say("FAIL: read-back impossible\n");
             card.close(card.self);
             if (g_out) { fclose(g_out); }
             return 1;
@@ -169,17 +169,17 @@ int main(void)
     }
     card.close(card.self);
 
-    /* --- Ce que la chaîne a fait des deux côtés ------------------------------ *
+    /* --- What the chain did on both sides ------------------------------------ *
      *
-     * Avant de comparer les images, comparer les comptes. Si les deux backends
-     * n'ont pas reçu le même nombre de triangles, la différence d'image ne dit
-     * plus rien du rendu : elle dit que la chaîne n'est pas déterministe, ce qui
-     * est un problème bien plus grave et qu'on veut voir en premier. */
-    say("  triangles emis : logiciel %lu, carte %lu\n", soft_emitted, card_emitted);
-    check("la chaine a emis autant de triangles des deux cotes",
+     * Before comparing the images, compare the counts. If the two backends did
+     * not receive the same number of triangles, the image difference says
+     * nothing about rendering any more: it says the chain is not deterministic,
+     * which is a far more serious problem and one we want to see first. */
+    say("  triangles emitted: software %lu, card %lu\n", soft_emitted, card_emitted);
+    check("the chain emitted the same number of triangles on both sides",
           soft_emitted == card_emitted && soft_emitted > 0);
 
-    /* --- La comparaison ------------------------------------------------------ */
+    /* --- The comparison ------------------------------------------------------ */
     {
         long total = 0, differ = 0, differ_edge = 0, painted_soft = 0,
              painted_card = 0;
@@ -208,49 +208,49 @@ int main(void)
             }
         }
 
-        say("  surface peinte : logiciel %ld, carte %ld (%ld%% d'ecart)\n",
+        say("  painted surface: software %ld, card %ld (%ld%% gap)\n",
             painted_soft, painted_card,
             painted_soft ? (100 * (painted_card - painted_soft) / painted_soft) : 0);
-        say("  pixels franchement differents : %ld sur %ld (%ld pour mille)\n",
+        say("  frankly different pixels: %ld out of %ld (%ld per thousand)\n",
             differ, total, total ? (1000 * differ / total) : 0);
-        say("  dont sur un bord, comptes a part : %ld\n", differ_edge);
-        say("  pire ecart par canal sur toute l'image : %d\n", max_gap);
+        say("  of which on an edge, counted separately: %ld\n", differ_edge);
+        say("  worst per-channel gap over the whole image: %d\n", max_gap);
         if (worst) {
-            say("  pire ecart hors bord : %d a (%d,%d)  logiciel 0x%06X  carte 0x%06X\n",
+            say("  worst gap off-edge: %d at (%d,%d)  software 0x%06X  card 0x%06X\n",
                 worst, worst_x, worst_y,
                 to565(g_soft[(size_t)worst_y * W + (size_t)worst_x] & 0x00FFFFFFu),
                 g_card[(size_t)worst_y * W + (size_t)worst_x] & 0x00FFFFFFu);
         }
 
-        /* La surface peinte est le contrôle le plus robuste : elle ne dépend ni
-           de la quantification ni des bords, et une géométrie fausse d'un côté
-           la fait bouger tout de suite. */
-        check("les deux backends peignent la meme surface a 2 pour cent pres",
+        /* The painted surface is the most robust check: it depends on neither
+           quantisation nor edges, and wrong geometry on one side moves it
+           immediately. */
+        check("both backends paint the same surface to within 2 per cent",
               painted_soft > 0 &&
               (painted_card - painted_soft) * 50 <  painted_soft &&
               (painted_soft - painted_card) * 50 <  painted_soft);
-        check("moins d'un pixel sur cent differe franchement hors des bords",
+        check("fewer than one pixel in a hundred differs frankly off-edge",
               total > 0 && differ * 100 < total);
 
-        /* **Le controle serre, et c'est celui qui vaut.**
+        /* **The tight check, and it is the one that counts.**
          *
-         * Le seuil de 24 par canal ci-dessus a servi a defricher : il permettait
-         * de voir une divergence de tri sans etre noye par la quantification.
-         * Une fois les vraies divergences corrigees — couleur iteree comme sur le
-         * materiel, profondeur triee sur 1/w — la mesure a montre que **le pire
-         * ecart sur les 307200 pixels vaut 9**, soit un pas de quantification du
-         * rouge plus un du vert. Le seuil large ne peut donc plus rien attraper :
-         * il passerait sur n'importe quelle regression inferieure a un dixieme de
-         * l'echelle.
+         * The threshold of 24 per channel above served to clear the ground: it
+         * allowed a sorting divergence to be seen without being drowned by
+         * quantisation. Once the real divergences were fixed — colour iterated as
+         * on the hardware, depth sorted on 1/w — measurement showed that **the
+         * worst gap over the 307200 pixels is 9**, that is, one quantisation step
+         * of red plus one of green. The loose threshold can therefore no longer
+         * catch anything: it would pass on any regression smaller than a tenth of
+         * the scale.
          *
-         * On borne a 16, deux pas de quantification. C'est au-dessus du bruit
-         * mesure et tres en dessous de tout ecart qui aurait un sens visuel. */
-        check("aucun pixel ne s'ecarte de plus de deux pas de quantification",
+         * We bound at 16, two quantisation steps. That is above the measured
+         * noise and far below any gap that would have visual meaning. */
+        check("no pixel deviates by more than two quantisation steps",
               max_gap <= 16);
     }
 
-    /* L'image de la carte est ramenée aussi, pour qu'un écart puisse être
-       regardé et non seulement compté. */
+    /* The card's image is brought back too, so that a gap can be looked at and
+       not merely counted. */
     {
         FILE *f = fopen("D:\\CMPCARD.BMP", "wb");
         if (f) {
@@ -280,11 +280,11 @@ int main(void)
                 for (i = 0; i < pad; i++) { fputc(0, f); }
             }
             fclose(f);
-            say("  images ecrites : D:\\CMPSOFT.BMP et D:\\CMPCARD.BMP\n");
+            say("  images written: D:\\CMPSOFT.BMP and D:\\CMPCARD.BMP\n");
         }
     }
 
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
