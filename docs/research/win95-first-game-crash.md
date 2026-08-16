@@ -1,10 +1,10 @@
-# Le premier plantage du jeu, et comment il s'est laissé lire
+# The game's first crash, and how it let itself be read
 
-Mesuré le 15 août 2026 sur la machine d'épreuve, avec la ROM.
+Measured on 15 August 2026 on the test machine, with the ROM.
 
-## Où en est le portage
+## Where the port stands
 
-Le jeu démarre. Le journal du runtime le dit sans ambiguïté :
+The game starts. The runtime's log says so unambiguously:
 
     [boot][rom] validated and registered
     [boot] runtime initialized; waiting for first safe VI state
@@ -13,135 +13,133 @@ Le jeu démarre. Le journal du runtime le dit sans ambiguïté :
     [boot][audio] frequency=22050 (diagnostic backend)
     [boot][vi] present=4260
 
-La ROM est validée, l'entrée du code recompilé est atteinte, et le jeu
-reconfigure lui-même la fréquence audio de 48000 à 22050 — c'est-à-dire qu'il
-exécute sa propre initialisation, pas seulement celle du runtime.
+The ROM is validated, the recompiled code's entry point is reached, and the game
+reconfigures the audio frequency from 48000 to 22050 itself — that is, it runs its
+own initialisation, not merely the runtime's.
 
-## Il a fallu trois outils avant de pouvoir diagnostiquer quoi que ce soit
+## It took three tools before anything could be diagnosed
 
-**`stderr` n'était pas récupérable.** Tout le journal y passe et COMMAND.COM de
-Windows 95 n'a pas de syntaxe `2>&1`. Le runtime le redirige désormais vers un
-fichier sur cette cible, sans mise en mémoire tampon.
+**`stderr` was not recoverable.** The whole log goes through it and Windows 95's
+COMMAND.COM has no `2>&1` syntax. The runtime now redirects it to a file on this
+target, unbuffered.
 
-**Le jeu n'avait aucun filtre d'exception.** `game_main.cpp` désactive le sien
-sur cette cible au motif que `platform/win95/startup.c` « installe déjà son
-propre filtre ». C'était vrai du témoin de plate-forme et faux du jeu :
-`dkr_win95_startup` n'était appelé que par `witness.c`. Le symptôme était une
-boîte « opération non conforme » de Windows, aucune trace, et **le mode vidéo non
-restitué** — le plus grave, la Voodoo gardant l'écran par relais analogique.
+**The game had no exception filter at all.** `game_main.cpp` disables its own on
+this target on the grounds that `platform/win95/startup.c` "already installs its
+own filter". That was true of the platform witness and false of the game:
+`dkr_win95_startup` was only called by `witness.c`. The symptom was a Windows
+"illegal operation" box, no trace, and **the video mode not restored** — the most
+serious of the three, the Voodoo holding the screen through its analogue relay.
 
-**ScanDisk avalait les frappes** à chaque démarrage suivant un plantage, ce qui
-faisait croire que le programme ne démarrait pas alors qu'il n'avait jamais été
-lancé. `AutoScan=0` supprime la cause.
+**ScanDisk was swallowing the keystrokes** at every boot following a crash, which
+made it look as though the program did not start when it had never been launched.
+`AutoScan=0` removes the cause.
 
-## Premier défaut : la RDRAM était trop petite pour la disposition de librecomp
+## First defect: RDRAM was too small for librecomp's layout
 
-    *** exception non rattrapee ***
-      code    : 0xC0000005 (acces memoire invalide)
-      adresse : 0x007B4226        -> o1heapInit + 0x46
+    *** unhandled exception ***
+      code    : 0xC0000005 (invalid memory access)
+      address : 0x007B4226        -> o1heapInit + 0x46
 
-L'adresse tombe dans la boucle qui efface les casiers de l'instance
-(`out->bins[i] = NULLFRAGMENT`) — c'est-à-dire sur le **premier octet du tas**.
+The address falls in the loop that clears the instance's bins
+(`out->bins[i] = NULLFRAGMENT`) — that is, on the **heap's first byte**.
 
-Le correctif 0017 avait dimensionné la RDRAM sur les besoins du *jeu* : le pool
-de DKR s'arrête à `RAM_END`, 0x80400000, et le decomp n'emploie pas l'Expansion
-Pak. Ce raisonnement est juste sur le jeu et faux sur librecomp, qui place ses
-propres régions bien au-dessus :
+Patch 0017 had sized RDRAM on the *game*'s needs: DKR's pool stops at `RAM_END`,
+0x80400000, and the decomp does not use the Expansion Pak. That reasoning is right
+about the game and wrong about librecomp, which places its own regions well above:
 
-    0x80800000  poignées PI         8 Mio
-    0x80801000  zone de correctifs
-    0x81000000  zone de mods       16 Mio
+    0x80800000  PI handles         8 MiB
+    0x80801000  patch area
+    0x81000000  mod area          16 MiB
 
-et `init_heap` place le tas à `mod_rdram_start`. Avec 4 Mio engagés et 8 Mio
-réservés, cette écriture tombait **hors de la réservation entière**.
+and `init_heap` places the heap at `mod_rdram_start`. With 4 MiB committed and
+8 MiB reserved, that write fell **outside the reservation entirely**.
 
-La disposition est laissée telle quelle et les tailles la suivent : 20 Mio
-engagés placent le tas à 16 Mio avec 4 Mio d'arène utilisable, et 24 Mio réservés
-gardent 4 Mio de pages protégées au-dessus, pour qu'une adresse invitée hors
-plage continue de déclencher une faute. L'ADR 0003 relève 47 Mio libres sur cette
-machine : c'est abordable.
+The layout is left as it is and the sizes follow it: 20 MiB committed place the
+heap at 16 MiB with 4 MiB of usable arena, and 24 MiB reserved keep 4 MiB of
+protected pages above, so that an out-of-range guest address still raises a fault.
+ADR 0003 records 47 MiB free on this machine: that is affordable.
 
-Un `static_assert` interdit désormais de redescendre sous `mod_rdram_start`.
+A `static_assert` now forbids dropping back below `mod_rdram_start`.
 
-## Second défaut : un pointeur nul dans le gestionnaire RSP du jeu
+## Second defect: a null pointer in the game's RSP handler
 
-Le filtre d'exception a été enrichi pour rapporter l'adresse **touchée** et les
-registres, et non seulement l'adresse du code. La différence est décisive sur un
-portage dont tout l'espace mémoire invité est un tableau indexé :
+The exception filter was enriched to report the **touched** address and the
+registers, and not only the code's address. The difference is decisive on a port
+whose entire guest memory space is an indexed array:
 
-    adresse : 0x006A98D7        -> __scHandleRSP + 0x97
-    touchait: 0x82360010 en lecture
+    address : 0x006A98D7        -> __scHandleRSP + 0x97
+    touching: 0x82360010 for reading
     ecx=00000000   ebp=02360000
 
-L'instruction est `mov -0x7ffffff0(%ebp,%ecx,1),%edx`, la forme typique du code
-recompilé : `ebp` porte la base RDRAM, `ecx` l'adresse invitée, et le déplacement
-replie le biais KSEG0 avec le champ lu.
+The instruction is `mov -0x7ffffff0(%ebp,%ecx,1),%edx`, the typical shape of the
+recompiled code: `ebp` carries the RDRAM base, `ecx` the guest address, and the
+displacement folds the KSEG0 bias together with the field being read.
 
-`ecx` vaut **zéro**. L'adresse invitée est donc `0x80000010`, et le champ à
-l'offset 0x10 d'un `OSScTask` est `list`. Autrement dit :
+`ecx` is **zero**. The guest address is therefore `0x80000010`, and the field at
+offset 0x10 of an `OSScTask` is `list`. In other words:
 
-    sc->curRSPTask->list   avec curRSPTask nul
+    sc->curRSPTask->list   with curRSPTask null
 
-Le jeu reçoit une fin de tâche RSP **alors qu'il n'a pas de tâche courante**.
+The game receives an RSP task completion **while it has no current task**.
 
-Ce n'est pas un défaut du jeu : c'est notre signalisation. Six correctifs de ce
-portage portent déjà sur l'ordre d'achèvement SP et DP — 0006, 0009, 0010, 0011,
-0012, 0013 — parce que cette zone est délicate. Une interruption SP en trop, ou
-délivrée après que le jeu a rendu sa tâche, produit exactement cela.
+That is not a defect of the game: it is our signalling. Six of this port's patches
+already bear on the SP and DP completion order — 0006, 0009, 0010, 0011, 0012,
+0013 — because that area is delicate. One SP interrupt too many, or one delivered
+after the game has given the task up, produces exactly this.
 
-C'est le prochain point à traiter, et il est désormais **nommé** plutôt que
-soupçonné.
+That is the next point to deal with, and it is now **named** rather than
+suspected.
 
-## Ce que cette session a changé dans la méthode
+## What this session changed in the method
 
-Un filtre d'exception qui rapporte l'adresse du code sans l'adresse touchée
-oblige à désassembler à la main pour deviner ce qui manquait. Avec les deux, plus
-les registres, la faute se lit : ici, trois lignes ont suffi à passer de
-« quelque part dans le gestionnaire RSP » à « `curRSPTask` est nul ».
+An exception filter that reports the code's address without the touched address
+forces one to disassemble by hand to guess what was missing. With both, plus the
+registers, the fault reads itself: here, three lines sufficed to go from
+"somewhere in the RSP handler" to "`curRSPTask` is null".
 
-## La trace élimine l'hypothèse la plus probable
+## The trace eliminates the most likely hypothesis
 
-`DKR_TRACE_SP` compte les soumissions de tâche et les bords SP et DP. Sur la
-machine, avant le plantage :
+`DKR_TRACE_SP` counts the task submissions and the SP and DP edges. On the
+machine, before the crash:
 
-    [trace][sp] soumis   type=2  soumis=1 sp=0 dp=0
-    [trace][sp] sp       type=0  soumis=1 sp=1 dp=0
+    [trace][sp] submit   type=2  submitted=1 sp=0 dp=0
+    [trace][sp] sp       type=0  submitted=1 sp=1 dp=0
 
-**Une seule soumission, un seul bord SP**, puis la faute. Il n'y a pas de
-livraison en double.
+**One submission, one SP edge**, then the fault. There is no double delivery.
 
-`type=2` est `M_AUDTASK` : la toute première tâche que DKR soumet est **audio**,
-pas graphique. Elle part dans la file de commandes du planificateur
-(`osSendMesg(osScGetCmdQ(gAudioSched), t)`, `audiomgr.c:363`), donc c'est bien
-`__scExec` de libultra qui la démarre — et c'est lui qui pose `sc->curRSPTask`.
+`type=2` is `M_AUDTASK`: the very first task DKR submits is **audio**, not
+graphics. It goes into the scheduler's command queue
+(`osSendMesg(osScGetCmdQ(gAudioSched), t)`, `audiomgr.c:363`), so it really is
+libultra's `__scExec` that starts it — and it is `__scExec` that sets
+`sc->curRSPTask`.
 
-Reste l'hypothèse de course : le RSP émulé termine avant que le fil
-soumissionnaire n'ait fini sa comptabilité, ce que le matériel réel ne permet
-pas — l'interruption y arrive des microsecondes plus tard. Six correctifs de ce
-portage portent déjà sur cet ordonnancement, ce qui la rendait plausible.
+That leaves the race hypothesis: the emulated RSP finishes before the submitting
+thread has completed its bookkeeping, which real hardware does not allow — the
+interrupt arrives there microseconds later. Six of this port's patches already bear
+on that ordering, which made it plausible.
 
-Elle est fausse. Publier le bord une milliseconde plus tard ne change **rien** :
+It is false. Publishing the edge one millisecond later changes **nothing**:
 
-    adresse : 0x006A98D7        (identique)
-    touchait: 0x82360010        (identique)
-    ecx=00000000 ebp=02360000   (identiques)
+    address : 0x006A98D7        (identical)
+    touching: 0x82360010        (identical)
+    ecx=00000000 ebp=02360000   (identical)
 
-Faute identique, registres identiques. L'état est **déterministe**, pas une
-course. Le retard a donc été retiré : un changement qui ne corrige rien mais
-modifie l'ordonnancement est pire qu'aucun changement.
+Identical fault, identical registers. The state is **deterministic**, not a race.
+The delay was therefore removed: a change that fixes nothing while modifying the
+scheduling is worse than no change at all.
 
-Ce que cela laisse : soit `curRSPTask` n'est jamais posé — donc `__scExec` ne
-prend pas le chemin qu'on croit — soit il est effacé entre-temps par un second
-passage dans `__scHandleRSP` que la trace ne voit pas, celle-ci comptant nos
-bords à nous et non les messages que le jeu consomme.
+What that leaves: either `curRSPTask` is never set — so `__scExec` does not take
+the path we think — or it is cleared in between by a second pass through
+`__scHandleRSP` that the trace does not see, the trace counting our edges and not
+the messages the game consumes.
 
-C'est du côté du jeu qu'il faut regarder maintenant, et non du nôtre.
+It is on the game's side that one must look now, not on ours.
 
-## Le vidage mémoire : la structure est vide
+## The memory dump: the structure is empty
 
-Le filtre vide désormais seize mots depuis tout registre qui ressemble à une
-adresse invitée — poids fort `0x80` — en traduisant par la base RDRAM. Le
-rapport devient lisible sans attacher un débogueur à une machine qui n'en a pas.
+The filter now dumps sixteen words from any register that looks like a guest
+address — high byte `0x80` — translating through the RDRAM base. The report becomes
+readable without attaching a debugger to a machine that has none.
 
     esi -> 0x80121260 :
       +00  00000100 00000000 00000000 00000000
@@ -149,29 +147,28 @@ rapport devient lisible sans attacher un débogueur à une machine qui n'en a pa
       +20  00000400 00000000 00000000 00000000
       +30  00000000 00000000 00000000 00000000
 
-`esi` est le premier argument de `__scHandleRSP`, donc le `OSSched`. Il est
-**presque entièrement nul**. Les deux seules valeurs non nulles, `0x100` en `+00`
-et `0x400` en `+20`, ressemblent à des tailles ou des drapeaux, pas à des
-pointeurs de file ou de tâche.
+`esi` is `__scHandleRSP`'s first argument, hence the `OSSched`. It is **almost
+entirely null**. The only two non-null values, `0x100` at `+00` and `0x400` at
+`+20`, look like sizes or flags, not like queue or task pointers.
 
-> **Cette lecture était fausse, et la correction vaut d'être gardée.** Un
-> `OSSched` commence par ses deux modèles de message — `retraceMsg` et
-> `prenmiMsg`, 32 octets chacun — puis une file, un tampon, une seconde file, un
-> second tampon, et un `OSThread` embarqué de 432 octets. `curRSPTask` vit à
-> l'offset **0x274**. Les soixante-quatre octets vidés ne montraient donc que
-> l'en-tête, et conclure « la structure est vide » revenait à conclure sur autre
-> chose que ce qu'on regardait. Le vidage couvre désormais 640 octets.
+> **That reading was wrong, and the correction is worth keeping.** An `OSSched`
+> begins with its two message templates — `retraceMsg` and `prenmiMsg`, 32 bytes
+> each — then a queue, a buffer, a second queue, a second buffer, and an embedded
+> `OSThread` of 432 bytes. `curRSPTask` lives at offset **0x274**. The sixty-four
+> bytes dumped therefore showed nothing but the header, and concluding "the
+> structure is empty" amounted to concluding about something other than what was
+> being looked at. The dump now covers 640 bytes.
 
-L'adresse est la bonne : `eax` vaut `0x024814D4`, soit exactement
-`gMainSched + 0x274` une fois retranchée la base RDRAM. Le code lisait bien
+The address is the right one: `eax` is `0x024814D4`, that is exactly
+`gMainSched + 0x274` once the RDRAM base is subtracted. The code was indeed reading
 `curRSPTask`.
 
-## L'état réel du planificateur
+## The scheduler's real state
 
-Vidé jusqu'à l'offset 0x280, et lu en inversant chaque mot — la RDRAM invitée est
-stockée en octets inversés côté hôte :
+Dumped up to offset 0x280, and read by reversing each word — the guest RDRAM is
+stored byte-swapped on the host side:
 
-| Offset | Champ | Valeur |
+| Offset | Field | Value |
 |---|---|---|
 | 0x260 | `clientList` | **0x80116220** |
 | 0x264 | `audioListHead` | 0 |
@@ -181,66 +178,63 @@ stockée en octets inversés côté hôte :
 | 0x274 | `curRSPTask` | 0 |
 | 0x278 | `curRDPTask` | 0 |
 
-**Le planificateur est bien initialisé** : `clientList` pointe sur un client
-enregistré, et l'`OSThread` embarqué est en place. Ce n'est donc ni une structure
-vide ni une mauvaise adresse.
+**The scheduler is duly initialised**: `clientList` points at a registered client,
+and the embedded `OSThread` is in place. So it is neither an empty structure nor a
+wrong address.
 
-Mais **les quatre listes de tâches sont vides**, en plus des deux tâches
-courantes. Le message de fin de tâche RSP est arrivé alors que le planificateur
-n'avait de tâche **nulle part** — ni en cours, ni en attente.
+But **all four task lists are empty**, in addition to the two current tasks. The
+RSP task completion message arrived while the scheduler had a task **nowhere** —
+neither in progress nor waiting.
 
-Cela déplace la question. Elle n'est plus « pourquoi `curRSPTask` a-t-il été
-effacé » mais **« pourquoi le RSP a-t-il démarré une tâche que le planificateur
-n'a jamais prise dans sa file de commandes »**.
+That moves the question. It is no longer "why was `curRSPTask` cleared" but **"why
+did the RSP start a task the scheduler never took out of its command queue"**.
 
-Or `submit_rsp_task` n'est appelé que depuis `osSpTaskStart` de librecomp, et
-dans libultra seul `__scExec` l'appelle — après avoir retiré la tâche de `cmdQ`
-et l'avoir chaînée dans une des listes. Les listes étant vides, `__scExec` n'a pas
-tourné.
+Now `submit_rsp_task` is only called from librecomp's `osSpTaskStart`, and within
+libultra only `__scExec` calls it — after removing the task from `cmdQ` and
+chaining it into one of the lists. The lists being empty, `__scExec` did not run.
 
-Quelque chose démarre donc la tâche sans passer par le planificateur.
+Something therefore starts the task without going through the scheduler.
 
-Les deux pistes qui restent, dans l'ordre où elles se testent :
+The two remaining leads, in the order in which they are testable:
 
-1. `osCreateScheduler` n'a pas écrit là où le jeu le croit. Le vérifier demande
-   de tracer l'appel côté invité, ce que `librecomp` permet par ses exports.
-2. La structure est bien à cette adresse mais son contenu a été effacé, par
-   exemple par un instantané RDRAM recopié par-dessus — `submit_rsp_task` copie
-   8 Mio de RDRAM à chaque tâche graphique, et l'ordre de ces copies mérite
-   d'être regardé.
+1. `osCreateScheduler` did not write where the game believes it did. Checking that
+   requires tracing the call on the guest side, which `librecomp` allows through
+   its exports.
+2. The structure really is at that address but its content was cleared, for
+   instance by an RDRAM snapshot copied over it — `submit_rsp_task` copies 8 MiB of
+   RDRAM per graphics task, and the order of those copies deserves a look.
 
-La seconde est bon marché à écarter : la trace montre qu'aucune tâche graphique
-n'a encore été soumise au moment de la faute.
+The second is cheap to rule out: the trace shows that no graphics task had yet been
+submitted at the moment of the fault.
 
-## Deux hypothèses de plus, éliminées
+## Two more hypotheses, eliminated
 
-**Les messages SP et DP sont distinguables.** Le planificateur enregistre une
-file et un message par événement ; s'ils portaient la même valeur, le jeu
-traiterait une fin de DP comme une fin de RSP et entrerait deux fois dans
-`__scHandleRSP` — dont le premier passage efface `curRSPTask` avant de le
-déréférencer. C'était une explication complète du plantage. Elle est fausse :
+**The SP and DP messages are distinguishable.** The scheduler registers one queue
+and one message per event; if they carried the same value, the game would treat a
+DP completion as an RSP completion and would enter `__scHandleRSP` twice — whose
+first pass clears `curRSPTask` before dereferencing it. That was a complete
+explanation of the crash. It is false:
 
     sp.mq=0x801212A0 sp.msg=0x0000029B
     dp.mq=0x801212A0 dp.msg=0x0000029C
 
-Files identiques — c'est bien l'`interruptQ`, à `gMainSched + 0x40` — mais
-messages distincts.
+Identical queues — it really is the `interruptQ`, at `gMainSched + 0x40` — but
+distinct messages.
 
-**`__scExec` écrit bien `curRSPTask`.** Le code recompilé, à l'adresse invitée
-0x8007A030, fait le stockage **dans le créneau de retard** d'un `bne`, donc sur
-les deux chemins :
+**`__scExec` does write `curRSPTask`.** The recompiled code, at guest address
+0x8007A030, does the store **in a `bne`'s delay slot**, hence on both paths:
 
     bne  $s0, $s1, L_8007A038
-    sw   $s0, 0x274($t9)      <- créneau de retard, exécuté quoi qu'il arrive
+    sw   $s0, 0x274($t9)      <- delay slot, executed whatever happens
 
-Le champ est donc renseigné après le démarrage de la tâche.
+The field is therefore filled in after the task starts.
 
-## La pile, et ce qu'elle établit
+## The stack, and what it establishes
 
-Windows 95 n'a pas `StackWalk64`, et le code recompilé n'a pas de cadre de pile
-exploitable. Le rapport parcourt donc la pile et retient ce qui ressemble à une
-adresse de code — pas une pile d'appels exacte, mais une liste de candidats, ce
-qui vaut infiniment mieux que rien quand on ignore par où l'on est arrivé.
+Windows 95 has no `StackWalk64`, and the recompiled code has no usable stack frame.
+The report therefore walks the stack and keeps whatever looks like a code address —
+not an exact call stack, but a list of candidates, which is infinitely better than
+nothing when one does not know how one got there.
 
     0x006AB6A6  __scMain + 0x466
     0x00777101  run_thread_function + 0xE1
@@ -248,145 +242,139 @@ qui vaut infiniment mieux que rien quand on ignore par où l'on est arrivé.
     0x00866CBF  dkr::win95::thread::entry<...> + 0x2F
     0x00834C01  dkr_thread_trampoline + 0x21
 
-La chaîne est confirmée : `__scHandleRSP` est bien appelé depuis `__scMain`, sur
-le fil du planificateur, lui-même porté par la couche de threads de E02-S01.
+The chain is confirmed: `__scHandleRSP` is indeed called from `__scMain`, on the
+scheduler's thread, itself carried by E02-S01's threading layer.
 
-## Ce qui reste, et pourquoi c'est maintenant le suspect principal
+## What remains, and why it is now the chief suspect
 
-Le compte est le suivant : une soumission, un `sp_complete` de notre côté, des
-messages distinguables, un `curRSPTask` écrit après le démarrage — et pourtant
-`__scHandleRSP` le trouve nul.
+The count runs as follows: one submission, one `sp_complete` on our side,
+distinguishable messages, a `curRSPTask` written after the start — and yet
+`__scHandleRSP` finds it null.
 
-Cela ne laisse qu'une possibilité : **le jeu reçoit le message plus d'une fois**.
-Notre trace compte nos appels à `sp_complete`, pas les messages effectivement
-déposés dans la file invitée. Un dépôt en double serait invisible pour elle.
+That leaves only one possibility: **the game receives the message more than once**.
+Our trace counts our calls to `sp_complete`, not the messages actually deposited
+into the guest queue. A duplicate deposit would be invisible to it.
 
-Le correctif 0013 de ce portage remplace précisément le transport des messages
-externes par une file « fiable ». C'est là qu'il faut regarder, et la mesure à
-faire est simple : compter les dépôts dans la file invitée, et non les appels qui
-les demandent.
+This port's patch 0013 replaces precisely the transport of external messages with a
+"reliable" queue. That is where to look, and the measurement to make is simple:
+count the deposits into the guest queue, not the calls that request them.
 
-## La famine était réelle, et elle est corrigée
+## The starvation was real, and it is fixed
 
-Le compteur de dépôts, une fois son plafond rendu **par valeur de message**,
-donne la réponse :
+The deposit counter, once its cap was made **per message value**, gives the answer:
 
-    msg=0x0000029B remis   depots=68 remises=1 refus=26
-    msg=0x0000029B depose  depots=71 remises=1 refus=35
+    msg=0x0000029B requeued   deposits=68 requeues=1 refusals=26
+    msg=0x0000029B deposited  deposits=71 requeues=1 refusals=35
 
-Un seul `sp_complete`, un seul dépôt — pas de doublon. Mais le bord SP a d'abord
-été **refusé et remis en file**, puis déposé neuf refus plus tard. Il était coincé
-derrière le flot de retraces dans une file de huit places.
+One `sp_complete`, one deposit — no duplicate. But the SP edge was first **refused
+and requeued**, then deposited nine refusals later. It was stuck behind the flow of
+retraces in an eight-slot queue.
 
-Le jeu, lui, n'attend pas : quelques images sans réponse et son planificateur
-abandonne la tâche et remet `curRSPTask` à nul. Notre message arrive après, et
-`__scHandleRSP` déréférence un pointeur nul.
+The game, for its part, does not wait: a few frames without an answer and its
+scheduler gives the task up and resets `curRSPTask` to null. Our message arrives
+afterwards, and `__scHandleRSP` dereferences a null pointer.
 
-Sur le matériel, une interruption SP et un retour de balayage sont deux
-événements indépendants dont l'ordre relatif n'est pas garanti. Les servir avant
-les retraces est donc fidèle, et suffit à les sortir de la famine — leur ordre
-entre eux est préservé, c'est celui-là que le jeu observe.
+On the hardware, an SP interrupt and a scan retrace are two independent events
+whose relative order is not guaranteed. Serving them before the retraces is
+therefore faithful, and suffices to lift them out of starvation — their order among
+themselves is preserved, and that is the one the game observes.
 
-**Effet mesuré** : le message SP est désormais déposé du premier coup, sans
-remise en file. Et la faute **se déplace** vers `__scHandleRDP`, ce qui est la
-meilleure preuve que la famine était réelle : le jeu va plus loin et rencontre le
-problème suivant.
+**Measured effect**: the SP message is now deposited at the first attempt, without
+being requeued. And the fault **moves** to `__scHandleRDP`, which is the best proof
+that the starvation was real: the game goes further and meets the next problem.
 
-## Un journal de zéro octet qui contenait tout
+## A zero-byte log that contained everything
 
-Le plantage suivant a produit un `DKRR.LOG` vide — alors que la trace qu'il
-contenait était exactement ce qu'on cherchait.
+The next crash produced an empty `DKRR.LOG` — while the trace it contained was
+exactly what we were after.
 
-Le runtime redirige `stderr` sans mise en mémoire tampon, donc les octets partent
-au système au fil de l'eau. Mais Windows 95 ne met à jour la **taille dans
-l'entrée de répertoire** qu'à la fermeture : un processus qui meurt laisse un
-fichier de zéro octet dont le contenu est pourtant sur le disque, et invisible
-pour tout outil qui lit la table.
+The runtime redirects `stderr` unbuffered, so the bytes go to the system as they
+come. But Windows 95 only updates the **size in the directory entry** at close
+time: a process that dies leaves a zero-byte file whose content is nonetheless on
+the disk, and invisible to any tool that reads the table.
 
-Le filtre d'exception ferme donc `stderr` avant d'écrire son propre rapport. Le
-journal est passé de 0 à 1446 octets sur le plantage suivant.
+The exception filter therefore closes `stderr` before writing its own report. The
+log went from 0 to 1446 bytes on the next crash.
 
-## Où en est le compte
+## Where the count stands
 
-Après correction, sur la dernière exécution : quatre retraces, **un** bord SP
-déposé du premier coup, **aucun** bord DP jamais déposé — et pourtant une faute
-qui passe par `__scHandleRDP` avant de revenir sur `__scHandleRSP`.
+After the fix, on the last run: four retraces, **one** SP edge deposited at the
+first attempt, **no** DP edge ever deposited — and yet a fault that passes through
+`__scHandleRDP` before coming back to `__scHandleRSP`.
 
-Le jeu attend donc une fin de RDP que nous n'émettons pas. La tâche audio de DKR
-porte `OS_TASK_DP_WAIT` dans ses drapeaux de tâche, ce qui est la piste à suivre.
+The game is therefore waiting for an RDP completion we do not emit. DKR's audio
+task carries `OS_TASK_DP_WAIT` in its task flags, which is the lead to follow.
 
-## La coalescence des retraces : une correction qui régresse
+## Coalescing the retraces: a fix that regresses
 
-L'analyse suggérait la suite : puisque la file sature de retraces, ne pas en
-déposer un second tant que le premier n'est pas délivré. Sur le matériel, un
-retrace manqué pendant que le processeur est occupé est simplement manqué.
+The analysis suggested what to do next: since the queue saturates with retraces, do
+not deposit a second one while the first has not been delivered. On the hardware, a
+retrace missed while the processor is busy is simply missed.
 
-**Le jeu ne démarre plus.** Il s'arrête à l'initialisation du tas :
+**The game no longer starts.** It stops at the heap's initialisation:
 
     Initializing recomp heap at offset 0x01000000 with size 0x00400000
 
-et n'affiche plus une seule image. Le drapeau « un retrace attend » reste à un,
-et tous les suivants sont écartés : le jeu attend un réveil qui ne vient jamais.
+and does not display a single frame. The "a retrace is pending" flag stays set, and
+every subsequent one is discarded: the game waits for a wake-up that never comes.
 
-La cause probable est que `dequeue_external_messages` n'est appelé que depuis un
-fil invité en attente. Avant que le jeu ne tourne, personne ne draine — le
-premier retrace pose le drapeau et rien ne le lève. Auparavant les retraces
-s'empilaient dans notre file et étaient délivrés en rafale au premier drainage.
+The likely cause is that `dequeue_external_messages` is only called from a waiting
+guest thread. Before the game runs, nobody drains — the first retrace sets the flag
+and nothing clears it. Previously the retraces piled up in our queue and were
+delivered in a burst at the first drain.
 
-Le changement est retiré. Une correction qui régresse est pire que le défaut
-qu'elle vise, et celle-ci échangeait un plantage tardif contre un blocage
-immédiat.
+The change is reverted. A fix that regresses is worse than the defect it aims at,
+and this one traded a late crash for an immediate hang.
 
-Ce que l'échec apprend, et qui vaut d'être gardé : **notre file externe n'est pas
-drainée à intervalle régulier**, mais opportunément, quand un fil invité se met en
-attente. Toute politique de dépôt qui suppose un drainage périodique est donc
-fausse par construction. La bonne forme reste à trouver — probablement en
-réservant des places plutôt qu'en écartant des messages.
+What the failure teaches, and which is worth keeping: **our external queue is not
+drained at regular intervals**, but opportunistically, when a guest thread waits.
+Any deposit policy that assumes periodic draining is therefore wrong by
+construction. The right shape remains to be found — probably by reserving slots
+rather than discarding messages.
 
-## Réserver des places plutôt qu'écarter des messages
+## Reserving slots rather than discarding messages
 
-La forme correcte était contrainte par l'échec précédent : ne rien retenir entre
-deux passages, puisque notre file externe n'est pas drainée à intervalle
-régulier.
+The correct shape was constrained by the previous failure: hold nothing back
+between two passes, since our external queue is not drained at regular intervals.
 
-On regarde donc l'état réel de la file invitée **au moment du dépôt**. Si moins
-de deux places restent libres, un retrace n'est pas déposé. Sur le matériel, un
-retrace levé alors que la file est pleine est perdu de la même façon —
-`osSendMesg` y est appelé sans blocage depuis l'interruption.
+So we look at the guest queue's real state **at deposit time**. If fewer than two
+slots remain free, a retrace is not deposited. On the hardware, a retrace raised
+while the queue is full is lost in the same way — `osSendMesg` is called there
+without blocking, from the interrupt.
 
-### Ce que cela change
+### What that changes
 
-| | avant | après |
+| | before | after |
 |---|---|---|
-| tâches soumises | 1 | **170** |
-| bords SP | 1 | **169** |
-| bords DP | 0 | **61** |
-| listes d'affichage | 0 | **547** |
-| voix audio normalisées | 0 | **17** |
-| images présentées | ~780 | **3540** |
+| tasks submitted | 1 | **170** |
+| SP edges | 1 | **169** |
+| DP edges | 0 | **61** |
+| display lists | 0 | **547** |
+| normalised audio voices | 0 | **17** |
+| frames presented | ~780 | **3540** |
 
-Le jeu fait tourner son moteur audio et **soumet des listes d'affichage**. C'est
-le premier moment de ce portage où DKR fait réellement son travail sur Windows 95.
+The game runs its audio engine and **submits display lists**. It is the first
+moment in this port where DKR really does its work on Windows 95.
 
-Le plantage subsiste, plus loin, dans `__scHandleRDP` — mais après 170 tâches au
-lieu d'une.
+The crash remains, further on, in `__scHandleRDP` — but after 170 tasks instead of
+one.
 
-### Ce que la trace disait, et qu'il fallait savoir lire
+### What the trace said, and what had to be read into it
 
-La saturation ne se voyait pas dans les compteurs de haut niveau : une seule
-tâche soumise, un seul bord SP, tout paraissait cohérent. Elle ne s'est révélée
-qu'en comptant **les dépôts effectifs dans la file invitée**, et en donnant à
-chaque valeur de message son propre plafond de trace — sans quoi le retrace,
-soixante fois par seconde, dévorait le budget avant que l'intéressant n'arrive.
+The saturation did not show in the high-level counters: one task submitted, one SP
+edge, everything looked consistent. It only showed by counting **the effective
+deposits into the guest queue**, and by giving every message value its own trace
+cap — without which the retrace, sixty times a second, devoured the budget before
+anything interesting arrived.
 
-## Ce qui reste : le bord DP, et pourquoi il est plus subtil
+## What remains: the DP edge, and why it is subtler
 
-Le plantage subsiste dans `__scHandleRDP`, avec `curRDPTask` nul lu à l'offset
-0x4. Mais il survient désormais **après 170 tâches**, pas après une : c'est une
-condition occasionnelle, pas un défaut systématique.
+The crash remains in `__scHandleRDP`, with a null `curRDPTask` read at offset 0x4.
+But it now occurs **after 170 tasks**, not after one: it is an occasional condition,
+not a systematic defect.
 
-Le decomp éclaire pourquoi c'est plus délicat que le cas SP. À la fin de
-`__scHandleRSP`, le planificateur **démarre déjà la tâche suivante** :
+The decomp shows why it is more delicate than the SP case. At the end of
+`__scHandleRSP`, the scheduler **already starts the next task**:
 
 ```c
 state = ((sc->curRSPTask == 0) << 1) | (sc->curRDPTask == 0);
@@ -394,146 +382,145 @@ if ((__scSchedule(sc, &sp, &dp, state)) != state)
     __scExec(sc, sp, dp);
 ```
 
-Et `__scExec` n'écrit `curRDPTask` que lorsque la tâche RSP et la tâche RDP sont
-**la même** — le stockage est dans le chemin non pris du `bne`, contrairement à
-`curRSPTask` qui est dans le créneau de retard. Une tâche audio, qui ne demande
-que le RSP, laisse donc `curRDPTask` inchangé.
+And `__scExec` only writes `curRDPTask` when the RSP task and the RDP task are
+**the same** — the store is on the `bne`'s untaken path, unlike `curRSPTask` which
+is in the delay slot. An audio task, which asks only for the RSP, therefore leaves
+`curRDPTask` unchanged.
 
-Trois causes possibles, qui ne se distinguent pas sans mesure :
+Three possible causes, indistinguishable without measurement:
 
-1. Nous émettons un bord DP pour une tâche graphique que le jeu n'a pas
-   enregistrée comme ayant besoin du RDP. Le chemin graphique appelle
-   `dp_complete()` inconditionnellement après `sp_complete()`.
-2. Deux bords DP pour une même tâche.
-3. La même famine que pour SP, mais résiduelle : la réservation garde deux
-   places, or un couple SP+DP en demande exactement deux — si une soumission du
-   jeu en prend une entre les deux, le DP est refusé.
+1. We emit a DP edge for a graphics task the game has not registered as needing the
+   RDP. The graphics path calls `dp_complete()` unconditionally after
+   `sp_complete()`.
+2. Two DP edges for the same task.
+3. The same starvation as for SP, but residual: the reservation keeps two slots,
+   and an SP+DP pair asks for exactly two — if one submission by the game takes one
+   in between, the DP is refused.
 
-La troisième est la plus probable au vu du profil : occasionnelle, et liée à la
-pression sur la file. Elle se teste en comptant les refus par source, ce que la
-trace sait déjà faire.
+The third is the most likely given the profile: occasional, and tied to pressure on
+the queue. It is tested by counting the refusals per source, which the trace
+already knows how to do.
 
-Ce qui est acquis en revanche : le jeu soumet 547 listes d'affichage et fait
-tourner son moteur audio avant d'y arriver.
+What is gained in the meantime: the game submits 547 display lists and runs its
+audio engine before getting there.
 
-## La famine est entièrement résorbée, et ce n'est plus l'explication
+## The starvation is entirely gone, and it is no longer the explanation
 
-Les totaux par message, sur toute l'exécution :
+The totals per message, over the whole run:
 
-| message | déposés | refusés | remis |
+| message | deposited | refused | requeued |
 |---|---|---|---|
 | retrace | 2984 | **0** | 0 |
 | SP | 1274 | **0** | 0 |
 | DP | 545 | **0** | 0 |
 
-**Plus un seul refus.** L'hypothèse d'une famine résiduelle sur le bord DP est
-donc éliminée : il n'est jamais écarté. Et 545 bords DP pour 550 listes
-d'affichage est cohérent — pas de doublement non plus.
+**Not a single refusal.** The hypothesis of a residual starvation on the DP edge is
+therefore eliminated: it is never discarded. And 545 DP edges for 550 display lists
+is consistent — no doubling either.
 
-Restent donc les causes 1 et 2 : un bord DP émis pour une tâche que le jeu n'a
-pas enregistrée comme ayant besoin du RDP, ou une course où le jeu efface
-`curRDPTask` par un autre chemin avant que notre message n'arrive.
+That leaves causes 1 and 2: a DP edge emitted for a task the game has not
+registered as needing the RDP, or a race in which the game clears `curRDPTask` by
+another path before our message arrives.
 
-### Une fausse alerte, et toujours la même cause
+### A false alarm, and always the same cause
 
-Un instant, les chiffres ont paru accuser une multiplication : 1274 dépôts du
-message SP pour 172 appels à `sp_complete`. C'était un artefact.
+For a moment the figures seemed to accuse a multiplication: 1274 deposits of the SP
+message for 172 calls to `sp_complete`. It was an artefact.
 
-Les lignes `[trace][sp]` cessent d'être imprimées au-delà de quelques centaines
-d'événements ; leur dernier affichage montre donc l'état à ce moment-là, pas le
-total. Je comparais **un compteur plafonné à un compteur libre**.
+The `[trace][sp]` lines stop being printed beyond a few hundred events; their last
+display therefore shows the state at that moment, not the total. I was comparing **a
+capped counter against an uncapped one**.
 
-C'est la troisième fois de cette enquête qu'un artefact de mesure imite un
-défaut, et les trois fois la cause est la même : deux grandeurs comparées sans
-que leurs budgets d'observation le soient. La trace garde désormais les deux
-formes — les premières occurrences pour la chronologie, les totaux périodiques
-pour le reste de l'exécution.
+It is the third time in this investigation that a measurement artefact imitates a
+defect, and all three times the cause is the same: two quantities compared without
+their observation budgets being comparable. The trace now keeps both forms — the
+first occurrences for the chronology, the periodic totals for the rest of the run.
 
-## Un défaut dans mon propre correctif, invisible dans les comptes
+## A defect in my own fix, invisible in the counts
 
-La sonde posée pour départager les deux causes restantes n'a **jamais tiré**,
-alors que 544 messages DP étaient déposés. Elle se conditionnait sur la source du
-message ; la trace des dépôts, elle, se conditionnait sur la valeur.
+The probe placed to separate the two remaining causes **never fired**, while 544 DP
+messages were being deposited. It was conditioned on the message's source; the
+deposit trace was conditioned on the value.
 
-`enqueue_external_message_src` ne recopiait pas la source dans le message mis en
-file. Tout ce qui passe par lui portait donc la valeur par défaut, et **les deux
-politiques écrites juste au-dessus manquaient leur cible** :
+`enqueue_external_message_src` did not copy the source into the queued message.
+Everything passing through it therefore carried the default value, and **the two
+policies written just above missed their target**:
 
-- la priorité accordée aux bords SP et DP ne promouvait que SP, le seul à passer
-  par la variante attendue ;
-- la réservation de places destinée aux retraces pouvait écarter un bord DP, qui
-  lui ressemblait alors comme un jumeau.
+- the priority given to the SP and DP edges promoted only SP, the only one to go
+  through the expected variant;
+- the slot reservation meant for the retraces could discard a DP edge, which then
+  looked like its twin.
 
-Le défaut ne se voyait pas dans les comptes : rien n'était refusé, donc rien ne
-paraissait manquer. Il ne s'est vu que parce qu'une sonde a refusé de tirer.
+The defect did not show in the counts: nothing was refused, so nothing seemed to be
+missing. It only showed because a probe refused to fire.
 
-C'est la quatrième fois de cette enquête qu'un instrument révèle autre chose que
-ce qu'il cherchait — et la première où il révèle un défaut du correctif qui le
-précède.
+It is the fourth time in this investigation that an instrument reveals something
+other than what it was looking for — and the first where it reveals a defect in the
+fix that precedes it.
 
-## Ce que la sonde établit une fois réparée
+## What the probe establishes once repaired
 
-    curRDPTask au depot = 0x405F1280  (nuls=0 poses=1)
+    curRDPTask at deposit = 0x405F1280  (nulls=0 set=1)
     ...
-    dernier : nuls=0 poses=500
+    last: nulls=0 set=500
 
-**`curRDPTask` n'est jamais nul au moment où nous déposons le bord DP** — 500
-dépôts, aucun nul. Le pointeur est donc effacé **entre notre dépôt et le
-traitement par le jeu**.
+**`curRDPTask` is never null at the moment we deposit the DP edge** — 500 deposits,
+no nulls. The pointer is therefore cleared **between our deposit and the game's
+handling of it**.
 
-Ce n'est donc ni un message perdu, ni un message de trop, ni un message pour une
-tâche qui n'a pas besoin du RDP : les trois hypothèses tombent. C'est une
-transition d'état du jeu lui-même, entre la mise en file et la prise en charge.
+So it is neither a lost message, nor an extra message, nor a message for a task
+that does not need the RDP: all three hypotheses fall. It is a state transition of
+the game itself, between the queuing and the handling.
 
-La piste suivante est dans `__scHandleRSP` : il termine en appelant `__scExec`
-pour démarrer la tâche suivante, et `__scExec` n'écrit `curRDPTask` que lorsque
-la tâche RSP et la tâche RDP sont la même. Une tâche RSP seule, démarrée entre
-notre dépôt et son traitement, laisse donc `curRDPTask` à la valeur qu'y a mise
-le dernier `__scHandleRDP` — c'est-à-dire zéro.
+The next lead is in `__scHandleRSP`: it ends by calling `__scExec` to start the next
+task, and `__scExec` only writes `curRDPTask` when the RSP task and the RDP task are
+the same. An RSP-only task, started between our deposit and its handling, therefore
+leaves `curRDPTask` at whatever the last `__scHandleRDP` put there — that is, zero.
 
-À l'état actuel : 555 listes d'affichage, 3720 images, aucun message refusé.
+As things stand: 555 display lists, 3720 frames, no message refused.
 
-## L'écart entre les deux bords n'est pas la cause non plus
+## The gap between the two edges is not the cause either
 
-Le chemin graphique publie le bord SP **avant** d'analyser la liste d'affichage —
-c'est le choix du correctif 0009 — et le bord DP après. L'écart couvre donc tout
-le temps de rendu, pendant lequel le jeu peut démarrer plusieurs tâches, puisque
-`__scHandleRSP` termine en appelant `__scExec`.
+The graphics path publishes the SP edge **before** parsing the display list — that
+is patch 0009's choice — and the DP edge afterwards. The gap therefore covers the
+whole rendering time, during which the game can start several tasks, since
+`__scHandleRSP` ends by calling `__scExec`.
 
-Hypothèse plausible, et fausse. Accoler les deux bords ne change **rien** :
+A plausible hypothesis, and a false one. Putting the two edges side by side changes
+**nothing**:
 
-    adresse : 0x006AA58C   -> __scHandleRDP + 0x6c   (identique)
+    address : 0x006AA58C   -> __scHandleRDP + 0x6c   (identical)
 
-Le changement a été retiré : il modifie l'ordonnancement sans bénéfice, et le
-correctif 0009 existe pour une raison.
+The change was reverted: it modifies the scheduling without benefit, and patch 0009
+exists for a reason.
 
-## L'état de l'enquête
+## The state of the investigation
 
-Cinq hypothèses éliminées par la mesure, dans l'ordre où elles ont paru les plus
-probables :
+Five hypotheses eliminated by measurement, in the order in which they seemed most
+likely:
 
-1. livraison en double du bord SP — un seul dépôt pour un seul appel ;
-2. course d'ordonnancement — retarder le bord ne change rien ;
-3. structure du planificateur non initialisée — elle l'est, je regardais son
-   en-tête au lieu du champ ;
-4. messages SP et DP indistinguables — leurs valeurs diffèrent ;
-5. famine résiduelle sur le bord DP — plus aucun message n'est refusé ;
-6. écart entre les bords SP et DP — l'accoler ne change rien.
+1. double delivery of the SP edge — one deposit for one call;
+2. a scheduling race — delaying the edge changes nothing;
+3. an uninitialised scheduler structure — it is initialised, I was looking at its
+   header instead of the field;
+4. indistinguishable SP and DP messages — their values differ;
+5. residual starvation on the DP edge — no message is refused any more;
+6. the gap between the SP and DP edges — putting them side by side changes nothing.
 
-Ce qui est établi : `curRDPTask` est **toujours renseigné au moment où nous
-déposons** le bord DP, et nul quand le jeu le traite. L'effacement se produit
-donc dans le jeu, entre la mise en file et la prise en charge, et aucune des
-politiques de livraison testées ne l'influence.
+What is established: `curRDPTask` is **always set at the moment we deposit** the DP
+edge, and null when the game handles it. The clearing therefore happens inside the
+game, between the queuing and the handling, and none of the delivery policies tried
+influences it.
 
-La prochaine mesure doit donc porter sur le jeu et non sur nous : instrumenter
-`__scExec` et `__scHandleRDP` côté invité pour voir quelle transition efface le
-champ. Le code recompilé ne se prête pas au `printf`, mais l'adresse de
-`gMainSched + 0x278` est connue — une surveillance de cette case, échantillonnée
-depuis le runtime, dirait quand elle passe à zéro.
+The next measurement must therefore bear on the game and not on us: instrument
+`__scExec` and `__scHandleRDP` on the guest side to see which transition clears the
+field. The recompiled code does not lend itself to `printf`, but the address of
+`gMainSched + 0x278` is known — a watch on that word, sampled from the runtime,
+would say when it goes to zero.
 
-## DKR envoie ses tâches dans la file d'interruptions
+## DKR sends its tasks into the interrupt queue
 
-`rcp_dkr.c` ne passe pas par la file de commandes du planificateur :
+`rcp_dkr.c` does not go through the scheduler's command queue:
 
 ```c
 osScInterruptQ = osScGetInterruptQ(sc);      /* gfxtask_init */
@@ -541,307 +528,193 @@ osScInterruptQ = osScGetInterruptQ(sc);      /* gfxtask_init */
 osSendMesg(osScInterruptQ, dkrtask, OS_MESG_BLOCK);
 ```
 
-Les tâches graphiques partent donc **directement dans la file d'interruptions**,
-où `__scMain` les récupère par son cas `default:` et les chaîne avec
+The graphics tasks therefore go **straight into the interrupt queue**, where
+`__scMain` picks them up through its `default:` case and chains them with
 `__scAppendList`.
 
-Cette file de huit places porte ainsi quatre choses à la fois : nos retraces,
-nos bords SP et DP, les messages internes du planificateur, et les pointeurs de
-tâche du jeu — ces derniers en envoi **bloquant**.
+That eight-slot queue thus carries four things at once: our retraces, our SP and DP
+edges, the scheduler's internal messages, and the game's task pointers — the last of
+those sent **blocking**.
 
-Cela explique rétroactivement l'ampleur de l'effet de la réservation de places.
-Ce n'était pas seulement une interruption retardée : quand la file saturait, le
-fil graphique du jeu **se bloquait** en tentant de soumettre sa tâche. Le modèle
-que j'avais en tête — « nos messages retardent les siens » — était trop
-optimiste : nos messages *arrêtaient* le jeu.
+That explains retrospectively the scale of the slot reservation's effect. It was not
+merely a delayed interrupt: when the queue saturated, the game's graphics thread
+**blocked** while trying to submit its task. The model I had in mind — "our messages
+delay its own" — was too optimistic: our messages *stopped* the game.
 
-## L'autre écart relevé au passage
+## The other discrepancy noted in passing
 
-`func_80079760`, l'ajout de Rare au planificateur, appelle `__scYield` dès que de
-l'audio attend pendant qu'une tâche RSP tourne. DKR **interrompt donc sa tâche
-graphique** pour laisser passer l'audio.
+`func_80079760`, Rare's addition to the scheduler, calls `__scYield` as soon as
+audio is waiting while an RSP task is running. DKR therefore **interrupts its
+graphics task** to let the audio through.
 
-Notre runtime ignore les yields : `osSpTaskYield` est vide et `osSpTaskYielded`
-rend toujours zéro, avec le commentaire « agit comme si la tâche s'était terminée
-avant de recevoir la demande ». Le chemin `if (osSpTaskYielded(...))` de
-`__scHandleRSP` n'est donc jamais pris, et une tâche interrompue est traitée comme
-achevée.
+Our runtime ignores yields: `osSpTaskYield` is empty and `osSpTaskYielded` always
+returns zero, with the comment "acts as if the task had finished before receiving
+the request". `__scHandleRSP`'s `if (osSpTaskYielded(...))` path is therefore never
+taken, and an interrupted task is treated as completed.
 
-Ce n'est pas nécessairement la cause du plantage restant, mais c'est un endroit
-où le modèle du jeu et le nôtre divergent franchement, sur un mécanisme que DKR
-emploie réellement.
+That is not necessarily the cause of the remaining crash, but it is a place where
+the game's model and ours diverge plainly, on a mechanism DKR really uses.
 
-## Le yield n'est pas emprunté
+## The yield is not taken
 
-`func_80079760` appelle `__scYield` dès que de l'audio attend pendant qu'une
-tâche RSP tourne, et notre runtime ignore les yields. La divergence est réelle
-dans le code ; reste à savoir si le jeu l'emprunte.
+`func_80079760` calls `__scYield` as soon as audio is waiting while an RSP task is
+running, and our runtime ignores yields. The divergence is real in the code; what
+remains is whether the game takes it.
 
-Compteurs posés dans `osSpTaskYield_recomp` et `osSpTaskYielded_recomp` :
-**aucune des deux fonctions n'est appelée** sur une séquence de 577 listes
-d'affichage.
+Counters placed in `osSpTaskYield_recomp` and `osSpTaskYielded_recomp`: **neither
+function is ever called** over a sequence of 577 display lists.
 
-Septième hypothèse éliminée. La divergence existe mais dort — elle pourrait se
-réveiller en course, où l'audio est plus chargé, et il faudra y repenser à ce
-moment-là. Elle n'explique pas le plantage actuel.
+A seventh hypothesis eliminated. The divergence exists but sleeps — it could wake up
+mid-race, where the audio is more heavily loaded, and it will have to be
+reconsidered then. It does not explain the current crash.
 
-Les compteurs ont été retirés : garder une sonde permanente sur un chemin mort
-coûte un correctif de dépendance pour rien. Le raisonnement, lui, reste consigné
-ici — c'est ce qui évitera de refaire la mesure.
+The counters were removed: keeping a permanent probe on a dead path costs a
+dependency patch for nothing. The reasoning stays recorded here — that is what will
+save redoing the measurement.
 
-## Bilan de l'enquête
+## The investigation so far
 
-Sept hypothèses éliminées par la mesure, chacune ayant paru la plus probable au
-moment d'être testée :
+Seven hypotheses eliminated by measurement, each having seemed the most likely at
+the moment of being tested:
 
-| # | Hypothèse | Ce qui l'a écartée |
+| # | Hypothesis | What ruled it out |
 |---|---|---|
-| 1 | livraison en double du bord SP | un dépôt pour un appel |
-| 2 | course d'ordonnancement | retarder le bord ne change rien |
-| 3 | planificateur non initialisé | il l'est ; je lisais son en-tête |
-| 4 | messages SP et DP confondus | leurs valeurs diffèrent |
-| 5 | famine résiduelle sur DP | plus aucun message refusé |
-| 6 | écart entre les bords SP et DP | les accoler ne change rien |
-| 7 | yield ignoré | le jeu ne yield pas |
+| 1 | double delivery of the SP edge | one deposit per call |
+| 2 | a scheduling race | delaying the edge changes nothing |
+| 3 | an uninitialised scheduler | it is initialised; I was reading its header |
+| 4 | SP and DP messages conflated | their values differ |
+| 5 | residual starvation on DP | no message refused any more |
+| 6 | the gap between the SP and DP edges | putting them side by side changes nothing |
+| 7 | the ignored yield | the game does not yield |
 
-Deux causes réelles trouvées et corrigées en chemin : la RDRAM trop petite pour
-la disposition de librecomp, et la saturation de la file d'interruptions — cette
-dernière **bloquant** le fil graphique du jeu, puisque DKR y envoie ses tâches en
-`OS_MESG_BLOCK`.
+Two real causes found and fixed along the way: RDRAM too small for librecomp's
+layout, and the saturation of the interrupt queue — the latter **blocking** the
+game's graphics thread, since DKR sends its tasks there with `OS_MESG_BLOCK`.
 
-Ce qui reste établi et non expliqué : `curRDPTask` est toujours renseigné quand
-nous déposons le bord DP, et nul quand le jeu le traite.
+What stays established and unexplained: `curRDPTask` is always set when we deposit
+the DP edge, and null when the game handles it.
 
-## Huitième élimination, et une contradiction qui tient
+## An eighth elimination, and a contradiction that holds
 
-Si `curRDPTask` est renseigné au dépôt et nul au traitement, et que seul
-`__scHandleRDP` l'efface, alors un autre bord DP a dû être traité entre les deux
-— donc en attendre un dans la file.
+If `curRDPTask` is set at the deposit and null at the handling, and only
+`__scHandleRDP` clears it, then another DP edge must have been handled in between —
+hence one waiting in the queue.
 
-Compté directement, en parcourant les messages vivants de la file invitée à
-chaque dépôt : **aucun bord DP n'est jamais déjà en attente**. Zéro collision sur
-toute l'exécution.
+Counted directly, by walking the live messages in the guest queue at every deposit:
+**no DP edge is ever already waiting**. Zero collisions over the whole run.
 
-La contradiction tient donc, et elle est maintenant précise :
+The contradiction therefore holds, and it is now precise:
 
-- `curRDPTask` est non nul à **chaque** dépôt du bord DP ;
-- aucun second bord DP n'attend jamais dans la file ;
-- `__scHandleRDP` le trouve pourtant nul.
+- `curRDPTask` is non-null at **every** deposit of the DP edge;
+- no second DP edge ever waits in the queue;
+- and yet `__scHandleRDP` finds it null.
 
-Aucune des trois affirmations n'est une supposition : chacune est mesurée.
+None of the three statements is an assumption: each is measured.
 
-### Une erreur d'affichage dans la sonde, sans conséquence sur la conclusion
+### A display error in the probe, without consequence for the conclusion
 
-Les valeurs relevées — `0x405F1280`, `0xB05F1280` — ne ressemblent pas à des
-pointeurs KSEG0, qui commencent par `0x80`. Inversées, elles donnent
-`0x80125F40` : mon inversion d'octets était à l'envers dans l'affichage.
+The values recorded — `0x405F1280`, `0xB05F1280` — do not look like KSEG0 pointers,
+which begin with `0x80`. Reversed, they give `0x80125F40`: my byte swap was
+backwards in the display.
 
-La conclusion « non nul » ne dépend pas de l'ordre des octets et tient donc. Mais
-la valeur imprimée était fausse, et je ne l'ai remarqué qu'en relisant. Une sonde
-qui affiche une valeur invraisemblable mérite qu'on s'arrête sur
-l'invraisemblance avant de se servir du résultat — c'est ce qui avait sauvé la
-mesure Z contre W, où un profil impossible avait révélé un artefact de mise en
-route.
+The "non-null" conclusion does not depend on the byte order and therefore holds. But
+the printed value was wrong, and I only noticed on rereading. A probe that displays
+an implausible value deserves to have the implausibility looked at before the result
+is used — that is what saved the Z-against-W measurement, where an impossible
+profile revealed a warm-up artefact.
 
-### Ce qu'il faut mesurer ensuite
+### What must be measured next
 
-La seule façon de trancher est de voir la case changer. Une surveillance
-échantillonnée de `gMainSched + 0x278` à chaque bascule de fil invité donnerait la
-chronologie exacte de son passage à zéro — c'est plus intrusif que tout ce qui a
-été fait ici, et c'est désormais la seule question ouverte.
+The only way to settle it is to see the word change. A sampled watch on
+`gMainSched + 0x278` at every guest thread switch would give the exact chronology of
+its going to zero — that is more intrusive than anything done here, and it is now
+the only open question.
 
-## Neuvième et dixième éliminations
+## Caught in the act
 
-**Le chemin RDP seul n'est jamais emprunté.** `__scExec` a deux écritures de
-`curRDPTask`, et ma première lecture du code recompilé n'avait vu que la
-première :
+The probe that was missing did not look at our paths but at **the game's instant**:
+in `do_recv`, just after the scheduler's loop has taken a message out of its queue,
+and just before it goes back into its handler.
 
-```c
-if (sp) { ...; sc->curRSPTask = sp; if (sp == dp) sc->curRDPTask = dp; }
-if (dp && (dp != sp)) { osDpSetNextBuffer(...); sc->curRDPTask = dp; }
-```
-
-Le second chemin programme le RDP seul, et `osDpSetNextBuffer_recomp` est un
-`assert(false)` — **qui disparaît en compilation optimisée**. Le jeu y
-programmerait donc un travail dont aucun bord DP ne viendrait jamais. Compteur
-posé : **aucun appel** sur 532 listes d'affichage. Le cas ne se présente pas.
-
-**Aucune livraison en double.** Comptés au point de passage unique, `do_send` :
-
-| message | envoyés | reçus | écart |
-|---|---|---|---|
-| retrace | 2804 | 2804 | 0 |
-| SP | 1019 | 1019 | 0 |
-| DP | 427 | 427 | 0 |
-
-### La même erreur de mesure, une quatrième fois — mais vue à temps
-
-Une mesure intermédiaire annonçait +463 retraces, +5 SP et +2 DP reçus de plus
-qu'envoyés. Deux DP de trop suffisaient à expliquer le plantage, et la
-conclusion était à portée de main.
-
-Elle était fausse : je comptais les dépôts dans `dequeue_external_messages`, qui
-n'est **qu'un** des chemins menant à `do_send`, tandis que je comptais les
-réceptions sur tout. Le jeu envoie lui aussi certains de ces messages. Compter en
-amont d'un entonnoir, c'est compter une branche en croyant compter le tout.
-
-Les trois fois précédentes, l'erreur a coûté une conclusion fausse. Celle-ci a
-été vue avant, parce que l'écart sur le retrace — 15 % — était trop gros pour un
-mécanisme de duplication ponctuel. **L'invraisemblance de l'ordre de grandeur est
-le garde-fou qui a servi le plus souvent dans cette enquête.**
-
-## L'hypothèse qui reste, et comment la tester
-
-Notre bord SP est publié avant le rendu. Le jeu peut donc, entre notre SP et
-notre DP, démarrer la tâche graphique suivante — `__scExec` y pose
-`curRDPTask` = **la nouvelle tâche**. Notre DP, destiné à l'ancienne, arrive
-alors : `__scHandleRDP` prend la nouvelle, la termine prématurément et remet le
-champ à zéro. Le DP de la nouvelle tâche trouve ensuite un pointeur nul.
-
-Cela expliquerait le caractère occasionnel, et pourquoi accoler les deux bords
-n'a pas suffi — `__scExec` peut encore s'intercaler.
-
-Le test : étiqueter chaque bord DP avec la tâche à laquelle il correspond et
-comparer à `curRDPTask` au moment du traitement. Nos messages ne portent qu'une
-valeur constante ; il faut donc l'étiquette de notre côté, et la comparaison au
-moment du dépôt.
-
-## Onzième élimination : le bord DP vise la bonne tâche
-
-L'hypothèse : notre bord SP étant publié avant le rendu, le jeu démarrerait la
-tâche graphique suivante entre nos deux bords, et notre DP terminerait la
-mauvaise.
-
-Testée en étiquetant chaque bord DP avec la tâche à laquelle il correspond — la
-tâche d'ordonnancement vaut l'adresse de l'`OSTask` moins 0x10 — et en la
-comparant à `curRDPTask` au moment du dépôt :
-
-    curRDPTask=0x80125F40 attendue=0x80125F40 OK
-    curRDPTask=0x80125FB0 attendue=0x80125FB0 OK
+    [trace][rcv] msg=667 curRSP=0x80111338 curRDP=0x00000000   (good=1)
     ...
-    (concordent=300 divergent=0)
+    [trace][rcv] msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NULL
+                                            (good=1157 nullSP=0 nullDP=1)
 
-**Trois cents concordances, aucune divergence.** Les deux adresses alternent, ce
-qui est cohérent avec un double tampon de tâches graphiques.
+**A single occurrence in 1157 receptions**, and it is the log's last line — hence
+the crash itself.
 
-L'écart de comptage relevé plus haut s'explique sans défaut : le message de
-retrace emprunte un chemin qui ne passe pas par notre file externe, de sorte que
-la trace posée dans `dequeue_external_messages` le manquait là où `do_send` le
-voyait. Encore un effet de sonde placée ailleurs qu'au point de passage.
+The detail that counts: **both fields are null**. Not only `curRDPTask`. The game no
+longer has any task in progress, neither RSP nor RDP, when our DP edge arrives.
 
-## Où en est l'espace des causes
+### What that changes
 
-Onze hypothèses éliminées, toutes par la mesure :
+Every previous hypothesis was looking for why `curRDPTask` was cleared while a task
+was in progress. The question is badly put: **the game is at rest**. Both handlers
+have done their work, both fields are reset to zero, no task is waiting — and a DP
+edge arrives all the same.
 
-| # | Hypothèse | Écartée par |
-|---|---|---|
-| 1 | double livraison du bord SP | un dépôt par appel |
-| 2 | course d'ordonnancement | retarder ne change rien |
-| 3 | planificateur non initialisé | il l'est |
-| 4 | messages SP et DP confondus | valeurs distinctes |
-| 5 | famine résiduelle sur DP | plus aucun refus |
-| 6 | écart entre les bords | les accoler ne change rien |
-| 7 | yield ignoré | jamais appelé |
-| 8 | bord DP déjà en attente | jamais |
-| 9 | chemin RDP seul | jamais emprunté |
-| 10 | livraison en double | envois = réceptions |
-| 11 | bord DP mal dirigé | 300 concordances sur 300 |
+On the hardware, an RDP at rest signals nothing. Our edge is therefore one too many,
+and the global count does not show it because there are **fewer** DP edges than
+display lists: it is not a duplicate, it is a **late** edge.
 
-Ce qui reste établi et sans explication : `curRDPTask` désigne la bonne tâche au
-dépôt, aucun message n'est perdu ni dupliqué, et `__scHandleRDP` le trouve
-pourtant nul.
+The explanation consistent with everything measured: our graphics thread is
+asynchronous. It takes a task, publishes SP, renders, then publishes DP. If the game
+has meanwhile finished the task by another path — the SP edge is enough to make it
+progress, and `__scHandleRetrace` can conclude it — then our DP arrives into the
+void.
 
-Toutes les sondes posées jusqu'ici observent **nos** chemins ou l'état du jeu
-**à nos moments**. La seule mesure qui reste échantillonne l'état du jeu **à ses
-moments à lui** : surveiller `gMainSched + 0x278` à chaque bascule de fil invité.
-C'est un travail d'instrumentation d'un autre ordre, et c'est par là qu'il faut
-reprendre.
+That also explains the rarity: the game must conclude the task before the rendering
+finishes, which only happens on a particularly long frame.
 
-## Pris sur le fait
+### The measurement that remains
 
-La sonde qui manquait ne regardait pas nos chemins mais **l'instant du jeu** :
-dans `do_recv`, juste après que la boucle du planificateur a retiré un message de
-sa file, et juste avant qu'elle ne reparte dans son gestionnaire.
+Compare, for that faulty DP edge precisely, the task it targeted with the game's
+state. The labelling probe already exists and reported 300 concordances out of 300 —
+but it measures **at the deposit**, and the faulty case occurs **at the reception**.
+The message itself must therefore be labelled, or the expected value recorded at
+deposit time to be read back at reception.
 
-    [trace][rcv] msg=667 curRSP=0x80111338 curRDP=0x00000000   (bons=1)
-    ...
-    [trace][rcv] msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
-                                            (bons=1157 nulsSP=0 nulsDP=1)
+## The targeted task's state, and a fix placed in the wrong spot
 
-**Une seule occurrence sur 1157 réceptions**, et c'est la dernière ligne du
-journal — donc le plantage lui-même.
+The label carried through to the reception gives the complete picture of the faulty
+case:
 
-Le détail qui compte : **les deux champs sont nuls**. Pas seulement `curRDPTask`.
-Le jeu n'a plus aucune tâche en cours, ni RSP ni RDP, quand notre bord DP arrive.
+    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NULL
+    targeted=0x80125FB0 state=0x00000001 flags=0x00000023
 
-### Ce que cela change
+`state = 1` is `OS_SC_NEEDS_RDP`: **the task is still waiting for the RDP**. It has
+therefore not been concluded — the hypothesis of a late edge on an already-finished
+task falls. The scheduler had simply **never granted it the RDP**: `__scExec` only
+sets `curRDPTask` when the RSP task and the RDP task are the same, and when the RDP
+is busy at scheduling time, the task starts on the RSP alone.
 
-Toutes les hypothèses précédentes cherchaient pourquoi `curRDPTask` était effacé
-alors qu'une tâche était en cours. La question est mal posée : **le jeu est au
-repos**. Les deux gestionnaires ont fait leur travail, les deux champs sont
-remis à zéro, aucune tâche n'attend — et un bord DP arrive quand même.
+A fix attempted: defer the DP edge as long as `curRDPTask` does not designate our
+task, reusing the retry queue.
 
-Sur le matériel, le RDP au repos ne signale rien. Notre bord est donc de trop,
-et le compte global ne le montre pas parce qu'il y a **moins** de bords DP que de
-listes d'affichage : ce n'est pas un doublon, c'est un bord **tardif**.
+**No effect.** And the reason reads in the measurements already made: at the
+deposit, `curRDPTask` always designates the right task — three hundred times out of
+three hundred. The deferral condition is therefore never true. The discrepancy is
+born **between the deposit and the reception**, and a guard placed at the deposit
+can see nothing of it.
 
-L'explication cohérente avec tout ce qui est mesuré : notre fil graphique est
-asynchrone. Il retire une tâche, publie SP, rend, puis publie DP. Si le jeu a
-entre-temps termine la tâche par un autre chemin — le bord SP suffit à la faire
-avancer, et `__scHandleRetrace` peut la conclure — alors notre DP arrive dans le
-vide.
+It is the same placement error as the one made five times on the probes, transposed
+to a fix: **acting where one observes, rather than where the phenomenon happens.**
 
-Cela explique aussi la rareté : il faut que le jeu conclue la tâche avant que le
-rendu ne se termine, ce qui n'arrive que sur une image particulièrement longue.
+The guard ought to be at the reception — but we have no hold on the moment the game
+takes its message, short of altering its queue's semantics. Another shape remains to
+be found: for instance publishing the DP edge only once the game has actually
+granted the RDP, which implies waiting on the graphics thread's side rather than
+depositing and deferring.
 
-### La mesure qui reste à faire
+## The cause: a watchdog, not a scheduling problem
 
-Comparer, pour ce bord DP fautif précisément, la tâche qu'il visait avec l'état
-du jeu. La sonde d'étiquetage existe déjà et rapportait 300 concordances sur
-300 — mais elle mesure **au dépôt**, et le cas fautif se produit **à la
-réception**. Il faut donc étiqueter le message lui-même, ou consigner l'attendue
-au moment du dépôt pour la relire à la réception.
+Twelve hypotheses eliminated, all about the **order** of the messages, all wrong —
+because the defect is not an ordering defect. One had to stop reading our code and
+read theirs.
 
-## L'état de la tâche visée, et une correction posée au mauvais endroit
-
-L'étiquette portée jusqu'à la réception donne le tableau complet du cas fautif :
-
-    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
-    visee=0x80125FB0 state=0x00000001 flags=0x00000023
-
-`state = 1` vaut `OS_SC_NEEDS_RDP` : **la tâche attend encore le RDP**. Elle n'a
-donc pas été conclue — l'hypothèse du bord tardif sur une tâche déjà terminée
-tombe. Le planificateur ne lui avait simplement **jamais accordé le RDP** :
-`__scExec` ne pose `curRDPTask` que lorsque la tâche RSP et la tâche RDP sont la
-même, et quand le RDP est occupé au moment de l'ordonnancement, la tâche démarre
-sur le RSP seul.
-
-Correction tentée : différer le bord DP tant que `curRDPTask` ne désigne pas
-notre tâche, en réutilisant la file de réessai.
-
-**Sans effet.** Et la raison se lit dans les mesures déjà faites : au dépôt,
-`curRDPTask` désigne toujours la bonne tâche — trois cents fois sur trois cents.
-La condition de report n'est donc jamais vraie. L'écart naît **entre le dépôt et
-la réception**, et une garde posée au dépôt ne peut rien y voir.
-
-C'est la même erreur de placement que celle commise cinq fois sur les sondes,
-transposée à un correctif : **agir là où l'on observe, plutôt que là où le
-phénomène se produit.**
-
-La garde devrait être à la réception — mais nous n'avons pas la main sur le
-moment où le jeu retire son message, sauf à altérer la sémantique de sa file.
-Une autre forme reste à trouver : par exemple ne publier le bord DP qu'une fois
-que le jeu a effectivement accordé le RDP, ce qui suppose d'attendre côté fil
-graphique plutôt que de déposer et différer.
-
-## La cause : un chien de garde, pas un ordonnancement
-
-Douze hypothèses éliminées, toutes sur l'**ordre** des messages, toutes fausses —
-parce que le défaut n'est pas un défaut d'ordre. Il fallait cesser de lire notre
-code et lire le sien.
-
-`__scHandleRetrace`, dans `libultra/src/sc/sched.c` du décomp, porte un chien de
-garde que la libultra d'origine n'a pas. Rare l'a ajouté :
+`__scHandleRetrace`, in the decomp's `libultra/src/sc/sched.c`, carries a watchdog
+that stock libultra does not have. Rare added it:
 
 ```c
 if (sc->curRDPTask) gCurRDPTaskCounter++;
@@ -859,95 +732,91 @@ if ((gCurRDPTaskCounter > 10) && (sc->curRDPTask)) {
 if (set_curRDPTask_NULL) { sc->curRDPTask = NULL; }
 ```
 
-Au-delà de dix retraces avec une tâche RDP en cours, le jeu **déclare le RDP
-planté** : il remet `curRDPTask` à zéro et réinitialise les registres DP — mais
-il **n'efface pas `OS_SC_NEEDS_RDP` sur la tâche**. Notre bord DP, arrivant
-après, entre dans `__scHandleRDP`, y lit `curRDPTask == 0` et déréférence zéro.
+Past ten retraces with an RDP task in progress, the game **declares the RDP hung**:
+it resets `curRDPTask` to zero and reinitialises the DP registers — but it **does not
+clear `OS_SC_NEEDS_RDP` on the task**. Our DP edge, arriving afterwards, walks into
+`__scHandleRDP`, reads `curRDPTask == 0` there and dereferences zero.
 
-C'est mot pour mot l'état que la sonde avait capturé :
+It is word for word the state the probe had captured:
 
-    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
-    visee=0x80125FB0 state=0x00000001 flags=0x00000023
+    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NULL
+    targeted=0x80125FB0 state=0x00000001 flags=0x00000023
 
-`curRDPTask` nul **et** la tâche visée portant encore `NEEDS_RDP`. Deux chemins
-seulement mettent `curRDPTask` à zéro, et `__scHandleRDP` efface `NEEDS_RDP`
-quand il le fait. Le chien de garde est le seul qui laisse cette combinaison
-derrière lui. La mesure désignait la cause depuis le début ; c'est sa lecture qui
-manquait.
+`curRDPTask` null **and** the targeted task still carrying `NEEDS_RDP`. Only two
+paths set `curRDPTask` to zero, and `__scHandleRDP` clears `NEEDS_RDP` when it does.
+The watchdog is the only one that leaves this combination behind. The measurement
+had been pointing at the cause all along; it was its reading that was missing.
 
-### Le seuil se compte en retraces, pas en millisecondes
+### The threshold is counted in retraces, not in milliseconds
 
-Premier jet de ce diagnostic : « dix retraces valent 167 ms, et un rendu logiciel
-Glide sur un Pentium II émulé dépasse ce budget. » La mesure embarquée avec le
-correctif le **réfute** — pire cas **60 ms sur plus de mille images, zéro
-dépassement**.
+The first draft of this diagnosis said: "ten retraces are 167 ms, and a software
+Glide rendering on an emulated Pentium II exceeds that budget." The measurement
+shipped with the fix **refutes it** — worst case **60 ms over more than a thousand
+frames, zero overruns**.
 
-L'hypothèse était plausible, elle expliquait le symptôme, et le correctif qu'elle
-a inspiré fonctionne. Trois raisons de ne pas la vérifier, et elle est fausse
-quand même. C'est précisément le cas où l'on n'aurait pas mesuré.
+The hypothesis was plausible, it explained the symptom, and the fix it inspired
+works. Three reasons not to check it, and it is false all the same. That is
+precisely the case where one would not have measured.
 
-**Avec la réserve qui compte, et qui a failli manquer** : cette construction
-emploie le **rendu nul**. Les 60 ms sont le seul parcours de la liste
-d'affichage, sans une ligne rastérisée. La mesure réfute donc l'hypothèse *pour
-ce binaire*, pas pour un rendu Glide réel — lequel coûtera bien davantage et fera
-revenir la question du budget. C'est un argument de plus pour publier le bord
-tôt : non pas un palliatif, mais la seule structure qui tienne quand le rendu
-s'alourdira. Et 60 ms de simple parcours produisent déjà six retraces par liste ;
-onze n'est pas loin, sans rien avoir dessiné.
+**With the reservation that counts, and that nearly went missing**: this build uses
+the **null renderer**. The 60 ms are the display list's traversal alone, without a
+single line rasterised. The measurement therefore refutes the hypothesis *for this
+binary*, not for a real Glide rendering — which will cost considerably more and will
+bring the budget question back. That is one more argument for publishing the edge
+early: not a palliative, but the only structure that holds when the rendering gets
+heavier. And 60 ms of mere traversal already produce six retraces per list; eleven
+is not far, with nothing having been drawn.
 
-Ce que le retard coûte n'est pas du temps mais des **retraces traités entre
-temps** : `gCurRDPTaskCounter` est remis à zéro par `__scExec` au démarrage d'une
-tâche, puis incrémenté une fois par `__scHandleRetrace`. Publier le bord DP après
-`send_dl` laisse tout un rendu de retraces s'intercaler.
+What the delay costs is not time but **retraces handled in the meantime**:
+`gCurRDPTaskCounter` is reset to zero by `__scExec` when a task starts, then
+incremented once per `__scHandleRetrace`. Publishing the DP edge after `send_dl`
+lets a whole render's worth of retraces slip in between.
 
-Les totaux de la course le chiffrent : **3238 messages VIDEO contre 567
-RDP_DONE**, soit environ six retraces par liste d'affichage. Confortablement sous
-onze en moyenne — et pas sous onze dans la queue de distribution. Une seule
-excursion suffit, ce qui explique que le plantage ait frappé **une fois**, à la
-liste 344 d'une course qui avançait par ailleurs.
+The run's totals put a number on it: **3238 VIDEO messages against 567 RDP_DONE**,
+that is about six retraces per display list. Comfortably under eleven on average —
+and not under eleven in the tail of the distribution. One excursion is all it takes,
+which explains why the crash struck **once**, at display list 344 of a run that was
+otherwise progressing.
 
-### Le correctif
+### The fix
 
-Publier le bord DP **avant** le rendu plutôt qu'après, exactement comme le bord
-SP l'est déjà — et pour la même raison, écrite deux lignes plus haut dans
-`events.cpp` : la tâche en file possède un instantané immuable de la RDRAM, donc
-le rendu ne lit jamais de mémoire que le jeu pourrait recycler, et l'échange vers
-l'écran nous appartient, pas au jeu.
+Publish the DP edge **before** the rendering rather than after, exactly as the SP
+edge already is — and for the same reason, written two lines higher in `events.cpp`:
+the queued task owns an immutable snapshot of RDRAM, so the rendering never reads
+memory the game might recycle, and the swap to the screen is ours, not the game's.
 
-Le correctif emporte la mesure qui le justifie : durée de `send_dl`, pire cas, et
-compte des images au-delà des 167 ms. Sans elle, le diagnostic serait plausible
-au lieu d'être vérifiable.
+The fix carries with it the measurement that justifies it: `send_dl`'s duration,
+worst case, and the count of frames beyond the 167 ms. Without it, the diagnosis
+would be plausible instead of verifiable.
 
+### Verified on the machine
 
-### Vérifié sur la machine
+Same ROM, same build otherwise:
 
-Même ROM, même construction par ailleurs :
-
-| | listes d'affichage | présentations | réceptions nulles | vidage de plantage |
+| | display lists | presents | null receptions | crash dump |
 |---|---|---|---|---|
-| avant | 344 puis EXCEPTION | — | 1 | 2618 octets |
-| après | 1135 et croissant | 7020 | **0** | aucun (156 octets) |
+| before | 344 then EXCEPTION | — | 1 | 2618 bytes |
+| after | 1135 and climbing | 7020 | **0** | none (156 bytes) |
 
-### Deux pièges d'observation levés au passage
+### Two observation traps cleared along the way
 
-**Le journal d'un programme figé fait zéro octet.** Windows 95 ne met la taille à
-jour dans le répertoire qu'à la fermeture, et son cache à écriture différée
-retient les secteurs. Le filtre d'exceptions contourne cela en fermant le flux
-avant d'écrire — mais un programme qui **bloque** n'atteint aucun gestionnaire.
-On lit alors « zéro octet » et on conclut « le programme n'a rien produit, donc
-il s'est arrêté tôt », alors qu'il tourne peut-être normalement. `dkr_diag_commit`
-appelle `_commit`, c'est-à-dire `FlushFileBuffers`, qui force le cache **et**
-l'entrée de répertoire ; appelée de loin en loin, elle rend le journal lisible en
-vol. C'est ce qui a permis de lire la course à 570 listes puis à 1135 sans
-l'interrompre.
+**A frozen program's log is zero bytes long.** Windows 95 only updates the size in
+the directory at close time, and its write-behind cache holds the sectors. The
+exception filter works around that by closing the stream before writing — but a
+program that **hangs** reaches no handler. One then reads "zero bytes" and concludes
+"the program produced nothing, so it stopped early", when it may be running
+normally. `dkr_diag_commit` calls `_commit`, that is `FlushFileBuffers`, which forces
+the cache **and** the directory entry; called now and then, it makes the log readable
+in flight. That is what allowed the run to be read at 570 display lists and then at
+1135 without interrupting it.
 
-**`DKR_TRACE_SP` ne survit pas à la boîte « Exécuter ».** Il n'est pas dans
-`autoexec.bat`, donc un lancement depuis le menu Démarrer donne un journal vide —
-indiscernable d'un programme muet. Le jeu se lance désormais par `D:\RUNDKR.BAT`,
-qui pose la variable avant d'appeler l'exécutable.
+**`DKR_TRACE_SP` does not survive the Run box.** It is not in `autoexec.bat`, so a
+launch from the Start menu gives an empty log — indistinguishable from a mute
+program. The game is now launched through `D:\RUNDKR.BAT`, which sets the variable
+before calling the executable.
 
-**« Ne répond pas » ne veut pas dire figé.** Windows 95 affiche cet avertissement
-dès qu'un fil porteur de fenêtre ne dépile pas ses messages. Le jeu tourne dans
-son propre fil et ne dépile rien : l'avertissement est donc **normal**, et l'avoir
-lu comme un blocage a coûté un aller-retour de plus. Trois observations, trois
-lectures fausses, toutes du même genre : conclure d'une absence de signal.
+**"Not responding" does not mean frozen.** Windows 95 displays that warning as soon
+as a thread owning a window stops pumping its messages. The game runs in its own
+thread and pumps nothing: the warning is therefore **normal**, and reading it as a
+hang cost one more round trip. Three observations, three wrong readings, all of the
+same kind: concluding from an absence of signal.
