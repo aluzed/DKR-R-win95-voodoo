@@ -1,98 +1,101 @@
-# ADR 0002 — Cible matérielle et version de Glide
+# ADR 0002 - Hardware target and Glide version
 
-- **Statut** : accepté
-- **Date** : 2026-08-12
-- **Ticket** : [E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md)
+- **Status**: accepted
+- **Date**: 2026-08-12
+- **Ticket**: [E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md)
 
-## Contexte
+## Context
 
-« Compatible 3dfx Voodoo » désigne cinq générations de cartes et deux API. Le
-choix décide directement du travail de rendu — en particulier le nombre de TMU,
-qui détermine si les combiners à deux texels passent en une passe ou en deux.
+"3dfx Voodoo compatible" names five generations of cards and two APIs. The choice
+decides the rendering work directly — in particular the number of TMUs, which
+determines whether two-texel combiners go through in one pass or two.
 
-Contrainte commune à toute la gamme : **aucune transformation matérielle**. La
-carte reçoit des sommets déjà projetés. Tout le pipeline géométrique reste à la
-charge du CPU, qui est déjà le poste tendu ([E00-S03](../research/cpu-budget.md)).
+A constraint common to the whole range: **no hardware transformation**. The card
+receives vertices already projected. The entire geometry pipeline stays on the
+CPU, which is already the tight resource
+([E00-S03](../research/cpu-budget.md)).
 
-## Décision
+## Decision
 
-| Élément | Plancher | Recommandé |
+| Item | Floor | Recommended |
 |---|---|---|
-| CPU | Pentium II 400 MHz | Pentium III 500 MHz et plus |
-| RAM | **64 Mo** | 128 Mo |
-| Carte 3dfx | Voodoo 2, 8 Mo, **2 TMU** | Voodoo 2 12 Mo ou Voodoo 3 |
-| API | **Glide 2.4x** (`glide2x.dll` 2.54) | idem |
-| Système | Windows 95 OSR2 ou OSR2.5 | idem |
-| Résolution | **640 × 480, 16 bits, double tampon + Z** | idem |
+| CPU | Pentium II 400 MHz | Pentium III 500 MHz and above |
+| RAM | **64 MB** | 128 MB |
+| 3dfx card | Voodoo 2, 8 MB, **2 TMUs** | Voodoo 2 12 MB or Voodoo 3 |
+| API | **Glide 2.4x** (`glide2x.dll` 2.54) | the same |
+| System | Windows 95 OSR2 or OSR2.5 | the same |
+| Resolution | **640 × 480, 16-bit, double buffer + Z** | the same |
 
-Chaque valeur est justifiée ci-dessous par une mesure ou une contrainte
-matérielle. Aucune ne relève d'une préférence.
+Every value is justified below by a measurement or a hardware constraint. None is
+a matter of preference.
 
-### RAM : 64 Mo, et le chiffre est mesuré
+### RAM: 64 MB, and the figure is measured
 
-[L'ADR 0003](0003-memory-budget.md) a relevé sur la machine : Windows 95 et ses
-pilotes consomment **15,6 Mio**, la pile 3dfx **872 Kio**, et il reste **47,0 Mio**
-disponibles pour un budget projet de 32,8 Mio. Sur 32 Mo il ne resterait que
-~16 Mio : la cible n'est pas tenable et n'est pas retenue.
+[ADR 0003](0003-memory-budget.md) recorded on the machine: Windows 95 and its
+drivers consume **15.6 MiB**, the 3dfx stack **872 KiB**, and **47.0 MiB** remain
+available for a project budget of 32.8 MiB. On 32 MB only ~16 MiB would remain:
+that target is not tenable and is not retained.
 
-### Résolution : 640 × 480 en 16 bits, double tampon
+### Resolution: 640 × 480 in 16 bits, double buffered
 
-Le calcul est contraint par la mémoire d'image de la carte, qui est séparée de
-la mémoire de texture :
+The arithmetic is constrained by the card's frame buffer memory, which is separate
+from the texture memory:
 
-| Configuration | Besoin | Voodoo 2 8 Mo (2 Mo image) | Voodoo 2 12 Mo (4 Mo image) |
+| Configuration | Requirement | Voodoo 2 8 MB (2 MB frame buffer) | Voodoo 2 12 MB (4 MB) |
 |---|---:|---|---|
-| Double tampon + Z | 1,76 Mio | ✅ 88 % occupé | ✅ 44 % |
-| **Triple** tampon + Z | 2,34 Mio | ❌ **ne tient pas** | ✅ 59 % |
+| Double buffer + Z | 1.76 MiB | ✅ 88 % used | ✅ 44 % |
+| **Triple** buffer + Z | 2.34 MiB | ❌ **does not fit** | ✅ 59 % |
 
-640 × 480 × 2 octets = 614 400 octets par tampon ; trois tampons (image, image
-arrière, profondeur) font 1,76 Mio.
+640 × 480 × 2 bytes = 614,400 bytes per buffer; three buffers (front, back,
+depth) make 1.76 MiB.
 
-**Le triple buffering est donc écarté**, parce qu'il exclurait la Voodoo 2 8 Mo
-qui est le plancher. Ce n'est pas une perte : le triple buffering sert à lisser
-une cadence irrégulière, or E00-S03 annonce une machine à la peine — la latence
-qu'il ajoute serait payée sans le bénéfice.
+**Triple buffering is therefore ruled out**, because it would exclude the 8 MB
+Voodoo 2 which is the floor. That is no loss: triple buffering serves to smooth an
+irregular frame rate, and E00-S03 announces a machine under strain — the latency
+it adds would be paid without the benefit.
 
-### TMU : deux exigées, deux exploitées, une passe de repli
+### TMUs: two required, two exploited, a single-TMU fallback
 
-**Deux TMU sont exigées au plancher.** Une seule TMU imposerait une seconde passe
-sur toutes les surfaces à deux texels, donc un budget de remplissage doublé —
-sur une machine dont le CPU est déjà le facteur limitant.
+**Two TMUs are required at the floor.** A single TMU would impose a second pass on
+every two-texel surface, hence a doubled fill budget — on a machine whose CPU is
+already the limiting factor.
 
-Le rendu doit néanmoins **rester correct sur une seule TMU**, par repli
-multipasse ([E05-S04](../stories/E05-glide/E05-S04-multitexture-two-tmus.md)) :
-correct, pas rapide. C'est ce qui permet à une Voodoo 1 d'afficher le jeu sans
-que le projet ait à la soutenir.
+The rendering must nonetheless **stay correct on a single TMU**, through the
+multipass fallback
+([E05-S04](../stories/E05-glide/E05-S04-multitexture-two-tmus.md)): correct, not
+fast. That is what lets a Voodoo 1 display the game without the project having to
+support it.
 
-### Mémoire de texture : le jeu tient en résidence totale
+### Texture memory: the game fits entirely resident
 
-Le portage natif voisin a résolu chaque niveau jusqu'à ses textures réelles
-(`../../Diddy-Kong-Racing/docs/research/level-working-set.md`), sur **65 niveaux
-dont 62 circuits et hubs** — soit le même jeu et le même jeu de niveaux que ce
-portage :
+The neighbouring native port resolved each level down to its real textures
+(`../../Diddy-Kong-Racing/docs/research/level-working-set.md`), over **65 levels
+of which 62 are tracks and hubs** — that is, the same game and the same level set
+as this port:
 
-| Grandeur | Mesure |
+| Quantity | Measurement |
 |---|---:|
-| Pic total (pire circuit + permanent + grille) | **1 116 Ko** |
-| Pic avec padding en puissances de deux | **1 225 Ko** |
+| Total peak (worst track + permanent + grid) | **1,116 KB** |
+| Peak with power-of-two padding | **1,225 KB** |
 
-Confronté à la mémoire par TMU :
+Set against the memory per TMU:
 
-| TMU | Pic padé | Occupation |
+| TMU | Padded peak | Occupancy |
 |---|---:|---:|
-| 2 Mo (Voodoo 2 8 Mo) | 1,20 Mio | **60 %** |
-| 4 Mo (Voodoo 2 12 Mo) | 1,20 Mio | 30 % |
+| 2 MB (Voodoo 2 8 MB) | 1.20 MiB | **60 %** |
+| 4 MB (Voodoo 2 12 MB) | 1.20 MiB | 30 % |
 
-**Le pire niveau tient intégralement dans une TMU de 2 Mo**, avec 40 % de marge.
-La gestion de la mémoire de texture (E05-S02) peut donc viser la résidence
-totale par niveau plutôt qu'un cache avec éviction en cours de course — ce qui
-supprime un poste de complexité et une source de à-coups.
+**The worst level fits entirely in a 2 MB TMU**, with 40 % of headroom. Texture
+memory management (E05-S02) can therefore aim at total residency per level rather
+than a cache with eviction mid-race — which removes one source of complexity and
+one source of stutter.
 
-### API : Glide 2.4x
+### API: Glide 2.4x
 
-Le ticket demandait d'argumenter sur la couverture réelle des sources 3dfx
-ouvertes, et non sur la documentation commerciale d'époque. Le `README` du dépôt
-[sezero/glide](https://github.com/sezero/glide) donne les noms internes 3dfx :
+The ticket asked for an argument based on the real coverage of the open 3dfx
+sources, and not on the commercial documentation of the period. The `README` of
+the [sezero/glide](https://github.com/sezero/glide) repository gives 3dfx's
+internal names:
 
 ```
 sst1:  Voodoo Graphics
@@ -101,147 +104,151 @@ cvg:   Voodoo 2
 h3:    Voodoo Banshee/Voodoo 3
 ```
 
-et les arbres construisent :
+and the trees build:
 
-| Arbre | Cibles présentes |
+| Tree | Targets present |
 |---|---|
 | `glide2x` | `sst1`, `cvg`, `h3` |
 | `glide3x` | `sst1`, `cvg`, `h3`, `h5` |
 
-**L'idée reçue selon laquelle Glide 2.4 serait la seule voie vers la Voodoo 1 est
-donc fausse** : `glide3x` a une cible `sst1`. Inversement, `glide2x` couvre la
-Voodoo 3. Les deux arbres couvrent l'intégralité de la cible retenue, et le
-choix ne se joue pas sur le matériel.
+**The received idea that Glide 2.4 is the only route to the Voodoo 1 is therefore
+false**: `glide3x` has an `sst1` target. Conversely, `glide2x` covers the Voodoo
+3. Both trees cover the whole of the chosen target, and the choice is not decided
+on the hardware.
 
-Il se joue sur trois faits mesurés sur la machine :
+It is decided on three facts measured on the machine:
 
-1. **Glide 2.54 est prouvé de bout en bout.** [E09-S01](../stories/E09-qa/E09-S01-emulated-test-environment.md)
-   affiche un triangle Gouraud ; `tools/win95/probes/` interroge le matériel et
-   mesure la mémoire par la même DLL.
-2. **Glide 3.x exige un HWND valide.** `tools/win95/probes/glide3_probe.c` charge
-   `glide3x.dll`, trouve tous ses exports, mais `grSstWinOpen` refuse :
-   « *need to use a valid window handle* ». Glide 2.x accepte `0` et prend
-   l'écran en plein écran. Retenir Glide 3 coupleraît donc l'amorçage du rendu à
+1. **Glide 2.54 is proved end to end.**
+   [E09-S01](../stories/E09-qa/E09-S01-emulated-test-environment.md) displays a
+   Gouraud triangle; `tools/win95/probes/` queries the hardware and measures the
+   memory through the same DLL.
+2. **Glide 3.x requires a valid HWND.** `tools/win95/probes/glide3_probe.c` loads
+   `glide3x.dll`, finds all its exports, but `grSstWinOpen` refuses: "*need to use
+   a valid window handle*". Glide 2.x accepts `0` and takes the screen full-screen.
+   Choosing Glide 3 would therefore couple the rendering bring-up to
    [E06-S01](../stories/E06-platform/E06-S01-win32-window-and-message-loop.md),
-   alors qu'il peut aujourd'hui en être indépendant.
-3. **Les deux DLL sont installées** par le pilote de référence 3dfx pour Voodoo 2
-   (`GLIDE2X.DLL` 398 848 o, `GLIDE3X.DLL` 425 472 o, toutes deux du 11 octobre
-   1998). Le choix n'a donc pas de coût de distribution.
+   whereas today it can be independent of it.
+3. **Both DLLs are installed** by 3dfx's reference driver for the Voodoo 2
+   (`GLIDE2X.DLL` 398,848 B, `GLIDE3X.DLL` 425,472 B, both dated 11 October
+   1998). The choice therefore carries no distribution cost.
 
-**Ce que Glide 3 aurait apporté**, et qu'il faut consigner puisque c'est ce qui
-rouvrirait la décision : `grVertexLayout`, qui permet de *déclarer* le format de
-sommet au lieu de remplir une structure figée de 60 octets. C'est exactement le
-piège qui a coûté du temps en E09-S01 — un sommet rouge sortant vert parce que
-`ooz` et `a` s'intercalent entre les couleurs et `oow`. Sur une machine où le CPU
-est le facteur limitant, réduire le travail par sommet n'est pas cosmétique.
+**What Glide 3 would have brought**, and which must be recorded since it is what
+would reopen the decision: `grVertexLayout`, which allows the vertex format to be
+*declared* instead of filling a fixed 60-byte structure. That is exactly the trap
+which cost time in E09-S01 — a red vertex coming out green because `ooz` and `a`
+sit between the colours and `oow`. On a machine where the CPU is the limiting
+factor, reducing the per-vertex work is not cosmetic.
 
-**L'API est donc placée derrière l'interface de backend de
-[E04-S01](../stories/E04-hle-f3ddkr/E04-S01-render-backend-interface.md)**,
-de sorte qu'un backend Glide 3 puisse s'ajouter sans toucher au décodeur F3DDKR.
+**The API is therefore placed behind
+[E04-S01](../stories/E04-hle-f3ddkr/E04-S01-render-backend-interface.md)'s backend
+interface**, so that a Glide 3 backend can be added without touching the F3DDKR
+decoder.
 
-## Ce que la machine de test dit d'elle-même
+## What the test machine says about itself
 
-`tools/win95/probes/glide_hwinfo.c` interroge `grSstQueryHardware`, par le même
-chemin que le moteur utilisera (E05-S01).
+`tools/win95/probes/glide_hwinfo.c` queries `grSstQueryHardware`, by the same path
+the engine will use (E05-S01).
 
-### Correction du 14 août 2026 — la machine est bien une Voodoo 2
+### Correction of 14 August 2026 — the machine really is a Voodoo 2
 
-La version précédente de cette section concluait que le fichier de configuration
-de 86Box « mentait », Glide rapportant le type `0` alors que le fichier annonçait
-`type = 2`. **Cette conclusion était fausse, et la méthode l'était aussi.**
+The previous version of this section concluded that 86Box's configuration file
+"lied", Glide reporting type `0` while the file announced `type = 2`. **That
+conclusion was wrong, and so was the method.**
 
-Il y a deux sections Voodoo dans `86box.cfg`. Celle que 86Box lit porte le
-suffixe d'instance — `[3dfx Voodoo Graphics #1]` — et elle disait `type = 1`,
-c'est-à-dire **Obsidian SB50 + Amethyst**, un Voodoo 1 à deux TMU. 86Box
-l'honorait fidèlement. L'autre section, écrite à la main, annonçait `type = 2` et
-n'était simplement jamais lue.
+There are two Voodoo sections in `86box.cfg`. The one 86Box reads carries the
+instance suffix — `[3dfx Voodoo Graphics #1]` — and it said `type = 1`, that is
+**Obsidian SB50 + Amethyst**, a two-TMU Voodoo 1. 86Box honoured it faithfully.
+The other section, written by hand, announced `type = 2` and was simply never
+read.
 
-La machine est désormais configurée sur la carte **plancher** de cette ADR, et le
-dialogue de réglages — la seule source qui fasse foi, comme E09-S01 l'avait déjà
-établi — le confirme :
-
-```text
-Type de Voodoo                     : 3Dfx Voodoo 2
-Taille memoire du tampon d'images  : 2 Mo
-Taille memoire des textures        : 2 Mo
-```
-
-### Et Glide 2.54 rapporte quand même le type 0
-
-Relevé de `grSstQueryHardware` sur cette machine, une fois la Voodoo 2 en place :
+The machine is now configured on this ADR's **floor** card, and the settings
+dialog — the only authoritative source, as E09-S01 had already established —
+confirms it (the emulator's interface is in French here; the labels are
+translated):
 
 ```text
-version Glide : 2.54
-cartes detectees : 1
-carte 0
-  type          : 0 (Voodoo Graphics)
-  memoire image : 2 Mo
-  revision FBI  : 261
-  TMU           : 2
-  TMU 0 memoire : 2 Mo
-  TMU 1 memoire : 2 Mo
+Voodoo type            : 3Dfx Voodoo 2
+Frame buffer memory    : 2 MB
+Texture memory         : 2 MB
 ```
 
-Le type reste `0`, et la révision FBI reste `261` — **exactement les mêmes valeurs
-que sur l'Obsidian**. Seules les tailles mémoire ont changé.
+### And Glide 2.54 still reports type 0
 
-**Conséquence pour E05-S01, et elle est concrète : sur cette plate-forme,
-`grSstQueryHardware` ne permet pas de distinguer une Voodoo 1 d'une Voodoo 2.**
-`GrSstType` de Glide 2.x ne sépare pas les deux — `GR_SSTTYPE_VOODOO` couvre la
-famille, et `glide2x` 2.54 *est* le pilote Voodoo 2. La détection à l'exécution
-doit donc reposer sur autre chose que le type : le nombre de TMU et la mémoire
-par TMU sont exploitables ; le modèle exact ne l'est pas.
+`grSstQueryHardware`'s report on this machine, once the Voodoo 2 is in place
+(quoted with the probe's current wording):
 
-Réserve de portée : ce relevé est celui de l'**émulation**. Sur du matériel réel
-la révision FBI diffère entre les deux générations, et pourrait discriminer.
-C'est à vérifier en E09-S04, et c'est une raison de plus de ne pas faire reposer
-la détection sur elle.
+```text
+Glide version : 2.54
+boards detected : 1
+board 0
+  type          : 0 (Voodoo Graphics (Voodoo 1))
+  frame buffer  : 2 MB
+  FBI revision  : 261
+  TMUs          : 2
+  TMU 0 memory   : 2 MB
+  TMU 1 memory   : 2 MB
+```
 
-### Ce que cela change au poids de E09-S04
+The type stays `0`, and the FBI revision stays `261` — **exactly the same values
+as on the Obsidian**. Only the memory sizes have changed.
 
-La version précédente concluait que « la machine de test n'exerce pas les chemins
-spécifiques à la Voodoo 2 », ce qui augmentait le poids de la validation sur
-matériel réel. **Ce n'est plus vrai** : la machine émule désormais une Voodoo 2,
-et sur la configuration plancher — 2 Mo de tampon d'images et 2 Mo par TMU, les
-deux contraintes les plus serrées de cette ADR. Le budget de texture de E05-S02
-sera donc éprouvé contre la vraie limite, et non contre le double.
+**The consequence for E05-S01 is concrete: on this platform,
+`grSstQueryHardware` does not allow a Voodoo 1 to be told from a Voodoo 2.**
+Glide 2.x's `GrSstType` does not separate the two — `GR_SSTTYPE_VOODOO` covers
+the family, and `glide2x` 2.54 *is* the Voodoo 2 driver. Run-time detection must
+therefore rest on something other than the type: the number of TMUs and the memory
+per TMU are usable; the exact model is not.
 
-## Configuration de validation sur matériel réel
+A reservation on scope: this report is the **emulation's**. On real hardware the
+FBI revision differs between the two generations, and could discriminate. That is
+to be checked in E09-S04, and it is one more reason not to rest the detection on
+it.
 
-E09-S04 déclarera la version bonne sur :
+### What this changes in E09-S04's weight
 
-| | Configuration de validation |
+The previous version concluded that "the test machine does not exercise the paths
+specific to the Voodoo 2", which increased the weight of validation on real
+hardware. **That is no longer true**: the machine now emulates a Voodoo 2, and on
+the floor configuration — 2 MB of frame buffer and 2 MB per TMU, this ADR's two
+tightest constraints. E05-S02's texture budget will therefore be tried against the
+real limit, and not against twice it.
+
+## Validation configuration on real hardware
+
+E09-S04 will declare the release good on:
+
+| | Validation configuration |
 |---|---|
-| **Plancher** | Pentium II 400 MHz, 64 Mo, **Voodoo 2 8 Mo** (2 TMU × 2 Mo), Windows 95 OSR2.5 |
-| **Recommandée** | Pentium III 500 MHz, 128 Mo, **Voodoo 2 12 Mo** ou Voodoo 3 2000, Windows 95 OSR2.5 |
+| **Floor** | Pentium II 400 MHz, 64 MB, **Voodoo 2 8 MB** (2 TMUs × 2 MB), Windows 95 OSR2.5 |
+| **Recommended** | Pentium III 500 MHz, 128 MB, **Voodoo 2 12 MB** or Voodoo 3 2000, Windows 95 OSR2.5 |
 
-La configuration plancher est celle qui compte : c'est elle qui met à l'épreuve
-les 2 Mo par TMU et les 2 Mo de mémoire d'image, donc les deux contraintes les
-plus serrées de cette ADR.
+The floor configuration is the one that counts: it is what puts the 2 MB per TMU
+and the 2 MB of frame buffer memory to the test, hence this ADR's two tightest
+constraints.
 
-## Ce qui rouvrirait cette décision
+## What would reopen this decision
 
-- **Un dépassement du budget de texture découvert en E05-S02.** Le pic de
-  1,20 Mio vient d'une analyse statique du portage voisin ; si le décodage réel
-  (E04-S07) produit davantage — mipmaps, formats non compressés — la résidence
-  totale tombe et il faut un cache. Au-delà de 2 Mo par niveau, le plancher passe
-  à la Voodoo 2 12 Mo.
-- **Un coût mesurable du remplissage de `GrVertex`** relevé en
-  [E08-S03](../stories/E08-perf/E08-S03-vertex-path-optimisation.md). C'est
-  l'argument qui ferait basculer sur Glide 3 et son `grVertexLayout`.
-- **Le go/no-go de E00-S03**, qui n'est pas encore tombé : le plancher CPU
-  ci-dessus est **provisoire**. E00-S03 a mesuré un facteur combiné de ~38× entre
-  l'hôte et la cible, mais le verdict attend une vraie session de jeu
-  ([E02-S06](../stories/E02-system/E02-S06-game-bring-up.md)). Si ce verdict est
-  négatif, cette ADR relève le plancher ou acte la sortie — elle ne contourne pas
-  le chiffre.
-- Une demande de support Voodoo 4/5, qui imposerait Glide 3 (`h5`).
+- **An overrun of the texture budget discovered in E05-S02.** The 1.20 MiB peak
+  comes from a static analysis of the neighbouring port; if the real decoding
+  (E04-S07) produces more — mipmaps, uncompressed formats — total residency falls
+  and a cache is needed. Beyond 2 MB per level, the floor moves to the 12 MB
+  Voodoo 2.
+- **A measurable cost of filling `GrVertex`**, recorded in
+  [E08-S03](../stories/E08-perf/E08-S03-vertex-path-optimisation.md). That is the
+  argument that would tip the choice towards Glide 3 and its `grVertexLayout`.
+- **E00-S03's go/no-go**, which has not yet come: the CPU floor above is
+  **provisional**. E00-S03 measured a combined factor of ~38× between host and
+  target, but the verdict awaits a real play session
+  ([E02-S06](../stories/E02-system/E02-S06-game-bring-up.md)). If that verdict is
+  negative, this ADR raises the floor or records the exit — it does not work
+  around the figure.
+- A request for Voodoo 4/5 support, which would impose Glide 3 (`h5`).
 
-## Références
+## References
 
-- [`docs/adr/0003-memory-budget.md`](0003-memory-budget.md) — 47 Mio disponibles, coût de Glide
-- [`docs/research/cpu-budget.md`](../research/cpu-budget.md) — facteur 38×, go/no-go en attente
-- `../../Diddy-Kong-Racing/docs/research/level-working-set.md` — pic de 1 116 Ko sur 65 niveaux
-- `tools/win95/probes/glide_hwinfo.c` — interrogation du matériel
-- `tools/win95/probes/glide3_probe.c` — essai de Glide 3.x
-- [sezero/glide](https://github.com/sezero/glide) — arbres `glide2x` et `glide3x`, cibles réelles
+- [`docs/adr/0003-memory-budget.md`](0003-memory-budget.md) — 47 MiB available, Glide's cost
+- [`docs/research/cpu-budget.md`](../research/cpu-budget.md) — factor of 38×, go/no-go pending
+- `../../Diddy-Kong-Racing/docs/research/level-working-set.md` — 1,116 KB peak over 65 levels
+- `tools/win95/probes/glide_hwinfo.c` — hardware query
+- `tools/win95/probes/glide3_probe.c` — Glide 3.x trial
+- [sezero/glide](https://github.com/sezero/glide) — `glide2x` and `glide3x` trees, real targets

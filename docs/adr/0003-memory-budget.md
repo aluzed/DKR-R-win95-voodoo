@@ -1,215 +1,215 @@
-# ADR 0003 — Budget mémoire sur une machine de 64 Mo
+# ADR 0003 - Memory budget on a 64 MB machine
 
-- **Statut** : accepté
-- **Date** : 2026-08-12
-- **Ticket** : [E00-S06](../stories/E00-scoping/E00-S06-adr-memory-budget.md)
+- **Status**: accepted
+- **Date**: 2026-08-12
+- **Ticket**: [E00-S06](../stories/E00-scoping/E00-S06-adr-memory-budget.md)
 
-## Contexte
+## Context
 
-Le runtime moderne dépense la mémoire sans compter, parce qu'il n'a aucune raison
-de compter : il réserve 4 Gio d'espace d'adressage et en valide 512 Mio. Sur la
-machine cible, chaque poste devient un arbitrage — et Windows 95 pagine sur un
-disque de 1998, ce qui rend tout dépassement catastrophique en course.
+The modern runtime spends memory without counting, because it has no reason to
+count: it reserves 4 GiB of address space and commits 512 MiB of it. On the target
+machine, every item becomes a trade-off — and Windows 95 pages onto a 1998 disk,
+which makes any overrun catastrophic mid-race.
 
-## Ce qui est mesuré
+## What is measured
 
-### Mémoire réellement disponible, pilote 3dfx actif
+### Memory really available, with the 3dfx driver active
 
-Relevé sur la machine de test par `tools/win95/probes/glide_memory.c`, qui
-interroge `GlobalMemoryStatus` à quatre moments :
+Recorded on the test machine by `tools/win95/probes/glide_memory.c`, which queries
+`GlobalMemoryStatus` at four moments:
 
-| Moment | Physique libre | Coût |
+| Moment | Physical free | Cost |
 |---|---:|---:|
-| Au repos, bureau chargé | 49 028 Kio | — |
-| `glide2x.dll` chargée | 48 880 Kio | 148 Kio |
-| Contexte Glide ouvert, 640×480, double tampon + Z | **48 156 Kio** | 724 Kio |
-| Contexte fermé | 48 292 Kio | (136 Kio non rendus) |
+| At rest, desktop loaded | 49,028 KiB | — |
+| `glide2x.dll` loaded | 48,880 KiB | 148 KiB |
+| Glide context open, 640×480, double buffer + Z | **48,156 KiB** | 724 KiB |
+| Context closed | 48,292 KiB | (136 KiB not returned) |
 
-Physique total : 65 012 Kio. **Windows 95 et ses pilotes en consomment 15 984 Kio
-au repos**, soit 15,6 Mio.
+Total physical: 65,012 KiB. **Windows 95 and its drivers consume 15,984 KiB at
+rest**, that is 15.6 MiB.
 
-Enseignement contre-intuitif : **la pile 3dfx ne coûte que 872 Kio de RAM
-système**. Les tampons de 640×480 en 16 bits — image, image arrière, profondeur,
-soit 1,76 Mio — vivent dans la mémoire de la carte, pas dans celle de la machine.
-La Voodoo n'entame donc quasiment pas le budget.
+A counter-intuitive lesson: **the 3dfx stack costs only 872 KiB of system RAM**.
+The 640×480 16-bit buffers — front, back, depth, that is 1.76 MiB — live in the
+card's memory, not in the machine's. The Voodoo therefore barely touches the
+budget.
 
-**Plafond de travail retenu : 47 Mio**, sur la foi de la troisième ligne.
+**Working ceiling retained: 47 MiB**, on the strength of the third row.
 
-### Image du code recompilé
+### The recompiled code's image
 
-Le ticket estimait « probablement 10 à 40 Mo ». La mesure, faite sur les 37
-objets 32 bits produits par [E00-S03](../research/cpu-budget.md) — soit
-l'intégralité du code du jeu généré :
+The ticket estimated "probably 10 to 40 MB". The measurement, made on the 37
+32-bit objects produced by [E00-S03](../research/cpu-budget.md) — that is, the
+whole of the generated game code:
 
-| Section | Taille |
+| Section | Size |
 |---|---:|
-| `.text` | 3 896 223 o (3,72 Mio) |
-| `.eh_frame` | 100 456 o |
-| `.rodata` (toutes variantes) | 37 085 o |
-| **Total chargeable** | **4 037 386 o (3,85 Mio)** |
+| `.text` | 3,896,223 B (3.72 MiB) |
+| `.eh_frame` | 100,456 B |
+| `.rodata` (all variants) | 37,085 B |
+| **Total loadable** | **4,037,386 B (3.85 MiB)** |
 
-L'estimation était haute d'un ordre de grandeur. C'est **3,85 Mio**, et ce poste
-cesse d'être une inquiétude.
+The estimate was an order of magnitude high. It is **3.85 MiB**, and this item
+stops being a worry.
 
-### RDRAM réellement utilisée par DKR
+### RDRAM actually used by DKR
 
-`librecomp` déclare 8 Mio au jeu (`recomp.cpp:510`). Le jeu, lui, n'en veut pas
-tant. Dans le decomp (`src/memory.h:22-23`, `include/config.h:7`) :
+`librecomp` declares 8 MiB to the game (`recomp.cpp:510`). The game does not want
+that much. In the decomp (`src/memory.h:22-23`, `include/config.h:7`):
 
 ```c
-#define RAM_END           0x80400000   /* 4 Mio */
-#define EXPANSION_RAM_END 0x80800000   /* 8 Mio */
-#define EXPANSION_PAK_SUPPORT 0        /* le jeu n'utilise pas l'Expansion Pak */
+#define RAM_END           0x80400000   /* 4 MiB */
+#define EXPANSION_RAM_END 0x80800000   /* 8 MiB */
+#define EXPANSION_PAK_SUPPORT 0        /* the game does not use the Expansion Pak */
 ```
 
-`mempool_init_main` prend donc `RAM_END` : **le pool principal de DKR s'arrête à
-4 Mio**. Une seule adresse de la carte de liens dépasse cette borne,
-`assets_VRAM_END` à `0x80b09df0` — mais `asset_loading.c` transfère les assets
-depuis la ROM par DMA à la demande ; c'est une adresse de segment ROM, pas de la
-RAM occupée.
+`mempool_init_main` therefore takes `RAM_END`: **DKR's main pool stops at 4 MiB**.
+A single address in the link map exceeds that bound, `assets_VRAM_END` at
+`0x80b09df0` — but `asset_loading.c` transfers the assets from the ROM by DMA on
+demand; it is a ROM segment address, not occupied RAM.
 
-## Décision
+## Decision
 
-### Budget par poste
+### Budget per item
 
-| Poste | Aujourd'hui | Décision | Budget |
+| Item | Today | Decision | Budget |
 |---|---:|---|---:|
-| Espace réservé | 4 Gio (→ **0** en 32 bits) | réserver 8 Mio + garde | 8 Mio |
-| RDRAM validée | 512 Mio | **4 Mio**, borne réelle du jeu | 4 Mio |
-| Instantané RDRAM par tâche | 8 Mio × file non bornée | **4 Mio × 1 en vol** | 4 Mio |
-| Image du code recompilé | — | mesurée | 3,85 Mio |
-| Image de la ROM | 12 Mio résidents | **lecture à la demande** | 0,06 Mio |
-| File de charges RT64 | 4 emplacements | disparaît avec RT64 | 0 |
-| Pile 3dfx | — | mesurée | 0,85 Mio |
-| Runtime, CRT, tas C++ | — | **réserve** | 4 Mio |
-| Textures décodées côté hôte | — | **réserve**, à mesurer en E04-S07 | 8 Mio |
-| **Total** | | | **32,8 Mio** |
-| **Disponible mesuré** | | | **47,0 Mio** |
-| **Marge** | | | **14,2 Mio (30 %)** |
+| Reserved space | 4 GiB (→ **0** in 32-bit) | reserve 8 MiB + guard | 8 MiB |
+| Committed RDRAM | 512 MiB | **4 MiB**, the game's real bound | 4 MiB |
+| RDRAM snapshot per task | 8 MiB × unbounded queue | **4 MiB × 1 in flight** | 4 MiB |
+| Recompiled code image | — | measured | 3.85 MiB |
+| ROM image | 12 MiB resident | **read on demand** | 0.06 MiB |
+| RT64 load queue | 4 slots | disappears with RT64 | 0 |
+| 3dfx stack | — | measured | 0.85 MiB |
+| Runtime, CRT, C++ heap | — | **reserve** | 4 MiB |
+| Host-side decoded textures | — | **reserve**, to be measured in E04-S07 | 8 MiB |
+| **Total** | | | **32.8 MiB** |
+| **Measured available** | | | **47.0 MiB** |
+| **Headroom** | | | **14.2 MiB (30 %)** |
 
-La marge est délibérément large. Un budget qui « tient » à 46 Mio sur 47 est un
-budget faux : la première allocation imprévue le fait paginer, et une course qui
-pagine n'est pas jouable.
+The headroom is deliberately generous. A budget that "fits" at 46 MiB out of 47 is
+a false budget: the first unforeseen allocation makes it page, and a race that
+pages is not playable.
 
-### 1. Corriger les deux constantes de `librecomp`
+### 1. Correct `librecomp`'s two constants
 
-`librecomp/include/librecomp/addresses.hpp` :
+`librecomp/include/librecomp/addresses.hpp`:
 
 ```cpp
 constexpr size_t mem_size        =  512ULL * 1024ULL * 1024ULL;
-constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;   // vaut 0 en 32 bits
+constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;   // is 0 in 32-bit
 ```
 
-Ces valeurs deviennent dépendantes de la cible : **`mem_size` = 4 Mio**,
-`allocation_size` = 8 Mio, ce qui laisse une région protégée de 4 Mio au-dessus
-de la RDRAM pour piéger les accès invalides — le mécanisme de `librecomp` reste
-intact, et [E00-S01](../research/win95-blockers.md) a vérifié qu'il fonctionne à
-cette taille sur la machine réelle.
+These values become target-dependent: **`mem_size` = 4 MiB**, `allocation_size` =
+8 MiB, which leaves a 4 MiB protected region above RDRAM to trap invalid accesses
+— `librecomp`'s mechanism stays intact, and
+[E00-S01](../research/win95-blockers.md) verified that it works at that size on
+the real machine.
 
-`osMemSize` reste déclaré à 8 Mio ou passe à 4 : **à trancher en E02-S04**, après
-vérification que rien dans DKR ne lit cette valeur pour dimensionner autre chose
-que le pool. C'est le seul point de cette ADR qui reste ouvert, et il est
-délibérément laissé ouvert plutôt que tranché sans preuve.
+`osMemSize` stays declared at 8 MiB or moves to 4: **to be settled in E02-S04**,
+after checking that nothing in DKR reads that value to size anything other than
+the pool. It is the only point in this ADR that stays open, and it is deliberately
+left open rather than settled without proof.
 
-### 2. Instantané RDRAM : 4 Mio, une seule tâche en vol
+### 2. RDRAM snapshot: 4 MiB, a single task in flight
 
-Le patch `0007-snapshot-rdram-for-queued-graphics-tasks` copie `0x800000`
-octets — 8 Mio — par tâche graphique mise en file, dans une
-`moodycamel::BlockingConcurrentQueue` **qui n'est pas bornée**.
+The `0007-snapshot-rdram-for-queued-graphics-tasks` patch copies `0x800000` bytes
+— 8 MiB — per queued graphics task, into a
+`moodycamel::BlockingConcurrentQueue` **which is not bounded**.
 
-Deux corrections, pour deux raisons distinctes :
+Two corrections, for two distinct reasons:
 
-- **la taille passe à 4 Mio**, parce que c'est la borne du pool de DKR : copier
-  au-delà copie de la mémoire que le jeu n'écrit jamais ;
-- **une seule tâche en vol**, parce que la file profonde sert l'interpolation
-  d'images de RT64, qui disparaît avec le profil « Accurate »
+- **the size moves to 4 MiB**, because that is DKR's pool bound: copying beyond it
+  copies memory the game never writes;
+- **a single task in flight**, because the deep queue serves RT64's frame
+  interpolation, which disappears with the "Accurate" profile
   ([E07-S01](../stories/E07-scope/E07-S01-accurate-profile-only.md)).
 
-Le second point est le plus important, et ce n'est pas qu'une question de
-budget : sur la cible, **le rendu sera plus lent que la production de tâches**.
-Une file non bornée devant un consommateur plus lent que le producteur ne
-plafonne pas — elle croît jusqu'à l'épuisement de la mémoire. Ce qui est
-inoffensif sur une machine moderne devient un plantage à retardement ici.
+The second point is the more important, and it is not only a question of budget:
+on the target, **rendering will be slower than the production of tasks**. An
+unbounded queue in front of a consumer slower than the producer does not level off
+— it grows until memory runs out. What is harmless on a modern machine becomes a
+delayed crash here.
 
-À terme, l'instantané devrait disparaître au profit d'une copie du seul segment
-lu par la display list — mais cela demande de connaître ce segment, ce qui relève
-de [E04-S02](../stories/E04-hle-f3ddkr/E04-S02-standalone-display-list-parser.md).
-Ce n'est pas une décision de cette ADR.
+In time, the snapshot ought to disappear in favour of a copy of only the segment
+the display list reads — but that requires knowing that segment, which belongs to
+[E04-S02](../stories/E04-hle-f3ddkr/E04-S02-standalone-display-list-parser.md).
+It is not this ADR's decision.
 
-### 3. ROM : lecture à la demande
+### 3. ROM: read on demand
 
-`librecomp/src/pi.cpp:14` garde la ROM entière en mémoire :
+`librecomp/src/pi.cpp:14` keeps the whole ROM in memory:
 
 ```cpp
 static std::vector<uint8_t> rom;
 ```
 
-et le DMA PI y lit par `memcpy` (lignes 70 et 80). **12 Mio résidents pour deux
-sites de lecture.**
+and the PI DMA reads from it by `memcpy` (lines 70 and 80). **12 MiB resident for
+two read sites.**
 
-Décision : remplacer par une poignée de fichier et un tampon de transfert, avec
-un cache de 64 Kio. Les deux sites sont les seuls à convertir, et DKR est déjà
-écrit pour ce modèle — il transfère ses assets par DMA asynchrone plutôt que de
-supposer la ROM présente. Mise en œuvre en
+Decision: replace it with a file handle and a transfer buffer, with a 64 KiB
+cache. Those two sites are the only ones to convert, and DKR is already written
+for that model — it transfers its assets by asynchronous DMA rather than assuming
+the ROM present. Implemented in
 [E02-S04](../stories/E02-system/E02-S04-rom-access-pi-dma.md).
 
-Le disque de la machine cible est lent, et c'est le risque de cette décision :
-si le DMA à la demande provoque des à-coups en course, le repli est de charger
-en mémoire les seules zones chaudes. À mesurer en E02-S04, pas à supposer ici.
+The target machine's disk is slow, and that is this decision's risk: if DMA on
+demand causes stutter mid-race, the fallback is to load only the hot regions into
+memory. To be measured in E02-S04, not assumed here.
 
-### 4. Configuration de repli à 32 Mo
+### 4. A 32 MB fallback configuration
 
-Windows 95 consomme 15,6 Mio au repos, mesurés. Sur une machine de 32 Mo il
-resterait donc de l'ordre de **16 Mio** — contre 32,8 Mio de budget.
+Windows 95 consumes 15.6 MiB at rest, measured. On a 32 MB machine there would
+therefore remain on the order of **16 MiB** — against 32.8 MiB of budget.
 
-**La cible 32 Mo n'est pas tenue, et n'est pas retenue.** Ce qui pourrait
-éventuellement y entrer, en supprimant toute réserve de textures et l'instantané :
-RDRAM 4 + code 3,85 + Glide 0,85 + runtime 4 ≈ 12,7 Mio, laissant 3 Mio pour les
-textures décodées. C'est un budget sans marge, sur une machine qui paginerait au
-moindre écart.
+**The 32 MB target is not met, and is not retained.** What could conceivably fit
+there, by removing every texture reserve and the snapshot: RDRAM 4 + code 3.85 +
+Glide 0.85 + runtime 4 ≈ 12.7 MiB, leaving 3 MiB for the decoded textures. That is
+a budget with no headroom, on a machine that would page at the slightest
+deviation.
 
-**64 Mo est donc le plancher matériel du projet**, ce qui confirme
-la cible matérielle retenue ([E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md), ADR 0002 encore à écrire) plutôt
-que de l'assouplir.
+**64 MB is therefore the project's hardware floor**, which confirms the chosen
+hardware target
+([E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md), ADR 0002
+still to be written) rather than relaxing it.
 
-## Ce qui n'est pas mesuré, et pourquoi
+## What is not measured, and why
 
-Le ticket demandait de mesurer le **pic mémoire de la build actuelle en
-fonctionnement**, ventilé par poste avec moins de 10 % de reliquat. **Ce n'est
-pas fait**, et ce n'est pas faisable aujourd'hui :
+The ticket asked for the **memory peak of the current build in operation** to be
+measured, broken down per item with less than 10 % unaccounted for. **That is not
+done**, and it is not feasible today:
 
-- aucune build de la cible n'existe encore — c'est
-  [E01-S05](../stories/E01-build/E01-S05-compiling-the-recompiled-code.md) ;
-- profiler la build moderne mesurerait RT64, ImGui, SDL2 et les texture packs,
-  c'est-à-dire précisément les postes qui disparaissent. Le chiffre serait exact
-  et sans rapport avec la question.
+- no build of the target exists yet — that is
+  [E01-S05](../stories/E01-build/E01-S05-compiling-the-recompiled-code.md);
+- profiling the modern build would measure RT64, ImGui, SDL2 and the texture
+  packs, that is to say precisely the items that disappear. The figure would be
+  exact and unrelated to the question.
 
-Le budget ci-dessus est donc construit **par le bas**, poste par poste, à partir
-de valeurs mesurées quand elles existaient (disponible cible, coût Glide, taille
-du code, borne du pool de DKR) et de réserves déclarées quand elles n'existaient
-pas (textures, tas du runtime).
+The budget above is therefore built **from the bottom up**, item by item, from
+measured values where they existed (target availability, Glide's cost, code size,
+DKR's pool bound) and from declared reserves where they did not (textures, runtime
+heap).
 
-**Conséquence à tenir** : dès que E01-S05 produit un exécutable, le pic réel doit
-être mesuré et confronté à ce tableau. Les deux réserves — 4 Mio de runtime et
-8 Mio de textures — sont les postes à vérifier en priorité, car ce sont les seuls
-qui ne reposent sur aucune mesure.
+**A consequence to honour**: as soon as E01-S05 produces an executable, the real
+peak must be measured and set against this table. The two reserves — 4 MiB of
+runtime and 8 MiB of textures — are the items to check first, since they are the
+only ones resting on no measurement at all.
 
-## Conséquences
+## Consequences
 
-- **E02-S04** hérite de deux décisions : ROM lue à la demande, et l'arbitrage sur
-  `osMemSize`.
-- **E08-S04** hérite de l'instantané : 4 Mio, une tâche en vol.
-- **E04-S07** doit mesurer l'empreinte des textures décodées contre la réserve de
-  8 Mio.
-- **E01-S05** doit mesurer le pic réel et le confronter à ce tableau.
-- Le plancher matériel reste **64 Mo**, confirmé par la mesure et non assoupli.
+- **E02-S04** inherits two decisions: the ROM read on demand, and the arbitration
+  on `osMemSize`.
+- **E08-S04** inherits the snapshot: 4 MiB, one task in flight.
+- **E04-S07** must measure the decoded textures' footprint against the 8 MiB
+  reserve.
+- **E01-S05** must measure the real peak and set it against this table.
+- The hardware floor stays **64 MB**, confirmed by measurement and not relaxed.
 
-## Références
+## References
 
-- `tools/win95/probes/glide_memory.c` — la mesure sur cible
-- [`docs/research/win95-blockers.md`](../research/win95-blockers.md) — troncature de `allocation_size`, plafonds `VirtualAlloc`
-- [`docs/research/cpu-budget.md`](../research/cpu-budget.md) — les 37 objets mesurés
+- `tools/win95/probes/glide_memory.c` — the measurement on the target
+- [`docs/research/win95-blockers.md`](../research/win95-blockers.md) — truncation of `allocation_size`, `VirtualAlloc` ceilings
+- [`docs/research/cpu-budget.md`](../research/cpu-budget.md) — the 37 objects measured
 - `extern/n64-modern-runtime/librecomp/include/librecomp/addresses.hpp:10-12`
 - `extern/n64-modern-runtime/librecomp/src/pi.cpp:14,70,80`
 - `patches/n64-modern-runtime/0007-snapshot-rdram-for-queued-graphics-tasks.patch`
-- `../../Diddy-Kong-Racing/src/memory.h:22-23`, `include/config.h:7` — bornes du pool de DKR
+- `../../Diddy-Kong-Racing/src/memory.h:22-23`, `include/config.h:7` — DKR's pool bounds

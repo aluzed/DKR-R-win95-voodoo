@@ -1,197 +1,195 @@
-# ADR 0001 — Chaîne de compilation
+# ADR 0001 - Toolchain
 
-- **Statut** : accepté
-- **Date** : 2026-08-12
-- **Ticket** : [E00-S02](../stories/E00-scoping/E00-S02-spike-pe-win95-toolchain.md)
+- **Status**: accepted
+- **Date**: 2026-08-12
+- **Ticket**: [E00-S02](../stories/E00-scoping/E00-S02-spike-pe-win95-toolchain.md)
 
-## Contexte
+## Context
 
-Le choix du compilateur commande le langage disponible, et le langage disponible
-commande la quantité de code à réécrire. C'est la décision la plus structurante
-du projet : si aucun compilateur moderne ne produit un binaire viable sous
-Windows 95, `ultramodern` et `librecomp` — écrits en C++20 — deviennent une
-réécriture complète.
+The compiler choice governs the language available, and the language available
+governs how much code must be rewritten. It is the project's most structuring
+decision: if no modern compiler produces a viable binary under Windows 95, then
+`ultramodern` and `librecomp` — written in C++20 — become a complete rewrite.
 
-Elle se tranche par l'expérience. Trois témoins de complexité croissante ont été
-construits par trois candidats, puis **exécutés sur la machine de test** :
+It is settled by experiment. Three witnesses of increasing complexity were built
+by three candidates, then **run on the test machine**:
 
-| Témoin | Ce qu'il prouve |
+| Witness | What it proves |
 |---|---|
-| **T1** | format PE, sous-système, imports de base — sans CRT |
-| **T2** | le CRT : tas, `fopen`/`fread`, `printf`, mathématiques flottantes |
+| **T1** | PE format, subsystem, basic imports — without a CRT |
+| **T2** | the CRT: heap, `fopen`/`fread`, `printf`, floating-point maths |
 | **T3a** | `std::thread`, `std::mutex`, `condition_variable`, RTTI, exceptions |
-| **T3b** | le même modèle d'exécution, mais sur les primitives Win32 |
+| **T3b** | the same execution model, but on the Win32 primitives |
 
-T3a et T3b sont le cœur de l'affaire : T3a est la forme qu'a le code à porter,
-T3b la forme qu'il pourrait prendre.
+T3a and T3b are the heart of the matter: T3a is the shape the code to be ported
+has, T3b the shape it could take.
 
-## Résultats
+## Results
 
-Tous les binaires sont compilés `-march=pentium2 -mfpmath=387 -mno-sse`, et le
-désassemblage confirme **aucune instruction SSE** — code de démarrage et
-bibliothèque standard compris.
+Every binary is compiled `-march=pentium2 -mfpmath=387 -mno-sse`, and the
+disassembly confirms **no SSE instruction at all** — startup code and standard
+library included.
 
-| Candidat | C++ | T1 | T2 | T3a | T3b | Taille T3b | DLL importées |
+| Candidate | C++ | T1 | T2 | T3a | T3b | T3b size | Imported DLLs |
 |---|---|---|---|---|---|---:|---|
-| **Open Watcom 2.0** | C++98 partiel | ✅ | ✅ | *sans objet* | ✅ | 51 200 o | KERNEL32, USER32 |
-| **mingw GCC 13, posix** | **C++20** | ✅ | ✅ | ❌ | ✅ *(avec pont)* | 501 625 o | KERNEL32, USER32, MSVCRT |
-| **mingw GCC 13, win32** | **C++20** | ✅ | ✅ | ❌ | ❌ | 353 108 o | KERNEL32, USER32, MSVCRT |
+| **Open Watcom 2.0** | partial C++98 | ✅ | ✅ | *not applicable* | ✅ | 51,200 B | KERNEL32, USER32 |
+| **mingw GCC 13, posix** | **C++20** | ✅ | ✅ | ❌ | ✅ *(with the bridge)* | 501,625 B | KERNEL32, USER32, MSVCRT |
+| **mingw GCC 13, win32** | **C++20** | ✅ | ✅ | ❌ | ❌ | 353,108 B | KERNEL32, USER32, MSVCRT |
 
-Open Watcom n'a pas `<thread>` : T3a n'existe pas pour lui, et c'est un résultat,
-pas une lacune du protocole.
+Open Watcom has no `<thread>`: T3a does not exist for it, and that is a result,
+not a gap in the protocol.
 
-### Les échecs, et le symbole exact en cause
+### The failures, and the exact symbol at fault
 
-Windows 95 résout **tous** les imports au chargement. Un symbole absent est donc
-fatal même si la fonction n'est jamais appelée — ce que la machine dit elle-même :
+Windows 95 resolves **every** import at load time. A missing symbol is therefore
+fatal even if the function is never called — which the machine says itself (its
+system messages are in French; translated here):
 
-> « Le fichier T3BG.EXE est lié à une exportation manquante KERNEL32.DLL:GetThreadId. »
+> "The file T3BG.EXE is linked to a missing export KERNEL32.DLL:GetThreadId."
 
-T3b n'appelle jamais `GetThreadId` : il utilise `CreateThread` directement. C'est
-`libstdc++`, tirée par les exceptions et le RTTI, qui l'importe. **On ne peut donc
-pas échapper au problème en évitant `std::thread`.**
+T3b never calls `GetThreadId`: it uses `CreateThread` directly. It is
+`libstdc++`, pulled in by exceptions and RTTI, that imports it. **One therefore
+cannot escape the problem by avoiding `std::thread`.**
 
-Symboles manquants relevés avant correction :
+Missing symbols recorded before correction:
 
-| Binaire | Manquants |
+| Binary | Missing |
 |---|---|
 | mingw-win32 T3b | `GetThreadId`, `TryEnterCriticalSection` |
 | mingw-win32 T3a | + `InitializeConditionVariable`, `SleepConditionVariableCS`, `WakeConditionVariable`, `WakeAllConditionVariable`, `_fstat64` |
-| mingw-posix T3a et T3b | `AddVectoredExceptionHandler`, `RemoveVectoredExceptionHandler`, `GetTickCount64`, `IsDebuggerPresent`, `SetProcessAffinityMask`, `TryEnterCriticalSection` |
+| mingw-posix T3a and T3b | `AddVectoredExceptionHandler`, `RemoveVectoredExceptionHandler`, `GetTickCount64`, `IsDebuggerPresent`, `SetProcessAffinityMask`, `TryEnterCriticalSection` |
 
-### Le pont de compatibilité, écrit et éprouvé
+### The compatibility bridge, written and put to the test
 
-Les six manques du modèle `posix` sont superficiels — aucun n'est une
-fonctionnalité, tous sont des commodités. `tools/win95/win95compat/` les fournit
-en 150 lignes, et **T3b passe alors de « ne démarre pas » à 1000/1000 sur la
-machine réelle**, RTTI et exceptions compris.
+The `posix` model's six gaps are superficial — none is a feature, all are
+conveniences. `tools/win95/win95compat/` supplies them in 150 lines, and **T3b
+then goes from "does not start" to 1000/1000 on the real machine**, RTTI and
+exceptions included.
 
-Deux difficultés ont dû être résolues, et méritent d'être consignées :
+Two difficulties had to be resolved, and are worth recording:
 
-**Fournir la fonction ne suffit pas.** `winpthreads` est compilée avec
-`__declspec(dllimport)` : ses appels visent le pointeur `__imp__X@n`, pas le
-symbole `_X@n`. Le pont doit donc définir aussi ces pointeurs, décoration stdcall
-comprise, et être lié en `--whole-archive` — sans quoi `libkernel32.a`, placée en
-dernier par les specs du compilateur, l'emporte.
+**Supplying the function is not enough.** `winpthreads` is compiled with
+`__declspec(dllimport)`: its calls aim at the `__imp__X@n` pointer, not at the
+`_X@n` symbol. The bridge must therefore define those pointers too, stdcall
+decoration included, and be linked under `--whole-archive` — without which
+`libkernel32.a`, placed last by the compiler's specs, wins.
 
-**Un bouchon « licite » n'est pas un bouchon inoffensif.** La première version
-faisait renvoyer `FALSE` à `TryEnterCriticalSection` — réponse permise par le
-contrat, et vérifiée sans danger puisque `try_lock` n'apparaît nulle part dans le
-runtime. **Elle a figé la machine entière** : `winpthreads` boucle sur cette
-fonction pour prendre ses verrous, et l'attente active affame l'ordonnanceur de
-Windows 95 jusqu'à arrêter l'horloge de la barre des tâches. Le pont implémente
-donc les **cinq** fonctions de section critique, ce qui lui donne la propriété des
-24 octets de `CRITICAL_SECTION`, et s'appuie sur `lock cmpxchg` — une instruction
-du 486 — là où Windows 95 n'exporte pas `InterlockedCompareExchange`.
+**A "lawful" stub is not a harmless stub.** The first version had
+`TryEnterCriticalSection` return `FALSE` — an answer the contract permits, and
+one checked as safe since `try_lock` appears nowhere in the runtime. **It froze
+the whole machine**: `winpthreads` loops on that function to take its locks, and
+the busy wait starves Windows 95's scheduler to the point of stopping the
+taskbar's clock. The bridge therefore implements **all five** critical-section
+functions, which gives it ownership of `CRITICAL_SECTION`'s 24 bytes, and relies
+on `lock cmpxchg` — a 486 instruction — where Windows 95 does not export
+`InterlockedCompareExchange`.
 
-### Ce que le pont ne répare pas
+### What the bridge does not repair
 
-**`std::thread` ne fonctionne pas, même avec le pont.** T3a se charge désormais
-sans erreur, démarre, puis se termine sans écrire son résultat : il échoue dans la
-partie threads. Le blocage n'est donc pas seulement une question de symboles
-absents — l'émulation POSIX de `winpthreads` ne tient pas sur Windows 95.
+**`std::thread` does not work, even with the bridge.** T3a now loads without an
+error, starts, then terminates without writing its result: it fails in the thread
+part. The blockage is therefore not merely a question of missing symbols —
+`winpthreads`'s POSIX emulation does not hold up on Windows 95.
 
-C'est le résultat le plus utile de ce spike, parce qu'il transforme une hypothèse
-en certitude : **la couche de fils d'exécution doit être réécrite sur les
-primitives Win32** ([E02-S01](../stories/E02-system/E02-S01-threading-and-synchronisation-layer.md)).
-Ce n'était jusqu'ici qu'un plan plausible ; c'est maintenant une contrainte
-mesurée.
+That is this spike's most useful result, because it turns a hypothesis into a
+certainty: **the threading layer must be rewritten on the Win32 primitives**
+([E02-S01](../stories/E02-system/E02-S01-threading-and-synchronisation-layer.md)).
+Until now that was only a plausible plan; it is now a measured constraint.
 
-## Décision
+## Decision
 
-**mingw-w64 GCC 13, cible `i686-w64-mingw32`, modèle de threads `posix`, lié
-avec `win95compat`.**
+**mingw-w64 GCC 13, target `i686-w64-mingw32`, `posix` threading model, linked
+with `win95compat`.**
 
-### Pourquoi pas Open Watcom, qui passe pourtant tout
+### Why not Open Watcom, which passes everything
 
-Watcom est le meilleur candidat sur tous les critères sauf un, et cet unique
-critère décide :
+Watcom is the best candidate on every criterion but one, and that single
+criterion decides:
 
-- ses binaires font **51 Ko contre 501** ;
-- il n'importe **que KERNEL32 et USER32**, sans aucun manque, sans pont ;
-- son CRT est lié statiquement — pas de question de redistribution ;
-- il cible Windows 95 nativement, sans détour.
+- its binaries are **51 KB against 501**;
+- it imports **only KERNEL32 and USER32**, with no gaps, with no bridge;
+- its CRT is statically linked — no question of redistribution;
+- it targets Windows 95 natively, without a detour.
 
-Mais il n'offre que **C++98 partiel**. `ultramodern` et `librecomp` sont écrits
-en C++20, et [E00-S01](../research/win95-blockers.md) a montré que leur portage
-tient en **six fichiers** de `ultramodern` et le remplacement de
-`std::filesystem`. Avec Watcom, ce ne sont plus six fichiers à patcher mais deux
-bibliothèques entières à réécrire — le scénario que le ticket désignait
-explicitement comme le risque à écarter, « plusieurs semaines qui ne figurent
-dans aucun ticket ».
+But it offers only **partial C++98**. `ultramodern` and `librecomp` are written
+in C++20, and [E00-S01](../research/win95-blockers.md) showed that porting them
+comes down to **six files** of `ultramodern` and the replacement of
+`std::filesystem`. With Watcom, it is no longer six files to patch but two whole
+libraries to rewrite — the scenario the ticket explicitly named as the risk to
+avoid, "several weeks that appear in no ticket".
 
-Le surcoût de mingw est un binaire dix fois plus gros et un pont de 150 lignes.
-Le budget mémoire ([ADR 0003](0003-memory-budget.md)) a 14 Mio de marge : la
-taille n'est pas un problème.
+The extra cost of mingw is a binary ten times larger and a 150-line bridge. The
+memory budget ([ADR 0003](0003-memory-budget.md)) has 14 MiB of headroom: the
+size is not a problem.
 
-**Watcom reste le repli documenté.** Si le portage de `ultramodern` dérape au
-point de devenir une réécriture, l'argument qui écarte Watcom tombe — et il
-faudra alors le reconsidérer plutôt que persister. C'est la seule condition qui
-rouvrirait cette décision.
+**Watcom remains the documented fallback.** If porting `ultramodern` goes wrong
+to the point of becoming a rewrite, the argument that rules Watcom out falls —
+and it will then have to be reconsidered rather than persisted against. That is
+the only condition that would reopen this decision.
 
-### Pourquoi le modèle `posix` plutôt que `win32`
+### Why the `posix` model rather than `win32`
 
-Les deux modèles manquent d'un nombre comparable de symboles, mais pas de la même
-nature. Le modèle `win32` réclame les **variables de condition de Vista**, dont la
-reproduction sur des événements Windows 95 est un exercice délicat où l'on perd
-des réveils. Le modèle `posix` réclame `IsDebuggerPresent`, `GetTickCount64`,
-`SetProcessAffinityMask` et deux gestionnaires d'exceptions vectorisés — toutes
-choses qu'on écrit en quelques lignes, ce qui a été fait et vérifié.
+The two models are short of a comparable number of symbols, but not of the same
+nature. The `win32` model requires **Vista's condition variables**, whose
+reproduction on Windows 95 events is a delicate exercise in which wake-ups get
+lost. The `posix` model requires `IsDebuggerPresent`, `GetTickCount64`,
+`SetProcessAffinityMask` and two vectored exception handlers — all things one
+writes in a few lines, which was done and verified.
 
-### Distribution du CRT : liaison statique
+### CRT distribution: static linking
 
-`-static -static-libgcc -static-libstdc++`, sans exception.
+`-static -static-libgcc -static-libstdc++`, without exception.
 
-Trois raisons, dont deux mesurées :
+Three reasons, two of them measured:
 
-1. **`libgcc_s_dw2-1.dll` n'existe pas sous Windows 95.** Un binaire lié
-   dynamiquement à libgcc ne se charge pas — constaté pendant ce spike, sur un
-   témoin compilé par inadvertance sans `-static`.
-2. **`MSVCRT.DLL` est présent sur la machine de test** (version du 3 novembre
-   1997, 756 exports) mais **pas dans le Windows 95 de première génération**. Il
-   arrive avec OSR2 ou Internet Explorer. En dépendre reviendrait à faire dépendre
-   le jeu d'une version d'IE.
-3. La liaison statique supprime toute question de redistribution.
+1. **`libgcc_s_dw2-1.dll` does not exist under Windows 95.** A binary linked
+   dynamically against libgcc does not load — observed during this spike, on a
+   witness compiled without `-static` by inadvertence.
+2. **`MSVCRT.DLL` is present on the test machine** (dated 3 November 1997, 756
+   exports) but **not in first-generation Windows 95**. It arrives with OSR2 or
+   Internet Explorer. Depending on it would amount to making the game depend on a
+   version of IE.
+3. Static linking removes any question of redistribution.
 
-Le coût est la taille : 501 Ko pour T3b. Sans objet au regard du budget.
+The cost is the size: 501 KB for T3b. Immaterial against the budget.
 
-## Conséquences
+## Consequences
 
-- **`ultramodern` et `librecomp` sont patchables**, pas à réécrire. Le risque
-  majeur identifié par le ticket ne s'est pas matérialisé, et c'est le principal
-  acquis de ce spike.
+- **`ultramodern` and `librecomp` are patchable**, not to be rewritten. The major
+  risk the ticket identified did not materialise, and that is this spike's chief
+  gain.
 - **[E02-S01](../stories/E02-system/E02-S01-threading-and-synchronisation-layer.md)
-  devient obligatoire et non optionnel** : `std::thread` ne fonctionne pas sur la
-  cible. La couche de fils doit reposer sur `CreateThread`, `CRITICAL_SECTION` et
-  les événements — ce que T3b valide.
-- **`tools/win95/win95compat/` est le point de départ de cette couche.** Il est
-  écrit, lié et éprouvé sur la machine ; E02-S01 l'étend plutôt que de partir de
-  rien.
+  becomes mandatory rather than optional**: `std::thread` does not work on the
+  target. The threading layer must rest on `CreateThread`, `CRITICAL_SECTION` and
+  events — which T3b validates.
+- **`tools/win95/win95compat/` is this layer's starting point.** It is written,
+  linked and tried on the machine; E02-S01 extends it rather than starting from
+  nothing.
 - **[E01-S01](../stories/E01-build/E01-S01-cmake-i686-toolchain-without-sse.md)**
-  hérite des drapeaux exacts :
+  inherits the exact flags:
   `-march=pentium2 -mtune=pentium3 -mfpmath=387 -mno-sse -mno-sse2 -static
   -static-libgcc -static-libstdc++`, plus
   `-Wl,--whole-archive -lwin95compat -Wl,--no-whole-archive`.
-- **[E01-S04](../stories/E01-build/E01-S04-pe-import-guard-rail.md)** devient
-  indispensable, pas confortable : le seul symbole oublié rend le binaire
-  inchargeable, sans avertissement au lien.
-- Le contrôle « aucune instruction SSE » doit porter sur le **binaire lié**, pas
-  sur les objets du projet : le SSE viendrait de la bibliothèque standard.
+- **[E01-S04](../stories/E01-build/E01-S04-pe-import-guard-rail.md)** becomes
+  indispensable rather than comfortable: a single forgotten symbol makes the
+  binary unloadable, with no warning at link time.
+- The "no SSE instruction" check must bear on the **linked binary**, not on the
+  project's objects: the SSE would come from the standard library.
 
-## Reproduire
+## Reproducing
 
 ```sh
-tools/win95/witnesses/build-witnesses.sh          # les trois candidats, matrice complète
-tools/win95/check-win95-imports.sh <binaire>      # symboles absents de Windows 95
+tools/win95/witnesses/build-witnesses.sh          # the three candidates, full matrix
+tools/win95/check-win95-imports.sh <binary>       # symbols absent from Windows 95
 scripts/Push-To-Win95-VM.sh build/win95-witnesses/*.exe
 ```
 
-Open Watcom s'installe sans droits : l'installeur Linux publié par le projet est
-une archive zip, qui s'extrait dans `~/.local/dkr-win95/opt/watcom`.
+Open Watcom installs without privileges: the Linux installer the project
+publishes is a zip archive, which extracts into `~/.local/dkr-win95/opt/watcom`.
 
-## Références
+## References
 
-- [`docs/research/win95-blockers.md`](../research/win95-blockers.md) — inventaire des manques, comptes par fichier
-- `tools/win95/witnesses/` — les quatre témoins et leur banc
-- `tools/win95/win95compat/win95compat.c` — le pont
-- [ADR 0003](0003-memory-budget.md) — budget mémoire, qui rend la taille des binaires indifférente
+- [`docs/research/win95-blockers.md`](../research/win95-blockers.md) — inventory of the gaps, counts per file
+- `tools/win95/witnesses/` — the four witnesses and their bench
+- `tools/win95/win95compat/win95compat.c` — the bridge
+- [ADR 0003](0003-memory-budget.md) — memory budget, which makes the binaries' size immaterial
