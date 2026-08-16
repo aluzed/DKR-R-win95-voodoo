@@ -366,8 +366,39 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             tri[corner] = c->cache[idx[corner]];
             /* Les s, t du coin, en 16 bits signes. C'est ici qu'elles entrent —
                le sommet ne les portait pas. */
-            tri[corner].s = (float)read_s16(c, a + 4 + corner * 4);
-            tri[corner].t = (float)read_s16(c, a + 6 + corner * 4);
+            /* --- La normalisation, qui manquait -------------------------- *
+             *
+             * Le microcode donne s et t en **10.5 en virgule fixe** : trente-
+             * deux pas par texel. `dkr_clip_project` attend, lui, du [0,1] —
+             * son commentaire le dit, et il applique ensuite l'échelle de 256
+             * de Glide. Entre les deux il manquait la division par 32 et par la
+             * largeur de la texture.
+             *
+             * L'ordre de grandeur de l'erreur dit pourquoi rien ne s'échantil-
+             * lonnait : pour une texture de 32 texels, un coin à droite vaut
+             * 1024 en brut, donc 262 144 après l'échelle de Glide au lieu de
+             * 256. Ce n'est pas une texture décalée, c'est une texture hors de
+             * tout.
+             *
+             * **La largeur remplie, pas la réelle** : la texture n'occupe que le
+             * coin supérieur gauche de ce qu'on a chargé, puisque le remplissage
+             * en puissance de deux l'a agrandie. Normaliser sur la largeur
+             * réelle étirerait le motif d'un facteur allant jusqu'à deux. */
+            {
+                const float sb = (float)read_s16(c, a + 4 + corner * 4);
+                const float tb = (float)read_s16(c, a + 6 + corner * 4);
+                tri[corner].s = sb * c->tex_echelle_s;
+                tri[corner].t = tb * c->tex_echelle_t;
+                /* La mesure qui peut réfuter l'interprétation ci-dessus : si le
+                   10.5 est le bon format et la largeur la bonne, les extrêmes
+                   doivent tenir dans un voisinage de [0,1]. Des milliers
+                   diraient que l'échelle est fausse, et le dire en chiffres
+                   plutôt qu'à l'écran est tout l'intérêt. */
+                if (tri[corner].s < c->state.s_min) { c->state.s_min = tri[corner].s; }
+                if (tri[corner].s > c->state.s_max) { c->state.s_max = tri[corner].s; }
+                if (tri[corner].t < c->state.t_min) { c->state.t_min = tri[corner].t; }
+                if (tri[corner].t > c->state.t_max) { c->state.t_max = tri[corner].t; }
+            }
         }
         if (emitted_here < 0) {
             continue;
@@ -651,6 +682,11 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                        (size_t)c->tex_hauteur_remplie * 2u;
         h = c->backend->texture_upload(c->backend->self, &d);
         if (h != 0) {
+            /* 1/32 pour le 10.5 du microcode, 1/largeur pour passer en [0,1].
+               Les deux en une seule multiplication par sommet : la
+               transformation est déjà le poste le plus lourd du portage. */
+            c->tex_echelle_s = 1.0f / (32.0f * (float)c->tex_largeur_remplie);
+            c->tex_echelle_t = 1.0f / (32.0f * (float)c->tex_hauteur_remplie);
             c->render_state.texture = h;
             c->texture_cle = cle;
             c->etat_sale = 1;
@@ -1077,6 +1113,15 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
         return;
     }
     memset(ctx, 0, sizeof(*ctx));
+    /* Une échelle non nulle par défaut : sans texture liée les coordonnées ne
+       servent pas, mais zéro les écraserait toutes sur un point, ce qui
+       ressemblerait à un défaut de transformation plutôt qu'à une absence. */
+    ctx->tex_echelle_s = 1.0f / 32.0f;
+    ctx->tex_echelle_t = 1.0f / 32.0f;
+    ctx->state.s_min = 1.0e30f;
+    ctx->state.t_min = 1.0e30f;
+    ctx->state.s_max = -1.0e30f;
+    ctx->state.t_max = -1.0e30f;
     ctx->rdram      = rdram;
     ctx->rdram_size = rdram_size;
     ctx->backend    = backend;

@@ -134,6 +134,11 @@ typedef struct {
     /* Refusees pour un rapport au-dela de 8:1, que le remplissage ne peut pas
        corriger sans multiplier la memoire par huit. */
     unsigned long     textures_hors_proportions;
+    /* Les extrêmes des coordonnées normalisées. Elles doivent tenir dans un
+       voisinage de [0,1] ; des milliers diraient que l'échelle est fausse. La
+       mesure existe pour pouvoir contredire l'interprétation du format 10.5,
+       pas pour la confirmer. */
+    float             s_min, s_max, t_min, t_max;
 
     /* Combien de fois chaque opcode a été vu.
      *
@@ -205,6 +210,9 @@ typedef struct {
        gauche de ce qu'on charge. */
     int                  tex_largeur, tex_hauteur;
     int                  tex_largeur_remplie, tex_hauteur_remplie;
+    /* Le facteur qui porte le 10.5 du microcode vers le [0,1] de la projection,
+       largeur de remplissage comprise. */
+    float                tex_echelle_s, tex_echelle_t;
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne

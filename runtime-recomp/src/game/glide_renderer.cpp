@@ -284,6 +284,16 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "[gfx]   remplies-en-puissance-de-2=%lu "
                      "refusees-proportions=%lu\n",
                      total_tex_remplies_, total_tex_proportions_);
+        // Les coordonnées normalisées. Un voisinage de [0,1] confirme le format
+        // 10.5 et la largeur employée ; des milliers le réfutent.
+        if (context_.state.s_max > context_.state.s_min) {
+            std::fprintf(stderr,
+                         "[gfx]   coords: s=[%d..%d]/1000 t=[%d..%d]/1000\n",
+                         static_cast<int>(context_.state.s_min * 1000.0F),
+                         static_cast<int>(context_.state.s_max * 1000.0F),
+                         static_cast<int>(context_.state.t_min * 1000.0F),
+                         static_cast<int>(context_.state.t_max * 1000.0F));
+        }
     }
 #else
     (void)task;
