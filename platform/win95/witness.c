@@ -50,8 +50,8 @@ int main(void)
         return rc;                       /* the message has already been shown */
     }
 
-    n += sprintf(report + n, "Temoin de la couche plate-forme Win95\r\n");
-    n += sprintf(report + n, "=====================================\r\n");
+    n += sprintf(report + n, "Witness for the Win95 platform layer\r\n");
+    n += sprintf(report + n, "====================================\r\n");
 
     /* --- the six APIs Windows 95 does not export -------------------------- */
     dkr_win95_log("checking the compatibility APIs");
