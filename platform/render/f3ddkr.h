@@ -93,6 +93,16 @@ typedef struct {
 typedef struct {
     const unsigned char *rdram;      /* instantané RDRAM, `rdram_size` octets */
     unsigned int         rdram_size;
+    /* Disposition des octets dans `rdram`. Zéro — la valeur par défaut — décrit
+       le gros-boutiste franc de la console, celui que les épreuves construisent.
+       Un vaut la disposition **entrelacée par XOR-3** de librecomp, celle de
+       l'instantané que le jeu remet au fil graphique.
+     *
+       Le drapeau existe parce que les deux sont indiscernables à l'inspection :
+       une display list lue avec la mauvaise convention ne plante pas, elle décode
+       des opcodes plausibles à des adresses absurdes. On les rejette, on compte
+       les rejets, et l'on soupçonne le décodeur. */
+    unsigned char        rdram_native;
     dkr_render_backend  *backend;    /* peut être NULL : on décode sans dessiner */
     dkr_f3d_state        state;
 

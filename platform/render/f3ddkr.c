@@ -64,20 +64,46 @@ static int in_range(const dkr_f3d_context *c, unsigned int addr, unsigned int le
     return c->rdram && end <= (unsigned long long)c->rdram_size;
 }
 
+/* --- Deux dispositions mémoire pour la même RDRAM --------------------------- *
+ *
+ * Les épreuves construisent une RDRAM en gros-boutiste franc, comme la console.
+ * Le jeu, lui, fournit l'instantané de librecomp, qui range la même mémoire
+ * **entrelacée par XOR-3** : l'octet d'adresse invitée `a` se trouve à `a ^ 3`.
+ * C'est visible dans les macros de N64Recomp :
+ *
+ *     MEM_BU(o, r)  ->  *(uint8_t *)(rdram + ((r + o) ^ 3) - ...)
+ *     MEM_HU(o, r)  ->  *(uint16_t *)(rdram + ((r + o) ^ 2) - ...)
+ *     MEM_W (o, r)  ->  *(int32_t  *)(rdram + ((r + o))     - ...)
+ *
+ * Le mot de 32 bits n'a **pas** de XOR : l'entrelacement et le petit-boutisme de
+ * l'hôte s'annulent exactement, de sorte qu'une lecture native rend la valeur
+ * invitée correcte. C'est contre-intuitif, et l'inverser — retourner les octets
+ * à la main « pour corriger le boutisme » — donne des adresses absurdes que l'on
+ * attribue ensuite au décodeur.
+ *
+ * Le drapeau vaut zéro par défaut, donc les épreuves ne changent pas de
+ * comportement : c'est le jeu qui déclare la disposition qu'il fournit. */
 static unsigned char read_u8(const dkr_f3d_context *c, unsigned int a)
 {
-    return c->rdram[a];
+    return c->rdram[c->rdram_native ? (a ^ 3u) : a];
 }
 
 static short read_s16(const dkr_f3d_context *c, unsigned int a)
 {
-    return (short)(((unsigned)c->rdram[a] << 8) | c->rdram[a + 1]);
+    return (short)(((unsigned)read_u8(c, a) << 8) | read_u8(c, a + 1u));
 }
 
 static unsigned int read_u32(const dkr_f3d_context *c, unsigned int a)
 {
-    return ((unsigned)c->rdram[a]     << 24) | ((unsigned)c->rdram[a + 1] << 16) |
-           ((unsigned)c->rdram[a + 2] <<  8) |  (unsigned)c->rdram[a + 3];
+    /* Le chemin rapide n'est pas un luxe : c'est la lecture la plus fréquente du
+       décodeur — deux par commande — et la cible est un Pentium II. Il ne vaut
+       que sur une adresse alignée, ce qui est le cas des display lists ; la voie
+       générale reste correcte pour tout le reste. */
+    if (c->rdram_native && (a & 3u) == 0u) {
+        return *(const unsigned int *)(const void *)(c->rdram + a);
+    }
+    return ((unsigned)read_u8(c, a)      << 24) | ((unsigned)read_u8(c, a + 1u) << 16) |
+           ((unsigned)read_u8(c, a + 2u) <<  8) |  (unsigned)read_u8(c, a + 3u);
 }
 
 static void trace(dkr_f3d_context *c, const char *fmt, ...)
@@ -137,7 +163,21 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
     {
         dkr_matrix loaded;
-        if (dkr_matrix_from_fixed(c->rdram + address, &loaded)) {
+        /* `dkr_matrix_from_fixed` lit une suite d'octets en gros-boutiste franc.
+           Sous la disposition de librecomp il faut donc la lui remettre à plat —
+           64 octets, une fois par commande de matrice, ce qui ne pèse rien face
+           aux seize multiplications qui suivent. Passer le pointeur brut ferait
+           lire des matrices dont les octets sont permutés quatre par quatre : le
+           décor ne planterait pas, il serait simplement faux, et l'on chercherait
+           l'erreur dans la transformation. */
+        unsigned char plat[MATRIX_BYTES];
+        const unsigned char *source = c->rdram + address;
+        if (c->rdram_native) {
+            unsigned int i;
+            for (i = 0; i < MATRIX_BYTES; i++) { plat[i] = read_u8(c, address + i); }
+            source = plat;
+        }
+        if (dkr_matrix_from_fixed(source, &loaded)) {
             dkr_transform_set_matrix(&c->transform, (int)index, &loaded);
         }
     }

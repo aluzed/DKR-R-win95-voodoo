@@ -311,6 +311,86 @@ int main(void)
               ctx2.state.texture_offset == 0x123456u);
     }
 
+    /* --- Les deux dispositions de RDRAM donnent le meme decodage -------------- *
+     *
+     * Le jeu ne fournit pas la RDRAM en gros-boutiste franc : librecomp la range
+     * **entrelacee par XOR-3**, l'octet d'adresse invitee `a` se trouvant a
+     * `a ^ 3`. Le decodeur porte donc `rdram_native`, et tout l'interet est que
+     * les deux voies rendent exactement le meme resultat.
+     *
+     * L'epreuve construit une scene en gros-boutiste, en fabrique la permutation
+     * XOR-3, et compare les deux decodages champ par champ. C'est le seul
+     * controle qui puisse echouer si l'une des deux voies derive : une display
+     * list lue avec la mauvaise convention ne plante pas, elle decode des
+     * opcodes plausibles a des adresses absurdes. Sans ce controle, la faute
+     * apparaitrait sur la machine, sous forme d'un decor absent, et se
+     * chercherait dans le rastériseur. */
+    {
+        dkr_f3d_context droit, tordu;
+        static unsigned char entrelace[RAM_SIZE];
+        unsigned int i, at3 = 0;
+
+        memset(g_ram, 0, sizeof(g_ram));
+        /* Une scene qui exerce les trois largeurs de lecture : la commande
+           (32 bits), les sommets (16 bits signes) et la matrice (octets). */
+        at3 = put_cmd(at3, 0xBF000000u, 0x00000000u);          /* DMAOffsets */
+        at3 = put_cmd(at3, 0x01000040u, 0x00000200u);          /* Matrix, 64 o */
+        at3 = put_cmd(at3, 0x04000000u | (2u << 19), 0x300u);  /* Vertex x3 */
+        at3 = put_cmd(at3, 0x05000000u, 0x00000102u);          /* Triangle */
+        (void)put_cmd(at3, 0xB8000000u, 0u);
+        /* Une matrice identite en virgule fixe, et trois sommets reconnaissables. */
+        for (i = 0; i < 4; i++) {
+            put16(0x200u + i * 10u, 1);        /* partie entiere, diagonale */
+        }
+        for (i = 0; i < 3; i++) {
+            put16(0x300u + i * 16u + 0u, (int)(100 * (i + 1)));
+            put16(0x300u + i * 16u + 2u, (int)(-50 * (i + 1)));
+            put16(0x300u + i * 16u + 4u, 200);
+        }
+
+        /* La permutation. `i ^ 3` est une involution, donc la meme boucle sert
+           dans les deux sens ; c'est aussi ce qui la rend facile a verifier. */
+        for (i = 0; i < RAM_SIZE; i++) { entrelace[i ^ 3u] = g_ram[i]; }
+
+        dkr_f3d_init(&droit, g_ram, RAM_SIZE, NULL);
+        (void)dkr_f3d_run(&droit, 0);
+
+        dkr_f3d_init(&tordu, entrelace, RAM_SIZE, NULL);
+        tordu.rdram_native = 1;
+        (void)dkr_f3d_run(&tordu, 0);
+
+        check("la disposition entrelacee decode le meme nombre de commandes",
+              droit.state.commands == tordu.state.commands);
+        check("les memes sommets", droit.state.vertices == tordu.state.vertices);
+        check("les memes triangles", droit.state.triangles == tordu.state.triangles);
+        check("les memes emissions", droit.state.emitted == tordu.state.emitted);
+        /* Le controle qui empeche les precedents de reussir a vide : si la scene
+           n'avait rien decode, tous les compteurs vaudraient zero des deux cotes
+           et l'accord serait vide de sens. */
+        check("et la scene a reellement decode quelque chose",
+              droit.state.vertices == 3 && droit.state.triangles == 1);
+        {
+            int memes_rejets = 1;
+            for (i = 0; i < (unsigned)DKR_F3D_REJECT_COUNT_MAX; i++) {
+                if (droit.state.rejects[i] != tordu.state.rejects[i]) { memes_rejets = 0; }
+            }
+            check("et les memes rejets, categorie par categorie", memes_rejets);
+        }
+        /* La matrice traverse un chemin distinct des lectures de 32 bits — elle
+           passe par un tampon remis a plat — donc elle merite son propre
+           controle plutot que d'etre couverte par ricochet. */
+        {
+            int meme_matrice = 1;
+            for (i = 0; i < 16u; i++) {
+                const float a = droit.transform.slot[0].m[i / 4u][i % 4u];
+                const float b = tordu.transform.slot[0].m[i / 4u][i % 4u];
+                if (a != b) { meme_matrice = 0; }
+            }
+            check("et la matrice chargee est identique dans les deux dispositions",
+                  meme_matrice);
+        }
+    }
+
     printf("\n%d echec(s)\n", g_fails);
     if (g_out) { fprintf(g_out, "\n%d echec(s)\n", g_fails); fclose(g_out); }
     return g_fails != 0;
