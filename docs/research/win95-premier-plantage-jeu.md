@@ -756,3 +756,48 @@ Toutes les sondes posées jusqu'ici observent **nos** chemins ou l'état du jeu
 moments à lui** : surveiller `gMainSched + 0x278` à chaque bascule de fil invité.
 C'est un travail d'instrumentation d'un autre ordre, et c'est par là qu'il faut
 reprendre.
+
+## Pris sur le fait
+
+La sonde qui manquait ne regardait pas nos chemins mais **l'instant du jeu** :
+dans `do_recv`, juste après que la boucle du planificateur a retiré un message de
+sa file, et juste avant qu'elle ne reparte dans son gestionnaire.
+
+    [trace][rcv] msg=667 curRSP=0x80111338 curRDP=0x00000000   (bons=1)
+    ...
+    [trace][rcv] msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
+                                            (bons=1157 nulsSP=0 nulsDP=1)
+
+**Une seule occurrence sur 1157 réceptions**, et c'est la dernière ligne du
+journal — donc le plantage lui-même.
+
+Le détail qui compte : **les deux champs sont nuls**. Pas seulement `curRDPTask`.
+Le jeu n'a plus aucune tâche en cours, ni RSP ni RDP, quand notre bord DP arrive.
+
+### Ce que cela change
+
+Toutes les hypothèses précédentes cherchaient pourquoi `curRDPTask` était effacé
+alors qu'une tâche était en cours. La question est mal posée : **le jeu est au
+repos**. Les deux gestionnaires ont fait leur travail, les deux champs sont
+remis à zéro, aucune tâche n'attend — et un bord DP arrive quand même.
+
+Sur le matériel, le RDP au repos ne signale rien. Notre bord est donc de trop,
+et le compte global ne le montre pas parce qu'il y a **moins** de bords DP que de
+listes d'affichage : ce n'est pas un doublon, c'est un bord **tardif**.
+
+L'explication cohérente avec tout ce qui est mesuré : notre fil graphique est
+asynchrone. Il retire une tâche, publie SP, rend, puis publie DP. Si le jeu a
+entre-temps termine la tâche par un autre chemin — le bord SP suffit à la faire
+avancer, et `__scHandleRetrace` peut la conclure — alors notre DP arrive dans le
+vide.
+
+Cela explique aussi la rareté : il faut que le jeu conclue la tâche avant que le
+rendu ne se termine, ce qui n'arrive que sur une image particulièrement longue.
+
+### La mesure qui reste à faire
+
+Comparer, pour ce bord DP fautif précisément, la tâche qu'il visait avec l'état
+du jeu. La sonde d'étiquetage existe déjà et rapportait 300 concordances sur
+300 — mais elle mesure **au dépôt**, et le cas fautif se produit **à la
+réception**. Il faut donc étiqueter le message lui-même, ou consigner l'attendue
+au moment du dépôt pour la relire à la réception.
