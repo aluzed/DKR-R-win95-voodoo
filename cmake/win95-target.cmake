@@ -654,19 +654,19 @@ set_target_properties(DKRWin95GlideProbe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideProbe)
 
-# Repose l'etat que le jeu produit et **relit le tampon d'image**. Six mesures
-# ont disculpe le decodeur ; ce qui reste est ce que la carte fait de l'etat, et
-# cela ne se voit pas depuis le jeu — on y observe ce qu'on envoie, jamais ce qui
-# en ressort. Le temoin degrade l'etat par etapes : le premier cas qui peint
-# nomme l'element fautif.
-add_executable(DKRWin95EtatJeu
-    "${DKR_WIN95_TOOLS}/witnesses/etat_jeu_probe.c")
-target_link_libraries(DKRWin95EtatJeu PRIVATE win95glide win95clock winmm)
-set_target_properties(DKRWin95EtatJeu PROPERTIES
-    OUTPUT_NAME "ETATJEU"
+# Replays the render state the game produces and **reads the frame buffer back**.
+# Six measurements cleared the decoder; what remains is what the card does with
+# the state, and that cannot be seen from the game -- there you observe what you
+# send, never what comes out. The probe degrades the state step by step: the
+# first case that paints names the culprit.
+add_executable(DKRWin95StateProbe
+    "${DKR_WIN95_TOOLS}/witnesses/state_probe.c")
+target_link_libraries(DKRWin95StateProbe PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95StateProbe PROPERTIES
+    OUTPUT_NAME "TEST"
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-dkr_win95_verify(DKRWin95EtatJeu)
+dkr_win95_verify(DKRWin95StateProbe)
 
 # Les constantes de Glide 2.x sont écrites de mémoire : il n'y a pas de
 # `glide.h` sur cette machine. Une valeur fausse ne provoque aucune erreur —
