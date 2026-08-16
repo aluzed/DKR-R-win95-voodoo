@@ -1,20 +1,20 @@
-/* E02-S01 — epreuve de la couche de fils et de synchronisation.
+/* E02-S01 - the threading and synchronisation layer, tested.
  *
- * **Une seule source, deux executions.** Compilee pour l'hote elle s'appuie sur
- * le vehicule POSIX de `threading.cpp` ; compilee pour la cible elle devient
- * THREADS.EXE et s'execute sous Windows 95 emule. C'est deliberement le meme
- * fichier : un test de synchronisation qui ne tourne que sur l'hote ne prouve
- * rien de la cible, et deux fichiers differents finissent toujours par diverger.
+ * **One source, two runs.** Compiled for the host it rests on
+ * `threading.cpp`'s POSIX vehicle; compiled for the target it becomes
+ * THREADS.EXE and runs under emulated Windows 95. It is deliberately the same
+ * file: a synchronisation test that only runs on the host proves nothing about
+ * the target, and two different files always end up diverging.
  *
- *   platform/win95/tests/run-tests.sh              sur l'hote
- *   scripts/Push-To-Win95-VM.sh build/win95/bin/THREADS.EXE   sur la cible
+ *   platform/win95/tests/run-tests.sh              on the host
+ *   scripts/Push-To-Win95-VM.sh build/win95/bin/THREADS.EXE   on the target
  *
- * Mode d'endurance, pour les defauts qui ne sortent pas en dix secondes :
+ * Endurance mode, for the defects that do not come out in ten seconds:
  *
- *   ./test_threading --stress 600                  dix minutes
+ *   ./test_threading --stress 600                  ten minutes
  *
- * Ce que chaque epreuve etablit est ecrit devant elle. Une epreuve dont on ne
- * sait pas dire ce qu'elle prouve ne prouve rien.
+ * What each test establishes is written above it. A test one cannot say what it
+ * proves proves nothing.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,23 +32,22 @@
 #endif
 
 /* ========================================================================== *
- * Harnais
+ * Harness
  * ========================================================================== */
 
 static int failures = 0;
 static int checks   = 0;
 
-/* Le compte rendu part sur la sortie standard *et* dans un fichier.
+/* The report goes to standard output *and* to a file.
  *
- * Sur la cible, le fichier n'est pas un confort : il est le seul canal. Un
- * programme lance depuis Windows 95 ecrit dans une fenetre DOS qui se referme
- * avec lui, et la machine est pilotee par capture d'ecran depuis l'hote — lire
- * quarante lignes ainsi n'est pas praticable. Le fichier atterrit sur D:, que
- * l'hote relit directement dans l'image FAT16.
+ * On the target the file is not a convenience: it is the only channel. A program
+ * launched from Windows 95 writes into a DOS window that closes with it, and the
+ * machine is driven by screen capture from the host - reading forty lines that
+ * way is not practical. The file lands on D:, which the host reads back directly
+ * from the FAT16 image.
  *
- * Il est vide apres chaque ligne, pour la meme raison que le journal de
- * demarrage : si une epreuve fige la machine, c'est la derniere ligne ecrite
- * qui dira laquelle.
+ * It is flushed after every line, for the same reason as the startup log: if a
+ * test freezes the machine, it is the last line written that will say which.
  */
 static FILE *report_file = NULL;
 
@@ -75,7 +74,7 @@ static void expect(const char *what, long long got, long long want)
     if (got == want) {
         emit("  ok    %-52s %lld\n", what, got);
     } else {
-        emit("  FAIL  %-52s attendu %lld, obtenu %lld\n", what, want, got);
+        emit("  FAIL  %-52s expected %lld, got %lld\n", what, want, got);
         failures++;
     }
 }
@@ -103,22 +102,21 @@ static unsigned long now_ms(void)
 }
 
 /* ========================================================================== *
- * 1. Correspondance des priorites — fonction pure, sans fil ni Windows
+ * 1. The priority mapping - a pure function, no threads and no Windows
  * ========================================================================== *
  *
- * Ce qui est etabli : la table est celle qui est ecrite dans la documentation,
- * elle est strictement croissante, et elle n'ecrase aucun niveau. Le ticket
- * annonce une correspondance « lossy » ; elle ne l'est pas dans ce sens — les
- * cinq niveaux d'`ultramodern` tiennent dans les sept classes de Win32. La
- * perte reelle est ailleurs, et n'est pas testable ici : voir
- * docs/WIN95-THREADING.md.
+ * What is established: the table is the one written in the documentation, it is
+ * strictly increasing, and it collapses no level. The ticket announces a "lossy"
+ * mapping; it is not lossy in that direction - `ultramodern`'s five levels fit
+ * inside Win32's seven classes. The real loss is elsewhere, and is not testable
+ * here: see docs/WIN95-THREADING.md.
  */
 static void test_priority_mapping(void)
 {
     int i;
     int previous;
 
-    emit("Correspondance des priorites (fonction pure)\n");
+    emit("Priority mapping (pure function)\n");
 
     expect("Low        -> THREAD_PRIORITY_BELOW_NORMAL",
            dkr_thread_priority_to_win32(DKR_THREAD_PRIORITY_LOW),       -1);
@@ -131,29 +129,29 @@ static void test_priority_mapping(void)
     expect("Critical   -> THREAD_PRIORITY_TIME_CRITICAL",
            dkr_thread_priority_to_win32(DKR_THREAD_PRIORITY_CRITICAL),  15);
 
-    /* Strictement croissante : sans cela l'ordre voulu ne serait pas l'ordre
-       obtenu, et deux niveaux distincts pourraient s'ecraser. */
+    /* Strictly increasing: without this the intended order would not be the
+       obtained order, and two distinct levels could collapse together. */
     previous = dkr_thread_priority_to_win32(DKR_THREAD_PRIORITY_LOW);
     for (i = DKR_THREAD_PRIORITY_NORMAL; i <= DKR_THREAD_PRIORITY_CRITICAL; i++) {
         int current = dkr_thread_priority_to_win32(i);
-        expect_true("croissance stricte de la table", current > previous);
+        expect_true("the table is strictly increasing", current > previous);
         previous = current;
     }
 
-    /* Hors domaine : refuse plutot que de rendre un niveau arbitraire. */
-    expect("entree hors domaine refusee",
+    /* Out of range: refuse rather than return an arbitrary level. */
+    expect("out-of-range input refused",
            dkr_thread_priority_to_win32(99), DKR_THREAD_PRIORITY_INVALID);
-    expect("entree negative refusee",
+    expect("negative input refused",
            dkr_thread_priority_to_win32(-1), DKR_THREAD_PRIORITY_INVALID);
 }
 
 /* ========================================================================== *
- * 2. Creation et jonction
+ * 2. Creation and joining
  * ========================================================================== *
  *
- * Ce qui est etabli : le fil s'execute reellement, la jonction attend sa fin —
- * et non seulement son demarrage — et l'identifiant du fil cree differe de
- * celui du createur.
+ * What is established: the thread really does run, joining waits for its end -
+ * and not merely for its start - and the created thread's identifier differs
+ * from the creator's.
  */
 static long          created_ran   = 0;
 static unsigned long created_id    = 0;
@@ -162,7 +160,7 @@ static unsigned long creator_id    = 0;
 static void created_thread_body(void *arg)
 {
     (void)arg;
-    dkr_sleep_ms(30);           /* la jonction doit attendre ceci */
+    dkr_sleep_ms(30);           /* joining must wait for this */
     created_id  = dkr_thread_id();
     created_ran = 1;
 }
@@ -171,45 +169,45 @@ static void test_create_join(void)
 {
     dkr_thread *t;
 
-    emit("Creation et jonction\n");
+    emit("Creation and joining\n");
 
     creator_id  = dkr_thread_id();
     created_ran = 0;
     created_id  = 0;
 
     t = dkr_thread_start(created_thread_body, 0, 0);
-    expect_true("le fil demarre", t != 0);
+    expect_true("the thread starts", t != 0);
     if (!t) {
         return;
     }
-    expect_true("la jonction reussit", dkr_thread_join(t) != 0);
-    /* Lu apres la jonction : si `join` rendait la main trop tot, ceci vaudrait
-       encore zero. C'est la propriete que le test cherche. */
-    expect("le corps du fil s'est execute", created_ran, 1);
-    expect_true("l'identifiant du fil cree differe du createur",
+    expect_true("joining succeeds", dkr_thread_join(t) != 0);
+    /* Read after joining: if `join` returned too early, this would still be
+       zero. That is the property the test is after. */
+    expect("the thread's body ran", created_ran, 1);
+    expect_true("the created thread's id differs from the creator's",
                 created_id != 0 && created_id != creator_id);
 }
 
 /* ========================================================================== *
- * 3. Detachement — le descripteur relache pendant que le fil demarre
+ * 3. Detaching - the handle released while the thread is starting
  * ========================================================================== *
  *
- * Ce qui est etabli : relacher le descripteur *avant* que le fil n'ait commence
- * ne lui retire rien sous les pieds.
+ * What is established: releasing the handle *before* the thread has started
+ * takes nothing out from under it.
  *
- * C'est le cas le plus defavorable, et il n'a rien de theorique. Sur un
- * monoprocesseur, le createur garde son quantum apres avoir demarre le fil : au
- * moment ou `dkr_thread_release` s'execute, le fil cree n'a en general pas
- * encore execute une seule instruction. Si le descripteur portait aussi la
- * fonction et son argument, le fil sauterait ensuite dans une case liberee — et
- * recyclee par le tas du CRT.
+ * That is the least favourable case, and there is nothing theoretical about it.
+ * On a single processor the creator keeps its quantum after starting the thread:
+ * at the moment `dkr_thread_release` runs, the created thread has generally not
+ * run a single instruction. If the handle also carried the function and its
+ * argument, the thread would then jump into a freed slot - recycled by the CRT's
+ * heap.
  *
- * L'epreuve compte les fils qui sont reellement alles au bout, et le sémaphore
- * la rend deterministe : sans lui, elle se terminerait avant eux et ne
- * prouverait rien.
+ * The test counts the threads that really ran to the end, and the semaphore
+ * makes it deterministic: without it, the test would finish before them and
+ * would prove nothing.
  *
- * `ultramodern/src/timer.cpp` detache son fil de minuterie immediatement apres
- * l'avoir cree : ce chemin est emprunte pour de bon.
+ * `ultramodern/src/timer.cpp` detaches its timer thread immediately after
+ * creating it: this path is genuinely taken.
  */
 #define DETACH_THREADS 8
 
@@ -233,9 +231,9 @@ static void test_detach(void)
     int           i;
     int           collected = 0;
 
-    emit("Detachement pendant le demarrage\n");
+    emit("Detaching during startup\n");
 
-    expect_true("semaphore de fin", dkr_sem_init(&done, 0) != 0);
+    expect_true("completion semaphore", dkr_sem_init(&done, 0) != 0);
     arg.done = &done;
     arg.ran  = &ran;
 
@@ -244,7 +242,8 @@ static void test_detach(void)
         if (!t) {
             break;
         }
-        /* Immediatement, sans laisser au fil la moindre chance d'avoir demarre. */
+        /* Immediately, without giving the thread the slightest chance to have
+           started. */
         dkr_thread_release(t);
     }
 
@@ -253,18 +252,18 @@ static void test_detach(void)
             collected++;
         }
     }
-    expect("les huit fils detaches sont alles au bout", collected, DETACH_THREADS);
-    expect("et ont tous execute leur corps", ran, DETACH_THREADS);
+    expect("the eight detached threads ran to the end", collected, DETACH_THREADS);
+    expect("and all ran their body", ran, DETACH_THREADS);
     dkr_sem_destroy(&done);
 }
 
 /* ========================================================================== *
- * 4. Exclusion mutuelle sous contention
+ * 4. Mutual exclusion under contention
  * ========================================================================== *
  *
- * Ce qui est etabli : deux fils qui incrementent un compteur non atomique sous
- * verrou n'en perdent aucun. Le compteur est volontairement un `long` nu, sans
- * `atomic` : c'est le verrou qui est teste, pas le processeur.
+ * What is established: two threads incrementing a non-atomic counter under the
+ * lock lose none of them. The counter is deliberately a bare `long`, with no
+ * `atomic`: it is the lock being tested, not the processor.
  */
 #define CONTENTION_ROUNDS 20000
 
@@ -287,33 +286,33 @@ static void test_mutual_exclusion(void)
     dkr_thread *a;
     dkr_thread *b;
 
-    emit("Exclusion mutuelle sous contention\n");
+    emit("Mutual exclusion under contention\n");
 
-    expect_true("initialisation du verrou", dkr_mutex_init(&contention_mutex) != 0);
+    expect_true("the lock initialises", dkr_mutex_init(&contention_mutex) != 0);
     contention_counter = 0;
 
     a = dkr_thread_start(contention_body, 0, 0);
     b = dkr_thread_start(contention_body, 0, 0);
-    expect_true("deux fils demarres", a != 0 && b != 0);
+    expect_true("two threads started", a != 0 && b != 0);
     if (a) { dkr_thread_join(a); }
     if (b) { dkr_thread_join(b); }
 
-    expect("aucun increment perdu", contention_counter, 2 * CONTENTION_ROUNDS);
+    expect("no increment lost", contention_counter, 2 * CONTENTION_ROUNDS);
     dkr_mutex_destroy(&contention_mutex);
 }
 
 /* ========================================================================== *
- * 4. Non-reentrance du verrou
+ * 4. The lock is non-reentrant
  * ========================================================================== *
  *
- * Ce qui est etabli : la difference de comportement entre CRITICAL_SECTION et
- * `std::mutex` est neutralisee. La section critique de Win32 est recursive ;
- * `std::mutex` ne l'est pas et s'interbloque. Un code qui comptait sur cet
- * interblocage pour reveler un defaut le reverrait passer sans bruit.
+ * What is established: the behavioural difference between CRITICAL_SECTION and
+ * `std::mutex` is neutralised. Win32's critical section is recursive;
+ * `std::mutex` is not and deadlocks. Code that relied on that deadlock to reveal
+ * a defect would see it pass by in silence.
  *
- * La couche detecte la reentrance et le signale. Le test intercepte le
- * signalement — sans cela il arreterait le processus, ce qui est le
- * comportement voulu en production mais peu commode ici.
+ * The layer detects reentrancy and reports it. The test intercepts the report -
+ * without that it would stop the process, which is the intended behaviour in
+ * production but inconvenient here.
  */
 static int reentrancy_reported = 0;
 
@@ -327,25 +326,25 @@ static void test_reentrancy_detected(void)
 {
     dkr_mutex m;
 
-    emit("Non-reentrance du verrou\n");
+    emit("The lock is non-reentrant\n");
 
     dkr_mutex_init(&m);
     reentrancy_reported = 0;
     dkr_threading_set_fatal_handler(capture_fatal);
 
     dkr_mutex_lock(&m);
-    dkr_mutex_lock(&m);           /* la faute : un std::mutex s'interbloquerait */
-    expect("la reentrance est signalee", reentrancy_reported, 1);
+    dkr_mutex_lock(&m);           /* the fault: a std::mutex would deadlock */
+    expect("reentrancy is reported", reentrancy_reported, 1);
 
-    /* Le second verrouillage n'a pas eu lieu : un seul deverrouillage. */
+    /* The second lock did not take place: one unlock only. */
     dkr_mutex_unlock(&m);
 
-    /* `try_lock` sur son propre verrou echoue, comme celui d'un std::mutex,
-       mais sans rien signaler : l'appelant a deja prevu l'echec. */
+    /* `try_lock` on one's own lock fails, like a std::mutex's, but reports
+       nothing: the caller has already allowed for failure. */
     reentrancy_reported = 0;
-    expect_true("try_lock prend un verrou libre", dkr_mutex_try_lock(&m) != 0);
-    expect("try_lock refuse la reentrance", dkr_mutex_try_lock(&m), 0);
-    expect("try_lock ne signale rien", reentrancy_reported, 0);
+    expect_true("try_lock takes a free lock", dkr_mutex_try_lock(&m) != 0);
+    expect("try_lock refuses reentrancy", dkr_mutex_try_lock(&m), 0);
+    expect("try_lock reports nothing", reentrancy_reported, 0);
     dkr_mutex_unlock(&m);
 
     dkr_threading_set_fatal_handler(0);
@@ -353,64 +352,64 @@ static void test_reentrancy_detected(void)
 }
 
 /* ========================================================================== *
- * 5. Semaphore — le signal qui precede l'attente n'est pas perdu
+ * 5. Semaphore - a signal that precedes the wait is not lost
  * ========================================================================== *
  *
- * Ce qui est etabli, et c'est la propriete dont depend le demarrage des fils de
- * jeu d'`ultramodern` : `osCreateThread` peut signaler `running` *avant* que le
- * fil cree n'atteigne son `wait`. Un primitif a memoire nulle — un evenement a
- * reinitialisation automatique mal employe, une variable de condition sans
- * predicat — perdrait ce reveil, et le fil dormirait pour toujours.
+ * What is established, and it is the property `ultramodern`'s game-thread
+ * startup depends on: `osCreateThread` can signal `running` *before* the created
+ * thread reaches its `wait`. A primitive with no memory - a badly used
+ * auto-reset event, a condition variable with no predicate - would lose that
+ * wake-up, and the thread would sleep forever.
  */
 static void test_semaphore_signal_before_wait(void)
 {
     dkr_sem s;
     int i;
 
-    emit("Semaphore : signal avant attente\n");
+    emit("Semaphore: signal before wait\n");
 
-    expect_true("initialisation", dkr_sem_init(&s, 0) != 0);
+    expect_true("initialises", dkr_sem_init(&s, 0) != 0);
 
-    /* Trois jetons deposes avant toute attente. */
+    /* Three tokens deposited before any wait. */
     dkr_sem_signal(&s, 1);
     dkr_sem_signal(&s, 2);
 
     for (i = 0; i < 3; i++) {
-        expect_true("le jeton depose d'avance est rendu",
+        expect_true("the token deposited in advance is returned",
                     dkr_sem_wait_timeout(&s, 1000) != 0);
     }
-    /* Et pas un de plus : `signal(n)` reveille exactement n fois. */
-    expect("aucun jeton surnumeraire", dkr_sem_try_wait(&s), 0);
+    /* And not one more: `signal(n)` wakes exactly n times. */
+    expect("no surplus token", dkr_sem_try_wait(&s), 0);
 
-    /* Un compte initial non nul est un depot d'avance, lui aussi. */
+    /* A non-zero initial count is also a deposit in advance. */
     dkr_sem_destroy(&s);
-    expect_true("initialisation a 2", dkr_sem_init(&s, 2) != 0);
-    expect_true("premier jeton initial", dkr_sem_try_wait(&s) != 0);
-    expect_true("second jeton initial",  dkr_sem_try_wait(&s) != 0);
-    expect("puis plus rien", dkr_sem_try_wait(&s), 0);
+    expect_true("initialises at 2", dkr_sem_init(&s, 2) != 0);
+    expect_true("first initial token", dkr_sem_try_wait(&s) != 0);
+    expect_true("second initial token", dkr_sem_try_wait(&s) != 0);
+    expect("then nothing more", dkr_sem_try_wait(&s), 0);
     dkr_sem_destroy(&s);
 }
 
 /* ========================================================================== *
- * 6. Semaphore — aller-retour strict, la forme exacte du planificateur
+ * 6. Semaphore - strict ping-pong, the scheduler's exact shape
  * ========================================================================== *
  *
- * Ce qui est etabli : le motif d'`ultramodern` lui-meme. Chaque fil de jeu dort
- * sur son propre semaphore ; en reveiller un et se rendormir est ce que fait
- * `run_next_thread_and_wait`. Un seul fil court a la fois, et l'alternance doit
- * etre stricte.
+ * What is established: `ultramodern`'s own pattern. Every game thread sleeps on
+ * its own semaphore; waking one and going back to sleep is what
+ * `run_next_thread_and_wait` does. Only one thread runs at a time, and the
+ * alternation must be strict.
  *
- * Le compteur partage est non atomique **a dessein** : si l'alternance se
- * relachait, les deux fils y toucheraient en meme temps et le total final le
- * dirait. Le test detecte donc a la fois le reveil perdu — il se bloquerait —
- * et le reveil de trop.
+ * The shared counter is non-atomic **on purpose**: if the alternation slackened,
+ * both threads would touch it at once and the final total would say so. The test
+ * therefore detects both the lost wake-up - it would block - and the surplus
+ * wake-up.
  */
-/* Deux fils, deux semaphores, chacun rend la main a l'autre. */
+/* Two threads, two semaphores, each handing back to the other. */
 typedef struct {
     dkr_sem      *mine;
     dkr_sem      *other;
     int           rounds;
-    int           tag;          /* 0 ou 1 : quel fil doit courir a ce tour */
+    int           tag;          /* 0 or 1: which thread must run this round */
     volatile int *turn;
     volatile int *broken;
     volatile long *counter;
@@ -426,12 +425,12 @@ static void pp_body(void *arg)
             *p->broken = 1;
             return;
         }
-        /* Personne d'autre ne doit courir ici : c'est ce que l'alternance
-           stricte garantit, et ce que le compteur non atomique verifie. */
+        /* Nobody else must be running here: that is what the strict alternation
+           guarantees, and what the non-atomic counter checks. */
         if (*p->turn != p->tag) {
             *p->broken = 1;
         }
-        *p->counter = *p->counter + 1;   /* pas d'increment compose sur volatile */
+        *p->counter = *p->counter + 1;   /* no compound increment on volatile */
         *p->turn = 1 - p->tag;
         dkr_sem_signal(p->other, 1);
     }
@@ -467,7 +466,7 @@ static int run_pingpong(int rounds)
         return -1;
     }
 
-    /* Le coup d'envoi : un seul jeton, pour un seul fil. */
+    /* The kick-off: a single token, for a single thread. */
     dkr_sem_signal(&sem_a, 1);
 
     dkr_thread_join(ta);
@@ -483,18 +482,18 @@ static int run_pingpong(int rounds)
 
 static void test_pingpong(void)
 {
-    emit("Semaphore : aller-retour strict (motif du planificateur)\n");
-    expect("5000 allers-retours sans reveil perdu ni de trop",
+    emit("Semaphore: strict ping-pong (the scheduler's pattern)\n");
+    expect("5000 round trips with no wake-up lost or surplus",
            run_pingpong(PINGPONG_ROUNDS), 0);
 }
 
 /* ========================================================================== *
- * 7. Evenement a reinitialisation manuelle — reveil de tous
+ * 7. Manual-reset event - waking everybody
  * ========================================================================== *
  *
- * Ce qui est etabli : ce que le semaphore ne sait pas faire. Un `set` unique
- * libere tous les attendeurs, presents et a venir, sans que le signaleur ait a
- * connaitre leur nombre.
+ * What is established: what the semaphore cannot do. A single `set` releases
+ * every waiter, present and future, without the signaller having to know their
+ * number.
  */
 #define EVENT_WAITERS 4
 
@@ -519,10 +518,10 @@ static void test_event_broadcast(void)
     volatile long woken = 0;
     int i;
 
-    emit("Evenement a reinitialisation manuelle\n");
+    emit("Manual-reset event\n");
 
-    expect_true("initialisation, ferme", dkr_event_init(&e, 0) != 0);
-    expect("un evenement ferme ne laisse pas passer",
+    expect_true("initialises, closed", dkr_event_init(&e, 0) != 0);
+    expect("a closed event lets nobody through",
            dkr_event_wait_timeout(&e, 20), 0);
 
     arg.event = &e;
@@ -530,31 +529,31 @@ static void test_event_broadcast(void)
     for (i = 0; i < EVENT_WAITERS; i++) {
         threads[i] = dkr_thread_start(event_body, &arg, 0);
     }
-    dkr_sleep_ms(50);            /* laisser les quatre atteindre leur attente */
+    dkr_sleep_ms(50);            /* let all four reach their wait */
 
-    dkr_event_set(&e);           /* un seul signal pour quatre attendeurs */
+    dkr_event_set(&e);           /* a single signal for four waiters */
     for (i = 0; i < EVENT_WAITERS; i++) {
         if (threads[i]) { dkr_thread_join(threads[i]); }
     }
-    expect("un seul set reveille les quatre", woken, EVENT_WAITERS);
+    expect("a single set wakes all four", woken, EVENT_WAITERS);
 
-    /* Il reste ouvert : c'est ce qui distingue « manuelle » d'« automatique ». */
-    expect_true("l'evenement reste ouvert apres le reveil",
+    /* It stays open: that is what distinguishes "manual" from "automatic". */
+    expect_true("the event stays open after the wake-up",
                 dkr_event_wait_timeout(&e, 20) != 0);
 
     dkr_event_reset(&e);
-    expect("apres reset, il refuse a nouveau",
+    expect("after reset, it refuses again",
            dkr_event_wait_timeout(&e, 20), 0);
     dkr_event_destroy(&e);
 }
 
 /* ========================================================================== *
- * 8. Variables locales au fil
+ * 8. Thread-local variables
  * ========================================================================== *
  *
- * Ce qui est etabli : chaque fil voit sa propre valeur, un fil qui n'a rien
- * pose lit zero, et les emplacements sont distribues sans collision. Les trois
- * emplacements correspondent aux trois `thread_local` de
+ * What is established: each thread sees its own value, a thread that has stored
+ * nothing reads zero, and the slots are handed out without collision. The three
+ * slots correspond to the three `thread_local`s in
  * `ultramodern/src/threads.cpp`.
  */
 #define TLS_THREADS 6
@@ -572,7 +571,7 @@ static void tls_body(void *arg)
     tls_arg *a = (tls_arg *)arg;
     int i;
 
-    /* Avant toute ecriture : un fil neuf lit zero. */
+    /* Before any write: a fresh thread reads zero. */
     if (dkr_tls_get(tls_slot_a) != 0 || dkr_tls_get(tls_slot_b) != 0) {
         __sync_fetch_and_add(a->mismatches, 1);
     }
@@ -580,8 +579,8 @@ static void tls_body(void *arg)
     dkr_tls_set(tls_slot_a, (void *)(uintptr_t)a->value);
     dkr_tls_set(tls_slot_b, (void *)(uintptr_t)(a->value * 7));
 
-    /* Relire apres avoir laisse les autres fils ecrire les leurs : c'est
-       l'isolement qui est teste, pas la memoire. */
+    /* Read back after letting the other threads write theirs: it is isolation
+       that is being tested, not memory. */
     for (i = 0; i < 200; i++) {
         dkr_yield();
         if (dkr_tls_get(tls_slot_a) != (void *)(uintptr_t)a->value ||
@@ -600,14 +599,14 @@ static void test_tls(void)
     int i;
     int extra;
 
-    emit("Variables locales au fil\n");
+    emit("Thread-local variables\n");
 
     tls_slot_a = dkr_tls_reserve();
     tls_slot_b = dkr_tls_reserve();
-    expect_true("deux emplacements distincts",
+    expect_true("two distinct slots",
                 tls_slot_a >= 0 && tls_slot_b >= 0 && tls_slot_a != tls_slot_b);
 
-    /* Le fil principal aussi : il n'est pas un cas particulier. */
+    /* The main thread too: it is not a special case. */
     dkr_tls_set(tls_slot_a, (void *)(uintptr_t)0xABCD);
 
     for (i = 0; i < TLS_THREADS; i++) {
@@ -619,37 +618,36 @@ static void test_tls(void)
         if (threads[i]) { dkr_thread_join(threads[i]); }
     }
 
-    expect("aucun fil n'a vu la valeur d'un autre", mismatches, 0);
-    expect("le fil principal a conserve la sienne",
+    expect("no thread saw another's value", mismatches, 0);
+    expect("the main thread kept its own",
            (long long)(uintptr_t)dkr_tls_get(tls_slot_a), 0xABCD);
 
-    /* Le stock est fini et le dit. Mieux vaut un -1 franc qu'un emplacement
-       silencieusement partage avec un autre usage. */
+    /* The stock is finite and says so. A frank -1 beats a slot silently shared
+       with another use. */
     extra = 0;
     while (dkr_tls_reserve() >= 0) {
         if (++extra > DKR_TLS_SLOTS + 4) {
-            break;              /* garde-fou : le distributeur ne s'arrete pas */
+            break;              /* guard rail: the dispenser does not stop */
         }
     }
-    expect("le distributeur s'epuise au compte annonce",
+    expect("the dispenser runs out at the announced count",
            extra, DKR_TLS_SLOTS - 2);
 }
 
 /* ========================================================================== *
- * 9. Le bouchon CreateSemaphoreW est neutralise    (cible uniquement)
+ * 9. The CreateSemaphoreW stub is neutralised      (target only)
  * ========================================================================== *
  *
- * Ce qui est etabli : sur la machine, `CreateSemaphoreW` rend un semaphore qui
- * fonctionne — et non le zero que rendrait le bouchon de KERNEL32.
+ * What is established: on the machine, `CreateSemaphoreW` returns a semaphore
+ * that works - and not the zero KERNEL32's stub would return.
  *
- * Cette epreuve est la seule du fichier qui n'ait pas d'equivalent sur l'hote,
- * et elle en vaut la peine : c'est elle qui separe une machine ou
- * `ultramodern` peut tourner d'une machine ou son planificateur se disloque en
- * silence. Elle echouerait sur un Windows 95 sans le pont de `compat.c`, ce qui
- * est exactement ce qu'on lui demande de surveiller.
+ * This test is the only one in the file with no host equivalent, and it is worth
+ * it: it is what separates a machine where `ultramodern` can run from a machine
+ * where its scheduler falls apart in silence. It would fail on a Windows 95
+ * without `compat.c`'s bridge, which is exactly what it is asked to watch.
  *
- * L'appel passe par la variante large **volontairement**. C'est le seul endroit
- * du projet ou elle est appelee de propos delibere.
+ * The call goes through the wide variant **on purpose**. It is the only place in
+ * the project where it is called deliberately.
  */
 #if defined(_WIN32)
 static void test_wide_semaphore_shim(void)
@@ -657,18 +655,18 @@ static void test_wide_semaphore_shim(void)
     HANDLE h;
     LONG   previous = 0;
 
-    emit("Bouchon CreateSemaphoreW neutralise\n");
+    emit("CreateSemaphoreW stub neutralised\n");
 
     h = CreateSemaphoreW(NULL, 0, 16, NULL);
-    expect_true("CreateSemaphoreW rend un descripteur", h != NULL);
+    expect_true("CreateSemaphoreW returns a handle", h != NULL);
     if (!h) {
-        /* Sans descripteur, la suite ne mesurerait que des echecs derives. */
+        /* With no handle, the rest would only measure derived failures. */
         return;
     }
-    expect_true("le semaphore rendu se signale",
+    expect_true("the returned semaphore signals",
                 ReleaseSemaphore(h, 1, &previous) != 0);
-    expect("il etait bien a zero avant", (long long)previous, 0);
-    expect("et le jeton se reprend",
+    expect("it was indeed at zero before", (long long)previous, 0);
+    expect("and the token is taken back",
            (long long)WaitForSingleObject(h, 1000), (long long)WAIT_OBJECT_0);
     CloseHandle(h);
 }
@@ -678,13 +676,13 @@ static void test_wide_semaphore_shim(void)
  * 10. Endurance
  * ========================================================================== *
  *
- * Les defauts de synchronisation sont rares et non deterministes. Une execution
- * de dix secondes ne les trouve pas ; c'est pourquoi le ticket demande dix
- * minutes sous charge, dans la machine emulee, et non une relecture.
+ * Synchronisation defects are rare and non-deterministic. A ten-second run does
+ * not find them; that is why the ticket asks for ten minutes under load, inside
+ * the emulated machine, and not a code review.
  *
- * La boucle enchaine les deux motifs qui peuvent perdre un reveil — l'aller-
- * retour du planificateur et la contention sur verrou — et s'arrete a la
- * premiere anomalie plutot qu'a la fin du temps imparti.
+ * The loop chains the two patterns that can lose a wake-up - the scheduler's
+ * ping-pong and lock contention - and stops at the first anomaly rather than at
+ * the end of the allotted time.
  */
 static int stress(unsigned long seconds)
 {
@@ -692,25 +690,25 @@ static int stress(unsigned long seconds)
     unsigned long elapsed;
     long          iterations = 0;
 
-    emit("Endurance : %lu secondes\n", seconds);
+    emit("Endurance: %lu seconds\n", seconds);
     fflush(stdout);
 
     for (;;) {
         if (run_pingpong(500) != 0) {
-            emit("  FAIL  aller-retour rompu au tour %ld\n", iterations);
+            emit("  FAIL  ping-pong broken at round %ld\n", iterations);
             return 1;
         }
 
         contention_counter = 0;
         if (!dkr_mutex_init(&contention_mutex)) {
-            emit("  FAIL  initialisation du verrou\n");
+            emit("  FAIL  the lock failed to initialise\n");
             return 1;
         }
         {
             dkr_thread *a = dkr_thread_start(contention_body, 0, 0);
             dkr_thread *b = dkr_thread_start(contention_body, 0, 0);
             if (!a || !b) {
-                emit("  FAIL  creation de fil\n");
+                emit("  FAIL  thread creation\n");
                 return 1;
             }
             dkr_thread_join(a);
@@ -718,31 +716,31 @@ static int stress(unsigned long seconds)
         }
         dkr_mutex_destroy(&contention_mutex);
         if (contention_counter != 2 * CONTENTION_ROUNDS) {
-            emit("  FAIL  increment perdu au tour %ld : %ld\n",
+            emit("  FAIL  increment lost at round %ld: %ld\n",
                    iterations, contention_counter);
             return 1;
         }
 
         iterations++;
-        /* Soustraction non signee : elle reste juste si `GetTickCount`
-           reboucle pendant l'epreuve, ce qui ne peut arriver qu'apres 49,7
-           jours mais ne coute rien a couvrir ici. */
+        /* Unsigned subtraction: it stays correct if `GetTickCount` wraps during
+           the test, which can only happen after 49.7 days but costs nothing to
+           cover here. */
         elapsed = now_ms() - start;
         if ((elapsed / 1000u) >= seconds) {
             break;
         }
         if ((iterations % 20) == 0) {
-            emit("  %lu s, %ld tours\n", elapsed / 1000u, iterations);
+            emit("  %lu s, %ld rounds\n", elapsed / 1000u, iterations);
             fflush(stdout);
         }
     }
 
-    emit("  ok    %ld tours sans reveil perdu ni interblocage\n", iterations);
+    emit("  ok    %ld rounds with no lost wake-up and no deadlock\n", iterations);
     return 0;
 }
 
 /* ========================================================================== *
- * Point d'entree
+ * Entry point
  * ========================================================================== */
 
 static void run_all(void)
@@ -774,16 +772,16 @@ int main(int argc, char **argv)
     }
 
 #if defined(_WIN32)
-    /* Sur la cible, le journal de demarrage est le seul canal qui survive a un
-       arret brutal. Sans ecran ni console, c'est lui qui portera la derniere
-       ligne ecrite avant un gel. */
-    if (dkr_win95_startup("Epreuve fils et synchronisation") != DKR_WIN95_STARTUP_OK) {
+    /* On the target, the startup log is the only channel that survives an abrupt
+       stop. With no screen and no console, it is what will carry the last line
+       written before a freeze. */
+    if (dkr_win95_startup("Threading and synchronisation test") != DKR_WIN95_STARTUP_OK) {
         return 2;
     }
-    /* Ouvert avant la premiere epreuve, pas apres la derniere : un compte rendu
-       ecrit a la fin ne dit rien de l'epreuve qui a fige la machine.
-       Deux noms, pour que l'endurance n'ecrase pas le resultat de la suite —
-       les deux se lancent dans le meme demarrage de la machine. */
+    /* Opened before the first test, not after the last: a report written at the
+       end says nothing about the test that froze the machine. Two names, so that
+       the endurance run does not overwrite the suite's result - both are launched
+       within the same boot of the machine. */
     report_file = fopen(stress_seconds > 0 ? "D:\\STRESS.LOG"
                                            : "D:\\THREADS.LOG", "w");
 #else
@@ -796,7 +794,7 @@ int main(int argc, char **argv)
 #endif
 
     if (!dkr_threading_init()) {
-        emit("ECHEC : dkr_threading_init\n");
+        emit("FAIL: dkr_threading_init\n");
         return 2;
     }
 
@@ -804,19 +802,19 @@ int main(int argc, char **argv)
         rc = stress(stress_seconds);
     } else {
         run_all();
-        emit("\n%d controles, %d echec(s)\n", checks, failures);
+        emit("\n%d checks, %d failure(s)\n", checks, failures);
         rc = failures != 0;
     }
 
     dkr_threading_shutdown();
 
-    emit("resultat : %s\n", rc == 0 ? "OK" : "ECHEC");
+    emit("result: %s\n", rc == 0 ? "OK" : "FAILED");
     if (report_file) {
         fclose(report_file);
         report_file = NULL;
     }
 #if defined(_WIN32)
-    dkr_win95_log(rc == 0 ? "epreuve : OK" : "epreuve : ECHEC");
+    dkr_win95_log(rc == 0 ? "test: OK" : "test: FAILED");
 #endif
 
     return rc;

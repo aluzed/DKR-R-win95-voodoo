@@ -1,10 +1,10 @@
-/* E02-S02 — epreuve du pont C++, dans les formes exactes qu'`ultramodern` emploie.
+/* E02-S02 - the C++ bridge tested, in the exact forms `ultramodern` uses.
  *
- * Le pont n'a pas a etre un `std::thread` complet : il a a etre correct sur les
- * quelques formes que le code appelant utilise vraiment. Chaque epreuve ci-dessous
- * reproduit donc une ligne reelle d'`ultramodern`, citee devant elle.
+ * The bridge does not have to be a complete `std::thread`: it has to be correct
+ * on the few forms the calling code actually uses. Every test below therefore
+ * reproduces a real line of `ultramodern`, quoted above it.
  *
- * Comme `test_threading.cpp`, une seule source pour les deux cibles.
+ * Like `test_threading.cpp`, one source for both targets.
  */
 #include <stdio.h>
 #include <stdint.h>
@@ -33,7 +33,7 @@ static void expect(const char *what, long long got, long long want)
     if (got == want) {
         printf("  ok    %-52s %lld\n", what, got);
     } else {
-        printf("  FAIL  %-52s attendu %lld, obtenu %lld\n", what, want, got);
+        printf("  FAIL  %-52s expected %lld, got %lld\n", what, want, got);
         failures++;
     }
     fflush(stdout);
@@ -48,22 +48,22 @@ static void expect_true(const char *what, int cond)
 }
 
 /* ========================================================================== *
- * 1. Construction variadique, comme threads.cpp:273
+ * 1. Variadic construction, as in threads.cpp:273
  * ========================================================================== *
  *
  *   context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint,
  *                                      arg, t->context};
  *
- * Quatre arguments, de types differents, et une affectation par deplacement sur
- * un membre construit par defaut. C'est la forme la plus exigeante du fichier.
+ * Four arguments, of different types, and a move assignment onto a
+ * default-constructed member. It is the most demanding form in the file.
  */
 static volatile long   v_sum   = 0;
 static volatile long   v_calls = 0;
 
 static void four_args(uint8_t *rdram, int id, const char *name, void *ctx)
 {
-    /* Les valeurs sont verifiees dans le fil, pas apres : c'est le passage
-       d'arguments qui est teste. */
+    /* The values are checked inside the thread, not afterwards: it is argument
+       passing that is being tested. */
     if (rdram == (uint8_t *)0x1234 && id == 7 &&
         strcmp(name, "gfx") == 0 && ctx == (void *)0xABCD) {
         __sync_fetch_and_add(&v_sum, 1);
@@ -73,28 +73,28 @@ static void four_args(uint8_t *rdram, int id, const char *name, void *ctx)
 
 static void test_variadic_construction(void)
 {
-    thread t;                       /* membre construit par defaut */
+    thread t;                       /* default-constructed member */
 
-    puts("Construction variadique et affectation par deplacement");
-    expect_true("un fil construit par defaut n'est pas joignable", !t.joinable());
+    puts("Variadic construction and move assignment");
+    expect_true("a default-constructed thread is not joinable", !t.joinable());
 
     v_sum = 0; v_calls = 0;
     t = thread{four_args, (uint8_t *)0x1234, 7, "gfx", (void *)0xABCD};
-    expect_true("il devient joignable", t.joinable());
+    expect_true("it becomes joinable", t.joinable());
     t.join();
-    expect_true("et ne l'est plus apres join", !t.joinable());
+    expect_true("and is not joinable after join", !t.joinable());
 
-    expect("le corps a ete appele une fois", v_calls, 1);
-    expect("les quatre arguments sont arrives intacts", v_sum, 1);
+    expect("the body was called once", v_calls, 1);
+    expect("the four arguments arrived intact", v_sum, 1);
 }
 
 /* ========================================================================== *
- * 2. Les arguments sont copies, comme le fait std::thread
+ * 2. The arguments are copied, as std::thread does
  * ========================================================================== *
  *
- * `events.cpp:576` passe `&gfx_thread_ready`, une variable locale — mais aussi
- * `rdram`, une valeur. Un pont qui garderait des references sur ses arguments
- * lirait une pile morte des que l'appelant rendrait la main.
+ * `events.cpp:576` passes `&gfx_thread_ready`, a local variable - but also
+ * `rdram`, a value. A bridge that kept references to its arguments would read a
+ * dead stack as soon as the caller returned.
  */
 static volatile long copied_ok = 0;
 
@@ -107,26 +107,26 @@ static void test_arguments_are_copied(void)
 {
     thread t;
 
-    puts("Les arguments sont copies, pas referencees");
+    puts("The arguments are copied, not referenced");
     copied_ok = 0;
     {
         int local = 99;
         t = thread{takes_value, local};
-        local = 0;              /* si l'argument etait une reference, le fil lirait 0 */
+        local = 0;              /* if the argument were a reference, the thread would read 0 */
     }
     t.join();
-    expect("le fil a vu la valeur du moment de la construction", copied_ok, 1);
+    expect("the thread saw the value as of construction time", copied_ok, 1);
 }
 
 /* ========================================================================== *
- * 3. detach, comme timer.cpp:144-145
+ * 3. detach, as in timer.cpp:144-145
  * ========================================================================== *
  *
  *   timer_context.thread = std::thread{ timer_thread, PASS_RDRAM1 };
  *   timer_context.thread.detach();
  *
- * Detache immediatement apres construction — le cas ou le descripteur meurt
- * avant que le fil n'ait demarre.
+ * Detached immediately after construction - the case where the handle dies
+ * before the thread has started.
  */
 static dkr_sem detach_done;
 
@@ -140,23 +140,23 @@ static void test_detach(void)
 {
     thread t;
 
-    puts("Detachement immediat");
+    puts("Immediate detach");
     dkr_sem_init(&detach_done, 0);
 
     t = thread{detached_body, 5};
     t.detach();
-    expect_true("apres detach, plus joignable", !t.joinable());
-    expect_true("le fil detache s'est bien execute",
+    expect_true("after detach, no longer joinable", !t.joinable());
+    expect_true("the detached thread did run",
                 dkr_sem_wait_timeout(&detach_done, 5000) != 0);
     dkr_sem_destroy(&detach_done);
 }
 
 /* ========================================================================== *
- * 4. lock_guard sous ses deux formes, comme events.cpp et renderer_context.cpp
+ * 4. lock_guard in both forms, as in events.cpp and renderer_context.cpp
  * ========================================================================== *
  *
  *   std::lock_guard lock{ events_context.message_mutex };      (deduction)
- *   std::lock_guard<std::mutex> lock(graphic_config_mutex);    (explicite)
+ *   std::lock_guard<std::mutex> lock(graphic_config_mutex);    (explicit)
  */
 #define GUARD_ROUNDS 20000
 
@@ -167,10 +167,10 @@ static void guard_body(int form)
 {
     for (int i = 0; i < GUARD_ROUNDS; i++) {
         if (form == 0) {
-            lock_guard lock{ guard_mutex };            /* forme par deduction */
+            lock_guard lock{ guard_mutex };            /* deduced form */
             guard_counter++;
         } else {
-            lock_guard<mutex> lock(guard_mutex);       /* forme explicite */
+            lock_guard<mutex> lock(guard_mutex);       /* explicit form */
             guard_counter++;
         }
     }
@@ -178,7 +178,7 @@ static void guard_body(int form)
 
 static void test_lock_guard(void)
 {
-    puts("lock_guard, deduction et forme explicite");
+    puts("lock_guard, deduction and explicit form");
     guard_counter = 0;
 
     thread a{guard_body, 0};
@@ -186,16 +186,16 @@ static void test_lock_guard(void)
     a.join();
     b.join();
 
-    expect("aucun increment perdu", guard_counter, 2 * GUARD_ROUNDS);
+    expect("no increment lost", guard_counter, 2 * GUARD_ROUNDS);
 }
 
 /* ========================================================================== *
- * 5. Les fautes de cycle de vie sont signalees
+ * 5. Lifetime faults are reported
  * ========================================================================== *
  *
- * `std::thread` appelle `std::terminate` si on detruit un fil joignable, ou si
- * on ecrase par affectation un fil joignable. Le pont doit avoir le meme
- * caractere : une faute bruyante, pas une fuite discrete.
+ * `std::thread` calls `std::terminate` if a joinable thread is destroyed, or if
+ * a joinable thread is overwritten by assignment. The bridge must have the same
+ * character: a loud fault, not a quiet leak.
  */
 static int fatal_seen = 0;
 
@@ -205,44 +205,45 @@ static void noop(void) {}
 
 static void test_lifetime_faults(void)
 {
-    puts("Fautes de cycle de vie");
+    puts("Lifetime faults");
     dkr_threading_set_fatal_handler(capture_fatal);
 
-    /* Ecraser un fil encore joignable. */
+    /* Overwrite a still-joinable thread. */
     fatal_seen = 0;
     {
         thread t{noop};
         thread u{noop};
-        t = static_cast<thread &&>(u);      /* t est encore joignable : faute */
-        expect("l'ecrasement d'un fil joignable est signale", fatal_seen, 1);
-        /* Le gestionnaire a rendu la main, donc l'affectation a eu lieu : `t`
-           tient desormais le fil de `u`, et `u` est vide. Un seul join. */
+        t = static_cast<thread &&>(u);      /* t is still joinable: a fault */
+        expect("overwriting a joinable thread is reported", fatal_seen, 1);
+        /* The handler returned, so the assignment took place: `t` now holds
+           `u`'s thread, and `u` is empty. One join only. */
         t.join();
     }
 
-    /* join sur un fil deja joint. */
+    /* join on an already joined thread. */
     fatal_seen = 0;
     {
         thread t{noop};
         t.join();
         t.join();
-        expect("le double join est signale", fatal_seen, 1);
+        expect("the double join is reported", fatal_seen, 1);
     }
 
     dkr_threading_set_fatal_handler(0);
 }
 
 /* ========================================================================== *
- * 6. Variable de condition — la file de messages du patch 0013
+ * 6. Condition variable - patch 0013's message queue
  * ========================================================================== *
  *
- * Reproduction litterale d'`ExternalMessageQueue` : un producteur depose sous
- * verrou puis `notify_one`, un consommateur attend sur `wait(lock, predicat)`.
+ * A literal reproduction of `ExternalMessageQueue`: a producer deposits under
+ * the lock then calls `notify_one`, a consumer waits on
+ * `wait(lock, predicate)`.
  *
- * Ce qui est etabli : rien ne se perd. Le producteur emet ses N messages aussi
- * vite qu'il peut, sans se soucier de savoir si le consommateur est deja en
- * attente — c'est exactement la fenetre ou une variable de condition mal batie
- * perd un reveil, et ou le consommateur s'endormirait pour toujours.
+ * What is established: nothing is lost. The producer emits its N messages as
+ * fast as it can, without caring whether the consumer is already waiting - that
+ * is exactly the window where a badly built condition variable loses a wake-up,
+ * and where the consumer would sleep forever.
  */
 #define CV_MESSAGES 3000
 
@@ -276,50 +277,49 @@ static void cv_consumer(int n)
 
 static void test_condition_variable(void)
 {
-    puts("Variable de condition : producteur / consommateur");
+    puts("Condition variable: producer / consumer");
 
     q_count = 0; q_consumed = 0; q_sum = 0;
 
-    /* Le consommateur demarre en premier et attend a vide ; puis le producteur
-       le double. Les deux ordres sont ainsi exerces. */
+    /* The consumer starts first and waits on an empty queue; then the producer
+       overtakes it. Both orders are thus exercised. */
     thread c{cv_consumer, CV_MESSAGES};
     thread p{cv_producer, CV_MESSAGES};
     p.join();
     c.join();
 
-    expect("tous les messages consommes", q_consumed, CV_MESSAGES);
-    expect("et aucun perdu ni compte deux fois", q_sum,
+    expect("every message consumed", q_consumed, CV_MESSAGES);
+    expect("and none lost or counted twice", q_sum,
            (long long)CV_MESSAGES * (CV_MESSAGES + 1) / 2);
 }
 
 /* ========================================================================== *
- * 7. Le signal emis avant l'attente n'est pas perdu
+ * 7. A signal emitted before the wait is not lost
  * ========================================================================== *
  *
- * La fenetre dangereuse, isolee : le producteur depose **tout** avant que le
- * consommateur n'existe. Une variable de condition sans memoire — et une
- * variable de condition n'en a pas — ne reveillerait personne ; c'est le
- * predicat qui doit sauver l'attente. On verifie que la combinaison des deux
- * tient.
+ * The dangerous window, isolated: the producer deposits **everything** before
+ * the consumer exists. A condition variable with no memory - and a condition
+ * variable has none - would wake nobody; it is the predicate that must save the
+ * wait. We check that the combination of the two holds.
  */
 static void test_notify_before_wait(void)
 {
-    puts("Signal avant attente");
+    puts("Signal before wait");
 
     q_count = 0; q_consumed = 0; q_sum = 0;
 
-    cv_producer(10);                /* tout est depose, personne n'attend */
-    q_cond.notify_all();            /* et le reveil part dans le vide */
+    cv_producer(10);                /* everything deposited, nobody waiting */
+    q_cond.notify_all();            /* and the wake-up goes nowhere */
 
-    thread c{cv_consumer, 10};      /* le consommateur n'arrive qu'apres */
+    thread c{cv_consumer, 10};      /* the consumer only arrives afterwards */
     c.join();
 
-    expect("les dix messages sont retrouves", q_consumed, 10);
-    expect("somme intacte", q_sum, 55);
+    expect("the ten messages are found again", q_consumed, 10);
+    expect("sum intact", q_sum, 55);
 }
 
 /* ========================================================================== *
- * 8. notify_all reveille tous les attendeurs
+ * 8. notify_all wakes every waiter
  * ========================================================================== */
 static mutex              bc_mutex;
 static condition_variable bc_cond;
@@ -342,7 +342,7 @@ static void test_notify_all(void)
     thread w1{bc_waiter, 1};
     thread w2{bc_waiter, 2};
     thread w3{bc_waiter, 3};
-    dkr_sleep_ms(60);               /* les trois atteignent leur attente */
+    dkr_sleep_ms(60);               /* all three reach their wait */
 
     {
         lock_guard lock{ bc_mutex };
@@ -351,18 +351,17 @@ static void test_notify_all(void)
     bc_cond.notify_all();
 
     w1.join(); w2.join(); w3.join();
-    expect("un seul notify_all reveille les trois", bc_woken, 3);
+    expect("a single notify_all wakes all three", bc_woken, 3);
 }
 
 /* ========================================================================== *
- * 9. wait_for expire, et rend le verrou repris
+ * 9. wait_for times out, and returns with the lock retaken
  * ========================================================================== *
  *
- * C'est la forme de `wait_external_message` : une boucle qui reteste sa
- * condition toutes les millisecondes. Deux choses doivent tenir — l'expiration
- * doit se produire quand rien n'arrive, et le verrou doit etre **repris** au
- * retour, sans quoi le `while` de l'appelant lirait sa condition sans
- * protection.
+ * This is `wait_external_message`'s shape: a loop that retests its condition
+ * every millisecond. Two things must hold - the timeout must happen when nothing
+ * arrives, and the lock must be **retaken** on return, otherwise the caller's
+ * `while` would read its condition unprotected.
  */
 static mutex              to_mutex;
 static condition_variable to_cond;
@@ -370,20 +369,20 @@ static bool               to_flag = false;
 
 static void test_wait_for_timeout(void)
 {
-    puts("wait_for : expiration et reprise du verrou");
+    puts("wait_for: timeout and lock retaken");
 
     {
         unique_lock lock{ to_mutex };
         cv_status s = to_cond.wait_for(lock, std::chrono::milliseconds{30});
-        expect("expire quand rien n'arrive",
+        expect("times out when nothing arrives",
                (long long)(s == cv_status::timeout), 1);
-        expect_true("le verrou est repris au retour", lock.owns_lock());
-        /* Preuve independante : si le verrou n'etait pas tenu, ce try_lock
-           depuis ce meme fil reussirait au lieu d'echouer. */
-        expect("le verrou est bien tenu par nous", (long long)to_mutex.try_lock(), 0);
+        expect_true("the lock is retaken on return", lock.owns_lock());
+        /* Independent proof: if the lock were not held, this try_lock from the
+           same thread would succeed instead of failing. */
+        expect("the lock is indeed held by us", (long long)to_mutex.try_lock(), 0);
     }
 
-    /* Et il expire *non* quand un signal arrive. */
+    /* And it does *not* time out when a signal arrives. */
     to_flag = false;
     thread s{[](int) {
         dkr_sleep_ms(20);
@@ -393,37 +392,37 @@ static void test_wait_for_timeout(void)
     {
         unique_lock lock{ to_mutex };
         cv_status st = to_cond.wait_for(lock, std::chrono::milliseconds{4000});
-        expect("ne rend pas timeout quand le signal arrive",
+        expect("does not return timeout when the signal arrives",
                (long long)(st == cv_status::no_timeout), 1);
-        expect_true("et la condition est vraie", to_flag);
+        expect_true("and the condition is true", to_flag);
     }
     s.join();
 }
 
 /* ========================================================================== *
- * 10. Passage de relais repete — la fenetre du reveil perdu, martelee
+ * 10. Repeated hand-off - the lost-wake-up window, hammered
  * ========================================================================== *
  *
- * Les epreuves precedentes exercent la variable de condition, mais mal la
- * fenetre qui la rend delicate : celle entre le relachement du verrou de
- * l'appelant et l'inscription de l'attendeur. Un signal emis la doit etre
- * conserve ; s'il tombe, l'attendeur dort pour toujours.
+ * The previous tests exercise the condition variable, but poorly exercise the
+ * window that makes it delicate: the one between releasing the caller's lock and
+ * registering the waiter. A signal emitted there must be kept; if it falls, the
+ * waiter sleeps forever.
  *
- * Dans un flot producteur/consommateur ordinaire, un reveil perdu passe
- * inapercu — le message suivant en emet un autre, qui rattrape. Le seul moyen
- * de le rendre visible est de faire en sorte qu'il n'y ait **jamais** de message
- * suivant : un relais strict, un message a la fois, ou le consommateur doit
- * necessairement s'endormir et ou rien d'autre ne viendra le reveiller.
+ * In an ordinary producer/consumer flow, a lost wake-up goes unnoticed - the
+ * next message emits another one, which catches up. The only way to make it
+ * visible is to arrange that there is **never** a next message: a strict
+ * hand-off, one message at a time, where the consumer must necessarily fall
+ * asleep and where nothing else will come to wake it.
  *
- * Chaque tour retraverse la fenetre. Un ordonnancement fautif finit par tomber
- * dedans, et l'epreuve ne se termine plus.
+ * Every round crosses the window again. A faulty ordering eventually falls into
+ * it, and the test stops terminating.
  */
 #define HANDOFF_ROUNDS 20000
 
 static mutex              ho_mutex;
 static condition_variable ho_to_consumer;
 static condition_variable ho_to_producer;
-static int                ho_item  = 0;      /* 0 : vide, 1 : plein */
+static int                ho_item  = 0;      /* 0: empty, 1: full */
 static long               ho_taken = 0;
 
 static void handoff_consumer(int rounds)
@@ -439,7 +438,7 @@ static void handoff_consumer(int rounds)
 
 static void test_handoff(void)
 {
-    puts("Passage de relais strict (fenetre du reveil perdu)");
+    puts("Strict hand-off (the lost-wake-up window)");
     ho_item = 0; ho_taken = 0;
 
     thread c{handoff_consumer, HANDOFF_ROUNDS};
@@ -452,7 +451,7 @@ static void test_handoff(void)
     }
     c.join();
 
-    expect("20000 relais sans reveil perdu", ho_taken, HANDOFF_ROUNDS);
+    expect("20000 hand-offs without a lost wake-up", ho_taken, HANDOFF_ROUNDS);
 }
 
 /* ========================================================================== */
@@ -460,12 +459,12 @@ static void test_handoff(void)
 int main(void)
 {
 #if defined(_WIN32)
-    if (dkr_win95_startup("Epreuve du pont C++") != DKR_WIN95_STARTUP_OK) {
+    if (dkr_win95_startup("C++ bridge test") != DKR_WIN95_STARTUP_OK) {
         return 2;
     }
 #endif
     if (!dkr_threading_init()) {
-        puts("ECHEC : dkr_threading_init");
+        puts("FAIL: dkr_threading_init");
         return 2;
     }
 
@@ -480,14 +479,14 @@ int main(void)
     test_wait_for_timeout();
     test_handoff();
 
-    printf("\n%d controles, %d echec(s)\n", checks, failures);
+    printf("\n%d checks, %d failure(s)\n", checks, failures);
     dkr_threading_shutdown();
 
 #if defined(_WIN32)
     {
         FILE *f = fopen("D:\\THRCPP.LOG", "w");
         if (f) {
-            fprintf(f, "pont C++ : %d controles, %d echec(s)\n", checks, failures);
+            fprintf(f, "C++ bridge: %d checks, %d failure(s)\n", checks, failures);
             fclose(f);
         }
     }
