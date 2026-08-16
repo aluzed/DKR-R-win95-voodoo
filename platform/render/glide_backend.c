@@ -168,6 +168,7 @@ static struct {
 typedef struct {
     unsigned long long key;
     unsigned int       address;
+    unsigned int       bytes;    /* ce qu'elle occupe, pour detecter le recouvrement */
     GrTexInfo          info;
     unsigned char      tmu;      /* sur quelle unite elle reside */
     unsigned char      live;
@@ -664,8 +665,43 @@ static dkr_texture_handle gl_texture_upload(void *self,
         return 0;
     }
 
+    /* --- Faire suivre la table les evictions de l'allocateur ---------------- *
+     *
+     * La table de descripteurs et l'allocateur de TMU avaient des vies
+     * independantes, et c'etait un defaut a deux faces :
+     *
+     *   - **Une texture evincee gardait son emplacement `live`.** Les 512
+     *     emplacements se remplissaient en une douzaine d'images — DKR en charge
+     *     une quarantaine par image — puis `slot < 0` refusait tout. Mesure sur
+     *     la machine : 25 853 chargements pour **21 195 refus**.
+     *
+     *   - **Pire que le refus** : tant que l'emplacement vivait, il designait de
+     *     la memoire que l'allocateur avait reattribuee. C'est exactement le
+     *     symptome que le commentaire de `tex_required` redoute plus haut — un
+     *     decor portant le motif d'un autre, a un endroit qui depend de l'ordre
+     *     de chargement.
+     *
+     * On invalide donc tout emplacement de la meme unite dont la plage recouvre
+     * celle qu'on vient d'obtenir. L'allocateur reste seul juge de ce qui reside
+     * ou ; la table se contente de le suivre, ce qui est la seule facon qu'elle
+     * ne mente pas. Le balayage coute 512 comparaisons par chargement, soit
+     * quelques dizaines de milliers par image — negligeable devant une seule
+     * conversion de texture. */
+    {
+        int j;
+        for (j = 0; j < GLIDE_MAX_TEXTURES; j++) {
+            if (j == slot || !g_tex[j].live) { continue; }
+            if (g_tex[j].tmu != g_tex[slot].tmu) { continue; }
+            if (g_tex[j].address < address + bytes &&
+                address < g_tex[j].address + g_tex[j].bytes) {
+                g_tex[j].live = 0;
+            }
+        }
+    }
+
     g_tex[slot].key     = desc->key;
     g_tex[slot].address = address;
+    g_tex[slot].bytes   = bytes;
     g_tex[slot].info    = info;
     g_tex[slot].info.data = 0;   /* les pixels ne nous appartiennent pas */
     g_tex[slot].live    = 1;
