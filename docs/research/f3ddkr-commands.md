@@ -1,145 +1,142 @@
-# Le microcode F3DDKR, commande par commande
+# The F3DDKR microcode, command by command
 
-Cartographie établie en lisant `runtime-recomp/src/game/f3ddkr_rt64.cpp`, le
-décodeur qui tourne aujourd'hui. Elle a une valeur propre : c'est la description
-du microcode de Rare, indépendante de ce portage et du moteur de rendu employé.
+A map established by reading `runtime-recomp/src/game/f3ddkr_rt64.cpp`, the
+decoder that runs today. It has a value of its own: it is a description of Rare's
+microcode, independent of this port and of the rendering engine used.
 
-Toutes les commandes font **deux mots de 32 bits**, `w0` puis `w1`, `w0` portant
-l'opcode dans son octet de poids fort.
+Every command is **two 32-bit words**, `w0` then `w1`, `w0` carrying the opcode in
+its high byte.
 
-## Les treize opcodes
+## The thirteen opcodes
 
-| Opcode | Nom | Rôle |
+| Opcode | Name | Role |
 |---:|---|---|
-| `0x01` | `Matrix` | charge une matrice depuis RDRAM, sélectionne un emplacement |
-| `0x02` | `TextureOffset` | décalage appliqué aux coordonnées de texture |
-| `0x03` | `MoveMem` | écriture d'un bloc de mémoire du RSP |
-| `0x04` | `Vertex` | charge des sommets dans le cache de 32 entrées |
-| `0x05` | `Triangle` | dessine des triangles indexés sur ce cache |
-| `0x06` | `DisplayListBranch` | branchement ou appel d'une liste imbriquée |
-| `0x07` | `CountedDisplayList` | liste dont le nombre de commandes est donné |
-| `0xB8` | `EndDisplayList` | retour de liste, ou fin |
-| `0xBC` | `MoveWord` | écriture d'un mot d'état |
-| `0xBF` | `DMAOffsets` | **bases d'adressage des matrices et des sommets** |
-| `0xF3` | `LoadBlock` | charge un bloc de texels |
-| `0xF6` | `FillRect` | rectangle plein |
-| `0xFD` | `SetTextureImage` | adresse, format et taille de l'image de texture |
+| `0x01` | `Matrix` | loads a matrix from RDRAM, selects a slot |
+| `0x02` | `TextureOffset` | offset applied to the texture coordinates |
+| `0x03` | `MoveMem` | writes a block of the RSP's memory |
+| `0x04` | `Vertex` | loads vertices into the 32-entry cache |
+| `0x05` | `Triangle` | draws triangles indexed into that cache |
+| `0x06` | `DisplayListBranch` | branch to, or call, a nested list |
+| `0x07` | `CountedDisplayList` | a list whose command count is given |
+| `0xB8` | `EndDisplayList` | return from a list, or end |
+| `0xBC` | `MoveWord` | writes a state word |
+| `0xBF` | `DMAOffsets` | **addressing bases for the matrices and the vertices** |
+| `0xF3` | `LoadBlock` | loads a block of texels |
+| `0xF6` | `FillRect` | solid rectangle |
+| `0xFD` | `SetTextureImage` | address, format and size of the texture image |
 
-Un quatorzième gestionnaire, `PresentationGroup`, n'a pas d'opcode : il est
-atteint par `MoveWord` avec le type `0xFE` et un mot magique — voir plus bas.
+A fourteenth handler, `PresentationGroup`, has no opcode: it is reached through
+`MoveWord` with type `0xFE` and a magic word — see below.
 
-## `DMAOffsets` (0xBF) — le mécanisme central
+## `DMAOffsets` (0xBF) — the central mechanism
 
 ```
-w0 : base des matrices   (masquée par 0x00FFFFFF)
-w1 : base des sommets    (masquée par 0x00FFFFFF)
+w0 : matrix base   (masked by 0x00FFFFFF)
+w1 : vertex base   (masked by 0x00FFFFFF)
 ```
 
-C'est **la spécificité du microcode de Rare**, et le point où une erreur ne
-pardonne pas : matrices et sommets ne sont pas adressés absolument mais par des
-décalages relatifs à ces deux bases. Une base fausse ne produit pas un plantage
-mais une géométrie entièrement absurde, ce qui est bien plus difficile à
-diagnostiquer.
+This is **Rare's microcode's distinguishing feature**, and the point where an
+error is unforgiving: matrices and vertices are not addressed absolutely but by
+offsets relative to those two bases. A wrong base does not produce a crash but
+entirely absurd geometry, which is far harder to diagnose.
 
 ## `Vertex` (0x04)
 
 ```
-w0  bit 16      : ajouter au lot courant plutôt que le remplacer
-    bits 19..23 : nombre de sommets, moins un
-    bits  9..13 : index de destination dans le cache
-w1              : adresse, relative à la base des sommets
+w0  bit 16      : add to the current batch rather than replace it
+    bits 19..23 : number of vertices, minus one
+    bits  9..13 : destination index in the cache
+w1              : address, relative to the vertex base
 ```
 
-Chaque sommet occupe **dix octets** : `x`, `y`, `z` en entiers 16 bits signés,
-puis `r`, `g`, `b`, `a` en octets. **Il ne porte pas de coordonnées de texture**
-— celles-ci arrivent par coin au moment du triangle, ce qui décide de la forme de
-l'interface de rendu (E04-S01).
+Each vertex occupies **ten bytes**: `x`, `y`, `z` as signed 16-bit integers, then
+`r`, `g`, `b`, `a` as bytes. **It carries no texture coordinates** — those arrive
+per corner at triangle time, which decides the shape of the rendering interface
+(E04-S01).
 
-Le cache compte **32 entrées**.
+The cache holds **32 entries**.
 
 ## `Triangle` (0x05)
 
 ```
-w0  bits 16..19 : état de texture (activation)
-    bits 20..23 : nombre de triangles, moins un
-w1              : adresse de la table de triangles
+w0  bits 16..19 : texture state (enable)
+    bits 20..23 : number of triangles, minus one
+w1              : address of the triangle table
 ```
 
-Chaque triangle occupe **seize octets** :
+Each triangle occupies **sixteen bytes**:
 
-| Décalage | Contenu |
+| Offset | Contents |
 |---:|---|
-| 0 | drapeaux — le bit `0x40` désactive la culling |
-| 1, 2, 3 | les trois index dans le cache de sommets |
-| 4, 6 | `s`, `t` du premier coin, en 16 bits signés |
-| 8, 10 | `s`, `t` du deuxième coin |
-| 12, 14 | `s`, `t` du troisième coin |
+| 0 | flags — bit `0x40` disables culling |
+| 1, 2, 3 | the three indices into the vertex cache |
+| 4, 6 | `s`, `t` of the first corner, as signed 16-bit |
+| 8, 10 | `s`, `t` of the second corner |
+| 12, 14 | `s`, `t` of the third corner |
 
-Le sens de culling dépend du **signe de l'échelle en x de la fenêtre
-d'affichage** : positif, on élimine les faces arrière ; négatif, les faces avant.
+The culling direction depends on the **sign of the viewport's x scale**: positive,
+back faces are eliminated; negative, front faces.
 
 ## `Matrix` (0x01)
 
 ```
-w0  bits  0..15 : doit valoir 64 — sinon la commande est ignorée
-    bits 16..19 : emplacement, ou 0
-    bits 22..23 : emplacement de repli quand le précédent vaut 0
-w1              : adresse, relative à la base des matrices
+w0  bits  0..15 : must be 64 — otherwise the command is ignored
+    bits 16..19 : slot, or 0
+    bits 22..23 : fallback slot when the previous is 0
+w1              : address, relative to the matrix base
 ```
 
-Trois emplacements au plus ; l'index est borné à 2. La matrice fait 64 octets.
+Three slots at most; the index is clamped to 2. The matrix is 64 bytes.
 
 ## `MoveWord` (0xBC)
 
 ```
 w0  bits 0..7 : type
-w1            : valeur
+w1            : value
 ```
 
-| Type | Effet |
+| Type | Effect |
 |---:|---|
-| `0x02` | mode panneau d'affichage — le bit 0 de `w1` |
-| `0x0A` | sélection de matrice — bits 6..7 de `w1`, borné à 2 |
-| `0xFE` | groupe de présentation, si `w1 & ~0xFF` vaut `0x444B5200` |
+| `0x02` | billboard mode — bit 0 of `w1` |
+| `0x0A` | matrix selection — bits 6..7 of `w1`, clamped to 2 |
+| `0xFE` | presentation group, if `w1 & ~0xFF` is `0x444B5200` |
 
-Le groupe de présentation est une **extension du portage**, pas du microcode
-d'origine : le mot magique `'DKR\0'` distingue les commandes ajoutées par le
-moteur moderne de celles du jeu. Ses modes sont l'ombre (2), la pièce de
-véhicule (4), le panneau d'affichage (6) et la surface (7).
+The presentation group is **an extension of the port**, not of the original
+microcode: the magic word `'DKR\0'` distinguishes the commands added by the modern
+engine from the game's own. Its modes are the shadow (2), the vehicle part (4),
+the billboard (6) and the surface (7).
 
-## Contrôle de flux
+## Flow control
 
-`DisplayListBranch` (0x06) branche ou appelle selon un drapeau ; l'adresse cible
-est masquée par `0x00FFFFF8` — **alignée sur huit octets**, la taille d'une
-commande. `EndDisplayList` (0xB8) dépile. `CountedDisplayList` (0x07) porte son
-nombre de commandes dans les bits 16..23 de `w0`.
+`DisplayListBranch` (0x06) branches or calls according to a flag; the target
+address is masked by `0x00FFFFF8` — **aligned on eight bytes**, one command's
+size. `EndDisplayList` (0xB8) pops. `CountedDisplayList` (0x07) carries its
+command count in bits 16..23 of `w0`.
 
-La pile de retour compte **32 entrées**.
+The return stack holds **32 entries**.
 
-## La validation des plages, et pourquoi elle survit à l'extraction
+## Range validation, and why it survives the extraction
 
-Le décodeur actuel **valide toutes les plages avant de les utiliser**, et rejette
-les données invalides par une erreur bornée plutôt que de laisser adresser la
-mémoire hôte.
+The current decoder **validates every range before using it**, and rejects invalid
+data with a bounded error rather than letting the host's memory be addressed.
 
-| Commande | Ce qui est vérifié |
+| Command | What is checked |
 |---|---|
-| `Matrix` | adresse ≤ 8 Mio − 64 |
-| `Vertex` | nombre ≤ 32, destination + nombre ≤ 32, fin ≤ 8 Mio |
-| `Triangle` | nombre ≠ 0, fin ≤ 8 Mio, **chaque index < 32** |
-| `DisplayListBranch` | cible ≤ 8 Mio − 8, profondeur de pile < 32 |
-| `CountedDisplayList` | nombre ≠ 0, adresse ≠ 0, fin ≤ 8 Mio |
-| `LoadBlock` | adresse dans RDRAM |
+| `Matrix` | address ≤ 8 MiB − 64 |
+| `Vertex` | count ≤ 32, destination + count ≤ 32, end ≤ 8 MiB |
+| `Triangle` | count ≠ 0, end ≤ 8 MiB, **every index < 32** |
+| `DisplayListBranch` | target ≤ 8 MiB − 8, stack depth < 32 |
+| `CountedDisplayList` | count ≠ 0, address ≠ 0, end ≤ 8 MiB |
+| `LoadBlock` | address within RDRAM |
 
-RDRAM fait **8 Mio** (`0x00800000`) et les adresses sont masquées par
-`0x00FFFFFF`.
+RDRAM is **8 MiB** (`0x00800000`) and the addresses are masked by `0x00FFFFFF`.
 
-Cette discipline protège contre une ROM modifiée comme contre un bug du portage.
-Le rejet est **circonscrit** : il interrompt la commande, pas le jeu — et il est
-journalisé, avec un compteur qui borne le volume, parce qu'une display list
-corrompue produirait sinon des milliers de lignes par image.
+This discipline protects against a modified ROM as much as against a bug in the
+port. The rejection is **contained**: it interrupts the command, not the game —
+and it is logged, with a counter bounding the volume, because a corrupted display
+list would otherwise produce thousands of lines per frame.
 
-Un détail qui compte pour l'extraction : la validation de `Triangle` **vérifie
-tout le lot avant d'en dessiner le premier**. Valider au fil de l'eau
-laisserait dessiner des triangles valides avant de rejeter le lot, ce qui rend le
-défaut dépendant du contenu et donc difficile à reproduire.
+A detail that matters for the extraction: `Triangle`'s validation **checks the
+whole batch before drawing the first of them**. Validating as it goes would let
+valid triangles be drawn before the batch is rejected, which makes the defect
+depend on the content and therefore hard to reproduce.
