@@ -432,6 +432,20 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 continue;
             }
             appliquer_etat(c);
+            /* **De quoi les triangles émis sont faits.**
+             *
+             * L'écran reste blanc alors que les textures chargent et que les
+             * coordonnées tiennent dans le bon ordre de grandeur. Trois causes
+             * restent possibles et un seul chiffre — « émis » — les confond :
+             * un combineur qui ne lit pas de texel, une texture non liée, ou un
+             * échantillonnage muet. Les deux premières se comptent ici, et
+             * c'est trois entiers contre une nouvelle hypothèse au hasard. */
+            if (c->render_state.combine < DKR_COMBINE_COUNT) {
+                c->state.emis_par_combine[c->render_state.combine]++;
+            }
+            if (c->render_state.texture != 0) {
+                c->state.emis_avec_texture++;
+            }
             if (c->backend && c->backend->draw_triangles) {
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }
@@ -517,6 +531,22 @@ static void appliquer_etat(dkr_f3d_context *c)
     c->state.cycle_courant = (unsigned char)rdp.cycle;
 
     dkr_rdp_to_render_state(&rdp, &c->render_state, &exact);
+    /* --- Le handle de texture ne survit pas à la traduction ------------------ *
+     *
+     * `dkr_rdp_to_render_state` remplit **tout** le bloc depuis l'état RDP, et
+     * l'état RDP ne connaît pas nos handles : le champ `texture` que le
+     * chargement venait d'y poser était donc écrasé à chaque application.
+     *
+     * Mesuré, et c'est ce qui a désigné la cause sans détour : 45 773 textures
+     * chargées, 246 707 triangles émis avec un combineur qui lit un texel, et
+     * **zéro triangle émis avec une texture liée**. Trois chiffres qui, séparés,
+     * ne laissent qu'une explication ; réunis sous « émis », ils n'en
+     * laissaient aucune.
+     *
+     * Le handle vit donc dans le contexte, qui est sa vraie place — c'est une
+     * ressource du décodeur, pas un mode du RDP — et il est reposé après la
+     * traduction. */
+    c->render_state.texture = c->texture_liee;
     if (!exact) {
         /* **Une traduction approchée qui ne s'annonce pas est pire qu'un
            échec** : elle produit une image plausible et fausse. Le compteur est
@@ -627,6 +657,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         const int petit = (pl > ph) ? ph : pl;
         if (grand > 256 || (petit > 0 && grand / petit > 8)) {
             c->render_state.texture = 0;
+            c->texture_liee = 0;
             c->texture_cle = 0;
             c->state.textures_hors_proportions++;
             c->etat_sale = 1;
@@ -647,6 +678,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
            texture périmée sur une surface est plus déroutante qu'une surface
            sans texture, parce qu'elle passe pour du rendu. */
         c->render_state.texture = 0;
+        c->texture_liee = 0;
         c->texture_cle = 0;
         c->etat_sale = 1;
         return;
@@ -682,6 +714,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                        (size_t)c->tex_hauteur_remplie * 2u;
         h = c->backend->texture_upload(c->backend->self, &d);
         if (h != 0) {
+            c->texture_liee = h;
             /* 1/32 pour le 10.5 du microcode, 1/largeur pour passer en [0,1].
                Les deux en une seule multiplication par sommet : la
                transformation est déjà le poste le plus lourd du portage. */
@@ -695,6 +728,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             /* Mémoire de texture pleine. C'est E05-S02 qui l'administre ; ici on
                se contente de ne pas dessiner avec une poignée invalide. */
             c->render_state.texture = 0;
+            c->texture_liee = 0;
             c->texture_cle = 0;
             c->state.textures_refusees++;
         }

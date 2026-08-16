@@ -165,6 +165,10 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_reutilisees_ += context_.state.textures_reutilisees;
     total_tex_refusees_ += context_.state.textures_refusees;
     total_tex_remplies_ += context_.state.textures_remplies;
+    total_emis_texture_ += context_.state.emis_avec_texture;
+    for (int i = 0; i < DKR_COMBINE_COUNT; i++) {
+        emis_par_combine_[i] += context_.state.emis_par_combine[i];
+    }
     total_tex_proportions_ += context_.state.textures_hors_proportions;
     total_tex_inconnues_ += context_.state.textures.non_prises_en_charge;
     total_tex_hors_ += context_.state.textures.hors_rdram;
@@ -286,6 +290,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      total_tex_remplies_, total_tex_proportions_);
         // Les coordonnées normalisées. Un voisinage de [0,1] confirme le format
         // 10.5 et la largeur employée ; des milliers le réfutent.
+        std::fprintf(stderr,
+                     "[gfx]   emis: avec-texture=%lu | shade=%lu texel=%lu "
+                     "texel*shade=%lu texel*shade+a=%lu\n",
+                     total_emis_texture_, emis_par_combine_[0],
+                     emis_par_combine_[1], emis_par_combine_[2],
+                     emis_par_combine_[3]);
         if (context_.state.s_max > context_.state.s_min) {
             std::fprintf(stderr,
                          "[gfx]   coords: s=[%d..%d]/1000 t=[%d..%d]/1000\n",

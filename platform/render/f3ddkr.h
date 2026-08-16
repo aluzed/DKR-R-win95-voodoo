@@ -139,6 +139,11 @@ typedef struct {
        mesure existe pour pouvoir contredire l'interprétation du format 10.5,
        pas pour la confirmer. */
     float             s_min, s_max, t_min, t_max;
+    /* Les triangles émis, ventilés par mode de combineur et selon qu'une
+       texture était liée. « Émis » seul confond trois causes distinctes de
+       surface blanche ; ces deux compteurs en séparent deux. */
+    unsigned long     emis_par_combine[DKR_COMBINE_COUNT];
+    unsigned long     emis_avec_texture;
 
     /* Combien de fois chaque opcode a été vu.
      *
@@ -201,6 +206,10 @@ typedef struct {
     unsigned int         timg_size;
     /* La texture actuellement liee, par sa cle. Zero signifie aucune. */
     unsigned long long   texture_cle;
+    /* Le handle courant. Il vit ici et non dans `render_state` parce que la
+       traduction de l'état RDP réécrit ce bloc en entier : le handle y serait
+       écrasé à chaque application, ce qui est exactement ce qui se passait. */
+    dkr_texture_handle   texture_liee;
     /* Le tampon de conversion. 256x256 en 5551 : 128 Kio, portes par le contexte
        plutot qu'alloues par texture — un Pentium II n'a pas les moyens d'un
        malloc par changement de texture, et il y en a des milliers par seconde. */
