@@ -1,148 +1,141 @@
-# E07-S03 — Découplage d'avec SDL2
+# E07-S03 — Decoupling from SDL2
 
 | | |
 |---|---|
-| **Épic** | E07 — Réduction de périmètre |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E06-S01, E06-S02, E06-S03, E07-S02 |
-| **Bloque** | E09-S03 |
+| **Epic** | E07 — Scope reduction |
+| **Status** | IN_PROGRESS |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E06-S01, E06-S02, E06-S03, E07-S02 |
+| **Blocks** | E09-S03 |
 
-## Contexte
+## Context
 
-SDL2 est présent dans dix fichiers du code du projet, et sur les quatre couches à
-la fois : fenêtre, entrées, audio, et intégration avec RT64. E06 a écrit les
-remplaçants Win32 de chacune. Reste à couper le lien proprement.
+SDL2 is present in ten of the project's files, and across all four layers at once:
+window, inputs, audio, and integration with RT64. E06 wrote the Win32 replacements for
+each. What remains is to cut the link cleanly.
 
-Le mauvais réflexe serait de dupliquer chaque fichier en deux versions, l'une SDL2
-pour la cible moderne, l'autre Win32 pour la cible Win95. Les deux dériveraient, et
-l'oracle perdrait sa valeur : comparer deux implémentations qui ont divergé ne
-prouve plus rien (E00-S07).
+The wrong reflex would be to duplicate each file in two versions, one SDL2 for the
+modern target, the other Win32 for the Win95 target. The two would drift, and the
+oracle would lose its value: comparing two implementations that have diverged no longer
+proves anything (E00-S07).
 
-La bonne structure sépare **ce qui dépend de la plateforme** de **ce qui n'en
-dépend pas**, et ne duplique que la première. La logique de correspondance des
-entrées, la politique de mixage audio, la politique de présentation sont du code
-portable qui doit rester unique.
+The right structure separates **what depends on the platform** from **what does not**,
+and duplicates only the first. The input mapping logic, the audio mixing policy, the
+presentation policy are portable code that must stay single.
 
-## Objectif
+## Objective
 
-Sortir SDL2 de la cible Win95, sans dupliquer la logique portable ni casser la
-cible moderne.
+To get SDL2 out of the Win95 target, without duplicating the portable logic or breaking
+the modern target.
 
-## Périmètre
+## Scope
 
-**Dans :** la séparation plateforme / logique, et la sélection à la compilation.
+**In:** the platform / logic separation, and selection at compile time.
 
-**Hors :** l'écriture des implémentations Win32 (E06).
+**Out:** writing the Win32 implementations (E06).
 
-## Travail
+## Work
 
-1. Recenser chaque usage de SDL2 dans les dix fichiers concernés et le classer :
-   **plateforme** (à abstraire) ou **logique** (à conserver tel quel).
-2. Définir une interface de plateforme minimale couvrant fenêtre, entrées, audio
-   et temps — la plus petite qui couvre les deux implémentations. Elle sera étroite,
-   parce que la logique portable a été mise à part à l'étape 1.
-3. Extraire de `runtime_input.cpp` (25 Ko) la logique de correspondance, qui doit
-   rester unique et partagée.
-4. Faire de même pour l'audio : la politique de mixage
-   (`audio_mix_policy.hpp`) et l'égaliseur sont portables ; seule la sortie ne
-   l'est pas.
-5. Implémenter l'interface deux fois : SDL2 pour la cible moderne, Win32 pour la
-   cible Win95. Sélection à la compilation, sans branchement à l'exécution.
-6. Vérifier que la cible moderne se comporte exactement comme avant. C'est la
-   condition pour que l'oracle conserve sa valeur.
-7. Vérifier qu'aucun symbole SDL2 n'est importé par le binaire Win95 — le garde-fou
-   de E01-S04 le fait automatiquement.
-8. Faire tourner les suites de tests conservées sur les deux cibles.
+1. Survey each use of SDL2 in the ten files concerned and classify it: **platform** (to
+   be abstracted) or **logic** (to be kept as it is).
+2. Define a minimal platform interface covering window, inputs, audio and time — the
+   smallest that covers both implementations. It will be narrow, because the portable
+   logic was set aside in step 1.
+3. Extract from `runtime_input.cpp` (25 KB) the mapping logic, which must stay single
+   and shared.
+4. Do the same for the audio: the mixing policy (`audio_mix_policy.hpp`) and the
+   equaliser are portable; only the output is not.
+5. Implement the interface twice: SDL2 for the modern target, Win32 for the Win95
+   target. Selection at compile time, with no branch at run time.
+6. Check that the modern target behaves exactly as before. It is the condition for the
+   oracle to keep its value.
+7. Check that no SDL2 symbol is imported by the Win95 binary — E01-S04's guard rail
+   does it automatically.
+8. Run the test suites that are kept on both targets.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] Chaque usage de SDL2 est classé plateforme ou logique.
-- [~] L'interface de plateforme est minimale — une fonction — et couvre les deux
-      implémentations **pour la fenêtre**. Entrées, audio et temps attendent E06.
-- [x] La logique reste unique : rien n'a été dupliqué, et deux morceaux
-      portables enfermés derrière un garde de plate-forme en ont été sortis.
-- [x] La sélection se fait à la compilation, sans branchement à l'exécution.
-- [~] La cible moderne passe ses **18 suites**. Le comportement avec RT64 allumé
-      n'est pas vérifié ici, faute de SDL2 sur ce poste.
-- [~] Aucun fichier compilé pour Win95 n'inclut SDL2. Le contrôle sur le
-      binaire viendra quand le jeu se liera.
-- [ ] Les suites de tests conservées passent sur les deux cibles.
+- [x] Every use of SDL2 is classified as platform or logic.
+- [~] The platform interface is minimal — one function — and covers both
+      implementations **for the window**. Inputs, audio and time await E06.
+- [x] The logic stays single: nothing has been duplicated, and two portable pieces
+      shut behind a platform guard have been taken out of it.
+- [x] Selection happens at compile time, with no branch at run time.
+- [~] The modern target passes its **18 suites**. The behaviour with RT64 turned on is
+      not verified here, for want of SDL2 on this machine.
+- [~] No file compiled for Win95 includes SDL2. The check on the binary will come when
+      the game links.
+- [ ] The test suites that are kept pass on both targets.
 
-## État au 2026-08-13 — le lien est coupé, une seule fonction a suffi
+## State as of 2026-08-13 — the link is cut, one function sufficed
 
-Le recensement de l'étape 1 donne un résultat plus favorable que le ticket ne le
-laissait craindre. **L'interrupteur RT64 avait déjà fait presque tout le
-travail** :
+Step 1's survey gives a more favourable result than the ticket suggested we should
+fear. **The RT64 switch had already done nearly all the work**:
 
-| Fichier | Occurrences | Hors garde RT64 | Verdict |
+| File | Occurrences | Outside the RT64 guard | Verdict |
 |---|---:|---:|---|
-| `runtime_platform.cpp` | 189 | 0 | plate-forme, remplacé par E06 |
-| `runtime_ui.cpp`, `rt64_renderer.cpp` | 87 | — | **exclus du build** quand RT64 est éteint |
-| `runtime_input.cpp` | 82 | 0 | plate-forme, sous garde |
-| `runtime_input.hpp`, `runtime_ui.hpp` | 8 | 8 | **déclaration anticipée seule** — aucune inclusion de SDL |
-| `game_main.cpp`, `runtime_stubs.cpp` | 4 | 0 | sous garde |
-| **`runtime_enhancements.cpp`** | **3** | **3** | **le seul lien réel** |
+| `runtime_platform.cpp` | 189 | 0 | platform, replaced by E06 |
+| `runtime_ui.cpp`, `rt64_renderer.cpp` | 87 | — | **excluded from the build** when RT64 is off |
+| `runtime_input.cpp` | 82 | 0 | platform, under a guard |
+| `runtime_input.hpp`, `runtime_ui.hpp` | 8 | 8 | **forward declaration only** — no inclusion of SDL |
+| `game_main.cpp`, `runtime_stubs.cpp` | 4 | 0 | under a guard |
+| **`runtime_enhancements.cpp`** | **3** | **3** | **the only real link** |
 
-Un seul fichier dépendait vraiment de SDL2 hors garde, et il n'en voulait
-qu'**une chose** : la taille de la fenêtre, pour un rapport d'aspect. Tout ce qui
-en découlait — l'échelle du tronc de vision, la politique de présentation — est
-de la logique portable.
+A single file really depended on SDL2 outside a guard, and it wanted only **one thing**
+from it: the window's size, for an aspect ratio. Everything that followed from it — the
+view frustum's scale, the presentation policy — is portable logic.
 
-D'où l'interface, qui tient en une fonction :
+Hence the interface, which holds in one function:
 
 ```cpp
 bool dkr::runtime::platform::window_size(int& width, int& height);
 ```
 
-Déclarée **hors** du garde, implémentée une fois de chaque côté. `runtime_stubs.cpp`
-faisait exactement la même danse `sdl_window()` + `SDL_GetWindowSize` et passe
-par le même accesseur : la duplication contre laquelle le ticket met en garde est
-retirée au lieu d'être ajoutée.
+Declared **outside** the guard, implemented once on each side. `runtime_stubs.cpp` was
+doing exactly the same `sdl_window()` + `SDL_GetWindowSize` dance and goes through the
+same accessor: the duplication the ticket warns against is removed rather than added.
 
-Deux découpages hérités, trouvés en compilant, ont été rectifiés au passage —
-tous deux du **code portable enfermé derrière un garde de plate-forme**, ce qui
-est le défaut exact que ce ticket cherche à défaire :
+Two inherited divisions, found while compiling, were rectified along the way — both of
+them **portable code shut behind a platform guard**, which is the exact defect this
+ticket seeks to undo:
 
-- `RdramAddress` et `g_title_intro_tail_gate` vivaient sous le garde RT64 dans
-  `runtime_stubs.cpp` alors que `dkr_title_intro_audio_tail`, qui les emploie,
-  n'en dépend pas.
-- Le gestionnaire de plantage de `game_main.cpp` lisait les registres x86-64 par
-  leur nom. Une branche i386 lui a été ajoutée, et `StackWalk64` reçoit
-  désormais le type de machine qui convient — le lui donner faux remonterait une
-  pile de valeurs fantaisistes, ce qui est pire que pas de pile du tout.
+- `RdramAddress` and `g_title_intro_tail_gate` lived under the RT64 guard in
+  `runtime_stubs.cpp` whereas `dkr_title_intro_audio_tail`, which uses them, does not
+  depend on it.
+- `game_main.cpp`'s crash handler read the x86-64 registers by name. An i386 branch was
+  added to it, and `StackWalk64` now receives the right machine type — giving it the
+  wrong one would report a stack of fanciful values, which is worse than no stack at
+  all.
 
-### Résultat
+### Result
 
 | | |
 |---|---|
-| Sources du jeu compilant pour Windows 95 | **17 sur 17** |
-| Suites de la cible moderne | **18 sur 18** |
-| Suites de la cible Win95 | 4 sur 4 |
-| Jeu d'instructions | aucune hors Pentium II |
+| Game sources compiling for Windows 95 | **17 out of 17** |
+| Modern target's suites | **18 out of 18** |
+| Win95 target's suites | 4 out of 4 |
+| Instruction set | none outside the Pentium II's |
 
-**Ce qui n'est pas vérifié ici** : le comportement de la cible moderne avec RT64
-*allumé*, faute de SDL2 sur ce poste. Les 18 suites couvrent la logique portable,
-qui est précisément ce que ce ticket ne devait pas toucher ; la branche RT64 de
-`window_size` reproduit le code retiré à l'identique — même test de nullité,
-même appel, même seuil.
+**What is not verified here**: the modern target's behaviour with RT64 *turned on*, for
+want of SDL2 on this machine. The 18 suites cover the portable logic, which is precisely
+what this ticket was not to touch; `window_size`'s RT64 branch reproduces the removed
+code identically — same null check, same call, same threshold.
 
-Les critères qui restent ouverts appartiennent à E06 : l'interface ne couvre
-aujourd'hui que la fenêtre, parce que c'est tout ce qui manquait pour compiler.
-Entrées, audio et temps y viendront quand leurs implémentations Win32
-existeront.
+The criteria that stay open belong to E06: the interface today covers only the window,
+because that is all that was missing in order to compile. Inputs, audio and time will
+come to it when their Win32 implementations exist.
 
-## Risques
+## Risks
 
-Le risque est la duplication rampante : à chaque difficulté, il sera tentant de
-copier un fichier plutôt que d'extraire l'abstraction. Le critère de non-duplication
-de la logique n'est pas une exigence de style — c'est ce qui garde l'oracle
-utilisable jusqu'à la fin du projet.
+The risk is creeping duplication: at every difficulty, it will be tempting to copy a
+file rather than extract the abstraction. The criterion of not duplicating the logic is
+not a requirement of style — it is what keeps the oracle usable to the end of the
+project.
 
-## Références
+## References
 
-- `runtime-recomp/src/game/runtime_platform.cpp` (33 Ko), `runtime_input.cpp`
-  (25 Ko), `game_main.cpp` (22 Ko)
-- E00-S07 — stratégie d'oracle
-- E06 — implémentations Win32
+- `runtime-recomp/src/game/runtime_platform.cpp` (33 KB), `runtime_input.cpp` (25 KB),
+  `game_main.cpp` (22 KB)
+- E00-S07 — oracle strategy
+- E06 — Win32 implementations

@@ -1,102 +1,96 @@
-# E07-S01 — Profil « Accurate » seul
+# E07-S01 — "Accurate" profile only
 
 | | |
 |---|---|
-| **Épic** | E07 — Réduction de périmètre |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E00-S07 |
-| **Bloque** | E06-S04, E06-S05, E08-S04 |
+| **Epic** | E07 — Scope reduction |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E00-S07 |
+| **Blocks** | E06-S04, E06-S05, E08-S04 |
 
-## Contexte
+## Context
 
-DKR-R propose deux profils. **Accurate** reproduit la console : 4:3, 30 images par
-seconde, champ de vision, distance d'affichage, niveau de détail et mixage audio
-d'origine. **Modern** ajoute le format large, l'interpolation vers les taux de
-rafraîchissement élevés, un champ de vision élargi, une distance de décor étendue
-et le filtrage anisotrope.
+DKR-R offers two profiles. **Accurate** reproduces the console: 4:3, 30 frames per
+second, the original field of view, draw distance, level of detail and audio mixing.
+**Modern** adds widescreen, interpolation towards high refresh rates, a widened field
+of view, an extended scenery distance and anisotropic filtering.
 
-Sur une machine qui aura du mal à tenir 30 images par seconde en 640 × 480, le
-mode Moderne n'a aucun sens. Il coûte, en revanche, beaucoup de complexité :
-`presentation_identity.cpp` fait 39 Ko et n'existe que pour attribuer des
-identités sémantiques stables aux objets en mouvement afin que RT64 puisse
-interpoler entre deux images. Toute cette machinerie — sidecar d'identités,
-crochets à la naissance et à la mort des objets, `TaskIdentityScope`, appariement
-des charges de travail — disparaît avec le mode Moderne.
+On a machine that will struggle to hold 30 frames per second at 640 × 480, the Modern
+mode makes no sense. It costs, on the other hand, a great deal of complexity:
+`presentation_identity.cpp` is 39 KB and exists only to attach stable semantic
+identities to moving objects so that RT64 can interpolate between two frames. All that
+machinery — identity sidecar, hooks at objects' birth and death, `TaskIdentityScope`,
+workload matching — disappears with the Modern mode.
 
-C'est la plus grosse simplification disponible dans ce projet, et elle allège à la
-fois le code, la mémoire et le CPU.
+It is the largest simplification available in this project, and it lightens the code,
+the memory and the CPU all at once.
 
-## Objectif
+## Objective
 
-Ne conserver que le profil Accurate, et retirer la machinerie qui n'existait que
-pour le mode Moderne.
+To keep only the Accurate profile, and to remove the machinery that existed only for
+the Modern mode.
 
-## Périmètre
+## Scope
 
-**Dans :** la suppression du mode Moderne et de ses dépendances.
+**In:** removing the Modern mode and its dependencies.
 
-**Hors :** ImGui, les texture packs et la télémétrie (E07-S02).
+**Out:** ImGui, the texture packs and the telemetry (E07-S02).
 
-## Travail
+## Work
 
-1. Établir la liste exacte de ce qui disparaît, à partir de `presentation_policy.hpp`
-   et de la frontière décrite dans `docs/ARCHITECTURE.md` : format large,
-   interpolation, champ de vision, distance de décor, niveau de détail des
-   véhicules, filtrage anisotrope, caméra moderne, gyroscope.
-2. Retirer les identités de présentation. `presentation_identity.cpp` (39 Ko) et
-   `presentation_identity.hpp` (17 Ko) sortent, ainsi que les crochets du pipeline
-   de patchs qui les alimentent — chargement de scène, naissance et libération
-   d'objet, frontière `render_object`. Ces crochets sont dans la politique de
-   recompilation, pas dans le code du projet : les retirer allège aussi le code
-   généré.
-3. Retirer l'interpolation : `interpolation_state_policy.hpp`, et les patchs RT64
-   qui la servent (`0001-allow-skip-buffering-interpolation-targets`,
-   `0002-count-interpolated-presentations`). Ces patchs ne concernent que la cible
-   moderne — vérifier avant de les retirer si l'oracle en dépend (E00-S07).
-4. Retirer `widescreen_policy.hpp`, `modern_camera_policy.hpp`,
+1. Establish the exact list of what disappears, from `presentation_policy.hpp` and the
+   boundary described in `docs/ARCHITECTURE.md`: widescreen, interpolation, field of
+   view, scenery distance, vehicle level of detail, anisotropic filtering, modern
+   camera, gyroscope.
+2. Remove the presentation identities. `presentation_identity.cpp` (39 KB) and
+   `presentation_identity.hpp` (17 KB) go, as do the patch pipeline's hooks that feed
+   them — scene load, object birth and release, the `render_object` boundary. Those
+   hooks are in the recompilation policy, not in the project's code: removing them also
+   lightens the generated code.
+3. Remove the interpolation: `interpolation_state_policy.hpp`, and the RT64 patches
+   that serve it (`0001-allow-skip-buffering-interpolation-targets`,
+   `0002-count-interpolated-presentations`). Those patches concern only the modern
+   target — check before removing them whether the oracle depends on them (E00-S07).
+4. Remove `widescreen_policy.hpp`, `modern_camera_policy.hpp`,
    `motion_steering_policy.hpp`.
-5. Simplifier `renderer_snapshot` et la profondeur de file de tâches graphiques,
-   conformément à la décision de E00-S06 : sans interpolation, il n'y a plus besoin
-   d'apparier deux images.
-6. Trier les suites de tests correspondantes : `interpolation_state_policy_tests`,
+5. Simplify `renderer_snapshot` and the graphics task queue's depth, in accordance with
+   E00-S06's decision: without interpolation, there is no longer any need to match two
+   frames.
+6. Sort out the corresponding test suites: `interpolation_state_policy_tests`,
    `presentation_identity_tests`, `widescreen_policy_tests`,
-   `modern_camera_policy_tests`, `motion_steering_policy_tests`. Elles sortent avec
-   le code qu'elles couvrent.
-7. Mesurer le gain : lignes de code, taille du binaire, mémoire, et temps CPU par
-   image. Le dernier chiffre est le plus intéressant — les crochets d'identité
-   s'exécutaient à chaque objet rendu.
-8. Vérifier que le comportement du profil Accurate est strictement inchangé. Il
-   est la référence de régression du projet (`docs/ARCHITECTURE.md`) et rien ne
-   doit bouger.
+   `modern_camera_policy_tests`, `motion_steering_policy_tests`. They go with the code
+   they cover.
+7. Measure the gain: lines of code, binary size, memory, and CPU time per frame. The
+   last figure is the most interesting — the identity hooks ran for every object
+   rendered.
+8. Check that the Accurate profile's behaviour is strictly unchanged. It is the
+   project's regression reference (`docs/ARCHITECTURE.md`) and nothing must move.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le mode Moderne et toutes ses dépendances sont retirés.
-- [ ] Les identités de présentation et leurs crochets de recompilation sont
-      retirés.
-- [ ] Les patchs RT64 propres à l'interpolation sont retirés, ou conservés avec
-      justification si l'oracle en dépend.
-- [ ] Les suites de tests devenues sans objet sont retirées.
-- [ ] Le gain est mesuré : code, binaire, mémoire, temps CPU par image.
-- [ ] Le comportement du profil Accurate est inchangé, vérifié par comparaison
-      avant / après.
-- [ ] La documentation ne mentionne plus le mode Moderne.
+- [ ] The Modern mode and all its dependencies are removed.
+- [ ] The presentation identities and their recompilation hooks are removed.
+- [ ] The RT64 patches specific to interpolation are removed, or kept with a
+      justification if the oracle depends on them.
+- [ ] The test suites that have become moot are removed.
+- [ ] The gain is measured: code, binary, memory, CPU time per frame.
+- [ ] The Accurate profile's behaviour is unchanged, verified by a before / after
+      comparison.
+- [ ] The documentation no longer mentions the Modern mode.
 
-## Risques
+## Risks
 
-Certaines de ces politiques peuvent être plus enchevêtrées dans le code du jeu
-qu'il n'y paraît : les crochets d'identité sont dans la politique de
-recompilation, et les retirer change le code généré. Vérifier après régénération
-que le jeu se comporte identiquement, plutôt que de supposer qu'un retrait est
-neutre.
+Some of these policies may be more entangled in the game's code than they appear: the
+identity hooks are in the recompilation policy, and removing them changes the generated
+code. Check after regeneration that the game behaves identically, rather than assuming
+a removal is neutral.
 
-## Références
+## References
 
-- `docs/ARCHITECTURE.md` — frontière entre profils, Accurate comme référence de
-  régression
-- `docs/RENDER_SNAPSHOT_ARCHITECTURE.md` — machinerie d'identités sémantiques
+- `docs/ARCHITECTURE.md` — boundary between the profiles, Accurate as the regression
+  reference
+- `docs/RENDER_SNAPSHOT_ARCHITECTURE.md` — semantic identity machinery
 - `runtime-recomp/src/game/presentation_identity.{hpp,cpp}`,
   `interpolation_state_policy.hpp`, `presentation_policy.hpp`
-- `runtime-recomp/dkr.us.v77.recomp-policy.json` — crochets à retirer
+- `runtime-recomp/dkr.us.v77.recomp-policy.json` — hooks to remove

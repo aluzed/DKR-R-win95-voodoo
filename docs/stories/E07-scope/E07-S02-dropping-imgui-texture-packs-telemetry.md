@@ -1,122 +1,119 @@
-# E07-S02 — Dépose d'ImGui, des texture packs et de la télémétrie
+# E07-S02 — Dropping ImGui, the texture packs and the telemetry
 
 | | |
 |---|---|
-| **Épic** | E07 — Réduction de périmètre |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | ~~M~~ **S** |
-| **Dépend de** | E06-S05 |
-| **Bloque** | E07-S03 |
+| **Epic** | E07 — Scope reduction |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | ~~M~~ **S** |
+| **Depends on** | E06-S05 |
+| **Blocks** | E07-S03 |
 
-## État au 2026-08-12 — l'essentiel est déjà fait par un interrupteur existant
+## State as of 2026-08-12 — the essential is already done by an existing switch
 
-[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) a
-constaté que `runtime-recomp/CMakeLists.txt` place déjà ces composants derrière
-`DKR_RUNTIME_BUILD_RT64`, dont la valeur par défaut est **`OFF`** :
-`runtime_ui.cpp` (ImGui), `runtime_texture_packs.cpp`,
-`runtime_rice_texture_import.cpp`, `runtime_crt_overlay.cpp`, `f3ddkr_rt64.cpp`,
-`rt64_renderer.cpp` et le pont ImGui/SDL.
+[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) found that
+`runtime-recomp/CMakeLists.txt` already places these components behind
+`DKR_RUNTIME_BUILD_RT64`, whose default value is **`OFF`**: `runtime_ui.cpp` (ImGui),
+`runtime_texture_packs.cpp`, `runtime_rice_texture_import.cpp`,
+`runtime_crt_overlay.cpp`, `f3ddkr_rt64.cpp`, `rt64_renderer.cpp` and the ImGui/SDL
+bridge.
 
-Conséquences chiffrées :
+Quantified consequences:
 
-- **1 054 des 1 089 références ImGui** (97 %) sont dans `runtime_ui.cpp`, déjà exclu ;
-- **139 des 299 usages de `std::filesystem`** (46 %) disparaissent avec eux.
+- **1,054 of the 1,089 ImGui references** (97 %) are in `runtime_ui.cpp`, already
+  excluded;
+- **139 of the 299 uses of `std::filesystem`** (46 %) disappear with them.
 
-Il n'y a donc **rien à supprimer** — ce qui préserve la cible moderne, qui
-continue d'allumer l'interrupteur.
+There is therefore **nothing to delete** — which preserves the modern target, which
+goes on turning the switch on.
 
-Le dépouillement des directives du préprocesseur, fait ligne à ligne, montre
-que **le découplage d'ImGui est déjà complet** : les 26 lignes ImGui restantes
-de `runtime_platform.cpp` sont toutes sous `#if DKR_RUNTIME_HAS_RT64`,
-inclusion de `imgui.h` comprise. Zéro référence hors garde.
+Going through the preprocessor directives line by line shows that **the decoupling from
+ImGui is already complete**: the 26 remaining ImGui lines in `runtime_platform.cpp` are
+all under `#if DKR_RUNTIME_HAS_RT64`, the inclusion of `imgui.h` included. Zero
+references outside a guard.
 
-Il ne subsiste que **quatre références SDL2** hors garde, dans deux fichiers —
-la signature publique de `input::poll` (`runtime_input.cpp:571-572`) et
-`runtime_enhancements.cpp` (lignes 10, 461, 468). Elles relèvent de E07-S03.
+Only **four SDL2 references** remain outside a guard, in two files — the public
+signature of `input::poll` (`runtime_input.cpp:571-572`) and
+`runtime_enhancements.cpp` (lines 10, 461, 468). They belong to E07-S03.
 
-La télémétrie (`runtime_telemetry.cpp`) n'est, elle, pas sous garde : c'est le
-seul vrai reliquat de ce ticket.
+The telemetry (`runtime_telemetry.cpp`), for its part, is not under a guard: it is this
+ticket's only real remainder.
 
-## Contexte
+## Context
 
-Plusieurs sous-systèmes de DKR-R n'ont pas de place sur cette cible, et ils
-représentent une part considérable du code du projet :
+Several of DKR-R's subsystems have no place on this target, and they represent a
+considerable share of the project's code:
 
-| Composant | Taille | Motif |
+| Component | Size | Reason |
 |---|---|---|
-| `runtime_ui.cpp` | 194 Ko | overlay ImGui, remplacé par le fichier `.ini` (E06-S05) |
-| `runtime_texture_packs.cpp` | 28 Ko | packs RT64 / Rice — la mémoire de texture ne le permet pas |
-| `runtime_rice_texture_import.cpp` | 9 Ko | idem |
-| `runtime_crt_overlay.cpp` | 10 Ko | filtres CRT en ImGui — sans objet sur un vrai moniteur cathodique |
-| `runtime_telemetry.cpp` | 4 Ko | à réévaluer, un affichage de compteurs reste utile (E08-S01) |
-| `save_manager.cpp` | 25 Ko | interface graphique ImGui ; le codec sous-jacent est conservé (E02-S05) |
-| `runtime_magic_codes.cpp` | 7 Ko | à conserver s'il ne dépend pas d'ImGui |
+| `runtime_ui.cpp` | 194 KB | ImGui overlay, replaced by the `.ini` file (E06-S05) |
+| `runtime_texture_packs.cpp` | 28 KB | RT64 / Rice packs — texture memory does not allow it |
+| `runtime_rice_texture_import.cpp` | 9 KB | idem |
+| `runtime_crt_overlay.cpp` | 10 KB | CRT filters in ImGui — moot on a real cathode-ray monitor |
+| `runtime_telemetry.cpp` | 4 KB | to be reassessed, a counter display stays useful (E08-S01) |
+| `save_manager.cpp` | 25 KB | ImGui graphical interface; the underlying codec is kept (E02-S05) |
+| `runtime_magic_codes.cpp` | 7 KB | to be kept if it does not depend on ImGui |
 
-Le cas des texture packs mérite d'être explicite : ce n'est pas un renoncement
-esthétique mais une contrainte matérielle. Une Voodoo 2 dispose de 2 à 4 Mo de
-mémoire de texture par TMU, et le jeu d'origine en occupe déjà 1,20 Mo au pic
-(E05-S02). Des textures haute résolution n'y tiennent pas, quelle que soit
-l'envie qu'on en ait.
+The case of the texture packs deserves to be explicit: it is not an aesthetic
+renunciation but a hardware constraint. A Voodoo 2 has 2 to 4 MB of texture memory per
+TMU, and the original game already occupies 1.20 MB of it at the peak (E05-S02).
+High-resolution textures do not fit there, however much one may want them.
 
-Le filtre CRT, lui, a une ironie propre : la machine cible est très probablement
-reliée à un véritable moniteur cathodique.
+The CRT filter has an irony of its own: the target machine is very probably connected
+to a genuine cathode-ray monitor.
 
-## Objectif
+## Objective
 
-Retirer les sous-systèmes sans objet sur cette cible, en préservant ce qui garde
-une utilité.
+To remove the subsystems that are moot on this target, preserving what keeps a use.
 
-## Périmètre
+## Scope
 
-**Dans :** le retrait de ces composants et de leurs dépendances.
+**In:** removing these components and their dependencies.
 
-**Hors :** le mode Moderne (E07-S01) et le découplage de SDL2 (E07-S03).
+**Out:** the Modern mode (E07-S01) and decoupling from SDL2 (E07-S03).
 
-## Travail
+## Work
 
-1. Retirer `runtime_ui.cpp` et toutes les dépendances à ImGui. C'est le plus gros
-   retrait du projet, et il élimine une dépendance externe entière.
-2. Retirer les texture packs et l'import Rice, ainsi que le patch RT64 associé
+1. Remove `runtime_ui.cpp` and every dependency on ImGui. It is the project's largest
+   removal, and it eliminates an entire external dependency.
+2. Remove the texture packs and the Rice import, as well as the associated RT64 patch
    (`0011-enable-runtime-rice-texture-aliases`,
-   `0012-cache-rice-replacement-decisions`) si l'oracle n'en dépend pas.
-3. Retirer l'overlay CRT.
-4. Retirer l'interface graphique de gestion des sauvegardes, en **conservant**
-   `dkr_save_codec.cpp` et la logique de `virtual_pak.cpp` (E02-S05). La
-   séparation entre les deux est le point de vigilance de ce ticket.
-5. Réévaluer la télémétrie : un affichage de compteurs à l'écran reste précieux
-   pour E08-S01. Conserver la collecte, remplacer l'affichage ImGui par un rendu
-   minimal via les rectangles 2D de E05-S07.
-6. Vérifier les magic codes : les conserver s'ils ne dépendent que de la
-   configuration, les retirer s'ils exigent une interface.
-7. Trier les suites de tests correspondantes : `rice_texture_pack_policy_tests`
-   sort, `save_manager_tests` est à revoir selon ce qui est conservé,
-   `magic_code_policy_tests` suit la décision de l'étape 6.
-8. Mesurer le gain en taille de binaire et en mémoire.
+   `0012-cache-rice-replacement-decisions`) if the oracle does not depend on it.
+3. Remove the CRT overlay.
+4. Remove the graphical save-management interface, **keeping** `dkr_save_codec.cpp` and
+   `virtual_pak.cpp`'s logic (E02-S05). The separation between the two is this ticket's
+   point of vigilance.
+5. Reassess the telemetry: an on-screen counter display stays precious for E08-S01.
+   Keep the collection, replace the ImGui display by a minimal rendering through
+   E05-S07's 2D rectangles.
+6. Check the magic codes: keep them if they depend only on the configuration, remove
+   them if they require an interface.
+7. Sort out the corresponding test suites: `rice_texture_pack_policy_tests` goes,
+   `save_manager_tests` is to be reviewed according to what is kept,
+   `magic_code_policy_tests` follows step 6's decision.
+8. Measure the gain in binary size and in memory.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Aucune dépendance à ImGui ne subsiste dans la cible Win95.
-- [ ] Texture packs, import Rice et overlay CRT sont retirés, patchs associés
-      compris.
-- [ ] Le codec de sauvegarde et la logique de Controller Pak sont conservés et
-      fonctionnels.
-- [ ] La collecte de télémétrie est conservée, son affichage remplacé.
-- [ ] La décision sur les magic codes est prise et appliquée.
-- [ ] Les suites de tests sont triées en conséquence.
-- [ ] Le gain en binaire et en mémoire est mesuré.
-- [ ] Aucune fonctionnalité de jeu n'est perdue au passage — seulement des
-      fonctionnalités de portage.
+- [ ] No dependency on ImGui remains in the Win95 target.
+- [ ] Texture packs, Rice import and CRT overlay are removed, associated patches
+      included.
+- [ ] The save codec and the Controller Pak logic are kept and working.
+- [ ] Telemetry collection is kept, its display replaced.
+- [ ] The decision on the magic codes is taken and applied.
+- [ ] The test suites are sorted out accordingly.
+- [ ] The gain in binary and in memory is measured.
+- [ ] No game feature is lost along the way — only port features.
 
-## Risques
+## Risks
 
-`save_manager.cpp` mêle interface et logique. Retirer l'interface sans emporter la
-logique demande de la précision : une erreur ici casse les sauvegardes, ce qui est
-le défaut le moins pardonnable du projet (E02-S05). Le tester avant et après.
+`save_manager.cpp` mixes interface and logic. Removing the interface without carrying
+off the logic requires precision: an error here breaks the saves, which is the
+project's least forgivable defect (E02-S05). Test it before and after.
 
-## Références
+## References
 
 - `runtime-recomp/src/game/runtime_ui.cpp`, `runtime_texture_packs.cpp`,
   `runtime_crt_overlay.cpp`, `runtime_telemetry.cpp`, `save_manager.cpp`
 - `docs/TEXTURE_PACKS.md`
-- E05-S02 — budget de mémoire de texture qui exclut les packs
+- E05-S02 — texture memory budget that excludes the packs
