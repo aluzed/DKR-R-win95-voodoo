@@ -1,278 +1,269 @@
-# Ce que la couche de compatibilité Windows 95 change
+# What the Windows 95 compatibility layer changes
 
-Livré par [E01-S03](stories/E01-build/E01-S03-crt-startup-api-compatibility.md).
-Implémentation : `platform/win95/`.
+Delivered by
+[E01-S03](stories/E01-build/E01-S03-crt-startup-api-compatibility.md).
+Implementation: `platform/win95/`.
 
-Ce document existe pour une raison précise : **un contournement dont la
-différence n'est pas écrite est un bogue en attente.** Chaque fonction ci-dessous
-remplace une API absente de Windows 95, et chacune perd quelque chose. Ce qui est
-perdu est écrit, y compris quand la perte est nulle.
+This document exists for a precise reason: **a workaround whose difference is not
+written down is a bug waiting to happen.** Each function below replaces an API
+absent from Windows 95, and each loses something. What is lost is written down,
+including when the loss is nil.
 
-## Pourquoi une couche est nécessaire
+## Why a layer is necessary
 
-Windows 95 résout **tous** les imports au chargement. Un symbole absent empêche
-le processus de démarrer, avec un message qui nomme la DLL et le symbole — et
-rien d'autre. Le code du projet n'appelle aucune des fonctions ci-dessous : ce
-sont `libstdc++` et `winpthreads` qui les importent. Leur seule présence dans la
-table d'imports suffit à tuer le programme.
+Windows 95 resolves **every** import at load time. A missing symbol stops the
+process from starting, with a message that names the DLL and the symbol — and
+nothing else. The project's code calls none of the functions below: it is
+`libstdc++` and `winpthreads` that import them. Their mere presence in the import
+table is enough to kill the program.
 
-L'inventaire est celui de [E00-S01](research/win95-blockers.md), et le choix du
-modèle de threads `posix` celui de [l'ADR 0001](adr/0001-toolchain.md).
+The inventory is [E00-S01](research/win95-blockers.md)'s, and the choice of the
+`posix` threading model [ADR 0001](adr/0001-toolchain.md)'s.
 
-## Les six fonctions, et ce qu'elles coûtent
+## The six functions, and what they cost
 
-### `IsDebuggerPresent` — rien de perdu
+### `IsDebuggerPresent` — nothing lost
 
-Renvoie toujours `FALSE`. Il n'y a pas de débogueur attaché sur la machine
-cible : la réponse est constante *et vraie*. `libstdc++` s'en sert pour décider
-d'un `DebugBreak` sur assertion ; elle prendra l'autre branche, qui est la bonne
-ici.
+Always returns `FALSE`. There is no debugger attached on the target machine: the
+answer is constant *and true*. `libstdc++` uses it to decide on a `DebugBreak` at
+an assertion; it will take the other branch, which is the right one here.
 
-### `SetProcessAffinityMask` — rien de perdu
+### `SetProcessAffinityMask` — nothing lost
 
-Accepte et ne fait rien. La cible est monoprocesseur (ADR 0002) : il n'existe
-qu'un placement possible, et l'accepter est le comportement correct, pas une
+Accepts and does nothing. The target is single-processor (ADR 0002): there exists
+only one possible placement, and accepting it is the correct behaviour, not an
 approximation.
 
-### `AddVectoredExceptionHandler` / `RemoveVectoredExceptionHandler` — dégradation acceptée
+### `AddVectoredExceptionHandler` / `RemoveVectoredExceptionHandler` — an accepted degradation
 
-Renvoient `NULL` et `0` — c'est-à-dire « je n'ai pas pu enregistrer ».
+Return `NULL` and `0` — that is, "I could not register".
 
-Windows 95 n'a que `SetUnhandledExceptionFilter`, qui est un **point unique** et
-non une chaîne de gestionnaires. `libgcc` s'en sert de façon facultative et teste
-le retour : renvoyer `NULL` est une réponse qu'elle sait traiter.
+Windows 95 has only `SetUnhandledExceptionFilter`, which is a **single point** and
+not a chain of handlers. `libgcc` uses it optionally and tests the return value:
+returning `NULL` is an answer it knows how to handle.
 
-**Ce qui est perdu** : rien pour `libgcc`, mais toute future utilisation de
-gestionnaires vectorisés par le projet échouerait silencieusement. Le mensonge
-inverse — renvoyer un jeton non nul — serait pire : le désenregistrement suivant
-porterait sur rien.
+**What is lost**: nothing for `libgcc`, but any future use of vectored handlers by
+the project would fail silently. The opposite lie — returning a non-null token —
+would be worse: the subsequent deregistration would bear on nothing.
 
-Le projet installe son propre filtre par `SetUnhandledExceptionFilter`, dans
+The project installs its own filter through `SetUnhandledExceptionFilter`, in
 `platform/win95/startup.c`.
 
-### `GetTickCount64` — une limite réelle, à 49,7 jours
+### `GetTickCount64` — a real limit, at 49.7 days
 
-`GetTickCount` revient à zéro après 49,7 jours. La couche accumule les
-rebouclages pour rendre un compteur qui, lui, ne revient pas.
+`GetTickCount` returns to zero after 49.7 days. The layer accumulates the
+wraparounds to return a counter that does not.
 
-**Ce qui est perdu** : la fonction doit être appelée **au moins une fois par
-période de 49,7 jours**. Sinon le rebouclage passe inaperçu, et le temps recule
-de 49 jours. Ce n'est pas un défaut d'implémentation mais une impossibilité :
-deux lectures espacées de 49 jours et de 1 milliseconde sont indiscernables l'une
-de l'autre.
+**What is lost**: the function must be called **at least once per 49.7-day
+period**. Otherwise the wraparound goes unnoticed, and time steps back by 49 days.
+That is not an implementation defect but an impossibility: two readings 49 days
+and 1 millisecond apart are indistinguishable from each other.
 
-Une boucle de jeu tient largement la condition. Un programme qui dormirait plus
-longtemps entre deux lectures ne la tiendrait pas.
+A game loop meets the condition amply. A program that slept longer between two
+readings would not.
 
-Le rebouclage est couvert par un test qui le **simule** — attendre sept semaines
-n'est pas un protocole. La logique est isolée en fonction pure dans
-`platform/win95/tick64.c`, précisément pour être pilotable :
+The wraparound is covered by a test that **simulates** it — waiting seven weeks is
+not a protocol. The logic is isolated as a pure function in
+`platform/win95/tick64.c`, precisely so that it can be driven:
 
 ```sh
 platform/win95/tests/run-tests.sh tick64
 ctest --test-dir build/win95 -R DKRWin95Tick64
 ```
 
-Le test fige aussi la limite ci-dessus, pour qu'elle reste un choix documenté et
-non une surprise.
+The test also fixes the limit above, so that it stays a documented choice and not
+a surprise.
 
-### Les cinq fonctions de section critique — réimplémentées, pas contournées
+### The five critical-section functions — reimplemented, not worked around
 
-`TryEnterCriticalSection` est absente de Windows 95. La couche fournit donc les
-**cinq** fonctions — `Initialize`, `Enter`, `TryEnter`, `Leave`, `Delete` — ce
-qui lui donne la propriété des 24 octets de `CRITICAL_SECTION` : puisque tout le
-binaire passe par elle, leur signification n'appartient qu'à elle.
+`TryEnterCriticalSection` is absent from Windows 95. The layer therefore supplies
+**all five** functions — `Initialize`, `Enter`, `TryEnter`, `Leave`, `Delete` —
+which gives it ownership of `CRITICAL_SECTION`'s 24 bytes: since the whole binary
+goes through it, their meaning belongs to it alone.
 
-L'échange atomique passe par `lock cmpxchg`, une instruction du 486, là où
-Windows 95 n'exporte pas `InterlockedCompareExchange`. Le processeur sait faire
-ce que le système ne propose pas.
+The atomic exchange goes through `lock cmpxchg`, a 486 instruction, where Windows
+95 does not export `InterlockedCompareExchange`. The processor can do what the
+system does not offer.
 
-**Ce qui est perdu :**
+**What is lost:**
 
-- **Pas de rotation avant blocage.** L'implémentation de Microsoft tourne un
-  moment avant de dormir ; celle-ci attend le sémaphore avec un délai de 1 ms.
-  Sur une section très disputée et très courte, cela coûte des changements de
-  contexte que l'originale évite. Sur un monoprocesseur, la rotation n'a de toute
-  façon guère de sens.
-- **Attente avec délai plutôt qu'infinie.** Si un réveil se perd entre le test et
-  la mise en attente, la boucle le rattrape au tour suivant au lieu de dormir
-  pour toujours. C'est un choix de robustesse contre la précision : le réveil
-  peut être retardé de 1 ms.
-- **Aucun diagnostic.** `DebugInfo` reste nul ; les outils qui inspecteraient la
-  structure ne verraient rien.
+- **No spinning before blocking.** Microsoft's implementation spins for a while
+  before sleeping; this one waits on the semaphore with a 1 ms timeout. On a very
+  contended and very short section, that costs context switches the original
+  avoids. On a single processor, spinning hardly makes sense anyway.
+- **A timed wait rather than an infinite one.** If a wake-up is lost between the
+  test and the wait, the loop catches it on the next turn instead of sleeping
+  forever. It is a choice of robustness over precision: the wake-up may be delayed
+  by 1 ms.
+- **No diagnostics.** `DebugInfo` stays null; tools inspecting the structure would
+  see nothing.
 
-**Ce qui n'est pas perdu** : la réentrance, la propriété par fil, et l'exclusion
-mutuelle. Vérifiées sur la machine — deux fils, 4 000 incréments en contention,
-compteur final exactement 4 000.
+**What is not lost**: reentrancy, per-thread ownership, and mutual exclusion.
+Verified on the machine — two threads, 4,000 increments in contention, final
+counter exactly 4,000.
 
-> **Une leçon qui a coûté cher.** La première version se contentait de renvoyer
-> `FALSE` à `TryEnterCriticalSection` — réponse *licite* du contrat, puisque tout
-> appelant doit prévoir l'échec, et vérifiée sans danger puisque `try_lock`
-> n'apparaît nulle part dans le runtime.
+> **A lesson that cost dearly.** The first version merely returned `FALSE` from
+> `TryEnterCriticalSection` — a *lawful* answer under the contract, since every
+> caller must allow for failure, and one checked as safe since `try_lock` appears
+> nowhere in the runtime.
 >
-> Elle a figé la machine entière. `winpthreads` boucle sur cette fonction pour
-> prendre ses verrous, et l'attente active affame l'ordonnanceur de Windows 95
-> jusqu'à arrêter l'horloge de la barre des tâches.
+> It froze the whole machine. `winpthreads` loops on that function to take its
+> locks, and the busy wait starves Windows 95's scheduler to the point of stopping
+> the taskbar's clock.
 >
-> **Un bouchon licite n'est pas un bouchon inoffensif.**
+> **A lawful stub is not a harmless stub.**
 
-### `CreateSemaphoreW` — ajoutée par E02-S01, et d'une autre nature
+### `CreateSemaphoreW` — added by E02-S01, and of another nature
 
-Les six ci-dessus **manquaient** à la table d'exports, et leur absence est
-bruyante : le programme ne démarre pas, et Windows nomme le symbole.
-`CreateSemaphoreW` est exportée. Elle ne fait simplement rien — trois
-instructions qui rendent zéro et posent `ERROR_CALL_NOT_IMPLEMENTED`, à la même
-adresse que `CreateEventW`.
+The six above were **missing** from the export table, and their absence is loud:
+the program does not start, and Windows names the symbol. `CreateSemaphoreW` is
+exported. It simply does nothing — three instructions that return zero and set
+`ERROR_CALL_NOT_IMPLEMENTED`, at the same address as `CreateEventW`.
 
-C'est un piège d'une autre classe : le lien réussit, le chargement réussit, le
-contrôle des imports était satisfait, et seule l'exécution diffère.
+It is a trap of another class: the link succeeds, the load succeeds, the import
+check was satisfied, and only the execution differs.
 
-Elle compte parce que `moodycamel::LightweightSemaphore` l'appelle, et que ce
-sémaphore est le primitif de blocage de tout le planificateur d'`ultramodern`.
-Avec un descripteur nul, l'attente ne bloque plus et le signal boucle sans fin.
+It matters because `moodycamel::LightweightSemaphore` calls it, and that semaphore
+is the blocking primitive of the whole of `ultramodern`'s scheduler. With a null
+handle, the wait no longer blocks and the signal loops forever.
 
-La couche la fournit, renvoyée sur `CreateSemaphoreA`, en convertissant le nom
-s'il y en a un. **Ce qui est perdu** : rien — `CreateSemaphoreA` est du vrai code,
-et la conversion de nom ne peut échouer que sur un nom que la page de codes du
-système ne représente pas.
+The layer supplies it, routed onto `CreateSemaphoreA`, converting the name if
+there is one. **What is lost**: nothing — `CreateSemaphoreA` is real code, and the
+name conversion can only fail on a name the system's code page does not represent.
 
-Détail complet et conséquences : [WIN95-THREADING.md](WIN95-THREADING.md) et
+Full detail and consequences: [WIN95-THREADING.md](WIN95-THREADING.md) and
 [research/win95-blockers.md](research/win95-blockers.md).
 
-## Ce qui n'a pas eu besoin d'être écrit
+## What did not need to be written
 
-Le ticket anticipait deux contournements délicats. La mesure les a rendus sans
-objet, et c'est un résultat qui mérite d'être consigné :
+The ticket anticipated two delicate workarounds. Measurement made them
+unnecessary, and that is a result worth recording:
 
-| API | Statut | Vérification |
+| API | Status | Verification |
 |---|---|---|
-| `SignalObjectAndWait` | **non réclamée** | absente des imports de `libwinpthread`, `libstdc++` et `libgcc` |
-| `InitializeCriticalSectionAndSpinCount` | **non réclamée** | idem |
-| `GetThreadId` | **non réclamée** en modèle `posix` | réclamée par le modèle `win32`, écarté par l'ADR 0001 |
+| `SignalObjectAndWait` | **not required** | absent from the imports of `libwinpthread`, `libstdc++` and `libgcc` |
+| `InitializeCriticalSectionAndSpinCount` | **not required** | the same |
+| `GetThreadId` | **not required** in the `posix` model | required by the `win32` model, ruled out by ADR 0001 |
 
-Le risque annoncé par le ticket — décomposer `SignalObjectAndWait` en perdant son
-atomicité, donc ouvrir une fenêtre de course — **ne se matérialise pas**. Rien ne
-la demande.
+The risk the ticket announced — decomposing `SignalObjectAndWait` and losing its
+atomicity, hence opening a race window — **does not materialise**. Nothing asks
+for it.
 
-> **Suite, par E02-S01.** La conclusion « les variables de condition de Vista ne
-> sont pas à reproduire » s'est confirmée pour une raison plus forte que le choix
-> du modèle `posix` : `ultramodern` n'utilise **aucune** variable de condition.
-> Son attente conditionnelle est un sémaphore de comptage.
+> **A follow-up, from E02-S01.** The conclusion "Vista's condition variables are
+> not to be reproduced" was confirmed for a stronger reason than the choice of the
+> `posix` model: `ultramodern` uses **no** condition variable at all. Its
+> conditional wait is a counting semaphore.
 >
-> Le tableau ci-dessus reste vrai, mais il faut lui ajouter une colonne qu'il
-> n'avait pas : « exportée » ne veut pas dire « implémentée ». Voir
+> The table above stays true, but a column it did not have must be added to it:
+> "exported" does not mean "implemented". See
 > [WIN95-THREADING.md](WIN95-THREADING.md).
 
-Les variables de condition de Vista ne sont pas non plus réimplémentées : c'est
-précisément ce que le choix du modèle `posix` a permis d'éviter, leur
-reproduction sur des événements Windows 95 étant un exercice où l'on perd des
-réveils.
+Vista's condition variables are not reimplemented either: that is precisely what
+the choice of the `posix` model allowed us to avoid, their reproduction on Windows
+95 events being an exercise in which wake-ups get lost.
 
-## Unicode : les API `...A`, sans exception
+## Unicode: the `...A` APIs, without exception
 
-Sous Windows 9x, la famille `...W` **est exportée mais ne fait rien**. Le
-désassemblage de `KERNEL32.DLL` le montre : chaque entrée `...W` tient en trois
-instructions — `xor eax,eax`, un index, un saut vers une queue commune qui pose
-`ERROR_CALL_NOT_IMPLEMENTED`. `LoadLibraryExW` et `MoveFileExW` partagent la même
-adresse, parce qu'aucune des deux n'a de code.
+Under Windows 9x, the `...W` family **is exported but does nothing**. The
+disassembly of `KERNEL32.DLL` shows it: every `...W` entry fits in three
+instructions — `xor eax,eax`, an index, a jump to a common tail that sets
+`ERROR_CALL_NOT_IMPLEMENTED`. `LoadLibraryExW` and `MoveFileExW` share the same
+address, because neither has any code.
 
-Conséquence : **toute la couche utilise les API `...A`**, y compris pour les
-chemins de fichiers, et le journal de démarrage ouvre son fichier par
-`CreateFileA`.
+Consequence: **the whole layer uses the `...A` APIs**, including for file paths,
+and the startup log opens its file with `CreateFileA`.
 
-Bonne nouvelle du côté du runtime : `librecomp` travaille en **`std::u8string`**,
-c'est-à-dire en UTF-8 sur des octets — 236 usages de chaînes étroites contre 25
-de chaînes larges, et ces dernières sont des `u8string`, non des `wchar_t`. Il
-n'y a donc pas de conversion large à supprimer.
+Good news on the runtime's side: `librecomp` works in **`std::u8string`**, that is
+in UTF-8 over bytes — 236 uses of narrow strings against 25 of wide ones, and the
+latter are `u8string`, not `wchar_t`. There is therefore no wide conversion to
+remove.
 
-**Une exception subsiste**, à traiter par E01-S02 : `mod_manifest.cpp:52` appelle
-`_wfopen_s`, qui n'est **pas exportée** par le `MSVCRT.DLL` de la machine (seule
-`_wfopen` l'est, et elle repose sur `CreateFileW`, donc sur un bouchon). C'est
-dans le système de mods, que E00-S01 désigne déjà comme le premier candidat au
-fork.
+**One exception remains**, to be dealt with by E01-S02: `mod_manifest.cpp:52`
+calls `_wfopen_s`, which is **not exported** by the machine's `MSVCRT.DLL` (only
+`_wfopen` is, and it rests on `CreateFileW`, hence on a stub). It is in the mod
+system, which E00-S01 already names as the first candidate for a fork.
 
-Reste la question des pages de code : UTF-8 n'est pas la page 850 du système. Un
-chemin contenant des accents ne sera pas correctement transmis. Ce n'est pas
-traité ici, et ce n'est pas urgent — le jeu n'ouvre que des chemins qu'il
-fabrique lui-même.
+There remains the question of code pages: UTF-8 is not the system's code page 850.
+A path containing accented characters will not be transmitted correctly. That is
+not addressed here, and it is not urgent — the game opens only paths it builds
+itself.
 
-## CRT : liaison statique, sans exception
+## CRT: static linking, without exception
 
-`-static -static-libgcc -static-libstdc++`. Décision de
-[l'ADR 0001](adr/0001-toolchain.md), pour trois raisons dont deux mesurées :
+`-static -static-libgcc -static-libstdc++`. A decision of
+[ADR 0001](adr/0001-toolchain.md), for three reasons, two of them measured:
 
-1. **`libgcc_s_dw2-1.dll` n'existe pas sous Windows 95.** Un binaire lié
-   dynamiquement à libgcc ne se charge pas — constaté sur un témoin compilé par
-   inadvertance sans `-static`.
-2. **`MSVCRT.DLL` n'est pas d'origine.** Celle de la machine de test est datée du
-   3 novembre 1997, quand tout le reste du système porte le 24 août 1996. Elle
-   arrive avec une mise à jour, et **un Windows 95 de première génération ne l'a
-   pas du tout**. En dépendre reviendrait à faire dépendre le jeu d'une version
-   d'Internet Explorer.
-3. La liaison statique supprime toute question de redistribution.
+1. **`libgcc_s_dw2-1.dll` does not exist under Windows 95.** A binary linked
+   dynamically against libgcc does not load — observed on a witness compiled
+   without `-static` by inadvertence.
+2. **`MSVCRT.DLL` is not original.** The test machine's is dated 3 November 1997,
+   while the rest of the system carries 24 August 1996. It arrives with an update,
+   and **a first-generation Windows 95 does not have it at all**. Depending on it
+   would amount to making the game depend on a version of Internet Explorer.
+3. Static linking removes any question of redistribution.
 
-**Conséquence sur la distribution ([E09-S05](stories/E09-qa/E09-S05-packaging-distribution.md))** :
-le paquet n'a **aucun redistribuable à embarquer** pour le CRT. Il reste à
-vérifier la présence de `glide2x.dll`, fournie par le pilote de la carte et non
-par le paquet.
+**Consequence for distribution
+([E09-S05](stories/E09-qa/E09-S05-packaging-distribution.md))**: the package has
+**no redistributable to embed** for the CRT. What remains is to check for the
+presence of `glide2x.dll`, supplied by the card's driver and not by the package.
 
-Le coût est la taille du binaire : 501 Ko pour un témoin qui en ferait 51 avec
-Open Watcom. Sans objet au regard des 14 Mio de marge de
-[l'ADR 0003](adr/0003-memory-budget.md).
+The cost is the binary's size: 501 KB for a witness that would be 51 with Open
+Watcom. Immaterial against [ADR 0003](adr/0003-memory-budget.md)'s 14 MiB of
+headroom.
 
-## Démarrage
+## Startup
 
-`dkr_win95_startup()` doit être appelée en première ligne de `main`. Elle fait
-trois choses que personne d'autre ne fera :
+`dkr_win95_startup()` must be called on the first line of `main`. It does three
+things nobody else will:
 
-**Un journal dans un fichier.** Il n'y a pas de console utilisable sur la machine
-cible : un jeu plein écran qui meurt avant son premier affichage ne laisse rien à
-lire. Le journal s'écrit **à côté de l'exécutable** — lancé depuis le menu
-Démarrer, un programme hérite d'un répertoire courant qui n'a rien à voir avec
-l'endroit où l'utilisateur ira chercher le fichier — et il est **vidé après
-chaque ligne**, de sorte que la dernière ligne survive au plantage qui l'a
-interrompue. C'est justement celle-là qui compte.
+**A log in a file.** There is no usable console on the target machine: a
+full-screen game that dies before its first frame leaves nothing to read. The log
+is written **next to the executable** — launched from the Start menu, a program
+inherits a current directory that has nothing to do with where the user will go
+looking for the file — and it is **flushed after every line**, so that the last
+line survives the crash that interrupted it. That is precisely the one that
+counts.
 
-**Un filtre d'exceptions structurées.** Sans lui, une instruction invalide produit
-une boîte de dialogue qui ne nomme rien d'exploitable. Avec lui, le code et
-l'adresse partent dans le journal. Le cas `EXCEPTION_ILLEGAL_INSTRUCTION` porte
-une note explicite : sur cette cible, c'est le symptôme d'une instruction
-postérieure au Pentium II qui aurait échappé au contrôle de E01-S01.
+**A structured exception filter.** Without it, an invalid instruction produces a
+dialog box that names nothing usable. With it, the code and the address go into
+the log. The `EXCEPTION_ILLEGAL_INSTRUCTION` case carries an explicit note: on
+this target, it is the symptom of an instruction later than the Pentium II having
+escaped E01-S01's check.
 
-**Un contrôle de version.** Win32s sur Windows 3.1 et toute version antérieure à
-4.0 sont refusés par un message compréhensible, plutôt que par un plantage sur
-une API absente. Windows NT est accepté : le binaire y tourne aussi, ce qui rend
-le développement moins pénible.
+**A version check.** Win32s on Windows 3.1 and any version earlier than 4.0 are
+refused with a comprehensible message, rather than by a crash on a missing API.
+Windows NT is accepted: the binary runs there too, which makes development less
+painful.
 
-Relevé sur la machine de test :
+Recorded on the test machine:
 
 ```
-=== journal de demarrage ===
-Temoin plate-forme
+=== startup log ===
+Platform witness
 D:\DKR-BOOT.LOG
-filtre d'exceptions installe
-systeme : plate-forme 1, version 4.0 build 1111
+exception filter installed
+system: platform 1, version 4.0 build 1111
  C
-demarrage termine
+startup complete
 ```
 
-Plate-forme 1 est `VER_PLATFORM_WIN32_WINDOWS`, et la version 4.0 build 1111
-avec le marqueur « C » est la signature de Windows 95 OSR2.
+Platform 1 is `VER_PLATFORM_WIN32_WINDOWS`, and version 4.0 build 1111 with the
+"C" marker is Windows 95 OSR2's signature.
 
-## Vérifier
+## Checking
 
 ```sh
 ./Build-Win95.sh
-ctest --test-dir build/win95                        # tick64 + fils (E02-S01)
+ctest --test-dir build/win95                        # tick64 + threads (E02-S01)
 scripts/Push-To-Win95-VM.sh build/win95/bin/PLATFORM.EXE
 ```
 
-Le témoin `PLATFORM.EXE` exerce la couche entière. Sur la machine de test :
+The `PLATFORM.EXE` witness exercises the whole layer. On the test machine:
 
 ```
-IsDebuggerPresent      : faux
-SetProcessAffinityMask : accepte
-GetTickCount64         : 123 ms ecoulees        (pour un Sleep de 120 ms)
-TryEnterCriticalSection: verrou libre pris
-deux fils, 4000 tours  : compteur = 4000 / 4000
+IsDebuggerPresent      : false
+SetProcessAffinityMask : accepted
+GetTickCount64         : 123 ms elapsed        (for a 120 ms Sleep)
+TryEnterCriticalSection: free lock taken
+two threads, 4000 turns: counter = 4000 / 4000
 ```
