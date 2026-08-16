@@ -705,3 +705,54 @@ Le test : étiqueter chaque bord DP avec la tâche à laquelle il correspond et
 comparer à `curRDPTask` au moment du traitement. Nos messages ne portent qu'une
 valeur constante ; il faut donc l'étiquette de notre côté, et la comparaison au
 moment du dépôt.
+
+## Onzième élimination : le bord DP vise la bonne tâche
+
+L'hypothèse : notre bord SP étant publié avant le rendu, le jeu démarrerait la
+tâche graphique suivante entre nos deux bords, et notre DP terminerait la
+mauvaise.
+
+Testée en étiquetant chaque bord DP avec la tâche à laquelle il correspond — la
+tâche d'ordonnancement vaut l'adresse de l'`OSTask` moins 0x10 — et en la
+comparant à `curRDPTask` au moment du dépôt :
+
+    curRDPTask=0x80125F40 attendue=0x80125F40 OK
+    curRDPTask=0x80125FB0 attendue=0x80125FB0 OK
+    ...
+    (concordent=300 divergent=0)
+
+**Trois cents concordances, aucune divergence.** Les deux adresses alternent, ce
+qui est cohérent avec un double tampon de tâches graphiques.
+
+L'écart de comptage relevé plus haut s'explique sans défaut : le message de
+retrace emprunte un chemin qui ne passe pas par notre file externe, de sorte que
+la trace posée dans `dequeue_external_messages` le manquait là où `do_send` le
+voyait. Encore un effet de sonde placée ailleurs qu'au point de passage.
+
+## Où en est l'espace des causes
+
+Onze hypothèses éliminées, toutes par la mesure :
+
+| # | Hypothèse | Écartée par |
+|---|---|---|
+| 1 | double livraison du bord SP | un dépôt par appel |
+| 2 | course d'ordonnancement | retarder ne change rien |
+| 3 | planificateur non initialisé | il l'est |
+| 4 | messages SP et DP confondus | valeurs distinctes |
+| 5 | famine résiduelle sur DP | plus aucun refus |
+| 6 | écart entre les bords | les accoler ne change rien |
+| 7 | yield ignoré | jamais appelé |
+| 8 | bord DP déjà en attente | jamais |
+| 9 | chemin RDP seul | jamais emprunté |
+| 10 | livraison en double | envois = réceptions |
+| 11 | bord DP mal dirigé | 300 concordances sur 300 |
+
+Ce qui reste établi et sans explication : `curRDPTask` désigne la bonne tâche au
+dépôt, aucun message n'est perdu ni dupliqué, et `__scHandleRDP` le trouve
+pourtant nul.
+
+Toutes les sondes posées jusqu'ici observent **nos** chemins ou l'état du jeu
+**à nos moments**. La seule mesure qui reste échantillonne l'état du jeu **à ses
+moments à lui** : surveiller `gMainSched + 0x278` à chaque bascule de fil invité.
+C'est un travail d'instrumentation d'un autre ordre, et c'est par là qu'il faut
+reprendre.
