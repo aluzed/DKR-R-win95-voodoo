@@ -991,7 +991,8 @@ target_compile_options(win95recompiled PRIVATE -w)   # code généré
 # Les 17 sources que cette cible construit : celles de `DKR_GAME_SOURCES` moins
 # les quatre que seul RT64 compile, puisque RT64 exige D3D12, Vulkan ou Metal.
 set(DKR_WIN95_GAME_SOURCES
-    audio_equalizer dkr_save_codec game_main game_registration null_renderer
+    audio_equalizer dkr_save_codec game_main game_registration
+    glide_renderer null_renderer
     presentation_identity renderer_snapshot runtime_enhancements
     runtime_audio_controls runtime_input runtime_magic_codes runtime_platform
     runtime_quick_restart save_manager runtime_stubs runtime_telemetry
@@ -1020,7 +1021,11 @@ target_link_libraries(DKRWin95Game PRIVATE
     -Wl,--start-group
     win95recompiled win95librecomp win95ultramodern win95liverecomp
     win95fileio win95clock win95threading
-    -Wl,--end-group)
+    -Wl,--end-group
+    # La chaîne de rendu. `win95f3ddkr` tire le découpage et la transformation ;
+    # `win95glide` tire la TMU et le combineur. Le jeu est le premier binaire à
+    # les réunir — jusqu'ici seuls des témoins les ouvraient séparément.
+    win95f3ddkr win95glide)
 # `win95compat` n'est pas nommée ici : elle s'ajoute d'elle-même, en tête et sous
 # `--whole-archive`, par les options d'interface posées plus haut. La nommer une
 # seconde fois duplique l'archive et le lieur refuse — définitions multiples.

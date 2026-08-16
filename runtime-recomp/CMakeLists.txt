@@ -142,6 +142,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/dkr_save_codec.cpp
         src/game/game_main.cpp
         src/game/game_registration.cpp
+        src/game/glide_renderer.cpp
         src/game/null_renderer.cpp
         src/game/presentation_identity.cpp
         src/game/renderer_snapshot.cpp

@@ -1,4 +1,5 @@
 #include "game_registration.hpp"
+#include "glide_renderer.hpp"
 #include "null_renderer.hpp"
 #include "runtime_platform.hpp"
 #include "save_manager.hpp"
@@ -361,6 +362,33 @@ extern "C" void dkr_diag_commit(void) {
 extern "C" void dkr_diag_commit(void) { std::fflush(stderr); }
 #endif
 
+namespace dkr::runtime {
+
+// Le choix du rendu, par `DKR_RENDERER`.
+//
+// La valeur par défaut est Glide : c'est la cible du portage, et un réglage
+// qu'il faut penser à poser pour obtenir le comportement normal finit toujours
+// par manquer quelque part.
+//
+// `DKR_RENDERER=null` garde le rendu de diagnostic, qui compte les display
+// lists sans les lire. Ce n'est pas un vestige : c'est la seule configuration
+// qui démarre quand la carte est en cause, et donc la seule façon de séparer un
+// défaut du portage d'un défaut du rendu. Elle a servi à établir que le jeu
+// atteignait 9822 listes d'affichage alors qu'aucun pixel n'était encore écrit.
+std::unique_ptr<ultramodern::renderer::RendererContext> SelectRenderContext(
+    std::uint8_t* rdram,
+    ultramodern::renderer::WindowHandle window_handle,
+    bool developer_mode) {
+    const char* choix = std::getenv("DKR_RENDERER");
+    if (choix != nullptr && std::string_view{choix} == "null") {
+        std::fprintf(stderr, "[boot][gfx] rendu de diagnostic (DKR_RENDERER=null)\n");
+        return CreateDiagnosticRenderer(rdram, window_handle, developer_mode);
+    }
+    return CreateGlideRenderer(rdram, window_handle, developer_mode);
+}
+
+} // namespace dkr::runtime
+
 int DkrMain(int argc, char** argv) {
 #if defined(DKR_TARGET_WIN95)
     RedirectDiagnosticsToFile();
@@ -551,7 +579,7 @@ int DkrMain(int argc, char** argv) {
 #if DKR_RUNTIME_HAS_RT64
         .create_render_context = dkr::runtime::CreateRT64Renderer};
 #else
-        .create_render_context = dkr::runtime::CreateDiagnosticRenderer};
+        .create_render_context = dkr::runtime::SelectRenderContext};
 #endif
     const ultramodern::audio_callbacks_t audio_callbacks{
         .queue_samples = dkr::runtime::platform::queue_audio,

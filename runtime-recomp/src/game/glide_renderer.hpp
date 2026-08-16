@@ -1,0 +1,80 @@
+#pragma once
+
+#include "ultramodern/renderer_context.hpp"
+
+#include <atomic>
+#include <cstdint>
+
+#if defined(DKR_TARGET_WIN95)
+#include "render/backend.h"
+#include "render/f3ddkr.h"
+#endif
+
+namespace dkr::runtime {
+
+// Le rendu Glide branché sur la chaîne de E04.
+//
+// Il remplace `DiagnosticRenderer`, qui comptait les display lists sans les
+// lire. Ce que change ce contexte : la display list traverse réellement le
+// décodeur, la transformation, le découpage, et ressort en triangles sur la
+// Voodoo.
+//
+// **Ce n'est pas encore une image juste**, et il vaut mieux le dire que de le
+// laisser découvrir : l'état RDP (E04-S06) et le décodage de textures (E04-S07)
+// ne sont pas branchés, et la commande de fenêtre d'affichage du microcode
+// (`MOVEMEM`) n'est pas décodée. La géométrie sort, les couleurs et les textures
+// suivront.
+//
+// Toutes les fonctions membres sont appelées depuis le fil graphique unique
+// d'ultramodern — construction comprise, puisque `create_render_context` est
+// appelé dans `gfx_thread_func`. C'est ce qui rend Glide utilisable ici : la
+// bibliothèque n'admet qu'un seul fil.
+class GlideRenderer final : public ultramodern::renderer::RendererContext {
+public:
+    GlideRenderer();
+
+    bool valid() override;
+    bool update_config(const ultramodern::renderer::GraphicsConfig& old_config,
+                       const ultramodern::renderer::GraphicsConfig& new_config) override;
+    void enable_instant_present() override;
+    void send_dl(const OSTask* task, std::uint8_t* rdram_snapshot) override;
+    void update_screen() override;
+    void shutdown() override;
+    std::uint32_t get_display_framerate() const override;
+    float get_resolution_scale() const override;
+
+private:
+    std::atomic<std::uint64_t> display_list_count_{0};
+    std::atomic<std::uint64_t> present_count_{0};
+
+#if defined(DKR_TARGET_WIN95)
+    dkr_render_backend backend_{};
+    dkr_f3d_context context_{};
+    bool opened_ = false;
+    int width_ = 0;
+    int height_ = 0;
+
+    // Cumuls sur toute la partie, et non par image. Un compteur par image ne dit
+    // rien d'utile dans un journal qu'on lit après coup : ce qu'on veut savoir
+    // est si la chaîne a émis quoi que ce soit depuis le début, et où elle perd
+    // ce qu'elle décode.
+    unsigned long total_commands_ = 0;
+    unsigned long total_triangles_ = 0;
+    unsigned long total_emitted_ = 0;
+    unsigned long total_rejects_ = 0;
+#endif
+};
+
+std::unique_ptr<ultramodern::renderer::RendererContext> CreateGlideRenderer(
+    std::uint8_t* rdram,
+    ultramodern::renderer::WindowHandle window_handle,
+    bool developer_mode);
+
+// Choisit entre Glide et le rendu de diagnostic selon `DKR_RENDERER`.
+// Définie dans game_main.cpp, où les deux en-têtes sont visibles.
+std::unique_ptr<ultramodern::renderer::RendererContext> SelectRenderContext(
+    std::uint8_t* rdram,
+    ultramodern::renderer::WindowHandle window_handle,
+    bool developer_mode);
+
+} // namespace dkr::runtime
