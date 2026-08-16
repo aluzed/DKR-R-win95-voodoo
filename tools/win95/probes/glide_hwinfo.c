@@ -1,18 +1,19 @@
-/* E00-S05 — que dit la carte d'elle-meme ?
+/* E00-S05 - what does the card say about itself?
  *
- * E09-S01 a montre que le fichier de configuration de 86Box ment : des reglages
- * Voodoo ecrits a la main y ont ete ignores en silence, et la machine a emule
- * une Voodoo 1 a 2 Mo alors que le fichier annoncait une Voodoo 2 a 4 Mo. Tout
- * budget de texture etabli sur le fichier serait donc faux.
+ * E09-S01 showed that 86Box's configuration file lies: hand-written Voodoo
+ * settings were silently ignored there, and the machine emulated a 2 MB Voodoo 1
+ * while the file announced a 4 MB Voodoo 2. Any texture budget established from
+ * the file would therefore be wrong.
  *
- * Ce banc pose la question a Glide : `grSstQueryHardware` remplit une
- * GrHwConfiguration dont on extrait le type de carte, la memoire d'image, le
- * nombre de TMU et la memoire de chacune. C'est la meme information que le
- * moteur consultera a l'execution (E05-S01), obtenue par le meme chemin.
+ * This bench puts the question to Glide: `grSstQueryHardware` fills a
+ * GrHwConfiguration from which we extract the board type, the frame buffer
+ * memory, the number of TMUs and the memory of each. That is the same
+ * information the engine will consult at run time (E05-S01), obtained by the
+ * same path.
  *
- * La structure est aussi vidangee en brut : si la disposition supposee ne
- * correspondait pas a celle de ce pilote, les entiers restent lisibles et
- * l'erreur se voit au lieu de se cacher.
+ * The structure is also dumped raw: if the assumed layout did not match this
+ * driver's, the integers stay readable and the mistake shows instead of
+ * hiding.
  */
 typedef unsigned int  FxU32;
 typedef int           FxBool;
@@ -36,16 +37,16 @@ __declspec(dllimport) int   WINAPI MessageBoxA(void *, const char *, const char 
 #define FILE_ATTR_NORM 0x80u
 #define INVALID_HANDLE ((void *)-1)
 
-/* Disposition de Glide 2.x, telle que la declare `glide.h` de 3dfx. */
+/* Glide 2.x's layout, as 3dfx's `glide.h` declares it. */
 #define MAX_NUM_SST   4
 #define GLIDE_NUM_TMU 3
 
 typedef struct { int tmuRev; int tmuRam; } GrTMUConfig_t;
 
 typedef struct {
-    int fbRam;                 /* Mo de memoire d'image */
+    int fbRam;                 /* MB of frame buffer memory */
     int fbiRev;
-    int nTexelfx;              /* nombre de TMU */
+    int nTexelfx;              /* number of TMUs */
     FxBool sliDetect;
     GrTMUConfig_t tmuConfig[GLIDE_NUM_TMU];
 } GrVoodooConfig_t;
@@ -103,8 +104,8 @@ static void finish(int code)
         WriteFile(h, log_buf, (unsigned)log_len, &written, NULL);
         CloseHandle(h);
     }
-    MessageBoxA(NULL, "Interrogation terminee.\n\nResultat dans D:\\GLIDEHW.TXT",
-                "Materiel 3dfx", 0x40);
+    MessageBoxA(NULL, "Query finished.\n\nResult in D:\\GLIDEHW.TXT",
+                "3dfx hardware", 0x40);
     ExitProcess((unsigned)code);
 }
 
@@ -115,7 +116,7 @@ static const char *type_name(int t)
     case 1: return "SST96 / Voodoo Rush";
     case 2: return "AT3D";
     case 3: return "Voodoo2";
-    default: return "inconnu";
+    default: return "unknown";
     }
 }
 
@@ -133,7 +134,7 @@ void start(void)
     for (i = 0; i < (int)sizeof(hw); i++) ((char *)&hw)[i] = 0;
 
     dll = LoadLibraryA("GLIDE2X.DLL");
-    if (!dll) { logs("ECHEC: GLIDE2X.DLL introuvable\r\n"); finish(1); }
+    if (!dll) { logs("FAILED: GLIDE2X.DLL not found\r\n"); finish(1); }
 
     grGlideInit        = (pfn_grGlideInit)       GetProcAddress(dll, "_grGlideInit@0");
     grSstQueryHardware = (pfn_grSstQueryHardware)GetProcAddress(dll, "_grSstQueryHardware@4");
@@ -141,47 +142,47 @@ void start(void)
     grGlideGetVersion  = (pfn_grGlideGetVersion) GetProcAddress(dll, "_grGlideGetVersion@4");
 
     if (!grGlideInit || !grSstQueryHardware) {
-        logs("ECHEC: exports Glide introuvables\r\n"); finish(2);
+        logs("FAILED: Glide exports not found\r\n"); finish(2);
     }
 
-    logs("Materiel 3dfx vu par Glide 2.x\r\n");
-    logs("==============================\r\n");
+    logs("3dfx hardware as seen by Glide 2.x\r\n");
+    logs("==================================\r\n");
 
     if (grGlideGetVersion) {
         for (i = 0; i < (int)sizeof(version); i++) version[i] = 0;
         grGlideGetVersion(version);
-        logs("version Glide : "); logs(version); logs("\r\n");
+        logs("Glide version : "); logs(version); logs("\r\n");
     } else {
-        logs("version Glide : grGlideGetVersion absente de cet arbre\r\n");
+        logs("Glide version : grGlideGetVersion absent from this build\r\n");
     }
 
     grGlideInit();
     if (!grSstQueryHardware(&hw)) {
-        logs("ECHEC: grSstQueryHardware — aucun materiel detecte\r\n");
+        logs("FAILED: grSstQueryHardware - no hardware detected\r\n");
         finish(3);
     }
 
-    logs("cartes detectees : "); lognum(hw.num_sst); logs("\r\n\r\n");
+    logs("boards detected : "); lognum(hw.num_sst); logs("\r\n\r\n");
 
     for (s = 0; s < hw.num_sst && s < MAX_NUM_SST; s++) {
         GrVoodooConfig_t *v = &hw.SSTs[s].sstBoard.VoodooConfig;
-        logs("carte "); lognum(s); logs("\r\n");
+        logs("board "); lognum(s); logs("\r\n");
         logs("  type          : "); lognum(hw.SSTs[s].type);
         logs(" ("); logs(type_name(hw.SSTs[s].type)); logs(")\r\n");
-        logs("  memoire image : "); lognum(v->fbRam);     logs(" Mo\r\n");
-        logs("  revision FBI  : "); lognum(v->fbiRev);    logs("\r\n");
-        logs("  TMU           : "); lognum(v->nTexelfx);  logs("\r\n");
-        logs("  SLI detecte   : "); lognum(v->sliDetect); logs("\r\n");
+        logs("  frame buffer  : "); lognum(v->fbRam);     logs(" MB\r\n");
+        logs("  FBI revision  : "); lognum(v->fbiRev);    logs("\r\n");
+        logs("  TMUs          : "); lognum(v->nTexelfx);  logs("\r\n");
+        logs("  SLI detected  : "); lognum(v->sliDetect); logs("\r\n");
         for (i = 0; i < v->nTexelfx && i < GLIDE_NUM_TMU; i++) {
-            logs("  TMU "); lognum(i); logs(" memoire  : ");
-            lognum(v->tmuConfig[i].tmuRam); logs(" Mo\r\n");
+            logs("  TMU "); lognum(i); logs(" memory   : ");
+            lognum(v->tmuConfig[i].tmuRam); logs(" MB\r\n");
         }
         logs("\r\n");
     }
 
-    /* Vidange brute : de quoi relire la structure si la disposition supposee
-       ne correspondait pas a ce pilote. */
-    logs("structure brute (16 premiers entiers)\r\n ");
+    /* Raw dump: enough to re-read the structure if the assumed layout did not
+       match this driver's. */
+    logs("raw structure (first 16 integers)\r\n ");
     for (i = 0; i < 16; i++) {
         loghex(((unsigned *)&hw)[i]);
         logs((i % 4 == 3) ? "\r\n " : " ");

@@ -1,19 +1,19 @@
-/* E00-S05 — Glide 3.x fonctionne-t-il sur la cible ?
+/* E00-S05 - does Glide 3.x work on the target?
  *
- * Le pilote de reference 3dfx installe `glide2x.dll` et `glide3x.dll` cote a
- * cote. E09-S01 a prouve glide2x ; l'ADR de cible materielle ne peut pas
- * choisir Glide 3.x sans la meme preuve.
+ * 3dfx's reference driver installs `glide2x.dll` and `glide3x.dll` side by side.
+ * E09-S01 proved glide2x; the hardware-target ADR cannot pick Glide 3.x without
+ * the same proof.
  *
- * Ce banc charge glide3x, interroge ses chaines d'identification, ouvre un
- * contexte 640x480 et effectue un echange de tampons. Il n'affiche rien : ce
- * qui est teste, c'est que l'API repond, pas le rendu — celui-ci est deja
- * couvert par la demonstration Glide de E09-S01.
+ * This bench loads glide3x, queries its identification strings, opens a 640x480
+ * context and performs a buffer swap. It displays nothing: what is tested is
+ * that the API answers, not the rendering - that is already covered by E09-S01's
+ * Glide demonstration.
  *
- * Glide 3 remplace `grSstQueryHardware` par `grGet`/`grGetString`, et surtout
- * `grVertexLayout` : le format de sommet se declare au lieu de devoir
- * correspondre a une structure figee. C'est exactement le piege qui a coute une
- * demi-journee en E09-S01, ou un sommet rouge sortait vert parce que `ooz` et
- * `a` s'intercalent entre les couleurs et `oow`.
+ * Glide 3 replaces `grSstQueryHardware` with `grGet`/`grGetString`, and above all
+ * with `grVertexLayout`: the vertex format is declared instead of having to match
+ * a fixed structure. That is exactly the trap which cost half a day in E09-S01,
+ * where a red vertex came out green because `ooz` and `a` sit between the colours
+ * and `oow`.
  */
 typedef unsigned int FxU32;
 typedef int          FxI32;
@@ -49,8 +49,8 @@ __declspec(dllimport) int   WINAPI MessageBoxA(void *, const char *, const char 
 #define GR_VENDOR   0xF003
 #define GR_VERSION  0xF004
 
-/* Entiers interrogeables. Les valeurs sont celles de `glide.h` de Glide 3.1 ;
-   si l'une d'elles se revele fausse, `grGet` renvoie 0 et on le voit. */
+/* Queryable integers. The values are those of Glide 3.1's `glide.h`; if one of
+   them turns out to be wrong, `grGet` returns 0 and it shows. */
 #define GR_NUM_BOARDS 0x0F
 #define GR_NUM_TMU    0x11
 #define GR_MEMORY_FB  0x0D
@@ -95,7 +95,7 @@ static void finish(int code)
         WriteFile(h, log_buf, (unsigned)log_len, &written, NULL);
         CloseHandle(h);
     }
-    MessageBoxA(NULL, "Essai Glide 3 termine.\n\nResultat dans D:\\GLIDE3.TXT",
+    MessageBoxA(NULL, "Glide 3 trial finished.\n\nResult in D:\\GLIDE3.TXT",
                 "Glide 3.x", 0x40);
     ExitProcess((unsigned)code);
 }
@@ -115,12 +115,12 @@ void start(void)
     FxU32 ctx;
     FxI32 val;
 
-    logs("Essai de Glide 3.x sur la cible\r\n");
-    logs("===============================\r\n");
+    logs("Trying Glide 3.x on the target\r\n");
+    logs("==============================\r\n");
 
     dll = LoadLibraryA("GLIDE3X.DLL");
-    if (!dll) { logs("ECHEC: GLIDE3X.DLL introuvable\r\n"); finish(1); }
-    logs("GLIDE3X.DLL chargee\r\n");
+    if (!dll) { logs("FAILED: GLIDE3X.DLL not found\r\n"); finish(1); }
+    logs("GLIDE3X.DLL loaded\r\n");
 
     grGlideInit     = (pfn_grGlideInit)    GetProcAddress(dll, "_grGlideInit@0");
     grGlideShutdown = (pfn_grGlideShutdown)GetProcAddress(dll, "_grGlideShutdown@0");
@@ -132,53 +132,53 @@ void start(void)
     grGetString     = (pfn_grGetString)    GetProcAddress(dll, "_grGetString@4");
     grGet           = (pfn_grGet)          GetProcAddress(dll, "_grGet@12");
 
-    logs("exports  : grGlideInit "); logs(grGlideInit ? "ok" : "ABSENT");
-    logs(", grSstWinOpen ");         logs(grSstWinOpen ? "ok" : "ABSENT");
-    logs(", grGetString ");          logs(grGetString ? "ok" : "ABSENT");
-    logs(", grGet ");                logs(grGet ? "ok" : "ABSENT");
+    logs("exports  : grGlideInit "); logs(grGlideInit ? "ok" : "MISSING");
+    logs(", grSstWinOpen ");         logs(grSstWinOpen ? "ok" : "MISSING");
+    logs(", grGetString ");          logs(grGetString ? "ok" : "MISSING");
+    logs(", grGet ");                logs(grGet ? "ok" : "MISSING");
     logs("\r\n");
 
     if (!grGlideInit || !grSstWinOpen || !grBufferClear || !grBufferSwap) {
-        logs("ECHEC: exports essentiels manquants\r\n"); finish(2);
+        logs("FAILED: essential exports missing\r\n"); finish(2);
     }
 
     grGlideInit();
     if (grSstSelect) grSstSelect(0);
 
     if (grGetString) {
-        logs("vendeur  : "); logs(grGetString(GR_VENDOR));   logs("\r\n");
-        logs("materiel : "); logs(grGetString(GR_HARDWARE)); logs("\r\n");
-        logs("rendu    : "); logs(grGetString(GR_RENDERER)); logs("\r\n");
+        logs("vendor   : "); logs(grGetString(GR_VENDOR));   logs("\r\n");
+        logs("hardware : "); logs(grGetString(GR_HARDWARE)); logs("\r\n");
+        logs("renderer : "); logs(grGetString(GR_RENDERER)); logs("\r\n");
         logs("version  : "); logs(grGetString(GR_VERSION));  logs("\r\n");
     }
 
     if (grGet) {
         val = 0; grGet(GR_NUM_BOARDS, 4, &val);
-        logs("cartes   : "); lognum(val); logs("\r\n");
+        logs("boards   : "); lognum(val); logs("\r\n");
         val = 0; grGet(GR_NUM_TMU, 4, &val);
-        logs("TMU      : "); lognum(val); logs("\r\n");
+        logs("TMUs     : "); lognum(val); logs("\r\n");
         val = 0; grGet(GR_MEMORY_FB, 4, &val);
-        logs("mem image: "); lognum(val); logs(" octets\r\n");
+        logs("fb mem   : "); lognum(val); logs(" bytes\r\n");
         val = 0; grGet(GR_MEMORY_TMU, 4, &val);
-        logs("mem TMU  : "); lognum(val); logs(" octets\r\n");
+        logs("TMU mem  : "); lognum(val); logs(" bytes\r\n");
     }
 
     ctx = grSstWinOpen(0, GR_RESOLUTION_640x480, GR_REFRESH_60Hz,
                        GR_COLORFORMAT_ARGB, GR_ORIGIN_UPPER_LEFT, 2, 1);
     if (!ctx) {
-        logs("ECHEC: grSstWinOpen a refuse 640x480 double tampon + Z\r\n");
+        logs("FAILED: grSstWinOpen refused 640x480 double buffer + Z\r\n");
         finish(3);
     }
-    logs("contexte : ouvert en 640x480, double tampon + Z\r\n");
+    logs("context  : open at 640x480, double buffer + Z\r\n");
 
     grBufferClear(0x00204060, 0, 0xFFFF);
     grBufferSwap(1);
-    logs("echange  : effectue\r\n");
+    logs("swap     : done\r\n");
 
     if (grSstWinClose)  grSstWinClose(ctx);
     if (grGlideShutdown) grGlideShutdown();
     FreeLibrary(dll);
 
-    logs("\r\nGlide 3.x est fonctionnel sur cette machine.\r\n");
+    logs("\r\nGlide 3.x is functional on this machine.\r\n");
     finish(0);
 }

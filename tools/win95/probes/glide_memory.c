@@ -1,13 +1,13 @@
-/* E00-S06 — combien de memoire reste-t-il quand la pile 3dfx est active ?
+/* E00-S06 - how much memory is left once the 3dfx stack is up?
  *
- * Le budget memoire ne peut pas se deduire de la RAM installee : Windows 95,
- * ses pilotes et Glide en prennent une part qu'il faut mesurer, pas estimer.
- * Ce banc releve MEMORYSTATUS a trois moments — au repos, apres chargement de
- * glide2x.dll, et une fois le contexte Glide ouvert en 640x480 — puis ecrit le
- * resultat sur D:.
+ * The memory budget cannot be deduced from the installed RAM: Windows 95, its
+ * drivers and Glide take a share of it that must be measured, not estimated.
+ * This bench reads MEMORYSTATUS at three moments - at rest, after loading
+ * glide2x.dll, and once the Glide context is open at 640x480 - then writes the
+ * result to D:.
  *
- * Meme forme que glidetest.c : pas de CRT, Glide charge par LoadLibrary, pour
- * que le binaire ne depende que de kernel32 et user32.
+ * Same shape as glidetest.c: no CRT, Glide loaded by LoadLibrary, so that the
+ * binary depends on nothing but kernel32 and user32.
  */
 typedef unsigned int   FxU32;
 typedef unsigned char  FxU8;
@@ -69,19 +69,19 @@ static void lognum(unsigned int v)
     while (i > 0 && log_len < (int)sizeof(log_buf) - 1) log_buf[log_len++] = tmp[--i];
 }
 
-/* Kio plutot que Mio : a ce niveau de budget, arrondir au Mio efface
-   precisement ce qu'on cherche a voir. */
+/* KiB rather than MiB: at this budget's scale, rounding to the MiB erases
+   precisely what we are trying to see. */
 static void report(const char *label)
 {
     MEMORYSTATUS ms;
     ms.dwLength = sizeof(ms);
     GlobalMemoryStatus(&ms);
     logs(label);
-    logs("\r\n  phys total   "); lognum(ms.dwTotalPhys    >> 10); logs(" Kio");
-    logs("\r\n  phys dispo   "); lognum(ms.dwAvailPhys    >> 10); logs(" Kio");
-    logs("\r\n  charge       "); lognum(ms.dwMemoryLoad);         logs(" %");
-    logs("\r\n  virt dispo   "); lognum(ms.dwAvailVirtual  >> 10); logs(" Kio");
-    logs("\r\n  swap dispo   "); lognum(ms.dwAvailPageFile >> 10); logs(" Kio");
+    logs("\r\n  phys total   "); lognum(ms.dwTotalPhys    >> 10); logs(" KiB");
+    logs("\r\n  phys free    "); lognum(ms.dwAvailPhys    >> 10); logs(" KiB");
+    logs("\r\n  load         "); lognum(ms.dwMemoryLoad);         logs(" %");
+    logs("\r\n  virt free    "); lognum(ms.dwAvailVirtual  >> 10); logs(" KiB");
+    logs("\r\n  swap free    "); lognum(ms.dwAvailPageFile >> 10); logs(" KiB");
     logs("\r\n\r\n");
 }
 
@@ -94,15 +94,16 @@ static void flush_and_exit(int code)
         WriteFile(h, log_buf, (unsigned int)log_len, &written, NULL);
         CloseHandle(h);
     }
-    MessageBoxA(NULL, "Mesure terminee.\n\nResultat dans D:\\GLIDEMEM.TXT",
-                "Budget memoire", 0x40);
+    MessageBoxA(NULL, "Measurement finished.\n\nResult in D:\\GLIDEMEM.TXT",
+                "Memory budget", 0x40);
     ExitProcess((unsigned int)code);
 }
 
-/* Nom sans underscore : la decoration PE i686 en ajoute un, et c'est ce
-   `_start` decore que reclame `-Wl,-e,_start`. Ecrire `_start` ici donne
-   `__start`, que le lieur ne trouve pas — il retombe alors silencieusement sur
-   0x401000, qui n'est pas l'entree voulue. Meme convention que glidetest.c. */
+/* Name without an underscore: the i686 PE decoration adds one, and it is that
+   decorated `_start` which `-Wl,-e,_start` asks for. Writing `_start` here gives
+   `__start`, which the linker does not find - it then silently falls back to
+   0x401000, which is not the intended entry point. Same convention as
+   glidetest.c. */
 void start(void)
 {
     void *dll;
@@ -114,14 +115,14 @@ void start(void)
     pfn_grGlideShutdown    grGlideShutdown;
     char hwinfo[512];
 
-    report("1. au repos, avant tout chargement");
+    report("1. at rest, before any loading");
 
     dll = LoadLibraryA("GLIDE2X.DLL");
-    if (!dll) { logs("ECHEC: GLIDE2X.DLL introuvable\r\n"); flush_and_exit(1); }
-    report("2. glide2x.dll chargee");
+    if (!dll) { logs("FAILED: GLIDE2X.DLL not found\r\n"); flush_and_exit(1); }
+    report("2. glide2x.dll loaded");
 
-    /* Les exports de Glide 2.x sont en stdcall decore : le nom porte la taille
-       de la pile. Sans le suffixe, GetProcAddress echoue silencieusement. */
+    /* Glide 2.x's exports are decorated stdcall: the name carries the stack
+       size. Without the suffix, GetProcAddress fails silently. */
     grGlideInit        = (pfn_grGlideInit)       GetProcAddress(dll, "_grGlideInit@0");
     grSstQueryHardware = (pfn_grSstQueryHardware)GetProcAddress(dll, "_grSstQueryHardware@4");
     grSstSelect        = (pfn_grSstSelect)       GetProcAddress(dll, "_grSstSelect@4");
@@ -131,24 +132,24 @@ void start(void)
 
     if (!grGlideInit || !grSstQueryHardware || !grSstSelect ||
         !grSstWinOpen || !grSstWinClose || !grGlideShutdown) {
-        logs("ECHEC: exports Glide introuvables\r\n"); flush_and_exit(2);
+        logs("FAILED: Glide exports not found\r\n"); flush_and_exit(2);
     }
 
     grGlideInit();
     if (!grSstQueryHardware(hwinfo)) {
-        logs("ECHEC: aucun materiel Voodoo detecte\r\n"); flush_and_exit(3);
+        logs("FAILED: no Voodoo hardware detected\r\n"); flush_and_exit(3);
     }
     grSstSelect(0);
 
     if (!grSstWinOpen(0, GR_RESOLUTION_640x480, GR_REFRESH_60Hz,
                       GR_COLORFORMAT_ARGB, GR_ORIGIN_UPPER_LEFT, 2, 1)) {
-        logs("ECHEC: grSstWinOpen\r\n"); flush_and_exit(4);
+        logs("FAILED: grSstWinOpen\r\n"); flush_and_exit(4);
     }
-    report("3. contexte Glide ouvert, 640x480, double tampon + Z");
+    report("3. Glide context open, 640x480, double buffer + Z");
 
     grSstWinClose();
     grGlideShutdown();
-    report("4. contexte ferme");
+    report("4. context closed");
 
     FreeLibrary(dll);
     flush_and_exit(0);
