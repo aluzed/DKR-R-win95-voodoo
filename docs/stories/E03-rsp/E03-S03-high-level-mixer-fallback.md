@@ -1,99 +1,97 @@
-# E03-S03 — Repli : mixeur audio de haut niveau
+# E03-S03 — Fallback: high-level audio mixer
 
 | | |
 |---|---|
-| **Épic** | E03 — RSP sur x86 sans SSE |
-| **Statut** | TODO — **déclenché** |
-| **Priorité** | **P0** |
-| **Estimation** | XL |
-| **Dépend de** | E03-S02 |
-| **Bloque** | — |
+| **Epic** | E03 — RSP on x86 without SSE |
+| **Status** | TODO — **triggered** |
+| **Priority** | **P0** |
+| **Estimate** | XL |
+| **Depends on** | E03-S02 |
+| **Blocks** | — |
 
-## Contexte
+## Context
 
-**Ce ticket est déclenché.** Sa condition l'est sans ambiguïté :
-[E00-S04](../E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) a mesuré que la
-cible n'atteint que **3,9 % du débit vectoriel du RSP**. Même en supposant que
-l'audio ne consomme que 5 % du RSP sur console, le microcode recompilé coûterait
-43 ms par image pour un budget de 33,3 ms — et une implémentation MMX, qui
-n'offrirait que quatre voies au lieu de huit, n'y changerait rien.
+**This ticket is triggered.** Its condition is met unambiguously:
+[E00-S04](../E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) measured that the
+target reaches only **3.9 % of the RSP's vector throughput**. Even assuming the audio
+consumes only 5 % of the RSP on console, the recompiled microcode would cost 43 ms per
+frame against a budget of 33.3 ms — and an MMX implementation, which would offer only
+four lanes instead of eight, would change nothing.
 
-Détails et chiffres : [`docs/research/rsp-audio-budget.md`](../../research/rsp-audio-budget.md).
+Details and figures:
+[`docs/research/rsp-audio-budget.md`](../../research/rsp-audio-budget.md).
 
-Dans ce cas, il faut cesser d'exécuter le microcode instruction par instruction et
-interpréter à haut niveau les commandes audio qu'il reçoit : lire la liste de
-commandes produite par le moteur, et réaliser directement l'opération demandée —
-décodage ADPCM, rééchantillonnage, enveloppe, mixage — en code x86 écrit pour la
-machine cible.
+In that case, we must stop running the microcode instruction by instruction and
+interpret at a high level the audio commands it receives: read the command list the
+engine produces, and carry out the requested operation directly — ADPCM decoding,
+resampling, envelope, mixing — in x86 code written for the target machine.
 
-C'est l'approche des émulateurs N64 à audio HLE. Elle est nettement plus rapide
-et nettement moins fidèle : la sortie n'est plus identique au bit près, et
-certains effets propres au microcode de Rare peuvent différer.
+That is the approach of the N64 emulators with HLE audio. It is markedly faster and
+markedly less faithful: the output is no longer bit-for-bit identical, and some
+effects peculiar to Rare's microcode may differ.
 
-Le portage natif voisin a le même arbitrage dans son épic E06, avec le même
-raisonnement.
+The neighbouring native port has the same trade-off in its epic E06, with the same
+reasoning.
 
-## Objectif
+## Objective
 
-Fournir un mixeur audio de haut niveau qui tienne le budget CPU, avec une
-différence sonore mesurée et jugée acceptable.
+To supply a high-level audio mixer that holds the CPU budget, with a difference in
+sound that is measured and judged acceptable.
 
-## Périmètre
+## Scope
 
-**Dans :** l'interprétation des commandes audio et le mixage.
+**In:** interpreting the audio commands and mixing.
 
-**Hors :** la sortie audio (E06-S03). Le mixeur produit des tampons ; il ne les
-restitue pas.
+**Out:** the audio output (E06-S03). The mixer produces buffers; it does not play
+them back.
 
-## Travail
+## Work
 
-1. Documenter l'ABI audio de DKR : format de la liste de commandes, opcodes,
-   structures de données. Deux sources se recoupent — le decomp
-   (`extern/dkr-decomp`, qui contient le code du moteur audio) et le microcode
-   recompilé lui-même, dont le répartiteur est décrit par les seize cibles de
-   branchement du fichier TOML.
-2. Implémenter les commandes une par une, dans l'ordre de fréquence d'usage. À
-   chaque étape, comparer la sortie à celle du microcode recompilé.
-3. Traiter en priorité le décodage ADPCM et le rééchantillonnage : ce sont les
-   opérations dominantes de tout mixeur audio N64.
-4. **Se servir du microcode recompilé comme oracle.** Il compile et s'exécute sur
-   la cible par le chemin scalaire — trop lentement pour le temps réel, mais avec
-   une fidélité au bit près. C'est la référence contre laquelle mesurer l'écart
-   du mixeur, et elle est disponible dès maintenant.
-5. Mesurer la différence sonore de façon objective : erreur quadratique moyenne
-   par rapport à la référence, sur des séquences musicales et sur des effets.
-   « Ça sonne pareil » n'est pas un critère.
-6. Mesurer le gain CPU et vérifier qu'il ramène l'audio dans son budget.
-7. Conserver le chemin microcode disponible et sélectionnable par la configuration
-   (E06-S05) : sur une machine plus rapide que le plancher, la fidélité doit
-   rester accessible.
-8. Documenter, dans `docs/AUDIO-HLE.md`, ce qui diffère de la référence et
-   pourquoi.
+1. Document DKR's audio ABI: the command list's format, the opcodes, the data
+   structures. Two sources corroborate each other — the decomp (`extern/dkr-decomp`,
+   which contains the audio engine's code) and the recompiled microcode itself, whose
+   dispatcher is described by the sixteen branch targets in the TOML file.
+2. Implement the commands one by one, in order of frequency of use. At each step,
+   compare the output against the recompiled microcode's.
+3. Deal first with ADPCM decoding and resampling: they are the dominant operations of
+   any N64 audio mixer.
+4. **Use the recompiled microcode as the oracle.** It compiles and runs on the target
+   through the scalar path — too slowly for real time, but with bit-for-bit fidelity.
+   It is the reference against which to measure the mixer's deviation, and it is
+   available right now.
+5. Measure the difference in sound objectively: root-mean-square error against the
+   reference, on musical sequences and on effects. "It sounds the same" is not a
+   criterion.
+6. Measure the CPU gain and check that it brings the audio back within its budget.
+7. Keep the microcode path available and selectable through the configuration
+   (E06-S05): on a machine faster than the floor, fidelity must stay reachable.
+8. Document, in `docs/AUDIO-HLE.md`, what differs from the reference and why.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] L'ABI audio de DKR est documentée à partir du decomp et du microcode.
-- [ ] Le mixeur produit une sortie audible et correcte pour la musique et pour les
-      effets.
-- [ ] L'écart à la référence est mesuré objectivement et consigné.
-- [ ] Le gain CPU est mesuré et ramène l'audio dans son budget.
-- [ ] Le chemin microcode reste sélectionnable par la configuration.
-- [ ] Les différences connues sont documentées.
-- [ ] Le déclenchement de ce ticket est justifié par le chiffre de E03-S02, et ce
-      chiffre est cité ici.
+- [ ] DKR's audio ABI is documented from the decomp and the microcode.
+- [ ] The mixer produces audible and correct output for the music and for the
+      effects.
+- [ ] The deviation from the reference is measured objectively and recorded.
+- [ ] The CPU gain is measured and brings the audio back within its budget.
+- [ ] The microcode path stays selectable through the configuration.
+- [ ] The known differences are documented.
+- [ ] This ticket's triggering is justified by E03-S02's figure, and that figure is
+      quoted here.
 
-## Risques
+## Risks
 
-C'est un des plus gros postes de travail du projet, et il produit une régression
-de fidélité assumée. Il ne doit pas être entrepris par confort ou par anticipation
-— seulement sur la foi d'une mesure qui prouve que le chemin fidèle ne tient pas.
+This is one of the project's largest items of work, and it produces an accepted
+regression in fidelity. It must not be undertaken out of comfort or in anticipation —
+only on the strength of a measurement proving that the faithful path does not hold.
 
-Inversement, s'il est nécessaire et qu'on le repousse, tout le travail audio en
-aval est bâti sur une fondation qui ne tiendra pas.
+Conversely, if it is necessary and we put it off, all the downstream audio work is
+built on a foundation that will not hold.
 
-## Références
+## References
 
-- E03-S02 — condition de déclenchement et budget
-- `runtime-recomp/rsp/aspMain.us.v77.toml` — répartiteur d'ABI et table de commandes
-- `extern/dkr-decomp` — code source du moteur audio du jeu
-- `../../Diddy-Kong-Racing/docs/stories/E06-audio/` — même arbitrage côté portage natif
+- E03-S02 — triggering condition and budget
+- `runtime-recomp/rsp/aspMain.us.v77.toml` — ABI dispatcher and command table
+- `extern/dkr-decomp` — source code of the game's audio engine
+- `../../Diddy-Kong-Racing/docs/stories/E06-audio/` — the same trade-off on the native
+  port's side

@@ -1,82 +1,80 @@
-# E03-S02 — Microcode audio `aspMain` : exécution et budget
+# E03-S02 — `aspMain` audio microcode: execution and budget
 
 | | |
 |---|---|
-| **Épic** | E03 — RSP sur x86 sans SSE |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E03-S01, E02-S02 |
-| **Bloque** | E06-S03, E03-S03 |
+| **Epic** | E03 — RSP on x86 without SSE |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E03-S01, E02-S02 |
+| **Blocks** | E06-S03, E03-S03 |
 
-## Contexte
+## Context
 
-`aspMain` est le microcode audio de Rare, recompilé instruction par instruction
-en 73 Ko de C++. Il produit les tampons audio du jeu à partir des commandes
-émises par le moteur.
+`aspMain` is Rare's audio microcode, recompiled instruction by instruction into 73 KB
+of C++. It produces the game's audio buffers from the commands the engine issues.
 
-Sa configuration de recompilation (`runtime-recomp/rsp/aspMain.us.v77.toml`) est
-instructive sur sa nature : le microcode est chargé à l'adresse IMEM `0x04001080`
-plutôt qu'à `0x1000` comme les révisions ultérieures, et seize cibles de
-branchement indirect ont dû être déclarées à la main parce que le répartiteur
-d'ABI les lit dans une table de commandes, hors de portée de l'analyse statique.
-Ce n'est pas du microcode standard, et il ne se remplace pas par une
-implémentation générique.
+Its recompilation configuration (`runtime-recomp/rsp/aspMain.us.v77.toml`) is
+instructive about its nature: the microcode is loaded at IMEM address `0x04001080`
+rather than at `0x1000` like later revisions, and sixteen indirect branch targets had
+to be declared by hand because the ABI dispatcher reads them from a command table,
+out of static analysis's reach. This is not standard microcode, and it cannot be
+replaced by a generic implementation.
 
-Une fois E03-S01 livré, `aspMain` doit s'exécuter correctement sur la cible. Reste
-à vérifier qu'il produit le bon son, et à quel prix.
+Once E03-S01 is delivered, `aspMain` must run correctly on the target. What remains
+is to check that it produces the right sound, and at what price.
 
-## Objectif
+## Objective
 
-Faire produire à `aspMain` des tampons audio corrects sous Windows 95, et
-mesurer sa part exacte du budget CPU.
+To make `aspMain` produce correct audio buffers under Windows 95, and to measure its
+exact share of the CPU budget.
 
-## Périmètre
+## Scope
 
-**Dans :** l'exécution du microcode recompilé, sa validation, sa mesure.
+**In:** running the recompiled microcode, validating it, measuring it.
 
-**Hors :** l'émulation vectorielle (E03-S01) et la restitution sonore (E06-S03).
+**Out:** the vector emulation (E03-S01) and the sound output (E06-S03).
 
-## Travail
+## Work
 
-1. Exécuter `dkrAspMain` sur la cible avec l'implémentation de E03-S01, sur des
-   tâches audio réelles produites par le jeu.
-2. Comparer les tampons produits à ceux de la cible moderne, au bit près. Toute
-   différence remonte à E03-S01, pas à un réglage de mixage.
-3. Vérifier l'ordonnancement : la tâche audio est soumise par le jeu au même titre
-   que la tâche graphique, et son achèvement doit être signalé au fil demandeur.
-   Plusieurs patchs existants portent sur cette mécanique de complétion
-   (`0011-acknowledge-sp-delivery-before-dp`, `0012-wait-for-emulated-sp-handler`) :
-   vérifier qu'ils restent corrects avec la couche de E02-S01.
-4. Mesurer le temps d'exécution par tâche audio sur la cible, en médiane et au
-   99ᵉ centile. Le centile haut compte davantage que la médiane : c'est lui qui
-   provoque les coupures sonores.
-5. Convertir en pourcentage du budget par image et l'inscrire au budget global de
-   E08-S01.
-6. Identifier les zones chaudes du microcode et vérifier qu'elles correspondent à
-   la distribution prévue par E00-S04. Un écart signale une hypothèse fausse dans
-   le spike, qu'il vaut mieux corriger que traîner.
-7. Statuer sur le déclenchement de E03-S03 : si le budget est dépassé et que
-   l'optimisation ne suffit pas, le mixeur de haut niveau devient nécessaire.
+1. Run `dkrAspMain` on the target with E03-S01's implementation, on real audio tasks
+   produced by the game.
+2. Compare the buffers produced against the modern target's, bit for bit. Any
+   difference goes back to E03-S01, not to a mixing setting.
+3. Check the scheduling: the audio task is submitted by the game just as the graphics
+   task is, and its completion must be signalled to the requesting thread. Several
+   existing patches bear on that completion mechanism
+   (`0011-acknowledge-sp-delivery-before-dp`, `0012-wait-for-emulated-sp-handler`):
+   check that they stay correct with E02-S01's layer.
+4. Measure the execution time per audio task on the target, at the median and at the
+   99th percentile. The high percentile counts more than the median: it is the one
+   that causes the sound dropouts.
+5. Convert it into a percentage of the per-frame budget and enter it in E08-S01's
+   overall budget.
+6. Identify the microcode's hot zones and check that they match the distribution
+   E00-S04 forecast. A gap signals a false hypothesis in the spike, which is better
+   corrected than carried around.
+7. Rule on whether E03-S03 is triggered: if the budget is exceeded and optimisation
+   does not suffice, the high-level mixer becomes necessary.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] `dkrAspMain` s'exécute sur la cible et produit des tampons identiques au bit
-      près à ceux de la cible moderne.
-- [ ] La complétion de tâche est signalée correctement, chemins d'arrêt inclus.
-- [ ] Le temps par tâche est mesuré en médiane et au 99ᵉ centile.
-- [ ] La part du budget par image est chiffrée et inscrite au budget global.
-- [ ] Les zones chaudes sont identifiées et comparées à la prévision de E00-S04.
-- [ ] La décision de déclencher ou non E03-S03 est prise sur ce chiffre.
+- [ ] `dkrAspMain` runs on the target and produces buffers bit-for-bit identical to
+      the modern target's.
+- [ ] Task completion is signalled correctly, shutdown paths included.
+- [ ] The time per task is measured at the median and at the 99th percentile.
+- [ ] The share of the per-frame budget is quantified and entered in the overall
+      budget.
+- [ ] The hot zones are identified and compared against E00-S04's forecast.
+- [ ] The decision whether or not to trigger E03-S03 is taken on that figure.
 
-## Risques
+## Risks
 
-L'audio est impitoyable sur le respect des échéances : une image de rendu en
-retard produit une saccade que l'œil pardonne, un tampon audio en retard produit
-un craquement que l'oreille ne pardonne pas. Le budget audio doit donc être tenu
-au centile haut, pas en moyenne.
+Audio is merciless about deadlines: a late rendered frame produces a stutter the eye
+forgives, a late audio buffer produces a crackle the ear does not. The audio budget
+must therefore be held at the high percentile, not on average.
 
-## Références
+## References
 
 - `runtime-recomp/RecompiledRSP/aspMain.cpp`
 - `runtime-recomp/rsp/aspMain.us.v77.toml`

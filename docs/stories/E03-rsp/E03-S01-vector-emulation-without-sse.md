@@ -1,114 +1,112 @@
-# E03-S01 — Émulation de l'unité vectorielle du RSP sans SSE
+# E03-S01 — Emulating the RSP's vector unit without SSE
 
 | | |
 |---|---|
-| **Épic** | E03 — RSP sur x86 sans SSE |
-| **Statut** | TODO |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E00-S04, E01-S05 |
-| **Bloque** | E03-S02 |
+| **Epic** | E03 — RSP on x86 without SSE |
+| **Status** | TODO |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E00-S04, E01-S05 |
+| **Blocks** | E03-S02 |
 
-## État au 2026-08-11 — largement caduc
+## State as of 2026-08-11 — largely obsolete
 
-[E00-S04](../E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) a mesuré ce que ce
-ticket devait rendre possible, et le résultat lui retire l'essentiel de sa
-raison d'être :
+[E00-S04](../E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) measured what this
+ticket was to make possible, and the result takes away most of its reason to exist:
 
-- **le repli scalaire existe déjà** dans `librecomp` et se sélectionne
-  automatiquement en 32 bits — les étapes 1 à 3 sont sans objet ;
-- **l'optimisation MMX ne sauverait pas le chemin** : quatre voies au lieu de
-  huit amèneraient à ~15 % du débit du RSP, cinq fois trop lent. Les étapes 4 à 7
-  seraient un effort perdu.
+- **the scalar fallback already exists** in `librecomp` and is selected
+  automatically in 32 bits — steps 1 to 3 are moot;
+- **an MMX optimisation would not save the path**: four lanes instead of eight would
+  bring us to ~15 % of the RSP's throughput, five times too slow. Steps 4 to 7 would
+  be wasted effort.
 
-Ce qui subsiste : le chemin scalaire est l'**oracle** de
-[E03-S03](E03-S03-high-level-mixer-fallback.md), et il est déjà fonctionnel. Ce
-ticket devrait être fermé ou réduit à la validation de cet oracle.
+What survives: the scalar path is
+[E03-S03](E03-S03-high-level-mixer-fallback.md)'s **oracle**, and it already works.
+This ticket ought to be closed, or reduced to validating that oracle.
 
-## Contexte
+## Context
 
-`RecompiledRSP/aspMain.cpp` inclut `librecomp/rsp_vu_impl.hpp`, qui émule
-l'unité vectorielle du RSP. Cette unité traite huit entiers signés de 16 bits par
-instruction, avec accumulateur 48 bits et saturations — une correspondance
-naturelle avec SSE2, dont les registres font 128 bits, soit exactement huit
-voies de 16 bits.
+`RecompiledRSP/aspMain.cpp` includes `librecomp/rsp_vu_impl.hpp`, which emulates the
+RSP's vector unit. That unit processes eight signed 16-bit integers per instruction,
+with a 48-bit accumulator and saturations — a natural match for SSE2, whose registers
+are 128 bits, that is, exactly eight 16-bit lanes.
 
-Le Pentium II n'a pas SSE2. Il a MMX : registres de 64 bits, soit quatre voies de
-16 bits. Chaque opération vectorielle du RSP demandera donc deux opérations MMX,
-plus la gestion des retenues et des saturations sur les deux moitiés.
+The Pentium II does not have SSE2. It has MMX: 64-bit registers, that is, four 16-bit
+lanes. Each RSP vector operation will therefore require two MMX operations, plus
+handling the carries and the saturations on both halves.
 
-Deux particularités de MMX pèsent sur la conception :
+Two peculiarities of MMX weigh on the design:
 
-- ses registres sont **partagés avec la pile x87**. Toute transition entre code
-  MMX et code flottant exige un `emms`, dont le coût est significatif. Le
-  découpage doit donc grouper le travail vectoriel plutôt que l'entrelacer ;
-- l'accumulateur 48 bits du RSP n'a pas d'équivalent MMX, et sa reproduction
-  exacte est la partie délicate de l'exercice.
+- its registers are **shared with the x87 stack**. Any transition between MMX code
+  and floating-point code requires an `emms`, whose cost is significant. The split
+  must therefore group the vector work rather than interleave it;
+- the RSP's 48-bit accumulator has no MMX equivalent, and reproducing it exactly is
+  the delicate part of the exercise.
 
-E00-S04 a mesuré ce que coûte chaque stratégie. Ce ticket implémente celle qui a
-été retenue.
+E00-S04 measured what each strategy costs. This ticket implements the one that was
+retained.
 
-## Objectif
+## Objective
 
-Fournir une implémentation de l'unité vectorielle du RSP qui compile sans SSE,
-produit des résultats identiques au bit près à la référence, et tient le budget
-de E00-S04.
+To supply an implementation of the RSP's vector unit that compiles without SSE,
+produces bit-for-bit identical results to the reference, and holds E00-S04's budget.
 
-## Périmètre
+## Scope
 
-**Dans :** l'émulation vectorielle et sa validation.
+**In:** the vector emulation and its validation.
 
-**Hors :** le microcode audio lui-même (E03-S02) et la sortie audio (E06-S03).
+**Out:** the audio microcode itself (E03-S02) and the audio output (E06-S03).
 
-## Travail
+## Work
 
-1. Écrire d'abord l'implémentation **scalaire portable**, sans MMX. Elle sera
-   lente, et c'est précisément son intérêt : elle est simple, évidemment correcte,
-   et elle sert d'oracle à la version optimisée. Elle est aussi le repli si MMX
-   pose problème.
-2. Valider cette version scalaire contre la version SSE2 de référence : rejouer
-   des tâches audio capturées et comparer les tampons de sortie au bit près. Une
-   différence, même d'une unité de quantification, est un défaut.
-3. Écrire les tests par opération : pour chaque instruction vectorielle utilisée
-   par `aspMain` (relevées et comptées en E00-S04), un test couvrant les cas
-   nominaux, les saturations positives et négatives, et les débordements
-   d'accumulateur. C'est aux frontières que ces implémentations se trompent.
-4. Optimiser en MMX les opérations dominantes relevées en E00-S04 — pas toutes.
-   Les opérations rares restent scalaires : leur optimisation coûte du temps et du
-   risque pour un gain non mesurable.
-5. Gérer les transitions MMX / x87 : placer les `emms` aux bonnes frontières,
-   vérifier qu'aucun code flottant ne s'exécute avec un état MMX actif. C'est une
-   source classique de corruption silencieuse de résultats en virgule flottante.
-6. Revalider la version MMX contre la version scalaire, au bit près, sur le même
-   jeu de tâches capturées.
-7. Mesurer le gain réel et le confronter au budget de E00-S04.
-8. Livrer le tout sous forme de patch `patches/n64-modern-runtime/`, jamais par
-   modification directe du worktree.
+1. Write the **portable scalar** implementation first, without MMX. It will be slow,
+   and that is precisely its interest: it is simple, obviously correct, and it serves
+   as the oracle for the optimised version. It is also the fallback if MMX turns out
+   to be a problem.
+2. Validate that scalar version against the reference SSE2 version: replay captured
+   audio tasks and compare the output buffers bit for bit. A difference, even of one
+   quantisation unit, is a defect.
+3. Write the per-operation tests: for each vector instruction used by `aspMain`
+   (surveyed and counted in E00-S04), a test covering the nominal cases, the positive
+   and negative saturations, and the accumulator overflows. It is at the boundaries
+   that these implementations go wrong.
+4. Optimise in MMX the dominant operations surveyed in E00-S04 — not all of them. The
+   rare operations stay scalar: optimising them costs time and risk for an
+   unmeasurable gain.
+5. Handle the MMX / x87 transitions: place the `emms` at the right boundaries, check
+   that no floating-point code runs with an MMX state active. It is a classic source
+   of silent corruption of floating-point results.
+6. Revalidate the MMX version against the scalar version, bit for bit, on the same
+   set of captured tasks.
+7. Measure the real gain and confront it with E00-S04's budget.
+8. Deliver the whole as a `patches/n64-modern-runtime/` patch, never by modifying the
+   worktree directly.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] L'implémentation scalaire produit une sortie identique au bit près à la
-      référence SSE2, sur au moins dix tâches audio capturées distinctes.
-- [ ] Chaque opération vectorielle utilisée par `aspMain` a un test couvrant
-      nominal, saturations et débordement d'accumulateur.
-- [ ] L'implémentation MMX produit une sortie identique au bit près à la version
-      scalaire.
-- [ ] Les transitions MMX / x87 sont traitées, et un test le vérifie en
-      entrelaçant volontairement du code flottant.
-- [ ] Le coût est mesuré et confronté au budget de E00-S04.
-- [ ] La livraison est un patch sous `patches/`, et la cible moderne continue
-      d'utiliser le chemin SSE2 sans régression.
-- [ ] Le choix des opérations optimisées est justifié par la distribution mesurée.
+- [ ] The scalar implementation produces output bit-for-bit identical to the SSE2
+      reference, on at least ten distinct captured audio tasks.
+- [ ] Every vector operation used by `aspMain` has a test covering nominal,
+      saturations and accumulator overflow.
+- [ ] The MMX implementation produces output bit-for-bit identical to the scalar
+      version.
+- [ ] The MMX / x87 transitions are handled, and a test checks it by deliberately
+      interleaving floating-point code.
+- [ ] The cost is measured and confronted with E00-S04's budget.
+- [ ] The delivery is a patch under `patches/`, and the modern target goes on using
+      the SSE2 path with no regression.
+- [ ] The choice of which operations are optimised is justified by the measured
+      distribution.
 
-## Risques
+## Risks
 
-L'écriture de SIMD à la main est le terrain le plus propice aux erreurs
-silencieuses : un décalage de saturation produit un son légèrement faux, que
-personne ne remarque avant longtemps. La discipline de comparaison au bit près
-contre une implémentation scalaire simple est non négociable.
+Writing SIMD by hand is the ground most propitious to silent errors: a saturation
+shifted by one produces a slightly wrong sound, which nobody notices for a long time.
+The discipline of bit-for-bit comparison against a simple scalar implementation is
+non-negotiable.
 
-## Références
+## References
 
 - `runtime-recomp/RecompiledRSP/aspMain.cpp:1-2`
-- `librecomp/include/librecomp/rsp_vu_impl.hpp` (dans le worktree préparé)
-- E00-S04 — distribution des opérations et budget
+- `librecomp/include/librecomp/rsp_vu_impl.hpp` (in the prepared worktree)
+- E00-S04 — distribution of the operations and budget
