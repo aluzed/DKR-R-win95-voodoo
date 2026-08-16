@@ -96,6 +96,16 @@ typedef struct {
        qu'absent. */
     unsigned long deferred;
 
+    /* --- L'état 2D, celui que la séquence de démarrage exerce ---------------- *
+     *
+     * Mesuré avant d'être écrit : sur les 47 000 commandes du démarrage, le seul
+     * ordre de dessin émis est `FILLRECT`. Ces trois champs sont donc ce dont
+     * dépend le premier pixel que ce portage affichera. */
+    unsigned int  fill_color_raw;     /* le mot de SETFILLCOLOR, tel quel */
+    unsigned int  fill_color_argb;    /* et sa conversion, pour le backend */
+    unsigned int  color_image_width;  /* la largeur du tampon, lue et non supposée */
+    unsigned long rects;              /* rectangles réellement remis au backend */
+
     /* Combien de fois chaque opcode a été vu.
      *
      * Mille octets pour répondre à une question qu'aucun raisonnement ne tranche :

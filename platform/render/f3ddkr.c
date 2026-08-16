@@ -19,7 +19,9 @@
 #define OP_DMAOFFSETS    0xBF
 #define OP_LOADBLOCK     0xF3
 #define OP_FILLRECT      0xF6
+#define OP_SETFILLCOLOR  0xF7
 #define OP_SETTEXIMAGE   0xFD
+#define OP_SETCOLORIMAGE 0xFF
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -398,6 +400,98 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
 }
 
+/* --- Le rectangle plein ----------------------------------------------------- *
+ *
+ * Mesuré sur la machine avant d'être écrit : sur les 47 000 commandes de la
+ * séquence de démarrage, **`FILLRECT` est le seul ordre de dessin émis** — ni
+ * sommet, ni triangle, ni rectangle texturé, deux remplissages par image. Ce
+ * chemin n'est donc pas un détail de la 2D : c'est tout ce qui met des pixels à
+ * l'écran à ce stade du portage.
+ *
+ * ## Les coordonnées
+ *
+ * `gDPFillRectangle` range les deux coins dans les deux mots, en virgule fixe
+ * 10.2, et **le coin inférieur droit est inclus** :
+ *
+ *     w0 = opcode<<24 | lrx<<14 | lry<<2
+ *     w1 =              ulx<<14 | uly<<2
+ *
+ * Oublier l'inclusion donne un rectangle trop court d'un pixel en bas et à
+ * droite. Sur un effacement plein écran cela laisse une ligne du fond visible,
+ * qu'on attribue au rastériseur plutôt qu'à la convention.
+ *
+ * ## L'échelle
+ *
+ * Les coordonnées sont dans l'espace du tampon de couleur du jeu, pas dans celui
+ * de l'écran. Le facteur se **lit** dans `SETCOLORIMAGE`, qui porte la largeur,
+ * plutôt que de supposer les 320 pixels habituels de la N64 : DKR change de
+ * tampon en cours de route, et une échelle supposée produirait un décor décalé
+ * sur certains écrans seulement — le genre de défaut qu'on met des heures à
+ * relier à sa cause.
+ *
+ * ## La couleur
+ *
+ * En mode remplissage sur seize bits, `SETFILLCOLOR` porte **deux pixels
+ * RGBA5551 côte à côte**, parce que le RDP écrit deux pixels par cycle. On prend
+ * les seize bits de poids faible : les deux moitiés sont identiques pour un
+ * remplissage uni, et une couleur à demi fausse serait plus déroutante qu'une
+ * couleur franchement fausse. */
+static unsigned int couleur_depuis_5551(unsigned int pixel)
+{
+    const unsigned int r = (pixel >> 11) & 0x1Fu;
+    const unsigned int v = (pixel >>  6) & 0x1Fu;
+    const unsigned int b = (pixel >>  1) & 0x1Fu;
+    /* La réplication des bits de poids fort plutôt qu'un décalage seul : 31 doit
+       donner 255 et non 248, sans quoi le blanc n'est jamais blanc. */
+    const unsigned int r8 = (r << 3) | (r >> 2);
+    const unsigned int v8 = (v << 3) | (v >> 2);
+    const unsigned int b8 = (b << 3) | (b >> 2);
+    return (r8 << 16) | (v8 << 8) | b8;
+}
+
+static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
+{
+    /* 10.2 en virgule fixe : deux bits de fraction, qu'on abandonne. Le RDP
+       remplit par pixel entier en mode remplissage. */
+    const int lrx = (int)((w0 >> 14) & 0x3FFu);
+    const int lry = (int)((w0 >>  2) & 0x3FFu);
+    const int ulx = (int)((w1 >> 14) & 0x3FFu);
+    const int uly = (int)((w1 >>  2) & 0x3FFu);
+
+    const float ecran_w = 2.0f * c->transform.viewport_scale_x;
+    const float ecran_h = -2.0f * c->transform.viewport_scale_y;
+    float echelle_x = 1.0f, echelle_y = 1.0f;
+    int x0, y0, x1, y1;
+
+    if (!c->backend || !c->backend->fill_rect) {
+        trace(c, "FillRect ignore : pas de backend");
+        return;
+    }
+
+    if (c->state.color_image_width > 0u && ecran_w > 0.0f) {
+        echelle_x = ecran_w / (float)c->state.color_image_width;
+        /* La hauteur du tampon n'est portée par aucune commande — le RDP ne la
+           connaît pas, il n'a que la largeur et l'adresse. On applique donc le
+           même facteur qu'en x, ce qui est juste tant que le tampon a le rapport
+           de l'écran. C'est le cas de DKR (320x240 pour 640x480) et c'est une
+           supposition qu'il faudra reprendre le jour où ce ne le sera plus. */
+        echelle_y = echelle_x;
+    }
+    (void)ecran_h;
+
+    x0 = (int)((float)ulx * echelle_x);
+    y0 = (int)((float)uly * echelle_y);
+    /* +1 : le coin inférieur droit est inclus côté RDP, exclu côté backend. */
+    x1 = (int)((float)(lrx + 1) * echelle_x);
+    y1 = (int)((float)(lry + 1) * echelle_y);
+
+    c->backend->fill_rect(c->backend->self, x0, y0, x1, y1,
+                          c->state.fill_color_argb);
+    c->state.rects++;
+    trace(c, "FillRect %d,%d..%d,%d couleur=0x%06X",
+          x0, y0, x1, y1, c->state.fill_color_argb);
+}
+
 /* --- La boucle ------------------------------------------------------------- */
 
 unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
@@ -514,9 +608,28 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             break;
         }
 
+        case OP_FILLRECT:
+            cmd_fill_rect(c, w0, w1);
+            break;
+
+        case OP_SETFILLCOLOR:
+            c->state.fill_color_raw = w1;
+            c->state.fill_color_argb = couleur_depuis_5551(w1 & 0xFFFFu);
+            trace(c, "SetFillColor brut=0x%08X -> 0x%06X",
+                  w1, c->state.fill_color_argb);
+            break;
+
+        case OP_SETCOLORIMAGE:
+            /* Les douze bits de poids faible portent la largeur moins un. C'est
+               d'ici que vient l'échelle des rectangles, plutôt que d'une
+               supposition sur les 320 pixels de la N64. */
+            c->state.color_image_width = (w0 & 0xFFFu) + 1u;
+            trace(c, "SetColorImage largeur=%u adresse=0x%06X",
+                  c->state.color_image_width, w1 & RDRAM_MASK);
+            break;
+
         case OP_MOVEMEM:
         case OP_LOADBLOCK:
-        case OP_FILLRECT:
         case OP_SETTEXIMAGE:
             /* Decodees comme commandes, mais leur effet appartient aux etages
                suivants — textures (E04-S07) et etat RDP (E04-S06). Les compter

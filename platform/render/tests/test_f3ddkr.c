@@ -41,6 +41,19 @@ static void put32(unsigned int a, unsigned int v)
     g_ram[a + 3] = (unsigned char)(v);
 }
 
+/* Le dernier rectangle demande au backend, pour l'epreuve du chemin 2D. */
+static int      g_rect[4];
+static unsigned g_rect_argb;
+static int      g_rect_n;
+
+static void note_rect(void *self, int x0, int y0, int x1, int y1, unsigned argb)
+{
+    (void)self;
+    g_rect[0] = x0; g_rect[1] = y0; g_rect[2] = x1; g_rect[3] = y1;
+    g_rect_argb = argb;
+    g_rect_n++;
+}
+
 static void put16(unsigned int a, int v)
 {
     g_ram[a] = (unsigned char)((unsigned)v >> 8);
@@ -389,6 +402,77 @@ int main(void)
             check("et la matrice chargee est identique dans les deux dispositions",
                   meme_matrice);
         }
+    }
+
+    /* --- Le rectangle plein --------------------------------------------------- *
+     *
+     * Mesure sur la machine avant d'etre ecrit : sur les 47 000 commandes de la
+     * sequence de demarrage de DKR, `FILLRECT` est le **seul** ordre de dessin
+     * emis. Cette epreuve porte donc sur le chemin dont depend le premier pixel
+     * que le portage affichera.
+     *
+     * Trois choses s'y verifient, chacune parce qu'elle a une facon propre de
+     * mal tourner :
+     *
+     *   - la conversion 5551 vers 888, ou 31 doit donner 255 et non 248 ;
+     *   - l'inclusion du coin inferieur droit, qui coute un pixel si on l'oublie ;
+     *   - l'echelle, **lue** dans SETCOLORIMAGE et non supposee.
+     */
+    {
+        dkr_f3d_context ctx4;
+        dkr_render_backend bk;
+        unsigned int at4 = 0;
+
+        /* Un backend local plutot que l'implementation vide : celle-ci accepte
+           tout et n'enregistre rien, donc elle ne peut pas dire *ou* le
+           rectangle a ete demande. Or c'est exactement ce qu'on veut verifier —
+           l'inclusion du coin et l'echelle sont des erreurs de coordonnees, pas
+           de comptage. */
+        memset(&bk, 0, sizeof(bk));
+        bk.name = "epreuve";
+        bk.fill_rect = note_rect;
+        g_rect_n = 0;
+
+        memset(g_ram, 0, sizeof(g_ram));
+        at4 = put_cmd(at4, 0xFF000000u | (320u - 1u), 0x00100000u); /* SetColorImage */
+        at4 = put_cmd(at4, 0xF7000000u, 0xFFFFFFFFu);               /* blanc */
+        /* 0,0 .. 9,4 inclus, donc 10 par 5 pixels a l'echelle 1. */
+        at4 = put_cmd(at4, 0xF6000000u | (9u << 14) | (4u << 2), 0u);
+        (void)put_cmd(at4, 0xB8000000u, 0u);
+
+        dkr_f3d_init(&ctx4, g_ram, RAM_SIZE, &bk);
+        /* Une fenetre de 320x240 : l'echelle vaut alors exactement un, ce qui
+           rend les coordonnees attendues lisibles sans calcul. */
+        dkr_transform_set_viewport(&ctx4.transform, 160.0f, -120.0f, 160.0f, 120.0f);
+        (void)dkr_f3d_run(&ctx4, 0);
+
+        check("la largeur du tampon est lue dans SetColorImage",
+              ctx4.state.color_image_width == 320u);
+        check("le rectangle atteint le backend", ctx4.state.rects == 1 && g_rect_n == 1);
+        /* 0,0 .. 9,4 **inclus** doit devenir 0,0 .. 10,5 exclu. Oublier le +1
+           laisserait une ligne du fond visible en bas et a droite d'un
+           effacement plein ecran, ce qu'on attribuerait au rasteriseur. */
+        check("le coin inferieur droit est inclus cote RDP, exclu cote backend",
+              g_rect[0] == 0 && g_rect[1] == 0 && g_rect[2] == 10 && g_rect[3] == 5);
+        /* 0xFFFF en 5551 est blanc opaque. Le controle porte sur 255 et non sur
+           « non nul » : un decalage sans replication des bits de poids fort
+           donnerait 248, une valeur assez proche pour passer inapercue a l'oeil
+           et assez fausse pour que le blanc ne soit jamais blanc. */
+        check("le blanc 5551 devient 0xFFFFFF et non 0xF8F8F8",
+              ctx4.state.fill_color_argb == 0x00FFFFFFu);
+
+        /* Et une couleur qui n'est ni noire ni blanche, sans quoi une conversion
+           qui ne ferait que saturer passerait le controle precedent. */
+        memset(g_ram, 0, sizeof(g_ram));
+        at4 = 0;
+        at4 = put_cmd(at4, 0xFF000000u | (320u - 1u), 0x00100000u);
+        /* rouge = 31, vert = 0, bleu = 0, alpha = 1 -> 0xF801 */
+        at4 = put_cmd(at4, 0xF7000000u, 0xF801F801u);
+        (void)put_cmd(at4, 0xB8000000u, 0u);
+        dkr_f3d_init(&ctx4, g_ram, RAM_SIZE, &bk);
+        (void)dkr_f3d_run(&ctx4, 0);
+        check("un rouge pur 5551 devient 0xFF0000",
+              ctx4.state.fill_color_argb == 0x00FF0000u);
     }
 
     printf("\n%d echec(s)\n", g_fails);

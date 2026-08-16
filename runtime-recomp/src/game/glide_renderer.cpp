@@ -200,6 +200,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             }
             std::fprintf(stderr, "[gfx]   opcodes%s\n", ligne);
         }
+        // Les ordres de dessin, nommés et cherchés explicitement.
+        //
+        // Les huit premiers de l'histogramme sont tous de l'état RDP, ce qui
+        // laisse une question ouverte que le classement ne tranche pas : y a-t-il
+        // *le moindre* ordre de dessin dans ces images, ou aucun ? Un opcode
+        // absent ne figure dans aucun classement, et « absent du top huit » se
+        // lit trop facilement comme « rare » alors qu'il peut valoir zéro.
+        //
+        // Zéro partout dirait que la séquence de démarrage ne dessine rien du
+        // tout et que l'on regarde l'écran de chargement du jeu. Des rectangles
+        // sans triangles désignerait le chemin 2D comme seul travail restant.
+        std::fprintf(stderr,
+                     "[gfx]   dessin: sommets=%lu triangles=%lu texrect=%lu "
+                     "texrectflip=%lu fillrect=%lu\n",
+                     opcodes_[0x04], opcodes_[0x05], opcodes_[0xE4],
+                     opcodes_[0xE5], opcodes_[0xF6]);
     }
 #else
     (void)task;
