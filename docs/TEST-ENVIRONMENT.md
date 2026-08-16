@@ -1,477 +1,387 @@
-# Environnement de test émulé
+# The emulated test environment
 
-Recette de la machine Windows 95 / 3dfx sur laquelle le portage se met au point.
-Livrable de [E09-S01](stories/E09-qa/E09-S01-emulated-test-environment.md).
+The recipe for the Windows 95 / 3dfx machine on which the port is developed.
+Deliverable of
+[E09-S01](stories/E09-qa/E09-S01-emulated-test-environment.md).
 
-## Pourquoi cet environnement passe avant le reste
+## Why this environment comes before the rest
 
-Le cycle « modifier, exécuter, observer » du portage passe par une machine
-Windows 95 avec une carte 3dfx. Sur du matériel réel, chaque itération coûte une
-copie de fichier, un redémarrage, et — quand Glide plante en plein écran — une
-réinstallation. L'émulateur ramène ce cycle à quelques secondes, et c'est ce qui
-rend praticable le tâtonnement inévitable de [E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md).
+The port's "edit, run, observe" cycle goes through a Windows 95 machine with a
+3dfx card. On real hardware, each iteration costs a file copy, a reboot, and —
+when Glide crashes full-screen — a reinstallation. The emulator brings that cycle
+down to a few seconds, and that is what makes the inevitable trial and error of
+[E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md) practicable.
 
-Il ne remplace pas la validation sur matériel réel
-([E09-S04](stories/E09-qa/E09-S04-real-hardware-validation.md)) : il la rend rare.
+It does not replace validation on real hardware
+([E09-S04](stories/E09-qa/E09-S04-real-hardware-validation.md)): it makes it rare.
 
-## Montage
+## Setting up
 
 ```bash
 scripts/Setup-Win95-TestVM.sh
 ```
 
-Le script n'installe rien à l'échelle du système — tout va dans
-`~/.local/dkr-win95` — et n'a pas besoin de droits root. Il récupère 86Box, le
-jeu de BIOS, installe `mtools` localement, crée les images disque et écrit la
-configuration machine.
+The script installs nothing system-wide — everything goes into
+`~/.local/dkr-win95` — and needs no root privileges. It fetches 86Box and the BIOS
+set, installs `mtools` locally, creates the disk images and writes the machine
+configuration.
 
-| Élément | Emplacement |
+| Item | Location |
 |---|---|
 | 86Box v6.0 | `~/.local/dkr-win95/opt/86box/squashfs-root/AppRun` |
-| Jeu de BIOS | `~/.local/dkr-win95/opt/86box/roms` |
+| BIOS set | `~/.local/dkr-win95/opt/86box/roms` |
 | Machine | `~/.local/dkr-win95/vm/dkr-p2-voodoo2` |
 
-L'AppImage est **extraite** plutôt que montée : FUSE est souvent absent des
-postes de build, et l'extraction supprime cette dépendance.
+The AppImage is **extracted** rather than mounted: FUSE is often absent from build
+machines, and extraction removes that dependency.
 
-## Préparation de l'installation
+## Preparing the installation
 
-**Il faut fournir son propre média Windows 95 OSR2.5** — logiciel propriétaire de
-Microsoft, que les scripts ne téléchargent pas et ne peuvent pas télécharger.
+**You must supply your own Windows 95 OSR2.5 medium** — proprietary Microsoft
+software, which the scripts do not download and cannot download.
 
 ```bash
-scripts/prepare_win95_install.py --iso /chemin/vers/W95.iso
+scripts/prepare_win95_install.py --iso /path/to/W95.iso
 ```
 
-Ce script crée les images disque, les **partitionne** et les formate, puis y
-recopie la source d'installation extraite de l'ISO :
+This script creates the disk images, **partitions** and formats them, then copies
+onto them the installation source extracted from the ISO:
 
-| Disque | Image | Contenu |
+| Disk | Image | Contents |
 |---|---|---|
-| A: | `freedos-boot.img` | démarrage FreeDOS 1.4 |
-| C: | `win95.img` — 1 023 Mio | système, à partitionner puis installer |
-| D: | `transfer.img` — 504 Mio | transfert hôte ↔ invité |
-| E: | `install.img` — 128 Mio | source Windows 95, 46 Mio |
+| A: | `freedos-boot.img` | FreeDOS 1.4 boot |
+| C: | `win95.img` — 1,023 MiB | system, to be partitioned then installed |
+| D: | `transfer.img` — 504 MiB | host ↔ guest transfer |
+| E: | `install.img` — 128 MiB | Windows 95 source, 46 MiB |
 
-Deux points méritent d'être connus, parce qu'ils sont la cause habituelle des
-échecs à cette étape :
+Two points are worth knowing, because they are the usual cause of failure at this
+step:
 
-- **Un disque dur DOS exige une table de partition.** Un volume FAT écrit
-  directement au début de l'image, sans MBR, n'est pas vu par DOS. Le script
-  écrit donc un MBR et place le système de fichiers à partir du secteur 63.
-- **La source est sur un disque dur, pas sur le CD.** Cela supprime toute
-  dépendance à un pilote CD-ROM sous DOS, qui est le point le plus fragile d'une
-  installation Windows 95 en émulation.
+- **A DOS hard disk requires a partition table.** A FAT volume written directly at
+  the start of the image, without an MBR, is not seen by DOS. The script therefore
+  writes an MBR and places the file system from sector 63 onwards.
+- **The source is on a hard disk, not on the CD.** That removes any dependence on
+  a CD-ROM driver under DOS, which is the most fragile point of an emulated
+  Windows 95 installation.
 
-Le CD OSR2.5 français ne contient pas de `SETUP.EXE` : son programme
-d'installation s'appelle **`INSTALL.EXE`** (exécutable NE Windows 3.x, qui charge
-`DOSSETUP.BIN` puis `WINSETUP.BIN`). L'ISO n'est pas amorçable — elle n'a pas de
-descripteur El Torito — d'où la disquette FreeDOS.
+The French OSR2.5 CD contains no `SETUP.EXE`: its installation program is called
+**`INSTALL.EXE`** (a Windows 3.x NE executable, which loads `DOSSETUP.BIN` then
+`WINSETUP.BIN`). The ISO is not bootable — it has no El Torito descriptor — hence
+the FreeDOS floppy.
 
 ## Installation
 
-C: est déjà partitionné, formaté et marqué actif : **ni `FDISK` ni `FORMAT` ne
-sont nécessaires**, et le redémarrage que `FDISK` impose entre les deux est
-évité. La disquette FreeDOS lance directement `E:\WIN95\INSTALL.EXE`.
+C: is already partitioned, formatted and marked active: **neither `FDISK` nor
+`FORMAT` is needed**, and the reboot `FDISK` imposes between the two is avoided.
+The FreeDOS floppy runs `E:\WIN95\INSTALL.EXE` directly.
 
 ```bash
-scripts/Run-Win95-VM.sh          # sur un poste avec écran
+scripts/Run-Win95-VM.sh          # on a machine with a screen
 ```
 
-Au tout premier démarrage, le BIOS affiche :
+On the very first boot, the BIOS displays:
 
 ```text
 CMOS checksum error - Defaults loaded
 Press F1 to continue, DEL to enter SETUP
 ```
 
-C'est normal — la CMOS est vierge. Appuyer sur **F1**. Le message ne réapparaît
-plus une fois la machine arrêtée proprement.
+That is normal — the CMOS is blank. Press **F1**. The message does not reappear
+once the machine has been shut down cleanly.
 
-Puis installer les pilotes 3dfx pour Voodoo 2 dans l'invité.
+Then install the 3dfx drivers for the Voodoo 2 in the guest.
 
-## Pilotage sans écran
+## Driving without a screen
 
-Le poste de développement n'a pas forcément de session graphique. `Drive-Win95-VM.sh`
-fait tourner 86Box sur un affichage X virtuel, capture l'écran et injecte des
-touches — ce qui rend l'environnement pilotable depuis un terminal, et fournit le
-socle du harnais de comparaison visuelle de
-[E09-S02](stories/E09-qa/E09-S02-visual-comparison-harness.md).
+The development machine does not necessarily have a graphical session.
+`Drive-Win95-VM.sh` runs 86Box on a virtual X display, captures the screen and
+injects keys — which makes the environment drivable from a terminal, and provides
+the foundation of
+[E09-S02](stories/E09-qa/E09-S02-visual-comparison-harness.md)'s visual comparison
+harness.
 
 ```bash
-scripts/Drive-Win95-VM.sh start                  # Xvfb + 86Box + capture clavier
-scripts/Drive-Win95-VM.sh key F1                 # passer l'avertissement CMOS
-scripts/Drive-Win95-VM.sh key Return             # menu de langue FreeDOS
-scripts/Drive-Win95-VM.sh shot ecran.png         # voir où en est la machine
+scripts/Drive-Win95-VM.sh start                  # Xvfb + 86Box + keyboard capture
+scripts/Drive-Win95-VM.sh key F1                 # get past the CMOS warning
+scripts/Drive-Win95-VM.sh key Return             # FreeDOS language menu
+scripts/Drive-Win95-VM.sh shot screen.png        # see where the machine has got to
 scripts/Drive-Win95-VM.sh type "DIR E:\WIN95"
 scripts/Drive-Win95-VM.sh stop
 ```
 
-Trois pièges coûtent chacun une bonne heure si on ne les connaît pas :
+Three traps each cost a good hour if one does not know them:
 
-- **`xdotool key --window` ne marche pas.** Il passe par `XSendEvent`, que Qt
-  ignore. Il faut poser le focus X puis utiliser XTEST, c'est-à-dire `xdotool
-  key` *sans* `--window`.
-- **86Box ne route le clavier vers la machine émulée qu'après un clic** dans sa
-  fenêtre, qui capture les périphériques. Sans ce clic, les touches vont à
-  l'interface de l'émulateur. `Drive-Win95-VM.sh start` fait ce clic ;
-  `grab` le refait si la capture a été relâchée.
-- **L'invité a sa propre disposition de clavier, et elle s'applique aux
-  scancodes.** `xdotool type "24796"` sur un Windows français produit `é'èç-` :
-  l'hôte envoie les touches de la rangée du haut, et l'invité les interprète en
-  AZERTY. Deux conséquences pratiques :
+- **`xdotool key --window` does not work.** It goes through `XSendEvent`, which Qt
+  ignores. One must set the X focus and then use XTEST, that is `xdotool key`
+  *without* `--window`.
+- **86Box only routes the keyboard to the emulated machine after a click** in its
+  window, which captures the devices. Without that click, the keys go to the
+  emulator's interface. `Drive-Win95-VM.sh start` performs that click; `grab` does
+  it again if the capture has been released.
+- **The guest has its own keyboard layout, and it applies to the scancodes.**
+  `xdotool type "24796"` on a French Windows produces `é'èç-`: the host sends the
+  top-row keys, and the guest reads them as AZERTY. Two practical consequences:
 
-  | Ce qu'on veut | Ce qu'il faut envoyer |
+  | What one wants | What must be sent |
   |---|---|
-  | un chiffre | `shift+<chiffre>` — en AZERTY la rangée du haut est en majuscule |
-  | `A Q Z W M` | les touches croisées ; à éviter dans les chaînes de test |
-  | le pavé numérique | inutilisable, NumLock est éteint dans l'invité |
+  | a digit | `shift+<digit>` — in AZERTY the top row is shifted |
+  | `A Q Z W M` | the crossed keys; to be avoided in test strings |
+  | the numeric keypad | unusable, NumLock is off in the guest |
 
-  Le plus sûr, pour un texte libre, est de n'employer que des lettres identiques
-  dans les deux dispositions.
+  The safest course, for free text, is to use only letters identical in both
+  layouts.
 
-Le diagnostic par capture d'écran est ce qui a permis de trouver l'attente sur
-`Press F1` : de l'extérieur, une machine bloquée au BIOS et une machine qui
-n'amorce pas sont indiscernables.
+Diagnosis by screenshot is what allowed the wait on `Press F1` to be found: from
+the outside, a machine stuck at the BIOS and a machine that does not boot are
+indistinguishable.
 
-Une fois Windows et les pilotes 3dfx installés, figer l'état :
+Once Windows and the 3dfx drivers are installed, freeze the state:
 
 ```bash
 scripts/Run-Win95-VM.sh --snapshot
 ```
 
-et y revenir après chaque essai qui tourne mal :
+and come back to it after every attempt that goes wrong:
 
 ```bash
 scripts/Run-Win95-VM.sh --restore
 ```
 
-Cette restauration est la propriété la plus importante de l'environnement. Une
-carte 3dfx en mode *passthrough* prend le contrôle de l'écran ; un plantage au
-mauvais moment laisse l'invité inutilisable, et sans retour rapide à un état
-sain, chaque essai raté coûterait une réinstallation complète.
+That restoration is the environment's most important property. A 3dfx card in
+*passthrough* mode takes control of the screen; a crash at the wrong moment leaves
+the guest unusable, and without a quick return to a sound state, every failed
+attempt would cost a complete reinstallation.
 
-## Configuration de la machine
+## The machine's configuration
 
-Conforme à la cible du projet, sous réserve de l'ADR 0002
-([E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md)) :
+Conforming to the project's target, subject to ADR 0002
+([E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md)):
 
-| Élément | Valeur | Remarque |
+| Item | Value | Remark |
 |---|---|---|
-| Carte mère | Asus P2B-LS (`p2bls`) | chipset 440BX, la plate-forme Pentium II de référence |
-| Processeur | Pentium II Deschutes, 400 MHz | |
-| Mémoire | 64 Mo | |
-| Vidéo 2D | S3 ViRGE/DX | la Voodoo 2 n'a pas de sortie 2D |
-| Vidéo 3D | 3dfx Voodoo 2 | 4 Mo de tampon d'image, 4 Mo de texture |
-| Son | Sound Blaster 16 | |
-| Disques | 2 × IDE | C: système, D: transfert |
+| Motherboard | Asus P2B-LS (`p2bls`) | 440BX chipset, the reference Pentium II platform |
+| Processor | Pentium II Deschutes, 400 MHz | |
+| Memory | 64 MB | |
+| 2D video | S3 ViRGE/DX | the Voodoo 2 has no 2D output |
+| 3D video | 3dfx Voodoo 2 | 4 MB of frame buffer, 4 MB of texture memory |
+| Sound | Sound Blaster 16 | |
+| Disks | 2 × IDE | C: system, D: transfer |
 
-Le choix d'une 2D séparée n'est pas un artifice d'émulation : c'est le montage
-réel d'une Voodoo 2, qui se branche en sortie de la carte 2D et prend la main
-seulement en 3D plein écran.
+The choice of a separate 2D card is not an emulation artifice: it is the real
+arrangement of a Voodoo 2, which plugs into the 2D card's output and takes over
+only in full-screen 3D.
 
-Chaque valeur est surchargeable par variable d'environnement, ce qui permet de
-préparer les autres configurations exigées par le ticket :
+Every value is overridable by environment variable, which allows the other
+configurations the ticket requires to be prepared:
 
 ```bash
-# Voodoo 1, une seule TMU — éprouve le repli multipasse de E05-S04
+# Voodoo 1, a single TMU - exercises E05-S04's multipass fallback
 DKR_WIN95_VM=dkr-p1-voodoo1 DKR_WIN95_VOODOO_TYPE=0 \
 DKR_WIN95_VOODOO_TEX=2 DKR_WIN95_VOODOO_FB=2 \
   scripts/Setup-Win95-TestVM.sh
 
-# Machine basse — éprouve le plancher de performance
+# A low-end machine - exercises the performance floor
 DKR_WIN95_VM=dkr-p2-slow DKR_WIN95_CPU_SPEED=233000000 DKR_WIN95_MEM_KB=32768 \
   scripts/Setup-Win95-TestVM.sh
 ```
 
-## Transfert de fichiers
+## Transferring files
 
 ```bash
 scripts/Push-To-Win95-VM.sh --dir DKRTEST build/DKR-R.exe
 ```
 
-Le fichier apparaît en `D:\DKRTEST\` dans l'invité. L'écriture passe par
-`mtools` directement dans l'image FAT16, sans monter quoi que ce soit et sans
-droits root.
+The file appears at `D:\DKRTEST\` in the guest. The write goes through `mtools`
+directly into the FAT16 image, without mounting anything and without root
+privileges.
 
-Deux points de vigilance :
+Two points to watch:
 
-- **La machine doit être arrêtée** au moment où l'invité doit voir le résultat.
-  Windows 95 met le volume en cache et ne relira pas une image modifiée sous
-  lui.
-- **FAT16 impose le 8.3.** Le script prévient quand un nom sera tronqué. C'est
-  la même contrainte que celle qui pèse sur les fichiers de sauvegarde
+- **The machine must be stopped** at the moment the guest is to see the result.
+  Windows 95 caches the volume and will not re-read an image modified underneath
+  it.
+- **FAT16 imposes 8.3.** The script warns when a name will be truncated. It is the
+  same constraint that bears on the save files
   ([E02-S05](stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md)).
 
-## Limites connues
+## Known limits
 
-Ce qui suit **ne peut pas** être validé ici, et doit passer par E09-S04 :
+The following **cannot** be validated here, and must go through E09-S04:
 
-| Limite | Conséquence |
+| Limit | Consequence |
 |---|---|
-| L'émulation Voodoo est fonctionnelle, pas temporelle | aucune mesure de performance graphique n'est transposable |
-| L'hôte exécute le rendu bien plus vite que le matériel d'époque | le budget de remplissage ne se mesure pas ici |
-| Ni bande passante PCI, ni latence de disque d'époque | téléchargements de texture (E05-S02) et temps de chargement (E02-S04) sont optimistes |
-| Pilotes 3dfx réels, cartes son et manettes du commerce | compatibilité à vérifier sur matériel |
+| The Voodoo emulation is functional, not temporal | no graphics performance measurement transfers |
+| The host runs the rendering far faster than period hardware | the fill budget cannot be measured here |
+| Neither period PCI bandwidth nor period disk latency | texture downloads (E05-S02) and load times (E02-S04) are optimistic |
+| Real 3dfx drivers, retail sound cards and controllers | compatibility to be checked on hardware |
 
-En revanche, tout ce qui est **fonctionnel** se valide ici : format du binaire,
-imports PE, démarrage, threads, décodage de la display list, justesse du rendu,
-sauvegardes, entrées.
+Everything **functional**, on the other hand, is validated here: binary format, PE
+imports, startup, threads, display-list decoding, correctness of the rendering,
+saves, input.
 
-## État actuel
+## Current state
 
-| Étape | État |
+| Step | State |
 |---|---|
-| 86Box installé et exécutable, sans droits root | ✅ |
-| Machine POST : Pentium II 400 MHz, 65 536 Ko, 3 disques détectés | ✅ |
-| Images disque partitionnées et formatées depuis l'hôte | ✅ |
-| Source Windows 95 extraite de l'ISO vers E: | ✅ 63 fichiers, 46 Mio |
-| Amorçage FreeDOS, C:/D:/E: visibles par DOS | ✅ |
-| Transfert hôte ↔ invité | ✅ dans les deux sens |
-| Pilotage sans écran (capture + injection de touches) | ✅ |
-| **Windows 95 OSR2.5 installé et démarre** | ✅ |
-| Sound Blaster 16 détectée par Windows | ✅ |
-| Instantané de référence | ✅ `Run-Win95-VM.sh --snapshot` |
-| **Pilote 3dfx 3.01.00 installé et lié à la carte** | ✅ « Voodoo2 3D Accelerator », sans avertissement |
-| **Runtime Glide en place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` dans `C:\WINDOWS\SYSTEM` |
-| **Démonstration Glide** | ✅ contexte 640×480, effacements, échanges de tampons, triangle Gouraud |
+| 86Box installed and runnable, without root privileges | ✅ |
+| Machine POST: Pentium II 400 MHz, 65,536 KB, 3 disks detected | ✅ |
+| Disk images partitioned and formatted from the host | ✅ |
+| Windows 95 source extracted from the ISO onto E: | ✅ 63 files, 46 MiB |
+| FreeDOS boot, C:/D:/E: visible to DOS | ✅ |
+| Host ↔ guest transfer | ✅ in both directions |
+| Driving without a screen (capture + key injection) | ✅ |
+| **Windows 95 OSR2.5 installed and booting** | ✅ |
+| Sound Blaster 16 detected by Windows | ✅ |
+| Reference snapshot | ✅ `Run-Win95-VM.sh --snapshot` |
+| **3dfx driver 3.01.00 installed and bound to the card** | ✅ "Voodoo2 3D Accelerator", with no warning |
+| **Glide runtime in place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` in `C:\WINDOWS\SYSTEM` |
+| **Glide demonstration** | ✅ 640×480 context, clears, buffer swaps, Gouraud triangle |
 
-### Vérifier le modèle de carte — le piège le plus coûteux
+### Checking the card model — the costliest trap
 
-**86Box n'a pas appliqué les réglages Voodoo écrits à la main dans `86box.cfg`.**
-Le fichier disait `type = 1`, `framebuffer_memory = 4`, `texture_memory = 4` ; le
-dialogue de réglages affichait « Graphique 3dfx Voodoo », 2 Mo + 2 Mo. La machine
-a donc émulé une **Voodoo 1** pendant toute l'installation, en conservant
-fidèlement le texte de la configuration.
+**86Box did not apply the Voodoo settings written by hand into `86box.cfg`.** The
+file said `type = 1`, `framebuffer_memory = 4`, `texture_memory = 4`; the settings
+dialog showed a plain 3dfx Voodoo Graphics board, 2 MB + 2 MB. The machine
+therefore emulated a **Voodoo 1** throughout the installation, while faithfully
+keeping the configuration's text.
 
-Rien ne le signale, sauf en cherchant : le POST liste la carte en `121A 0001`
-(l'identifiant de la Voodoo 1), et Glide finit par répondre :
+Nothing flags it, except by looking: the POST lists the card as `121A 0001` (the
+Voodoo 1's identifier), and Glide eventually answers:
 
 ```text
 _GlideInitEnvironment: glide2x.dll expected Voodoo, none detected
 ```
 
-C'est aussi la vraie raison pour laquelle `voodoo2.inf` ne reconnaissait pas la
-carte : elle n'était effectivement pas une Voodoo 2.
+It is also the real reason `voodoo2.inf` did not recognise the card: it genuinely
+was not a Voodoo 2.
 
-**Vérifier une fois par le dialogue**, avant toute mesure :
+**Check once through the dialog**, before any measurement:
 
 ```bash
-86Box -S    # Affichage → Graphique Voodoo 1 ou 2 → Configurer
+86Box -S    # Display → Voodoo Graphics board → Configure
 ```
 
-et y choisir « 3Dfx Voodoo 2 », 4 Mo de tampon d'images, 4 Mo de textures. Après
-ce passage, les mêmes valeurs dans le fichier sont honorées, et Windows redétecte
-un nouveau matériel au démarrage suivant.
+and choose "3Dfx Voodoo 2" there, 4 MB of frame buffer, 4 MB of texture memory.
+(The dialog's labels appear in the interface's own language; they are given here
+in English.) After that passage, the same values in the file are honoured, and
+Windows re-detects new hardware at the next boot.
 
-Conséquence pour [E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md) :
-**le modèle de carte émulé doit être vérifié dans le dialogue, pas déduit du
-fichier de configuration.** Une mesure de budget de texture faite sur 2 Mo au
-lieu de 4, ou un test de multitexture fait sur une seule TMU, serait faux sans
-que rien ne le signale.
+Consequence for
+[E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md): **the emulated
+card model must be verified in the dialog, not deduced from the configuration
+file.** A texture budget measurement made on 2 MB instead of 4, or a multitexture
+test made on a single TMU, would be wrong with nothing to flag it.
 
-### Le pilote 3dfx : deux pièges
+### The 3dfx driver: two traps
 
-**L'assistant de mise à jour de pilote n'offre pas « Disquette fournie ».** Il
-filtre les modèles par la classe du périphérique existant, et un périphérique
-« inconnu » ne correspond à aucune classe : il ne propose que « Périphérique non
-pris en charge ». Le bouton se trouve dans **Panneau de configuration → Ajout de
-périphérique**, qui fait lire l'INF directement.
+**The driver update wizard does not offer "Have Disk".** It filters the models by
+the existing device's class, and an "unknown" device matches no class: it offers
+nothing but "Unsupported device". The button is found in **Control Panel → Add New
+Hardware**, which makes the INF be read directly.
 
-**86Box expose sa Voodoo 2 avec l'identifiant PCI de la Voodoo 1.** Le POST le
-montre : `121A 0001` dans la colonne Device ID, alors que `voodoo2.inf` ne se lie
-qu'à `PCI\VEN_121A&DEV_0002`. Le pilote d'origine ne peut donc pas reconnaître la
-carte émulée, et l'auto-détection échoue quel que soit le chemin indiqué.
+**86Box exposes its Voodoo 2 with the Voodoo 1's PCI identifier.** The POST shows
+it: `121A 0001` in the Device ID column, while `voodoo2.inf` binds only to
+`PCI\VEN_121A&DEV_0002`. The original driver therefore cannot recognise the
+emulated card, and auto-detection fails whatever path is given.
 
-Correction : ajouter la liaison `DEV_0001` à côté de celle d'origine, aux trois
-endroits où l'INF la déclare (`[Mfg]`, la clé `Enum`, et les chaînes de
-description). `scripts/patch_voodoo2_inf.py` le fait.
+The fix: add the `DEV_0001` binding alongside the original one, at the three
+places where the INF declares it (`[Mfg]`, the `Enum` key, and the description
+strings). `scripts/patch_voodoo2_inf.py` does it.
 
-À retenir pour [E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md) :
-la détection de carte à l'exécution ne doit pas se fier au seul identifiant PCI,
-puisqu'il ment sur cette plate-forme de test. C'est `grGet` /
-`grSstQueryBoards` qui font foi.
+To remember for
+[E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md): run-time card
+detection must not trust the PCI identifier alone, since it lies on this test
+platform. It is `grGet` / `grSstQueryBoards` that are authoritative.
 
-### Installer le pilote 3dfx
+### Installing the 3dfx driver
 
-Les fichiers sont extraits dans `C:\WINDOWS\TEMP` par le paquet
-`V2_W9X_3.EXE`, puis l'INF est corrigé et installé :
+The files are extracted into `C:\WINDOWS\TEMP` by the `V2_W9X_3.EXE` package, then
+the INF is corrected and installed:
 
 ```bash
 scripts/patch_voodoo2_inf.py --inf voodoo2.inf --output VOODOO2.INF
 ```
 
-Dans l'invité : **Panneau de configuration → Ajout de périphérique → Non →
-Contrôleurs son, vidéo et jeux → Disquette fournie → `C:\WINDOWS\TEMP` →
-Voodoo2 3D Accelerator**, puis redémarrer.
+In the guest: **Control Panel → Add New Hardware → No → Sound, video and game
+controllers → Have Disk → `C:\WINDOWS\TEMP` → Voodoo2 3D Accelerator**, then
+reboot.
 
-Vérification depuis l'hôte, machine arrêtée :
+Verification from the host, with the machine stopped:
 
 ```bash
 mdir -i win95.img@@32256 ::/WINDOWS/SYSTEM | grep -iE 'glide|fxmemmap'
 ```
 
-`fxmemmap.vxd` est le pilote noyau qui mappe les registres de la carte ; sans
-lui, `glide2x.dll` se charge mais n'ouvre aucun contexte.
+`fxmemmap.vxd` is the kernel driver that maps the card's registers; without it,
+`glide2x.dll` loads but opens no context.
 
-## Limites connues
+### What was left: binding the 3dfx driver
 
-Ce qui suit **ne peut pas** être validé ici, et doit passer par E09-S04 :
+The 3.01.00 driver's files are already extracted into `C:\WINDOWS\TEMP` —
+`voodoo2.inf`, `glide2x.dll`, `glide3x.dll`, `3dfxv2.drv`, `fxmemmap.vxd`. The
+card appears in Device Manager under **Other devices → PCI Multimedia Video
+Device**, without a driver.
 
-| Limite | Conséquence |
-|---|---|
-| L'émulation Voodoo est fonctionnelle, pas temporelle | aucune mesure de performance graphique n'est transposable |
-| L'hôte exécute le rendu bien plus vite que le matériel d'époque | le budget de remplissage ne se mesure pas ici |
-| Ni bande passante PCI, ni latence de disque d'époque | téléchargements de texture (E05-S02) et temps de chargement (E02-S04) sont optimistes |
-| Pilotes 3dfx réels, cartes son et manettes du commerce | compatibilité à vérifier sur matériel |
-
-En revanche, tout ce qui est **fonctionnel** se valide ici : format du binaire,
-imports PE, démarrage, threads, décodage de la display list, justesse du rendu,
-sauvegardes, entrées.
-
-## État actuel
-
-| Étape | État |
-|---|---|
-| 86Box installé et exécutable, sans droits root | ✅ |
-| Machine POST : Pentium II 400 MHz, 65 536 Ko, 3 disques détectés | ✅ |
-| Images disque partitionnées et formatées depuis l'hôte | ✅ |
-| Source Windows 95 extraite de l'ISO vers E: | ✅ 63 fichiers, 46 Mio |
-| Amorçage FreeDOS, C:/D:/E: visibles par DOS | ✅ |
-| Transfert hôte ↔ invité | ✅ dans les deux sens |
-| Pilotage sans écran (capture + injection de touches) | ✅ |
-| **Windows 95 OSR2.5 installé et démarre** | ✅ |
-| Sound Blaster 16 détectée par Windows | ✅ |
-| Instantané de référence | ✅ `Run-Win95-VM.sh --snapshot` |
-| **Pilote 3dfx 3.01.00 installé et lié à la carte** | ✅ « Voodoo2 3D Accelerator », sans avertissement |
-| **Runtime Glide en place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` dans `C:\WINDOWS\SYSTEM` |
-| **Démonstration Glide** | ✅ contexte 640×480, effacements, échanges de tampons, triangle Gouraud |
-
-### Vérifier le modèle de carte — le piège le plus coûteux
-
-**86Box n'a pas appliqué les réglages Voodoo écrits à la main dans `86box.cfg`.**
-Le fichier disait `type = 1`, `framebuffer_memory = 4`, `texture_memory = 4` ; le
-dialogue de réglages affichait « Graphique 3dfx Voodoo », 2 Mo + 2 Mo. La machine
-a donc émulé une **Voodoo 1** pendant toute l'installation, en conservant
-fidèlement le texte de la configuration.
-
-Rien ne le signale, sauf en cherchant : le POST liste la carte en `121A 0001`
-(l'identifiant de la Voodoo 1), et Glide finit par répondre :
-
-```text
-_GlideInitEnvironment: glide2x.dll expected Voodoo, none detected
-```
-
-C'est aussi la vraie raison pour laquelle `voodoo2.inf` ne reconnaissait pas la
-carte : elle n'était effectivement pas une Voodoo 2.
-
-**Vérifier une fois par le dialogue**, avant toute mesure :
-
-```bash
-86Box -S    # Affichage → Graphique Voodoo 1 ou 2 → Configurer
-```
-
-et y choisir « 3Dfx Voodoo 2 », 4 Mo de tampon d'images, 4 Mo de textures. Après
-ce passage, les mêmes valeurs dans le fichier sont honorées, et Windows redétecte
-un nouveau matériel au démarrage suivant.
-
-Conséquence pour [E00-S05](stories/E00-scoping/E00-S05-adr-hardware-target-glide.md) :
-**le modèle de carte émulé doit être vérifié dans le dialogue, pas déduit du
-fichier de configuration.** Une mesure de budget de texture faite sur 2 Mo au
-lieu de 4, ou un test de multitexture fait sur une seule TMU, serait faux sans
-que rien ne le signale.
-
-### Le pilote 3dfx : deux pièges
-
-**L'assistant de mise à jour de pilote n'offre pas « Disquette fournie ».** Il
-filtre les modèles par la classe du périphérique existant, et un périphérique
-« inconnu » ne correspond à aucune classe : il ne propose que « Périphérique non
-pris en charge ». Le bouton se trouve dans **Panneau de configuration → Ajout de
-périphérique**, qui fait lire l'INF directement.
-
-**86Box expose sa Voodoo 2 avec l'identifiant PCI de la Voodoo 1.** Le POST le
-montre : `121A 0001` dans la colonne Device ID, alors que `voodoo2.inf` ne se lie
-qu'à `PCI\VEN_121A&DEV_0002`. Le pilote d'origine ne peut donc pas reconnaître la
-carte émulée, et l'auto-détection échoue quel que soit le chemin indiqué.
-
-Correction : ajouter la liaison `DEV_0001` à côté de celle d'origine, aux trois
-endroits où l'INF la déclare (`[Mfg]`, la clé `Enum`, et les chaînes de
-description). `scripts/patch_voodoo2_inf.py` le fait.
-
-À retenir pour [E05-S01](stories/E05-glide/E05-S01-glide-init-and-buffers.md) :
-la détection de carte à l'exécution ne doit pas se fier au seul identifiant PCI,
-puisqu'il ment sur cette plate-forme de test. C'est `grGet` /
-`grSstQueryBoards` qui font foi.
-
-### Ce qu'il restait : lier le pilote 3dfx
-
-Les fichiers du pilote 3.01.00 sont déjà extraits dans `C:\WINDOWS\TEMP` —
-`voodoo2.inf`, `glide2x.dll`, `glide3x.dll`, `3dfxv2.drv`, `fxmemmap.vxd`. La
-carte apparaît dans le gestionnaire de périphériques sous **Autres périphériques
-→ PCI Multimedia Video Device**, sans pilote.
-
-L'assistant de mise à jour de pilote **ne reconnaît pas l'INF** : il répond
-« l'emplacement sélectionné ne contient pas de pilote mis à jour » et, en
-sélection manuelle, ne propose que « Périphérique non pris en charge » sans
-bouton « Disquette fournie ». Trois voies ont été essayées sans succès :
-recherche automatique, « Autres emplacements » puis *Terminer* (la procédure que
-le readme du pilote prescrit pour OSR2), et `rundll32
+The driver update wizard **does not recognise the INF**: it answers that the
+selected location contains no updated driver and, in manual selection, offers
+nothing but "Unsupported device" with no "Have Disk" button. Three routes were
+tried without success: automatic search, "Other locations" then *Finish* (the
+procedure the driver's readme prescribes for OSR2), and `rundll32
 setupx.dll,InstallHinfSection`.
 
-La voie qui reste, et qui expose le bouton « Disquette fournie » absent de
-l'assistant de mise à jour :
+The route that remains, and which exposes the "Have Disk" button the update wizard
+lacks:
 
 ```text
-Démarrer → Paramètres → Panneau de configuration → Ajout de nouveau matériel
-  → Suivant
-  → « Non » (ne pas rechercher automatiquement)
-  → choisir le type de matériel
-  → « Disquette fournie... » → C:\WINDOWS\TEMP
-  → « Voodoo2 3D Accelerator »
+Start → Settings → Control Panel → Add New Hardware
+  → Next
+  → "No" (do not search automatically)
+  → choose the hardware type
+  → "Have Disk..." → C:\WINDOWS\TEMP
+  → "Voodoo2 3D Accelerator"
 ```
 
-Cette manipulation prend une minute sur un poste avec écran
-(`scripts/Run-Win95-VM.sh`). Elle est aussi pilotable par
-`scripts/Drive-Win95-VM.sh`, au prix d'une navigation clavier plus longue.
+This takes a minute on a machine with a screen (`scripts/Run-Win95-VM.sh`). It can
+also be driven by `scripts/Drive-Win95-VM.sh`, at the price of a longer keyboard
+navigation.
 
-### Démonstration Glide
+### Glide demonstration
 
-`tools/win95/glidetest.c` ouvre un contexte Glide 640×480, enchaîne trois
-effacements avec échange de tampons, puis dessine un triangle Gouraud. Il écrit
-son déroulé dans `D:\GLIDETST.TXT`, lisible depuis l'hôte — une preuve
-indépendante de toute capture d'écran.
+`tools/win95/glidetest.c` opens a 640×480 Glide context, chains three clears with
+buffer swaps, then draws a Gouraud triangle. It writes its sequence of events into
+`D:\GLIDETST.TXT`, readable from the host — proof independent of any screenshot.
 
 ```bash
-tools/win95/build-glidetest.sh              # PE 32 bits, sans CRT, sans SSE
+tools/win95/build-glidetest.sh              # 32-bit PE, no CRT, no SSE
 scripts/Push-To-Win95-VM.sh tools/win95/GLIDETST.EXE
-# dans l'invité : d:\glidetst.exe
+# in the guest: d:\glidetst.exe
 ```
 
-Le binaire n'importe que `kernel32` et `user32`, et charge Glide par
-`LoadLibrary` : il ne dépend d'aucun redistribuable et écarte le démarrage du CRT
-de mingw-w64, qui est le point d'achoppement attendu sous Windows 95. À ce titre
-il sert aussi de premier témoin pour
+The binary imports only `kernel32` and `user32`, and loads Glide through
+`LoadLibrary`: it depends on no redistributable and keeps mingw-w64's CRT startup
+— the expected sticking point under Windows 95 — out of the equation. On that
+count it also serves as the first witness for
 [E00-S02](stories/E00-scoping/E00-S02-spike-pe-win95-toolchain.md).
 
-Résultat obtenu :
+The result obtained:
 
 ```text
-glide2x.dll charge
-symboles Glide resolus
+glide2x.dll loaded
+Glide symbols resolved
 grGlideInit
-cartes 3dfx detectees : 1
-contexte 640x480 ouvert, double buffer
+3dfx boards detected: 1
+640x480 context open, double buffered
 grBufferClear + grBufferSwap x3
-grDrawTriangle : triangle Gouraud
-SUCCES : la pile Glide fonctionne de bout en bout
+grDrawTriangle: Gouraud triangle
+SUCCESS: the Glide stack works end to end
 ```
 
-**Un piège trouvé par cette démo, et qui vaut pour tout E05 :** la structure
-`GrVertex` de Glide 2.x range ses champs dans l'ordre `x, y, z, r, g, b, ooz, a,
-oow` — `ooz` et `a` s'intercalent entre les couleurs et `oow`. Une structure
-« logique » (`x, y, ooz, oow, r, g, b, a`) compile sans un avertissement et rend
-un triangle impeccable, **aux couleurs permutées** : Glide lit simplement les
-flottants aux mauvais décalages. Un sommet rouge sort vert. Rien dans le code, le
-compilateur ou Glide ne le signale — seule la comparaison visuelle l'attrape.
-C'est l'argument de [E04-S08](stories/E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md)
-en miniature.
+**A trap this demonstration found, and which holds for all of E05:** Glide 2.x's
+`GrVertex` structure lays its fields out in the order `x, y, z, r, g, b, ooz, a,
+oow` — `ooz` and `a` sit between the colours and `oow`. A "logical" structure
+(`x, y, ooz, oow, r, g, b, a`) compiles without a warning and renders an
+impeccable triangle **with permuted colours**: Glide simply reads the floats at
+the wrong offsets. A red vertex comes out green. Nothing in the code, the compiler
+or Glide flags it — only visual comparison catches it. It is
+[E04-S08](stories/E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md)'s
+argument in miniature.
