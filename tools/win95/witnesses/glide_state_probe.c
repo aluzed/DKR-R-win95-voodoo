@@ -1,17 +1,17 @@
-/* Vérifier les constantes de Glide 2.x **par la mesure**, une par une.
+/* Checking Glide 2.x's constants **by measurement**, one by one.
  *
- * `glide_backend.c` traduit l'état de rendu en appels Glide, à l'aide de valeurs
- * d'énumération écrites de mémoire : il n'y a pas de `glide.h` sur cette machine.
- * Le danger n'est pas qu'une valeur fausse plante — Glide ne valide rien — mais
- * qu'elle programme un registre voisin. L'image sort différente, sans erreur, et
- * l'écart est ensuite attribué au décodeur de display list.
+ * `glide_backend.c` translates the render state into Glide calls, using
+ * enumeration values written from memory: there is no `glide.h` on this machine.
+ * The danger is not that a wrong value crashes - Glide validates nothing - but
+ * that it programs a neighbouring register. The image comes out different,
+ * without an error, and the deviation is then blamed on the display-list decoder.
  *
- * Chaque épreuve ci-dessous exerce **un seul** mode, dessine, puis relit le
- * tampon d'image par `grLfbLock`. Le résultat attendu est calculé à la main et
- * écrit dans le code : ce n'est pas une capture qu'on regarde, c'est un pixel
- * qu'on compare.
+ * Each trial below exercises **one single** mode, draws, then reads the frame
+ * buffer back through `grLfbLock`. The expected result is worked out by hand and
+ * written into the code: this is not a screenshot one looks at, it is a pixel one
+ * compares.
  *
- * Ce qui passe ici est un fait daté ; ce qui échoue nomme la constante à revoir.
+ * What passes here is a dated fact; what fails names the constant to revisit.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -35,15 +35,15 @@ static void say(const char *fmt, ...)
 
 static void check(const char *what, int ok, unsigned got, unsigned expected)
 {
-    say("  %s %-46s  lu 0x%06X  attendu ~0x%06X\n",
-        ok ? "ok   " : "ECHEC", what, got & 0x00FFFFFFu, expected & 0x00FFFFFFu);
+    say("  %s %-46s  read 0x%06X  expected ~0x%06X\n",
+        ok ? "ok  " : "FAIL", what, got & 0x00FFFFFFu, expected & 0x00FFFFFFu);
     if (!ok) { g_fails++; }
 }
 
-/* La carte travaille en 565 : deux couleurs voisines de moins d'un pas de
-   quantification sont la même couleur. Comparer à l'octet près rejetterait des
-   résultats justes — et accepter trop large ne prouverait rien. Huit unités,
-   soit un pas de rouge et de bleu, est la tolérance minimale honnête. */
+/* The card works in 565: two colours less than one quantisation step apart are
+   the same colour. Comparing to the byte would reject correct results - and
+   accepting too broadly would prove nothing. Eight units, that is one step of red
+   and of blue, is the smallest honest tolerance. */
 static int near_color(unsigned a, unsigned b, int tol)
 {
     int i;
@@ -56,11 +56,11 @@ static int near_color(unsigned a, unsigned b, int tol)
     return 1;
 }
 
-/* --- La scène d'épreuve ------------------------------------------------------ *
+/* --- The trial scene --------------------------------------------------------- *
  *
- * Un triangle qui couvre largement le centre de l'écran, dont on ne lit qu'un
- * pixel : celui du centre exact. Tous les sommets portent la même couleur, de
- * sorte que l'interpolation ne puisse pas être confondue avec l'effet mesuré. */
+ * A triangle covering the centre of the screen generously, of which we read only
+ * one pixel: the exact centre. Every vertex carries the same colour, so that
+ * interpolation cannot be confused with the effect being measured. */
 static void triangle(dkr_render_backend *bk, unsigned char r, unsigned char g,
                      unsigned char bl, unsigned char a, float oow)
 {
@@ -90,9 +90,9 @@ static unsigned centre_pixel(void)
     return px[(size_t)(h / 2) * (size_t)w + (size_t)(w / 2)];
 }
 
-/* Nombre de pixels non noirs, pour les épreuves où l'on veut savoir si quelque
-   chose a été dessiné du tout — le test alpha, par exemple, dont l'effet est
-   « rien » et non « une autre couleur ». */
+/* The number of non-black pixels, for the trials where one wants to know whether
+   anything was drawn at all - the alpha test, for instance, whose effect is
+   "nothing" and not "another colour". */
 static int painted_count(void)
 {
     static unsigned px[640 * 480];
@@ -119,32 +119,32 @@ int main(void)
     dkr_render_state   st;
 
     g_out = fopen("D:\\GLSTATE.TXT", "w");
-    say("verification des constantes Glide 2.x par relecture\n\n");
+    say("checking Glide 2.x's constants by reading the buffer back\n\n");
 
     dkr_render_backend_glide(&bk);
     if (!bk.open(bk.self, 640, 480)) {
-        say("ECHEC : la carte ne s'ouvre pas\n");
+        say("FAILED: the card will not open\n");
         if (g_out) { fclose(g_out); }
         return 1;
     }
 
-    /* --- Mélange : opaque --------------------------------------------------- */
+    /* --- Blending: opaque ---------------------------------------------------- */
     base_state(&st);
     bk.set_state(bk.self, &st);
-    bk.begin_frame(bk.self, 0x000040);            /* fond bleu sombre */
+    bk.begin_frame(bk.self, 0x000040);            /* dark blue background */
     triangle(&bk, 255, 0, 0, 255, 1.0f);
     bk.present(bk.self);
     {
         const unsigned c = centre_pixel();
-        check("melange opaque : le rouge couvre le fond",
+        check("opaque blending: the red covers the background",
               near_color(c, 0xFF0000u, 8), c, 0xFF0000u);
     }
 
-    /* --- Mélange : alpha ----------------------------------------------------- *
+    /* --- Blending: alpha ------------------------------------------------------ *
      *
-     * Rouge à alpha 128 sur fond noir : la moitié du rouge, soit 0x800000. Si
-     * `GR_BLEND_SRC_ALPHA` désigne en réalité un autre facteur, on obtiendra du
-     * rouge plein ou du noir — deux résultats très reconnaissables. */
+     * Red at alpha 128 on a black background: half the red, that is 0x800000. If
+     * `GR_BLEND_SRC_ALPHA` actually names another factor, we shall get full red or
+     * black - two very recognisable results. */
     st.blend = DKR_BLEND_ALPHA;
     bk.set_state(bk.self, &st);
     bk.begin_frame(bk.self, 0x000000);
@@ -152,12 +152,12 @@ int main(void)
     bk.present(bk.self);
     {
         const unsigned c = centre_pixel();
-        check("melange alpha : moitie de rouge sur noir",
+        check("alpha blending: half red on black",
               near_color(c, 0x800000u, 12), c, 0x800000u);
     }
 
-    /* --- Mélange : additif ---------------------------------------------------- *
-     * Rouge plein ajouté à un fond bleu : les deux composantes coexistent. */
+    /* --- Blending: additive --------------------------------------------------- *
+     * Full red added to a blue background: the two components coexist. */
     st.blend = DKR_BLEND_ADDITIVE;
     bk.set_state(bk.self, &st);
     bk.begin_frame(bk.self, 0x000040);
@@ -165,49 +165,49 @@ int main(void)
     bk.present(bk.self);
     {
         const unsigned c = centre_pixel();
-        check("melange additif : rouge + bleu = magenta",
+        check("additive blending: red + blue = magenta",
               near_color(c, 0xFF0040u, 12), c, 0xFF0040u);
     }
 
-    /* --- Profondeur : le sens de la comparaison en mode w --------------------- *
+    /* --- Depth: the comparison's direction in w mode -------------------------- *
      *
-     * **C'est l'épreuve la plus importante du fichier.** En tampon w, un objet
-     * proche a un `1/w` grand, donc la comparaison s'inverse par rapport au
-     * tampon z. Se tromper de sens ne vide pas l'écran : cela peint la scène à
-     * l'envers, ce qui passe inaperçu sur une scène simple et devient
-     * incompréhensible sur le jeu.
+     * **This is the most important trial in the file.** In a w buffer, a near
+     * object has a large `1/w`, so the comparison reverses relative to a z buffer.
+     * Getting the direction wrong does not empty the screen: it paints the scene
+     * inside out, which goes unnoticed on a simple scene and becomes
+     * incomprehensible on the game.
      *
-     * On dessine le lointain d'abord, puis le proche : le proche doit gagner. */
+     * We draw the far one first, then the near one: the near one must win. */
     st.blend = DKR_BLEND_OPAQUE;
     st.depth = DKR_DEPTH_TEST_AND_WRITE;
     bk.set_state(bk.self, &st);
     bk.begin_frame(bk.self, 0x000000);
-    triangle(&bk, 0, 255, 0, 255, 0.001f);        /* lointain : 1/w petit */
-    triangle(&bk, 255, 0, 0, 255, 1.0f);          /* proche   : 1/w grand */
+    triangle(&bk, 0, 255, 0, 255, 0.001f);        /* far : 1/w small */
+    triangle(&bk, 255, 0, 0, 255, 1.0f);          /* near: 1/w large */
     bk.present(bk.self);
     {
         const unsigned c = centre_pixel();
-        check("profondeur : le proche couvre le lointain",
+        check("depth: the near one covers the far one",
               near_color(c, 0xFF0000u, 8), c, 0xFF0000u);
     }
 
-    /* Et l'ordre inverse — le proche d'abord. Le lointain doit être rejeté. Sans
-       cette seconde moitié, un test de profondeur totalement désactivé passerait
-       la première. */
+    /* And the reverse order - the near one first. The far one must be rejected.
+       Without this second half, a depth test that was simply disabled would pass
+       the first. */
     bk.begin_frame(bk.self, 0x000000);
-    triangle(&bk, 255, 0, 0, 255, 1.0f);          /* proche d'abord */
-    triangle(&bk, 0, 255, 0, 255, 0.001f);        /* lointain ensuite */
+    triangle(&bk, 255, 0, 0, 255, 1.0f);          /* near first */
+    triangle(&bk, 0, 255, 0, 255, 0.001f);        /* far next */
     bk.present(bk.self);
     {
         const unsigned c = centre_pixel();
-        check("profondeur : le lointain est rejete par le proche",
+        check("depth: the far one is rejected by the near one",
               near_color(c, 0xFF0000u, 8), c, 0xFF0000u);
     }
 
-    /* --- Ciseaux -------------------------------------------------------------- *
-     * Fenêtre limitée à la moitié droite : le centre exact est sur la frontière,
-     * on lit donc par comptage plutôt que par pixel. Un triangle qui couvre
-     * ~75000 pixels doit en perdre à peu près la moitié. */
+    /* --- Scissor -------------------------------------------------------------- *
+     * Window limited to the right half: the exact centre is on the boundary, so we
+     * read by counting rather than by pixel. A triangle covering ~75000 pixels
+     * must lose roughly half of them. */
     st.depth = DKR_DEPTH_DISABLED;
     bk.set_state(bk.self, &st);
     bk.begin_frame(bk.self, 0x000000);
@@ -216,14 +216,14 @@ int main(void)
     bk.present(bk.self);
     {
         const int n = painted_count();
-        say("  %s ciseaux : moitie droite seulement                 %d pixels peints\n",
-            (n > 20000 && n < 60000) ? "ok   " : "ECHEC", n);
+        say("  %s scissor: right half only                        %d pixels painted\n",
+            (n > 20000 && n < 60000) ? "ok  " : "FAIL", n);
         if (!(n > 20000 && n < 60000)) { g_fails++; }
     }
     bk.set_scissor(bk.self, 0, 0, 640, 480);
 
-    /* --- Test alpha ----------------------------------------------------------- *
-     * Référence 128 : un triangle à alpha 64 doit disparaître entièrement. */
+    /* --- Alpha test ----------------------------------------------------------- *
+     * Reference 128: a triangle at alpha 64 must disappear entirely. */
     st.alpha_test      = 1;
     st.alpha_reference = 128;
     bk.set_state(bk.self, &st);
@@ -232,25 +232,25 @@ int main(void)
     bk.present(bk.self);
     {
         const int n = painted_count();
-        say("  %s test alpha : 64 < 128, rien n'est peint            %d pixels peints\n",
-            (n < 100) ? "ok   " : "ECHEC", n);
+        say("  %s alpha test: 64 < 128, nothing is painted         %d pixels painted\n",
+            (n < 100) ? "ok  " : "FAIL", n);
         if (n >= 100) { g_fails++; }
     }
 
-    /* Et le complément : alpha 200 passe. Sans lui, un test alpha bloqué sur
-       « jamais » passerait l'épreuve précédente. */
+    /* And the complement: alpha 200 passes. Without it, an alpha test stuck on
+       "never" would pass the previous trial. */
     bk.begin_frame(bk.self, 0x000000);
     triangle(&bk, 255, 255, 255, 200, 1.0f);
     bk.present(bk.self);
     {
         const int n = painted_count();
-        say("  %s test alpha : 200 >= 128, le triangle passe         %d pixels peints\n",
-            (n > 60000) ? "ok   " : "ECHEC", n);
+        say("  %s alpha test: 200 >= 128, the triangle passes      %d pixels painted\n",
+            (n > 60000) ? "ok  " : "FAIL", n);
         if (n <= 60000) { g_fails++; }
     }
 
     bk.close(bk.self);
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
