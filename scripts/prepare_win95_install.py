@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""E09-S01 — Prépare l'installation de Windows 95 dans la machine de test.
+"""E09-S01 - prepares the Windows 95 installation in the test machine.
 
-Extrait la source d'installation de l'ISO fournie par l'utilisateur vers un
-disque dur partitionné, et prépare une disquette de démarrage FreeDOS. Poser la
-source sur un disque plutôt que sur le CD supprime toute dépendance à un pilote
-CD-ROM sous DOS, qui est le point le plus fragile d'une installation Windows 95
-en émulation.
+Extracts the installation source from the user's ISO onto a partitioned hard disk,
+and prepares a FreeDOS boot floppy. Putting the source on a disk rather than on
+the CD removes any dependence on a CD-ROM driver under DOS, which is the most
+fragile point of an emulated Windows 95 installation.
 
-Aucun fichier Microsoft n'est téléchargé : tout vient de l'ISO de l'utilisateur.
+No Microsoft file is downloaded: everything comes from the user's ISO.
 
-    scripts/prepare_win95_install.py --iso /chemin/vers/W95.iso
+    scripts/prepare_win95_install.py --iso /path/to/W95.iso
 """
 from __future__ import annotations
 
@@ -25,44 +24,42 @@ import urllib.request
 import zipfile
 
 SECTOR = 512
-PART_START_LBA = 63          # géométrie classique : la partition commence après la piste 0
-PART_TYPE_FAT16 = 0x06       # FAT16 > 32 Mio, CHS
+PART_START_LBA = 63          # classic geometry: the partition starts after track 0
+PART_TYPE_FAT16 = 0x06       # FAT16 > 32 MiB, CHS
 
-# --- géométrie : le piège de ce script ---------------------------------------
+# --- geometry: this script's trap --------------------------------------------
 #
-# Un BIOS d'époque ne sait adresser que 1024 cylindres. Au-delà, il applique une
-# translation : il double le nombre de têtes jusqu'à ce que le compte de
-# cylindres repasse sous la limite, et présente CETTE géométrie à INT 13h. Le
-# POST l'annonce — « LBA » pour un disque translaté, « CHS » pour un disque qui
-# tient dans les limites.
+# A period BIOS can only address 1024 cylinders. Beyond that it applies a
+# translation: it doubles the head count until the cylinder count falls back under
+# the limit, and presents THAT geometry to INT 13h. The POST announces it - "LBA"
+# for a translated disk, "CHS" for one that fits within the limits.
 #
-# Le code d'amorçage de Windows 95 convertit les adresses logiques en CHS avec le
-# nombre de têtes inscrit dans le BPB du secteur de démarrage. Si ce nombre ne
-# correspond pas à celui que le BIOS présente, chaque lecture tombe à côté : la
-# machine charge n'importe quoi et se fige **sans message**, après le POST.
+# Windows 95's boot code converts logical addresses into CHS using the head count
+# written in the boot sector's BPB. If that number does not match the one the BIOS
+# presents, every read lands beside its target: the machine loads anything at all
+# and freezes **without a message**, after the POST.
 #
-# On construit donc les disques directement dans la géométrie translatée, de
-# sorte que le BPB et le BIOS soient d'accord dès le départ.
+# So we build the disks directly in the translated geometry, so that the BPB and
+# the BIOS agree from the start.
 MAX_BIOS_CYLINDERS = 1024
 
 
 def translated_heads(total_sectors: int, spt: int, heads: int) -> int:
-    """Nombre de têtes que le BIOS présentera pour ce disque."""
+    """The number of heads the BIOS will present for this disk."""
     while total_sectors // (heads * spt) > MAX_BIOS_CYLINDERS:
         heads *= 2
     return heads
 
-# Le dossier \WIN95 des CD OSR2.5 contient aussi Internet Explorer, MSN, AOL et
-# quantité d'extras. Seuls les fichiers d'installation nous intéressent : 46 Mio
-# au lieu de 124, ce qui tient dans un disque de 128 Mio.
+# The \WIN95 folder of OSR2.5 CDs also contains Internet Explorer, MSN, AOL and a
+# quantity of extras. Only the installation files interest us: 46 MiB instead of
+# 124, which fits on a 128 MiB disk.
 #
-# Attention : l'installation RÉCLAME certains de ces extras pendant la copie —
-# `aol30fr.exe` sur le CD français, par exemple. Elle ne s'arrête pas pour
-# autant : le bouton « Ignorer le fichier » de sa boîte de dialogue permet de
-# poursuivre, et le composant simplement n'est pas installé. C'est sans
-# conséquence pour un banc de test, mais il faut le savoir avant de croire à un
-# disque source incomplet. `--complete` copie tout et évite la question, au prix
-# d'un disque de 256 Mio.
+# Careful: the installation DOES ASK for some of those extras during the copy -
+# `aol30fr.exe` on the French CD, for instance. It does not stop for all that: the
+# "skip file" button in its dialog allows one to carry on, and the component is
+# simply not installed. That is of no consequence for a test bench, but it must be
+# known before believing the source disk incomplete. `--complete` copies everything
+# and avoids the question, at the price of a 256 MiB disk.
 EXTRA_PREFIXES = (
     "IE4", "ICW", "MSN", "AOL", "NM2", "MAILNEWS", "SWDIR", "SWFLASH", "SWINST",
     "VDOLIVE", "MSCHAT", "MSAGENT", "MSVBVM", "JAVI", "IEJAVA", "IELPK", "WPIE4",
@@ -81,12 +78,12 @@ def say(msg: str) -> None:
 
 
 def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    print(f"\033[1;31merreur:\033[0m {msg}", file=sys.stderr)
+    print(f"\033[1;31merror:\033[0m {msg}", file=sys.stderr)
     raise SystemExit(1)
 
 
 def chs(lba: int, heads: int, spt: int) -> bytes:
-    """Encode un LBA en CHS sur trois octets, saturé à la valeur maximale."""
+    """Encodes an LBA as CHS in three bytes, saturated at the maximum value."""
     cyl, rem = divmod(lba, heads * spt)
     head, sec = divmod(rem, spt)
     if cyl > 1023:
@@ -96,13 +93,12 @@ def chs(lba: int, heads: int, spt: int) -> bytes:
 
 def write_mbr(path: pathlib.Path, cylinders: int, heads: int, spt: int,
               active: bool = False) -> int:
-    """Écrit une table de partition contenant une unique partition FAT16.
+    """Writes a partition table containing a single FAT16 partition.
 
-    Pas de code d'amorçage dans le MBR : c'est l'installation de Windows qui
-    écrira le sien sur le disque système. En revanche le fanion « active » doit
-    être posé dès maintenant sur ce disque, sans quoi le MBR n'aura aucune
-    partition à charger et la machine ne démarrera pas une fois Windows installé.
-    Retourne le nombre de secteurs de la partition.
+    No boot code in the MBR: it is the Windows installation that will write its own
+    on the system disk. The "active" flag, on the other hand, must be set on that
+    disk now, without which the MBR will have no partition to load and the machine
+    will not boot once Windows is installed. Returns the partition's sector count.
     """
     total = cylinders * heads * spt
     part_sectors = total - PART_START_LBA
@@ -116,7 +112,7 @@ def write_mbr(path: pathlib.Path, cylinders: int, heads: int, spt: int,
     assert len(entry) == 16
     with open(path, "r+b") as f:
         f.seek(0x1BE)
-        f.write(entry + bytes(48))          # les trois autres entrées sont vides
+        f.write(entry + bytes(48))          # the other three entries are empty
         f.seek(0x1FE)
         f.write(b"\x55\xAA")
     return part_sectors
@@ -128,26 +124,26 @@ def make_disk(path: pathlib.Path, cylinders: int, heads: int, spt: int,
     total_sectors = cylinders * heads * spt
     size = total_sectors * SECTOR
     if path.exists() and not force:
-        say(f"{path.name} déjà présent ({size // 1024 // 1024} Mio) — conservé")
+        say(f"{path.name} already present ({size // 1024 // 1024} MiB) - kept")
         return
 
-    # On adopte la géométrie que le BIOS présentera, pas la géométrie physique :
-    # voir la note en tête de fichier. La taille du disque ne change pas.
+    # We adopt the geometry the BIOS will present, not the physical one: see the
+    # note at the head of the file. The disk's size does not change.
     effective_heads = translated_heads(total_sectors, spt, heads)
     if effective_heads != heads:
         cylinders = total_sectors // (effective_heads * spt)
         total_sectors = cylinders * effective_heads * spt
         size = total_sectors * SECTOR
         heads = effective_heads
-        say(f"{path.name} dépasse {MAX_BIOS_CYLINDERS} cylindres : "
-            f"géométrie translatée en {cylinders}/{heads}/{spt}, comme le BIOS")
+        say(f"{path.name} exceeds {MAX_BIOS_CYLINDERS} cylinders: "
+            f"geometry translated to {cylinders}/{heads}/{spt}, like the BIOS")
 
-    say(f"Création de {path.name} ({size // 1024 // 1024} Mio, CHS {cylinders}/{heads}/{spt})")
+    say(f"Creating {path.name} ({size // 1024 // 1024} MiB, CHS {cylinders}/{heads}/{spt})")
     with open(path, "wb") as f:
         f.truncate(size)
     part_sectors = write_mbr(path, cylinders, heads, spt, active)
     if part_sectors * SECTOR > 2 * 1024**3:
-        die(f"{path.name} dépasse la limite FAT16 de 2 Gio ; réduisez sa géométrie")
+        die(f"{path.name} exceeds FAT16's 2 GiB limit; reduce its geometry")
     subprocess.run(
         [str(mtools / "mformat"), "-i", f"{path}@@{PART_START_LBA * SECTOR}",
          "-h", str(heads), "-s", str(spt), "-T", str(part_sectors),
@@ -160,14 +156,14 @@ def extract_win95(iso: pathlib.Path, dest: pathlib.Path, complete: bool = False)
     try:
         import pycdlib  # type: ignore
     except ImportError:
-        die("pycdlib est requis : pip install pycdlib (ou uv pip install pycdlib)")
+        die("pycdlib is required: pip install pycdlib (or uv pip install pycdlib)")
     dest.mkdir(parents=True, exist_ok=True)
     cd = pycdlib.PyCdlib()
     cd.open(str(iso))
     try:
         children = list(cd.list_children(iso_path="/WIN95"))
     except Exception:
-        die(f"{iso} ne contient pas de dossier /WIN95 — est-ce bien un CD Windows 95 ?")
+        die(f"{iso} contains no /WIN95 folder - is this really a Windows 95 CD?")
     count = 0
     for child in children:
         if child is None or child.is_dot() or child.is_dotdot() or child.is_dir():
@@ -180,16 +176,16 @@ def extract_win95(iso: pathlib.Path, dest: pathlib.Path, complete: bool = False)
         count += 1
     cd.close()
     if not any(p.name.upper() == "INSTALL.EXE" for p in dest.iterdir()):
-        die("INSTALL.EXE introuvable dans /WIN95 : cette ISO n'est pas une source "
-            "d'installation Windows 95 utilisable")
+        die("INSTALL.EXE not found in /WIN95: this ISO is not a usable Windows 95 "
+            "installation source")
     return count
 
 
 def fetch_freedos(dest: pathlib.Path) -> None:
     if dest.exists():
-        say("Disquette FreeDOS déjà présente")
+        say("FreeDOS floppy already present")
         return
-    say("Récupération de la disquette de démarrage FreeDOS 1.4")
+    say("Fetching the FreeDOS 1.4 boot floppy")
     with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
         with urllib.request.urlopen(FREEDOS_URL, timeout=180) as response:
             shutil.copyfileobj(response, tmp)
@@ -202,76 +198,76 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--iso", required=True, type=pathlib.Path,
-                    help="ISO d'installation de Windows 95 fournie par l'utilisateur")
+                    help="the user's Windows 95 installation ISO")
     ap.add_argument("--prefix", type=pathlib.Path,
                     default=pathlib.Path(os.environ.get(
                         "DKR_WIN95_PREFIX", pathlib.Path.home() / ".local/dkr-win95")))
     ap.add_argument("--vm", default=os.environ.get("DKR_WIN95_VM", "dkr-p2-voodoo2"))
     ap.add_argument("--force", action="store_true",
-                    help="recrée les images disque même si elles existent")
+                    help="recreate the disk images even if they exist")
     ap.add_argument("--complete", action="store_true",
-                    help="copie tout /WIN95 (124 Mio) au lieu des seuls fichiers "
-                         "d'installation ; évite les demandes de fichier manquant "
-                         "pendant la copie, au prix d'un disque source plus gros")
+                    help="copy the whole of /WIN95 (124 MiB) instead of the "
+                         "installation files alone; avoids the missing-file prompts "
+                         "during the copy, at the price of a larger source disk")
     args = ap.parse_args()
 
     if not args.iso.is_file():
-        die(f"ISO introuvable : {args.iso}")
+        die(f"ISO not found: {args.iso}")
     vm = args.prefix / "vm" / args.vm
     if not vm.is_dir():
-        die(f"machine absente : {vm}\nLancez d'abord scripts/Setup-Win95-TestVM.sh")
+        die(f"machine absent: {vm}\nRun scripts/Setup-Win95-TestVM.sh first")
     mtools = args.prefix / "bin"
     if not (mtools / "mformat").exists():
-        die("mtools absent. Lancez scripts/Setup-Win95-TestVM.sh")
+        die("mtools absent. Run scripts/Setup-Win95-TestVM.sh")
 
-    # Disque système : partitionné, formaté et marqué actif depuis l'hôte, ce qui
-    # évite un passage par FDISK et FORMAT dans l'invité — et le redémarrage que
-    # FDISK impose entre les deux. L'installation de Windows y écrit son secteur
-    # d'amorçage.
+    # System disk: partitioned, formatted and marked active from the host, which
+    # avoids a pass through FDISK and FORMAT in the guest - and the reboot FDISK
+    # imposes between the two. The Windows installation writes its boot sector
+    # there.
     make_disk(vm / "win95.img", 2080, 16, 63, "WIN95", mtools, args.force,
               active=True)
-    # Disque de transfert hôte -> invité.
+    # Host -> guest transfer disk.
     make_disk(vm / "transfer.img", 1024, 16, 63, "DKRXFER", mtools, args.force)
-    # Source d'installation.
-    source_cylinders = 522 if args.complete else 261      # 256 Mio ou 128 Mio
+    # Installation source.
+    source_cylinders = 522 if args.complete else 261      # 256 MiB or 128 MiB
     make_disk(vm / "install.img", source_cylinders, 16, 63, "W95SRC", mtools, args.force)
 
-    say("Extraction de la source d'installation depuis l'ISO")
+    say("Extracting the installation source from the ISO")
     with tempfile.TemporaryDirectory() as tmpdir:
         staging = pathlib.Path(tmpdir) / "WIN95"
         count = extract_win95(args.iso, staging, args.complete)
         total = sum(p.stat().st_size for p in staging.iterdir())
-        say(f"{count} fichiers, {total / 1024 / 1024:.1f} Mio")
+        say(f"{count} files, {total / 1024 / 1024:.1f} MiB")
 
         image = f"{vm / 'install.img'}@@{PART_START_LBA * SECTOR}"
         subprocess.run([str(mtools / "mmd"), "-i", image, "::/WIN95"],
                        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        say("Copie vers le disque d'installation")
+        say("Copying to the installation disk")
         subprocess.run([str(mtools / "mcopy"), "-i", image, "-s", "-o",
                         *[str(p) for p in sorted(staging.iterdir())], "::/WIN95/"],
                        check=True, stdout=subprocess.DEVNULL)
 
     fetch_freedos(vm / "freedos-boot.img")
 
-    say("Vérification du disque d'installation")
+    say("Verifying the installation disk")
     subprocess.run([str(mtools / "mdir"), "-i",
                     f"{vm / 'install.img'}@@{PART_START_LBA * SECTOR}", "::/WIN95"],
                    check=True)
 
     print(f"""
-\033[1;34m==>\033[0m Prêt à installer
+\033[1;34m==>\033[0m Ready to install
 
-  Disque C:  {vm / 'win95.img'}     système, vide, prêt
-  Disque D:  {vm / 'transfer.img'}  transfert hôte <-> invité
-  Disque E:  {vm / 'install.img'}   source Windows 95
-  Disquette  {vm / 'freedos-boot.img'}  démarrage FreeDOS
+  Disk C:    {vm / 'win95.img'}     system, empty, ready
+  Disk D:    {vm / 'transfer.img'}  host <-> guest transfer
+  Disk E:    {vm / 'install.img'}   Windows 95 source
+  Floppy     {vm / 'freedos-boot.img'}  FreeDOS boot
 
-C: est déjà partitionné, formaté et actif : ni FDISK ni FORMAT ne sont
-nécessaires. Lancez la machine, puis dans l'invite FreeDOS :
+C: is already partitioned, formatted and active: neither FDISK nor FORMAT is
+needed. Start the machine, then at the FreeDOS prompt:
 
   E:\\WIN95\\INSTALL.EXE
 
-Une fois Windows installé, installez les pilotes 3dfx, puis figez l'état :
+Once Windows is installed, install the 3dfx drivers, then freeze the state:
 
   scripts/Run-Win95-VM.sh --snapshot
 """)
