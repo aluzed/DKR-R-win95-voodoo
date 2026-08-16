@@ -1,148 +1,149 @@
-# E00-S03 — Spike : coût CPU du code recompilé en 32 bits sans SSE
+# E00-S03 — Spike: CPU cost of the recompiled code in 32-bit without SSE
 
 | | |
 |---|---|
-| **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E00-S02 |
-| **Bloque** | E00-S05, E08-S01, E08-S02 |
+| **Epic** | E00 — Scoping, measurements and decisions |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E00-S02 |
+| **Blocks** | E00-S05, E08-S01, E08-S02 |
 
-## État au 2026-08-11
+## State as of 2026-08-11
 
-Les **deux facteurs** du budget sont mesurés — le passage 64 → 32 bits sans SSE,
-et la normalisation vers la machine cible réelle :
+**Both factors** of the budget are measured — the 64 → 32 bit move without SSE, and
+the normalisation towards the real target machine:
 [`docs/research/cpu-budget.md`](../../research/cpu-budget.md).
 
-| Grandeur | Mesure |
+| Quantity | Measurement |
 |---|---|
-| Temps d'exécution 64 → 32 bits, facteur médian | **2,16×** (étendue 1,54× à 3,00×) |
-| **Normalisation hôte 32 bits → Pentium II 400 MHz** | **17,7×** (étendue 15,6× à 21,7×) |
-| **Facteur global, poste de développement → cible** | **≈ 38×** |
-| Instructions x86 par instruction MIPS | 2,74 en 64 bits, **3,89** en 32 bits |
-| Taille de code `.text` | **+24,8 %** |
-| Instructions SSE dans le binaire 32 bits | **aucune**, vérifié au désassemblage |
+| Execution time 64 → 32 bit, median factor | **2.16×** (range 1.54× to 3.00×) |
+| **Normalisation 32-bit host → Pentium II 400 MHz** | **17.7×** (range 15.6× to 21.7×) |
+| **Overall factor, development machine → target** | **≈ 38×** |
+| x86 instructions per MIPS instruction | 2.74 in 64-bit, **3.89** in 32-bit |
+| `.text` code size | **+24.8 %** |
+| SSE instructions in the 32-bit binary | **none**, verified in the disassembly |
 
-Chaîne rendue opérationnelle sous Linux en chemin : toolchain MIPS sans droits
-root, ELF du decomp **matching** (SHA-1 identique à la ROM du joueur),
-`scripts/generate_recomp_toml.py`, et **587 625 lignes de C généré** par
-N64Recomp. Banc rejouable : `tools/cpu-budget/run.sh`.
+The chain was made operational under Linux along the way: a MIPS toolchain without
+root privileges, a **matching** decomp ELF (SHA-1 identical to the player's ROM),
+`scripts/generate_recomp_toml.py`, and **587,625 lines of C generated** by
+N64Recomp. A replayable bench: `tools/cpu-budget/run.sh`.
 
-Un blocage franc trouvé et levé : `recomp.h` exigeait un entier 128 bits, absent
-en 32 bits, ce qui arrêtait la compilation avant la première fonction. Il ne
-servait qu'à `DMULT`/`DMULTU`, que **DKR n'appelle jamais** (zéro occurrence sur
-3 823 fonctions). Corrigé par une implémentation portable prouvée équivalente sur
-20 000 200 comparaisons — patch `patches/n64recomp/0002-…`.
+One outright blockage found and lifted: `recomp.h` required a 128-bit integer,
+absent in 32-bit, which stopped the compilation before the first function. It served
+only `DMULT`/`DMULTU`, which **DKR never calls** (zero occurrences across 3,823
+functions). Fixed by a portable implementation proved equivalent over 20,000,200
+comparisons — patch `patches/n64recomp/0002-…`.
 
-**La normalisation vers la cible est faite** (étape 5). Le banc a été porté sur
-Win32 et exécuté sur le Pentium II émulé de [E09-S01](../E09-qa/E09-S01-emulated-test-environment.md),
-avec le même code généré, le même ELF et les mêmes entrées que sur l'hôte : seule
-la machine change. 23 fonctions communes, dispersion étroite (15,6× à 21,7×), ce
-qui indique une mesure saine.
+**The normalisation towards the target is done** (step 5). The bench was ported to
+Win32 and run on
+[E09-S01](../E09-qa/E09-S01-emulated-test-environment.md)'s emulated Pentium II,
+with the same generated code, the same ELF and the same inputs as on the host: only
+the machine changes. 23 common functions, a narrow spread (15.6× to 21.7×), which
+indicates a sound measurement.
 
-Deux enseignements en marge : le rapport de fréquence hôte/cible étant d'environ
-9 pour un facteur mesuré de 17,7, le Pentium II est environ **deux fois moins
-efficace par cycle** sur ce code — plausible pour de la recompilation, faite de
-longues chaînes de dépendances. Et le binaire de mesure, lié au **CRT complet de
-mingw-w64**, démarre sans difficulté sous Windows 95 : c'est un résultat direct
-pour [E00-S02](E00-S02-spike-pe-win95-toolchain.md), qui tenait cette question
-pour l'inconnue principale.
+Two lessons in the margin: the host/target frequency ratio being about 9 for a
+measured factor of 17.7, the Pentium II is about **twice as inefficient per cycle**
+on this code — plausible for recompilation, made of long dependency chains. And the
+measurement binary, linked against **mingw-w64's complete CRT**, starts without
+difficulty under Windows 95: that is a direct result for
+[E00-S02](E00-S02-spike-pe-win95-toolchain.md), which held that question to be the
+principal unknown.
 
-**Le go/no-go n'est toujours pas prononcé**, mais ce qui manque a changé de
-nature : ce n'est plus un facteur, c'est un **dénominateur**. Le banc mesure des
-fonctions feuilles isolées ; il donne le coût relatif d'une machine à l'autre,
-pas le coût absolu d'une image de jeu. Il faut désormais l'étape 2 (séquence de
-jeu déterministe), qui exige [E02-S06](../E02-system/E02-S06-game-bring-up.md),
-et le chiffre audio de [E00-S04](E00-S04-spike-rsp-cost-without-sse.md).
+**The go/no-go is still not pronounced**, but what is missing has changed in nature:
+it is no longer a factor, it is a **denominator**. The bench measures isolated leaf
+functions; it gives the relative cost from one machine to another, not the absolute
+cost of a game frame. What is now needed is step 2 (a deterministic play sequence),
+which requires
+[E02-S06](../E02-system/E02-S06-game-bring-up.md), and
+[E00-S04](E00-S04-spike-rsp-cost-without-sse.md)'s audio figure.
 
-Utilisable dès maintenant : le facteur **38×** transpose sur la cible toute
-mesure faite sur le poste de développement.
+Usable straight away: the **38×** factor transposes onto the target any measurement
+made on the development machine.
 
-## Contexte
+## Context
 
-C'est le ticket qui décide si ce projet est faisable.
+This is the ticket that decides whether this project is feasible.
 
-La recompilation statique traduit chaque instruction MIPS en C. Sur un hôte
-64 bits, c'est confortable : les 32 registres de 64 bits du VR4300 tiennent
-naturellement dans les registres de l'hôte. Sur un Pentium II, chaque registre
-du jeu devient une paire de mots de 32 bits, et chaque opération 64 bits une
-séquence de plusieurs instructions x86. Le facteur multiplicatif n'est pas connu
-et il n'est pas devinable.
+Static recompilation translates every MIPS instruction into C. On a 64-bit host
+that is comfortable: the VR4300's 32 64-bit registers fit naturally into the host's
+registers. On a Pentium II, every one of the game's registers becomes a pair of
+32-bit words, and every 64-bit operation a sequence of several x86 instructions. The
+multiplying factor is not known and it cannot be guessed.
 
-À cela s'ajoute une charge que la console ne faisait pas porter au CPU : le
-microcode audio, exécuté sur la N64 par un DSP vectoriel dédié à 62,5 MHz, tourne
-ici sur le processeur hôte (E00-S04 le mesure séparément).
+To that is added a load the console did not put on the CPU: the audio microcode,
+run on the N64 by a dedicated 62.5 MHz vector DSP, runs here on the host processor
+(E00-S04 measures it separately).
 
-L'ordre de grandeur à battre : le VR4300 tourne à 93,75 MHz et le jeu vise
-30 images par seconde. Un Pentium II à 400 MHz offre environ quatre fois le débit
-d'instructions brut. Toute la question est de savoir ce que le surcoût de
-traduction consomme de cette marge.
+The order of magnitude to beat: the VR4300 runs at 93.75 MHz and the game aims at 30
+frames per second. A 400 MHz Pentium II offers about four times the raw instruction
+throughput. The whole question is how much of that margin the translation overhead
+consumes.
 
-## Objectif
+## Objective
 
-Mesurer le facteur de ralentissement du code recompilé compilé en 32 bits sans
-SSE, et en déduire la fréquence CPU minimale requise. Livrer un **go / no-go**
-chiffré, pas une impression.
+To measure the slowdown factor of the recompiled code compiled in 32-bit without
+SSE, and to deduce from it the minimum CPU frequency required. To deliver a
+numbered **go / no-go**, not an impression.
 
-## Périmètre
+## Scope
 
-**Dans :** mesure du seul code CPU du jeu, hors rendu et hors audio.
+**In:** measurement of the game's CPU code alone, outside rendering and outside
+audio.
 
-**Hors :** optimisation (c'est E08-S02) ; toute la partie graphique.
+**Out:** optimisation (that is E08-S02); the whole graphics part.
 
-## Travail
+## Work
 
-1. Construire le runtime existant en deux variantes sur le même hôte moderne :
-   - référence : x86-64, options actuelles ;
-   - cible : `-m32 -march=pentium2 -mfpmath=387 -mno-sse`, toolchain retenue par
-     E00-S02.
-2. Instrumenter une portion de jeu **déterministe et reproductible** : par
-   exemple le démarrage jusqu'à l'écran-titre, puis une course fixée jouée par
-   une trace d'entrées rejouée. Sans reproductibilité, la mesure ne compare rien.
-3. Mesurer, avec le renderer `DiagnosticRenderer` (`null_renderer.cpp`) pour
-   sortir le rendu de l'équation :
-   - temps CPU total du fil de jeu par image, en médiane et au 99ᵉ centile ;
-   - répartition par zone chaude (physique, IA, collisions, matrices).
-4. En déduire le facteur cible / référence, puis, en normalisant par la fréquence
-   de l'hôte de mesure, la fréquence minimale d'un Pentium II qui tient 33,3 ms
-   par image en laissant une marge pour le rendu et l'audio.
-5. Recouper avec une mesure indépendante : rejouer la même trace sur une machine
-   32 bits réelle ou fortement bridée si l'atelier en dispose. Une extrapolation
-   depuis un cœur moderne surestime toujours les vieilles machines — le rapport
-   instructions par cycle, la taille des caches et la prédiction de branchement
-   n'ont rien à voir.
-6. Écrire `docs/research/cpu-budget.md` avec la méthode, les chiffres bruts, et
-   la conclusion.
+1. Build the existing runtime in two variants on the same modern host:
+   - reference: x86-64, current options;
+   - target: `-m32 -march=pentium2 -mfpmath=387 -mno-sse`, the toolchain E00-S02
+     retained.
+2. Instrument a **deterministic and reproducible** portion of the game: for
+   instance the startup up to the title screen, then a fixed race played by a
+   replayed input trace. Without reproducibility, the measurement compares nothing.
+3. Measure, with the `DiagnosticRenderer` (`null_renderer.cpp`) to take the
+   rendering out of the equation:
+   - the game thread's total CPU time per frame, median and 99th percentile;
+   - the distribution per hot area (physics, AI, collisions, matrices).
+4. Deduce the target / reference factor, then, by normalising by the measurement
+   host's frequency, the minimum frequency of a Pentium II that holds 33.3 ms per
+   frame while leaving a margin for rendering and audio.
+5. Cross-check against an independent measurement: replay the same trace on a real
+   or heavily throttled 32-bit machine if the workshop has one. An extrapolation
+   from a modern core always overestimates old machines — the instructions per
+   cycle, the cache sizes and the branch prediction bear no relation.
+6. Write `docs/research/cpu-budget.md` with the method, the raw figures, and the
+   conclusion.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le facteur de ralentissement 64 → 32 bits sans SSE est mesuré sur au moins
-      deux séquences de jeu distinctes.
-- [ ] Le budget par image est ventilé : CPU du jeu, microcode audio (chiffre
-      repris de E00-S04), transformation des vertex, marge restante.
-- [ ] La fréquence CPU minimale est énoncée en MHz, avec l'hypothèse de marge
-      explicitée.
-- [ ] Une conclusion **go / no-go** est écrite noir sur blanc, avec le seuil qui
-      la déclencherait dans l'autre sens.
-- [ ] Si le verdict est no-go sur Pentium II, le document indique ce qui
-      changerait la donne : plancher matériel relevé (Pentium III), ou bascule
-      vers le portage natif du decomp voisin.
+- [ ] The 64 → 32 bit slowdown factor without SSE is measured on at least two
+      distinct play sequences.
+- [ ] The per-frame budget is broken down: the game's CPU, the audio microcode (the
+      figure taken from E00-S04), vertex transformation, remaining margin.
+- [ ] The minimum CPU frequency is stated in MHz, with the margin hypothesis made
+      explicit.
+- [ ] A **go / no-go** conclusion is written in black and white, with the threshold
+      that would trigger it the other way.
+- [ ] If the verdict is no-go on a Pentium II, the document states what would change
+      the picture: a raised hardware floor (Pentium III), or a switch to the
+      neighbouring decomp's native port.
 
-## Risques
+## Risks
 
-Le résultat peut condamner l'approche recomp sur cette classe de machine. C'est
-une issue acceptable de ce ticket, et c'est même sa raison d'être : la découvrir
-maintenant coûte une semaine, la découvrir après E04 et E05 en coûte trois mois.
+The result may condemn the recomp approach on this class of machine. That is an
+acceptable outcome of this ticket, and it is even its reason for being: discovering
+it now costs a week, discovering it after E04 and E05 costs three months.
 
-Le repli existe et il est documenté : `/var/www/Diddy-Kong-Racing` porte un
-backlog « Voodoo95 » de portage natif depuis le decomp, qui n'a pas ce surcoût de
-traduction puisqu'il compile du C d'origine — au prix d'un travail bien plus
-lourd sur le reste.
+The fallback exists and is documented: `/var/www/Diddy-Kong-Racing` carries a
+"Voodoo95" backlog of a native port from the decomp, which does not have this
+translation overhead since it compiles the original C — at the price of far heavier
+work on everything else.
 
-## Références
+## References
 
-- `runtime-recomp/src/game/null_renderer.cpp` — renderer de diagnostic, idéal
-  pour isoler le coût CPU
-- `docs/ARCHITECTURE.md` — chemin d'exécution
-- E00-S04 — coût du microcode audio, second terme du budget
+- `runtime-recomp/src/game/null_renderer.cpp` — the diagnostic renderer, ideal for
+  isolating the CPU cost
+- `docs/ARCHITECTURE.md` — execution path
+- E00-S04 — cost of the audio microcode, the budget's second term

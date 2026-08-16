@@ -1,130 +1,126 @@
-# E00-S02 — Spike : produire un exécutable qui démarre sous Windows 95
+# E00-S02 — Spike: produce an executable that starts under Windows 95
 
 | | |
 |---|---|
-| **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E00-S01 |
-| **Bloque** | E01-S01, E01-S02, E01-S03 |
+| **Epic** | E00 — Scoping, measurements and decisions |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E00-S01 |
+| **Blocks** | E01-S01, E01-S02, E01-S03 |
 
-## État au 2026-08-12 — tranché, et le risque majeur est écarté
+## State as of 2026-08-12 — settled, and the major risk is ruled out
 
-ADR : [`docs/adr/0001-toolchain.md`](../../adr/0001-toolchain.md).
+ADR: [`docs/adr/0001-toolchain.md`](../../adr/0001-toolchain.md).
 
-**Décision : mingw-w64 GCC 13, `i686-w64-mingw32`, modèle de threads `posix`,
-CRT lié statiquement, avec le pont `tools/win95/win95compat/`.**
+**Decision: mingw-w64 GCC 13, `i686-w64-mingw32`, `posix` threading model, CRT
+linked statically, with the `tools/win95/win95compat/` bridge.**
 
-| Candidat | C++ | T1 | T2 | T3a | T3b | Taille T3b |
+| Candidate | C++ | T1 | T2 | T3a | T3b | T3b size |
 |---|---|---|---|---|---|---:|
-| Open Watcom 2.0 | C++98 partiel | ✅ | ✅ | *sans objet* | ✅ | 51 200 o |
-| mingw GCC 13, posix | **C++20** | ✅ | ✅ | ❌ | ✅ *(avec pont)* | 501 625 o |
-| mingw GCC 13, win32 | **C++20** | ✅ | ✅ | ❌ | ❌ | 353 108 o |
+| Open Watcom 2.0 | partial C++98 | ✅ | ✅ | *not applicable* | ✅ | 51,200 B |
+| mingw GCC 13, posix | **C++20** | ✅ | ✅ | ❌ | ✅ *(with the bridge)* | 501,625 B |
+| mingw GCC 13, win32 | **C++20** | ✅ | ✅ | ❌ | ❌ | 353,108 B |
 
-Aucun binaire n'émet d'instruction SSE, bibliothèque standard comprise.
+No binary emits an SSE instruction, the standard library included.
 
-**Le risque majeur du ticket ne s'est pas matérialisé** : `ultramodern` et
-`librecomp` restent patchables. Watcom passe pourtant tous les témoins, avec des
-binaires dix fois plus petits et sans pont — mais son C++98 imposerait de
-réécrire les deux bibliothèques. Il reste le repli documenté si le portage
-dérape.
+**The ticket's major risk did not materialise**: `ultramodern` and `librecomp` stay
+patchable. Watcom nonetheless passes every witness, with binaries ten times smaller
+and no bridge — but its C++98 would force both libraries to be rewritten. It remains
+the documented fallback if the port goes wrong.
 
-**Trois résultats qui changent la suite :**
+**Three results that change what follows:**
 
-1. **`std::thread` ne fonctionne pas sur la cible, même une fois tous les
-   symboles fournis.** T3a se charge, démarre, puis échoue dans la partie
-   threads. **E02-S01 devient obligatoire**, et ce n'est plus une hypothèse.
-2. **On ne peut pas éviter le problème en évitant `std::thread`** : T3b, qui
-   n'utilise que `CreateThread`, échoue quand même au chargement — `libstdc++`
-   importe `GetThreadId` pour les exceptions et le RTTI. La machine le dit
-   elle-même : « lié à une exportation manquante KERNEL32.DLL:GetThreadId ».
-3. **Un bouchon licite peut figer la machine.** `TryEnterCriticalSection`
-   renvoyant toujours `FALSE` — réponse permise par le contrat — a bloqué
-   Windows 95 au point d'arrêter l'horloge : `winpthreads` boucle dessus. Le pont
-   implémente les cinq fonctions de section critique.
+1. **`std::thread` does not work on the target, even once every symbol is
+   supplied.** T3a loads, starts, then fails in the thread part. **E02-S01 becomes
+   mandatory**, and that is no longer a hypothesis.
+2. **One cannot avoid the problem by avoiding `std::thread`**: T3b, which uses
+   nothing but `CreateThread`, still fails to load — `libstdc++` imports
+   `GetThreadId` for exceptions and RTTI. The machine says so itself: "linked to a
+   missing export KERNEL32.DLL:GetThreadId".
+3. **A lawful stub can freeze the machine.** `TryEnterCriticalSection` always
+   returning `FALSE` — an answer the contract permits — blocked Windows 95 to the
+   point of stopping its clock: `winpthreads` loops on it. The bridge implements all
+   five critical-section functions.
 
-Le pont est écrit, lié et **éprouvé sur la machine** : T3b passe de « ne démarre
-pas » à 1000/1000, RTTI et exceptions compris. Il est le point de départ de
-E02-S01.
+The bridge is written, linked and **tried on the machine**: T3b goes from "does not
+start" to 1000/1000, RTTI and exceptions included. It is E02-S01's starting point.
 
-## Contexte
+## Context
 
-Le choix du compilateur commande le langage disponible, et le langage disponible
-commande la quantité de code à réécrire. C'est la décision la plus structurante
-du projet, et elle se tranche par l'expérience, pas par la lecture.
+The compiler choice governs the language available, and the language available
+governs how much code must be rewritten. It is the project's most structuring
+decision, and it is settled by experiment, not by reading.
 
-Trois familles de candidats, avec un compromis franc entre modernité du langage
-et compatibilité de la cible :
+Three families of candidates, with a plain trade-off between the language's
+modernity and the target's compatibility:
 
-| Candidat | C++ disponible | Compatibilité Win95 |
+| Candidate | C++ available | Win95 compatibility |
 |---|---|---|
-| Visual C++ 6.0 / 2003 (7.1) | C++98 | native, dernière génération Microsoft à cibler 95 |
-| Open Watcom 2.0 | C99 / C++98 partiel | native, encore maintenue |
-| clang ou GCC récent → `i686-w64-mingw32` | C++17 / C++20 | à prouver — le démarrage du CRT mingw-w64 appelle des API postérieures à 95 |
+| Visual C++ 6.0 / 2003 (7.1) | C++98 | native, Microsoft's last generation to target 95 |
+| Open Watcom 2.0 | C99 / partial C++98 | native, still maintained |
+| recent clang or GCC → `i686-w64-mingw32` | C++17 / C++20 | to be proved — mingw-w64's CRT startup calls APIs later than 95 |
 
-La troisième voie est la seule qui préserve `ultramodern` et `librecomp` sans
-réécriture ; c'est aussi la seule dont la compatibilité n'est pas acquise.
+The third route is the only one that preserves `ultramodern` and `librecomp` without
+a rewrite; it is also the only one whose compatibility is not a given.
 
-## Objectif
+## Objective
 
-Faire démarrer sous Windows 95 un exécutable témoin de complexité croissante, et
-en déduire quelle toolchain le projet adopte.
+To make a witness executable of increasing complexity start under Windows 95, and to
+deduce from it which toolchain the project adopts.
 
-## Périmètre
+## Scope
 
-**Dans :** trois exécutables témoins, mesurés dans un Windows 95 émulé.
+**In:** three witness executables, measured in an emulated Windows 95.
 
-**Hors :** compiler quoi que ce soit du jeu (c'est E01-S05).
+**Out:** compiling any of the game (that is E01-S05).
 
-## Travail
+## Work
 
-1. Monter la machine de test (E09-S01 en fournit la recette ; si elle n'est pas
-   prête, un Windows 95 OSR2.5 sous 86Box suffit à ce spike).
-2. Pour chaque candidat, produire trois témoins :
-   - **T1** — `MessageBoxA` et sortie. Prouve le format PE, le sous-système et
-     les imports de base.
-   - **T2** — T1 plus le CRT : allocation tas, `fopen`/`fread`, `printf`,
-     mathématiques flottantes. Prouve la dépendance au CRT et sa distribution.
-     Attention : `msvcrt.dll` n'est pas présent dans le Windows 95 de première
-     génération — statuer entre édition de liens statique et redistribution.
-   - **T3** — T2 plus deux threads, un objet de synchronisation, et une classe
-     C++ avec exceptions et RTTI. Prouve le modèle d'exécution, qui est ce dont
-     `ultramodern` a besoin.
-3. Pour le candidat mingw-w64, forcer `-march=pentium2 -mtune=pentium3
-   -mfpmath=387 -mno-sse` et vérifier dans le désassemblage qu'**aucune**
-   instruction SSE ne subsiste, y compris dans le code de démarrage et dans les
-   fonctions de la bibliothèque standard.
-4. Relever pour chaque témoin qui passe : taille du binaire, liste des DLL
-   importées, liste des symboles importés, et le comportement observé au
-   démarrage sous 95.
-5. Pour chaque témoin qui échoue, relever le symbole ou l'instruction exacte en
-   cause. Un échec documenté vaut mieux qu'un succès inexpliqué.
+1. Set up the test machine (E09-S01 supplies the recipe; if it is not ready, a
+   Windows 95 OSR2.5 under 86Box suffices for this spike).
+2. For each candidate, produce three witnesses:
+   - **T1** — `MessageBoxA` and exit. Proves the PE format, the subsystem and the
+     basic imports.
+   - **T2** — T1 plus the CRT: heap allocation, `fopen`/`fread`, `printf`,
+     floating-point maths. Proves the dependence on the CRT and its distribution.
+     Careful: `msvcrt.dll` is not present in first-generation Windows 95 — decide
+     between static linking and redistribution.
+   - **T3** — T2 plus two threads, a synchronisation object, and a C++ class with
+     exceptions and RTTI. Proves the execution model, which is what `ultramodern`
+     needs.
+3. For the mingw-w64 candidate, force `-march=pentium2 -mtune=pentium3
+   -mfpmath=387 -mno-sse` and verify in the disassembly that **no** SSE instruction
+   remains, including in the startup code and in the standard library's functions.
+4. Record for every witness that passes: the binary's size, the list of imported
+   DLLs, the list of imported symbols, and the behaviour observed at startup under
+   95.
+5. For every witness that fails, record the exact symbol or instruction at fault. A
+   documented failure is worth more than an unexplained success.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Les trois témoins sont construits par au moins deux candidats.
-- [ ] Au moins un candidat exécute T3 sous Windows 95 émulé, capture d'écran à
-      l'appui.
-- [ ] Le tableau des résultats donne, par candidat : C++ disponible, taille de
-      T3, DLL et symboles importés, statut d'exécution.
-- [ ] Les échecs nomment le symbole ou l'instruction fautive.
-- [ ] Une ADR de choix de toolchain est rédigée (`docs/adr/0001-toolchain.md`),
-      qui tranche également le mode de distribution du CRT.
-- [ ] L'ADR indique la conséquence directe du choix sur `ultramodern` et
-      `librecomp` : patchables tels quels, ou à réécrire — en s'appuyant sur le
-      compte de constructions C++20 de E00-S01.
+- [ ] The three witnesses are built by at least two candidates.
+- [ ] At least one candidate runs T3 under emulated Windows 95, with a screenshot in
+      support.
+- [ ] The results table gives, per candidate: C++ available, T3's size, DLLs and
+      symbols imported, execution status.
+- [ ] The failures name the offending symbol or instruction.
+- [ ] A toolchain-choice ADR is written (`docs/adr/0001-toolchain.md`), which also
+      settles the CRT's distribution mode.
+- [ ] The ADR states the choice's direct consequence for `ultramodern` and
+      `librecomp`: patchable as they stand, or to be rewritten — relying on
+      E00-S01's count of C++20 constructs.
 
-## Risques
+## Risks
 
-Si aucun compilateur moderne ne produit un binaire viable sous 95, le projet
-retombe sur C++98, et `ultramodern`/`librecomp` deviennent une réécriture
-complète — plusieurs semaines qui ne figurent aujourd'hui dans aucun ticket.
-C'est précisément pour cela que ce spike passe avant tout le reste. Le résultat
-doit remonter en risque projet, pas rester dans le fichier d'ADR.
+If no modern compiler produces a viable binary under 95, the project falls back on
+C++98, and `ultramodern`/`librecomp` become a complete rewrite — several weeks that
+appear in no ticket today. That is precisely why this spike comes before everything
+else. The result must be raised as a project risk, not left in the ADR file.
 
-## Références
+## References
 
-- `docs/BUILDING.md` — chaîne de build actuelle (VS 2022, CMake, Ninja)
+- `docs/BUILDING.md` — the current build chain (VS 2022, CMake, Ninja)
 - `runtime-recomp/CMakeLists.txt:26-31`
-- E00-S01 — inventaire des blocages
+- E00-S01 — inventory of the blockers

@@ -1,126 +1,126 @@
-# E00-S04 — Spike : coût du RSP recompilé sans SSE
+# E00-S04 — Spike: cost of the recompiled RSP without SSE
 
 | | |
 |---|---|
-| **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E00-S02 |
-| **Bloque** | E00-S05, E03-S01, E03-S03 |
+| **Epic** | E00 — Scoping, measurements and decisions |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E00-S02 |
+| **Blocks** | E00-S05, E03-S01, E03-S03 |
 
-## État au 2026-08-11 — mesuré, conclusion tranchée
+## State as of 2026-08-11 — measured, conclusion settled
 
-Résultats complets : [`docs/research/rsp-audio-budget.md`](../../research/rsp-audio-budget.md).
+Full results:
+[`docs/research/rsp-audio-budget.md`](../../research/rsp-audio-budget.md).
 
-| Grandeur | Mesure |
+| Quantity | Measurement |
 |---|---|
-| Repli scalaire dans `librecomp` | **existe déjà**, retenu automatiquement en 32 bits |
-| Jeu d'instructions du chemin SIMD | **SSE4.1** — hors de portée de tout Pentium |
-| Compilation du microcode 32 bits sans SSE | ✅ sans modification |
-| Opération vectorielle, hôte SIMD → cible SISD | 2,22 ns → **410 ns** (185×) |
-| Dont pénalité du scalaire seul | **10,4×** (le reste est la machine, 17,7×) |
-| Débit vectoriel de la cible | 2,44 M op/s contre ~62,5 M/s pour le RSP |
-| **Ce que la cible atteint du RSP** | **3,9 %** |
+| Scalar fallback in `librecomp` | **already exists**, selected automatically in 32-bit |
+| The SIMD path's instruction set | **SSE4.1** — out of reach of any Pentium |
+| Compiling the microcode in 32-bit without SSE | ✅ unmodified |
+| Vector operation, SIMD host → SISD target | 2.22 ns → **410 ns** (185×) |
+| Of which the scalar path's own penalty | **10.4×** (the rest is the machine, 17.7×) |
+| The target's vector throughput | 2.44 M op/s against ~62.5 M/s for the RSP |
+| **What the target reaches of the RSP** | **3.9 %** |
 
-**Le microcode audio recompilé ne peut pas tenir le temps réel.** Même en
-supposant que l'audio ne consomme que 5 % du RSP sur console, il coûterait 43 ms
-par image sur la cible — pour un budget de 33,3 ms. À 20 %, cinq fois le budget.
+**The recompiled audio microcode cannot hold real time.** Even assuming the audio
+consumes only 5 % of the RSP on console, it would cost 43 ms per frame on the target
+— for a budget of 33.3 ms. At 20 %, five times the budget.
 
-**Trois questions du ticket sont closes :**
+**Three of the ticket's questions are closed:**
 
-1. Le repli scalaire n'était pas à écrire — `rsp_vu.hpp` le sélectionne dès que
-   l'architecture n'est ni x86-64 ni arm64.
-2. Le chemin SIMD exige **SSE4.1**, pas SSE2 : il était inaccessible à toute la
-   gamme Pentium, et non au seul Pentium II.
-3. **Écrire du MMX ne sauverait pas ce chemin.** Quatre voies au lieu de huit,
-   sans permutation d'octets ni saturation 32 bits : un gain de 3 à 4× amènerait
-   à ~15 % du débit du RSP, toujours cinq fois trop lent. C'est un effort à ne
-   pas engager.
+1. The scalar fallback did not need writing — `rsp_vu.hpp` selects it as soon as the
+   architecture is neither x86-64 nor arm64.
+2. The SIMD path requires **SSE4.1**, not SSE2: it was out of reach of the entire
+   Pentium range, and not of the Pentium II alone.
+3. **Writing MMX would not save this path.** Four lanes instead of eight, with
+   neither byte permutation nor 32-bit saturation: a gain of 3 to 4× would bring it
+   to ~15 % of the RSP's throughput, still five times too slow. That is an effort not
+   to embark on.
 
-**Décision : [E03-S03](../E03-rsp/E03-S03-high-level-mixer-fallback.md) passe de
-contingence à chemin critique.** Le chemin scalaire garde une utilité — il
-exécute le microcode fidèlement, hors temps réel, ce qui en fait l'**oracle**
-naturel pour valider le mixeur de haut niveau.
+**Decision: [E03-S03](../E03-rsp/E03-S03-high-level-mixer-fallback.md) moves from
+contingency to critical path.** The scalar path keeps a use — it runs the microcode
+faithfully, outside real time, which makes it the natural **oracle** for validating
+the high-level mixer.
 
-## Contexte
+## Context
 
-DKR fait deux usages du RSP, et le projet les traite très différemment :
+DKR makes two uses of the RSP, and the project treats them very differently:
 
-- le **microcode graphique F3DDKR** n'est pas recompilé : il est interprété à
-  haut niveau par `f3ddkr_rt64.cpp`, qui lit la display list et la traduit. Bonne
-  nouvelle — c'est le chemin bon marché ;
-- le **microcode audio `aspMain`** est bel et bien recompilé, instruction par
-  instruction, dans `runtime-recomp/RecompiledRSP/aspMain.cpp` (73 Ko de C++
-  généré) et s'exécute sur le CPU hôte.
+- the **F3DDKR graphics microcode** is not recompiled: it is interpreted at a high
+  level by `f3ddkr_rt64.cpp`, which reads the display list and translates it. Good
+  news — that is the cheap path;
+- the **`aspMain` audio microcode** really is recompiled, instruction by
+  instruction, into `runtime-recomp/RecompiledRSP/aspMain.cpp` (73 KB of generated
+  C++) and runs on the host CPU.
 
-Le RSP est un processeur vectoriel : ses instructions traitent huit entiers de
-16 bits d'un coup. `librecomp/rsp_vu_impl.hpp` les émule très probablement en
-SSE2 — absent du Pentium II, qui ne dispose que de MMX.
+The RSP is a vector processor: its instructions handle eight 16-bit integers at
+once. `librecomp/rsp_vu_impl.hpp` very probably emulates them in SSE2 — absent from
+the Pentium II, which has only MMX.
 
-MMX n'est pas un remplacement direct : ses registres font 64 bits, soit quatre
-voies de 16 bits. Chaque opération vectorielle du RSP en demandera deux. Et MMX
-partage ses registres avec la pile x87, ce qui impose un `emms` à chaque
-transition vers du code flottant — le coût réel dépend donc autant de
-l'entrelacement que des instructions elles-mêmes.
+MMX is not a direct replacement: its registers are 64 bits, that is four 16-bit
+lanes. Every RSP vector operation will need two of them. And MMX shares its registers
+with the x87 stack, which imposes an `emms` at every transition to floating-point
+code — the real cost therefore depends as much on the interleaving as on the
+instructions themselves.
 
-## Objectif
+## Objective
 
-Chiffrer le coût du microcode audio recompilé sur la cible, et décider si le
-chemin « microcode recompilé » tient dans le budget ou s'il faut lui préférer un
-mixeur audio de haut niveau.
+To put a number on the cost of the recompiled audio microcode on the target, and to
+decide whether the "recompiled microcode" path fits in the budget or whether a
+high-level audio mixer should be preferred to it.
 
-## Périmètre
+## Scope
 
-**Dans :** `aspMain`, `rsp_vu_impl.hpp`, et le coût comparé des trois stratégies
-d'émulation vectorielle.
+**In:** `aspMain`, `rsp_vu_impl.hpp`, and the comparative cost of the three vector
+emulation strategies.
 
-**Hors :** l'écriture de l'implémentation retenue (c'est E03-S01) et la sortie
-audio (E06-S03).
+**Out:** writing the chosen implementation (that is E03-S01) and the audio output
+(E06-S03).
 
-## Travail
+## Work
 
-1. Lire `librecomp/include/librecomp/rsp_vu_impl.hpp` et relever précisément quel
-   jeu d'instructions il exige, et si un repli scalaire portable existe déjà.
-2. Compter, dans `RecompiledRSP/aspMain.cpp`, les appels aux opérations
-   vectorielles par type. La distribution compte plus que le total : quelques
-   opérations dominent toujours un microcode audio (multiplication-accumulation,
-   saturations, permutations).
-3. Écrire un banc d'essai isolé qui exécute `dkrAspMain` sur une tâche audio
-   capturée depuis une vraie session de jeu, en boucle, et mesure le temps par
-   tâche.
-4. Mesurer ce banc dans trois configurations :
-   - SSE2, 64 bits — la référence actuelle ;
-   - scalaire portable, 32 bits sans SSE — le pire cas ;
-   - MMX, 32 bits — la cible probable, au moins pour les opérations dominantes
-     relevées à l'étape 2.
-5. Rapporter le résultat au budget réel : DKR produit de l'audio à cadence fixe ;
-   convertir le temps par tâche en pourcentage d'une image de 33,3 ms sur un
-   Pentium II à 400 MHz, en réutilisant le facteur de normalisation de E00-S03.
-6. Statuer sur le repli : si le microcode dépasse son budget même en MMX,
-   E03-S03 (mixeur de haut niveau) passe de contingence à chemin critique.
+1. Read `librecomp/include/librecomp/rsp_vu_impl.hpp` and record precisely which
+   instruction set it requires, and whether a portable scalar fallback already
+   exists.
+2. Count, in `RecompiledRSP/aspMain.cpp`, the calls to vector operations per type.
+   The distribution counts for more than the total: a few operations always dominate
+   an audio microcode (multiply-accumulate, saturations, permutations).
+3. Write an isolated bench that runs `dkrAspMain` on an audio task captured from a
+   real play session, in a loop, and measures the time per task.
+4. Measure that bench in three configurations:
+   - SSE2, 64-bit — the current reference;
+   - portable scalar, 32-bit without SSE — the worst case;
+   - MMX, 32-bit — the likely target, at least for the dominant operations recorded
+     at step 2.
+5. Relate the result to the real budget: DKR produces audio at a fixed rate; convert
+   the time per task into a percentage of a 33.3 ms frame on a 400 MHz Pentium II,
+   reusing E00-S03's normalisation factor.
+6. Rule on the fallback: if the microcode exceeds its budget even in MMX, E03-S03
+   (high-level mixer) moves from contingency to critical path.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le jeu d'instructions exigé par `rsp_vu_impl.hpp` est établi par lecture du
-      code, et l'existence ou non d'un repli scalaire est tranchée.
-- [ ] La distribution des opérations vectorielles d'`aspMain` est comptée.
-- [ ] Le banc d'essai mesure les trois configurations sur une tâche audio réelle.
-- [ ] Le coût est exprimé en pourcentage du budget d'une image sur la cible.
-- [ ] Le document conclut : microcode recompilé conservé, ou mixeur de haut
-      niveau — avec le chiffre qui motive la conclusion.
-- [ ] Le résultat est reporté dans le budget global de E00-S03.
+- [ ] The instruction set `rsp_vu_impl.hpp` requires is established by reading the
+      code, and the existence or absence of a scalar fallback is settled.
+- [ ] The distribution of `aspMain`'s vector operations is counted.
+- [ ] The bench measures the three configurations on a real audio task.
+- [ ] The cost is expressed as a percentage of one frame's budget on the target.
+- [ ] The document concludes: recompiled microcode kept, or high-level mixer — with
+      the figure that motivates the conclusion.
+- [ ] The result is carried into E00-S03's overall budget.
 
-## Risques
+## Risks
 
-Le microcode audio est du code généré et intouchable directement
-(`docs/ARCHITECTURE.md`) : toute correction passe par le pipeline de patchs. Si
-l'émulation vectorielle doit changer, elle change dans `librecomp` via
-`patches/n64-modern-runtime/`, pas dans le fichier généré.
+The audio microcode is generated code and cannot be touched directly
+(`docs/ARCHITECTURE.md`): every correction goes through the patch pipeline. If the
+vector emulation has to change, it changes in `librecomp` through
+`patches/n64-modern-runtime/`, not in the generated file.
 
-## Références
+## References
 
-- `runtime-recomp/RecompiledRSP/aspMain.cpp` — 73 Ko de microcode audio recompilé
-- `runtime-recomp/rsp/aspMain.us.v77.toml` — configuration de la recompilation RSP
-- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — le microcode graphique, lui, est HLE
+- `runtime-recomp/RecompiledRSP/aspMain.cpp` — 73 KB of recompiled audio microcode
+- `runtime-recomp/rsp/aspMain.us.v77.toml` — the RSP recompilation's configuration
+- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — the graphics microcode, by contrast, is HLE
 - `docs/F3DDKR.md`

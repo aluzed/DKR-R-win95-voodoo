@@ -1,137 +1,135 @@
-# E00-S01 — Inventaire des dépendances incompatibles avec Windows 95
+# E00-S01 — Inventory of the dependencies incompatible with Windows 95
 
 | | |
 |---|---|
-| **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | — |
-| **Bloque** | E00-S02, E01-S02, E02-S01, E07-S03 |
+| **Epic** | E00 — Scoping, measurements and decisions |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | — |
+| **Blocks** | E00-S02, E01-S02, E02-S01, E07-S03 |
 
-## État au 2026-08-12 — inventaire fait
+## State as of 2026-08-12 — the inventory is done
 
-Résultats complets : [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
+Full results: [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
 
-| Constat | Mesure |
+| Finding | Measurement |
 |---|---|
-| API Win32 appelées directement par le projet | 20, **toutes présentes** sous Win95 OSR2 |
-| Variantes `...W` utilisées | 5, **toutes des stubs** (`ERROR_CALL_NOT_IMPLEMENTED`, vérifié au désassemblage) |
-| `std::atomic` (y compris 64 bits) | **0 bloquant**, exécuté sur la machine réelle |
-| `std::mutex` / `condition_variable` / `thread` | **6 bloquants** (variables de condition Vista) |
-| `std::filesystem` | **13 bloquants** |
-| `ultramodern` | **6 fichiers** concernés, 12 `std::thread`, 5 `std::mutex` |
-| `allocation_size` de `librecomp` en 32 bits | **0** — troncature silencieuse, le jeu meurt au démarrage |
-| Plafond réel de la cible | 1 Gio réservés, **256 Mio validés** (`mem_size` en demande 512) |
-| SSE hors chemins déjà traités | aucun |
+| Win32 APIs called directly by the project | 20, **all present** under Win95 OSR2 |
+| `...W` variants used | 5, **all stubs** (`ERROR_CALL_NOT_IMPLEMENTED`, verified in the disassembly) |
+| `std::atomic` (64 bits included) | **0 blockers**, run on the real machine |
+| `std::mutex` / `condition_variable` / `thread` | **6 blockers** (Vista condition variables) |
+| `std::filesystem` | **13 blockers** |
+| `ultramodern` | **6 files** affected, 12 `std::thread`, 5 `std::mutex` |
+| `librecomp`'s `allocation_size` in 32-bit | **0** — silent truncation, the game dies at startup |
+| The target's real ceiling | 1 GiB reserved, **256 MiB committed** (`mem_size` asks for 512) |
+| SSE outside the paths already dealt with | none |
 
-**Trois conclusions changent le plan :**
+**Three conclusions change the plan:**
 
-1. **La prémisse « C++20 exclut les compilateurs capables de cibler Win95 » est
-   fausse.** GCC 13 cible i686 PE32 et implémente tout C++20. Le problème est la
-   *bibliothèque*, pas le langage — ce qui déplace E01-S02 d'une question de
-   dialecte vers une question de couche d'hébergement.
-2. **`ultramodern` se patche, il ne se réécrit pas** (6 fichiers). E02-S01 était
-   dimensionné sur l'hypothèse inverse et doit être réduit.
-3. **E07-S02 est déjà faite, ou presque** : ImGui, les texture packs et
-   `runtime_ui.cpp` sont exclus par `DKR_RUNTIME_BUILD_RT64=OFF`, et le
-   dépouillement des gardes du préprocesseur ne trouve **aucune référence ImGui
-   hors garde**. Il ne reste que quatre références SDL2 dans deux fichiers.
+1. **The premise "C++20 rules out the compilers capable of targeting Win95" is
+   false.** GCC 13 targets i686 PE32 and implements all of C++20. The problem is the
+   *library*, not the language — which moves E01-S02 from a question of dialect to a
+   question of hosting layer.
+2. **`ultramodern` gets patched, it does not get rewritten** (6 files). E02-S01 was
+   sized on the opposite hypothesis and must be cut down.
+3. **E07-S02 is already done, or nearly**: ImGui, the texture packs and
+   `runtime_ui.cpp` are excluded by `DKR_RUNTIME_BUILD_RT64=OFF`, and the survey of
+   the preprocessor guards finds **no ImGui reference outside a guard**. Only four
+   SDL2 references in two files remain.
 
-Le risque annoncé par ce ticket — « conclure que tout est à jeter » — ne s'est
-pas matérialisé : le code recompilé, le microcode audio, `std::atomic` et les 20
-API appelées passent sans modification.
+The risk this ticket announced — "concluding that everything is to be thrown away" —
+did not materialise: the recompiled code, the audio microcode, `std::atomic` and the
+20 APIs called all pass unmodified.
 
-## Contexte
+## Context
 
-DKR-R est un portage par recompilation statique conçu pour des systèmes 64 bits
-modernes. La pile actuelle est, de haut en bas :
+DKR-R is a port by static recompilation designed for modern 64-bit systems. The
+current stack is, from top to bottom:
 
-| Couche | Composant | Nature |
+| Layer | Component | Nature |
 |---|---|---|
-| Fenêtre / entrées / audio | SDL2 | dépendance externe |
-| Interface | Dear ImGui (`runtime_ui.cpp`, 194 Ko) | dépendance externe |
-| Rendu | RT64 (`extern/rt64`) | D3D12 / Vulkan / Metal |
-| Ordonnancement N64 | `ultramodern` | C++20 |
-| Chargement / API N64 | `librecomp` | C++20 |
-| CPU du jeu | sortie N64Recomp (`RecompiledFuncs`) | C généré |
-| Microcode audio | sortie RSPRecomp (`RecompiledRSP/aspMain.cpp`) | C++ généré |
+| Window / input / audio | SDL2 | external dependency |
+| Interface | Dear ImGui (`runtime_ui.cpp`, 194 KB) | external dependency |
+| Rendering | RT64 (`extern/rt64`) | D3D12 / Vulkan / Metal |
+| N64 scheduling | `ultramodern` | C++20 |
+| N64 loading / API | `librecomp` | C++20 |
+| The game's CPU | N64Recomp output (`RecompiledFuncs`) | generated C |
+| Audio microcode | RSPRecomp output (`RecompiledRSP/aspMain.cpp`) | generated C++ |
 
-Aucune de ces couches n'a été pensée pour un Win32 de 1995. Avant de planifier
-quoi que ce soit, il faut savoir **précisément** ce qui tombe et pourquoi :
-c'est ce qui distingue un remplacement obligatoire d'un simple ajustement.
+None of these layers was conceived for a Win32 from 1995. Before planning anything,
+one must know **precisely** what falls and why: that is what distinguishes a
+mandatory replacement from a mere adjustment.
 
-## Objectif
+## Objective
 
-Produire `docs/research/win95-blockers.md` : la liste exhaustive, composant par
-composant, de ce qui empêche la compilation ou l'exécution sous Windows 95, avec
-pour chaque entrée un verdict — **remplacer**, **patcher**, ou **conserver**.
+To produce `docs/research/win95-blockers.md`: the exhaustive list, component by
+component, of what prevents compilation or execution under Windows 95, with for
+each entry a verdict — **replace**, **patch**, or **keep**.
 
-## Périmètre
+## Scope
 
-**Dans :** analyse statique des sources et des en-têtes des quatre dépendances
-épinglées dans `dependencies.lock.json`, plus `runtime-recomp/src/game/`.
+**In:** static analysis of the sources and headers of the four dependencies pinned
+in `dependencies.lock.json`, plus `runtime-recomp/src/game/`.
 
-**Hors :** toute mesure de performance (c'est E00-S03 et E00-S04) et toute
-écriture de code de remplacement.
+**Out:** any performance measurement (that is E00-S03 and E00-S04) and any writing
+of replacement code.
 
-## Travail
+## Work
 
-1. Préparer les dépendances une fois (`Prepare-DKR-Runtime.cmd` ou
-   `scripts/bootstrap_dependencies.py`) pour disposer des worktrees à analyser.
-2. **Appels d'API Win32.** Extraire tous les symboles importés depuis
-   `kernel32`/`user32`/`advapi32` par `ultramodern`, `librecomp` et
-   `runtime-recomp/src/game/`. Confronter chacun à la table d'exports réelle de
-   Windows 95. Les manques attendus, à confirmer plutôt qu'à supposer :
-   - `TryEnterCriticalSection` — NT 4 / 98 et au-delà ;
-   - `InitializeCriticalSectionAndSpinCount` — 98 / NT 4 SP3 ;
-   - `SignalObjectAndWait` — NT 4 ;
-   - les variables de condition `SRWLOCK` / `CONDITION_VARIABLE` — Vista ;
-   - `GetTickCount64`, `GetModuleHandleEx` — Vista / XP ;
-   - toute la famille `...W` Unicode, qui est un stub sous 9x.
-3. **Bibliothèque standard C++.** Relever les constructions C++20 qui excluent
-   les compilateurs capables de cibler Win95 : concepts, `<ranges>`,
-   `<span>`, `<bit>`, `consteval`, `<format>`, initialiseurs désignés, et
-   surtout `std::thread` / `std::condition_variable` / `std::atomic` avec
-   `std::latch` ou `std::jthread`. Compter les occurrences par fichier — c'est ce
-   compte qui dira si `ultramodern` se patche ou se réécrit.
-4. **Jeu d'instructions.** Repérer tout usage de SSE/SSE2/AVX, explicite
-   (intrinsèques) ou implicite. Regarder en particulier
-   `librecomp/include/librecomp/rsp_vu_impl.hpp`, inclus par
-   `runtime-recomp/RecompiledRSP/aspMain.cpp:2` : l'unité vectorielle du RSP y est
-   très probablement émulée en SSE2, absent du Pentium II.
-5. **Hypothèses 64 bits.** Chercher les `static_assert(sizeof(void*) == 8)`, les
-   conversions pointeur↔`uint64_t`, les espaces d'adressage réservés en dur
-   (`librecomp` réserve typiquement la RDRAM par un `mmap`/`VirtualAlloc` massif).
-6. **Dépendances externes.** Pour SDL2, ImGui et RT64, statuer sur le
-   remplacement plutôt que le portage, et le justifier en une ligne chacun.
-7. Ranger chaque conclusion dans le tableau de verdicts avec le ticket qui la
-   traitera.
+1. Prepare the dependencies once (`Prepare-DKR-Runtime.cmd` or
+   `scripts/bootstrap_dependencies.py`) so as to have the worktrees to analyse.
+2. **Win32 API calls.** Extract every symbol imported from
+   `kernel32`/`user32`/`advapi32` by `ultramodern`, `librecomp` and
+   `runtime-recomp/src/game/`. Set each against Windows 95's real export table. The
+   expected gaps, to be confirmed rather than assumed:
+   - `TryEnterCriticalSection` — NT 4 / 98 and beyond;
+   - `InitializeCriticalSectionAndSpinCount` — 98 / NT 4 SP3;
+   - `SignalObjectAndWait` — NT 4;
+   - the `SRWLOCK` / `CONDITION_VARIABLE` condition variables — Vista;
+   - `GetTickCount64`, `GetModuleHandleEx` — Vista / XP;
+   - the whole `...W` Unicode family, which is a stub under 9x.
+3. **The C++ standard library.** Record the C++20 constructs that rule out the
+   compilers capable of targeting Win95: concepts, `<ranges>`, `<span>`, `<bit>`,
+   `consteval`, `<format>`, designated initialisers, and above all `std::thread` /
+   `std::condition_variable` / `std::atomic` with `std::latch` or `std::jthread`.
+   Count the occurrences per file — it is that count which will say whether
+   `ultramodern` gets patched or rewritten.
+4. **Instruction set.** Spot any use of SSE/SSE2/AVX, explicit (intrinsics) or
+   implicit. Look in particular at `librecomp/include/librecomp/rsp_vu_impl.hpp`,
+   included by `runtime-recomp/RecompiledRSP/aspMain.cpp:2`: the RSP's vector unit is
+   very probably emulated there in SSE2, absent from the Pentium II.
+5. **64-bit assumptions.** Look for `static_assert(sizeof(void*) == 8)`, for
+   pointer↔`uint64_t` conversions, for hard-coded reserved address spaces
+   (`librecomp` typically reserves RDRAM through a massive `mmap`/`VirtualAlloc`).
+6. **External dependencies.** For SDL2, ImGui and RT64, rule on replacement rather
+   than porting, and justify it in one line each.
+7. Put every conclusion into the verdict table with the ticket that will deal with
+   it.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] `docs/research/win95-blockers.md` existe et couvre les sept points ci-dessus.
-- [ ] Chaque entrée porte un verdict **remplacer / patcher / conserver**, une
-      justification d'une ligne, et le ticket qui s'en charge.
-- [ ] Les API Win32 manquantes sont vérifiées contre une source d'exports réelle
-      (table d'exports d'un `kernel32.dll` de Win95 OSR2.5, ou la colonne
-      « Minimum supported client » de la documentation Win32), pas de mémoire.
-- [ ] Le compte des constructions C++20 est donné **par fichier** pour
-      `ultramodern` et `librecomp`, de sorte que E01-S02 puisse trancher entre
-      patch et réécriture sur un chiffre.
-- [ ] Le document nomme explicitement les composants qui survivent sans
-      modification — c'est là que se trouve la valeur conservée du projet.
+- [ ] `docs/research/win95-blockers.md` exists and covers the seven points above.
+- [ ] Every entry carries a verdict **replace / patch / keep**, a one-line
+      justification, and the ticket that takes it on.
+- [ ] The missing Win32 APIs are verified against a real export source (the export
+      table of a Win95 OSR2.5 `kernel32.dll`, or the Win32 documentation's "Minimum
+      supported client" column), not from memory.
+- [ ] The count of C++20 constructs is given **per file** for `ultramodern` and
+      `librecomp`, so that E01-S02 can decide between patch and rewrite on a figure.
+- [ ] The document names explicitly the components that survive unmodified — that is
+      where the project's retained value lies.
 
-## Risques
+## Risks
 
-Le piège est de conclure « tout est à jeter ». Le cœur du projet — la sortie
-N64Recomp, qui est du C généré à partir d'un ELF MIPS — n'a aucune raison
-d'être incompatible : c'est du C portable manipulant des entiers. Si l'inventaire
-conclut à un remplacement total, il est faux.
+The trap is to conclude that "everything is to be thrown away". The project's core —
+the N64Recomp output, which is C generated from a MIPS ELF — has no reason to be
+incompatible: it is portable C manipulating integers. If the inventory concludes on
+a total replacement, it is wrong.
 
-## Références
+## References
 
-- `dependencies.lock.json` — les quatre dépendances épinglées
-- `docs/ARCHITECTURE.md` — frontières protégées et couches
-- `runtime-recomp/CMakeLists.txt:26-31` — normes C17 / C++20 exigées
-- `runtime-recomp/RecompiledRSP/aspMain.cpp:1-2` — inclusions `librecomp`
+- `dependencies.lock.json` — the four pinned dependencies
+- `docs/ARCHITECTURE.md` — protected boundaries and layers
+- `runtime-recomp/CMakeLists.txt:26-31` — C17 / C++20 standards required
+- `runtime-recomp/RecompiledRSP/aspMain.cpp:1-2` — `librecomp` includes

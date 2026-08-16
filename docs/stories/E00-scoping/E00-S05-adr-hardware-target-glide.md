@@ -1,173 +1,169 @@
-# E00-S05 — ADR : cible matérielle et version de Glide
+# E00-S05 — ADR: hardware target and Glide version
 
 | | |
 |---|---|
-| **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | DONE |
-| **Priorité** | P0 |
-| **Estimation** | S |
-| **Dépend de** | E00-S03, E00-S04 |
-| **Bloque** | E05-S01, E05-S02, E05-S04, E09-S01, E09-S04 |
+| **Epic** | E00 — Scoping, measurements and decisions |
+| **Status** | DONE |
+| **Priority** | P0 |
+| **Estimate** | S |
+| **Depends on** | E00-S03, E00-S04 |
+| **Blocks** | E05-S01, E05-S02, E05-S04, E09-S01, E09-S04 |
 
-## État au 2026-08-12 — ADR écrite
+## State as of 2026-08-12 — the ADR is written
 
 [`docs/adr/0002-hardware-target.md`](../../adr/0002-hardware-target.md).
 
-| Élément | Plancher | Recommandé |
+| Item | Floor | Recommended |
 |---|---|---|
-| CPU | Pentium II 400 MHz *(provisoire)* | Pentium III 500 MHz et plus |
-| RAM | **64 Mo** — 47,0 Mio libres mesurés | 128 Mo |
-| Carte | Voodoo 2 8 Mo, **2 TMU** | Voodoo 2 12 Mo ou Voodoo 3 |
-| API | **Glide 2.4x** (`glide2x.dll` 2.54) | idem |
-| Résolution | **640 × 480, 16 bits, double tampon + Z** | idem |
+| CPU | Pentium II 400 MHz *(provisional)* | Pentium III 500 MHz and above |
+| RAM | **64 MB** — 47.0 MiB free, measured | 128 MB |
+| Card | Voodoo 2 8 MB, **2 TMUs** | Voodoo 2 12 MB or Voodoo 3 |
+| API | **Glide 2.4x** (`glide2x.dll` 2.54) | the same |
+| Resolution | **640 × 480, 16-bit, double buffer + Z** | the same |
 
-**Trois décisions reposent sur un calcul, pas sur une préférence :**
+**Three decisions rest on a calculation, not on a preference:**
 
-- **Triple buffering écarté** : 2,34 Mio contre 2 Mo de mémoire d'image sur la
-  Voodoo 2 8 Mo. Le retenir excluerait le plancher.
-- **Résidence totale des textures** : le pic mesuré par le portage voisin est de
-  1 225 Ko padés sur 65 niveaux, soit **60 % d'une TMU de 2 Mo**. E05-S02 peut
-  viser la résidence par niveau plutôt qu'un cache avec éviction.
-- **Deux TMU exigées**, une TMU restant un repli multipasse correct mais lent.
+- **Triple buffering ruled out**: 2.34 MiB against 2 MB of frame buffer memory on
+  the 8 MB Voodoo 2. Keeping it would exclude the floor.
+- **Total texture residency**: the peak measured by the neighbouring port is
+  1,225 KB padded over 65 levels, that is **60 % of a 2 MB TMU**. E05-S02 can aim at
+  per-level residency rather than a cache with eviction.
+- **Two TMUs required**, a single TMU remaining a correct but slow multipass
+  fallback.
 
-**Le choix Glide 2.4 est argumenté sur les sources**, comme demandé. Le `README`
-de `sezero/glide` montre que `glide2x` construit pour `sst1`, `cvg` et `h3`, et
-`glide3x` pour `sst1`, `cvg`, `h3` et `h5` : **les deux couvrent toute la cible**,
-et l'idée reçue « Glide 2.4 est la seule voie vers la Voodoo 1 » est fausse.
+**The Glide 2.4 choice is argued on the sources**, as asked. `sezero/glide`'s
+`README` shows that `glide2x` builds for `sst1`, `cvg` and `h3`, and `glide3x` for
+`sst1`, `cvg`, `h3` and `h5`: **both cover the whole target**, and the received idea
+that "Glide 2.4 is the only route to the Voodoo 1" is false.
 
-Ce qui a départagé est mesuré sur la machine : Glide 2.54 est prouvé de bout en
-bout, tandis que **Glide 3 exige un HWND valide** — `grSstWinOpen` refuse avec
-« need to use a valid window handle », ce qui coupleraît l'amorçage du rendu à
-E06-S01. `grVertexLayout` reste l'argument qui rouvrirait la décision.
+What decided it is measured on the machine: Glide 2.54 is proved end to end, while
+**Glide 3 requires a valid HWND** — `grSstWinOpen` refuses with "need to use a valid
+window handle", which would couple the rendering bring-up to E06-S01.
+`grVertexLayout` remains the argument that would reopen the decision.
 
-**Corrigé le 14 août 2026.** Ce paragraphe disait que le fichier de
-configuration de 86Box mentait, `grSstQueryHardware` rapportant le type `0`
-alors que le fichier annonçait `type = 2`. C'était faux, et la méthode l'était
-aussi : il y a **deux sections Voodoo** dans `86box.cfg`, et celle que 86Box lit
-porte le suffixe d'instance. Elle disait `type = 1` — Obsidian SB50, un Voodoo 1
-à deux TMU — et 86Box l'honorait fidèlement. La section écrite à la main n'était
-jamais lue.
+**Corrected on 14 August 2026.** This paragraph said that 86Box's configuration file
+lied, `grSstQueryHardware` reporting type `0` while the file announced `type = 2`.
+That was false, and so was the method: there are **two Voodoo sections** in
+`86box.cfg`, and the one 86Box reads carries the instance suffix. It said `type = 1`
+— an Obsidian SB50, a two-TMU Voodoo 1 — and 86Box honoured it faithfully. The
+hand-written section was never read.
 
-La machine est maintenant sur la carte **plancher** : Voodoo 2, 2 Mo de tampon
-d'images, 2 Mo par TMU, confirmé dans le dialogue de réglages. Le budget de
-texture de E05-S02 sera donc éprouvé contre la vraie limite et non contre le
-double, ce qui **réduit** le poids de E09-S04 au lieu de l'augmenter.
+The machine is now on the **floor** card: Voodoo 2, 2 MB of frame buffer, 2 MB per
+TMU, confirmed in the settings dialog. E05-S02's texture budget will therefore be
+tried against the real limit and not against twice it, which **reduces** E09-S04's
+weight instead of increasing it.
 
-Ce qui reste vrai, et qui compte pour E05-S01 : Glide 2.54 rapporte le type `0`
-et la révision FBI `261` pour la Voodoo 2 comme pour l'Obsidian. **Sur cette
-plate-forme, `grSstQueryHardware` ne distingue pas les deux générations** — le
-nombre de TMU et la mémoire par TMU sont exploitables, le modèle ne l'est pas.
+What stays true, and matters for E05-S01: Glide 2.54 reports type `0` and FBI
+revision `261` for the Voodoo 2 as for the Obsidian. **On this platform,
+`grSstQueryHardware` does not distinguish the two generations** — the number of TMUs
+and the memory per TMU are usable, the model is not.
 
-**Réserve explicite :** le plancher CPU est **provisoire**. Le go/no-go de
-E00-S03 n'est pas tombé — il attend une vraie session de jeu (E02-S06). L'ADR le
-dit et ne contourne pas le chiffre.
+**An explicit reservation:** the CPU floor is **provisional**. E00-S03's go/no-go has
+not come — it awaits a real play session (E02-S06). The ADR says so and does not work
+around the figure.
 
-## Contexte
+## Context
 
-« Compatible 3dfx Voodoo » désigne cinq générations de cartes aux capacités très
-différentes, et deux API incompatibles entre elles. Le choix conditionne
-directement le travail de rendu — en particulier le nombre de TMU disponibles,
-qui décide si les configurations de combiner à deux texels passent en une passe
-ou en deux.
+"3dfx Voodoo compatible" names five generations of cards with very different
+capabilities, and two mutually incompatible APIs. The choice directly conditions the
+rendering work — in particular the number of TMUs available, which decides whether
+the two-texel combiner configurations go through in one pass or in two.
 
-| Carte | TMU | Mémoire de texture | API |
+| Card | TMUs | Texture memory | API |
 |---|---|---|---|
-| Voodoo Graphics (Voodoo 1) | 1 | 2 Mo | Glide 2.x |
-| Voodoo 2, 8 Mo | 2 | 2 × 2 Mo | Glide 2.4 · Glide 3.x |
-| Voodoo 2, 12 Mo | 2 | 2 × 4 Mo | Glide 2.4 · Glide 3.x |
-| Voodoo Banshee | 1 | partagée | Glide 3.x |
-| Voodoo 3 | 2 | 16 Mo | Glide 3.x |
+| Voodoo Graphics (Voodoo 1) | 1 | 2 MB | Glide 2.x |
+| Voodoo 2, 8 MB | 2 | 2 × 2 MB | Glide 2.4 · Glide 3.x |
+| Voodoo 2, 12 MB | 2 | 2 × 4 MB | Glide 2.4 · Glide 3.x |
+| Voodoo Banshee | 1 | shared | Glide 3.x |
+| Voodoo 3 | 2 | 16 MB | Glide 3.x |
 
-Contrainte commune à toute la gamme : **aucune transformation matérielle**. La
-carte reçoit des sommets déjà projetés en coordonnées écran. Tout le pipeline
-géométrique — matrices, transformation, éclairage, découpage — reste à la charge
-du CPU, ce qui pèse sur le budget mesuré par E00-S03. Les textures sont en
-puissance de deux, 256 × 256 au maximum sur Voodoo 1 et 2.
+A constraint common to the whole range: **no hardware transformation**. The card
+receives vertices already projected into screen coordinates. The entire geometry
+pipeline — matrices, transformation, lighting, clipping — stays on the CPU, which
+weighs on the budget E00-S03 measures. The textures are powers of two, 256 × 256 at
+most on the Voodoo 1 and 2.
 
-Le cadrage projet a retenu la classe **Pentium II / III, Voodoo 2 ou 3, 64 Mo de
-RAM, Windows 95 OSR2.5**. Cette ADR l'acte formellement et en tire les
-conséquences chiffrées.
+The project's scoping retained the class **Pentium II / III, Voodoo 2 or 3, 64 MB of
+RAM, Windows 95 OSR2.5**. This ADR records it formally and draws the numbered
+consequences.
 
-## Objectif
+## Objective
 
-Écrire `docs/adr/0002-hardware-target.md` : plancher matériel, configuration
-recommandée, version de Glide, résolution de référence — chaque valeur justifiée
-par une mesure ou une contrainte matérielle, pas par une préférence.
+To write `docs/adr/0002-hardware-target.md`: the hardware floor, the recommended
+configuration, the Glide version, the reference resolution — every value justified by
+a measurement or a hardware constraint, not by a preference.
 
-## Périmètre
+## Scope
 
-**Dans :** la décision et sa justification.
+**In:** the decision and its justification.
 
-**Hors :** l'implémentation Glide (E05).
+**Out:** the Glide implementation (E05).
 
-## Travail
+## Work
 
-1. Reprendre les conclusions de E00-S03 et E00-S04 pour fixer le plancher CPU en
-   MHz. Si le no-go de E00-S03 est tombé, cette ADR acte la sortie du projet ou
-   le relèvement du plancher — elle ne contourne pas le chiffre.
-2. Trancher **Glide 2.4 contre Glide 3.x**. Glide 3.x couvre Voodoo 2, Banshee et
-   Voodoo 3 par une seule API et simplifie le support ; Glide 2.4 reste la seule
-   voie vers Voodoo 1. Vérifier dans les sources 3dfx ouvertes quelles cibles
-   chaque arbre construit réellement, plutôt que de se fier à la documentation
-   commerciale d'époque.
-3. Fixer le nombre de TMU **exigé** et le nombre **exploité**. Deux TMU
-   permettent une passe unique pour les combiners à deux texels ; le rendu doit
-   néanmoins rester correct sur une seule TMU, par repli multipasse (E05-S04).
-4. Fixer la résolution de référence. 640 × 480 en 16 bits est le point d'équilibre
-   d'une Voodoo 2 ; vérifier que le tampon d'image et le tampon de profondeur y
-   tiennent dans la mémoire de la carte visée, en incluant le triple buffering
-   s'il est retenu.
-5. Établir le budget de mémoire de texture par niveau et le confronter à la
-   mémoire par TMU. Le portage natif voisin a déjà mesuré un pic de **1,20 Mo**
-   par niveau (`../../Diddy-Kong-Racing/docs/research/level-working-set.md`) —
-   chiffre à réutiliser, en vérifiant qu'il porte bien sur le même jeu de niveaux.
-6. Nommer la configuration de validation de E09-S04 : le matériel réel sur lequel
-   la version sera déclarée bonne.
+1. Take E00-S03's and E00-S04's conclusions to fix the CPU floor in MHz. If
+   E00-S03's no-go has come, this ADR records the project's exit or the raising of
+   the floor — it does not work around the figure.
+2. Decide between **Glide 2.4 and Glide 3.x**. Glide 3.x covers Voodoo 2, Banshee
+   and Voodoo 3 through a single API and simplifies support; Glide 2.4 remains the
+   only route to the Voodoo 1. Check in the open 3dfx sources which targets each tree
+   really builds, rather than trusting the commercial documentation of the period.
+3. Fix the number of TMUs **required** and the number **exploited**. Two TMUs allow a
+   single pass for the two-texel combiners; the rendering must nonetheless stay
+   correct on a single TMU, through the multipass fallback (E05-S04).
+4. Fix the reference resolution. 640 × 480 in 16 bits is a Voodoo 2's balance point;
+   check that the frame buffer and the depth buffer fit there in the target card's
+   memory, including triple buffering if it is retained.
+5. Establish the texture memory budget per level and set it against the memory per
+   TMU. The neighbouring native port has already measured a peak of **1.20 MB** per
+   level (`../../Diddy-Kong-Racing/docs/research/level-working-set.md`) — a figure to
+   reuse, checking that it really bears on the same level set.
+6. Name E09-S04's validation configuration: the real hardware on which the release
+   will be declared good.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] `docs/adr/0002-hardware-target.md` fixe : CPU plancher, CPU recommandé,
-      RAM, carte 3dfx plancher, carte recommandée, version de Glide, résolution.
-- [x] Chaque valeur renvoie à la mesure ou à la contrainte matérielle qui la
-      justifie.
-- [x] Le choix Glide 2.4 / 3.x est argumenté sur la couverture matérielle réelle
-      des sources 3dfx, pas sur la documentation d'époque.
-- [x] Le budget de mémoire de texture par TMU est chiffré et comparé au pic
-      mesuré par niveau — 1 225 Ko padés contre 2 Mo par TMU, soit 60 %.
-- [x] La configuration de validation matériel réel est nommée.
-- [x] L'ADR indique ce qui la rouvrirait — dépassement du budget de texture en
-      E05-S02, coût du remplissage de `GrVertex` en E08-S03, go/no-go de E00-S03,
-      demande de support Voodoo 4/5.
+- [x] `docs/adr/0002-hardware-target.md` fixes: floor CPU, recommended CPU, RAM,
+      floor 3dfx card, recommended card, Glide version, resolution.
+- [x] Every value points at the measurement or the hardware constraint that
+      justifies it.
+- [x] The Glide 2.4 / 3.x choice is argued on the real hardware coverage of the 3dfx
+      sources, not on the period's documentation.
+- [x] The texture memory budget per TMU is quantified and compared against the peak
+      measured per level — 1,225 KB padded against 2 MB per TMU, that is 60 %.
+- [x] The real-hardware validation configuration is named.
+- [x] The ADR states what would reopen it — an overrun of the texture budget in
+      E05-S02, the cost of filling `GrVertex` in E08-S03, E00-S03's go/no-go, a
+      request for Voodoo 4/5 support.
 
-## Vérifié en amont par E09-S01
+## Verified upstream by E09-S01
 
-La machine de test est montée et une démonstration Glide y tourne
-([E09-S01](../E09-qa/E09-S01-emulated-test-environment.md)). Trois faits en
-sortent, à reprendre ici :
+The test machine is set up and a Glide demonstration runs on it
+([E09-S01](../E09-qa/E09-S01-emulated-test-environment.md)). Three facts come out of
+it, to be taken up here:
 
-- **Glide 2.54 et Glide 3.01 sont tous deux fournis** par le pilote de référence
-  3dfx pour Voodoo 2. Le choix d'API de l'étape 2 ne dépend donc pas du matériel :
-  `glide2x.dll` et `glide3x.dll` cohabitent sur la même machine.
-- **Le modèle de carte émulé doit être vérifié dans le dialogue de réglages de
-  86Box, pas déduit du fichier de configuration.** Les réglages Voodoo écrits à
-  la main y ont été ignorés en silence : la machine a émulé une Voodoo 1 à 2 Mo
-  alors que le fichier annonçait une Voodoo 2 à 4 Mo. Toute mesure de budget de
-  texture ou de multitexture faite sans cette vérification serait fausse.
-- **L'identifiant PCI ne suffit pas à identifier la carte** sur cette
-  plate-forme. La détection à l'exécution de E05-S01 doit passer par
-  `grSstQueryHardware` / `grSstQueryBoards`.
+- **Glide 2.54 and Glide 3.01 are both supplied** by 3dfx's reference driver for the
+  Voodoo 2. Step 2's API choice therefore does not depend on the hardware:
+  `glide2x.dll` and `glide3x.dll` coexist on the same machine.
+- **The emulated card model must be verified in 86Box's settings dialog, not deduced
+  from the configuration file.** The hand-written Voodoo settings were silently
+  ignored there: the machine emulated a 2 MB Voodoo 1 while the file announced a 4 MB
+  Voodoo 2. Any texture-budget or multitexture measurement made without that check
+  would be wrong.
+- **The PCI identifier does not suffice to identify the card** on this platform.
+  E05-S01's run-time detection must go through `grSstQueryHardware` /
+  `grSstQueryBoards`.
 
-## Risques
+## Risks
 
-Élargir la cible coûte cher et se paie en E05 : une TMU contre deux, c'est une
-seconde passe de rendu sur une partie du jeu, donc un budget de remplissage
-doublé sur ces surfaces. Mieux vaut un plancher étroit et tenu qu'une compatibilité
-large et fausse.
+Widening the target costs dearly and is paid for in E05: one TMU against two means a
+second rendering pass over part of the game, hence a doubled fill budget on those
+surfaces. Better a narrow floor that is held than a wide compatibility that is false.
 
-## Références
+## References
 
-- `../../Diddy-Kong-Racing/docs/research/level-working-set.md` — pic de working set
-  par niveau, déjà mesuré côté portage natif
-- [Sources Glide 3dfx](https://sourceforge.net/projects/glide/) ·
+- `../../Diddy-Kong-Racing/docs/research/level-working-set.md` — the working-set peak
+  per level, already measured on the native port's side
+- [3dfx Glide sources](https://sourceforge.net/projects/glide/) ·
   [sezero/glide](https://github.com/sezero/glide) ·
   [hatarch/glide3x](https://github.com/hatarch/glide3x)

@@ -1,120 +1,119 @@
-# E00-S07 — ADR : stratégie de dépôt et oracle de référence
+# E00-S07 — ADR: repository strategy and reference oracle
 
 | | |
 |---|---|
-| **Épic** | E00 — Cadrage, mesures et décisions |
-| **Statut** | REVIEW |
-| **Priorité** | P1 |
-| **Estimation** | S |
-| **Dépend de** | — |
-| **Bloque** | E07-S01, E09-S02, E09-S03 |
+| **Epic** | E00 — Scoping, measurements and decisions |
+| **Status** | REVIEW |
+| **Priority** | P1 |
+| **Estimate** | S |
+| **Depends on** | — |
+| **Blocks** | E07-S01, E09-S02, E09-S03 |
 
-## État au 2026-08-12 — tranché
+## State as of 2026-08-12 — settled
 
-ADR écrite : [`docs/adr/0004-repository-strategy.md`](../../adr/0004-repository-strategy.md).
+ADR written:
+[`docs/adr/0004-repository-strategy.md`](../../adr/0004-repository-strategy.md).
 
-| Point | Décision |
+| Point | Decision |
 |---|---|
-| Chemin moderne | **conservé dans le même arbre**, comme oracle, jusqu'à la validation de E09-S02 |
-| Interrupteur | `DKR_RUNTIME_BUILD_RT64`, défaut `OFF` — **vérifié suffisant** pour RT64 et ImGui, pas encore pour SDL2 (4 références) |
-| Amont | **gel** au commit `e5d1bbb` de `ThatGuyMcd/DKR-R` ; reprise manuelle des seules corrections de justesse et de pipeline |
-| Patch / fork | pipeline `patches/manifest.json` **confirmé sans exception** ; limite écrite ; premier candidat au fork nommé (système de mods de `librecomp`) |
-| Tests | **les 18 suites conservées** — 12 portables sur les deux cibles, 6 réservées à l'hôte |
+| The modern path | **kept in the same tree**, as an oracle, until E09-S02's validation |
+| The switch | `DKR_RUNTIME_BUILD_RT64`, default `OFF` — **verified sufficient** for RT64 and ImGui, not yet for SDL2 (4 references) |
+| Upstream | **frozen** at commit `e5d1bbb` of `ThatGuyMcd/DKR-R`; manual pick-up of correctness and pipeline fixes alone |
+| Patch / fork | the `patches/manifest.json` pipeline **confirmed without exception**; the boundary written; the first fork candidate named (`librecomp`'s mod system) |
+| Tests | **all 18 suites kept** — 12 portable to both targets, 6 reserved for the host |
 
-Deux constats ont porté la décision, tous deux issus du dépouillement des
-directives du préprocesseur :
+Two findings carried the decision, both from the survey of the preprocessor
+directives:
 
-- la séparation « chemin moderne / socle portable » **existe déjà** et est
-  appliquée par le build — 0 référence RT64 ou ImGui hors garde ;
-- les 18 suites de tests sont **sous `BUILD_TESTING` et non sous RT64**, et
-  aucune ne dépend de SDL, d'ImGui ni de RT64. Douze compilent pour la cible
-  sans rien écrire, ce qui offre à E09-S03 une base gratuite.
+- the "modern path / portable core" separation **already exists** and is enforced by
+  the build — 0 RT64 or ImGui references outside a guard;
+- the 18 test suites are **under `BUILD_TESTING` and not under RT64**, and none
+  depends on SDL, on ImGui or on RT64. Twelve compile for the target without
+  writing anything, which gives E09-S03 a free base.
 
-Conséquence à répercuter : **E07-S01** ne supprime pas les politiques modernes,
-il les exclut de la cible Win95. Le ticket doit être reformulé.
+A consequence to carry through: **E07-S01** does not remove the modern policies, it
+excludes them from the Win95 target. The ticket must be reworded.
 
-## Contexte
+## Context
 
-Ce dépôt est un fork de DKR-R. Le portage Win95 va retirer des fonctionnalités
-(widescreen, interpolation, texture packs, overlay ImGui), remplacer des
-dépendances entières (SDL2, RT64) et abaisser la norme du langage. Ces
-changements sont incompatibles avec l'amont : il n'y a pas de retour possible.
+This repository is a fork of DKR-R. The Win95 port will remove features
+(widescreen, interpolation, texture packs, the ImGui overlay), replace whole
+dependencies (SDL2, RT64) and lower the language standard. Those changes are
+incompatible with upstream: there is no way back.
 
-Il faut donc décider, une fois pour toutes, deux choses distinctes :
+Two distinct things must therefore be decided, once and for all:
 
-1. **Le devenir du portage moderne dans ce dépôt.** Le supprimer simplifie
-   énormément le code. Le conserver coûte de la maintenance — mais fournit
-   l'unique référence exécutable permettant de savoir si le rendu Glide est
-   *juste*. Sans elle, la seule référence est un émulateur N64 tiers ou la
-   console, et la comparaison image par image devient beaucoup plus lourde.
-2. **Le suivi de l'amont.** Reprendre les corrections de DKR-R, ou figer.
+1. **The fate of the modern port in this repository.** Removing it simplifies the
+   code enormously. Keeping it costs maintenance — but supplies the only executable
+   reference that tells us whether the Glide rendering is *right*. Without it, the
+   only reference is a third-party N64 emulator or the console, and image-by-image
+   comparison becomes far heavier.
+2. **Tracking upstream.** Take DKR-R's fixes, or freeze.
 
-Le portage natif voisin (`/var/www/Diddy-Kong-Racing`) a rencontré exactement
-cette question et l'a tranchée dans son ADR 0003 : fork dédié, matching abandonné
-comme contrainte de livraison, mais **build de référence conservé comme oracle de
-test**. La justification y est explicite — casser l'oracle, c'est perdre le seul
-moyen de savoir si le portage est correct.
+The neighbouring native port (`/var/www/Diddy-Kong-Racing`) met exactly this
+question and settled it in its ADR 0003: a dedicated fork, matching abandoned as a
+delivery constraint, but **the reference build kept as a test oracle**. The
+justification there is explicit — breaking the oracle is losing the only means of
+knowing whether the port is correct.
 
-## Objectif
+## Objective
 
-Écrire `docs/adr/0004-repository-strategy.md` : ce qui est conservé, ce qui est
-retiré, ce qui reste constructible, et comment l'oracle est utilisé.
+To write `docs/adr/0004-repository-strategy.md`: what is kept, what is removed, what
+stays buildable, and how the oracle is used.
 
-## Périmètre
+## Scope
 
-**Dans :** la décision, et la structure de build qu'elle impose.
+**In:** the decision, and the build structure it imposes.
 
-**Hors :** la mise en œuvre de la réduction de périmètre (E07).
+**Out:** implementing the scope reduction (E07).
 
-## Travail
+## Work
 
-1. Trancher la conservation du chemin RT64 / SDL2. Trois options honnêtes :
-   - **supprimer** — code minimal, plus d'oracle exécutable ;
-   - **conserver dans le même arbre** derrière un interrupteur CMake, les deux
-     backends implémentant `ultramodern::renderer::RendererContext` — cette
-     interface existe déjà et porte trois implémentations potentielles ;
-   - **conserver sur une branche séparée** — arbre propre, mais dérive garantie
-     et comparaison plus laborieuse.
+1. Decide on keeping the RT64 / SDL2 path. Three honest options:
+   - **remove** — minimal code, no executable oracle any more;
+   - **keep in the same tree** behind a CMake switch, both backends implementing
+     `ultramodern::renderer::RendererContext` — that interface already exists and
+     carries three potential implementations;
+   - **keep on a separate branch** — a clean tree, but guaranteed drift and a more
+     laborious comparison.
 
-   La deuxième option est la seule qui rende E09-S02 réellement praticable, parce
-   qu'elle permet de rejouer *la même trace de display list* dans les deux
-   backends depuis un seul binaire de développement.
-2. Définir l'interrupteur de build et son défaut. La cible Win95 ne doit
-   évidemment jamais tenter de compiler RT64 : `DKR_RUNTIME_BUILD_RT64` existe
-   déjà et vaut `OFF` par défaut — vérifier qu'il suffit et qu'aucun code de
-   `src/game/` ne référence RT64 inconditionnellement.
-3. Trancher le suivi de l'amont : version de DKR-R figée comme base, et procédure
-   de reprise sélective des correctifs, ou gel complet.
-4. Statuer sur le pipeline de patchs. La règle du dépôt est ferme
-   (`docs/ARCHITECTURE.md`) : jamais de modification directe des worktrees de
-   dépendances. Le portage va exiger des patchs lourds sur `ultramodern` et
-   `librecomp` — confirmer que `patches/manifest.json` reste la voie unique, et
-   fixer la limite au-delà de laquelle une dépendance est forkée plutôt que
-   patchée.
-5. Trancher le sort des tests existants. Les 18 suites de `runtime-recomp/tests/`
-   portent sur des politiques modernes ; certaines deviennent sans objet avec le
-   profil « Accurate » seul, d'autres restent valables (codec de sauvegarde,
-   égaliseur audio, gestionnaire de sauvegardes). Trier.
+   The second option is the only one that makes E09-S02 genuinely practicable,
+   because it allows *the same display-list trace* to be replayed in both backends
+   from a single development binary.
+2. Define the build switch and its default. The Win95 target must obviously never
+   attempt to compile RT64: `DKR_RUNTIME_BUILD_RT64` already exists and is `OFF` by
+   default — check that it suffices and that no code in `src/game/` references RT64
+   unconditionally.
+3. Decide on tracking upstream: a frozen version of DKR-R as the base, and a
+   procedure for taking fixes selectively, or a complete freeze.
+4. Rule on the patch pipeline. The repository's rule is firm
+   (`docs/ARCHITECTURE.md`): never modify a dependency worktree directly. The port
+   will demand heavy patches on `ultramodern` and `librecomp` — confirm that
+   `patches/manifest.json` stays the only route, and fix the boundary beyond which a
+   dependency is forked rather than patched.
+5. Decide the fate of the existing tests. The 18 suites in `runtime-recomp/tests/`
+   bear on modern policies; some become moot with the "Accurate" profile alone,
+   others stay valid (save codec, audio equaliser, save manager). Sort them.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] `docs/adr/0004-repository-strategy.md` tranche les cinq points.
-- [ ] La décision sur l'oracle est justifiée par son usage concret en E09-S02.
-- [ ] L'interrupteur de build et son défaut sont nommés, et la vérification qu'il
-      suffit à exclure RT64 est faite.
-- [ ] La limite patch / fork des dépendances est écrite.
-- [ ] Le tri des suites de tests existantes est fait, suite par suite.
+- [ ] `docs/adr/0004-repository-strategy.md` settles the five points.
+- [ ] The decision on the oracle is justified by its concrete use in E09-S02.
+- [ ] The build switch and its default are named, and the check that it suffices to
+      exclude RT64 is done.
+- [ ] The patch / fork boundary for the dependencies is written.
+- [ ] The sorting of the existing test suites is done, suite by suite.
 
-## Risques
+## Risks
 
-Conserver deux backends double le coût de chaque changement d'interface de
-rendu. Ce coût est réel et doit être accepté en connaissance de cause, pas subi :
-si l'ADR retient la conservation, elle doit dire jusqu'à quand.
+Keeping two backends doubles the cost of every change to the rendering interface.
+That cost is real and must be accepted knowingly, not endured: if the ADR retains
+them, it must say until when.
 
-## Références
+## References
 
-- `docs/ARCHITECTURE.md` — frontières protégées, pipeline de patchs
+- `docs/ARCHITECTURE.md` — protected boundaries, patch pipeline
 - `runtime-recomp/CMakeLists.txt:36-37` — `DKR_RUNTIME_BUILD_RT64`
-- `runtime-recomp/src/game/null_renderer.hpp` — troisième implémentation possible
-- `../../Diddy-Kong-Racing/docs/adr/0003-strategie-fork.md` — même arbitrage,
-  déjà tranché côté portage natif
+- `runtime-recomp/src/game/null_renderer.hpp` — a possible third implementation
+- `../../Diddy-Kong-Racing/docs/adr/0003-strategie-fork.md` — the same arbitration,
+  already settled on the native port's side
