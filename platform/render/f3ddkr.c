@@ -565,6 +565,43 @@ static void appliquer_etat(dkr_f3d_context *c)
        compteur le dirait sans qu'on ait à regarder l'écran. */
     c->state.cycle_courant = (unsigned char)rdp.cycle;
 
+    /* --- Le filet que `rdp_state.h` réclame, et que personne ne tenait ------- *
+     *
+     * « Un cas non répertorié doit **se signaler** plutôt que produire un rendu
+     * faux en silence. Une configuration manquée ne se voit pas au décodage —
+     * elle se voit à l'écran, sous forme d'une surface d'une couleur
+     * inattendue, éventuellement dans un seul niveau. »
+     *
+     * L'inventaire du portage voisin dénombre 33 configurations. La clé les
+     * identifie exactement ; `dkr_rdp_combiner_name` rend NULL pour les autres.
+     * On compte donc, et l'on retient les premières clés inconnues — un compte
+     * seul dirait qu'il en manque, pas lesquelles, et c'est la différence entre
+     * un chiffre et une piste. */
+    {
+        const unsigned long long cle = dkr_rdp_combiner_key(&rdp.combiner, rdp.cycle);
+        if (dkr_rdp_combiner_name(cle) != 0) {
+            c->state.combineurs_connus++;
+        } else {
+            unsigned i;
+            int vue = 0;
+            c->state.combineurs_inconnus++;
+            for (i = 0; i < c->state.cles_inconnues_n; i++) {
+                if (c->state.cles_inconnues[i] == cle) { vue = 1; break; }
+            }
+            if (!vue && c->state.cles_inconnues_n < 8u) {
+                /* **La clé ne suffit pas.** Elle identifie une configuration ;
+                   elle ne dit pas ce qu'elle calcule, donc elle ne permet pas de
+                   l'ajouter à la table. On garde la composition, qui est ce dont
+                   on a besoin pour la nommer contre les macros `G_CC_*`. */
+                const unsigned i2 = c->state.cles_inconnues_n;
+                c->state.cles_inconnues[i2] = cle;
+                c->state.compo_inconnues[i2] = rdp.combiner;
+                c->state.cycle_inconnu[i2] = (unsigned char)rdp.cycle;
+                c->state.cles_inconnues_n++;
+            }
+        }
+    }
+
     dkr_rdp_to_render_state(&rdp, &c->render_state, &exact);
     /* --- Le handle de texture ne survit pas à la traduction ------------------ *
      *

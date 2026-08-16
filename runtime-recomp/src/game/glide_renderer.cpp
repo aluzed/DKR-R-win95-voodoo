@@ -212,6 +212,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_inconnues_ += context_.state.textures.non_prises_en_charge;
     total_tex_hors_ += context_.state.textures.hors_rdram;
     total_etats_ += context_.state.etats_appliques;
+    total_comb_connus_ += context_.state.combineurs_connus;
+    total_comb_inconnus_ += context_.state.combineurs_inconnus;
     total_approches_ += context_.state.etats_approches;
     total_fill_hors_cycle_ += context_.state.fill_hors_cycle;
     total_deferred_ += context_.state.deferred;
@@ -343,6 +345,37 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "[gfx]   profondeur: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
                      profondeur_[0], profondeur_[1], profondeur_[2],
                      profondeur_[3]);
+        {
+            char ligne[128];
+            std::size_t ecrit = 0;
+            unsigned i;
+            ligne[0] = '\0';
+            for (i = 0; i < context_.state.cles_inconnues_n && ecrit < 100; i++) {
+                ecrit += static_cast<std::size_t>(std::snprintf(
+                    ligne + ecrit, sizeof(ligne) - ecrit, " %08X",
+                    static_cast<unsigned>(context_.state.cles_inconnues[i])));
+            }
+            std::fprintf(stderr,
+                         "[gfx]   combineurs: repertories=%lu inconnus=%lu%s%s\n",
+                         total_comb_connus_, total_comb_inconnus_,
+                         (ligne[0] != '\0') ? " cles:" : "", ligne);
+            // La composition, sous la forme (a,b,c,d) que `gDPSetCombineLERP`
+            // prend — c'est celle des macros G_CC_*, donc celle qui permet de
+            // nommer la configuration et de l'ajouter à la table.
+            for (i = 0; i < context_.state.cles_inconnues_n; i++) {
+                const dkr_combiner& k = context_.state.compo_inconnues[i];
+                std::fprintf(stderr,
+                             "[gfx]     %08X cycle=%u rgb0=(%u,%u,%u,%u) "
+                             "a0=(%u,%u,%u,%u) rgb1=(%u,%u,%u,%u) "
+                             "a1=(%u,%u,%u,%u)\n",
+                             static_cast<unsigned>(context_.state.cles_inconnues[i]),
+                             context_.state.cycle_inconnu[i],
+                             k.rgb[0].a, k.rgb[0].b, k.rgb[0].c, k.rgb[0].d,
+                             k.alpha[0].a, k.alpha[0].b, k.alpha[0].c, k.alpha[0].d,
+                             k.rgb[1].a, k.rgb[1].b, k.rgb[1].c, k.rgb[1].d,
+                             k.alpha[1].a, k.alpha[1].b, k.alpha[1].c, k.alpha[1].d);
+            }
+        }
         // L'état du jeu, lu chez lui. C'est la seule mesure de cette série qui
         // ne parle pas du rendu.
         {

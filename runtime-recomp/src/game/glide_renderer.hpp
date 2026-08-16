@@ -70,6 +70,8 @@ private:
     // n'en demande pas » de « on les décode et on les perd ».
     unsigned long total_rects_ = 0;
     unsigned long total_etats_ = 0;
+    unsigned long total_comb_connus_ = 0;
+    unsigned long total_comb_inconnus_ = 0;
     // Zéro ici signifierait qu'on dessine encore à une échelle inventée.
     unsigned long total_viewports_ = 0;
     unsigned long total_tex_chargees_ = 0;

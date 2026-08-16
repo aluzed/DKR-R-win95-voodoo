@@ -152,6 +152,19 @@ typedef struct {
     /* Les triangles émis par mode de profondeur. Un tri absent produit
        exactement l'image observée : le dernier grand polygone recouvre tout. */
     unsigned long     emis_par_profondeur[4];
+    /* Les configurations de combineur, répertoriées ou non. `rdp_state.h`
+       insiste : un cas manquant ne se voit pas au décodage, il se voit à
+       l'écran sous forme d'une couleur inattendue, éventuellement dans un seul
+       niveau. On retient les clés plutôt que leur seul nombre — un compte dit
+       qu'il en manque, pas lesquelles. */
+    unsigned long      combineurs_connus;
+    unsigned long      combineurs_inconnus;
+    unsigned long long cles_inconnues[8];
+    unsigned           cles_inconnues_n;
+    /* La composition de chaque configuration inconnue, sans quoi la clé ne
+       permet que de constater le manque, pas de le combler. */
+    dkr_combiner       compo_inconnues[8];
+    unsigned char      cycle_inconnu[8];
 
     /* Combien de fois chaque opcode a été vu.
      *
