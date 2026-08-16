@@ -1,5 +1,5 @@
-/* E04-S02 — mise en œuvre. La cartographie est dans
- * `docs/research/f3ddkr-commands.md`, le contrat dans `f3ddkr.h`. */
+/* E04-S02 — implementation. The command map lives in
+ * `docs/research/f3ddkr-commands.md`, the contract in `f3ddkr.h`. */
 #include "f3ddkr.h"
 #include "rdp_state.h"
 #include "texture.h"
@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Opcodes, repris de `f3ddkr_rt64.cpp`. */
+/* Opcodes, taken from `f3ddkr_rt64.cpp`. */
 #define OP_MATRIX        0x01
 #define OP_TEXOFFSET     0x02
 #define OP_MOVEMEM       0x03
@@ -42,49 +42,48 @@
 #define RDRAM_MASK           0x00FFFFFFu
 #define MAX_VERTICES         32u
 #define MAX_NESTED           32u
-/* Une liste ordinaire va jusqu'a son ENDDL ; une liste comptee s'arrete a son
-   compte. Zero ne peut pas dire les deux. */
+/* An ordinary list runs to its ENDDL; a counted list stops at its count. Zero
+   cannot mean both. */
 #define NO_COUNT          0xFFFFFFFFu
 #define VERTEX_STRIDE        10u
 #define TRIANGLE_STRIDE      16u
 #define MATRIX_BYTES         64u
 
-/* Le volume de journalisation est borné. Une display list corrompue produirait
-   sinon des milliers de lignes par image, ce qui noie le diagnostic au lieu de
-   l'éclairer — et coûte cher sur une machine de 1998. */
+/* The logging volume is bounded. A corrupt display list would otherwise produce
+   thousands of lines per frame, which drowns the diagnosis instead of lighting
+   it up — and costs dearly on a 1998 machine. */
 #define MAX_LOGGED_REJECTS   64
 
-/* --- Les commandes reconnues dont l'effet n'est pas encore branché ---------- *
+/* --- Recognised commands whose effect is not wired up yet ------------------- *
  *
- * Le décodeur n'implémentait que sept opcodes et **arrêtait la liste** sur tout
- * le reste. C'était le bon choix tant qu'il ne lisait que des display lists
- * fabriquées : après un opcode vraiment inconnu le flux est désynchronisé, et
- * poursuivre inventerait des commandes.
+ * The decoder implemented only seven opcodes and **stopped the list** on
+ * everything else. That was the right choice as long as it only read fabricated
+ * display lists: after a genuinely unknown opcode the stream is desynchronised,
+ * and carrying on would invent commands.
  *
- * Face aux listes du jeu, ce choix rendait le décodeur inutile : mesuré sur la
- * machine, **600 listes, 3580 commandes, zéro triangle** — chacune s'arrêtait
- * sur son premier `0xE9` ou `0xB6`, c'est-à-dire une synchronisation RDP et un
- * effacement de mode géométrique. La géométrie était toujours *après*.
+ * Faced with the game's lists, that choice made the decoder useless: measured on
+ * the machine, **600 lists, 3580 commands, zero triangles** — each stopped at
+ * its first `0xE9` or `0xB6`, that is, an RDP synchronisation and a geometry
+ * mode clear. The geometry was always *after*.
  *
- * Les deux familles ci-dessous sont celles du microcode F3D et du RDP, toutes en
- * commandes de huit octets, donc toutes enjambables sans ambiguïté :
+ * The two families below are those of the F3D microcode and of the RDP, all
+ * eight-byte commands, hence all skippable without ambiguity:
  *
- *     0xB0..0xBF   immédiates F3D — RDPHALF, TRI2, modes géométriques, autres
- *                  modes, texture, POPMTX, CULLDL
- *     0xE4..0xFF   RDP — synchronisations, ciseaux, tuiles, couleurs, combineur
+ *     0xB0..0xBF   F3D immediates — RDPHALF, TRI2, geometry modes, other modes,
+ *                  texture, POPMTX, CULLDL
+ *     0xE4..0xFF   RDP — synchronisations, scissor, tiles, colours, combiner
  *
- * La borne basse était d'abord posée à 0xB6, par lecture de la table des
- * opcodes plutôt que par mesure. La machine a répondu `0xB4` — `G_RDPHALF_1` —
- * une fois par liste, six cents fois. La famille commence bien à 0xB0, et
- * l'écart tenait à ce que la table consultée ne listait que la partie du jeu de
- * commandes qui a un effet géométrique.
+ * The low bound was first set at 0xB6, by reading the opcode table rather than
+ * by measurement. The machine answered `0xB4` — `G_RDPHALF_1` — once per list,
+ * six hundred times. The family does start at 0xB0, and the discrepancy came
+ * from the consulted table listing only the part of the command set that has a
+ * geometric effect.
  *
- * Les énumérer plutôt que de tout accepter garde la détection de
- * désynchronisation : un opcode hors de ces plages arrête toujours la liste.
- * C'est la propriété qu'on aurait perdue en remplaçant simplement le rejet par
- * un `break`, et elle vaut d'être gardée — c'est elle qui a permis de voir que
- * la disposition mémoire était juste, puisque *aucun* rejet d'adresse n'est
- * apparu. */
+ * Enumerating them rather than accepting everything keeps desynchronisation
+ * detection: an opcode outside these ranges still stops the list. That is the
+ * property we would have lost by simply replacing the rejection with a `break`,
+ * and it is worth keeping — it is what allowed us to see that the memory layout
+ * was right, since *no* address rejection appeared. */
 static int opcode_effect_deferred(unsigned int opcode)
 {
     return (opcode >= 0xB0u && opcode <= 0xBFu) ||
@@ -94,47 +93,47 @@ static int opcode_effect_deferred(unsigned int opcode)
 const char *dkr_f3d_reject_text(dkr_f3d_reject r)
 {
     switch (r) {
-    case DKR_F3D_REJECT_ADDRESS: return "adresse hors RDRAM";
-    case DKR_F3D_REJECT_COUNT:   return "nombre invalide";
-    case DKR_F3D_REJECT_INDEX:   return "index de sommet hors cache";
-    case DKR_F3D_REJECT_DEPTH:   return "imbrication trop profonde";
-    default:                     return "opcode inconnu";
+    case DKR_F3D_REJECT_ADDRESS: return "address outside RDRAM";
+    case DKR_F3D_REJECT_COUNT:   return "invalid count";
+    case DKR_F3D_REJECT_INDEX:   return "vertex index outside cache";
+    case DKR_F3D_REJECT_DEPTH:   return "nesting too deep";
+    default:                     return "unknown opcode";
     }
 }
 
-/* --- Lecture bornée -------------------------------------------------------- *
+/* --- Bounded reads --------------------------------------------------------- *
  *
- * Toutes les lectures passent par ici. C'est ce qui rend la discipline de
- * validation vérifiable : il n'y a qu'un endroit à relire pour s'assurer que
- * rien ne sort de RDRAM.
+ * Every read goes through here. That is what makes the validation discipline
+ * checkable: there is only one place to re-read to be sure that nothing leaves
+ * RDRAM.
  */
 static int in_range(const dkr_f3d_context *c, unsigned int addr, unsigned int len)
 {
-    /* En 64 bits pour que la somme ne reboucle pas : `addr + len` sur 32 bits
-       peut redevenir petit et faire passer une plage manifestement hors bornes. */
+    /* In 64 bits so that the sum does not wrap: `addr + len` in 32 bits can
+       become small again and let an obviously out-of-bounds range through. */
     const unsigned long long end = (unsigned long long)addr + (unsigned long long)len;
     return c->rdram && end <= (unsigned long long)c->rdram_size;
 }
 
-/* --- Deux dispositions mémoire pour la même RDRAM --------------------------- *
+/* --- Two memory layouts for the same RDRAM ---------------------------------- *
  *
- * Les épreuves construisent une RDRAM en gros-boutiste franc, comme la console.
- * Le jeu, lui, fournit l'instantané de librecomp, qui range la même mémoire
- * **entrelacée par XOR-3** : l'octet d'adresse invitée `a` se trouve à `a ^ 3`.
- * C'est visible dans les macros de N64Recomp :
+ * The tests build an RDRAM in plain big-endian, like the console. The game, for
+ * its part, supplies librecomp's snapshot, which stores the same memory
+ * **XOR-3 interleaved**: the byte at guest address `a` sits at `a ^ 3`. This is
+ * visible in N64Recomp's macros:
  *
  *     MEM_BU(o, r)  ->  *(uint8_t *)(rdram + ((r + o) ^ 3) - ...)
  *     MEM_HU(o, r)  ->  *(uint16_t *)(rdram + ((r + o) ^ 2) - ...)
  *     MEM_W (o, r)  ->  *(int32_t  *)(rdram + ((r + o))     - ...)
  *
- * Le mot de 32 bits n'a **pas** de XOR : l'entrelacement et le petit-boutisme de
- * l'hôte s'annulent exactement, de sorte qu'une lecture native rend la valeur
- * invitée correcte. C'est contre-intuitif, et l'inverser — retourner les octets
- * à la main « pour corriger le boutisme » — donne des adresses absurdes que l'on
- * attribue ensuite au décodeur.
+ * The 32-bit word has **no** XOR: the interleaving and the host's little-endian
+ * cancel out exactly, so that a native read returns the correct guest value.
+ * That is counter-intuitive, and reversing it — swapping the bytes by hand "to
+ * fix the endianness" — gives absurd addresses that one then blames on the
+ * decoder.
  *
- * Le drapeau vaut zéro par défaut, donc les épreuves ne changent pas de
- * comportement : c'est le jeu qui déclare la disposition qu'il fournit. */
+ * The flag is zero by default, so the tests do not change behaviour: it is the
+ * game that declares the layout it supplies. */
 static unsigned char read_u8(const dkr_f3d_context *c, unsigned int a)
 {
     return c->rdram[c->rdram_native ? (a ^ 3u) : a];
@@ -147,10 +146,10 @@ static short read_s16(const dkr_f3d_context *c, unsigned int a)
 
 static unsigned int read_u32(const dkr_f3d_context *c, unsigned int a)
 {
-    /* Le chemin rapide n'est pas un luxe : c'est la lecture la plus fréquente du
-       décodeur — deux par commande — et la cible est un Pentium II. Il ne vaut
-       que sur une adresse alignée, ce qui est le cas des display lists ; la voie
-       générale reste correcte pour tout le reste. */
+    /* The fast path is not a luxury: it is the decoder's most frequent read —
+       two per command — and the target is a Pentium II. It only holds on an
+       aligned address, which display lists are; the general path stays correct
+       for everything else. */
     if (c->rdram_native && (a & 3u) == 0u) {
         return *(const unsigned int *)(const void *)(c->rdram + a);
     }
@@ -175,17 +174,17 @@ static void reject(dkr_f3d_context *c, dkr_f3d_reject why, const char *detail)
 {
     c->state.rejects[why]++;
     if (c->state.rejects[why] <= MAX_LOGGED_REJECTS) {
-        trace(c, "REJET %s : %s", dkr_f3d_reject_text(why), detail);
+        trace(c, "REJECT %s: %s", dkr_f3d_reject_text(why), detail);
     }
 }
 
-/* --- Du tampon du jeu vers l'écran -----------------------------------------
+/* --- From the game's buffer to the screen ----------------------------------
  *
- * Le jeu raisonne dans son tampon de couleur — 320 pixels de large pour DKR — et
- * la carte affiche en 640x480. Le facteur est **lu** dans `SETCOLORIMAGE` plutôt
- * que supposé, et il sert à deux endroits : les rectangles pleins et la fenêtre
- * d'affichage. Les faire diverger donnerait une interface 2D et une géométrie 3D
- * à deux échelles différentes, ce qui se voit mais ne se comprend pas. */
+ * The game reasons inside its colour buffer — 320 pixels wide for DKR — and the
+ * card displays at 640x480. The factor is **read** from `SETCOLORIMAGE` rather
+ * than assumed, and it serves in two places: filled rectangles and the viewport.
+ * Letting them diverge would give a 2D interface and a 3D geometry at two
+ * different scales, which is visible but not understandable. */
 static float screen_scale(const dkr_f3d_context *c)
 {
     if (c->screen_width == 0u || c->state.color_image_width == 0u) {
@@ -194,17 +193,17 @@ static float screen_scale(const dkr_f3d_context *c)
     return (float)c->screen_width / (float)c->state.color_image_width;
 }
 
-/* Declaree ici parce que le dessin de triangles la precede dans ce fichier : la
-   traduction d'etat vit avec le reste du chemin 2D, plus bas. */
+/* Declared here because triangle drawing precedes it in this file: the state
+   translation lives with the rest of the 2D path, further down. */
 static void apply_state(dkr_f3d_context *c);
 
-/* --- Les commandes --------------------------------------------------------- */
+/* --- The commands ---------------------------------------------------------- */
 
 static void cmd_dma_offsets(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     c->state.matrix_offset = w0 & RDRAM_MASK;
     c->state.vertex_offset = w1 & RDRAM_MASK;
-    trace(c, "DMAOffsets matrices=0x%06X sommets=0x%06X",
+    trace(c, "DMAOffsets matrices=0x%06X vertices=0x%06X",
           c->state.matrix_offset, c->state.vertex_offset);
 }
 
@@ -212,9 +211,9 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     unsigned int index, address;
 
-    /* Le champ bas doit valoir 64 — la taille d'une matrice. Ce n'est pas une
-       validation défensive mais la façon dont le microcode distingue ses
-       variantes : autre chose, et la commande n'est pas un chargement. */
+    /* The low field must be 64 — the size of a matrix. This is not a defensive
+       check but the way the microcode tells its variants apart: anything else,
+       and the command is not a load. */
     if ((w0 & 0xFFFFu) != MATRIX_BYTES) {
         return;
     }
@@ -228,32 +227,32 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     address = (c->state.matrix_offset + w1) & RDRAM_MASK;
     if (!in_range(c, address, MATRIX_BYTES)) {
         char d[64];
-        sprintf(d, "matrice a 0x%06X", address);
+        sprintf(d, "matrix at 0x%06X", address);
         reject(c, DKR_F3D_REJECT_ADDRESS, d);
         return;
     }
     {
         dkr_matrix loaded;
-        /* `dkr_matrix_from_fixed` lit une suite d'octets en gros-boutiste franc.
-           Sous la disposition de librecomp il faut donc la lui remettre à plat —
-           64 octets, une fois par commande de matrice, ce qui ne pèse rien face
-           aux seize multiplications qui suivent. Passer le pointeur brut ferait
-           lire des matrices dont les octets sont permutés quatre par quatre : le
-           décor ne planterait pas, il serait simplement faux, et l'on chercherait
-           l'erreur dans la transformation. */
-        unsigned char plat[MATRIX_BYTES];
+        /* `dkr_matrix_from_fixed` reads a byte sequence in plain big-endian.
+           Under librecomp's layout it must therefore be flattened first — 64
+           bytes, once per matrix command, which weighs nothing next to the
+           sixteen multiplications that follow. Passing the raw pointer would
+           read matrices whose bytes are permuted four by four: the scenery would
+           not crash, it would simply be wrong, and one would look for the error
+           in the transformation. */
+        unsigned char flat[MATRIX_BYTES];
         const unsigned char *source = c->rdram + address;
         if (c->rdram_native) {
             unsigned int i;
-            for (i = 0; i < MATRIX_BYTES; i++) { plat[i] = read_u8(c, address + i); }
-            source = plat;
+            for (i = 0; i < MATRIX_BYTES; i++) { flat[i] = read_u8(c, address + i); }
+            source = flat;
         }
         if (dkr_matrix_from_fixed(source, &loaded)) {
             dkr_transform_set_matrix(&c->transform, (int)index, &loaded);
         }
     }
     dkr_transform_select(&c->transform, (int)index);
-    trace(c, "Matrix emplacement=%u adresse=0x%06X", index, address);
+    trace(c, "Matrix slot=%u address=0x%06X", index, address);
 }
 
 static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
@@ -263,27 +262,27 @@ static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     const unsigned int source      = (c->state.vertex_offset + w1) & RDRAM_MASK;
     unsigned int i;
 
-    /* Les trois conditions sont distinctes et toutes nécessaires : un nombre
-       trop grand, une destination trop loin, ou un lot qui déborde le cache par
-       la somme des deux. La troisième est celle qu'on oublie. */
+    /* The three conditions are distinct and all necessary: a count that is too
+       large, a destination that is too far, or a batch that overflows the cache
+       through the sum of the two. The third is the one that gets forgotten. */
     if (count > MAX_VERTICES || destination >= MAX_VERTICES ||
         count > MAX_VERTICES - destination) {
         char d[80];
-        sprintf(d, "%u sommets a l'index %u", count, destination);
+        sprintf(d, "%u vertices at index %u", count, destination);
         reject(c, DKR_F3D_REJECT_COUNT, d);
         return;
     }
     if (!in_range(c, source, count * VERTEX_STRIDE)) {
         char d[64];
-        sprintf(d, "sommets a 0x%06X", source);
+        sprintf(d, "vertices at 0x%06X", source);
         reject(c, DKR_F3D_REJECT_ADDRESS, d);
         return;
     }
     for (i = 0; i < count; i++) {
         const unsigned int a = source + i * VERTEX_STRIDE;
         dkr_source_vertex sv;
-        /* Le sommet DKR : x, y, z en 16 bits signes puis r, g, b, a en octets.
-           **Aucune coordonnee de texture** — elles arrivent au triangle. */
+        /* The DKR vertex: x, y, z as signed 16-bit then r, g, b, a as bytes.
+           **No texture coordinates** — they arrive with the triangle. */
         sv.x = read_s16(c, a + 0);
         sv.y = read_s16(c, a + 2);
         sv.z = read_s16(c, a + 4);
@@ -291,16 +290,16 @@ static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         sv.g = read_u8(c, a + 7);
         sv.b = read_u8(c, a + 8);
         sv.a = read_u8(c, a + 9);
-        /* Transforme **ici** et non au triangle : un sommet servi par trois
-           triangles serait sinon transforme trois fois, et c'est le poste le
-           plus lourd du portage. Les coordonnees de texture restent a zero —
-           elles seront posees au triangle. */
+        /* Transformed **here** and not at the triangle: a vertex served by
+           three triangles would otherwise be transformed three times, and this
+           is the port's heaviest stage. The texture coordinates stay at zero —
+           they will be laid down at the triangle. */
         dkr_transform_to_clip(&c->transform, &sv, 0.0f, 0.0f,
                               &c->cache[destination + i]);
         c->cache_valid[destination + i] = 1;
     }
     c->state.vertices += count;
-    trace(c, "Vertex %u sommets vers %u depuis 0x%06X", count, destination, source);
+    trace(c, "Vertex %u vertices to %u from 0x%06X", count, destination, source);
 }
 
 static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
@@ -310,39 +309,39 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     unsigned int i;
 
     if (count == 0u) {
-        reject(c, DKR_F3D_REJECT_COUNT, "zero triangle");
+        reject(c, DKR_F3D_REJECT_COUNT, "zero triangles");
         return;
     }
     if (!in_range(c, source, count * TRIANGLE_STRIDE)) {
         char d[64];
-        sprintf(d, "triangles a 0x%06X", source);
+        sprintf(d, "triangles at 0x%06X", source);
         reject(c, DKR_F3D_REJECT_ADDRESS, d);
         return;
     }
-    /* **Tout le lot est valide avant d'en dessiner le premier.**
+    /* **The whole batch is validated before the first one is drawn.**
      *
-     * Valider au fil de l'eau laisserait dessiner les triangles valides avant de
-     * rejeter le lot, ce qui rend le defaut dependant du contenu — donc
-     * difficile a reproduire. Le decodeur d'origine procede ainsi et cette
-     * extraction le conserve. */
+     * Validating as we go would let the valid triangles be drawn before the
+     * batch is rejected, which makes the defect content-dependent — hence hard
+     * to reproduce. The original decoder works this way and this extraction
+     * keeps it. */
     for (i = 0; i < count; i++) {
         const unsigned int a = source + i * TRIANGLE_STRIDE;
         if (read_u8(c, a + 1) >= MAX_VERTICES ||
             read_u8(c, a + 2) >= MAX_VERTICES ||
             read_u8(c, a + 3) >= MAX_VERTICES) {
             char d[80];
-            sprintf(d, "lot de %u a 0x%06X, triangle %u", count, source, i);
+            sprintf(d, "batch of %u at 0x%06X, triangle %u", count, source, i);
             reject(c, DKR_F3D_REJECT_INDEX, d);
             return;
         }
     }
     c->state.triangles += count;
-    trace(c, "Triangle %u depuis 0x%06X", count, source);
+    trace(c, "Triangle %u from 0x%06X", count, source);
 
-    /* --- L'emission, et c'est ici que la chaine se referme ------------------ *
+    /* --- Emission, and this is where the chain closes ----------------------- *
      *
-     * Chaque triangle traverse : coordonnees de texture posees par coin,
-     * decoupage au plan proche, projection, culling, rejet hors ecran. */
+     * Every triangle goes through: texture coordinates laid down per corner,
+     * near-plane clipping, projection, culling, off-screen rejection. */
     for (i = 0; i < count; i++) {
         const unsigned int a = source + i * TRIANGLE_STRIDE;
         const unsigned char flags = read_u8(c, a + 0);
@@ -355,46 +354,45 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 
         for (corner = 0; corner < 3; corner++) {
             if (!c->cache_valid[idx[corner]]) {
-                /* Un index valide pointant sur un emplacement jamais charge :
-                   la display list emploie un sommet qu'elle n'a pas defini. Ce
-                   n'est pas une adresse fausse, donc pas un rejet de plage —
-                   mais dessiner un sommet non initialise donnerait une geometrie
-                   aleatoire, ce qui est pire qu'un triangle absent. */
-                reject(c, DKR_F3D_REJECT_INDEX, "sommet non charge");
+                /* A valid index pointing at a slot that was never loaded: the
+                   display list uses a vertex it has not defined. This is not a
+                   wrong address, hence not a range rejection — but drawing an
+                   uninitialised vertex would give random geometry, which is
+                   worse than a missing triangle. */
+                reject(c, DKR_F3D_REJECT_INDEX, "vertex not loaded");
                 emitted_here = -1;
                 break;
             }
             tri[corner] = c->cache[idx[corner]];
-            /* Les s, t du coin, en 16 bits signes. C'est ici qu'elles entrent —
-               le sommet ne les portait pas. */
-            /* --- La normalisation, qui manquait -------------------------- *
+            /* The corner's s, t, as signed 16-bit. This is where they come in
+               — the vertex did not carry them. */
+            /* --- The normalisation that was missing ---------------------- *
              *
-             * Le microcode donne s et t en **10.5 en virgule fixe** : trente-
-             * deux pas par texel. `dkr_clip_project` attend, lui, du [0,1] —
-             * son commentaire le dit, et il applique ensuite l'échelle de 256
-             * de Glide. Entre les deux il manquait la division par 32 et par la
-             * largeur de la texture.
+             * The microcode gives s and t in **10.5 fixed point**: thirty-two
+             * steps per texel. `dkr_clip_project`, for its part, expects [0,1] —
+             * its comment says so — and then applies Glide's scale of 256.
+             * Between the two, the division by 32 and by the texture's width was
+             * missing.
              *
-             * L'ordre de grandeur de l'erreur dit pourquoi rien ne s'échantil-
-             * lonnait : pour une texture de 32 texels, un coin à droite vaut
-             * 1024 en brut, donc 262 144 après l'échelle de Glide au lieu de
-             * 256. Ce n'est pas une texture décalée, c'est une texture hors de
-             * tout.
+             * The order of magnitude of the error says why nothing was
+             * sampling: for a 32-texel texture, a right-hand corner is 1024 raw,
+             * hence 262,144 after Glide's scale instead of 256. That is not an
+             * offset texture, it is a texture outside everything.
              *
-             * **La largeur remplie, pas la réelle** : la texture n'occupe que le
-             * coin supérieur gauche de ce qu'on a chargé, puisque le remplissage
-             * en puissance de deux l'a agrandie. Normaliser sur la largeur
-             * réelle étirerait le motif d'un facteur allant jusqu'à deux. */
+             * **The padded width, not the real one**: the texture only occupies
+             * the top-left corner of what was uploaded, since power-of-two
+             * padding enlarged it. Normalising over the real width would stretch
+             * the pattern by a factor of up to two. */
             {
                 const float sb = (float)read_s16(c, a + 4 + corner * 4);
                 const float tb = (float)read_s16(c, a + 6 + corner * 4);
                 tri[corner].s = sb * c->tex_scale_s;
                 tri[corner].t = tb * c->tex_scale_t;
-                /* La mesure qui peut réfuter l'interprétation ci-dessus : si le
-                   10.5 est le bon format et la largeur la bonne, les extrêmes
-                   doivent tenir dans un voisinage de [0,1]. Des milliers
-                   diraient que l'échelle est fausse, et le dire en chiffres
-                   plutôt qu'à l'écran est tout l'intérêt. */
+                /* The measurement that can refute the interpretation above: if
+                   10.5 is the right format and the width the right one, the
+                   extremes must stay in the neighbourhood of [0,1]. Thousands
+                   would say the scale is wrong, and saying it in figures rather
+                   than on screen is the whole point. */
                 if (tri[corner].s < c->state.s_min) { c->state.s_min = tri[corner].s; }
                 if (tri[corner].s > c->state.s_max) { c->state.s_max = tri[corner].s; }
                 if (tri[corner].t < c->state.t_min) { c->state.t_min = tri[corner].t; }
@@ -414,8 +412,8 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             c->state.clip_split++;
         }
 
-        /* Le bit 0x40 desactive l'elimination des faces arriere ; sinon le sens
-           vient du signe de l'echelle en x de la fenetre. */
+        /* Bit 0x40 disables back-face culling; otherwise the direction comes
+           from the sign of the viewport's x scale. */
         cull = dkr_cull_mode_for_viewport(c->transform.viewport_scale_x,
                                           (flags & 0x40u) == 0);
 
@@ -433,33 +431,33 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 continue;
             }
             apply_state(c);
-            /* **De quoi les triangles émis sont faits.**
+            /* **What the emitted triangles are made of.**
              *
-             * L'écran reste blanc alors que les textures chargent et que les
-             * coordonnées tiennent dans le bon ordre de grandeur. Trois causes
-             * restent possibles et un seul chiffre — « émis » — les confond :
-             * un combineur qui ne lit pas de texel, une texture non liée, ou un
-             * échantillonnage muet. Les deux premières se comptent ici, et
-             * c'est trois entiers contre une nouvelle hypothèse au hasard. */
+             * The screen stays white while textures upload and the coordinates
+             * sit in the right order of magnitude. Three causes remain possible
+             * and a single figure — "emitted" — conflates them: a combiner that
+             * reads no texel, a texture that is not bound, or silent sampling.
+             * The first two are counted here, and that is three integers
+             * against another hypothesis picked at random. */
             if (c->render_state.combine < DKR_COMBINE_COUNT) {
                 c->state.emitted_per_combine[c->render_state.combine]++;
             }
             if (c->render_state.texture != 0) {
                 c->state.emitted_textured++;
             }
-            /* **La taille des triangles à l'écran.**
+            /* **The size of the triangles on screen.**
              *
-             * 490 triangles par image sont émis, et l'écran n'en montre qu'un
-             * seul, énorme. Les deux ne peuvent pas être vrais en même temps
-             * sans que quelque chose d'autre soit faux, et « émis » ne dit pas
-             * lequel. Une distribution dominée par des triangles de plus de dix
-             * mille pixels accuserait la projection ou les matrices ; une
-             * distribution normale dirait au contraire que la géométrie est
-             * juste et que c'est l'échantillonnage qui manque.
+             * 490 triangles per frame are emitted, and the screen shows only
+             * one, enormous. Both cannot be true at once without something else
+             * being wrong, and "emitted" does not say which. A distribution
+             * dominated by triangles of more than ten thousand pixels would
+             * accuse the projection or the matrices; a normal distribution would
+             * say instead that the geometry is right and that sampling is what
+             * is missing.
              *
-             * L'area par le produit vectoriel, en valeur absolue et sans
-             * division : on ne cherche pas l'area exacte mais l'ordre de
-             * grandeur, et une racine par triangle se paierait. */
+             * Area through the cross product, in absolute value and without
+             * dividing: we are not after the exact area but the order of
+             * magnitude, and a square root per triangle would be paid for. */
             {
                 const float ax = v[1].x - v[0].x, ay = v[1].y - v[0].y;
                 const float bx = v[2].x - v[0].x, by = v[2].y - v[0].y;
@@ -470,37 +468,37 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 else if (area < 10000.0f){ c->state.area[2]++; }
                 else                     { c->state.area[3]++; }
             }
-            /* **Le mode de profondeur au moment du dessin.**
+            /* **The depth mode at draw time.**
              *
-             * La distribution des aires est normale — 45 % des triangles sous
-             * cent pixels — donc la géométrie n'est pas dégénérée. Mais l'écran
-             * est couvert par un seul grand polygone, ce qui est exactement ce
-             * que produit un tri de profondeur absent : les 18 % de triangles
-             * de plus de dix mille pixels recouvrent tout ce qui a été dessiné
-             * avant. Compter les modes dit si le test est actif, plutôt que de
-             * le supposer d'après le code qui le traduit. */
+             * The area distribution is normal — 45% of triangles under a hundred
+             * pixels — so the geometry is not degenerate. But the screen is
+             * covered by a single large polygon, which is exactly what a missing
+             * depth sort produces: the 18% of triangles over ten thousand pixels
+             * cover everything drawn before. Counting the modes says whether the
+             * test is active, rather than assuming it from the code that
+             * translates it. */
             if (c->render_state.depth < 4) {
                 c->state.emitted_per_depth[c->render_state.depth]++;
             }
-            /* **La plage des profondeurs transmises.**
+            /* **The range of depths handed over.**
              *
-             * Glide en mode tampon W consomme `oow` directement. L'écran est
-             * noir depuis que le test s'active, et deux causes très différentes
-             * donnent exactement ce symptôme : un sens de comparaison inversé —
-             * déjà consigné dans `win95-glide-etats.md` — ou des profondeurs
-             * dégénérées. Ouvrir le masque d'écriture pendant l'effacement n'a
-             * rien changé, donc la première est écartée d'un cran.
+             * Glide in W-buffer mode consumes `oow` directly. The screen has
+             * been black since the test was switched on, and two very different
+             * causes give exactly that symptom: an inverted comparison direction
+             * — already recorded in `win95-glide-states.md` — or degenerate
+             * depths. Opening the write mask during the clear changed nothing,
+             * so the first is pushed one notch aside.
              *
-             * On relève donc l'entrée du test. Des `oow` tous égaux, négatifs,
-             * ou hors de la plage que Glide encode expliqueraient le noir sans
-             * qu'aucune convention ne soit en cause. */
-            /* **Le mélange et le test alpha, comptés comme la profondeur.**
+             * We therefore measure the test's input. `oow` values that are all
+             * equal, negative, or outside the range Glide encodes would explain
+             * the black without any convention being at fault. */
+            /* **Blending and the alpha test, counted like depth.**
              *
-             * Le correctif de `G_RDPSETOTHERMODE` n'a pas réécrit que le mode de
-             * cycle : la moitié basse porte aussi le mélangeur et la comparaison
-             * alpha. Trois causes peuvent noircir l'écran et j'en ai vérifié une
-             * seule — c'est exactement la faute qui a coûté un correctif inutile
-             * sur les refus de texture. On les sépare avant d'en corriger une. */
+             * The `G_RDPSETOTHERMODE` fix did not only rewrite the cycle mode:
+             * the low half also carries the blender and the alpha comparison.
+             * Three causes can blacken the screen and I checked only one — that
+             * is exactly the mistake that cost a useless fix on the texture
+             * refusals. We separate them before fixing any one of them. */
             if (c->render_state.blend < 8) {
                 c->state.emitted_per_blend[c->render_state.blend]++;
             }
@@ -516,15 +514,15 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     const float o = v[q].oow;
                     if (o < c->state.oow_min) { c->state.oow_min = o; }
                     if (o > c->state.oow_max) { c->state.oow_max = o; }
-                    /* **La couleur du sommet.**
+                    /* **The vertex colour.**
                      *
-                     * Le combineur retenu est `texel * shade`, la texture est
-                     * liée, le mélange est opaque pour cent soixante-quinze
-                     * mille triangles — et l'écran est noir. Une de ces trois
-                     * entrées vaut zéro. La couleur du sommet est celle qu'on
-                     * peut lire sans relire la carte, donc celle par laquelle
-                     * commencer. Un shade nul multiplie le texel par zéro et
-                     * donne exactement du noir, quels que soient les texels. */
+                     * The chosen combiner is `texel * shade`, the texture is
+                     * bound, blending is opaque for one hundred and seventy-five
+                     * thousand triangles — and the screen is black. One of those
+                     * three inputs is zero. The vertex colour is the one we can
+                     * read without reading the card back, hence the one to start
+                     * with. A zero shade multiplies the texel by zero and gives
+                     * exactly black, whatever the texels. */
                     if (v[q].r > c->state.shade_max) { c->state.shade_max = v[q].r; }
                     if (v[q].g > c->state.shade_max) { c->state.shade_max = v[q].g; }
                     if (v[q].b > c->state.shade_max) { c->state.shade_max = v[q].b; }
@@ -544,58 +542,57 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     const unsigned char type = (unsigned char)(w0 & 0xFFu);
     if (type == MOVEWORD_PRESENT &&
         (w1 & ~PRESENT_META_MASK) == PRESENT_MAGIC) {
-        /* Extension du portage, pas du microcode d'origine : le mot magique
-           « DKR\0 » distingue les commandes ajoutees par le moteur moderne de
-           celles du jeu. */
+        /* An extension of the port, not of the original microcode: the magic
+           word "DKR\0" tells the commands added by the modern engine apart from
+           the game's. */
         trace(c, "PresentationGroup mode=%u", w1 & 7u);
     } else if (type == MOVEWORD_BILLBOARD) {
         c->state.billboard = (unsigned char)(w1 & 1u);
-        trace(c, "MoveWord panneau=%u", c->state.billboard);
+        trace(c, "MoveWord billboard=%u", c->state.billboard);
     } else if (type == MOVEWORD_MVPMATRIX) {
         unsigned int m = (w1 >> 6) & 0x03u;
         if (m > 2u) { m = 2u; }
         c->state.selected_matrix = m;
         dkr_transform_select(&c->transform, (int)m);
-        trace(c, "MoveWord matrice=%u", m);
+        trace(c, "MoveWord matrix=%u", m);
     } else {
-        trace(c, "MoveWord type=0x%02X valeur=0x%08X", type, w1);
+        trace(c, "MoveWord type=0x%02X value=0x%08X", type, w1);
     }
 }
 
 
-/* --- L'état RDP, accumulé puis traduit -------------------------------------- *
+/* --- The RDP state, accumulated then translated ----------------------------- *
  *
- * `SETOTHERMODE_H` et `_L` sont des **écritures partielles** : chaque commande
- * remplace un champ du mot de mode, sans toucher au reste. Le codage est celui
- * de F3D — décalage en bits 8..15, longueur en bits 0..7, donnée **déjà
- * décalée** dans `w1` :
+ * `SETOTHERMODE_H` and `_L` are **partial writes**: each command replaces one
+ * field of the mode word without touching the rest. The encoding is F3D's —
+ * shift in bits 8..15, length in bits 0..7, data **already shifted** in `w1`:
  *
- *     0xBA001402 w1=0x00000000   décalage 20, longueur 2  -> type de cycle
- *     0xBA001701 w1=0x00800000   décalage 23, longueur 1  -> le bit y est deja
- *     0xB900031D w1=0x0F0A4000   décalage  3, longueur 29 -> mode de rendu
+ *     0xBA001402 w1=0x00000000   shift 20, length 2  -> cycle type
+ *     0xBA001701 w1=0x00800000   shift 23, length 1  -> the bit is already there
+ *     0xB900031D w1=0x0F0A4000   shift  3, length 29 -> render mode
  *
- * Les trois échantillons viennent de la machine, pas d'un en-tête : F3DEX2
- * inverse le décalage, et se tromper de famille donnerait des champs voisins de
- * ceux visés — un filtrage à la place d'un type de cycle, par exemple, c'est-à-
- * dire une image plausible et fausse plutôt qu'une erreur franche.
+ * The three samples come from the machine, not from a header: F3DEX2 inverts the
+ * shift, and picking the wrong family would give fields adjacent to the intended
+ * ones — a filter instead of a cycle type, for instance, that is, a plausible
+ * and wrong image rather than a frank error.
  *
- * L'état n'est traduit qu'au moment de dessiner. Le faire à chaque écriture
- * coûterait une traduction complète par commande, et il y en a plus de six mille
- * par image ; le faire au dessin la fait payer une fois par changement réel. */
-static void write_othermode(unsigned int *mot, unsigned int w0, unsigned int w1)
+ * The state is only translated at draw time. Doing it on every write would cost
+ * a complete translation per command, and there are more than six thousand per
+ * frame; doing it at draw time pays for it once per real change. */
+static void write_othermode(unsigned int *word, unsigned int w0, unsigned int w1)
 {
     const unsigned int sft = (w0 >> 8) & 0xFFu;
     const unsigned int len = w0 & 0xFFu;
-    unsigned int masque;
+    unsigned int mask;
     if (len == 0u || len > 32u || sft >= 32u) {
         return;
     }
-    masque = (len >= 32u) ? 0xFFFFFFFFu : (((1u << len) - 1u) << sft);
-    *mot = (*mot & ~masque) | (w1 & masque);
+    mask = (len >= 32u) ? 0xFFFFFFFFu : (((1u << len) - 1u) << sft);
+    *word = (*word & ~mask) | (w1 & mask);
 }
 
-/* Traduit l'état RDP accumulé et le remet au backend, si quelque chose a changé
-   depuis le dernier dessin. */
+/* Translates the accumulated RDP state and hands it to the backend, if anything
+   has changed since the last draw. */
 static void apply_state(dkr_f3d_context *c)
 {
     dkr_rdp_state rdp;
@@ -610,41 +607,42 @@ static void apply_state(dkr_f3d_context *c)
     dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &rdp);
     rdp.combiner = c->combiner;
 
-    /* Le type de cycle décodé se vérifie tout seul : pendant un `FILLRECT` il
-       doit valoir `FILL`. Un décalage mal placé le mettrait ailleurs, et ce
-       compteur le dirait sans qu'on ait à regarder l'écran. */
+    /* The decoded cycle type checks itself: during a `FILLRECT` it must be
+       `FILL`. A misplaced shift would put it elsewhere, and this counter would
+       say so without anyone having to look at the screen. */
     c->state.current_cycle = (unsigned char)rdp.cycle;
 
-    /* --- Le filet que `rdp_state.h` réclame, et que personne ne tenait ------- *
+    /* --- The safety net `rdp_state.h` demands, and that nobody held --------- *
      *
-     * « Un cas non répertorié doit **se signaler** plutôt que produire un rendu
-     * faux en silence. Une configuration manquée ne se voit pas au décodage —
-     * elle se voit à l'écran, sous forme d'une surface d'une couleur
-     * inattendue, éventuellement dans un seul niveau. »
+     * "A case that is not catalogued must **announce itself** rather than render
+     * wrongly in silence. A missed configuration is invisible at decode time —
+     * it shows up on screen, as a surface in an unexpected colour, possibly in a
+     * single level."
      *
-     * L'inventaire du portage voisin dénombre 33 configurations. La clé les
-     * identifie exactement ; `dkr_rdp_combiner_name` rend NULL pour les autres.
-     * On compte donc, et l'on retient les premières clés inconnues — un compte
-     * seul dirait qu'il en manque, pas lesquelles, et c'est la différence entre
-     * un chiffre et une piste. */
+     * The neighbouring port's inventory counts 33 configurations. The key
+     * identifies them exactly; `dkr_rdp_combiner_name` returns NULL for the
+     * others. So we count, and we keep the first unknown keys — a count alone
+     * would say some are missing, not which, and that is the difference between
+     * a figure and a lead. */
     {
-        const unsigned long long cle = dkr_rdp_combiner_key(&rdp.combiner, rdp.cycle);
-        if (dkr_rdp_combiner_name(cle) != 0) {
+        const unsigned long long key = dkr_rdp_combiner_key(&rdp.combiner, rdp.cycle);
+        if (dkr_rdp_combiner_name(key) != 0) {
             c->state.combiners_known++;
         } else {
             unsigned i;
-            int vue = 0;
+            int seen = 0;
             c->state.combiners_unknown++;
             for (i = 0; i < c->state.unknown_keys_n; i++) {
-                if (c->state.unknown_keys[i] == cle) { vue = 1; break; }
+                if (c->state.unknown_keys[i] == key) { seen = 1; break; }
             }
-            if (!vue && c->state.unknown_keys_n < 8u) {
-                /* **La clé ne suffit pas.** Elle identifie une configuration ;
-                   elle ne dit pas ce qu'elle calcule, donc elle ne permet pas de
-                   l'ajouter à la table. On garde la composition, qui est ce dont
-                   on a besoin pour la nommer contre les macros `G_CC_*`. */
+            if (!seen && c->state.unknown_keys_n < 8u) {
+                /* **The key is not enough.** It identifies a configuration; it
+                   does not say what that configuration computes, so it does not
+                   allow it to be added to the table. We keep the composition,
+                   which is what is needed to name it against the `G_CC_*`
+                   macros. */
                 const unsigned i2 = c->state.unknown_keys_n;
-                c->state.unknown_keys[i2] = cle;
+                c->state.unknown_keys[i2] = key;
                 c->state.unknown_combiners[i2] = rdp.combiner;
                 c->state.unknown_cycle[i2] = (unsigned char)rdp.cycle;
                 c->state.unknown_keys_n++;
@@ -653,38 +651,39 @@ static void apply_state(dkr_f3d_context *c)
     }
 
     dkr_rdp_to_render_state(&rdp, &c->render_state, &exact);
-    /* Interrupteur de diagnostic, pas un contournement.
+    /* A diagnostic switch, not a workaround.
      *
-     * Trois causes peuvent noircir l'écran et deux ont été écartées par la
-     * mesure. La troisième — la profondeur — ne se réfute pas en la regardant :
-     * ses entrées sont saines, sa configuration est celle que E05-S05 a
-     * mesurée, et elle noircit quand même. La désactiver d'un cran répond en
-     * une course à une question que l'inspection ne tranche pas, et l'on garde
-     * l'interrupteur : il resservira à chaque fois qu'un doute portera sur le
-     * tri plutôt que sur ce qui est dessiné. */
+     * Three causes can blacken the screen and two have been ruled out by
+     * measurement. The third — depth — cannot be refuted by looking at it: its
+     * inputs are sound, its configuration is the one E05-S05 measured, and it
+     * blackens all the same. Switching it off for one notch answers, in a single
+     * race, a question inspection does not settle, and we keep the switch: it
+     * will serve again every time a doubt bears on sorting rather than on what
+     * is drawn. */
     if (c->no_depth) {
         c->render_state.depth = DKR_DEPTH_DISABLED;
     }
-    /* --- Le handle de texture ne survit pas à la traduction ------------------ *
+    /* --- The texture handle does not survive the translation ---------------- *
      *
-     * `dkr_rdp_to_render_state` remplit **tout** le bloc depuis l'état RDP, et
-     * l'état RDP ne connaît pas nos handles : le champ `texture` que le
-     * chargement venait d'y poser était donc écrasé à chaque application.
+     * `dkr_rdp_to_render_state` fills **the whole** block from the RDP state,
+     * and the RDP state knows nothing of our handles: the `texture` field the
+     * upload had just placed there was therefore overwritten on every
+     * application.
      *
-     * Mesuré, et c'est ce qui a désigné la cause sans détour : 45 773 textures
-     * chargées, 246 707 triangles émis avec un combineur qui lit un texel, et
-     * **zéro triangle émis avec une texture liée**. Trois chiffres qui, séparés,
-     * ne laissent qu'une explication ; réunis sous « émis », ils n'en
-     * laissaient aucune.
+     * Measured, and that is what named the cause without a detour: 45,773
+     * textures uploaded, 246,707 triangles emitted with a combiner that reads a
+     * texel, and **zero triangles emitted with a texture bound**. Three figures
+     * which, separated, leave only one explanation; gathered under "emitted",
+     * they left none.
      *
-     * Le handle vit donc dans le contexte, qui est sa vraie place — c'est une
-     * ressource du décodeur, pas un mode du RDP — et il est reposé après la
-     * traduction. */
+     * The handle therefore lives in the context, which is its proper place — it
+     * is a decoder resource, not an RDP mode — and it is laid back down after
+     * the translation. */
     c->render_state.texture = c->bound_texture;
     if (!exact) {
-        /* **Une traduction approchée qui ne s'annonce pas est pire qu'un
-           échec** : elle produit une image plausible et fausse. Le compteur est
-           le filet que `rdp_state.h` réclame explicitement. */
+        /* **An approximate translation that does not announce itself is worse
+           than a failure**: it produces a plausible, wrong image. The counter is
+           the safety net `rdp_state.h` explicitly demands. */
         c->state.states_approximate++;
     }
     c->state.states_applied++;
@@ -696,54 +695,51 @@ static void apply_state(dkr_f3d_context *c)
 
 
 
-/* --- Les textures ---------------------------------------------------------- *
+/* --- Textures --------------------------------------------------------------- *
  *
- * Trois commandes portent l'information, et **aucune ne suffit seule** :
+ * Three commands carry the information, and **none is enough on its own**:
  *
- *     SETTIMG      (0xFD)  format, taille, adresse en RDRAM
- *     SETTILE      (0xF5)  format et taille de la tuile, enveloppement
- *     SETTILESIZE  (0xF2)  les dimensions, en virgule fixe 10.2
+ *     SETTIMG      (0xFD)  format, size, RDRAM address
+ *     SETTILE      (0xF5)  the tile's format and size, wrapping
+ *     SETTILESIZE  (0xF2)  the dimensions, in 10.2 fixed point
  *
- * Relevé sur la machine, la séquence de DKR :
+ * Measured on the machine, DKR's sequence:
  *
- *     0xFD100000 w1=0x00252D60   RGBA, 16 bits, adresse 0x252D60
- *     0xF5100000 w1=0x07080200   tuile 7
+ *     0xFD100000 w1=0x00252D60   RGBA, 16 bits, address 0x252D60
+ *     0xF5100000 w1=0x07080200   tile 7
  *     0xF3000000 w1=0x077FF100   LoadBlock
- *     0xF5101000 w1=0x00080200   tuile 0
+ *     0xF5101000 w1=0x00080200   tile 0
  *     0xF2000000 w1=0x0007C0FC   lrs=124, lrt=252 -> 32x64 texels
  *
- * On charge à `SETTILESIZE` parce que c'est la dernière des trois : avant elle
- * les dimensions sont inconnues, et charger sur `SETTIMG` donnerait une texture
- * de taille inventée. L'ordre est celui du microcode, pas une convention qu'on
- * choisit.
+ * We upload at `SETTILESIZE` because it is the last of the three: before it the
+ * dimensions are unknown, and uploading on `SETTIMG` would give a texture of an
+ * invented size. The order is the microcode's, not a convention we pick.
  *
- * La clé de cache réunit adresse, format, taille et dimensions. L'adresse seule
- * ne suffirait pas : DKR réemploie ses tampons, et deux textures différentes
- * peuvent partager une adresse d'une image à l'autre. Une clé trop courte ne
- * plante pas — elle affiche l'ancienne texture, ce qui se remarque tard. */
-/* --- Ce que la Voodoo accepte, et ce que la N64 envoie ---------------------- *
+ * The cache key gathers address, format, size and dimensions. The address alone
+ * would not do: DKR reuses its buffers, and two different textures can share an
+ * address from one frame to the next. A key that is too short does not crash —
+ * it displays the old texture, which gets noticed late. */
+/* --- What the Voodoo accepts, and what the N64 sends ------------------------ *
  *
- * Le RDP échantillonne n'importe quelles dimensions ; la Voodoo exige des
- * **puissances de deux**, un côté d'au plus 256, et un rapport d'au plus 8:1.
+ * The RDP samples any dimensions; the Voodoo requires **powers of two**, a side
+ * of at most 256, and a ratio of at most 8:1.
  *
- * Mesuré sur la machine, une fois les quatre causes de refus séparées :
+ * Measured on the machine, once the four causes of refusal were separated:
  *
- *     refus-detail: proportions=21084 taille=0 emplacements=0 memoire-tmu=0
+ *     refusal-detail: aspect=21084 size=0 slots=0 tmu-memory=0
  *
- * **Tous** les refus venaient de là, et aucun de la mémoire — ce qui a invalidé
- * la correction précédente, faite en supposant la saturation coupable. Séparer
- * les causes a coûté quatre entiers ; les confondre avait coûté un correctif.
+ * **All** the refusals came from there, and none from memory — which invalidated
+ * the previous fix, made on the assumption that exhaustion was to blame.
+ * Separating the causes cost four integers; conflating them had cost a fix.
  *
- * On remplit donc jusqu'à la puissance de deux supérieure et l'on retient le
- * rapport, dont les coordonnées de texture ont besoin : la texture réelle
- * n'occupe plus que le coin supérieur gauche.
+ * So we pad up to the next power of two and keep the ratio, which the texture
+ * coordinates need: the real texture now only occupies the top-left corner.
  *
- * **Ce que le remplissage abîme, et qu'il vaut mieux dire** : une texture
- * répétée montrera son remplissage aux jointures, puisque l'enveloppement se
- * fait sur la taille remplie et non sur la taille réelle. DKR emploie
- * l'enveloppement dix-huit fois contre le bornage quatre fois, donc la question
- * se posera. La réponse propre est de répéter le motif dans le remplissage
- * plutôt que de le laisser vide ; c'est ce qui est fait ici. */
+ * **What padding spoils, and had better be said**: a repeated texture will show
+ * its padding at the seams, since wrapping happens over the padded size and not
+ * over the real one. DKR uses wrapping eighteen times against clamping four
+ * times, so the question will come up. The clean answer is to repeat the pattern
+ * into the padding rather than leave it empty; that is what is done here. */
 static int next_power_of_two(int n)
 {
     int p = 1;
@@ -757,39 +753,40 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
     const unsigned int lrt = w1 & 0xFFFu;
     const unsigned int uls = (w0 >> 12) & 0xFFFu;
     const unsigned int ult = w0 & 0xFFFu;
-    /* 10.2 en virgule fixe, et les deux coins sont **inclus** — comme pour le
-       rectangle plein, et pour la même raison de convention du RDP. */
-    const int largeur = (int)((lrs >> 2) - (uls >> 2)) + 1;
-    const int hauteur = (int)((lrt >> 2) - (ult >> 2)) + 1;
-    unsigned long long cle;
+    /* 10.2 fixed point, and both corners are **inclusive** — as with the filled
+       rectangle, and for the same RDP convention reason. */
+    const int width  = (int)((lrs >> 2) - (uls >> 2)) + 1;
+    const int height = (int)((lrt >> 2) - (ult >> 2)) + 1;
+    unsigned long long key;
 
-    if (largeur <= 0 || hauteur <= 0) {
+    if (width <= 0 || height <= 0) {
         return;
     }
 
-    cle = ((unsigned long long)c->timg_address << 24)
+    key = ((unsigned long long)c->timg_address << 24)
         ^ ((unsigned long long)c->timg_format << 20)
         ^ ((unsigned long long)c->timg_size   << 18)
-        ^ ((unsigned long long)largeur << 9)
-        ^ (unsigned long long)hauteur;
+        ^ ((unsigned long long)width << 9)
+        ^ (unsigned long long)height;
 
-    if (cle == c->texture_key && c->render_state.texture != 0) {
-        /* Déjà chargée et encore liée : rien à faire. Sans ce test on
-           reconvertirait la même texture des milliers de fois par image, et sur
-           un Pentium II cela seul suffirait à rendre le portage injouable. */
+    if (key == c->texture_key && c->render_state.texture != 0) {
+        /* Already uploaded and still bound: nothing to do. Without this test we
+           would reconvert the same texture thousands of times per frame, and on
+           a Pentium II that alone would be enough to make the port
+           unplayable. */
         c->state.textures_reused++;
         return;
     }
 
     {
-        const int pl = next_power_of_two(largeur);
-        const int ph = next_power_of_two(hauteur);
-        /* Le rapport d'au plus 8:1 de la carte. On ne peut pas remplir pour le
-           satisfaire — cela reviendrait à multiplier la mémoire par huit — donc
-           on refuse, et on le compte plutôt que de le taire. */
-        const int grand = (pl > ph) ? pl : ph;
-        const int petit = (pl > ph) ? ph : pl;
-        if (grand > 256 || (petit > 0 && grand / petit > 8)) {
+        const int pl = next_power_of_two(width);
+        const int ph = next_power_of_two(height);
+        /* The card's ratio of at most 8:1. We cannot pad to satisfy it — that
+           would amount to multiplying memory by eight — so we refuse, and we
+           count it rather than keep quiet about it. */
+        const int big   = (pl > ph) ? pl : ph;
+        const int small = (pl > ph) ? ph : pl;
+        if (big > 256 || (small > 0 && big / small > 8)) {
             c->render_state.texture = 0;
             c->bound_texture = 0;
             c->texture_key = 0;
@@ -797,8 +794,8 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             c->state_dirty = 1;
             return;
         }
-        c->tex_width = largeur;
-        c->tex_height = hauteur;
+        c->tex_width = width;
+        c->tex_height = height;
         c->tex_padded_width = pl;
         c->tex_padded_height = ph;
     }
@@ -807,10 +804,10 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                              c->timg_address,
                              (dkr_n64_format)c->timg_format,
                              (dkr_n64_size)c->timg_size,
-                             largeur, hauteur, c->texels, &c->state.textures)) {
-        /* Refusée : on **délie** plutôt que de dessiner avec la précédente. Une
-           texture périmée sur une surface est plus déroutante qu'une surface
-           sans texture, parce qu'elle passe pour du rendu. */
+                             width, height, c->texels, &c->state.textures)) {
+        /* Refused: we **unbind** rather than draw with the previous one. A stale
+           texture on a surface is more confusing than a surface with no texture,
+           because it passes for rendering. */
         c->render_state.texture = 0;
         c->bound_texture = 0;
         c->texture_key = 0;
@@ -818,49 +815,49 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         return;
     }
 
-    /* Le remplissage, en place et de bas en haut pour ne pas écraser ce qu'on
-       recopie. Le motif est **répété** plutôt que laissé vide : c'est ce qui
-       rend le remplissage invisible quand la texture est enveloppée, et cela ne
-       coûte rien de plus qu'un remplissage nul. */
-    if (c->tex_padded_width != largeur || c->tex_padded_height != hauteur) {
+    /* The padding, in place and bottom to top so as not to overwrite what is
+       being copied. The pattern is **repeated** rather than left empty: that is
+       what makes the padding invisible when the texture is wrapped, and it costs
+       nothing more than a zero fill. */
+    if (c->tex_padded_width != width || c->tex_padded_height != height) {
         int y, x;
         for (y = c->tex_padded_height - 1; y >= 0; y--) {
-            const int sy = y % hauteur;
+            const int sy = y % height;
             for (x = c->tex_padded_width - 1; x >= 0; x--) {
-                const int sx = x % largeur;
+                const int sx = x % width;
                 c->texels[(size_t)y * (size_t)c->tex_padded_width + (size_t)x] =
-                    c->texels[(size_t)sy * (size_t)largeur + (size_t)sx];
+                    c->texels[(size_t)sy * (size_t)width + (size_t)sx];
             }
         }
         c->state.textures_padded++;
     }
 
-    /* **Le contenu de la texture, après conversion.**
+    /* **The texture's content, after conversion.**
      *
-     * Le texel est la dernière des trois entrées du combineur qu'on n'ait pas
-     * regardée : la couleur des sommets atteint 255, le combineur retenu lit
-     * bien le texel, la texture est liée. Si les texels sont nuls, le produit
-     * l'est aussi — et c'est du noir, quoi que valent les deux autres.
+     * The texel is the last of the combiner's three inputs we had not looked at:
+     * the vertex colour reaches 255, the chosen combiner does read the texel,
+     * the texture is bound. If the texels are zero, so is the product — and that
+     * is black, whatever the other two are worth.
      *
-     * On compte les texels non nuls plutôt que d'en imprimer : une texture
-     * entièrement noire est un fait, pas une valeur à lire. Et l'on ne le fait
-     * qu'au chargement, pas au dessin. */
+     * We count the non-zero texels rather than print any: an entirely black
+     * texture is a fact, not a value to read. And we only do it on upload, not
+     * at draw time. */
     {
         unsigned int i, n = (unsigned int)c->tex_padded_width *
                             (unsigned int)c->tex_padded_height;
-        unsigned int vus = 0;
+        unsigned int seen = 0;
         for (i = 0; i < n; i++) {
-            if ((c->texels[i] & 0xFFFEu) != 0u) { vus++; }
+            if ((c->texels[i] & 0xFFFEu) != 0u) { seen++; }
         }
-        if (vus == 0u) { c->state.textures_black++; }
-        else           { c->state.textures_with_content++; }
+        if (seen == 0u) { c->state.textures_black++; }
+        else            { c->state.textures_with_content++; }
     }
 
     if (c->backend && c->backend->texture_upload) {
         dkr_texture_desc d;
         dkr_texture_handle h;
         memset(&d, 0, sizeof(d));
-        d.key = cle;
+        d.key = key;
         d.format = DKR_TEXFMT_RGBA5551;
         d.width = c->tex_padded_width;
         d.height = c->tex_padded_height;
@@ -870,18 +867,18 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         h = c->backend->texture_upload(c->backend->self, &d);
         if (h != 0) {
             c->bound_texture = h;
-            /* 1/32 pour le 10.5 du microcode, 1/largeur pour passer en [0,1].
-               Les deux en une seule multiplication par sommet : la
-               transformation est déjà le poste le plus lourd du portage. */
+            /* 1/32 for the microcode's 10.5, 1/width to get into [0,1]. Both
+               in a single multiplication per vertex: transformation is already
+               the port's heaviest stage. */
             c->tex_scale_s = 1.0f / (32.0f * (float)c->tex_padded_width);
             c->tex_scale_t = 1.0f / (32.0f * (float)c->tex_padded_height);
             c->render_state.texture = h;
-            c->texture_key = cle;
+            c->texture_key = key;
             c->state_dirty = 1;
             c->state.textures_loaded++;
         } else {
-            /* Mémoire de texture pleine. C'est E05-S02 qui l'administre ; ici on
-               se contente de ne pas dessiner avec une poignée invalide. */
+            /* Texture memory full. E05-S02 administers it; here we merely
+               refrain from drawing with an invalid handle. */
             c->render_state.texture = 0;
             c->bound_texture = 0;
             c->texture_key = 0;
@@ -889,183 +886,179 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         }
     }
 
-    trace(c, "SetTileSize %dx%d %s a 0x%06X", largeur, hauteur,
+    trace(c, "SetTileSize %dx%d %s at 0x%06X", width, height,
           dkr_texture_format_name((dkr_n64_format)c->timg_format,
                                   (dkr_n64_size)c->timg_size),
           c->timg_address);
 }
 
-/* --- La fenêtre d'affichage, celle du jeu et non celle qu'on suppose -------- *
+/* --- The viewport: the game's, not the one we assume ------------------------ *
  *
- * Jusqu'ici la fenêtre venait du défaut de `dkr_transform_init` — 640x480,
- * plausible et faux. Le symptôme mesuré : un unique triangle couvrant la moitié
- * de l'écran, alors que la géométrie et l'ombrage étaient corrects.
+ * Until now the viewport came from `dkr_transform_init`'s default — 640x480,
+ * plausible and wrong. The measured symptom: a single triangle covering half the
+ * screen, while the geometry and the shading were correct.
  *
- * `MOVEMEM` d'index `0x80` la porte, en seize octets. L'échantillon relevé sur
- * la machine :
+ * `MOVEMEM` with index `0x80` carries it, in sixteen bytes. The sample measured
+ * on the machine:
  *
  *     opcode 0x03 w0=0x03800010 w1=0x000DD148
- *                    ^^ index   ^^^^ seize octets
+ *                    ^^ index   ^^^^ sixteen bytes
  *
- * La structure est `short vscale[4]` puis `short vtrans[4]`, en virgule fixe
- * 2.2 — d'où la division par quatre. Les deux dernières composantes portent la
- * profondeur et ne servent pas ici : notre plage de profondeur est celle du
- * backend, établie par E05-S05.
+ * The structure is `short vscale[4]` then `short vtrans[4]`, in 2.2 fixed point
+ * — hence the division by four. The last two components carry depth and are not
+ * used here: our depth range is the backend's, established by E05-S05.
  *
- * **Le signe en y s'inverse.** Le jeu donne une échelle positive ; la convention
- * de `dkr_transform` la veut négative, comme son propre défaut. S'en dispenser
- * retournerait l'image de haut en bas — visible, mais facile à attribuer à la
- * projection plutôt qu'à une convention de signe. */
+ * **The sign in y flips.** The game gives a positive scale; `dkr_transform`'s
+ * convention wants it negative, like its own default. Skipping that would flip
+ * the image top to bottom — visible, but easy to attribute to the projection
+ * rather than to a sign convention. */
 static void cmd_viewport(dkr_f3d_context *c, unsigned int address)
 {
     const short sx = read_s16(c, address + 0u);
     const short sy = read_s16(c, address + 2u);
     const short tx = read_s16(c, address + 8u);
     const short ty = read_s16(c, address + 10u);
-    const float echelle = screen_scale(c);
+    const float scale = screen_scale(c);
 
-    /* Une fenêtre nulle n'est pas une fenêtre : elle projetterait tous les
-       sommets au même point, ce qui ressemble à une matrice fausse. On garde
-       alors celle qu'on avait plutôt que d'en installer une inutilisable. */
+    /* A zero viewport is not a viewport: it would project every vertex onto the
+       same point, which looks like a wrong matrix. We then keep the one we had
+       rather than install an unusable one. */
     if (sx == 0 || sy == 0) {
-        trace(c, "Viewport ignore : echelle nulle");
+        trace(c, "Viewport ignored: zero scale");
         return;
     }
 
     dkr_transform_set_viewport(&c->transform,
-                               ((float)sx / 4.0f) * echelle,
-                               -((float)sy / 4.0f) * echelle,
-                               ((float)tx / 4.0f) * echelle,
-                               ((float)ty / 4.0f) * echelle);
+                               ((float)sx / 4.0f) * scale,
+                               -((float)sy / 4.0f) * scale,
+                               ((float)tx / 4.0f) * scale,
+                               ((float)ty / 4.0f) * scale);
     c->state.viewports++;
-    trace(c, "Viewport echelle=%d,%d translation=%d,%d (x%d/100)",
-          sx / 4, sy / 4, tx / 4, ty / 4, (int)(echelle * 100.0f));
+    trace(c, "Viewport scale=%d,%d translation=%d,%d (x%d/100)",
+          sx / 4, sy / 4, tx / 4, ty / 4, (int)(scale * 100.0f));
 }
 
-/* --- Le rectangle plein ----------------------------------------------------- *
+/* --- The filled rectangle --------------------------------------------------- *
  *
- * Mesuré sur la machine avant d'être écrit : sur les 47 000 commandes de la
- * séquence de démarrage, **`FILLRECT` est le seul ordre de dessin émis** — ni
- * sommet, ni triangle, ni rectangle texturé, deux remplissages par image. Ce
- * chemin n'est donc pas un détail de la 2D : c'est tout ce qui met des pixels à
- * l'écran à ce stade du portage.
+ * Measured on the machine before being written: across the 47,000 commands of
+ * the startup sequence, **`FILLRECT` is the only draw order emitted** — no
+ * vertex, no triangle, no textured rectangle, two fills per frame. This path is
+ * therefore not a detail of the 2D: it is everything that puts pixels on screen
+ * at this stage of the port.
  *
- * ## Les coordonnées
+ * ## The coordinates
  *
- * `gDPFillRectangle` range les deux coins dans les deux mots, en virgule fixe
- * 10.2, et **le coin inférieur droit est inclus** :
+ * `gDPFillRectangle` stores the two corners in the two words, in 10.2 fixed
+ * point, and **the bottom-right corner is inclusive**:
  *
  *     w0 = opcode<<24 | lrx<<14 | lry<<2
  *     w1 =              ulx<<14 | uly<<2
  *
- * Oublier l'inclusion donne un rectangle trop court d'un pixel en bas et à
- * droite. Sur un effacement plein écran cela laisse une ligne du fond visible,
- * qu'on attribue au rastériseur plutôt qu'à la convention.
+ * Forgetting the inclusion gives a rectangle one pixel short at the bottom and
+ * on the right. On a full-screen clear that leaves one line of the background
+ * visible, which one blames on the rasteriser rather than on the convention.
  *
- * ## L'échelle
+ * ## The scale
  *
- * Les coordonnées sont dans l'espace du tampon de couleur du jeu, pas dans celui
- * de l'écran. Le facteur se **lit** dans `SETCOLORIMAGE`, qui porte la largeur,
- * plutôt que de supposer les 320 pixels habituels de la N64 : DKR change de
- * tampon en cours de route, et une échelle supposée produirait un décor décalé
- * sur certains écrans seulement — le genre de défaut qu'on met des heures à
- * relier à sa cause.
+ * The coordinates live in the space of the game's colour buffer, not that of the
+ * screen. The factor is **read** from `SETCOLORIMAGE`, which carries the width,
+ * rather than assuming the N64's usual 320 pixels: DKR switches buffers along
+ * the way, and an assumed scale would produce offset scenery on some screens
+ * only — the kind of defect that takes hours to connect to its cause.
  *
- * ## La couleur
+ * ## The colour
  *
- * En mode remplissage sur seize bits, `SETFILLCOLOR` porte **deux pixels
- * RGBA5551 côte à côte**, parce que le RDP écrit deux pixels par cycle. On prend
- * les seize bits de poids faible : les deux moitiés sont identiques pour un
- * remplissage uni, et une couleur à demi fausse serait plus déroutante qu'une
- * couleur franchement fausse. */
+ * In 16-bit fill mode, `SETFILLCOLOR` carries **two RGBA5551 pixels side by
+ * side**, because the RDP writes two pixels per cycle. We take the low sixteen
+ * bits: the two halves are identical for a plain fill, and a half-wrong colour
+ * would be more confusing than a frankly wrong one. */
 static unsigned int colour_from_5551(unsigned int pixel)
 {
     const unsigned int r = (pixel >> 11) & 0x1Fu;
-    const unsigned int v = (pixel >>  6) & 0x1Fu;
+    const unsigned int g = (pixel >>  6) & 0x1Fu;
     const unsigned int b = (pixel >>  1) & 0x1Fu;
-    /* La réplication des bits de poids fort plutôt qu'un décalage seul : 31 doit
-       donner 255 et non 248, sans quoi le blanc n'est jamais blanc. */
+    /* Replicating the high bits rather than shifting alone: 31 must give 255 and
+       not 248, otherwise white is never white. */
     const unsigned int r8 = (r << 3) | (r >> 2);
-    const unsigned int v8 = (v << 3) | (v >> 2);
+    const unsigned int g8 = (g << 3) | (g >> 2);
     const unsigned int b8 = (b << 3) | (b >> 2);
-    return (r8 << 16) | (v8 << 8) | b8;
+    return (r8 << 16) | (g8 << 8) | b8;
 }
 
 static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
-    /* 10.2 en virgule fixe : deux bits de fraction, qu'on abandonne. Le RDP
-       remplit par pixel entier en mode remplissage. */
+    /* 10.2 fixed point: two fraction bits, which we drop. The RDP fills by
+       whole pixels in fill mode. */
     const int lrx = (int)((w0 >> 14) & 0x3FFu);
     const int lry = (int)((w0 >>  2) & 0x3FFu);
     const int ulx = (int)((w1 >> 14) & 0x3FFu);
     const int uly = (int)((w1 >>  2) & 0x3FFu);
 
-    const float ecran_w = 2.0f * c->transform.viewport_scale_x;
-    const float ecran_h = -2.0f * c->transform.viewport_scale_y;
-    float echelle_x = 1.0f, echelle_y = 1.0f;
+    const float screen_w = 2.0f * c->transform.viewport_scale_x;
+    const float screen_h = -2.0f * c->transform.viewport_scale_y;
+    float scale_x = 1.0f, scale_y = 1.0f;
     int x0, y0, x1, y1;
 
     if (!c->backend || !c->backend->fill_rect) {
-        trace(c, "FillRect ignore : pas de backend");
+        trace(c, "FillRect ignored: no backend");
         return;
     }
 
-    if (c->state.color_image_width > 0u && ecran_w > 0.0f) {
-        echelle_x = screen_scale(c);
-        /* La hauteur du tampon n'est portée par aucune commande — le RDP ne la
-           connaît pas, il n'a que la largeur et l'adresse. On applique donc le
-           même facteur qu'en x, ce qui est juste tant que le tampon a le rapport
-           de l'écran. C'est le cas de DKR (320x240 pour 640x480) et c'est une
-           supposition qu'il faudra reprendre le jour où ce ne le sera plus. */
-        echelle_y = echelle_x;
+    if (c->state.color_image_width > 0u && screen_w > 0.0f) {
+        scale_x = screen_scale(c);
+        /* The buffer's height is carried by no command — the RDP does not know
+           it, it only has the width and the address. So we apply the same factor
+           as in x, which is right as long as the buffer has the screen's aspect
+           ratio. That is DKR's case (320x240 for 640x480) and it is an
+           assumption to be revisited the day it stops holding. */
+        scale_y = scale_x;
     }
-    (void)ecran_h;
+    (void)screen_h;
 
-    x0 = (int)((float)ulx * echelle_x);
-    y0 = (int)((float)uly * echelle_y);
-    /* +1 : le coin inférieur droit est inclus côté RDP, exclu côté backend. */
-    x1 = (int)((float)(lrx + 1) * echelle_x);
-    y1 = (int)((float)(lry + 1) * echelle_y);
+    x0 = (int)((float)ulx * scale_x);
+    y0 = (int)((float)uly * scale_y);
+    /* +1: the bottom-right corner is inclusive on the RDP side, exclusive on the
+       backend side. */
+    x1 = (int)((float)(lrx + 1) * scale_x);
+    y1 = (int)((float)(lry + 1) * scale_y);
 
-    /* Contrôle qui ne coûte rien et qui se déclenche tout seul : le RDP ne
-       remplit qu'en mode `FILL`. Un décalage mal placé dans l'écriture du mot de
-       mode se verrait ici, en chiffres, plutôt qu'à l'écran sous forme d'une
-       surface d'une couleur inattendue. */
+    /* A check that costs nothing and fires on its own: the RDP only fills in
+       `FILL` mode. A misplaced shift in the mode-word write would show up here,
+       in figures, rather than on screen as a surface in an unexpected colour. */
     {
-        dkr_rdp_state verif;
-        memset(&verif, 0, sizeof(verif));
-        dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &verif);
-        if (verif.cycle != DKR_CYCLE_FILL) { c->state.fills_wrong_cycle++; }
+        dkr_rdp_state check;
+        memset(&check, 0, sizeof(check));
+        dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &check);
+        if (check.cycle != DKR_CYCLE_FILL) { c->state.fills_wrong_cycle++; }
     }
     c->backend->fill_rect(c->backend->self, x0, y0, x1, y1,
                           c->state.fill_color_argb);
     c->state.rects++;
-    trace(c, "FillRect %d,%d..%d,%d couleur=0x%06X",
+    trace(c, "FillRect %d,%d..%d,%d colour=0x%06X",
           x0, y0, x1, y1, c->state.fill_color_argb);
 }
 
-/* --- La boucle ------------------------------------------------------------- */
+/* --- The loop -------------------------------------------------------------- */
 
 unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 {
     unsigned int return_stack[MAX_NESTED];
-    /* --- Ce qui termine une liste comptée --------------------------------- *
+    /* --- What ends a counted list ----------------------------------------- *
      *
-     * Une liste comptée n'a **pas** d'`ENDDL` : c'est son compte qui la termine.
-     * Le décodeur l'ignorait — il empilait l'adresse de retour, sautait, et
-     * attendait un `ENDDL` qui ne viendrait jamais. Il sortait donc de la liste
-     * par le bas et continuait dans la mémoire qui suit, jusqu'à buter sur du
-     * hasard.
+     * A counted list has **no** `ENDDL`: its count is what ends it. The decoder
+     * ignored that — it pushed the return address, jumped, and waited for an
+     * `ENDDL` that would never come. So it fell out of the bottom of the list
+     * and carried on into the memory that follows, until it hit randomness.
      *
-     * Le symptôme, mesuré sur la machine : **soixante-dix commandes par liste,
-     * constant, deux remplissages et pas un triangle**, et un rejet par image.
-     * La liste d'affichage de DKR charge une texture par une liste comptée de
-     * sept commandes, et toute la géométrie vient *après* ce retour. Elle était
-     * perdue là, à chaque image, depuis le début.
+     * The symptom, measured on the machine: **seventy commands per list,
+     * constant, two fills and not one triangle**, and one rejection per frame.
+     * DKR's display list uploads a texture through a counted list of seven
+     * commands, and all the geometry comes *after* that return. It was lost
+     * there, every frame, from the start.
      *
-     * `NO_COUNT` distingue « jusqu'à `ENDDL` » de « plus une seule commande ».
-     * Sans ce sentinelle, zéro voudrait dire les deux, et une liste ordinaire se
-     * terminerait à sa première commande. */
+     * `NO_COUNT` tells "until `ENDDL`" from "not one command more". Without that
+     * sentinel, zero would mean both, and an ordinary list would end at its
+     * first command. */
     unsigned int remaining_stack[MAX_NESTED];
     unsigned int remaining = NO_COUNT;
     unsigned int depth = 0;
@@ -1082,7 +1075,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         if (!in_range(c, address, 8u)) {
             char d[64];
-            sprintf(d, "commande a 0x%06X", address);
+            sprintf(d, "command at 0x%06X", address);
             reject(c, DKR_F3D_REJECT_ADDRESS, d);
             break;
         }
@@ -1093,9 +1086,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         executed++;
         c->state.commands++;
         c->state.opcodes[opcode]++;
-        /* Decompte avant d'executer, pour que la valeur empilee par un appel
-           imbrique soit celle du parent **apres** cette commande. La decrementer
-           apres la ferait recompter au retour. */
+        /* Decremented before executing, so that the value pushed by a nested
+           call is the parent's **after** this command. Decrementing it
+           afterwards would count it again on return. */
         if (remaining != NO_COUNT && remaining > 0u) { remaining--; }
 
         switch (opcode) {
@@ -1106,20 +1099,21 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         case OP_MOVEWORD:   cmd_move_word(c, w0, w1);   break;
 
         case OP_TEXOFFSET:
-            /* **`w1` est une adresse RDRAM, pas un couple de decalages.**
+            /* **`w1` is an RDRAM address, not a pair of offsets.**
              *
-             * Ce decodeur lisait `(w1 >> 16)` et `(w1 & 0xFFFF)` comme des
-             * decalages `s` et `t` sur seize bits. Le portage voisin, qui tourne,
-             * en fait tout autre chose : `data.texture_offset = w1 & 0x00FFFFFF`,
-             * une **base d'adressage pour le chargement de texture**, et la
-             * commande remet a zero le decalage et le compte.
+             * This decoder read `(w1 >> 16)` and `(w1 & 0xFFFF)` as sixteen-bit
+             * `s` and `t` offsets. The neighbouring port, which runs, makes
+             * something else entirely of it:
+             * `data.texture_offset = w1 & 0x00FFFFFF`, an **addressing base for
+             * texture loading**, and the command resets the shift and the count
+             * to zero.
              *
-             * L'erreur ne se serait pas vue tout de suite. Une base d'adresse
-             * lue comme deux decalages de texture produit des coordonnees
-             * absurdes sur les surfaces concernees — donc un motif deplace, pas
-             * une absence — et l'on aurait cherche du cote du decodage de
-             * texture. E05-S07 demandait de relever ce comportement plutot que
-             * de le supposer ; c'est ce qui l'a revele. */
+             * The error would not have shown up straight away. An address base
+             * read as two texture offsets produces absurd coordinates on the
+             * surfaces concerned — hence a displaced pattern, not an absence —
+             * and one would have looked at texture decoding. E05-S07 asked for
+             * this behaviour to be measured rather than assumed; that is what
+             * revealed it. */
             c->state.texture_offset = w1 & 0x00FFFFFFu;
             c->state.texture_shift  = 0;
             c->state.texture_count  = 0;
@@ -1127,42 +1121,42 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             break;
 
         case OP_DLBRANCH: {
-            /* Alignee sur huit octets — la taille d'une commande. Une cible
-               desalignee decoderait des mots a cheval et produirait des opcodes
-               fantaisistes. */
+            /* Aligned to eight bytes — the size of a command. A misaligned
+               target would decode straddling words and produce fanciful
+               opcodes. */
             const unsigned int target = w1 & 0x00FFFFF8u;
             const int branch = ((w0 >> 16) & 0x01u) != 0;
             if (!in_range(c, target, 8u)) {
                 char d[64];
-                sprintf(d, "liste a 0x%06X", target);
+                sprintf(d, "list at 0x%06X", target);
                 reject(c, DKR_F3D_REJECT_ADDRESS, d);
                 break;
             }
             if (!branch) {
                 if (depth >= MAX_NESTED) {
                     char d[48];
-                    sprintf(d, "profondeur %u", depth);
+                    sprintf(d, "depth %u", depth);
                     reject(c, DKR_F3D_REJECT_DEPTH, d);
                     break;
                 }
                 remaining_stack[depth] = remaining;
                 return_stack[depth++] = address;
-                remaining = NO_COUNT;   /* une liste appelee va jusqu'a son ENDDL */
+                remaining = NO_COUNT;   /* a called list runs to its ENDDL */
             }
-            trace(c, "DisplayList %s vers 0x%06X",
-                  branch ? "branchement" : "appel", target);
+            trace(c, "DisplayList %s to 0x%06X",
+                  branch ? "branch" : "call", target);
             address = target;
             break;
         }
 
         case OP_ENDDL:
             if (depth == 0u) {
-                trace(c, "EndDisplayList — fin");
+                trace(c, "EndDisplayList - end");
                 running = 0;
             } else {
                 address = return_stack[--depth];
                 remaining = remaining_stack[depth];
-                trace(c, "EndDisplayList — retour a 0x%06X", address);
+                trace(c, "EndDisplayList - return to 0x%06X", address);
             }
             break;
 
@@ -1172,18 +1166,18 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             if (count == 0u || target == 0u ||
                 !in_range(c, target, count * 8u)) {
                 char d[72];
-                sprintf(d, "%u commandes a 0x%06X", count, target);
+                sprintf(d, "%u commands at 0x%06X", count, target);
                 reject(c, DKR_F3D_REJECT_COUNT, d);
                 break;
             }
             if (depth >= MAX_NESTED) {
-                reject(c, DKR_F3D_REJECT_DEPTH, "liste comptee");
+                reject(c, DKR_F3D_REJECT_DEPTH, "counted list");
                 break;
             }
             remaining_stack[depth] = remaining;
             return_stack[depth++] = address;
             remaining = count;
-            trace(c, "CountedDisplayList %u commandes a 0x%06X", count, target);
+            trace(c, "CountedDisplayList %u commands at 0x%06X", count, target);
             address = target;
             break;
         }
@@ -1193,32 +1187,31 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             break;
 
         case OP_RDPSETOTHERMODE:
-            /* --- Le mot de mode, écrit en entier ------------------------------ *
+            /* --- The mode word, written whole -------------------------------- *
              *
-             * `SETOTHERMODE_H` et `_L` sont des écritures **partielles** ;
-             * celle-ci remplace les deux moitiés d'un coup. Elle était enjambée,
-             * et le mode restait donc figé sur le dernier réglage partiel — en
-             * pratique celui des remplissages plein écran, c'est-à-dire le mode
-             * de cycle FILL.
+             * `SETOTHERMODE_H` and `_L` are **partial** writes; this one replaces
+             * both halves at once. It was being skipped, and the mode therefore
+             * stayed frozen on the last partial setting — in practice that of the
+             * full-screen fills, that is, cycle mode FILL.
              *
-             * Le symptôme n'accusait rien : les 32 411 configurations de
-             * combineur du jeu étaient toutes enregistrées en cycle FILL, donc
-             * aucune ne pouvait correspondre à la table — le mode de cycle fait
-             * partie de la clé. On aurait conclu que la table était incomplète
-             * et on l'aurait enrichie de configurations qui n'auraient rien
-             * reconnu non plus.
+             * The symptom accused nothing: the game's 32,411 combiner
+             * configurations were all recorded in FILL cycle, so none could match
+             * the table — the cycle mode is part of the key. One would have
+             * concluded that the table was incomplete and enriched it with
+             * configurations that would have recognised nothing either.
              *
-             * L'histogramme des opcodes portait la réponse depuis le début :
-             * `EF:1798`, mille sept cent quatre-vingt-dix-huit fois par course,
-             * dans les huit premiers. Il était enjambé au même titre que les
-             * synchronisations, faute d'avoir regardé ce qu'il faisait.
+             * The opcode histogram carried the answer from the start:
+             * `EF:1798`, one thousand seven hundred and ninety-eight times per
+             * race, in the top eight. It was being skipped just like the
+             * synchronisations, for want of having looked at what it did.
              *
-             * La moitié haute ne tient que sur vingt-quatre bits — c'est ce que
-             * la commande transporte, le reste du mot n'existant pas côté RDP. */
+             * The high half only holds twenty-four bits — that is what the
+             * command carries, the rest of the word not existing on the RDP
+             * side. */
             c->mode_h = w0 & 0x00FFFFFFu;
             c->mode_l = w1;
             c->state_dirty = 1;
-            trace(c, "SetOtherMode entier h=0x%06X l=0x%08X",
+            trace(c, "SetOtherMode whole h=0x%06X l=0x%08X",
                   c->mode_h, c->mode_l);
             break;
 
@@ -1240,16 +1233,16 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         case OP_SETFILLCOLOR:
             c->state.fill_color_raw = w1;
             c->state.fill_color_argb = colour_from_5551(w1 & 0xFFFFu);
-            trace(c, "SetFillColor brut=0x%08X -> 0x%06X",
+            trace(c, "SetFillColor raw=0x%08X -> 0x%06X",
                   w1, c->state.fill_color_argb);
             break;
 
         case OP_SETCOLORIMAGE:
-            /* Les douze bits de poids faible portent la largeur moins un. C'est
-               d'ici que vient l'échelle des rectangles, plutôt que d'une
-               supposition sur les 320 pixels de la N64. */
+            /* The low twelve bits carry the width minus one. This is where the
+               rectangles' scale comes from, rather than from an assumption about
+               the N64's 320 pixels. */
             c->state.color_image_width = (w0 & 0xFFFu) + 1u;
-            trace(c, "SetColorImage largeur=%u adresse=0x%06X",
+            trace(c, "SetColorImage width=%u address=0x%06X",
                   c->state.color_image_width, w1 & RDRAM_MASK);
             break;
 
@@ -1257,7 +1250,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->timg_format  = (w0 >> 21) & 0x07u;
             c->timg_size    = (w0 >> 19) & 0x03u;
             c->timg_address = w1 & RDRAM_MASK;
-            trace(c, "SetTextureImage %s a 0x%06X",
+            trace(c, "SetTextureImage %s at 0x%06X",
                   dkr_texture_format_name((dkr_n64_format)c->timg_format,
                                           (dkr_n64_size)c->timg_size),
                   c->timg_address);
@@ -1269,57 +1262,58 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         case OP_MOVEMEM: {
             const unsigned int index = (w0 >> 16) & 0xFFu;
-            const unsigned int taille = w0 & 0xFFFFu;
+            const unsigned int size = w0 & 0xFFFFu;
             const unsigned int source = w1 & RDRAM_MASK;
-            if (index == MOVEMEM_VIEWPORT && taille >= VIEWPORT_BYTES &&
+            if (index == MOVEMEM_VIEWPORT && size >= VIEWPORT_BYTES &&
                 in_range(c, source, VIEWPORT_BYTES)) {
                 cmd_viewport(c, source);
             } else {
-                trace(c, "MoveMem index=0x%02X taille=%u a 0x%06X",
-                      index, taille, source);
+                trace(c, "MoveMem index=0x%02X size=%u at 0x%06X",
+                      index, size, source);
             }
             break;
         }
 
         case OP_LOADBLOCK:
-            /* `LOADBLOCK` copie la texture de la RDRAM vers la memoire de
-               texture du RDP. Ce portage lit directement en RDRAM — le raccourci
-               assume et documente en tete de `texture.h` — donc la copie n'a
-               rien a faire ici. La commande reste decodee pour que la sequence
-               apparaisse dans la trace. */
+            /* `LOADBLOCK` copies the texture from RDRAM into the RDP's texture
+               memory. This port reads straight from RDRAM — the shortcut is
+               owned and documented at the top of `texture.h` — so the copy has
+               no business here. The command stays decoded so that the sequence
+               appears in the trace. */
             trace(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
             break;
 
         default: {
             char d[48];
             if (opcode_effect_deferred(opcode)) {
-                /* Reconnue, enjambee. Comptee a part de `commands` : ce chiffre
-                   dit **quelle part de l'image on ignore encore**, et c'est la
-                   mesure qui manquerait le plus quand le decor sortira faux. */
+                /* Recognised, skipped. Counted separately from `commands`:
+                   this figure says **how much of the image we still ignore**,
+                   and it is the measurement that would be missed most when the
+                   scenery comes out wrong. */
                 c->state.deferred++;
                 if (c->state.deferred <= MAX_LOGGED_REJECTS) {
-                    trace(c, "differe 0x%02X w0=0x%08X w1=0x%08X", opcode, w0, w1);
+                    trace(c, "deferred 0x%02X w0=0x%08X w1=0x%08X", opcode, w0, w1);
                 }
                 break;
             }
-            sprintf(d, "0x%02X a 0x%06X", opcode, address - 8u);
+            sprintf(d, "0x%02X at 0x%06X", opcode, address - 8u);
             reject(c, DKR_F3D_REJECT_OPCODE, d);
-            /* On s'arrete : apres un opcode vraiment inconnu, le flux est
-               probablement desynchronise et poursuivre inventerait des
-               commandes. La detection subsiste precisement parce que les
-               familles connues sont enumerees plutot que tout accepte. */
+            /* We stop: after a genuinely unknown opcode the stream is probably
+               desynchronised and carrying on would invent commands. The
+               detection survives precisely because the known families are
+               enumerated rather than everything accepted. */
             running = 0;
             break;
         }
         }
 
-        /* Le compte est epuise : on revient, sans attendre d'ENDDL. C'est le
-           seul terminateur d'une liste comptee, et l'oublier faisait sortir le
-           decodeur par le bas de la liste dans la memoire qui suit. */
+        /* The count is spent: we return, without waiting for an ENDDL. It is a
+           counted list's only terminator, and forgetting it made the decoder
+           fall out of the bottom of the list into the memory that follows. */
         if (running && remaining == 0u && depth > 0u) {
             address = return_stack[--depth];
             remaining = remaining_stack[depth];
-            trace(c, "CountedDisplayList terminee — retour a 0x%06X", address);
+            trace(c, "CountedDisplayList finished - return to 0x%06X", address);
         }
     }
     return executed;
@@ -1332,9 +1326,9 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
         return;
     }
     memset(ctx, 0, sizeof(*ctx));
-    /* Une échelle non nulle par défaut : sans texture liée les coordonnées ne
-       servent pas, mais zéro les écraserait toutes sur un point, ce qui
-       ressemblerait à un défaut de transformation plutôt qu'à une absence. */
+    /* A non-zero scale by default: with no texture bound the coordinates are
+       not used, but zero would collapse them all onto a point, which would look
+       like a transformation defect rather than an absence. */
     ctx->tex_scale_s = 1.0f / 32.0f;
     ctx->tex_scale_t = 1.0f / 32.0f;
     ctx->state.s_min = 1.0e30f;

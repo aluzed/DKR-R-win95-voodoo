@@ -1,62 +1,60 @@
-/* E04-S01 — l'interface que le décodeur F3DDKR pilote.
+/* E04-S01 — the interface the F3DDKR decoder drives.
  *
- * Deux implémentations la consomment : Glide (E05) et le rastériseur logiciel de
- * référence (E04-S08), qui sert d'oracle de comparaison. Elle ne contient donc
- * aucun type de RT64, de SDL2 ni d'ImGui.
+ * Two implementations consume it: Glide (E05) and the reference software
+ * rasteriser (E04-S08), which serves as the comparison oracle. It therefore
+ * contains no RT64, SDL2 or ImGui type at all.
  *
- * ## Ce qu'elle est, et pourquoi elle est basse
+ * ## What it is, and why it sits low
  *
- * `ultramodern::renderer::RendererContext` existe déjà, mais reçoit une tâche RSP
- * brute et laisse tout faire à l'implémentation. C'est ainsi que le décodeur
- * actuel s'est soudé à RT64 : `f3ddkr_rt64.cpp` manipule `RT64::State`,
- * `RT64::DisplayList`, et enregistre des charges de travail RT64.
+ * `ultramodern::renderer::RendererContext` already exists, but receives a raw
+ * RSP task and leaves everything to the implementation. That is how the current
+ * decoder became welded to RT64: `f3ddkr_rt64.cpp` manipulates `RT64::State`,
+ * `RT64::DisplayList`, and registers RT64 workloads.
  *
- * Celle-ci se place un cran plus bas. Le décodeur transforme, éclaire et découpe
- * (E04-S03, E04-S05) ; le backend reçoit des primitives **déjà projetées en
- * coordonnées écran**. Ce n'est pas un choix d'élégance : aucune carte 3dfx ne
- * transforme, et une interface qui promettrait des sommets en espace objet
- * obligerait le backend Glide à refaire côté processeur ce que le décodeur vient
- * déjà de faire.
+ * This one sits one notch lower. The decoder transforms, lights and clips
+ * (E04-S03, E04-S05); the backend receives primitives **already projected into
+ * screen coordinates**. This is not a choice of elegance: no 3dfx card
+ * transforms, and an interface promising vertices in object space would force
+ * the Glide backend to redo on the CPU what the decoder has just done.
  *
- * ## La règle qui a guidé chaque décision
+ * ## The rule that guided every decision
  *
- * L'interface **épouse la carte** au lieu de l'abstraire. Une interface trop
- * générique se paie deux fois : à l'écriture du backend Glide, qui doit émuler
- * ce que la carte ne fait pas, et à l'exécution, en surcoût par primitive sur un
- * processeur à 400 MHz.
+ * The interface **hugs the card** instead of abstracting it. An over-generic
+ * interface is paid for twice: when writing the Glide backend, which then has to
+ * emulate what the card does not do, and at run time, in per-primitive overhead
+ * on a 400 MHz CPU.
  *
- * Chaque élément porte donc l'une de ces deux annotations :
+ * Every element therefore carries one of these two annotations:
  *
- *     NATIF     Glide sait le faire, et l'appel est nommé
- *     A EMULER  Glide ne sait pas, et le contournement est décrit
+ *     NATIVE     Glide can do it, and the call is named
+ *     TO EMULATE Glide cannot, and the workaround is described
  *
- * ## Ce qui a été relevé dans `f3ddkr_rt64.cpp`, et qui décide de la forme
+ * ## What was found in `f3ddkr_rt64.cpp`, and what decides the shape
  *
- * Les gestionnaires du décodeur sont : `Matrix`, `Vertex`, `Triangle`,
- * `FillRect`, `SetTextureImage`, `LoadBlock`, `TextureOffset`, `MoveWord`, plus
- * le contrôle de flux des listes d'affichage — qui ne concerne pas le rendu.
+ * The decoder's handlers are: `Matrix`, `Vertex`, `Triangle`, `FillRect`,
+ * `SetTextureImage`, `LoadBlock`, `TextureOffset`, `MoveWord`, plus display-list
+ * flow control — which does not concern rendering.
  *
- * Trois observations comptent :
+ * Three observations matter:
  *
- * 1. **Le sommet DKR ne porte pas de coordonnées de texture.** Ses dix octets
- *    sont `x, y, z` en entiers 16 bits signés et `r, g, b, a` en octets. Les
- *    coordonnées `s, t` arrivent **par coin, au moment du triangle** —
- *    `rsp.modifyVertex(vertices[corner], G_MWO_POINT_ST, texcoord)` modifie le
- *    sommet en cache juste avant de dessiner.
+ * 1. **The DKR vertex carries no texture coordinates.** Its ten bytes are
+ *    `x, y, z` as signed 16-bit integers and `r, g, b, a` as bytes. The `s, t`
+ *    coordinates arrive **per corner, when the triangle is emitted** —
+ *    `rsp.modifyVertex(vertices[corner], G_MWO_POINT_ST, texcoord)` modifies the
+ *    cached vertex just before drawing.
  *
- *    Conséquence directe : **une interface à sommets indexés serait fausse ici.**
- *    Le même sommet en cache est dessiné avec des `s, t` différents selon le
- *    triangle ; un backend indexé devrait donc tenir un cache modifiable et le
- *    réécrire à chaque triangle. Comme `grDrawTriangle` prend de toute façon
- *    trois sommets complets, l'interface les prend aussi, et l'expansion se fait
- *    côté décodeur — là où l'information est déjà en main.
+ *    Direct consequence: **an indexed-vertex interface would be wrong here.**
+ *    The same cached vertex is drawn with different `s, t` depending on the
+ *    triangle; an indexed backend would therefore have to keep a mutable cache
+ *    and rewrite it for every triangle. Since `grDrawTriangle` takes three
+ *    complete vertices anyway, the interface takes them too, and the expansion
+ *    happens on the decoder side — where the information is already in hand.
  *
- * 2. **La culling est par triangle**, décidée par un bit de l'entête (0x40) et
- *    par le signe de l'échelle en x de la fenêtre d'affichage.
+ * 2. **Culling is per triangle**, decided by a bit in the header (0x40) and by
+ *    the sign of the viewport's x scale.
  *
- * 3. **Le décodeur n'a besoin que d'une seule primitive de dessin**, le triangle,
- *    plus le rectangle plein de `FillRect`. Il n'y a ni ligne, ni point, ni
- *    éventail.
+ * 3. **The decoder needs only one drawing primitive**, the triangle, plus the
+ *    filled rectangle from `FillRect`. There is no line, no point, no fan.
  */
 #ifndef DKR_RENDER_BACKEND_H
 #define DKR_RENDER_BACKEND_H
@@ -67,118 +65,117 @@
 extern "C" {
 #endif
 
-/* --- Le sommet ------------------------------------------------------------- *
+/* --- The vertex ------------------------------------------------------------ *
  *
- * **La disposition est celle de `GrVertex` de Glide 2.x, champ pour champ, et
- * c'est délibéré.** Le backend Glide passe l'adresse du sommet directement à
- * `grDrawTriangle` : aucune conversion, aucune recopie. Sur un Pentium II, une
- * conversion de format par sommet est un coût réel, et le rendu de DKR en émet
- * des dizaines de milliers par image.
+ * **The layout is that of Glide 2.x's `GrVertex`, field for field, and that is
+ * deliberate.** The Glide backend passes the vertex address straight to
+ * `grDrawTriangle`: no conversion, no copy. On a Pentium II, a per-vertex format
+ * conversion is a real cost, and DKR's rendering emits tens of thousands of them
+ * per frame.
  *
- * L'ordre n'est pas intuitif — `ooz` et `a` s'intercalent entre les couleurs et
- * `oow` — et s'en écarter ne produit **aucune erreur** : Glide lit les flottants
- * aux mauvais décalages et rend des couleurs permutées. Mesuré en E09-S01, où un
- * sommet rouge sortait vert. Ne pas réordonner ces champs.
+ * The order is not intuitive — `ooz` and `a` sit between the colours and `oow` —
+ * and departing from it produces **no error at all**: Glide reads the floats at
+ * the wrong offsets and renders permuted colours. Measured in E09-S01, where a
+ * red vertex came out green. Do not reorder these fields.
  *
- * Le rastériseur logiciel de E04-S08 lit les mêmes champs par leur nom ; la
- * disposition ne lui coûte rien.
+ * The E04-S08 software rasteriser reads the same fields by name; the layout
+ * costs it nothing.
  */
 typedef struct {
-    float x, y;            /* coordonnées écran, en pixels, origine en haut à gauche */
-    float z;               /* ignoré par Glide ; le rastériseur logiciel s'en sert */
-    float r, g, b;         /* 0..255, non 0..1 — c'est l'échelle de Glide */
-    float ooz;             /* 65535/z, valeur du tampon de profondeur */
+    float x, y;            /* screen coordinates, in pixels, origin top left */
+    float z;               /* ignored by Glide; the software rasteriser uses it */
+    float r, g, b;         /* 0..255, not 0..1 — that is Glide's scale */
+    float ooz;             /* 65535/z, the depth-buffer value */
     float a;               /* 0..255 */
-    float oow;             /* 1/w, correction de perspective */
-    float tmu[3][4];       /* par unité de texture : sow, tow, oow, réservé */
+    float oow;             /* 1/w, perspective correction */
+    float tmu[3][4];       /* per texture unit: sow, tow, oow, reserved */
 } dkr_render_vertex;
 
-/* Indices dans `tmu[n]`, nommés pour que les sites d'appel se lisent. */
-#define DKR_TMU_SOW 0      /* s/w, dans l'espace de 256 texels — voir ci-dessous */
-#define DKR_TMU_TOW 1      /* t/w, idem */
+/* Indices into `tmu[n]`, named so that the call sites read. */
+#define DKR_TMU_SOW 0      /* s/w, in the 256-texel space — see below */
+#define DKR_TMU_TOW 1      /* t/w, likewise */
 #define DKR_TMU_OOW 2      /* 1/w */
 
-/* **Les coordonnées de texture sont dans un espace de 256 texels, toujours.**
+/* **Texture coordinates live in a 256-texel space, always.**
  *
- * Ce n'est ni [0,1] ni la largeur réelle de la texture, et c'est mesuré, pas
- * choisi : `glide_texture_probe.c` a essayé les échelles 64, 128, 255, 256 et
- * 512 sur un damier 64x64 dont les quatre coins portent des couleurs
- * distinctes. Seules 255 et 256 placent les quatre couleurs aux quatre coins.
- * Glide normalise donc sur 256 **quelle que soit la taille de la texture**.
+ * This is neither [0,1] nor the texture's real width, and it is measured, not
+ * chosen: `glide_texture_probe.c` tried the scales 64, 128, 255, 256 and 512 on
+ * a 64x64 checkerboard whose four corners carry distinct colours. Only 255 and
+ * 256 put the four colours in the four corners. Glide therefore normalises over
+ * 256 **whatever the texture's size**.
  *
- * Le contrat retient cette convention plutôt que [0,1] pour une raison de coût :
- * le facteur est une constante, indépendante de la texture liée. Le backend
- * Glide reçoit ainsi les sommets tels quels — c'est tout l'intérêt d'avoir
- * calqué `GrVertex` champ pour champ — et c'est le rastériseur de référence, qui
- * n'a pas de contrainte de vitesse, qui divise pour retrouver du [0,1].
+ * The contract keeps that convention rather than [0,1] for a cost reason: the
+ * factor is a constant, independent of the bound texture. The Glide backend thus
+ * receives the vertices as they are — that is the whole point of having mirrored
+ * `GrVertex` field for field — and it is the reference rasteriser, which has no
+ * speed constraint, that divides to get back to [0,1].
  *
- * L'inverse aurait imposé une copie de chaque sommet avant chaque triangle, sur
- * une machine où le poste de transformation coûte déjà 0,682 µs par sommet.
+ * The reverse would have forced a copy of every vertex before every triangle, on
+ * a machine where transformation already costs 0.682 us per vertex.
  *
- * Le piège que cela ferme : les deux backends ne parlaient pas la même langue —
- * le rastériseur échantillonnait en [0,1], la carte en 256 — et la comparaison
- * de E09-S02 ne l'a pas vu, faute de texture dans la scène. */
+ * The trap this closes: the two backends were not speaking the same language —
+ * the rasteriser sampled in [0,1], the card in 256 — and the E09-S02 comparison
+ * did not notice, for want of a texture in the scene. */
 #define DKR_TEXCOORD_SCALE 256.0f
 
-/* --- L'état de rendu ------------------------------------------------------- *
+/* --- The render state ------------------------------------------------------ *
  *
- * Un **bloc de valeurs**, et non une série d'appels. Le backend compare au bloc
- * courant et n'émet que les différences : c'est ce qui rend le suivi d'état bon
- * marché, et c'est le seul moyen tenable quand chaque changement d'état Glide
- * coûte un appel de fonction à travers une DLL.
+ * A **block of values**, not a series of calls. The backend compares against the
+ * current block and emits only the differences: that is what makes state
+ * tracking cheap, and it is the only tenable approach when every Glide state
+ * change costs a function call through a DLL.
  *
- * Le bloc est comparable par `memcmp` — d'où l'absence de remplissage implicite
- * et de pointeurs autres que le handle de texture.
+ * The block is comparable with `memcmp` — hence no implicit padding and no
+ * pointers other than the texture handle.
  */
 
-/* Le combineur. **A EMULER, partiellement.**
+/* The combiner. **TO EMULATE, partially.**
  *
- * Le combineur du RDP prend deux étages à quatre entrées ; celui de Glide 2.x
- * est fixe et n'offre qu'un jeu de modes. Les cas que DKR emploie réellement
- * seront relevés en E04-S06 et traduits en E05-S03 ; ceux qui n'ont pas
- * d'équivalent demanderont une seconde passe. Cette énumération ne liste donc
- * que des **intentions**, pas des modes RDP : c'est au traducteur de les
- * produire, et au backend de les honorer.
+ * The RDP's combiner takes two stages with four inputs; Glide 2.x's is fixed and
+ * offers only a set of modes. The cases DKR actually uses are collected in
+ * E04-S06 and translated in E05-S03; those with no equivalent will need a second
+ * pass. This enumeration therefore lists only **intentions**, not RDP modes: it
+ * is up to the translator to produce them, and up to the backend to honour them.
  *
- * Appels Glide : `grColorCombine`, `grAlphaCombine`, `grTexCombine`. */
+ * Glide calls: `grColorCombine`, `grAlphaCombine`, `grTexCombine`. */
 typedef enum {
-    DKR_COMBINE_SHADE = 0,        /* couleur du sommet seule */
-    DKR_COMBINE_TEXTURE,          /* texel seul */
-    DKR_COMBINE_TEXTURE_SHADE,    /* texel modulé par la couleur du sommet */
-    DKR_COMBINE_TEXTURE_SHADE_ALPHA, /* idem, alpha du texel retenu */
+    DKR_COMBINE_SHADE = 0,        /* vertex colour alone */
+    DKR_COMBINE_TEXTURE,          /* texel alone */
+    DKR_COMBINE_TEXTURE_SHADE,    /* texel modulated by the vertex colour */
+    DKR_COMBINE_TEXTURE_SHADE_ALPHA, /* likewise, texel alpha kept */
     DKR_COMBINE_COUNT
 } dkr_combine_mode;
 
-/* Le mélange. **NATIF** — `grAlphaBlendFunction`. */
+/* Blending. **NATIVE** — `grAlphaBlendFunction`. */
 typedef enum {
-    DKR_BLEND_OPAQUE = 0,         /* pas de mélange */
+    DKR_BLEND_OPAQUE = 0,         /* no blending */
     DKR_BLEND_ALPHA,              /* src.a, 1-src.a */
-    DKR_BLEND_ADDITIVE,           /* un, un */
+    DKR_BLEND_ADDITIVE,           /* one, one */
     DKR_BLEND_COUNT
 } dkr_blend_mode;
 
-/* Le test de profondeur. **NATIF** — `grDepthBufferFunction`, `grDepthMask`.
+/* The depth test. **NATIVE** — `grDepthBufferFunction`, `grDepthMask`.
  *
- * Une réserve mesurée par l'ADR 0002 : le tampon de profondeur occupe la même
- * mémoire d'image que les tampons de couleur, et c'est ce qui a écarté le triple
- * buffering. Le désactiver libère de la bande passante, pas de la mémoire. */
+ * One reservation measured by ADR 0002: the depth buffer takes up the same
+ * frame-buffer memory as the colour buffers, and that is what ruled out triple
+ * buffering. Disabling it frees bandwidth, not memory. */
 typedef enum {
     DKR_DEPTH_DISABLED = 0,
-    DKR_DEPTH_TEST_ONLY,          /* teste sans écrire */
+    DKR_DEPTH_TEST_ONLY,          /* tests without writing */
     DKR_DEPTH_TEST_AND_WRITE,
     DKR_DEPTH_COUNT
 } dkr_depth_mode;
 
-/* Filtrage et enveloppement. **NATIF** — `grTexFilterMode`, `grTexClampMode`. */
+/* Filtering and wrapping. **NATIVE** — `grTexFilterMode`, `grTexClampMode`. */
 typedef enum { DKR_FILTER_POINT = 0, DKR_FILTER_BILINEAR } dkr_filter_mode;
 typedef enum { DKR_WRAP_REPEAT = 0, DKR_WRAP_CLAMP, DKR_WRAP_MIRROR } dkr_wrap_mode;
 
-/* La culling. **NATIF** — `grCullMode`. Par triangle dans le décodeur, mais
- * portée par l'état : Glide n'a pas de culling par primitive, et le décodeur
- * regroupe déjà ses triangles par sens. */
+/* Culling. **NATIVE** — `grCullMode`. Per triangle in the decoder, but carried
+ * by the state: Glide has no per-primitive culling, and the decoder already
+ * groups its triangles by winding. */
 typedef enum { DKR_CULL_NONE = 0, DKR_CULL_FRONT, DKR_CULL_BACK } dkr_cull_mode;
 
-/* Handle de texture rendu par le backend. Zéro signifie « aucune texture ». */
+/* Texture handle returned by the backend. Zero means "no texture". */
 typedef unsigned int dkr_texture_handle;
 
 typedef struct {
@@ -190,166 +187,166 @@ typedef struct {
     dkr_wrap_mode      wrap_s;
     dkr_wrap_mode      wrap_t;
 
-    /* Test alpha. **NATIF** — `grAlphaTestFunction`, `grAlphaTestReferenceValue`.
-       `alpha_reference` ne compte que si `alpha_test` est non nul. */
+    /* Alpha test. **NATIVE** — `grAlphaTestFunction`,
+       `grAlphaTestReferenceValue`. `alpha_reference` only counts if `alpha_test`
+       is non-zero. */
     unsigned char      alpha_test;
     unsigned char      alpha_reference;   /* 0..255 */
 
-    /* Brouillard. **NATIF** — `grFogMode`, `grFogColorValue`, `grFogTable`.
-       Une des rares choses que Glide fait mieux que la concurrence de l'époque,
-       et DKR en fait un usage constant. */
+    /* Fog. **NATIVE** — `grFogMode`, `grFogColorValue`, `grFogTable`.
+       One of the few things Glide does better than its contemporaries, and DKR
+       uses it constantly. */
     unsigned char      fog_enabled;
-    unsigned char      pad_;              /* explicite : le bloc est memcmp-able */
+    unsigned char      pad_;              /* explicit: the block is memcmp-able */
     unsigned int       fog_color;         /* 0x00RRGGBB */
 
     dkr_texture_handle texture;
-    /* La seconde couche, pour les configurations qui lisent deux texels
-       (E05-S04). Nulle quand il n'y en a qu'une, ce qui est le cas courant. */
+    /* The second layer, for configurations that read two texels (E05-S04). Zero
+       when there is only one, which is the common case. */
     dkr_texture_handle texture1;
 } dkr_render_state;
 
-/* --- Les textures ---------------------------------------------------------- *
+/* --- Textures -------------------------------------------------------------- *
  *
- * Un cache à handles. Le décodeur fournit une texture **déjà décodée** en un
- * format que la carte accepte, plus une clé qui l'identifie ; le backend rend un
- * handle et gère seul son placement en mémoire de texture (E05-S02).
+ * A handle cache. The decoder supplies an **already decoded** texture in a
+ * format the card accepts, plus a key that identifies it; the backend returns a
+ * handle and manages its placement in texture memory on its own (E05-S02).
  *
- * La clé est l'adresse RDRAM combinée au format et aux dimensions, calculée par
- * le décodeur. Le backend ne l'interprète pas : il compare, c'est tout. C'est ce
- * qui lui permet de répondre « je l'ai déjà » sans décoder à nouveau — et le
- * décodage N64 (E04-S07) est cher.
+ * The key is the RDRAM address combined with the format and the dimensions,
+ * computed by the decoder. The backend does not interpret it: it compares, that
+ * is all. That is what lets it answer "I already have it" without decoding
+ * again — and N64 decoding (E04-S07) is expensive.
  *
- * **NATIF** — `grTexDownloadMipMap`, `grTexSource`. Le placement dans la TMU est
- * en revanche entièrement à la charge du backend : Glide expose une mémoire
- * plate et une adresse, sans allocateur. */
+ * **NATIVE** — `grTexDownloadMipMap`, `grTexSource`. Placement inside the TMU,
+ * on the other hand, is entirely the backend's job: Glide exposes flat memory
+ * and an address, with no allocator. */
 typedef enum {
-    DKR_TEXFMT_RGBA5551 = 0,      /* le format naturel de la Voodoo */
-    DKR_TEXFMT_RGBA8888,          /* à convertir : la Voodoo 2 ne le prend pas */
+    DKR_TEXFMT_RGBA5551 = 0,      /* the Voodoo's natural format */
+    DKR_TEXFMT_RGBA8888,          /* to be converted: the Voodoo 2 does not take it */
     DKR_TEXFMT_INTENSITY8,
     DKR_TEXFMT_COUNT
 } dkr_texture_format;
 
 typedef struct {
-    unsigned long long key;       /* opaque au backend ; il compare, il n'interprète pas */
+    unsigned long long key;       /* opaque to the backend; it compares, it does not interpret */
     dkr_texture_format format;
     int                width, height;
     const void        *pixels;
     size_t             size_bytes;
-    /* Sur quelle unité de texture la placer. Zéro par défaut.
+    /* Which texture unit to place it on. Zero by default.
      *
-     * **Une texture n'est pas échantillonnable depuis une TMU où elle ne réside
-     * pas**, et les deux unités ont leur mémoire propre : ce sont deux espaces,
-     * pas un. Porter la cible dans le descripteur plutôt que dans la signature
-     * évite de changer la table de fonctions pour une information que seul le
-     * multitexturage emploie. */
+     * **A texture is not samplable from a TMU where it does not reside**, and
+     * the two units have their own memory: they are two spaces, not one.
+     * Carrying the target in the descriptor rather than in the signature avoids
+     * changing the function table for information only multitexturing uses. */
     int                tmu;
 } dkr_texture_desc;
 
-/* --- L'interface ----------------------------------------------------------- *
+/* --- The interface --------------------------------------------------------- *
  *
- * Une table de pointeurs de fonctions plutôt qu'un ensemble de symboles : les
- * deux implémentations doivent coexister dans le même binaire, le rastériseur
- * logiciel servant d'oracle au backend Glide (E04-S08). Des symboles globaux
- * l'interdiraient.
+ * A table of function pointers rather than a set of symbols: both
+ * implementations must coexist in the same binary, the software rasteriser
+ * serving as the Glide backend's oracle (E04-S08). Global symbols would forbid
+ * that.
  *
- * Toute fonction peut être nulle dans une implémentation partielle ; l'appelant
- * doit vérifier. C'est ce qui permet à une implémentation vide de compiler et de
- * se lier, comme le demande E04-S01.
+ * Any function may be null in a partial implementation; the caller must check.
+ * That is what lets an empty implementation compile and link, as E04-S01 asks.
  */
 typedef struct dkr_render_backend {
-    const char *name;             /* « glide », « software » — pour les journaux */
+    const char *name;             /* "glide", "software" — for the logs */
 
-    /* Cycle de vie. `open` rend zéro en cas d'échec ; le message reste au
-       backend, qui seul sait pourquoi. */
+    /* Life cycle. `open` returns zero on failure; the message stays with the
+       backend, which alone knows why. */
     int  (*open)(void *self, int width, int height);
     void (*close)(void *self);
 
-    /* Cycle d'image. **NATIF** — `grBufferClear`, `grBufferSwap`.
-       `begin_frame` efface ; `present` échange les tampons. */
+    /* Frame cycle. **NATIVE** — `grBufferClear`, `grBufferSwap`.
+       `begin_frame` clears; `present` swaps the buffers. */
     void (*begin_frame)(void *self, unsigned clear_argb);
     void (*present)(void *self);
 
-    /* État. Le backend compare au bloc courant et n'émet que les différences. */
+    /* State. The backend compares against the current block and emits only the
+       differences. */
     void (*set_state)(void *self, const dkr_render_state *state);
 
-    /* Fenêtre de ciseaux. **NATIF** — `grClipWindow`. Les coordonnées sont en
-       pixels écran, bornes incluses à gauche et en haut, exclues à droite et en
-       bas — la convention de Glide, retenue pour n'avoir pas à convertir. */
+    /* Scissor window. **NATIVE** — `grClipWindow`. The coordinates are in screen
+       pixels, bounds included on the left and top, excluded on the right and
+       bottom — Glide's convention, kept so that no conversion is needed. */
     void (*set_scissor)(void *self, int x0, int y0, int x1, int y1);
 
-    /* Triangles. Les sommets sont complets et projetés ; voir la remarque sur
-       les coordonnées de texture en tête de fichier.
-       **NATIF** — `grDrawTriangle`, un appel par triangle.
-       `draw_triangles` prend un tableau de 3n sommets afin d'amortir l'appel
-       traversant l'interface, pas celui traversant Glide. */
+    /* Triangles. The vertices are complete and projected; see the remark about
+       texture coordinates at the top of the file.
+       **NATIVE** — `grDrawTriangle`, one call per triangle.
+       `draw_triangles` takes an array of 3n vertices in order to amortise the
+       call crossing the interface, not the one crossing Glide. */
     void (*draw_triangles)(void *self, const dkr_render_vertex *vertices,
                            int triangle_count);
 
-    /* Rectangle plein. **A EMULER** — Glide n'a pas de primitive de rectangle.
-       Deux triangles suffisent, et le backend les fabrique : le faire ici plutôt
-       que dans le décodeur évite d'imposer la même dépense au rastériseur
-       logiciel, qui sait remplir un rectangle directement. */
+    /* Filled rectangle. **TO EMULATE** — Glide has no rectangle primitive. Two
+       triangles are enough, and the backend builds them: doing it here rather
+       than in the decoder avoids imposing the same expense on the software
+       rasteriser, which can fill a rectangle directly. */
     void (*fill_rect)(void *self, int x0, int y0, int x1, int y1,
                       unsigned argb);
 
-    /* Textures. `upload` rend zéro en cas d'échec — mémoire de TMU pleine, par
-       exemple, ce que E05-S02 devra traiter. */
+    /* Textures. `upload` returns zero on failure — TMU memory full, for
+       instance, which E05-S02 will have to handle. */
     dkr_texture_handle (*texture_upload)(void *self, const dkr_texture_desc *desc);
     void               (*texture_release)(void *self, dkr_texture_handle handle);
 
-    void *self;                   /* état privé de l'implémentation */
+    void *self;                   /* the implementation's private state */
 } dkr_render_backend;
 
-/* Une implémentation vide, qui accepte tout et ne dessine rien.
+/* An empty implementation, which accepts everything and draws nothing.
  *
- * Elle n'est pas un bouchon de complaisance : elle sert à établir que
- * l'interface se compile et se lie sans backend réel, et elle donne au décodeur
- * une cible pendant que Glide et le rastériseur logiciel s'écrivent. Le jour où
- * un défaut de rendu apparaîtra, la comparer aux deux autres dira si le décodeur
- * ou le backend est en cause. */
+ * It is not a stub of convenience: it serves to establish that the interface
+ * compiles and links without a real backend, and it gives the decoder a target
+ * while Glide and the software rasteriser are being written. The day a rendering
+ * defect appears, comparing it against the other two will say whether the
+ * decoder or the backend is at fault. */
 void dkr_render_backend_null(dkr_render_backend *out);
 
-/* Les implémentations réelles. Déclarées ici plutôt que chacune dans son
-   en-tête : l'appelant qui choisit un backend à l'exécution les veut toutes
-   visibles d'un seul include, et c'est ainsi que le comparateur de E09-S02 les
-   ouvre côte à côte sur la même entrée.
+/* The real implementations. Declared here rather than each in its own header:
+   a caller choosing a backend at run time wants them all visible from a single
+   include, and that is how the E09-S02 comparator opens them side by side on the
+   same input.
 
-   `glide` n'est disponible que sur la cible Win95 ; sur l'hôte, seule la version
-   logicielle est compilée, et c'est délibéré — l'oracle doit tourner partout. */
+   `glide` is only available on the Win95 target; on the host, only the software
+   version is compiled, and that is deliberate — the oracle must run
+   everywhere. */
 void dkr_render_backend_software(dkr_render_backend *out);
 #if defined(DKR_TARGET_WIN95)
 void dkr_render_backend_glide(dkr_render_backend *out);
 unsigned long dkr_glide_backend_triangle_count(void);
-/* Pourquoi un chargement de texture a echoue : 0 proportions refusees par la
-   carte, 1 taille nulle, 2 table de descripteurs pleine, 3 memoire de TMU
-   saturee. Quatre causes derriere un seul zero rendu ; les confondre fait
-   corriger la mauvaise. */
+/* Why a texture upload failed: 0 aspect ratio refused by the card, 1 zero size,
+   2 descriptor table full, 3 TMU memory exhausted. Four causes behind a single
+   returned zero; conflating them makes one fix the wrong thing. */
 unsigned long dkr_glide_backend_upload_failure(int kind);
-/* L'etat de l'allocateur de TMU, pour l'affichage de diagnostic de E08-S01.
-   Rend NULL si la TMU demandee n'existe pas. */
+/* The TMU allocator's state, for E08-S01's diagnostic display. Returns NULL if
+   the requested TMU does not exist. */
 struct dkr_tmu;
 const struct dkr_tmu *dkr_glide_backend_tmu(int index);
-/* Applique un reglage de la table de E05-S03 et lie une texture. Employes par
-   le harnais de mesure, et destines au moteur : les quatre modes de
-   `dkr_combine_mode` ne sont qu'un raccourci devant vingt-neuf configurations. */
+/* Applies a setup from the E05-S03 table and binds a texture. Used by the
+   measurement harness, and meant for the engine: the four `dkr_combine_mode`
+   modes are only a shorthand in front of twenty-nine configurations. */
 struct dkr_cc_setup;
 void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
                                   unsigned constant_argb);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
-/* Chaine les deux unites de texture (E05-S04). Sans effet sur une carte a une
-   seule TMU, ou le repli multipasse s'applique. */
+/* Chains the two texture units (E05-S04). No effect on a single-TMU card, where
+   the multipass fallback applies. */
 void dkr_glide_backend_chain(dkr_texture_handle tmu0, dkr_texture_handle tmu1,
-                             unsigned char fonction, unsigned char facteur);
-/* Force le chemin multipasse meme sur une carte a deux TMU. Le ticket E05-S04
-   nomme le risque : un repli facile a ecrire et facile a ne jamais eprouver,
-   faute de materiel a une seule TMU sous la main. */
+                             unsigned char function, unsigned char factor);
+/* Forces the multipass path even on a two-TMU card. Ticket E05-S04 names the
+   risk: a fallback that is easy to write and easy never to exercise, for want of
+   single-TMU hardware to hand. */
 void dkr_glide_backend_force_single_tmu(int force);
-/* Le nombre de TMU **utilisables**, qui tient compte du forcage. C'est lui que
-   le choix de chemin doit lire, jamais la detection materielle directement. */
+/* The number of **usable** TMUs, which accounts for the forcing. That is what
+   the path choice must read, never the hardware detection directly. */
 int  dkr_glide_backend_tmu_count(void);
-/* Choisit le tampon de profondeur : non nul pour W, zero pour Z. Expose pour que
-   E05-S05 compare les deux par la mesure plutot que sur reputation. */
-void dkr_glide_backend_depth_mode(int en_w);
+/* Selects the depth buffer: non-zero for W, zero for Z. Exposed so that E05-S05
+   compares the two by measurement rather than by reputation. */
+void dkr_glide_backend_depth_mode(int use_w);
 #endif
 
 #ifdef __cplusplus

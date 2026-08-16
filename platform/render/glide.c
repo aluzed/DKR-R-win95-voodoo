@@ -1,4 +1,4 @@
-/* E05-S01 — mise en œuvre. Le contrat et les pièges sont dans `glide.h`. */
+/* E05-S01 — implementation. The contract and the traps live in `glide.h`. */
 #include "glide.h"
 
 #include <windows.h>
@@ -6,12 +6,12 @@
 
 #include "win95/startup.h"
 
-/* --- Les constantes de Glide 2.x ------------------------------------------ *
+/* --- The Glide 2.x constants ---------------------------------------------- *
  *
- * Recopiées de `glide.h` de 3dfx plutôt qu'incluses : la cible n'a pas le SDK,
- * et une poignée de constantes vaut mieux qu'une dépendance de plus. Chacune est
- * vérifiée par la démonstration de E09-S01, qui a ouvert un contexte et dessiné
- * un triangle avec ces valeurs.
+ * Copied from 3dfx's `glide.h` rather than included: the target does not have
+ * the SDK, and a handful of constants beats one more dependency. Each one is
+ * verified by the E09-S01 demonstration, which opened a context and drew a
+ * triangle with these values.
  */
 typedef unsigned int  FxU32;
 typedef unsigned char FxU8;
@@ -27,11 +27,11 @@ typedef int           FxBool;
 #define GR_BUFFER_BACKBUFFER    0x1
 #define GR_WDEPTHVALUE_FARTHEST 0xFFFF
 
-/* `GrVertex` de Glide 2.x. L'ordre n'est pas intuitif — `ooz` et `a`
-   s'intercalent entre les couleurs et `oow` — et une disposition « logique »
-   compile parfaitement en rendant des couleurs permutées : Glide lit les
-   flottants aux mauvais décalages, sans la moindre erreur. Vérifié à l'écran
-   par la démonstration de E09-S01, où un sommet rouge sortait vert. */
+/* Glide 2.x's `GrVertex`. The order is not intuitive — `ooz` and `a` sit between
+   the colours and `oow` — and a "logical" layout compiles perfectly while
+   rendering permuted colours: Glide reads the floats at the wrong offsets,
+   without the slightest error. Verified on screen by the E09-S01 demonstration,
+   where a red vertex came out green. */
 typedef struct {
     float x, y, z;
     float r, g, b;
@@ -54,9 +54,9 @@ typedef void   (WINAPI *pfn_grGlideGetVersion)(char *);
 typedef FxBool (WINAPI *pfn_grLfbLock)(FxU32, FxU32, FxU32, FxU32, FxU32, void *);
 typedef FxBool (WINAPI *pfn_grLfbUnlock)(FxU32, FxU32);
 
-/* `GrLfbInfo_t` de Glide 2.x. Le champ `size` doit être renseigné avant l'appel :
-   Glide s'en sert pour savoir quelle version de la structure on lui passe, et le
-   laisser à zéro fait échouer le verrouillage sans autre explication. */
+/* Glide 2.x's `GrLfbInfo_t`. The `size` field must be filled in before the call:
+   Glide uses it to know which version of the structure it is being handed, and
+   leaving it at zero makes the lock fail with no further explanation. */
 typedef struct {
     int    size;
     void  *lfbPtr;
@@ -84,8 +84,8 @@ static struct {
     pfn_grLfbLock          lfb_lock;
     pfn_grLfbUnlock        lfb_unlock;
 
-    int  initialised;   /* grGlideInit appelé */
-    int  context_open;  /* grSstWinOpen réussi */
+    int  initialised;   /* grGlideInit called */
+    int  context_open;  /* grSstWinOpen succeeded */
     int  hardware_known;
     dkr_glide_hardware hw;
     dkr_glide_context ctx;
@@ -94,23 +94,23 @@ static struct {
 const char *dkr_glide_result_text(dkr_glide_result r)
 {
     switch (r) {
-    case DKR_GLIDE_OK:             return "succes";
-    case DKR_GLIDE_ERR_NO_LIBRARY: return "glide2x.dll introuvable — pilote 3dfx absent ?";
-    case DKR_GLIDE_ERR_NO_SYMBOL:  return "glide2x.dll incomplete — version inattendue";
-    /* Ce texte suit une boite modale anglaise que le joueur vient de congedier,
-       et il doit s'y rattacher explicitement — sans quoi il lira deux problemes
-       la ou il n'y en a qu'un. Voir `docs/research/win95-glide-sans-carte.md` :
-       la boite vient de glide2x.dll elle-meme, au chargement, et rien ne permet
-       de la devancer. */
+    case DKR_GLIDE_OK:             return "success";
+    case DKR_GLIDE_ERR_NO_LIBRARY: return "glide2x.dll not found - 3dfx driver missing?";
+    case DKR_GLIDE_ERR_NO_SYMBOL:  return "glide2x.dll incomplete - unexpected version";
+    /* This text follows a message box the player has just dismissed, and it must
+       tie back to it explicitly - otherwise they will read two problems where
+       there is only one. See `docs/research/win95-glide-no-card.md`: the box
+       comes from glide2x.dll itself, at load time, and nothing lets us get in
+       ahead of it. */
     case DKR_GLIDE_ERR_NO_BOARD:
-        return "aucune carte 3dfx detectee — c'est ce que disait aussi le "
-               "message anglais de glide2x.dll";
-    case DKR_GLIDE_ERR_NO_MEMORY:  return "la carte n'a pas assez de memoire d'image";
-    default:                       return "ouverture du contexte refusee";
+        return "no 3dfx card detected - which is what the glide2x.dll message "
+               "said as well";
+    case DKR_GLIDE_ERR_NO_MEMORY:  return "the card does not have enough frame-buffer memory";
+    default:                       return "context open refused";
     }
 }
 
-/* --- Résolutions ----------------------------------------------------------- */
+/* --- Resolutions ----------------------------------------------------------- */
 
 static const struct { int glide_id, w, h; } RESOLUTIONS[DKR_GLIDE_RES_COUNT] = {
     { GR_RESOLUTION_640x480, 640, 480 },
@@ -119,18 +119,17 @@ static const struct { int glide_id, w, h; } RESOLUTIONS[DKR_GLIDE_RES_COUNT] = {
     { GR_RESOLUTION_320x240, 320, 240 },
 };
 
-/* Ce que coûte une résolution en mémoire de tampon d'image.
+/* What a resolution costs in frame-buffer memory.
  *
- * Deux tampons de couleur en 16 bits plus un tampon de profondeur en 16 bits :
- * trois surfaces de `w * h * 2` octets. C'est le calcul de l'ADR 0002, qui
- * écarte le triple buffering pour cette raison — 2,34 Mio contre 2 Mo sur la
- * Voodoo 2 8 Mo. */
+ * Two 16-bit colour buffers plus a 16-bit depth buffer: three surfaces of
+ * `w * h * 2` bytes. That is ADR 0002's calculation, which rules out triple
+ * buffering for this reason — 2.34 MiB against 2 MB on the 8 MB Voodoo 2. */
 static unsigned fb_cost_kb(int w, int h)
 {
     return (unsigned)(((long)w * h * 2 * 3) / 1024);
 }
 
-/* --- Détection ------------------------------------------------------------- */
+/* --- Detection ------------------------------------------------------------- */
 
 static void unload(void)
 {
@@ -147,24 +146,24 @@ static void *sym(const char *decorated)
 
 dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
 {
-    /* La structure rendue par `grSstQueryHardware` est lue par décalages plutôt
-       que par une déclaration : sa disposition exacte varie entre versions de
-       Glide, et seuls les premiers champs nous intéressent. Le tampon est
-       largement dimensionné — Glide écrit la configuration de toutes les cartes
-       possibles, et un tampon trop court serait débordé en silence. */
+    /* The structure `grSstQueryHardware` returns is read by offsets rather than
+       through a declaration: its exact layout varies between Glide versions, and
+       only the first fields interest us. The buffer is generously sized — Glide
+       writes the configuration of every possible card, and a buffer that was too
+       short would be overrun in silence. */
     FxU32 hw[128];
     char  version_text[80];
 
-    /* Idempotente, et il a fallu la machine pour l'apprendre.
+    /* Idempotent, and it took the machine to learn that.
      *
-     * La première version déchargeait et rechargeait `glide2x.dll` à chaque
-     * appel. Le témoin appelait `detect` puis `open`, qui redétectait : le
-     * second `grGlideInit` tombait sur une bibliothèque qui tenait encore la
-     * carte, et Glide refusait par **« Mutual exclusion prohibits this »** —
-     * un message qui ne désigne pas sa cause.
+     * The first version unloaded and reloaded `glide2x.dll` on every call. The
+     * witness called `detect` then `open`, which detected again: the second
+     * `grGlideInit` met a library that still held the card, and Glide refused
+     * with **"Mutual exclusion prohibits this"** — a message that does not name
+     * its cause.
      *
-     * Une detection qui a des effets de bord n'est pas une detection. Celle-ci
-     * rend simplement ce qu'elle sait déjà. */
+     * A detection with side effects is not a detection. This one simply returns
+     * what it already knows. */
     if (g.hardware_known) {
         if (out) { *out = g.hw; }
         return DKR_GLIDE_OK;
@@ -179,8 +178,8 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
         return DKR_GLIDE_ERR_NO_LIBRARY;
     }
 
-    /* Les noms portent la décoration stdcall complète : `glide2x.dll` exporte
-       `_grGlideInit@0` et non `grGlideInit`. */
+    /* The names carry the full stdcall decoration: `glide2x.dll` exports
+       `_grGlideInit@0` and not `grGlideInit`. */
     g.init      = (pfn_grGlideInit)        sym("_grGlideInit@0");
     g.shutdown  = (pfn_grGlideShutdown)    sym("_grGlideShutdown@0");
     g.query     = (pfn_grSstQueryHardware) sym("_grSstQueryHardware@4");
@@ -191,9 +190,9 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
     g.swap      = (pfn_grBufferSwap)       sym("_grBufferSwap@4");
     g.triangle  = (pfn_grDrawTriangle)     sym("_grDrawTriangle@12");
     g.version   = (pfn_grGlideGetVersion)  sym("_grGlideGetVersion@4");
-    /* La relecture est facultative : une Glide qui ne l'exporte pas reste
-       utilisable pour dessiner, seule la comparaison devient impossible. On ne
-       la met donc pas dans la liste des symboles obligatoires. */
+    /* Read-back is optional: a Glide that does not export it stays usable for
+       drawing, only comparison becomes impossible. It therefore does not go into
+       the list of mandatory symbols. */
     g.lfb_lock   = (pfn_grLfbLock)   sym("_grLfbLock@24");
     g.lfb_unlock = (pfn_grLfbUnlock) sym("_grLfbUnlock@8");
 
@@ -217,9 +216,9 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
         dkr_glide_hardware *const info = &g.hw;
         int i;
         memset(info, 0, sizeof(*info));
-        /* Disposition de `GrHwConfiguration` : num_sst, puis pour la carte 0
-           type, fbRam, fbiRev, nTexelfx, sliDetect, puis (tmuRev, tmuRam) par
-           TMU. Les mémoires sont en mégaoctets. */
+        /* Layout of `GrHwConfiguration`: num_sst, then for card 0 type, fbRam,
+           fbiRev, nTexelfx, sliDetect, then (tmuRev, tmuRam) per TMU. The memory
+           figures are in megabytes. */
         info->board_count  = (int)hw[0];
         info->tmu_count    = (int)hw[4];
         info->fb_memory_kb = hw[2] * 1024u;
@@ -228,8 +227,8 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
             info->tmu_memory_kb[i] = hw[7 + (unsigned)i * 2] * 1024u;
         }
         if (g.version) {
-            /* « Glide 2.54 » → 0x254, sans dépendre de la forme exacte du
-               texte : on prend les chiffres et le point. */
+            /* "Glide 2.54" -> 0x254, without depending on the exact shape of
+               the text: we take the digits and the dot. */
             const char *p;
             memset(version_text, 0, sizeof(version_text));
             g.version(version_text);
@@ -255,10 +254,10 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
     return DKR_GLIDE_OK;
 }
 
-/* --- Ouverture ------------------------------------------------------------- */
+/* --- Opening --------------------------------------------------------------- */
 
-/* Rappelée par le filtre d'exception de E02-S03. Une Voodoo passthrough qui
-   garde la main laisse l'écran noir jusqu'au redémarrage. */
+/* Called back by E02-S03's exception filter. A passthrough Voodoo that keeps
+   control leaves the screen black until reboot. */
 static void restore_display_on_crash(void)
 {
     dkr_glide_shutdown();
@@ -281,9 +280,9 @@ dkr_glide_result dkr_glide_open(dkr_glide_resolution wanted,
         wanted = DKR_GLIDE_RES_640x480;
     }
 
-    /* Le repli descend depuis la résolution demandée. Le budget est calculé,
-       non deviné : `grSstWinOpen` qui échoue ne dit pas pourquoi, et « 640x480
-       ne tient pas dans 2 Mo » est une phrase qu'on peut montrer. */
+    /* The fallback walks down from the requested resolution. The budget is
+       computed, not guessed: a failing `grSstWinOpen` does not say why, and
+       "640x480 does not fit in 2 MB" is a sentence one can show. */
     for (i = (int)wanted; i < DKR_GLIDE_RES_COUNT; i++) {
         if (fb_cost_kb(RESOLUTIONS[i].w, RESOLUTIONS[i].h) > hw.fb_memory_kb) {
             continue;
@@ -297,15 +296,15 @@ dkr_glide_result dkr_glide_open(dkr_glide_resolution wanted,
             g.ctx.buffers    = 2;
             g.ctx.depth_buffer = 1;
             if (out) { *out = g.ctx; }
-            /* Inscrit **après** l'ouverture : avant, il n'y aurait rien à
-               restituer, et le registre est de taille fixe. */
+            /* Registered **after** opening: before it there would be nothing
+               to restore, and the registry is fixed in size. */
             dkr_win95_at_abnormal_exit(restore_display_on_crash);
             return DKR_GLIDE_OK;
         }
     }
 
-    /* Aucune n'a tenu. Distinguer « pas assez de mémoire » de « refus » aide
-       l'appelant à écrire quelque chose d'utile. */
+    /* None fitted. Telling "not enough memory" from "refused" helps the caller
+       write something useful. */
     r = (fb_cost_kb(RESOLUTIONS[wanted].w, RESOLUTIONS[wanted].h) > hw.fb_memory_kb)
         ? DKR_GLIDE_ERR_NO_MEMORY : DKR_GLIDE_ERR_OPEN;
     g.shutdown();
@@ -323,16 +322,17 @@ void dkr_glide_clear(unsigned argb)
 void dkr_glide_swap(void)
 {
     if (g.context_open) {
-        /* 1 : synchroniser sur le balayage. Le choix entre celui-ci et l'échange
-           immédiat se mesure en E06-S04 ; par défaut on évite le déchirement. */
+        /* 1: synchronise with the retrace. The choice between this and an
+           immediate swap is measured in E06-S04; by default we avoid
+           tearing. */
         g.swap(1);
     }
 }
 
 void dkr_glide_shutdown(void)
 {
-    /* Idempotente, et elle doit l'être : le filtre d'exception peut l'appeler
-       alors que la fermeture normale est déjà passée. */
+    /* Idempotent, and it has to be: the exception filter may call it after the
+       normal shutdown has already run. */
     if (g.context_open) {
         g.win_close();
         g.context_open = 0;
@@ -382,9 +382,9 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
     if (height) { *height = h; }
 
     memset(&info, 0, sizeof(info));
-    /* Renseigner `size` avant l'appel : Glide s'en sert pour reconnaitre la
-       version de la structure, et le laisser a zero fait echouer le
-       verrouillage sans autre explication. */
+    /* Fill in `size` before the call: Glide uses it to recognise the version of
+       the structure, and leaving it at zero makes the lock fail with no further
+       explanation. */
     info.size = (int)sizeof(info);
     if (!g.lfb_lock(GR_LFB_READ_ONLY, GR_BUFFER_FRONTBUFFER,
                     GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, 0, &info) ||
@@ -398,9 +398,9 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
                                      (size_t)y * info.strideInBytes);
         for (x = 0; x < w && count < max_pixels; x++) {
             const unsigned short p = row[x];
-            /* 565 vers 888. La replication des bits de poids fort est la bonne
-               extension : 0x1F doit donner 0xFF et non 0xF8, sans quoi le blanc
-               n'est pas blanc et toute comparaison de couleur derive. */
+            /* 565 to 888. Replicating the high bits is the right extension:
+               0x1F must give 0xFF and not 0xF8, otherwise white is not white and
+               every colour comparison drifts. */
             const unsigned r = (unsigned)((p >> 11) & 0x1F);
             const unsigned gg = (unsigned)((p >>  5) & 0x3F);
             const unsigned b = (unsigned)(p & 0x1F);
@@ -414,7 +414,7 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
     return count;
 }
 
-/* --- Ouvertures pour le calque de backend ------------------------------------ */
+/* --- Hooks for the backend layer --------------------------------------------- */
 
 void *dkr_glide_symbol(const char *decorated_name)
 {

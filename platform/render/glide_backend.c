@@ -1,35 +1,34 @@
-/* E05-S01 — la Voodoo se présente comme un `dkr_render_backend`.
+/* E05-S01 — the Voodoo presents itself as a `dkr_render_backend`.
  *
- * `glide.c` ouvre la carte ; ce fichier la branche sur l'interface de E04-S01,
- * de sorte que la chaîne assemblée en `tests/test_pipeline.c` puisse la traverser
- * sans changer une ligne. C'est le seul moyen de comparer la carte au rastériseur
- * de référence sur *la même* entrée, ce qui est la raison d'être de l'oracle.
+ * `glide.c` opens the card; this file wires it onto the E04-S01 interface, so
+ * that the chain assembled in `tests/test_pipeline.c` can run through it without
+ * changing a line. It is the only way to compare the card against the reference
+ * rasteriser on *the same* input, which is the whole reason the oracle exists.
  *
- * ## Ce que ce module ne fait pas, et pourquoi
+ * ## What this module does not do, and why
  *
- * Il ne charge aucune texture. `texture_upload` rend zéro et le dit. Placer une
- * texture en mémoire de TMU est un problème d'allocation — 2 Mo par TMU, pas de
- * pagination, granularité imposée — qui a son propre ticket (E05-S02), et la
- * traduction du combineur RDP vers `grTexCombine` en a un autre (E05-S03). Les
- * écrire ici pour « avoir tout » produirait un allocateur naïf qu'il faudrait
- * jeter.
+ * It uploads no texture. `texture_upload` returns zero and says so. Placing a
+ * texture in TMU memory is an allocation problem — 2 MB per TMU, no paging,
+ * imposed granularity — which has its own ticket (E05-S02), and translating the
+ * RDP combiner into `grTexCombine` has another (E05-S03). Writing them here to
+ * "have everything" would produce a naive allocator that would have to be thrown
+ * away.
  *
- * Les modes sans texture, eux, sont complets : couleur de sommet, mélange,
- * profondeur, faces arrière, ciseaux, test alpha, brouillard.
+ * The untextured modes, on the other hand, are complete: vertex colour,
+ * blending, depth, back faces, scissor, alpha test, fog.
  *
- * ## Les constantes de Glide 2.x sont écrites de mémoire — donc vérifiées
+ * ## The Glide 2.x constants are written from memory — hence verified
  *
- * Il n'y a pas de `glide.h` sur cette machine : la DLL du pilote 3dfx n'est pas
- * accompagnée de son en-tête. Les valeurs ci-dessous viennent de la spécification
- * Glide 2.4, de mémoire, et **une valeur fausse ne provoque aucune erreur** :
- * Glide ne valide pas ses énumérations, elle programme le registre et l'image
- * sort différente. C'est exactement le genre de faute qu'on attribue ensuite au
- * décodeur de display list.
+ * There is no `glide.h` on this machine: the 3dfx driver's DLL does not come
+ * with its header. The values below come from the Glide 2.4 specification, from
+ * memory, and **a wrong value causes no error at all**: Glide does not validate
+ * its enumerations, it programs the register and the image comes out different.
+ * That is exactly the kind of fault one then blames on the display-list decoder.
  *
- * D'où `tools/win95/witnesses/glide_state_probe.c` : chaque mode traduit ici est
- * exercé sur la carte et **relu par `grLfbLock`**. Ce qui est confirmé par la
- * mesure est marqué CONFIRME et daté ; le reste porte SUPPOSE et ne doit pas être
- * cru. Voir `docs/research/win95-glide-etats.md`.
+ * Hence `tools/win95/witnesses/glide_state_probe.c`: every mode translated here
+ * is exercised on the card and **read back through `grLfbLock`**. What
+ * measurement confirms is marked CONFIRMED and dated; the rest carries ASSUMED
+ * and must not be believed. See `docs/research/win95-glide-states.md`.
  */
 #include "glide.h"
 #include "backend.h"
@@ -44,9 +43,9 @@ typedef unsigned int  FxU32;
 typedef unsigned char FxU8;
 typedef int           FxBool;
 
-/* --- Les énumérations de Glide 2.x ------------------------------------------ */
+/* --- The Glide 2.x enumerations ---------------------------------------------- */
 
-/* Combineur de couleur. */
+/* Colour combiner. */
 #define GR_COMBINE_FUNCTION_ZERO          0x0
 #define GR_COMBINE_FUNCTION_LOCAL         0x1
 #define GR_COMBINE_FUNCTION_LOCAL_ALPHA   0x2
@@ -64,40 +63,40 @@ typedef int           FxBool;
 #define GR_COMBINE_OTHER_TEXTURE          0x1
 #define GR_COMBINE_OTHER_CONSTANT         0x2
 
-/* Mélange. */
+/* Blending. */
 #define GR_BLEND_ZERO                     0x0
 #define GR_BLEND_SRC_ALPHA                0x1
 #define GR_BLEND_ONE                      0x4
 #define GR_BLEND_ONE_MINUS_SRC_ALPHA      0x5
 
-/* Comparaisons — partagées par le test de profondeur et le test alpha. */
+/* Comparisons — shared by the depth test and the alpha test. */
 #define GR_CMP_NEVER                      0x0
 #define GR_CMP_LESS                       0x1
 #define GR_CMP_GREATER                    0x4
 #define GR_CMP_GEQUAL                     0x6
 #define GR_CMP_ALWAYS                     0x7
 
-/* Tampon de profondeur. */
+/* Depth buffer. */
 #define GR_DEPTHBUFFER_DISABLE            0x0
 #define GR_DEPTHBUFFER_ZBUFFER            0x1
 #define GR_DEPTHBUFFER_WBUFFER            0x2
 
-/* Faces arrière. */
+/* Back faces. */
 #define GR_CULL_DISABLE                   0x0
 #define GR_CULL_NEGATIVE                  0x1
 #define GR_CULL_POSITIVE                  0x2
 
-/* Brouillard. */
+/* Fog. */
 #define GR_FOG_DISABLE                    0x0
 #define GR_FOG_WITH_ITERATED_ALPHA        0x1
 
 /* --- Textures ---------------------------------------------------------------- *
  *
- * Ces valeurs-ci ne sont pas de memoire : `tmu_probe.c` les a validees sur la
- * carte en comparant `grTexTextureMemRequired` a la taille analytique. Un LOD ou
- * un rapport d'aspect faux aurait donne une taille visiblement fausse.
- * Voir `docs/research/win95-tmu.md`. */
-#define GR_LOD_256   0    /* le LOD nomme la plus grande dimension, et decroit */
+ * These values are not from memory: `tmu_probe.c` validated them on the card by
+ * comparing `grTexTextureMemRequired` against the analytic size. A wrong LOD or
+ * aspect ratio would have given a visibly wrong size.
+ * See `docs/research/win95-tmu.md`. */
+#define GR_LOD_256   0    /* the LOD names the largest dimension, and decreases */
 #define GR_LOD_1     8
 #define GR_ASPECT_8x1  0
 #define GR_ASPECT_1x1  3
@@ -108,7 +107,7 @@ typedef int           FxBool;
 #define GR_TMU0  0
 #define GR_TMU1  1
 
-/* Le combineur de texture, quand il y en a une. */
+/* The texture combiner, when there is a texture. */
 #define GR_TEXTURECOMBINE_ZERO   0x0
 #define GR_TEXTURECOMBINE_DECAL  0x1
 
@@ -159,41 +158,41 @@ static struct {
     pfn_tex_mode tex_filter, tex_clamp;
 } gs;
 
-/* --- Les textures residentes -------------------------------------------------- *
+/* --- The resident textures ---------------------------------------------------- *
  *
- * Le handle rendu a l'appelant est un indice dans cette table, decale de un :
- * zero signifie l'echec, et c'est le contrat de `backend.h`. La table garde ce
- * qu'il faut pour **relier** la texture au moment du dessin — Glide exige de
- * repasser le meme `GrTexInfo` a `grTexSource` qu'a `grTexDownloadMipMap`. */
+ * The handle returned to the caller is an index into this table, offset by one:
+ * zero means failure, and that is `backend.h`'s contract. The table keeps what
+ * is needed to **rebind** the texture at draw time — Glide requires the same
+ * `GrTexInfo` to be handed to `grTexSource` as to `grTexDownloadMipMap`. */
 typedef struct {
     unsigned long long key;
     unsigned int       address;
-    unsigned int       bytes;    /* ce qu'elle occupe, pour detecter le recouvrement */
+    unsigned int       bytes;    /* what it occupies, to detect overlap */
     GrTexInfo          info;
-    unsigned char      tmu;      /* sur quelle unite elle reside */
+    unsigned char      tmu;      /* which unit it resides on */
     unsigned char      live;
 } glide_texture;
 
-/* --- Pourquoi un chargement echoue ------------------------------------------
+/* --- Why an upload fails -----------------------------------------------------
  *
- * `gl_texture_upload` rend zero pour quatre raisons distinctes, et l'appelant ne
- * voit que le zero. Mesure sur la machine : 25 896 chargements pour 21 211
- * refus, un sur deux — sans que rien ne dise lequel des quatre. On a corrige la
- * saturation d'emplacements en la supposant coupable, et le chiffre n'a pas
- * bouge d'une unite. Separer les causes coute quatre entiers. */
+ * `gl_texture_upload` returns zero for four distinct reasons, and the caller only
+ * sees the zero. Measured on the machine: 25,896 uploads for 21,211 refusals,
+ * one in two — with nothing to say which of the four. We fixed slot exhaustion
+ * on the assumption that it was to blame, and the figure did not move by one.
+ * Separating the causes costs four integers. */
 enum {
-    GL_TEX_ECHEC_PROPORTIONS = 0,  /* dimensions refusees par la carte */
-    GL_TEX_ECHEC_TAILLE,           /* grTexCalcMemRequired rend zero */
-    GL_TEX_ECHEC_EMPLACEMENT,      /* table de descripteurs pleine */
-    GL_TEX_ECHEC_MEMOIRE,          /* allocateur de TMU sature */
-    GL_TEX_ECHEC_NB
+    GL_TEX_FAIL_ASPECT = 0,  /* dimensions refused by the card */
+    GL_TEX_FAIL_SIZE,        /* grTexCalcMemRequired returns zero */
+    GL_TEX_FAIL_SLOT,        /* descriptor table full */
+    GL_TEX_FAIL_MEMORY,      /* TMU allocator exhausted */
+    GL_TEX_FAIL_COUNT
 };
-static unsigned long g_tex_echecs[GL_TEX_ECHEC_NB];
+static unsigned long g_tex_failures[GL_TEX_FAIL_COUNT];
 
 unsigned long dkr_glide_backend_upload_failure(int kind)
 {
-    if (kind < 0 || kind >= GL_TEX_ECHEC_NB) { return 0; }
-    return g_tex_echecs[kind];
+    if (kind < 0 || kind >= GL_TEX_FAIL_COUNT) { return 0; }
+    return g_tex_failures[kind];
 }
 
 #define GLIDE_MAX_TEXTURES 512
@@ -201,21 +200,21 @@ static glide_texture g_tex[GLIDE_MAX_TEXTURES];
 static dkr_tmu       g_tmu[2];
 static int           g_tmu_count;
 
-/* Le transfert vers la carte, appele par l'allocateur.
-   `data` porte le `GrTexInfo` deja rempli : l'allocateur ne connait ni les LOD
-   ni les rapports d'aspect, et n'a pas a les connaitre. */
+/* The transfer to the card, called by the allocator.
+   `data` carries the already filled `GrTexInfo`: the allocator knows neither
+   LODs nor aspect ratios, and has no business knowing them. */
 static int glide_download(void *user, int tmu, unsigned int address,
                           const void *data, unsigned int bytes)
 {
     (void)user; (void)bytes;
     if (!gs.tex_download || !data) { return 0; }
     gs.tex_download(tmu, address, GR_MIPMAPLEVELMASK_BOTH, (GrTexInfo *)data);
-    /* Glide ne rend rien. L'absence de moyen de verifier ici est precisement
-       pourquoi `glide_texture_probe.c` va relire le tampon d'image. */
+    /* Glide returns nothing. The absence of any way to check here is precisely
+       why `glide_texture_probe.c` goes and reads the frame buffer back. */
     return 1;
 }
 
-/* --- L'état du backend ------------------------------------------------------ */
+/* --- The backend's state ---------------------------------------------------- */
 static struct {
     int              open;
     int              width, height;
@@ -224,11 +223,11 @@ static struct {
     unsigned long    triangles;
 } b;
 
-/* --- Traductions ------------------------------------------------------------ *
+/* --- Translations ----------------------------------------------------------- *
  *
- * Chacune est une fonction distincte et courte : c'est ce qui permet au témoin
- * d'exercer un mode à la fois, et donc d'attribuer un écart d'image à une
- * traduction précise plutôt qu'à « l'état ». */
+ * Each one is a short, distinct function: that is what lets the witness exercise
+ * one mode at a time, and hence attribute an image difference to one precise
+ * translation rather than to "the state". */
 
 static void bind_texture(dkr_texture_handle handle);
 
@@ -236,13 +235,13 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
 {
     if (!gs.color_combine || !gs.alpha_combine) { return; }
 
-    /* **Sans texture liee, on retombe sur la couleur du sommet, et c'est voulu.**
+    /* **With no texture bound we fall back on the vertex colour, deliberately.**
      *
-     * Selectionner la texture alors qu'aucune n'est residente ne provoque pas
-     * d'erreur : la TMU echantillonne ce qui traine a l'adresse ou elle pointait.
-     * L'ecran est alors faux d'une maniere qui *ressemble* a un defaut de
-     * combineur, et l'on cherche longtemps du mauvais cote. Un rendu franchement
-     * non texture se diagnostique mieux. */
+     * Selecting the texture while none is resident causes no error: the TMU
+     * samples whatever happens to sit at the address it was pointing at. The
+     * screen is then wrong in a way that *looks* like a combiner defect, and one
+     * searches the wrong side for a long while. A frankly untextured render is
+     * easier to diagnose. */
     if (handle == 0 || m == DKR_COMBINE_SHADE) {
         gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
@@ -253,26 +252,26 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
 
     bind_texture(handle);
     if (gs.tex_combine) {
-        /* Une seule TMU employee ici : la texture passe telle quelle. Le
-           multitexturage sur deux TMU est E05-S04, la traduction fidele du
-           combineur RDP est E05-S03 — ce qui suit couvre les modes que le
-           decodeur sait deja produire, pas davantage. */
+        /* Only one TMU used here: the texture passes through as it is.
+           Multitexturing across two TMUs is E05-S04, faithful translation of the
+           RDP combiner is E05-S03 — what follows covers the modes the decoder
+           can already produce, no more. */
         gs.tex_combine(GR_TMU0, GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO,
                        GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO, 0, 0);
     }
 
     switch (m) {
     case DKR_COMBINE_TEXTURE:
-        /* Le texel seul : la couleur du sommet n'intervient pas. */
+        /* The texel alone: the vertex colour plays no part. */
         gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         break;
     case DKR_COMBINE_TEXTURE_SHADE_ALPHA:
-        /* Texel module par la couleur du sommet, mais **alpha du texel retenu** :
-           c'est ce qui permet a une texture percee de le rester quand le sommet
-           porte une transparence propre. */
+        /* Texel modulated by the vertex colour, but **texel alpha kept**: that
+           is what lets a punched-through texture stay punched through when the
+           vertex carries a transparency of its own. */
         gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
@@ -287,13 +286,13 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
     }
 }
 
-/* Filtrage et enveloppement. E05-S08 les traitera pour de bon ; ici l'on se
-   contente de ne pas laisser un etat herite decider a notre place. */
+/* Filtering and wrapping. E05-S08 will handle them properly; here we merely
+   avoid letting an inherited state decide on our behalf. */
 static void apply_texture_modes(const dkr_render_state *st)
 {
     /* GR_TEXTUREFILTER_POINT_SAMPLED = 0, BILINEAR = 1.
-       GR_TEXTURECLAMP_WRAP = 0, CLAMP = 1 — le miroir n'existe pas sur Voodoo 2
-       et se traite au decodage, ce qui est note pour E05-S08. */
+       GR_TEXTURECLAMP_WRAP = 0, CLAMP = 1 — mirroring does not exist on the
+       Voodoo 2 and is handled at decode time, which is noted for E05-S08. */
     if (gs.tex_filter) {
         const FxU32 f = (st->filter == DKR_FILTER_BILINEAR) ? 1u : 0u;
         gs.tex_filter(GR_TMU0, f, f);
@@ -322,16 +321,16 @@ static void apply_blend(dkr_blend_mode m)
     }
 }
 
-/* Quel tampon employer. Un, en W, par défaut — voir `apply_depth`.
+/* Which buffer to use. W by default — see `apply_depth`.
  *
- * Exposé pour que E05-S05 puisse **comparer les deux par la mesure** plutôt que
- * de trancher sur la réputation du mode W. Le ticket demande explicitement que
- * ce choix soit justifié par une mesure d'artefacts consignée. */
-static int g_depth_en_w = 1;
+ * Exposed so that E05-S05 can **compare the two by measurement** rather than
+ * settle it on the W mode's reputation. The ticket explicitly asks for this
+ * choice to be justified by a recorded artefact measurement. */
+static int g_depth_use_w = 1;
 
-void dkr_glide_backend_depth_mode(int en_w)
+void dkr_glide_backend_depth_mode(int use_w)
 {
-    g_depth_en_w = en_w;
+    g_depth_use_w = use_w;
 }
 
 static void apply_depth(dkr_depth_mode m)
@@ -342,32 +341,32 @@ static void apply_depth(dkr_depth_mode m)
         gs.depth_mask(0);
         return;
     }
-    /* **Tampon en w, et non en z.**
+    /* **W buffer, not Z.**
      *
-     * `dkr_render_vertex` porte déjà `oow = 1/w`, que Glide consomme telle
-     * quelle en mode w. Le mode z, lui, lit `ooz` sur [0, 65535] alors que la
-     * chaîne produit une profondeur sur [0, 1] : il faudrait remettre chaque
-     * sommet à l'échelle, donc les recopier, donc perdre le bénéfice d'avoir
-     * calqué la disposition de `GrVertex` champ pour champ.
+     * `dkr_render_vertex` already carries `oow = 1/w`, which Glide consumes as
+     * it is in w mode. Z mode, on the other hand, reads `ooz` over [0, 65535]
+     * while the chain produces a depth over [0, 1]: every vertex would have to
+     * be rescaled, hence copied, hence the benefit of having mirrored
+     * `GrVertex`'s layout field for field would be lost.
      *
-     * **Le sens de la comparaison ne s'inverse pas**, et c'est contre l'intuition.
+     * **The comparison direction does not flip**, and that is counter-intuitive.
      *
-     * On raisonne naturellement ainsi : le sommet porte `1/w`, un objet proche a
-     * un `1/w` grand, donc le proche gagne avec `GR_CMP_GREATER`. Ce fichier l'a
-     * d'abord écrit, et l'écran est resté **entièrement noir** — dans les deux
-     * ordres de dessin, ce qui exclut un problème de tri.
+     * The natural reasoning is: the vertex carries `1/w`, a near object has a
+     * large `1/w`, so the near one wins with `GR_CMP_GREATER`. This file wrote
+     * that first, and the screen stayed **entirely black** — in both draw
+     * orders, which rules out a sorting problem.
      *
-     * Le raisonnement oublie que Glide ne stocke pas `1/w` : elle range une
-     * valeur w encodée qui **croît avec la distance**, et `grBufferClear` efface
-     * à `GR_WDEPTHVALUE_FARTHEST` = 0xFFFF. Rien ne pouvant dépasser ce maximum,
-     * `GR_CMP_GREATER` rejette la totalité de la scène. La comparaison est donc
-     * `LESS`, comme en tampon z.
+     * The reasoning forgets that Glide does not store `1/w`: it stores an
+     * encoded w value that **grows with distance**, and `grBufferClear` clears
+     * to `GR_WDEPTHVALUE_FARTHEST` = 0xFFFF. Since nothing can exceed that
+     * maximum, `GR_CMP_GREATER` rejects the entire scene. The comparison is
+     * therefore `LESS`, as with a z buffer.
      *
-     * Le symptôme méritait d'être écrit : un écran noir se diagnostique d'abord
-     * comme un défaut de géométrie ou de fenêtre, et l'on cherche longtemps avant
-     * de soupçonner un tampon de profondeur qui fonctionne parfaitement.
-     * Confirmé par relecture le 14 août 2026 ; voir `win95-glide-etats.md`. */
-    gs.depth_mode(g_depth_en_w ? GR_DEPTHBUFFER_WBUFFER : GR_DEPTHBUFFER_ZBUFFER);
+     * The symptom deserved writing down: a black screen is first diagnosed as a
+     * geometry or window defect, and one searches a long while before suspecting
+     * a depth buffer that works perfectly.
+     * Confirmed by read-back on 14 August 2026; see `win95-glide-states.md`. */
+    gs.depth_mode(g_depth_use_w ? GR_DEPTHBUFFER_WBUFFER : GR_DEPTHBUFFER_ZBUFFER);
     gs.depth_function(GR_CMP_LESS);
     gs.depth_mask(m == DKR_DEPTH_TEST_AND_WRITE ? 1 : 0);
 }
@@ -375,11 +374,11 @@ static void apply_depth(dkr_depth_mode m)
 static void apply_cull(dkr_cull_mode m)
 {
     if (!gs.cull_mode) { return; }
-    /* La chaîne élimine déjà les faces arrière elle-même (`dkr_cull_accept`),
-       parce que le rastériseur de référence doit éliminer les mêmes triangles
-       que la carte. Programmer *aussi* la carte serait redondant et risquerait
-       d'éliminer deux fois selon des conventions opposées — donc de tout vider.
-       On la désactive explicitement plutôt que de la laisser dans un état hérité. */
+    /* The chain already culls back faces itself (`dkr_cull_accept`), because the
+       reference rasteriser must cull the same triangles as the card. Programming
+       the card *as well* would be redundant and would risk culling twice under
+       opposite conventions — hence emptying everything. We disable it explicitly
+       rather than leave it in an inherited state. */
     (void)m;
     gs.cull_mode(GR_CULL_DISABLE);
 }
@@ -403,16 +402,16 @@ static void apply_fog(unsigned char enabled, unsigned int color)
         return;
     }
     if (gs.fog_color) { gs.fog_color(color & 0x00FFFFFFu); }
-    /* Alpha itérée plutôt que table : DKR calcule son brouillard par sommet, et
-       la table de Glide imposerait une courbe qui n'est pas la sienne. */
+    /* Iterated alpha rather than a table: DKR computes its fog per vertex, and
+       Glide's table would impose a curve that is not its own. */
     gs.fog_mode(GR_FOG_WITH_ITERATED_ALPHA);
 }
 
-/* --- L'interface ------------------------------------------------------------ */
+/* --- The interface ---------------------------------------------------------- */
 
-/* Le nombre de TMU vient de la detection, pas d'une constante : l'ADR 0002
-   impose deux TMU sans interdire d'en trouver une seule, auquel cas le repli
-   multipasse de E05-S04 s'appliquera. */
+/* The number of TMUs comes from detection, not from a constant: ADR 0002
+   mandates two TMUs without forbidding us from finding only one, in which case
+   E05-S04's multipass fallback applies. */
 static int hw_tmu_count(void)
 {
     dkr_glide_hardware hw;
@@ -463,9 +462,9 @@ static int gl_open(void *self, int width, int height)
         gs.ready = 1;
     }
 
-    /* Les bornes de la TMU sont **demandees**, jamais supposees. La mesure a
-       montre `grTexMinAddress` a zero, ce qui interdit de faire de zero un
-       sentinelle — d'ou `DKR_TMU_NONE` a 0xFFFFFFFF. */
+    /* The TMU's bounds are **asked for**, never assumed. Measurement showed
+       `grTexMinAddress` at zero, which rules out using zero as a sentinel —
+       hence `DKR_TMU_NONE` at 0xFFFFFFFF. */
     memset(g_tex, 0, sizeof(g_tex));
     g_tmu_count = 0;
     if (gs.tex_min && gs.tex_max) {
@@ -492,35 +491,35 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
     (void)self;
     b.triangles = 0;
     {
-        /* L'allocateur doit savoir qu'une image commence : c'est ce qui leve les
-           protections de l'image precedente et remet les compteurs par image a
-           zero. Sans cela, plus rien ne serait jamais evincable. */
+        /* The allocator has to know a frame is starting: that is what lifts the
+           previous frame's pins and resets the per-frame counters. Without it,
+           nothing would ever be evictable again. */
         int i;
         for (i = 0; i < g_tmu_count; i++) { dkr_tmu_begin_frame(&g_tmu[i]); }
     }
 
-    /* --- Glide n'efface la profondeur que si l'écriture y est autorisée ------ *
+    /* --- Glide only clears depth if writing to it is allowed ---------------- *
      *
-     * `grBufferClear` prend une valeur de profondeur, mais elle n'est écrite que
-     * si `grDepthMask` est ouvert. L'état laissé par la fin de l'image
-     * précédente le referme dès que le dernier triangle était en
-     * `DKR_DEPTH_DISABLED` ou en test-sans-écriture — c'est-à-dire presque
-     * toujours, l'interface se dessinant par-dessus la scène.
+     * `grBufferClear` takes a depth value, but it is only written if
+     * `grDepthMask` is open. The state left behind at the end of the previous
+     * frame closes it as soon as the last triangle was in `DKR_DEPTH_DISABLED`
+     * or in test-without-write — that is, almost always, the interface being
+     * drawn over the scene.
      *
-     * Tant que le test de profondeur était inactif, cela ne se voyait pas : rien
-     * ne lisait le tampon. Dès qu'il s'est activé, le tampon a gardé les
-     * profondeurs de la première image pour toutes les suivantes, et **l'écran
-     * est devenu noir** — tout échouait au test contre une scène figée.
+     * As long as the depth test was inactive this went unnoticed: nothing read
+     * the buffer. As soon as it was switched on, the buffer kept the first
+     * frame's depths for every following one, and **the screen went black** —
+     * everything failed the test against a frozen scene.
      *
-     * Le symptôme est le même que celui d'un sens de comparaison inversé, déjà
-     * consigné dans `win95-glide-etats.md`, et c'est ce qui rend ce défaut
-     * coûteux : on va vérifier la comparaison, on la trouve juste, et l'on
-     * cherche ailleurs que dans l'effacement.
+     * The symptom is the same as that of an inverted comparison direction,
+     * already recorded in `win95-glide-states.md`, and that is what makes this
+     * defect expensive: one goes and checks the comparison, finds it right, and
+     * searches anywhere but in the clear.
      *
-     * On ouvre donc le masque le temps de l'effacement. `has_state` est invalidé
-     * pour que le prochain `set_state` repose l'état réel plutôt que de le
-     * croire déjà en place — sans quoi la comparaison de blocs sauterait la
-     * remise en ordre. */
+     * We therefore open the mask for the duration of the clear. `has_state` is
+     * invalidated so that the next `set_state` lays down the real state rather
+     * than believing it already in place — otherwise the block comparison would
+     * skip the tidying up. */
     if (gs.depth_mask) {
         gs.depth_mask(1);
         b.has_state = 0;
@@ -538,10 +537,9 @@ static void gl_set_state(void *self, const dkr_render_state *state)
 {
     (void)self;
     if (!state) { return; }
-    /* Le bloc est `memcmp`-able par construction — c'est pour cela qu'il porte un
-       champ de bourrage explicite. Sauter un état identique évite une rafale
-       d'écritures de registres par triangle, ce qui coûte cher sur un bus PCI de
-       1998. */
+    /* The block is `memcmp`-able by construction — that is why it carries an
+       explicit padding field. Skipping an identical state avoids a burst of
+       register writes per triangle, which is expensive on a 1998 PCI bus. */
     if (b.has_state && memcmp(&b.current, state, sizeof(*state)) == 0) {
         return;
     }
@@ -561,9 +559,9 @@ static void gl_set_scissor(void *self, int x0, int y0, int x1, int y1)
 {
     (void)self;
     if (!gs.clip_window) { return; }
-    /* Glide refuse une fenêtre qui déborde du tampon, et le refus est silencieux :
-       la fenêtre précédente reste, et le partage d'écran à deux joueurs se met à
-       dessiner l'un sur l'autre. On borne donc ici. */
+    /* Glide refuses a window that overflows the buffer, and the refusal is
+       silent: the previous window stays, and two-player split screen starts
+       drawing one over the other. So we clamp here. */
     if (x0 < 0) { x0 = 0; }
     if (y0 < 0) { y0 = 0; }
     if (x1 > b.width)  { x1 = b.width; }
@@ -578,9 +576,10 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     int i;
     (void)self;
     if (!vertices || count <= 0) { return; }
-    /* `dkr_render_vertex` a la disposition de `GrVertex`, champ pour champ —
-       `backend_layout_check.c` le vérifie à la compilation. Le passage se fait
-       donc sans conversion ni copie, ce qui était tout l'objet de ce calque. */
+    /* `dkr_render_vertex` has `GrVertex`'s layout, field for field —
+       `backend_layout_check.c` checks it at compile time. The hand-off therefore
+       needs no conversion and no copy, which was the whole point of this
+       layer. */
     for (i = 0; i + 2 < count * 3; i += 3) {
         dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
         b.triangles++;
@@ -590,9 +589,9 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
 static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
                          unsigned argb)
 {
-    /* Deux triangles plutôt que `grBufferClear` sur une fenêtre de ciseaux :
-       l'effacement ignore le mélange et le test alpha, alors que DKR emploie ces
-       rectangles pour les fondus au noir, qui sont translucides. */
+    /* Two triangles rather than `grBufferClear` on a scissor window: the clear
+       ignores blending and the alpha test, whereas DKR uses these rectangles for
+       fades to black, which are translucent. */
     dkr_render_vertex v[6];
     const float r = (float)((argb >> 16) & 0xFF);
     const float g = (float)((argb >> 8) & 0xFF);
@@ -608,8 +607,8 @@ static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
     for (i = 0; i < 6; i++) {
         v[i].x = xs[i]; v[i].y = ys[i];
         v[i].r = r; v[i].g = g; v[i].b = bl; v[i].a = a;
-        /* Au premier plan et sans profondeur : un rectangle d'interface ne
-           participe pas au tri. */
+        /* Frontmost and depthless: an interface rectangle takes no part in
+           sorting. */
         v[i].oow = 1.0f;
         v[i].z = 0.0f;
         v[i].ooz = 0.0f;
@@ -617,13 +616,13 @@ static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
     gl_draw_triangles(self, v, 2);
 }
 
-/* Traduit (largeur, hauteur) en couple (LOD, rapport d'aspect).
+/* Translates (width, height) into a (LOD, aspect ratio) pair.
  *
- * Glide ne connait pas les dimensions : elle connait la plus grande, et le
- * rapport. Rend zero si la texture n'est pas exprimable — dimensions qui ne sont
- * pas des puissances de deux, ou rapport au-dela de 8:1. **Refuser est le bon
- * comportement** : approcher donnerait une texture lue de travers, ce qui
- * ressemble a un defaut de coordonnees et se diagnostique tres mal. */
+ * Glide does not know the dimensions: it knows the largest one, and the ratio.
+ * Returns zero if the texture is not expressible — dimensions that are not
+ * powers of two, or a ratio beyond 8:1. **Refusing is the right behaviour**:
+ * approximating would give a texture read askew, which looks like a coordinate
+ * defect and is very hard to diagnose. */
 static int lod_and_aspect(int w, int h, int *lod, int *aspect)
 {
     int big = (w > h) ? w : h;
@@ -639,8 +638,8 @@ static int lod_and_aspect(int w, int h, int *lod, int *aspect)
     }
     *lod = k;
 
-    /* GR_ASPECT_1x1 vaut 3 ; les rapports larges descendent vers 0, les hauts
-       montent vers 6. */
+    /* GR_ASPECT_1x1 is 3; wide ratios go down towards 0, tall ones up towards
+       6. */
     ratio = big / small;
     if (w >= h) {
         *aspect = (ratio == 1) ? GR_ASPECT_1x1
@@ -663,81 +662,78 @@ static dkr_texture_handle gl_texture_upload(void *self,
         return 0;
     }
     if (!lod_and_aspect(desc->width, desc->height, &lod, &aspect)) {
-        g_tex_echecs[GL_TEX_ECHEC_PROPORTIONS]++;
+        g_tex_failures[GL_TEX_FAIL_ASPECT]++;
         return 0;
     }
 
     memset(&info, 0, sizeof(info));
     info.smallLod    = lod;
-    info.largeLod    = lod;        /* pas de mipmap : E05-S08 */
+    info.largeLod    = lod;        /* no mipmap: E05-S08 */
     info.aspectRatio = aspect;
     info.format      = (desc->format == DKR_TEXFMT_INTENSITY8)
                        ? GR_TEXFMT_INTENSITY_8 : GR_TEXFMT_ARGB_1555;
     info.data        = (void *)desc->pixels;
 
-    /* **La taille vient de la carte, pas d'un calcul.** La mesure a montre un
-       cas d'arrondi — une texture 1x1 coute 8 octets pour 2 utiles — et empiler
-       d'apres un calcul ferait se recouvrir deux textures. Le symptome ne serait
-       pas une erreur mais un decor portant le motif d'un autre, a un endroit qui
-       depend de l'ordre de chargement. */
+    /* **The size comes from the card, not from a computation.** Measurement
+       showed a rounding case — a 1x1 texture costs 8 bytes for 2 useful ones —
+       and packing according to a computation would make two textures overlap.
+       The symptom would not be an error but a piece of scenery wearing another's
+       pattern, in a place that depends on the upload order. */
     bytes = gs.tex_required(GR_MIPMAPLEVELMASK_BOTH, &info);
-    if (bytes == 0u) { g_tex_echecs[GL_TEX_ECHEC_TAILLE]++; return 0; }
+    if (bytes == 0u) { g_tex_failures[GL_TEX_FAIL_SIZE]++; return 0; }
 
     for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
         if (g_tex[i].live && g_tex[i].key == desc->key) { slot = i; break; }
         if (!g_tex[i].live && slot < 0) { slot = i; }
     }
-    if (slot < 0) { g_tex_echecs[GL_TEX_ECHEC_EMPLACEMENT]++; return 0; }
+    if (slot < 0) { g_tex_failures[GL_TEX_FAIL_SLOT]++; return 0; }
 
-    /* **On passe par l'allocateur meme quand la texture est deja connue.**
+    /* **We go through the allocator even when the texture is already known.**
      *
-     * Rendre directement le handle serait plus rapide et serait un piege : la
-     * date d'usage de la texture n'avancerait jamais, l'allocateur la croirait
-     * abandonnee, et il evincerait au moindre recemment utilise precisement ce
-     * que le jeu emploie a chaque image. Le symptome serait un retelechargement
-     * permanent — donc des a-coups — sur les textures les plus vues.
+     * Returning the handle directly would be faster and would be a trap: the
+     * texture's use timestamp would never advance, the allocator would believe
+     * it abandoned, and least-recently-used eviction would throw out precisely
+     * what the game uses every frame. The symptom would be permanent
+     * re-uploading — hence hitches — on the most-seen textures.
      *
-     * `dkr_tmu_acquire` distingue seul le succes du defaut : c'est lui qui tient
-     * les compteurs, et il doit les tenir sur la totalite des demandes. */
-    /* **Deux espaces, pas un.** Chaque TMU a sa memoire propre, et une texture
-       n'est echantillonnable que depuis l'unite ou elle reside. Une meme cle
-       peut donc legitimement etre residente deux fois — mais seulement si les
-       deux unites l'echantillonnent, et la cle du cache inclut la TMU pour que
-       ce ne soit jamais accidentel. */
+     * `dkr_tmu_acquire` alone tells a hit from a miss: it is what keeps the
+     * counters, and it must keep them over the whole set of requests. */
+    /* **Two spaces, not one.** Each TMU has its own memory, and a texture is
+       only samplable from the unit where it resides. The same key can therefore
+       legitimately be resident twice — but only if both units sample it, and the
+       cache key includes the TMU so that this is never accidental. */
     {
-        int cible = desc->tmu;
-        if (cible < 0 || cible >= g_tmu_count) { cible = 0; }
-        g_tex[slot].tmu = (unsigned char)cible;
-        address = dkr_tmu_acquire(&g_tmu[cible], desc->key, &info, bytes);
+        int target = desc->tmu;
+        if (target < 0 || target >= g_tmu_count) { target = 0; }
+        g_tex[slot].tmu = (unsigned char)target;
+        address = dkr_tmu_acquire(&g_tmu[target], desc->key, &info, bytes);
     }
     if (address == DKR_TMU_NONE) {
-        g_tex_echecs[GL_TEX_ECHEC_MEMOIRE]++;
+        g_tex_failures[GL_TEX_FAIL_MEMORY]++;
         g_tex[slot].live = 0;
         return 0;
     }
 
-    /* --- Faire suivre la table les evictions de l'allocateur ---------------- *
+    /* --- Make the table follow the allocator's evictions -------------------- *
      *
-     * La table de descripteurs et l'allocateur de TMU avaient des vies
-     * independantes, et c'etait un defaut a deux faces :
+     * The descriptor table and the TMU allocator led independent lives, and that
+     * was a two-faced defect:
      *
-     *   - **Une texture evincee gardait son emplacement `live`.** Les 512
-     *     emplacements se remplissaient en une douzaine d'images — DKR en charge
-     *     une quarantaine par image — puis `slot < 0` refusait tout. Mesure sur
-     *     la machine : 25 853 chargements pour **21 195 refus**.
+     *   - **An evicted texture kept its slot `live`.** The 512 slots filled up
+     *     in a dozen frames — DKR uploads some forty per frame — and then
+     *     `slot < 0` refused everything. Measured on the machine: 25,853 uploads
+     *     for **21,195 refusals**.
      *
-     *   - **Pire que le refus** : tant que l'emplacement vivait, il designait de
-     *     la memoire que l'allocateur avait reattribuee. C'est exactement le
-     *     symptome que le commentaire de `tex_required` redoute plus haut — un
-     *     decor portant le motif d'un autre, a un endroit qui depend de l'ordre
-     *     de chargement.
+     *   - **Worse than the refusal**: as long as the slot lived, it designated
+     *     memory the allocator had reassigned. That is exactly the symptom the
+     *     `tex_required` comment above fears — a piece of scenery wearing
+     *     another's pattern, in a place that depends on the upload order.
      *
-     * On invalide donc tout emplacement de la meme unite dont la plage recouvre
-     * celle qu'on vient d'obtenir. L'allocateur reste seul juge de ce qui reside
-     * ou ; la table se contente de le suivre, ce qui est la seule facon qu'elle
-     * ne mente pas. Le balayage coute 512 comparaisons par chargement, soit
-     * quelques dizaines de milliers par image — negligeable devant une seule
-     * conversion de texture. */
+     * We therefore invalidate every slot on the same unit whose range overlaps
+     * the one just obtained. The allocator remains the sole judge of what
+     * resides where; the table merely follows it, which is the only way it does
+     * not lie. The sweep costs 512 comparisons per upload, that is a few tens of
+     * thousands per frame — negligible next to a single texture conversion. */
     {
         int j;
         for (j = 0; j < GLIDE_MAX_TEXTURES; j++) {
@@ -754,7 +750,7 @@ static dkr_texture_handle gl_texture_upload(void *self,
     g_tex[slot].address = address;
     g_tex[slot].bytes   = bytes;
     g_tex[slot].info    = info;
-    g_tex[slot].info.data = 0;   /* les pixels ne nous appartiennent pas */
+    g_tex[slot].info.data = 0;   /* the pixels do not belong to us */
     g_tex[slot].live    = 1;
     return (dkr_texture_handle)(slot + 1);
 }
@@ -763,25 +759,27 @@ static void gl_texture_release(void *self, dkr_texture_handle handle)
 {
     (void)self;
     if (handle == 0 || handle > GLIDE_MAX_TEXTURES) { return; }
-    /* On oublie le handle sans liberer le bloc : c'est l'allocateur qui decide
-       quand evincer, au moindre recemment utilise, et il le fera mieux que
-       l'appelant. Liberer ici jetterait une texture que l'image suivante
-       redemanderait — le pire regime, ou l'on paie le bus pour rien. */
+    /* We forget the handle without freeing the block: it is the allocator that
+       decides when to evict, least-recently-used first, and it will do it better
+       than the caller. Freeing here would throw away a texture the next frame
+       would ask for again — the worst regime, where the bus is paid for
+       nothing. */
     g_tex[handle - 1].live = 0;
 }
 
-/* Lie la texture courante avant le dessin. Sans `grTexSource`, la TMU echantillonne
-   ce qui traine a l'adresse ou elle pointait — donc une autre texture. */
+/* Binds the current texture before drawing. Without `grTexSource`, the TMU
+   samples whatever sits at the address it was pointing at — hence another
+   texture. */
 static void bind_texture(dkr_texture_handle handle)
 {
     glide_texture *tx;
     if (handle == 0 || handle > GLIDE_MAX_TEXTURES || !gs.tex_source) { return; }
     tx = &g_tex[handle - 1];
     if (!tx->live) { return; }
-    /* Lier sur l'unite ou la texture reside, et non sur la TMU 0 par defaut :
-       lier une adresse de la TMU 1 sur la TMU 0 ne provoque aucune erreur, la
-       TMU 0 echantillonnant simplement ce qui traine a cette adresse chez elle.
-       Le decor porterait alors le motif d'un autre. */
+    /* Bind on the unit where the texture resides, and not on TMU 0 by default:
+       binding a TMU 1 address on TMU 0 causes no error, TMU 0 simply sampling
+       whatever sits at that address in its own memory. The scenery would then
+       wear another's pattern. */
     gs.tex_source(tx->tmu ? GR_TMU1 : GR_TMU0, tx->address,
                   GR_MIPMAPLEVELMASK_BOTH, &tx->info);
 }
@@ -809,17 +807,17 @@ unsigned long dkr_glide_backend_triangle_count(void)
     return b.triangles;
 }
 
-/* Applique un reglage de la table de E05-S03, tel quel.
+/* Applies a setup from the E05-S03 table, as it is.
  *
- * Point d'entree direct, employe par le harnais de mesure et destine au moteur.
- * Il court-circuite `apply_combine`, dont les quatre modes ne sont qu'un
- * raccourci : la table couvre vingt-neuf configurations, et c'est elle qui doit
- * decider, pas une enumeration qui la resume.
+ * A direct entry point, used by the measurement harness and meant for the
+ * engine. It short-circuits `apply_combine`, whose four modes are only a
+ * shorthand: the table covers twenty-nine configurations, and it is the table
+ * that must decide, not an enumeration that summarises it.
  *
- * `constant_argb` charge l'unique registre constant de Glide. **Quel registre du
- * RDP y placer est une decision de la table** — `DKR_CONST_PRIMITIVE` ou
- * `DKR_CONST_ENVIRONMENT` — et la seconde constante, quand elle est necessaire,
- * voyage dans l'alpha du sommet. */
+ * `constant_argb` loads Glide's single constant register. **Which RDP register
+ * to put there is a decision of the table** — `DKR_CONST_PRIMITIVE` or
+ * `DKR_CONST_ENVIRONMENT` — and the second constant, when it is needed, travels
+ * in the vertex alpha. */
 void dkr_glide_backend_set_recipe(const dkr_cc_setup *r, unsigned constant_argb)
 {
     if (!r) { return; }
@@ -841,48 +839,48 @@ void dkr_glide_backend_bind(dkr_texture_handle handle)
     bind_texture(handle);
 }
 
-/* Chaîne les deux unités : la TMU 1 échantillonne, sa sortie devient l'entrée
- * « other » de la TMU 0, dont la sortie alimente le combineur de couleurs.
+/* Chains the two units: TMU 1 samples, its output becomes TMU 0's "other"
+ * input, and TMU 0's output feeds the colour combiner.
  *
- * **L'ordre des appels n'est pas indifférent.** Glide veut la TMU la plus haute
- * d'abord : c'est elle qui commence la chaîne, et la programmer après la TMU 0
- * laisse cette dernière chaînée sur une unité pas encore configurée. L'effet
- * n'est pas une erreur mais une image construite à partir de l'état précédent —
- * donc juste tant qu'on ne change rien, et fausse au premier changement d'état,
- * ce qui est le pire moment pour s'en apercevoir.
+ * **The order of the calls matters.** Glide wants the highest TMU first: it is
+ * the one that starts the chain, and programming it after TMU 0 leaves the
+ * latter chained onto a unit that is not configured yet. The effect is not an
+ * error but an image built from the previous state — hence right as long as
+ * nothing changes, and wrong at the first state change, which is the worst
+ * moment to notice.
  *
- * `fonction` et `facteur` sont passés plutôt que codés : leurs valeurs
- * d'énumération sont mesurées par `multitex_probe.c`, et ce projet a déjà payé
- * deux fois pour avoir supposé de telles valeurs. */
-/* **Le repli à une TMU doit être éprouvable sur une carte qui en a deux.**
+ * `function` and `factor` are passed rather than hard-coded: their enumeration
+ * values are measured by `multitex_probe.c`, and this project has already paid
+ * twice for assuming such values. */
+/* **The single-TMU fallback must be exercisable on a card that has two.**
  *
- * C'est le risque que le ticket nomme : « facile à écrire et facile à ne jamais
- * tester, faute de matériel à une seule TMU sous la main ». Sans ce drapeau, le
- * chemin multipasse ne serait vérifié qu'après une remontée d'utilisateur — donc
- * sur la machine de quelqu'un d'autre, et sans trace. */
-static int g_force_une_tmu;
+ * That is the risk the ticket names: "easy to write and easy never to test, for
+ * want of single-TMU hardware to hand". Without this flag, the multipass path
+ * would only be checked after a user report — hence on someone else's machine,
+ * and without a trace. */
+static int g_force_single_tmu;
 
 void dkr_glide_backend_force_single_tmu(int force)
 {
-    g_force_une_tmu = force;
+    g_force_single_tmu = force;
 }
 
 int dkr_glide_backend_tmu_count(void)
 {
-    return g_force_une_tmu ? 1 : g_tmu_count;
+    return g_force_single_tmu ? 1 : g_tmu_count;
 }
 
 void dkr_glide_backend_chain(dkr_texture_handle tmu0, dkr_texture_handle tmu1,
-                             unsigned char fonction, unsigned char facteur)
+                             unsigned char function, unsigned char factor)
 {
     if (dkr_glide_backend_tmu_count() < 2 || !gs.tex_combine) { return; }
 
     bind_texture(tmu1);
-    /* La TMU 1 se contente d'échantillonner : elle n'a pas d'unité en amont. */
+    /* TMU 1 merely samples: it has no unit upstream. */
     gs.tex_combine(GR_TMU1, GR_TEXTURECOMBINE_DECAL, 0,
                              GR_TEXTURECOMBINE_DECAL, 0, 0, 0);
     bind_texture(tmu0);
-    gs.tex_combine(GR_TMU0, fonction, facteur, fonction, facteur, 0, 0);
+    gs.tex_combine(GR_TMU0, function, factor, function, factor, 0, 0);
 }
 
 const dkr_tmu *dkr_glide_backend_tmu(int index)

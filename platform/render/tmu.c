@@ -1,23 +1,23 @@
-/* E05-S02 — mise en œuvre. Le contrat et les mesures sont dans `tmu.h`. */
+/* E05-S02 — implementation. The contract and the measurements live in `tmu.h`. */
 #include "tmu.h"
 
 #include <stdio.h>
 #include <string.h>
 
-/* --- L'arbre buddy ----------------------------------------------------------- *
+/* --- The buddy tree ---------------------------------------------------------- *
  *
- * Rangé comme un tas binaire : le nœud 0 couvre tout l'espace, le nœud `i` a
- * pour fils `2i+1` et `2i+2`. Aucun pointeur, aucune liste chaînée — la
- * structure entière tient dans un tableau d'octets de 32 Kio, et une adresse se
- * déduit de l'indice par arithmétique.
+ * Laid out like a binary heap: node 0 covers the whole space, node `i` has
+ * `2i+1` and `2i+2` as children. No pointers, no linked lists — the entire
+ * structure fits in a 32 KiB byte array, and an address follows from the index
+ * by arithmetic.
  *
- * C'est ce qui la rend éprouvable : il n'y a pas d'état caché à corrompre, et un
- * parcours complet de l'arbre vérifie l'invariant en quelques lignes. */
+ * That is what makes it testable: there is no hidden state to corrupt, and a
+ * full walk of the tree checks the invariant in a few lines. */
 
 static unsigned int node_size(unsigned int index)
 {
-    /* Le nœud 0 couvre DKR_TMU_SPAN, ses deux fils la moitié, etc. La
-       profondeur est le rang du bit de poids fort de (index+1). */
+    /* Node 0 covers DKR_TMU_SPAN, its two children half of it, and so on. The
+       depth is the position of the high bit of (index+1). */
     unsigned int span = DKR_TMU_SPAN;
     unsigned int i = index + 1u;
     while (i > 1u) { i >>= 1; span >>= 1; }
@@ -26,11 +26,11 @@ static unsigned int node_size(unsigned int index)
 
 static unsigned int node_offset(unsigned int index)
 {
-    /* L'offset se reconstruit en remontant : chaque fois qu'on est le fils
-       droit, on a franchi la moitié du bloc parent. */
+    /* The offset is rebuilt on the way up: every time we are the right child,
+       we have crossed half of the parent block. */
     unsigned int offset = 0, size = node_size(index), i = index;
     while (i > 0u) {
-        if ((i & 1u) == 0u) {          /* fils droit : i = 2p + 2 */
+        if ((i & 1u) == 0u) {          /* right child: i = 2p + 2 */
             offset += size;
         }
         size <<= 1;
@@ -46,28 +46,28 @@ static unsigned int round_up_pow2(unsigned int v)
     return p;
 }
 
-/* Marque hors d'usage tout ce qui dépasse la mémoire réelle.
+/* Marks as unusable everything that reaches past real memory.
  *
- * L'espace mesuré va de 0 à 0x1FFFF8 : **il manque huit octets** pour que la
- * TMU fasse exactement 2 Mio, et l'arbre en couvre 2 Mio pleins. Sans cette
- * réserve, l'allocateur rendrait une adresse que la carte n'accepte pas. Le
- * défaut serait rare — il faudrait que la mémoire soit presque pleine — donc
- * découvert tard, et sur un niveau chargé plutôt que sur un test. */
+ * The measured space runs from 0 to 0x1FFFF8: **eight bytes short** of the TMU
+ * being exactly 2 MiB, while the tree covers a full 2 MiB. Without this reserve,
+ * the allocator would hand out an address the card does not accept. The defect
+ * would be rare — memory would have to be nearly full — hence discovered late,
+ * and on a loaded level rather than on a test. */
 static void reserve_outside(dkr_tmu *t, unsigned int index)
 {
     const unsigned int start = t->base + node_offset(index);
     const unsigned int size  = node_size(index);
 
     if (start >= t->limit) {
-        t->node[index] = DKR_TMU_RESERVED;      /* entièrement dehors */
+        t->node[index] = DKR_TMU_RESERVED;      /* entirely outside */
         return;
     }
     if (start + size <= t->limit) {
-        return;                                  /* entièrement dedans */
+        return;                                  /* entirely inside */
     }
-    /* À cheval : on coupe et l'on recommence sur les deux moitiés. */
+    /* Straddling: split and start again on both halves. */
     if (size <= DKR_TMU_MIN_BLOCK) {
-        t->node[index] = DKR_TMU_RESERVED;       /* on ne coupe plus : on jette */
+        t->node[index] = DKR_TMU_RESERVED;       /* no more splitting: discard */
         return;
     }
     t->node[index] = DKR_TMU_SPLIT;
@@ -88,13 +88,12 @@ void dkr_tmu_init(dkr_tmu *t, int index, unsigned int base, unsigned int limit,
     reserve_outside(t, 0u);
 }
 
-/* Descente récursive : trouver un bloc libre de `want` octets, en coupant au
-   besoin. Rend l'offset relatif à `base`, ou DKR_TMU_NONE.
+/* Recursive descent: find a free block of `want` bytes, splitting as needed.
+   Returns the offset relative to `base`, or DKR_TMU_NONE.
  *
- * La première place trouvée est prise, sans chercher la meilleure. Sur des
- * demandes toutes en puissances de deux, « la première » et « la meilleure »
- * désignent le même bloc : l'arbre ne contient pas de bloc de taille
- * intermédiaire où l'on pourrait faire mieux. */
+ * The first place found is taken, with no search for the best. On requests that
+ * are all powers of two, "the first" and "the best" name the same block: the
+ * tree holds no intermediate-sized block where one could do better. */
 static unsigned int take(dkr_tmu *t, unsigned int index, unsigned int want)
 {
     const unsigned int size = node_size(index);
@@ -105,12 +104,12 @@ static unsigned int take(dkr_tmu *t, unsigned int index, unsigned int want)
     }
     if (size == want) {
         if (t->node[index] != DKR_TMU_FREE) {
-            return DKR_TMU_NONE;                 /* déjà coupé : rien d'entier ici */
+            return DKR_TMU_NONE;                 /* already split: nothing whole here */
         }
         t->node[index] = DKR_TMU_USED;
         return node_offset(index);
     }
-    /* Trop grand : couper, puis descendre. */
+    /* Too large: split, then descend. */
     if (t->node[index] == DKR_TMU_FREE) {
         t->node[index] = DKR_TMU_SPLIT;
     }
@@ -139,9 +138,9 @@ unsigned int dkr_tmu_alloc(dkr_tmu *t, unsigned int bytes)
     return t->base + offset;
 }
 
-/* Libère et **fusionne**. C'est la fusion qui distingue le buddy d'un simple
-   allocateur par classes : sans elle, un niveau qui remplace ses textures 64x64
-   par des 128x128 échouerait alors que la place existe, éparpillée. */
+/* Frees and **coalesces**. Coalescing is what distinguishes the buddy from a
+   plain size-class allocator: without it, a level replacing its 64x64 textures
+   with 128x128 ones would fail while the room exists, scattered. */
 static int give_back(dkr_tmu *t, unsigned int index, unsigned int offset,
                      unsigned int want)
 {
@@ -163,7 +162,7 @@ static int give_back(dkr_tmu *t, unsigned int index, unsigned int offset,
             !give_back(t, right, offset, want)) {
             return 0;
         }
-        /* Les deux moitiés libres : le parent redevient un bloc entier. */
+        /* Both halves free: the parent becomes a whole block again. */
         if (t->node[left] == DKR_TMU_FREE && t->node[right] == DKR_TMU_FREE) {
             t->node[index] = DKR_TMU_FREE;
         }
@@ -183,7 +182,7 @@ void dkr_tmu_free(dkr_tmu *t, unsigned int address, unsigned int bytes)
 
 unsigned int dkr_tmu_used(const dkr_tmu *t) { return t ? t->used_bytes : 0u; }
 
-/* --- Le cache de résidence ---------------------------------------------------- */
+/* --- The residency cache ------------------------------------------------------ */
 
 static dkr_tmu_resident *find_resident(dkr_tmu *t, unsigned long long key)
 {
@@ -205,13 +204,12 @@ static dkr_tmu_resident *free_slot(dkr_tmu *t)
     return 0;
 }
 
-/* Choisit la victime : la plus anciennement employée, et **non protégée**.
+/* Picks the victim: the least recently used, and **not pinned**.
  *
- * Rend NULL s'il n'y a rien à évincer, ce qui n'est pas la même chose que
- * « la mémoire est pleine » : cela veut dire que tout ce qui est résident sert
- * à l'image en cours. Continuer d'évincer serait alors nuisible — on
- * retéléchargerait sans cesse ce dont on a besoin, en payant le bus à chaque
- * fois pour n'afficher rien de plus. */
+ * Returns NULL if there is nothing to evict, which is not the same thing as
+ * "memory is full": it means everything resident serves the current frame.
+ * Carrying on evicting would then be harmful — we would endlessly re-download
+ * what we need, paying the bus each time to display nothing more. */
 static dkr_tmu_resident *pick_victim(dkr_tmu *t)
 {
     dkr_tmu_resident *victim = 0;
@@ -243,8 +241,8 @@ unsigned int dkr_tmu_acquire(dkr_tmu *t, unsigned long long key,
     }
     t->stats.misses++;
 
-    /* Faire de la place jusqu'à ce que l'allocation passe. La boucle s'arrête
-       aussi quand il n'y a plus de victime : voir `pick_victim`. */
+    /* Make room until the allocation goes through. The loop also stops when
+       there is no victim left: see `pick_victim`. */
     for (;;) {
         address = dkr_tmu_alloc(t, bytes);
         if (address != DKR_TMU_NONE) { break; }
@@ -262,8 +260,8 @@ unsigned int dkr_tmu_acquire(dkr_tmu *t, unsigned long long key,
 
     r = free_slot(t);
     if (!r) {
-        /* La table est pleine alors que la mémoire ne l'est pas. Évincer libère
-           une entrée aussi bien qu'un bloc. */
+        /* The table is full while memory is not. Evicting frees an entry just
+           as well as a block. */
         dkr_tmu_resident *victim = pick_victim(t);
         if (!victim) {
             dkr_tmu_free(t, address, bytes);
@@ -324,8 +322,8 @@ void dkr_tmu_reset(dkr_tmu *t)
     dkr_tmu_stats keep;
 
     if (!t) { return; }
-    /* Les compteurs cumulés survivent au changement de niveau : ce sont eux qui
-       diront, à la fin, si le portage a téléchargé pendant les courses. */
+    /* The cumulative counters survive a level change: they are what will say,
+       in the end, whether the port downloaded during the races. */
     keep  = t->stats;
     base  = t->base;  limit = t->limit;
     dl    = t->download; user = t->download_user; index = t->index;
@@ -342,7 +340,7 @@ void dkr_tmu_format_status(const dkr_tmu *t, char *out, unsigned int size)
     if (!out || size == 0u) { return; }
     if (!t) { out[0] = 0; return; }
 
-    sprintf(line, "TMU%d %uK/%uK  succes %lu/%lu  tel %lu (%lu image)  evic %lu  echecs %lu",
+    sprintf(line, "TMU%d %uK/%uK  hits %lu/%lu  dl %lu (%lu frame)  evict %lu  fail %lu",
             t->index,
             t->used_bytes / 1024u,
             (t->limit - t->base) / 1024u,

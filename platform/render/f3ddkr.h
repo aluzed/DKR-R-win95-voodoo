@@ -1,33 +1,32 @@
-/* E04-S02 — décodeur de display list F3DDKR, indépendant de RT64.
+/* E04-S02 — F3DDKR display-list decoder, independent of RT64.
  *
- * `F3DDKRRT64Bridge` sait déjà décoder le microcode de Rare, et ce travail est
- * précieux : il est validé par un portage qui tourne. Ce module en reprend la
- * logique — qui est propre au microcode et n'a rien à voir avec RT64 — et la
- * repose sur l'interface de rendu de E04-S01.
+ * `F3DDKRRT64Bridge` already knows how to decode Rare's microcode, and that work
+ * is valuable: it is validated by a port that runs. This module takes its logic
+ * — which belongs to the microcode and has nothing to do with RT64 — and rests
+ * it on the E04-S01 rendering interface.
  *
- * La cartographie des commandes est dans `docs/research/f3ddkr-commands.md`.
+ * The command map lives in `docs/research/f3ddkr-commands.md`.
  *
- * ## Ce qui devait survivre à l'extraction
+ * ## What had to survive the extraction
  *
- * **La validation des plages.** Le décodeur d'origine vérifie chaque plage avant
- * de l'utiliser et rejette les données invalides par une erreur bornée, plutôt
- * que de laisser adresser la mémoire hôte. Une extraction qui perdrait cette
- * discipline échangerait un décodeur sûr contre un décodeur rapide à écrire.
+ * **Range validation.** The original decoder checks every range before using it
+ * and rejects invalid data with a bounded error, rather than letting host memory
+ * be addressed. An extraction that lost that discipline would trade a safe
+ * decoder for a decoder that is quick to write.
  *
- * Elle protège contre deux choses différentes : une ROM modifiée, et un bug du
- * portage. La seconde est la plus probable.
+ * It protects against two different things: a modified ROM, and a bug in the
+ * port. The second is the more likely.
  *
- * ## Ce que ce module ne fait pas
+ * ## What this module does not do
  *
- * Il ne transforme pas les sommets (E04-S03), ne découpe pas (E04-S05), ne
- * décode pas les textures (E04-S07). Il lit la display list, valide, tient
- * l'état du microcode, et appelle l'interface de rendu.
+ * It does not transform vertices (E04-S03), does not clip (E04-S05), does not
+ * decode textures (E04-S07). It reads the display list, validates, keeps the
+ * microcode's state, and calls the rendering interface.
  *
- * Il **émet** en revanche, désormais que E04-S03 et E04-S05 existent : chaque
- * triangle traverse la transformation, le découpage au plan proche, la
- * projection et l'élimination des faces arrière avant d'atteindre le backend.
- * C'est la chaîne complète, et le seul assemblage qui prouve que les cinq
- * modules s'emboîtent.
+ * It does **emit**, however, now that E04-S03 and E04-S05 exist: every triangle
+ * goes through transformation, near-plane clipping, projection and back-face
+ * culling before reaching the backend. That is the complete chain, and the only
+ * assembly that proves the five modules fit together.
  */
 #ifndef DKR_RENDER_F3DDKR_H
 #define DKR_RENDER_F3DDKR_H
@@ -42,245 +41,243 @@
 extern "C" {
 #endif
 
-/* --- Les raisons de rejet -------------------------------------------------- *
+/* --- The reasons for rejection --------------------------------------------- *
  *
- * Distinguées parce qu'elles ne se diagnostiquent pas de la même façon : une
- * adresse hors RDRAM évoque une base de DMA fausse, un index de sommet hors
- * cache évoque une display list corrompue ou une commande manquée. */
+ * Told apart because they are not diagnosed the same way: an address outside
+ * RDRAM suggests a wrong DMA base, a vertex index outside the cache suggests a
+ * corrupt display list or a missed command. */
 typedef enum {
-    DKR_F3D_REJECT_ADDRESS = 0,   /* plage hors des 8 Mio de RDRAM */
-    DKR_F3D_REJECT_COUNT,         /* nombre nul ou au-delà de la limite */
-    DKR_F3D_REJECT_INDEX,         /* index de sommet hors du cache de 32 */
-    DKR_F3D_REJECT_DEPTH,         /* pile de listes imbriquées pleine */
-    DKR_F3D_REJECT_OPCODE,        /* opcode inconnu */
+    DKR_F3D_REJECT_ADDRESS = 0,   /* range outside the 8 MiB of RDRAM */
+    DKR_F3D_REJECT_COUNT,         /* count of zero or beyond the limit */
+    DKR_F3D_REJECT_INDEX,         /* vertex index outside the 32-entry cache */
+    DKR_F3D_REJECT_DEPTH,         /* nested display-list stack full */
+    DKR_F3D_REJECT_OPCODE,        /* unknown opcode */
     DKR_F3D_REJECT_COUNT_MAX
 } dkr_f3d_reject;
 
 const char *dkr_f3d_reject_text(dkr_f3d_reject r);
 
-/* --- L'état du décodeur ---------------------------------------------------- */
+/* --- The decoder's state --------------------------------------------------- */
 typedef struct {
-    /* Bases d'adressage de `DMAOffsets` — le mécanisme central du microcode de
-       Rare. Une base fausse ne plante pas : elle produit une géométrie
-       entièrement absurde, ce qui est bien plus dur à diagnostiquer. */
+    /* Addressing bases from `DMAOffsets` — the central mechanism of Rare's
+       microcode. A wrong base does not crash: it produces entirely absurd
+       geometry, which is far harder to diagnose. */
     unsigned int matrix_offset;
     unsigned int vertex_offset;
 
     unsigned int selected_matrix;    /* 0..2 */
     unsigned char billboard;
-    /* Base d'adressage pour le chargement de texture, **et non un couple de
-       decalages s et t** — relevé dans le portage voisin, voir `f3ddkr.c`. */
+    /* Addressing base for texture loading, **and not a pair of s and t
+       offsets** — found in the neighbouring port, see `f3ddkr.c`. */
     unsigned int texture_offset;
     unsigned int texture_shift;
     unsigned int texture_count;
 
-    /* Comptes, pour le mode trace et pour les épreuves. */
+    /* Counts, for trace mode and for the tests. */
     unsigned long commands;
     unsigned long triangles;
     unsigned long vertices;
     unsigned long rejects[DKR_F3D_REJECT_COUNT_MAX];
 
-    /* Ce que la chaîne a réellement remis au backend, par opposition à ce que la
-       display list demandait. L'écart entre `triangles` et `emitted` est le
-       nombre éliminé — par le découpage, la culling ou le rejet hors écran — et
-       c'est un chiffre qu'on veut voir : un écran vide avec `triangles` élevé et
-       `emitted` nul désigne immédiatement cet étage. */
+    /* What the chain actually handed to the backend, as opposed to what the
+       display list asked for. The gap between `triangles` and `emitted` is the
+       number discarded — by clipping, culling or off-screen rejection — and it
+       is a figure one wants to see: an empty screen with a high `triangles` and
+       a zero `emitted` points straight at this stage. */
     unsigned long emitted;
     unsigned long culled;
     unsigned long clipped_away;
-    unsigned long clip_split;      /* triangles devenus deux */
+    unsigned long clip_split;      /* triangles that became two */
 
-    /* Commandes reconnues mais dont l'effet n'est pas encore branché — modes
-       géométriques, état RDP, textures. Comptées à part de `commands` parce que
-       ce chiffre répond à une question différente : non pas « la séquence est-
-       elle juste » mais **quelle part de l'image est encore ignorée**. C'est la
-       mesure qui manquera le plus quand le décor sortira faux plutôt
-       qu'absent. */
+    /* Commands recognised but whose effect is not wired up yet — geometry
+       modes, RDP state, textures. Counted separately from `commands` because
+       this figure answers a different question: not "is the sequence right" but
+       **how much of the image is still ignored**. It is the measurement that
+       will be missed most when the scenery comes out wrong rather than
+       absent. */
     unsigned long deferred;
 
-    /* --- L'état 2D, celui que la séquence de démarrage exerce ---------------- *
+    /* --- The 2D state, the one the startup sequence exercises ---------------- *
      *
-     * Mesuré avant d'être écrit : sur les 47 000 commandes du démarrage, le seul
-     * ordre de dessin émis est `FILLRECT`. Ces trois champs sont donc ce dont
-     * dépend le premier pixel que ce portage affichera. */
-    unsigned int  fill_color_raw;     /* le mot de SETFILLCOLOR, tel quel */
-    unsigned int  fill_color_argb;    /* et sa conversion, pour le backend */
-    unsigned int  color_image_width;  /* la largeur du tampon, lue et non supposée */
-    unsigned long rects;              /* rectangles réellement remis au backend */
+     * Measured before being written: across the 47,000 commands of startup, the
+     * only draw order emitted is `FILLRECT`. These three fields are therefore
+     * what the first pixel this port displays depends on. */
+    unsigned int  fill_color_raw;     /* the SETFILLCOLOR word, as it is */
+    unsigned int  fill_color_argb;    /* and its conversion, for the backend */
+    unsigned int  color_image_width;  /* the buffer's width, read and not assumed */
+    unsigned long rects;              /* rectangles actually handed to the backend */
 
-    /* --- L'état RDP, et ce qu'il coûte en fidélité -------------------------- */
-    unsigned long states_applied;    /* traductions réellement remises au backend */
-    /* Traductions **approchées**. `rdp_state.h` insiste : une approximation qui
-       ne s'annonce pas est pire qu'un échec, parce qu'elle produit une image
-       plausible et fausse. Ce compteur est ce filet. */
+    /* --- The RDP state, and what it costs in fidelity ----------------------- */
+    unsigned long states_applied;    /* translations actually handed to the backend */
+    /* **Approximate** translations. `rdp_state.h` insists: an approximation that
+       does not announce itself is worse than a failure, because it produces a
+       plausible, wrong image. This counter is that safety net. */
     unsigned long states_approximate;
-    /* Remplissages survenus hors du mode `FILL`. Le RDP ne remplit qu'en mode
-       FILL ; toute autre valeur accuse l'écriture partielle du mot de mode, donc
-       le décalage — et le dit en chiffres plutôt qu'à l'écran. */
+    /* Fills that happened outside `FILL` mode. The RDP only fills in FILL mode;
+       any other value accuses the partial write of the mode word, hence the
+       shift — and says so in figures rather than on screen. */
     unsigned long fills_wrong_cycle;
     unsigned char current_cycle;
-    /* Fenêtres d'affichage installées par le jeu. Zéro signifie qu'on dessine
-       encore avec le défaut, donc à une échelle inventée. */
+    /* Viewports installed by the game. Zero means we are still drawing with the
+       default, hence at an invented scale. */
     unsigned long viewports;
 
-    /* --- Les textures ------------------------------------------------------- */
-    dkr_texture_stats textures;          /* converties, refusees, hors bornes */
-    unsigned long     textures_loaded;    /* remises au backend */
-    unsigned long     textures_reused; /* servies par le cache */
-    unsigned long     textures_refused;    /* memoire de texture pleine */
-    /* Remplies jusqu'a la puissance de deux superieure, ce que la Voodoo exige
-       et que la N64 n'impose pas. */
+    /* --- Textures ----------------------------------------------------------- */
+    dkr_texture_stats textures;           /* converted, refused, out of bounds */
+    unsigned long     textures_loaded;    /* handed to the backend */
+    unsigned long     textures_reused;    /* served from the cache */
+    unsigned long     textures_refused;   /* texture memory full */
+    /* Padded up to the next power of two, which the Voodoo requires and the N64
+       does not. */
     unsigned long     textures_padded;
-    /* Refusees pour un rapport au-dela de 8:1, que le remplissage ne peut pas
-       corriger sans multiplier la memoire par huit. */
+    /* Refused for a ratio beyond 8:1, which padding cannot fix without
+       multiplying memory by eight. */
     unsigned long     textures_bad_aspect;
-    /* Les extrêmes des coordonnées normalisées. Elles doivent tenir dans un
-       voisinage de [0,1] ; des milliers diraient que l'échelle est fausse. La
-       mesure existe pour pouvoir contredire l'interprétation du format 10.5,
-       pas pour la confirmer. */
+    /* The extremes of the normalised coordinates. They must stay in the
+       neighbourhood of [0,1]; thousands would say the scale is wrong. The
+       measurement exists to be able to contradict the 10.5 format
+       interpretation, not to confirm it. */
     float             s_min, s_max, t_min, t_max;
-    /* Les triangles émis, ventilés par mode de combineur et selon qu'une
-       texture était liée. « Émis » seul confond trois causes distinctes de
-       surface blanche ; ces deux compteurs en séparent deux. */
+    /* Triangles emitted, broken down by combiner mode and by whether a texture
+       was bound. "Emitted" on its own conflates three distinct causes of a white
+       surface; these two counters separate two of them. */
     unsigned long     emitted_per_combine[DKR_COMBINE_COUNT];
     unsigned long     emitted_textured;
-    /* Les triangles émis par ordre de grandeur d'area à l'écran : moins d'un
-       pixel, moins de cent, moins de dix mille, au-delà. Une distribution
-       dominée par le dernier seau accuse la projection ou les matrices ; une
-       distribution normale dit que la géométrie est juste. */
+    /* Triangles emitted by order of magnitude of screen area: under one pixel,
+       under a hundred, under ten thousand, beyond. A distribution dominated by
+       the last bucket accuses the projection or the matrices; a normal
+       distribution says the geometry is right. */
     unsigned long     area[4];
-    /* Les triangles émis par mode de profondeur. Un tri absent produit
-       exactement l'image observée : le dernier grand polygone recouvre tout. */
+    /* Triangles emitted by depth mode. A missing sort produces exactly the
+       observed image: the last large polygon covers everything. */
     unsigned long     emitted_per_depth[4];
-    /* La plage des profondeurs remises à la carte. Glide en tampon W consomme
-       `oow` telle quelle ; des valeurs dégénérées donnent un écran noir sans
-       qu'aucune convention de comparaison ne soit en cause. */
+    /* The range of depths handed to the card. Glide in W-buffer mode consumes
+       `oow` as it is; degenerate values give a black screen with no comparison
+       convention being at fault. */
     float             oow_min, oow_max;
-    /* Le mélange et le test alpha. Trois causes peuvent noircir un écran —
-       profondeur, mélange, seuil alpha — et les confondre fait corriger la
-       mauvaise. */
+    /* Blending and the alpha test. Three causes can blacken a screen — depth,
+       blending, alpha threshold — and conflating them makes one fix the wrong
+       one. */
     unsigned long     emitted_per_blend[8];
     unsigned long     emitted_alpha_test;
     unsigned          alpha_ref_max;
-    /* Le maximum de couleur et d'alpha atteint par un sommet émis. Un shade nul
-       multiplie le texel par zéro : c'est du noir, quels que soient les
-       texels. */
+    /* The maximum colour and alpha reached by an emitted vertex. A zero shade
+       multiplies the texel by zero: that is black, whatever the texels. */
     float             shade_max, alpha_max;
-    /* Textures entièrement noires après conversion, contre celles qui portent
-       quelque chose. Le texel est la dernière entrée du combineur qu'on n'ait
-       pas regardée. */
+    /* Textures entirely black after conversion, against those that carry
+       something. The texel is the last combiner input we had not looked at. */
     unsigned long     textures_black, textures_with_content;
-    /* Les configurations de combineur, répertoriées ou non. `rdp_state.h`
-       insiste : un cas manquant ne se voit pas au décodage, il se voit à
-       l'écran sous forme d'une couleur inattendue, éventuellement dans un seul
-       niveau. On retient les clés plutôt que leur seul nombre — un compte dit
-       qu'il en manque, pas lesquelles. */
+    /* The combiner configurations, catalogued or not. `rdp_state.h` insists: a
+       missing case is invisible at decode time, it shows on screen as an
+       unexpected colour, possibly in a single level. We keep the keys rather
+       than merely their count — a count says some are missing, not which. */
     unsigned long      combiners_known;
     unsigned long      combiners_unknown;
     unsigned long long unknown_keys[8];
     unsigned           unknown_keys_n;
-    /* La composition de chaque configuration inconnue, sans quoi la clé ne
-       permet que de constater le manque, pas de le combler. */
+    /* The composition of each unknown configuration, without which the key only
+       lets one note the gap, not fill it. */
     dkr_combiner       unknown_combiners[8];
     unsigned char      unknown_cycle[8];
 
-    /* Combien de fois chaque opcode a été vu.
+    /* How many times each opcode was seen.
      *
-     * Mille octets pour répondre à une question qu'aucun raisonnement ne tranche :
-     * **de quoi une image de DKR est-elle faite ?** Sans cela on décide quoi
-     * implémenter d'après une table d'opcodes, c'est-à-dire d'après ce que le
-     * microcode *peut* émettre plutôt que ce que ce jeu *émet*. Les deux ont déjà
-     * divergé une fois cette session, sur la borne basse de la famille F3D. */
+     * A thousand bytes to answer a question no amount of reasoning settles:
+     * **what is a DKR frame made of?** Without it one decides what to implement
+     * from an opcode table, that is, from what the microcode *can* emit rather
+     * than what this game *does* emit. The two have already diverged once this
+     * session, on the low bound of the F3D family. */
     unsigned long opcodes[256];
 } dkr_f3d_state;
 
-/* --- Le contexte ----------------------------------------------------------- */
+/* --- The context ----------------------------------------------------------- */
 typedef struct {
-    const unsigned char *rdram;      /* instantané RDRAM, `rdram_size` octets */
+    const unsigned char *rdram;      /* RDRAM snapshot, `rdram_size` bytes */
     unsigned int         rdram_size;
-    /* Disposition des octets dans `rdram`. Zéro — la valeur par défaut — décrit
-       le gros-boutiste franc de la console, celui que les épreuves construisent.
-       Un vaut la disposition **entrelacée par XOR-3** de librecomp, celle de
-       l'instantané que le jeu remet au fil graphique.
+    /* Byte layout inside `rdram`. Zero — the default — describes the console's
+       plain big-endian, the one the tests build. One means librecomp's
+       **XOR-3 interleaved** layout, that of the snapshot the game hands to the
+       graphics thread.
      *
-       Le drapeau existe parce que les deux sont indiscernables à l'inspection :
-       une display list lue avec la mauvaise convention ne plante pas, elle décode
-       des opcodes plausibles à des adresses absurdes. On les rejette, on compte
-       les rejets, et l'on soupçonne le décodeur. */
+       The flag exists because the two are indistinguishable on inspection: a
+       display list read with the wrong convention does not crash, it decodes
+       plausible opcodes at absurd addresses. We reject them, we count the
+       rejections, and we suspect the decoder. */
     unsigned char        rdram_native;
-    dkr_render_backend  *backend;    /* peut être NULL : on décode sans dessiner */
+    dkr_render_backend  *backend;    /* may be NULL: we decode without drawing */
     dkr_f3d_state        state;
 
-    /* La chaîne. `transform` porte les matrices et la fenêtre ; `cache` tient les
-       32 sommets du microcode, **déjà transformés en espace homogène**.
+    /* The chain. `transform` carries the matrices and the viewport; `cache`
+       holds the microcode's 32 vertices, **already transformed into homogeneous
+       space**.
      *
-       Les transformer au chargement plutôt qu'au triangle n'est pas une
-       optimisation gratuite : un sommet servi par trois triangles serait sinon
-       transformé trois fois, et la transformation est le poste le plus lourd du
-       portage (0,682 µs par sommet, mesuré). Les coordonnées de texture, elles,
-       arrivent bien au triangle — c'est ainsi que le microcode fonctionne. */
+       Transforming them on load rather than at the triangle is not a free
+       optimisation: a vertex served by three triangles would otherwise be
+       transformed three times, and transformation is the port's heaviest stage
+       (0.682 us per vertex, measured). Texture coordinates, on the other hand,
+       do arrive with the triangle — that is how the microcode works. */
     dkr_transform        transform;
     dkr_clip_vertex      cache[32];
     unsigned char        cache_valid[32];
     dkr_render_state     render_state;
 
-    /* Le mot d'autre-mode du RDP, accumulé par écritures partielles, et le
-       combineur. Ils vivent dans le contexte et non dans l'état parce qu'ils
-       sont de la mémoire de travail du décodeur, pas une mesure. */
+    /* The RDP's other-mode word, accumulated through partial writes, and the
+       combiner. They live in the context and not in the state because they are
+       the decoder's working memory, not a measurement. */
     unsigned int         mode_h;
     unsigned int         mode_l;
     dkr_combiner         combiner;
     unsigned char        state_dirty;
-    /* Force la profondeur inactive, pour isoler le tri d'un défaut de rendu.
-       Posé par l'appelant ; zéro par défaut. */
+    /* Forces depth off, to isolate sorting from a rendering defect. Set by the
+       caller; zero by default. */
     unsigned char        no_depth;
 
-    /* La résolution réellement ouverte par le backend. Le décodeur en a besoin
-       pour porter le tampon du jeu à l'écran, et la déduire de la fenêtre
-       courante ne marcherait plus dès qu'il la remplace. */
+    /* The resolution the backend actually opened. The decoder needs it to carry
+       the game's buffer to the screen, and deducing it from the current viewport
+       would stop working as soon as it replaces that viewport. */
     unsigned int         screen_width;
     unsigned int         screen_height;
 
-    /* L'image de texture courante, telle que `SETTIMG` la decrit. Elle ne suffit
-       pas a charger : les dimensions viennent de `SETTILESIZE`, plus tard. */
+    /* The current texture image, as `SETTIMG` describes it. It is not enough to
+       load with: the dimensions come from `SETTILESIZE`, later. */
     unsigned int         timg_address;
     unsigned int         timg_format;
     unsigned int         timg_size;
-    /* La texture actuellement liee, par sa cle. Zero signifie aucune. */
+    /* The currently bound texture, by its key. Zero means none. */
     unsigned long long   texture_key;
-    /* Le handle courant. Il vit ici et non dans `render_state` parce que la
-       traduction de l'état RDP réécrit ce bloc en entier : le handle y serait
-       écrasé à chaque application, ce qui est exactement ce qui se passait. */
+    /* The current handle. It lives here and not in `render_state` because
+       translating the RDP state rewrites that block in full: the handle would be
+       overwritten on every application, which is exactly what was happening. */
     dkr_texture_handle   bound_texture;
-    /* Le tampon de conversion. 256x256 en 5551 : 128 Kio, portes par le contexte
-       plutot qu'alloues par texture — un Pentium II n'a pas les moyens d'un
-       malloc par changement de texture, et il y en a des milliers par seconde. */
+    /* The conversion buffer. 256x256 in 5551: 128 KiB, carried by the context
+       rather than allocated per texture — a Pentium II cannot afford a malloc
+       per texture change, and there are thousands of them per second. */
     unsigned short       texels[256 * 256];
-    /* Les dimensions reelles et celles apres remplissage. Leur rapport sert aux
-       coordonnees de texture : la texture reelle n'occupe que le coin superieur
-       gauche de ce qu'on charge. */
+    /* The real dimensions and the padded ones. Their ratio serves the texture
+       coordinates: the real texture only occupies the top-left corner of what is
+       uploaded. */
     int                  tex_width, tex_height;
     int                  tex_padded_width, tex_padded_height;
-    /* Le facteur qui porte le 10.5 du microcode vers le [0,1] de la projection,
-       largeur de remplissage comprise. */
+    /* The factor that carries the microcode's 10.5 into the projection's [0,1],
+       padding width included. */
     float                tex_scale_s, tex_scale_t;
 
-    /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
-       cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne
-       voit rien d'autre que le résultat. */
+    /* Trace mode. Without this tool, every graphics diagnosis on the target
+       machine is made blind — the screen belongs to the 3dfx card and one sees
+       nothing but the result. */
     void (*trace)(void *user, const char *line);
     void  *trace_user;
 } dkr_f3d_context;
 
-/* Prépare le contexte. `rdram` et `rdram_size` décrivent la mémoire visible ;
-   tout ce qui en sort est rejeté. */
+/* Prepares the context. `rdram` and `rdram_size` describe the visible memory;
+   anything outside it is rejected. */
 void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
                   unsigned int rdram_size, dkr_render_backend *backend);
 
-/* Exécute la display list à `address`. Rend le nombre de commandes décodées.
+/* Runs the display list at `address`. Returns the number of commands decoded.
  *
- * `address` est une adresse RDRAM, pas un pointeur : le décodeur ne déréférence
- * jamais rien qui vienne de la display list sans l'avoir borné d'abord. */
+ * `address` is an RDRAM address, not a pointer: the decoder never dereferences
+ * anything coming from the display list without bounding it first. */
 unsigned long dkr_f3d_run(dkr_f3d_context *ctx, unsigned int address);
 
 #ifdef __cplusplus

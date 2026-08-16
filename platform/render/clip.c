@@ -1,13 +1,13 @@
-/* E04-S05 — mise en œuvre. Le contrat est dans `clip.h`. */
+/* E04-S05 — implementation. The contract lives in `clip.h`. */
 #include "clip.h"
 
 #include <string.h>
 
-/* Interpole **tous** les attributs entre deux sommets.
+/* Interpolates **every** attribute between two vertices.
  *
- * Écrite une seule fois et employée pour chaque sommet produit : c'est ce qui
- * empêche d'oublier un attribut dans un cas particulier. L'oubli ne se verrait
- * que sur les triangles découpés — donc rarement, donc tard. */
+ * Written once and used for every vertex produced: that is what prevents an
+ * attribute being forgotten in a special case. The omission would only show on
+ * clipped triangles — hence rarely, hence late. */
 static void lerp_vertex(const dkr_clip_vertex *a, const dkr_clip_vertex *b,
                         float k, dkr_clip_vertex *out)
 {
@@ -23,26 +23,26 @@ static void lerp_vertex(const dkr_clip_vertex *a, const dkr_clip_vertex *b,
     out->t = a->t + (b->t - a->t) * k;
 }
 
-/* La distance signée d'un sommet à un plan, en espace homogène.
+/* The signed distance from a vertex to a plane, in homogeneous space.
  *
- * Cinq plans : le plan proche, et les quatre côtés de la bande de garde. Les
- * écrire comme des fonctions linéaires de (x, y, w) permet de les traiter par la
- * même boucle — donc de n'avoir qu'un seul découpeur à relire. */
+ * Five planes: the near plane, and the four sides of the guard band. Writing
+ * them as linear functions of (x, y, w) lets one loop handle them all — hence
+ * only one clipper to read. */
 static float plane_distance(const dkr_clip_vertex *v, int plane)
 {
     const float g = DKR_CLIP_GUARD;
     switch (plane) {
-    case 0:  return v->w - DKR_CLIP_NEAR_EPSILON;   /* plan proche */
-    case 1:  return v->x + g * v->w;                /* garde gauche */
-    case 2:  return g * v->w - v->x;                /* garde droite */
-    case 3:  return v->y + g * v->w;                /* garde haute */
-    default: return g * v->w - v->y;                /* garde basse */
+    case 0:  return v->w - DKR_CLIP_NEAR_EPSILON;   /* near plane */
+    case 1:  return v->x + g * v->w;                /* left guard */
+    case 2:  return g * v->w - v->x;                /* right guard */
+    case 3:  return v->y + g * v->w;                /* top guard */
+    default: return g * v->w - v->y;                /* bottom guard */
     }
 }
 
 #define CLIP_PLANES 5
-/* Cinq plans peuvent porter un triangle à huit sommets : chacun en ajoute au
-   plus un. La borne est atteignable, et la dépasser écraserait la pile. */
+/* Five planes can take a triangle up to eight vertices: each adds at most one.
+   The bound is reachable, and exceeding it would smash the stack. */
 #define CLIP_MAX_VERTICES 8
 
 int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
@@ -55,10 +55,9 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
         return 0;
     }
 
-    /* **Court-circuit.** La quasi-totalité des triangles est entièrement dans la
-       bande, et sort d'ici sans qu'aucune arête ne soit calculée. C'est ce qui
-       rend le découpage à cinq plans abordable là où le découpage complet ne le
-       serait pas. */
+    /* **Short circuit.** Almost every triangle is entirely inside the band, and
+       leaves here without a single edge being computed. That is what makes
+       five-plane clipping affordable where full clipping would not be. */
     {
         int all_inside = 1;
         for (plane = 0; plane < CLIP_PLANES && all_inside; plane++) {
@@ -77,9 +76,9 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
 
     poly[0] = in[0]; poly[1] = in[1]; poly[2] = in[2];
 
-    /* Sutherland-Hodgman, un plan après l'autre : pour chaque arête, on garde le
-       sommet s'il est du bon côté, et l'on ajoute l'intersection si l'arête
-       traverse. */
+    /* Sutherland-Hodgman, one plane after another: for each edge we keep the
+       vertex if it is on the right side, and add the intersection if the edge
+       crosses. */
     for (plane = 0; plane < CLIP_PLANES; plane++) {
         int m = 0;
         for (i = 0; i < n; i++) {
@@ -92,28 +91,28 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
                 work[m++] = *cur;
             }
             if ((dc >= 0.0f) != (dn >= 0.0f) && m < CLIP_MAX_VERTICES) {
-                /* Le dénominateur ne peut pas s'annuler : les deux sommets sont
-                   de part et d'autre, donc leurs distances diffèrent. */
+                /* The denominator cannot vanish: the two vertices are on
+                   opposite sides, so their distances differ. */
                 lerp_vertex(cur, next, dc / (dc - dn), &work[m++]);
             }
         }
         n = m;
         if (n < 3) {
-            return 0;                 /* entièrement rejeté */
+            return 0;                 /* rejected entirely */
         }
         for (i = 0; i < n; i++) {
             poly[i] = work[i];
         }
     }
 
-    /* Le polygone est retriangulé en éventail. Ne garder que le premier triangle
-       ferait disparaître le reste de la surface — un trou, sur les seuls
-       triangles découpés, donc rare et déroutant.
+    /* The polygon is retriangulated as a fan. Keeping only the first triangle
+       would make the rest of the surface disappear — a hole, on clipped
+       triangles alone, hence rare and baffling.
 
-       `out` en contient six, soit deux triangles : c'est le contrat de cette
-       fonction, et un polygone plus riche est tronqué plutôt que de déborder.
-       Le cas ne se présente que sur des triangles qui traversent plusieurs plans
-       à la fois, où la surface perdue est hors de la bande de garde. */
+       `out` holds six, that is two triangles: that is this function's contract,
+       and a richer polygon is truncated rather than allowed to overflow. The
+       case only arises on triangles crossing several planes at once, where the
+       lost surface is outside the guard band. */
     triangles = n - 2;
     if (triangles > 2) {
         triangles = 2;
@@ -134,28 +133,28 @@ void dkr_clip_project(const dkr_transform *t, const dkr_clip_vertex *in,
     if (!t || !in || !out) {
         return;
     }
-    /* Le découpage garantit `w > epsilon` : la division est sûre ici, et c'est
-       tout l'intérêt de l'avoir faite avant. */
+    /* Clipping guarantees `w > epsilon`: the division is safe here, and that is
+       the whole point of having clipped first. */
     oow = 1.0f / in->w;
 
     memset(out, 0, sizeof(*out));
     out->x = in->x * oow * t->viewport_scale_x + t->viewport_trans_x;
     out->y = in->y * oow * t->viewport_scale_y + t->viewport_trans_y;
 
-    /* **La profondeur est bornee a [0,1], et ce n'est pas un ajustement.**
+    /* **Depth is clamped to [0,1], and that is not a tweak.**
      *
-     * Le tampon de profondeur est defini sur cet intervalle : une valeur en
-     * dehors n'a pas de sens, et elle gagne le test partout. Un sommet cree par
-     * le decoupage sort avec `w` egal a la marge du plan proche, donc une
-     * profondeur enorme — mesure : -250000 pour une marge de 0,0001 — qui passe
-     * devant toute la scene.
+     * The depth buffer is defined over that interval: a value outside it means
+     * nothing, and it wins the test everywhere. A vertex created by clipping
+     * comes out with `w` equal to the near-plane margin, hence an enormous depth
+     * — measured: -250000 for a margin of 0.0001 — which passes in front of the
+     * whole scene.
      *
-     * Le symptome est spectaculaire et trompeur : des pixels isoles du triangle
-     * decoupe percent a travers une surface qui devrait le masquer, en un motif
-     * poinstille qui evoque un defaut de rasterisation plutot qu'un defaut de
-     * profondeur. Il a fallu projeter un sommet a la main pour le voir.
+     * The symptom is spectacular and misleading: isolated pixels of the clipped
+     * triangle punch through a surface that should hide it, in a stippled
+     * pattern that suggests a rasterisation defect rather than a depth one. It
+     * took projecting a vertex by hand to see it.
      *
-     * Le materiel reel borne de meme. */
+     * Real hardware clamps the same way. */
     {
         const float z = in->z * oow;
         out->z = (z < 0.0f) ? 0.0f : (z > 1.0f ? 1.0f : z);
@@ -166,27 +165,27 @@ void dkr_clip_project(const dkr_transform *t, const dkr_clip_vertex *in,
     out->g = in->g;
     out->b = in->b;
     out->a = in->a;
-    /* Les coordonnées de texture sont divisées ici, pas avant : le rastériseur
-       et Glide attendent `s/w` et `t/w`.
-       L'échelle de 256 est la convention de Glide, mesurée sur la carte — voir
-       `DKR_TEXCOORD_SCALE` dans `backend.h`. Elle est appliquée ici, une fois
-       par sommet, plutôt que par le backend une fois par triangle. */
+    /* Texture coordinates are divided here, not earlier: the rasteriser and
+       Glide expect `s/w` and `t/w`.
+       The scale of 256 is Glide's convention, measured on the card — see
+       `DKR_TEXCOORD_SCALE` in `backend.h`. It is applied here, once per vertex,
+       rather than by the backend once per triangle. */
     out->tmu[0][DKR_TMU_SOW] = in->s * DKR_TEXCOORD_SCALE * oow;
     out->tmu[0][DKR_TMU_TOW] = in->t * DKR_TEXCOORD_SCALE * oow;
     out->tmu[0][DKR_TMU_OOW] = oow;
 }
 
-/* --- Faces arrière ---------------------------------------------------------- */
+/* --- Back faces ------------------------------------------------------------- */
 
 dkr_cull_mode dkr_cull_mode_for_viewport(float viewport_scale_x, int cull_enabled)
 {
     if (!cull_enabled) {
         return DKR_CULL_NONE;
     }
-    /* Convention du microcode, relevée dans `f3ddkr_rt64.cpp` : le sens dépend
-       du **signe de l'échelle en x**. Une fenêtre miroir inverse l'orientation
-       apparente des triangles, et éliminer le mauvais côté viderait l'écran —
-       défaut spectaculaire et facile à mal diagnostiquer. */
+    /* The microcode's convention, taken from `f3ddkr_rt64.cpp`: the direction
+       depends on the **sign of the x scale**. A mirrored viewport flips the
+       apparent winding of triangles, and culling the wrong side would empty the
+       screen — a spectacular defect and an easy one to misdiagnose. */
     return (viewport_scale_x > 0.0f) ? DKR_CULL_BACK : DKR_CULL_FRONT;
 }
 
@@ -196,18 +195,18 @@ int dkr_cull_accept(const dkr_render_vertex v[3], dkr_cull_mode mode)
     if (!v || mode == DKR_CULL_NONE) {
         return 1;
     }
-    /* L'area signée en espace écran, origine en haut à gauche. Le rastériseur de
-       E04-S08 emploie la même convention : les deux doivent coïncider, sans quoi
-       l'oracle et Glide n'élimineraient pas les mêmes triangles. */
+    /* The signed area in screen space, origin at the top left. The E04-S08
+       rasteriser uses the same convention: the two must agree, otherwise the
+       oracle and Glide would not cull the same triangles. */
     area = (v[1].x - v[0].x) * (v[2].y - v[0].y) -
            (v[2].x - v[0].x) * (v[1].y - v[0].y);
     if (area == 0.0f) {
-        return 0;                     /* dégénéré : rien à dessiner */
+        return 0;                     /* degenerate: nothing to draw */
     }
     return (mode == DKR_CULL_BACK) ? (area < 0.0f) : (area > 0.0f);
 }
 
-/* --- Rejet ------------------------------------------------------------------ */
+/* --- Rejection -------------------------------------------------------------- */
 
 int dkr_clip_reject_offscreen(const dkr_render_vertex v[3],
                               int width, int height, float margin)
@@ -218,10 +217,10 @@ int dkr_clip_reject_offscreen(const dkr_render_vertex v[3],
     if (!v) {
         return 1;
     }
-    /* Rejeté seulement si **les trois** sommets sont du même côté. Un triangle
-       dont les sommets sont dispersés de part et d'autre couvre peut-être
-       l'écran, et le rejeter serait une erreur bien plus grave que de laisser
-       passer un triangle inutile. */
+    /* Rejected only if **all three** vertices are on the same side. A triangle
+       whose vertices are scattered on either side may well cover the screen, and
+       rejecting it would be a far worse error than letting a useless triangle
+       through. */
     for (i = 0; i < 3; i++) {
         if (v[i].x < -margin)                    { left++; }
         if (v[i].x > (float)width + margin)      { right++; }
@@ -231,7 +230,7 @@ int dkr_clip_reject_offscreen(const dkr_render_vertex v[3],
     return left == 3 || right == 3 || above == 3 || below == 3;
 }
 
-/* --- Fenêtre de ciseaux ------------------------------------------------------ */
+/* --- Scissor window --------------------------------------------------------- */
 
 int dkr_scissor_for_player(int players, int player, int width, int height,
                            dkr_scissor *out)
@@ -244,16 +243,16 @@ int dkr_scissor_for_player(int players, int player, int width, int height,
         out->x0 = 0; out->y0 = 0; out->x1 = width; out->y1 = height;
         return 1;
     case 2:
-        /* Deux joueurs : partage horizontal, l'un au-dessus de l'autre. */
+        /* Two players: horizontal split, one above the other. */
         out->x0 = 0; out->x1 = width;
         out->y0 = player * (height / 2);
         out->y1 = out->y0 + height / 2;
         return 1;
     case 3:
     case 4:
-        /* Trois et quatre joueurs partagent la même grille de quatre quadrants ;
-           à trois, le quatrième reste vide. Les traiter ensemble évite deux
-           calculs qui divergeraient. */
+        /* Three and four players share the same grid of four quadrants; with
+           three, the fourth stays empty. Handling them together avoids two
+           computations that would drift apart. */
         out->x0 = (player % 2) * (width / 2);
         out->y0 = (player / 2) * (height / 2);
         out->x1 = out->x0 + width / 2;

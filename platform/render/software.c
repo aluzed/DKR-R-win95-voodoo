@@ -1,4 +1,4 @@
-/* E04-S08 — mise en œuvre. Le pourquoi est dans `software.h`. */
+/* E04-S08 — implementation. The why lives in `software.h`. */
 #include "software.h"
 
 #include <stdio.h>
@@ -10,7 +10,7 @@
 typedef struct {
     dkr_texture_format format;
     int                width, height;
-    unsigned          *texels;      /* toujours converti en ARGB : voir plus bas */
+    unsigned          *texels;      /* always converted to ARGB: see below */
     unsigned long long key;
     int                used;
 } sw_texture;
@@ -27,7 +27,7 @@ typedef struct {
 
 static sw_backend g_sw;
 
-/* --- Utilitaires ----------------------------------------------------------- */
+/* --- Utilities ------------------------------------------------------------- */
 
 static float clampf(float v, float lo, float hi)
 {
@@ -39,17 +39,17 @@ static int imax(int a, int b) { return a > b ? a : b; }
 
 /* --- Textures -------------------------------------------------------------- *
  *
- * Tous les formats sont convertis en ARGB 32 bits au chargement. C'est un choix
- * d'oracle : l'échantillonnage n'a alors qu'un seul chemin, donc une seule
- * occasion de se tromper. Le backend Glide, lui, gardera le format natif de la
- * carte — c'est son affaire, et l'écart entre les deux est précisément ce que la
- * comparaison doit révéler.
+ * Every format is converted to 32-bit ARGB on upload. That is an oracle's
+ * choice: sampling then has a single path, hence a single opportunity to go
+ * wrong. The Glide backend, for its part, will keep the card's native format —
+ * that is its business, and the gap between the two is precisely what the
+ * comparison must reveal.
  */
 static unsigned texel_from_rgba5551(unsigned short p)
 {
-    /* La réplication des bits de poids fort est la bonne extension : 0x1F doit
-       donner 0xFF et non 0xF8, sans quoi le blanc n'est pas blanc et toute
-       comparaison de couleur dérive. */
+    /* Replicating the high bits is the right extension: 0x1F must give 0xFF and
+       not 0xF8, otherwise white is not white and every colour comparison
+       drifts. */
     const unsigned r = (unsigned)((p >> 11) & 0x1F);
     const unsigned g = (unsigned)((p >>  6) & 0x1F);
     const unsigned b = (unsigned)((p >>  1) & 0x1F);
@@ -79,9 +79,9 @@ static int wrap_coord(int v, int size, dkr_wrap_mode mode)
     case DKR_WRAP_CLAMP:
         return imax(0, imin(v, size - 1));
     case DKR_WRAP_MIRROR: {
-        /* Le miroir se replie sur une période de 2*size ; l'écrire ainsi évite
-           le cas des coordonnées négatives, où un modulo de C se comporte
-           autrement qu'on ne l'attend. */
+        /* Mirroring folds over a period of 2*size; writing it this way avoids
+           the negative-coordinate case, where a C modulo behaves other than one
+           expects. */
         int period = size * 2;
         int m = v % period;
         if (m < 0) { m += period; }
@@ -102,9 +102,9 @@ static unsigned sample_texture(const sw_texture *t, float s, float tc,
         return 0xFFFFFFFFu;
     }
     if (st->filter == DKR_FILTER_BILINEAR) {
-        /* Le demi-texel est ce qui place l'échantillon au centre du texel. Sans
-           lui l'image est décalée d'un demi-texel — invisible sur une mire,
-           parfaitement visible sur une comparaison d'images. */
+        /* The half-texel is what puts the sample at the centre of the texel.
+           Without it the image is offset by half a texel — invisible on a test
+           pattern, perfectly visible in an image comparison. */
         const float fx = s * (float)t->width  - 0.5f;
         const float fy = tc * (float)t->height - 0.5f;
         const int   x0 = (int)((fx >= 0.0f) ? fx : fx - 1.0f);
@@ -140,11 +140,11 @@ static unsigned sample_texture(const sw_texture *t, float s, float tc,
     }
 }
 
-/* --- Le combineur ---------------------------------------------------------- *
+/* --- The combiner ---------------------------------------------------------- *
  *
- * Calculé en flottants, sans contrainte de matériel. C'est ce qui donne à ce
- * backend sa valeur d'oracle : il montre ce que l'image devrait être, et E05-S03
- * mesurera l'écart de Glide à cette référence.
+ * Computed in floating point, with no hardware constraint. That is what gives
+ * this backend its value as an oracle: it shows what the image should be, and
+ * E05-S03 will measure Glide's gap against that reference.
  */
 static void combine(const dkr_render_state *st, unsigned texel,
                     float sr, float sg, float sb, float sa,
@@ -174,7 +174,7 @@ static void combine(const dkr_render_state *st, unsigned texel,
     }
 }
 
-/* --- Écriture d'un pixel --------------------------------------------------- */
+/* --- Writing one pixel ----------------------------------------------------- */
 
 static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
 {
@@ -227,19 +227,19 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
         ( unsigned)clampf(b, 0.0f, 255.0f);
 }
 
-/* --- Rastérisation --------------------------------------------------------- *
+/* --- Rasterisation --------------------------------------------------------- *
  *
- * Fonctions de bord et coordonnées barycentriques, une boîte englobante, une
- * boucle par pixel. C'est la forme la plus évidente, et c'est le but.
+ * Edge functions and barycentric coordinates, a bounding box, one loop per
+ * pixel. It is the most obvious form, and that is the point.
  *
- * La **correction perspective** est le point qui compte, et c'est celui qu'un
- * rastériseur naïf rate : interpoler `s` et `t` linéairement en espace écran
- * fait onduler les textures sur toute surface vue en oblique. On interpole donc
- * `s/w`, `t/w` et `1/w`, et on divise par pixel — ce que les sommets portent
- * déjà, puisque l'interface a la disposition de `GrVertex` où `oow` vaut `1/w`.
+ * **Perspective correction** is the part that counts, and it is the one a naive
+ * rasteriser gets wrong: interpolating `s` and `t` linearly in screen space
+ * makes textures ripple across any surface seen at an angle. So we interpolate
+ * `s/w`, `t/w` and `1/w`, and divide per pixel — which the vertices already
+ * carry, since the interface has `GrVertex`'s layout where `oow` is `1/w`.
  *
- * C'est précisément le genre d'artefact qu'on chercherait plus tard à imputer à
- * Glide ; il faut donc que l'oracle soit juste ici.
+ * This is precisely the kind of artefact one would later try to pin on Glide;
+ * the oracle therefore has to be right here.
  */
 static float edge(const dkr_render_vertex *a, const dkr_render_vertex *b,
                   float px, float py)
@@ -263,12 +263,12 @@ static void raster_triangle(const dkr_render_vertex *v0,
 
     area = edge(v0, v1, v2->x, v2->y);
     if (area == 0.0f) {
-        return;                     /* triangle dégénéré */
+        return;                     /* degenerate triangle */
     }
-    /* La culling se lit sur le signe de l'area. Glide la fait dans le matériel ;
-       ici on l'écrit, et il faut que les deux conventions coïncident — l'origine
-       est en haut à gauche des deux côtés, donc un triangle antihoraire à
-       l'écran a une area négative. */
+    /* Culling reads off the sign of the area. Glide does it in hardware; here we
+       write it, and the two conventions must agree — the origin is at the top
+       left on both sides, so a counter-clockwise triangle on screen has a
+       negative area. */
     if (st->cull == DKR_CULL_BACK  && area > 0.0f) { return; }
     if (st->cull == DKR_CULL_FRONT && area < 0.0f) { return; }
 
@@ -287,8 +287,8 @@ static void raster_triangle(const dkr_render_vertex *v0,
 
     for (y = y0; y < y1; y++) {
         for (x = x0; x < x1; x++) {
-            /* Le centre du pixel, et non son coin : c'est la convention de
-               remplissage qui évite les trous entre triangles adjacents. */
+            /* The pixel's centre, not its corner: that is the fill convention
+               which avoids gaps between adjacent triangles. */
             const float px = (float)x + 0.5f;
             const float py = (float)y + 0.5f;
             const float w0 = edge(v1, v2, px, py) / area;
@@ -301,63 +301,63 @@ static void raster_triangle(const dkr_render_vertex *v0,
                 continue;
             }
 
-            /* Correction perspective : interpoler 1/w, puis diviser. */
+            /* Perspective correction: interpolate 1/w, then divide. */
             oow = w0 * v0->oow + w1 * v1->oow + w2 * v2->oow;
             w   = (oow != 0.0f) ? (1.0f / oow) : 0.0f;
 
-            /* **La couleur est iteree lineairement, sans correction perspective.**
+            /* **Colour is iterated linearly, with no perspective correction.**
              *
-             * C'est contre-intuitif apres le paragraphe qui precede, et c'est
-             * pourtant ce qu'il faut : ni Glide 2 ni le RDP ne corrigent la
-             * couleur. `GrVertex.r/g/b/a` sont iteres en espace ecran, et seuls
-             * `s/w`, `t/w` et `1/w` traversent la division. Un oracle dont la
-             * cible est Glide doit iterer comme Glide, faute de quoi il accuse
-             * le materiel d'un ecart dont il est lui-meme l'auteur.
+             * That is counter-intuitive after the preceding paragraph, and it is
+             * nonetheless what is needed: neither Glide 2 nor the RDP corrects
+             * colour. `GrVertex.r/g/b/a` are iterated in screen space, and only
+             * `s/w`, `t/w` and `1/w` go through the division. An oracle whose
+             * target is Glide must iterate like Glide, failing which it accuses
+             * the hardware of a gap it authored itself.
              *
-             * La premiere version corrigeait la couleur, et l'erreur ne se
-             * voyait pas : sur une surface ordinaire, les deux interpolations
-             * different de quelques unites. Elle a explose sur le premier
-             * triangle **decoupe au plan proche**, ou le sommet cree porte un
-             * `1/w` enorme qui, pondere, impose sa couleur a tout le polygone.
-             * La comparaison avec la carte montrait un aplat magenta la ou le
-             * materiel produisait un degrade vert — voir
-             * `docs/research/win95-oracle-vs-carte.md`. */
+             * The first version corrected colour, and the error was invisible:
+             * on an ordinary surface the two interpolations differ by a few
+             * units. It blew up on the first triangle **clipped at the near
+             * plane**, where the created vertex carries an enormous `1/w` that,
+             * once weighted, imposes its colour on the whole polygon. The
+             * comparison against the card showed a flat magenta where the
+             * hardware produced a green gradient — see
+             * `docs/research/win95-oracle-vs-card.md`. */
             sr = w0 * v0->r + w1 * v1->r + w2 * v2->r;
             sg = w0 * v0->g + w1 * v1->g + w2 * v2->g;
             sb = w0 * v0->b + w1 * v1->b + w2 * v2->b;
             sa = w0 * v0->a + w1 * v1->a + w2 * v2->a;
-            /* **La profondeur est triee sur `1/w`, pas sur `z`.**
+            /* **Depth is sorted on `1/w`, not on `z`.**
              *
-             * Un tampon en z est parfaitement legitime, et c'etait le premier
-             * choix. La comparaison avec la carte l'a invalide, pour une raison
-             * qui ne se devine pas.
+             * A z buffer is perfectly legitimate, and it was the first choice.
+             * Comparison against the card invalidated it, for a reason that
+             * cannot be guessed.
              *
-             * `dkr_clip_project` borne `z` a [0,1] — il le faut, un sommet cree
-             * par le decoupage sort avec une profondeur de l'ordre de -200000.
-             * Mais borner **au sommet** deforme le gradient sur toute la
-             * primitive : les deux extremites ne sont plus a l'echelle l'une de
-             * l'autre, et l'interpolation ment partout entre elles. Le defaut
-             * reste invisible sur une surface entiere et n'apparait que la ou
-             * une primitive decoupee en croise une autre — un coin de quelques
-             * milliers de pixels, ou l'oracle et la carte designaient chacun une
-             * surface differente comme etant devant.
+             * `dkr_clip_project` clamps `z` to [0,1] — it has to, a vertex
+             * created by clipping comes out with a depth of the order of
+             * -200000. But clamping **at the vertex** distorts the gradient
+             * across the whole primitive: the two ends are no longer to the same
+             * scale, and the interpolation lies everywhere between them. The
+             * defect stays invisible over a whole surface and only appears where
+             * a clipped primitive crosses another — a corner of a few thousand
+             * pixels, where the oracle and the card each named a different
+             * surface as being in front.
              *
-             * `oow` n'a pas ce probleme : il vaut `1/w`, il est affine en espace
-             * ecran, il n'a jamais besoin d'etre borne, et c'est exactement ce
-             * que la Voodoo range dans son tampon. L'oracle doit predire Glide,
-             * donc il trie comme Glide. Grand `1/w` = proche, d'ou l'inversion
-             * du sens du test.
+             * `oow` does not have that problem: it is `1/w`, it is affine in
+             * screen space, it never needs clamping, and it is exactly what the
+             * Voodoo stores in its buffer. The oracle must predict Glide, so it
+             * sorts like Glide. Large `1/w` = near, hence the inverted sense of
+             * the test.
              *
-             * `v->z` reste rempli et disponible : le RDP, lui, trie bien en z,
-             * et le jour ou l'on voudra confronter le portage a l'original
-             * plutot qu'au materiel, c'est cette valeur qu'il faudra. */
+             * `v->z` stays filled in and available: the RDP does sort in z, and
+             * the day we want to confront the port with the original rather than
+             * with the hardware, that is the value we will need. */
             z  = -oow;
 
             if (tex) {
-                /* Retour en coordonnees normalisees. Les sommets portent
-                   l'espace de 256 texels de Glide — c'est la carte qui impose
-                   le contrat, et c'est l'oracle qui s'adapte, parce qu'il n'a
-                   pas de contrainte de vitesse. Voir `DKR_TEXCOORD_SCALE`. */
+                /* Back to normalised coordinates. The vertices carry Glide's
+                   256-texel space — the card imposes the contract, and the
+                   oracle adapts, because it has no speed constraint. See
+                   `DKR_TEXCOORD_SCALE`. */
                 s = (w0 * v0->tmu[0][DKR_TMU_SOW] + w1 * v1->tmu[0][DKR_TMU_SOW] +
                      w2 * v2->tmu[0][DKR_TMU_SOW]) * w * (1.0f / DKR_TEXCOORD_SCALE);
                 t = (w0 * v0->tmu[0][DKR_TMU_TOW] + w1 * v1->tmu[0][DKR_TMU_TOW] +
@@ -368,9 +368,9 @@ static void raster_triangle(const dkr_render_vertex *v0,
             combine(st, texel, sr, sg, sb, sa, &r, &g, &b, &a);
 
             if (st->fog_enabled) {
-                /* Un brouillard linéaire sur la profondeur. Glide emploie une
-                   table ; l'écart entre les deux est mesurable, et c'est la
-                   raison d'être de ce backend. */
+                /* Linear fog over depth. Glide uses a table; the gap between
+                   the two is measurable, and that is this backend's reason to
+                   exist. */
                 const float k = clampf(z, 0.0f, 1.0f);
                 const float fr = (float)((st->fog_color >> 16) & 0xFF);
                 const float fg = (float)((st->fog_color >>  8) & 0xFF);
@@ -428,11 +428,11 @@ static void sw_begin_frame(void *self, unsigned clear_argb)
     n = (size_t)g_sw.width * (size_t)g_sw.height;
     for (i = 0; i < n; i++) {
         g_sw.color[i] = 0xFF000000u | (clear_argb & 0x00FFFFFFu);
-        /* Le tampon part au plus loin. La grandeur triee etant `-1/w`, « loin »
-           est un grand positif : `1/w` tend vers zero a l'infini, donc `-1/w`
-           tend vers zero par en dessous, et toute surface reelle a une valeur
-           negative. Zero suffirait ; on prend une marge pour qu'une surface
-           exactement a l'infini soit malgre tout peinte. */
+        /* The buffer starts at the far end. The sorted quantity being `-1/w`,
+           "far" is a large positive: `1/w` tends to zero at infinity, so `-1/w`
+           tends to zero from below, and every real surface has a negative value.
+           Zero would do; we take a margin so that a surface exactly at infinity
+           is painted all the same. */
         g_sw.depth[i] = 1.0f;
     }
 }
@@ -469,10 +469,10 @@ static void sw_fill_rect(void *self, int x0, int y0, int x1, int y1, unsigned ar
     int x, y;
     (void)self;
     if (!g_sw.open) { return; }
-    /* Rempli directement, sans passer par deux triangles : le backend Glide
-       devra les fabriquer faute de primitive, celui-ci sait remplir. Imposer le
-       détour au rastériseur ajouterait une source d'écart entre les deux là où
-       il n'y a aucune raison d'en avoir. */
+    /* Filled directly, without going through two triangles: the Glide backend
+       will have to build them for want of a primitive, this one can fill.
+       Imposing the detour on the rasteriser would add a source of divergence
+       between the two where there is no reason to have one. */
     x0 = imax(x0, g_sw.scissor_x0); x1 = imin(x1, g_sw.scissor_x1);
     y0 = imax(y0, g_sw.scissor_y0); y1 = imin(y1, g_sw.scissor_y1);
     for (y = y0; y < y1; y++) {
@@ -490,7 +490,7 @@ static dkr_texture_handle sw_texture_upload(void *self, const dkr_texture_desc *
     if (!d || !d->pixels || d->width <= 0 || d->height <= 0) {
         return 0;
     }
-    /* Déjà chargée ? La clé est opaque : on compare, on n'interprète pas. */
+    /* Already uploaded? The key is opaque: we compare, we do not interpret. */
     for (slot = 0; slot < MAX_TEXTURES; slot++) {
         if (g_sw.textures[slot].used && g_sw.textures[slot].key == d->key) {
             return (dkr_texture_handle)(slot + 1);
@@ -564,7 +564,7 @@ void dkr_render_backend_software(dkr_render_backend *out)
     out->self            = &g_sw;
 }
 
-/* --- Ce qui rend l'oracle observable --------------------------------------- */
+/* --- What makes the oracle observable -------------------------------------- */
 
 const unsigned *dkr_software_framebuffer(int *width, int *height)
 {
@@ -602,18 +602,18 @@ int dkr_software_write_bmp(const char *path)
     *(unsigned *)&header[10] = 54u;
     *(unsigned *)&header[14] = 40u;
     *(int *)     &header[18] = w;
-    *(int *)     &header[22] = h;      /* positif : lignes du bas vers le haut */
-    header[26] = 1;                    /* plans */
-    header[28] = 24;                   /* bits par pixel */
+    *(int *)     &header[22] = h;      /* positive: rows bottom to top */
+    header[26] = 1;                    /* planes */
+    header[28] = 24;                   /* bits per pixel */
     *(unsigned *)&header[34] = data_size;
     if (fwrite(header, 1, sizeof(header), f) != sizeof(header)) {
         fclose(f);
         return 0;
     }
-    /* BMP range les lignes du bas vers le haut, le tampon du haut vers le bas :
-       on parcourt donc à l'envers. Se tromper ici donne une image retournée,
-       qu'une comparaison automatique signale comme entièrement fausse — un
-       diagnostic bien plus coûteux que le bogue. */
+    /* BMP stores rows bottom to top, the buffer top to bottom: we therefore
+       walk it backwards. Getting this wrong gives a flipped image, which an
+       automatic comparison reports as entirely wrong — a far more expensive
+       diagnosis than the bug. */
     for (y = h - 1; y >= 0; y--) {
         for (x = 0; x < w; x++) {
             const unsigned c = g_sw.color[(size_t)y * (size_t)w + (size_t)x];
