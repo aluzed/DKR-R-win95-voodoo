@@ -875,13 +875,27 @@ quand il le fait. Le chien de garde est le seul qui laisse cette combinaison
 derrière lui. La mesure désignait la cause depuis le début ; c'est sa lecture qui
 manquait.
 
-### Pourquoi aucun correctif d'ordre ne pouvait marcher
+### Le seuil se compte en retraces, pas en millisecondes
 
-Dix retraces valent **167 ms**. Le bord DP était publié après `send_dl`, et un
-rendu logiciel Glide sur un Pentium II émulé dépasse ce budget. Le chien de garde
-devait donc finir par se déclencher, quel que soit l'ordre des messages, quelle
-que soit la file, quel que soit le ciblage. Les douze hypothèses cherchaient une
-faute de séquence là où il n'y avait qu'un **budget de temps dépassé**.
+Premier jet de ce diagnostic : « dix retraces valent 167 ms, et un rendu logiciel
+Glide sur un Pentium II émulé dépasse ce budget. » La mesure embarquée avec le
+correctif le **réfute** — pire cas **60 ms sur plus de mille images, zéro
+dépassement**.
+
+L'hypothèse était plausible, elle expliquait le symptôme, et le correctif qu'elle
+a inspiré fonctionne. Trois raisons de ne pas la vérifier, et elle est fausse
+quand même. C'est précisément le cas où l'on n'aurait pas mesuré.
+
+Ce que le retard coûte n'est pas du temps mais des **retraces traités entre
+temps** : `gCurRDPTaskCounter` est remis à zéro par `__scExec` au démarrage d'une
+tâche, puis incrémenté une fois par `__scHandleRetrace`. Publier le bord DP après
+`send_dl` laisse tout un rendu de retraces s'intercaler.
+
+Les totaux de la course le chiffrent : **3238 messages VIDEO contre 567
+RDP_DONE**, soit environ six retraces par liste d'affichage. Confortablement sous
+onze en moyenne — et pas sous onze dans la queue de distribution. Une seule
+excursion suffit, ce qui explique que le plantage ait frappé **une fois**, à la
+liste 344 d'une course qui avançait par ailleurs.
 
 ### Le correctif
 
@@ -894,3 +908,37 @@ l'écran nous appartient, pas au jeu.
 Le correctif emporte la mesure qui le justifie : durée de `send_dl`, pire cas, et
 compte des images au-delà des 167 ms. Sans elle, le diagnostic serait plausible
 au lieu d'être vérifiable.
+
+
+### Vérifié sur la machine
+
+Même ROM, même construction par ailleurs :
+
+| | listes d'affichage | présentations | réceptions nulles | vidage de plantage |
+|---|---|---|---|---|
+| avant | 344 puis EXCEPTION | — | 1 | 2618 octets |
+| après | 1135 et croissant | 7020 | **0** | aucun (156 octets) |
+
+### Deux pièges d'observation levés au passage
+
+**Le journal d'un programme figé fait zéro octet.** Windows 95 ne met la taille à
+jour dans le répertoire qu'à la fermeture, et son cache à écriture différée
+retient les secteurs. Le filtre d'exceptions contourne cela en fermant le flux
+avant d'écrire — mais un programme qui **bloque** n'atteint aucun gestionnaire.
+On lit alors « zéro octet » et on conclut « le programme n'a rien produit, donc
+il s'est arrêté tôt », alors qu'il tourne peut-être normalement. `dkr_diag_commit`
+appelle `_commit`, c'est-à-dire `FlushFileBuffers`, qui force le cache **et**
+l'entrée de répertoire ; appelée de loin en loin, elle rend le journal lisible en
+vol. C'est ce qui a permis de lire la course à 570 listes puis à 1135 sans
+l'interrompre.
+
+**`DKR_TRACE_SP` ne survit pas à la boîte « Exécuter ».** Il n'est pas dans
+`autoexec.bat`, donc un lancement depuis le menu Démarrer donne un journal vide —
+indiscernable d'un programme muet. Le jeu se lance désormais par `D:\RUNDKR.BAT`,
+qui pose la variable avant d'appeler l'exécutable.
+
+**« Ne répond pas » ne veut pas dire figé.** Windows 95 affiche cet avertissement
+dès qu'un fil porteur de fenêtre ne dépile pas ses messages. Le jeu tourne dans
+son propre fil et ne dépile rien : l'avertissement est donc **normal**, et l'avoir
+lu comme un blocage a coûté un aller-retour de plus. Trois observations, trois
+lectures fausses, toutes du même genre : conclure d'une absence de signal.

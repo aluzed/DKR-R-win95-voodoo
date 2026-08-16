@@ -3,8 +3,8 @@ Subject: [PATCH] Publish the DP edge before rendering, not after
 
 DKR crashes in __scHandleRDP with sc->curRDPTask null. Twelve hypotheses about
 ordering were eliminated one by one -- duplicate edges, SP/DP races, queue
-saturation, wrong target task -- and every one of them was wrong, because the
-defect is not an ordering defect at all.
+saturation, wrong target task -- and every one was wrong, because the defect is
+not an ordering defect at all.
 
 DKR's scheduler carries a watchdog that stock libultra does not have. In
 __scHandleRetrace (libultra/src/sc/sched.c):
@@ -29,36 +29,74 @@ That is exactly the state the probe captured at the instant of reception:
     visee=0x80125FB0 state=0x00000001 flags=0x00000023
 
 curRDPTask null while the targeted task still carries NEEDS_RDP (state = 1).
-Only two code paths null curRDPTask, and __scHandleRDP clears NEEDS_RDP when it
-does. The watchdog is the only path that leaves this combination behind.
+Only two paths null curRDPTask, and __scHandleRDP clears NEEDS_RDP when it does.
+The watchdog is the only path that leaves this combination behind.
 
-Ten retraces is 167 ms. The DP edge was published after send_dl, and a software
-Glide frame on an emulated Pentium II exceeds that budget, so the watchdog was
-guaranteed to fire eventually -- no ordering fix could have helped.
+The threshold is counted in RETRACES PROCESSED, not in milliseconds:
+gCurRDPTaskCounter is reset in __scExec when a task starts and incremented once
+per __scHandleRetrace. Publishing the DP edge after send_dl let a whole render
+worth of retraces land in between.
+
+The first draft of this patch claimed a software Glide frame blows the 167 ms
+that eleven retraces are worth at 60 Hz. The measurement it shipped with refutes
+that outright -- worst case 60 ms over more than a thousand frames, zero
+overruns. The hypothesis was plausible, it explained the symptom, and the fix it
+inspired works; three reasons not to check it, and it was wrong anyway. The
+measurement is kept because it watches the worst case, not because it validates
+anything.
+
+What the run does show: 3238 VIDEO messages against 567 RDP_DONE, about six
+retraces per display list -- comfortably under eleven on average and not under it
+in the tail. One excursion is all it takes, which is why the crash struck once,
+at display list 344 of a run that was otherwise progressing.
 
 Publishing the edge before rendering is safe for exactly the reason the SP edge
 already is: the queued task owns an immutable RDRAM snapshot, so the renderer
 never reads memory the game may recycle, and presenting to the screen is the
 port's business rather than the game's.
 
-The patch also records how long send_dl actually takes -- worst case and the
-count of frames over the 167 ms budget -- because that measurement is what makes
-the diagnosis checkable rather than merely plausible.
+Measured on the machine, same ROM, same build otherwise:
+
+    before   display lists 344, then EXCEPTION in __scHandleRDP
+    after    display lists 1135 and climbing, 7020 presents, 0 null receptions
 
 diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 --- a/ultramodern/src/events.cpp
 +++ b/ultramodern/src/events.cpp
-@@ -284,6 +284,31 @@
+@@ -268,6 +268,13 @@
+ //
+ // La trace s'arrete d'elle-meme apres quelques centaines de lignes : la machine
+ // cible ecrit sur une disquette emulee.
++// Definie par le jeu (game_main.cpp) : vide le journal ET met a jour l'entree de
++// repertoire, faute de quoi un programme fige laisse un fichier de zero octet.
++// Declaree faible pour que les binaires d'epreuve, qui lient ultramodern sans le
++// jeu, se lient quand meme.
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++static void diag_commit() { if (dkr_diag_commit) { dkr_diag_commit(); } }
++
+ static std::atomic<unsigned> g_trace_submits{0};
+ static std::atomic<unsigned> g_trace_sp{0};
+ static std::atomic<unsigned> g_trace_dp{0};
+@@ -284,6 +291,44 @@
                   g_trace_dp.load());
  }
  
 +// Combien de temps dure reellement un rendu de liste d'affichage ?
 +//
-+// C'est la mesure qui decide du diagnostic : le chien de garde de DKR abandonne
-+// le RDP au bout de onze retraces, soit 167 ms. Si le rendu depasse ce budget,
-+// publier le bord DP a la fin du rendu condamne le jeu, quel que soit l'ordre
-+// des messages. On releve le pire cas plutot que la moyenne, parce que c'est un
-+// seul depassement qui declenche le chien de garde.
++// C'est la mesure qui a corrige le diagnostic plutot que de le confirmer.
++//
++// L'hypothese etait qu'un rendu logiciel Glide depasse les 167 ms que valent
++// onze retraces a 60 Hz, et fait donc ceder le chien de garde de DKR. Mesure :
++// **pire cas 60 ms sur plus de mille images, zero depassement**. L'hypothese est
++// fausse, et sans ce releve elle serait passee pour etablie -- elle etait
++// plausible, elle expliquait le symptome, et le correctif qu'elle a inspire
++// fonctionne. Trois raisons de ne pas la verifier, et elle est fausse quand meme.
++//
++// Ce que le retard coute n'est pas du temps mais des **retraces traites entre
++// temps** : gCurRDPTaskCounter est remis a zero par __scExec au demarrage d'une
++// tache, puis incremente une fois par __scHandleRetrace. On garde la mesure
++// parce qu'elle continue de surveiller le pire cas, pas parce qu'elle valide
++// quoi que ce soit.
 +static std::atomic<unsigned> g_dl_pire_ms{0};
 +static std::atomic<unsigned> g_dl_hors_budget{0};
 +static std::atomic<unsigned> g_dl_total{0};
@@ -75,12 +113,16 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +    if (n % 60u != 0u) { return; }
 +    std::fprintf(stderr, "[trace][dl] rendus=%u pire=%u ms hors-budget(>167ms)=%u\n",
 +                 n, g_dl_pire_ms.load(), g_dl_hors_budget.load());
++    // Forcer le journal sur le disque. Sans cela, un blocage laisse un fichier
++    // de zero octet quoi qu'on ait ecrit, et l'on ne peut pas distinguer
++    // « le programme s'est arrete tot » de « le programme tourne encore ».
++    diag_commit();
 +}
 +
  void sp_complete() {
      g_trace_sp.fetch_add(1);
      trace_sp("sp", 0);
-@@ -416,11 +441,30 @@
+@@ -416,11 +461,40 @@
                  PTR(u64) displaylist = task_action->task.t.data_ptr;
                  ultramodern::extensions::on_displaylist_submitted(displaylist);
  
@@ -94,9 +136,19 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +                // after that point walks into __scHandleRDP with curRDPTask == 0
 +                // and dereferences null.
 +                //
-+                // Ten retraces is 167 ms. A software Glide frame on an emulated
-+                // Pentium II exceeds that, so tying the DP edge to the end of
-+                // send_dl guarantees the watchdog fires eventually.
++                // The threshold is counted in RETRACES PROCESSED, not in
++                // milliseconds -- gCurRDPTaskCounter is reset in __scExec when a
++                // task starts and incremented once per __scHandleRetrace. The
++                // first draft of this comment claimed a software Glide frame
++                // blows a 167 ms budget; the measurement below refutes that
++                // outright, worst case 60 ms over a thousand frames. What the
++                // delay costs is not time but retraces landing in between.
++                //
++                // The run averages 3238 VIDEO messages against 567 RDP_DONE --
++                // about six retraces per display list, comfortably under eleven
++                // on average and not under it in the tail. One excursion is all
++                // it takes, which is why the crash struck once, at display list
++                // 344 of a run that was otherwise progressing.
 +                //
 +                // Publishing early is safe for exactly the reason sp_complete()
 +                // is: the queued task owns an immutable RDRAM snapshot, so the

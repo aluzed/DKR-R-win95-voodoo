@@ -20,6 +20,10 @@
 #include <cstdlib>
 #if defined(DKR_TARGET_WIN95)
 #include "win95/startup.h"
+// `_commit` et `_fileno` : forcer le cache d'écriture différée de Windows 95 et
+// la mise à jour de l'entrée de répertoire, sans quoi le journal d'un programme
+// figé reste à zéro octet. Voir dkr_diag_commit plus bas.
+#include <io.h>
 #endif
 #include <cstdio>
 #include <exception>
@@ -328,6 +332,33 @@ static void RedirectDiagnosticsToFile() {
         std::setvbuf(stderr, nullptr, _IONBF, 0);
     }
 }
+
+// **Rendre le journal lisible d'un programme qui ne se termine pas.**
+//
+// `_IONBF` suffit pour un plantage, parce que le filtre d'exceptions ferme le
+// flux avant d'écrire. Il ne suffit pas pour un **blocage** : Windows 95 ne met
+// à jour la taille dans le répertoire qu'à la fermeture du fichier, et le cache
+// à écriture différée retient les secteurs. Un programme figé laisse donc un
+// journal de zéro octet, quoi qu'il ait écrit.
+//
+// Le symptôme est cruel : on lit « zéro octet » et on conclut que le programme
+// n'a rien produit, donc qu'il s'est arrêté tôt — alors qu'il a peut-être écrit
+// des dizaines de milliers de lignes. Deux diagnostics opposés derrière la même
+// observation.
+//
+// `_commit` appelle `FlushFileBuffers`, présente dans Windows 95, qui force le
+// cache **et** la mise à jour de l'entrée de répertoire. Appelée de loin en
+// loin, elle rend le journal lisible pendant que le programme tourne encore —
+// et c'est la seule façon d'observer un blocage de l'extérieur.
+extern "C" void dkr_diag_commit(void) {
+    std::fflush(stderr);
+    {
+        const int fd = _fileno(stderr);
+        if (fd >= 0) { _commit(fd); }
+    }
+}
+#else
+extern "C" void dkr_diag_commit(void) { std::fflush(stderr); }
 #endif
 
 int DkrMain(int argc, char** argv) {
