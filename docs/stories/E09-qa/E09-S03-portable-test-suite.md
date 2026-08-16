@@ -1,85 +1,82 @@
-# E09-S03 — Suite de tests portable
+# E09-S03 — Portable test suite
 
 | | |
 |---|---|
-| **Épic** | E09 — Intégration, QA et distribution |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E00-S07, E01-S01, E07-S03 |
-| **Bloque** | E09-S05 |
+| **Epic** | E09 — Integration, QA and distribution |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E00-S07, E01-S01, E07-S03 |
+| **Blocks** | E09-S05 |
 
-## Contexte
+## Context
 
-Le projet dispose de 18 suites de tests exécutées par CTest, et les scripts de
-build les exigent avant tout empaquetage (`Build-Linux.sh:32`). C'est une bonne
-discipline, qu'il faut conserver malgré trois difficultés :
+The project has 18 test suites run by CTest, and the build scripts require them before
+any packaging (`Build-Linux.sh:32`). It is a good discipline, and one to keep despite
+three difficulties:
 
-- une partie de ces suites porte sur des politiques modernes qui disparaissent
-  (E07-S01, E07-S02) ;
-- la cible Win95 est cross-compilée : ses tests ne s'exécutent pas sur l'hôte de
-  build sans passer par la machine émulée ;
-- CTest et le cadre de test employé peuvent ne pas être disponibles dans le
-  sous-ensemble C++ retenu (E01-S02).
+- some of those suites bear on modern policies that disappear (E07-S01, E07-S02);
+- the Win95 target is cross-compiled: its tests do not run on the build host without
+  going through the emulated machine;
+- CTest and the test framework used may not be available in the retained C++ subset
+  (E01-S02).
 
-La bonne réponse est de séparer trois familles : ce qui teste de la **logique
-portable** et tourne partout, ce qui teste du **code spécifique à la plateforme**
-et doit tourner sur la cible, et ce qui **compare** les deux cibles.
+The right answer is to separate three families: what tests **portable logic** and runs
+everywhere, what tests **platform-specific code** and must run on the target, and what
+**compares** the two targets.
 
-## Objectif
+## Objective
 
-Conserver une vérification automatique utile sur les deux cibles, exécutée avant
-tout empaquetage.
+To keep a useful automatic verification on both targets, run before any packaging.
 
-## Périmètre
+## Scope
 
-**Dans :** l'organisation des tests, leur exécution sur la cible, leur intégration
-aux scripts de build.
+**In:** organising the tests, running them on the target, integrating them into the build
+scripts.
 
-**Hors :** la comparaison visuelle (E09-S02).
+**Out:** the visual comparison (E09-S02).
 
-## Travail
+## Work
 
-1. Trier les 18 suites existantes selon la décision de E00-S07 : conservées,
-   retirées, à adapter. Les suites de codec de sauvegarde et d'égaliseur audio sont
-   à conserver ; celles des politiques modernes sortent.
-2. Classer les tests conservés en trois familles : logique portable, spécifique
-   plateforme, comparaison inter-cibles.
-3. Faire tourner les tests de logique portable sur les deux cibles. S'ils
-   dépendent d'un cadre de test indisponible en C++ restreint, prévoir un
-   remplacement minimal plutôt que d'y renoncer.
-4. Écrire les tests de plateforme réclamés par E02 : fils et synchronisation
-   (E02-S01), horloge et débordement (E02-S03), sauvegardes (E02-S05).
-5. Automatiser l'exécution sur la machine émulée : lancer la suite, récupérer les
-   résultats, les rapporter sur l'hôte. Sans automatisation, ces tests ne seront
-   pas exécutés régulièrement, et des tests qu'on n'exécute pas ne valent rien.
-6. Ajouter les tests de comparaison entre cibles : la même entrée produit-elle le
-   même résultat sur l'hôte moderne et sur la cible ? C'est ce qui attrapera les
-   divergences d'arrondi flottant introduites par `-mfpmath=387` (E01-S01).
-7. Intégrer aux scripts de build, en échec bloquant, sur le modèle de
+1. Sort the 18 existing suites according to E00-S07's decision: kept, removed, to be
+   adapted. The save codec and audio equaliser suites are to be kept; those of the modern
+   policies go.
+2. Classify the suites kept into three families: portable logic, platform-specific,
+   cross-target comparison.
+3. Run the portable-logic tests on both targets. If they depend on a test framework
+   unavailable in restricted C++, provide a minimal replacement rather than give them up.
+4. Write the platform tests E02 asks for: threads and synchronisation (E02-S01), clock
+   and overflow (E02-S03), saves (E02-S05).
+5. Automate running them on the emulated machine: launch the suite, collect the results,
+   report them back on the host. Without automation, these tests will not be run
+   regularly, and tests one does not run are worth nothing.
+6. Add the cross-target comparison tests: does the same input produce the same result on
+   the modern host and on the target? That is what will catch the floating-point rounding
+   divergences introduced by `-mfpmath=387` (E01-S01).
+7. Integrate them into the build scripts, as a blocking failure, on the model of
    `Build-Linux.sh`.
-8. Documenter l'exécution dans `docs/TESTING.md`.
+8. Document how to run them in `docs/TESTING.md`.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Les 18 suites existantes sont triées, chaque décision étant justifiée.
-- [ ] Les tests de logique portable passent sur les deux cibles.
-- [ ] Les tests de plateforme réclamés par E02 sont écrits et passent sur la cible.
-- [ ] L'exécution sur la machine émulée est automatisée.
-- [ ] Les tests de comparaison inter-cibles détectent une divergence d'arrondi
-      introduite volontairement.
-- [ ] Les tests sont bloquants dans les scripts de build.
-- [ ] `docs/TESTING.md` documente l'exécution sur les deux cibles.
+- [ ] The 18 existing suites are sorted, each decision being justified.
+- [ ] The portable-logic tests pass on both targets.
+- [ ] The platform tests E02 asks for are written and pass on the target.
+- [ ] Running them on the emulated machine is automated.
+- [ ] The cross-target comparison tests detect a rounding divergence introduced
+      deliberately.
+- [ ] The tests are blocking in the build scripts.
+- [ ] `docs/TESTING.md` documents running them on both targets.
 
-## Risques
+## Risks
 
-Une suite de tests qui ne tourne que sur l'hôte moderne donne une confiance
-trompeuse : elle valide un code compilé par un autre compilateur, pour une autre
-architecture, avec une autre arithmétique flottante. L'automatisation de l'étape 5
-est ce qui distingue une suite utile d'une suite décorative.
+A test suite that runs only on the modern host gives deceptive confidence: it validates
+code compiled by another compiler, for another architecture, with another floating-point
+arithmetic. Step 5's automation is what distinguishes a useful suite from a decorative
+one.
 
-## Références
+## References
 
-- `runtime-recomp/tests/` — 18 suites existantes
-- `Build-Linux.sh:32` — CTest bloquant avant empaquetage
-- E01-S01 — `-mfpmath=387` et ses écarts d'arrondi
+- `runtime-recomp/tests/` — 18 existing suites
+- `Build-Linux.sh:32` — CTest blocking before packaging
+- E01-S01 — `-mfpmath=387` and its rounding deviations

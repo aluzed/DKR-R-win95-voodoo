@@ -1,119 +1,109 @@
-# E09-S02 — Harnais de comparaison visuelle
+# E09-S02 — Visual comparison harness
 
 | | |
 |---|---|
-| **Épic** | E09 — Intégration, QA et distribution |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E00-S07, E04-S02, E04-S08, E09-S01 |
-| **Bloque** | E05-S03, E08-S03, E09-S04 |
+| **Epic** | E09 — Integration, QA and distribution |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E00-S07, E04-S02, E04-S08, E09-S01 |
+| **Blocks** | E05-S03, E08-S03, E09-S04 |
 
-## Contexte
+## Context
 
-Le portage produit des images. La seule façon de savoir si elles sont justes est
-de les comparer à une référence, et de le faire automatiquement — la comparaison à
-l'œil ne détecte pas les écarts progressifs, et elle ne passe pas à l'échelle de
-plusieurs centaines de scènes.
+The port produces images. The only way to know whether they are right is to compare them
+against a reference, and to do it automatically — comparison by eye does not detect
+progressive deviations, and it does not scale to several hundred scenes.
 
-Trois références sont disponibles, de fidélité décroissante et de commodité
-croissante :
+Three references are available, of decreasing fidelity and increasing convenience:
 
-1. **La console ou un émulateur de référence** — la vérité, mais lourde à
-   instrumenter ;
-2. **DKR-R en mode Accurate sur RT64** — conservé comme oracle par l'ADR de
-   E00-S07, et facile à piloter ;
-3. **Le rastériseur logiciel de E04-S08** — implémente le combineur du RDP
-   fidèlement, sans les contraintes de Glide.
+1. **The console or a reference emulator** — the truth, but heavy to instrument;
+2. **DKR-R in Accurate mode on RT64** — kept as the oracle by E00-S07's ADR, and easy to
+   drive;
+3. **E04-S08's software rasteriser** — implements the RDP's combiner faithfully, without
+   Glide's constraints.
 
-Le troisième est le plus utile en pratique, parce qu'il isole une seule variable :
-si le rendu logiciel est correct et le rendu Glide faux, le décodeur est hors de
-cause et l'erreur est dans le backend. C'est cette isolation qui donne son
-efficacité à E05-S03.
+The third is the most useful in practice, because it isolates a single variable: if the
+software rendering is correct and the Glide rendering wrong, the decoder is out of the
+question and the error is in the backend. It is that isolation which gives E05-S03 its
+effectiveness.
 
-La brique centrale est la **capture de display lists**. Une fois qu'on sait
-enregistrer les tâches graphiques d'une session et les rejouer, la comparaison
-devient déterministe et reproductible — ce qu'une session de jeu jouée à la main
-n'est jamais.
+The central building block is **display-list capture**. Once we know how to record a
+session's graphics tasks and replay them, the comparison becomes deterministic and
+reproducible — which a play session played by hand never is.
 
-## Objectif
+## Objective
 
-Livrer un harnais qui capture, rejoue et compare les images entre les trois
-backends, automatiquement.
+To deliver a harness that captures, replays and compares the images between the three
+backends, automatically.
 
-## Périmètre
+## Scope
 
-**Dans :** capture, rejeu, comparaison, rapport, intégration à la vérification
-continue.
+**In:** capture, replay, comparison, report, integration into continuous verification.
 
-**Hors :** la validation sur matériel réel (E09-S04).
+**Out:** validation on real hardware (E09-S04).
 
-## Travail
+## Work
 
-1. Implémenter la capture des tâches graphiques : `OSTask` et instantané RDRAM
-   associé, écrits dans un fichier. Le format doit être stable et documenté, ces
-   captures ayant vocation à servir longtemps.
-2. Constituer un jeu de captures couvrant le jeu : écran-titre, menus, sélection
-   de personnage, un tour sur chaque niveau, cinématiques, écran partagé, écran de
-   résultats. C'est le corpus de référence du projet, et sa couverture décide de
-   ce que le harnais peut détecter.
-3. Implémenter le rejeu : recharger une capture et la soumettre au backend choisi,
-   sans faire tourner le jeu. Le rejeu est déterministe, ce qui rend chaque
-   comparaison reproductible.
-4. Implémenter la comparaison : différence par pixel, avec une métrique tolérante
-   à la réduction de profondeur de couleur — Glide rend en 16 bits, une différence
-   exacte serait inexploitable. La métrique doit distinguer « quantifié
-   différemment » de « faux ».
-5. Produire un rapport visuel : image de référence, image obtenue, carte des
-   différences, métrique. C'est ce rapport qui rendra E05-S03 praticable.
-6. Intégrer à la vérification : une régression visuelle doit se signaler
-   automatiquement, avec un seuil par scène plutôt qu'un seuil global — certaines
-   scènes sont intrinsèquement plus proches que d'autres.
-7. Prévoir le rejeu sur la machine cible, pour comparer le rendu Glide réel à la
-   référence obtenue sur l'hôte.
-8. Documenter la procédure dans `docs/VISUAL-TESTING.md`.
+1. Implement the capture of the graphics tasks: `OSTask` and the associated RDRAM
+   snapshot, written to a file. The format must be stable and documented, those captures
+   being intended to serve for a long time.
+2. Build a set of captures covering the game: title screen, menus, character selection, a
+   lap on each level, cutscenes, split screen, results screen. It is the project's
+   reference corpus, and its coverage decides what the harness can detect.
+3. Implement the replay: reload a capture and submit it to the chosen backend, without
+   running the game. The replay is deterministic, which makes every comparison
+   reproducible.
+4. Implement the comparison: per-pixel difference, with a metric tolerant of the
+   reduction in colour depth — Glide renders in 16 bits, an exact difference would be
+   unusable. The metric must distinguish "quantised differently" from "wrong".
+5. Produce a visual report: reference image, image obtained, difference map, metric. It
+   is that report which will make E05-S03 practicable.
+6. Integrate it into the verification: a visual regression must announce itself
+   automatically, with a per-scene threshold rather than a global one — some scenes are
+   intrinsically closer than others.
+7. Provide for replay on the target machine, in order to compare the real Glide rendering
+   against the reference obtained on the host.
+8. Document the procedure in `docs/VISUAL-TESTING.md`.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Les captures de tâches graphiques sont enregistrables et rejouables.
-- [ ] Le corpus couvre titre, menus, tous les niveaux, cinématiques, écran
-      partagé et résultats.
-- [~] Le rejeu est déterministe pour la scène synthétique — la comparaison des
-      comptes de triangles émis précède celle des images, précisément pour que
-      l'écart d'image ne masque pas un défaut de déterminisme. **La rejouabilité
-      d'une capture réelle reste bloquée** : elle suppose la ROM.
-- [x] La métrique de comparaison distingue quantification et erreur — la
-      référence est quantifiée en 565 avant comparaison, avec la même
-      réplication des bits de poids fort que la relecture, et les pixels de bord
-      sont comptés à part. Le seuil large qui a servi à défricher est doublé d'un
-      seuil serré une fois le bruit réel mesuré : pire écart 9 sur 255, borne
-      posée à 16. Un seuil qu'on ne resserre pas après avoir mesuré n'affirme
-      que sa propre indulgence.
-- [~] Le rapport présente référence et obtenu en BMP 24 bits ramenés sur l'hôte,
-      plus les métriques — surface peinte de part et d'autre, pixels divergents,
-      pixels de bord, pire écart et sa position. **L'image de différence n'est
-      pas produite par le harnais** ; elle a été calculée sur l'hôte pendant le
-      diagnostic.
-- [ ] Une régression visuelle est signalée automatiquement, seuil par scène.
-- [x] Le rejeu fonctionne sur la machine cible avec le backend Glide — la même
-      scène traverse la chaîne complète vers le rastériseur puis vers la Voodoo,
-      dont le tampon d'image est relu. Résultat : 0 pixel divergent sur 307200,
-      après correction de trois défauts **tous situés dans l'oracle**.
-      Voir `docs/research/win95-oracle-vs-card.md`.
-- [ ] Le format de capture est documenté.
+- [ ] The graphics task captures can be recorded and replayed.
+- [ ] The corpus covers title, menus, every level, cutscenes, split screen and results.
+- [~] The replay is deterministic for the synthetic scene — the comparison of the counts
+      of triangles emitted precedes that of the images, precisely so that an image
+      deviation does not mask a determinism defect. **The replayability of a real capture
+      stays blocked**: it presupposes the ROM.
+- [x] The comparison metric distinguishes quantisation from error — the reference is
+      quantised to 565 before comparison, with the same replication of the high-order
+      bits as the read-back, and the edge pixels are counted separately. The wide
+      threshold that served to clear the ground is doubled by a tight one once the real
+      noise is measured: worst deviation 9 out of 255, bound set at 16. A threshold one
+      does not tighten after measuring asserts nothing but its own indulgence.
+- [~] The report presents reference and obtained as 24-bit BMPs brought back to the host,
+      plus the metrics — area painted on either side, divergent pixels, edge pixels,
+      worst deviation and its position. **The difference image is not produced by the
+      harness**; it was computed on the host during diagnosis.
+- [ ] A visual regression is reported automatically, with a per-scene threshold.
+- [x] The replay works on the target machine with the Glide backend — the same scene
+      crosses the complete chain to the rasteriser then to the Voodoo, whose frame buffer
+      is read back. Result: 0 divergent pixels out of 307,200, after correcting three
+      defects **all of them located in the oracle**.
+      See `docs/research/win95-oracle-vs-card.md`.
+- [ ] The capture format is documented.
 
-> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-available.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+> **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
-## Risques
+## Risks
 
-Un corpus incomplet donne une fausse confiance : ce qu'il ne couvre pas ne sera
-pas détecté, et l'absence d'alerte sera lue comme une absence de problème. La
-couverture par niveau et par mode de jeu est donc un critère d'acceptation à part
-entière, pas un raffinement ultérieur.
+An incomplete corpus gives false confidence: what it does not cover will not be detected,
+and the absence of an alert will be read as an absence of problems. Coverage by level and
+by game mode is therefore an acceptance criterion in its own right, not a later
+refinement.
 
-## Références
+## References
 
-- `docs/RENDER_SNAPSHOT_ARCHITECTURE.md` — instantané par tâche, déjà en place
-- E04-S08 — rastériseur de référence
-- E00-S07 — conservation de l'oracle RT64
-- E05-S03 — consommateur principal du harnais
+- `docs/RENDER_SNAPSHOT_ARCHITECTURE.md` — snapshot per task, already in place
+- E04-S08 — reference rasteriser
+- E00-S07 — keeping the RT64 oracle
+- E05-S03 — the harness's main consumer

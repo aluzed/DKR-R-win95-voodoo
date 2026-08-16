@@ -1,229 +1,219 @@
-# E09-S01 — Environnement de test émulé
+# E09-S01 — Emulated test environment
 
 | | |
 |---|---|
-| **Épic** | E09 — Intégration, QA et distribution |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | — |
-| **Bloque** | E00-S02, E05-S01, E09-S02 |
+| **Epic** | E09 — Integration, QA and distribution |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | — |
+| **Blocks** | E00-S02, E05-S01, E09-S02 |
 
-## État au 2026-08-11
+## State as of 2026-08-11
 
-**L'environnement est opérationnel de bout en bout** : Windows 95 OSR2.5 sur
-Pentium II / Voodoo 2, pilote 3dfx installé, et une démonstration Glide qui rend
-un triangle Gouraud à l'écran. La machine se pilote sans écran physique.
-Recette : [`docs/TEST-ENVIRONMENT.md`](../../TEST-ENVIRONMENT.md).
+**The environment is operational end to end**: Windows 95 OSR2.5 on a Pentium II /
+Voodoo 2, 3dfx driver installed, and a Glide demonstration that renders a Gouraud
+triangle on screen. The machine is driven with no physical display.
+Recipe: [`docs/TEST-ENVIRONMENT.md`](../../TEST-ENVIRONMENT.md).
 
-| Étape | État |
+| Step | State |
 |---|---|
-| 86Box v6.0 installé et exécutable, sans droits root | ✅ |
-| Machine POST : Pentium II 400 MHz, 65 536 Ko, 3 disques détectés | ✅ vérifié par capture d'écran |
-| Images disque partitionnées et formatées depuis l'hôte | ✅ |
-| Source Windows 95 extraite de l'ISO du joueur vers E: | ✅ 63 fichiers, 46 Mio |
-| Amorçage FreeDOS, C:/D:/E: visibles par DOS | ✅ prouvé par témoin écrit depuis l'invité |
-| Transfert hôte ↔ invité par `mtools`, sans root | ✅ dans les deux sens |
-| Pilotage sans écran : capture + injection de touches | ✅ `Drive-Win95-VM.sh` |
-| **Windows 95 OSR2.5 installé et démarre** | ✅ ScanDisk sans erreur sur C:, D:, E: |
-| Sound Blaster 16 détectée par Windows | ✅ |
-| Instantané / restauration | ✅ `Run-Win95-VM.sh --snapshot` / `--restore` |
-| Configurations Voodoo 1 et machine lente | ✅ par variables d'environnement |
-| **Pilote 3dfx 3.01.00 installé et lié à la carte** | ✅ « Voodoo2 3D Accelerator », sans avertissement |
-| **Runtime Glide en place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` dans `C:\WINDOWS\SYSTEM` |
-| **Démonstration Glide** | ✅ contexte 640×480, effacements, échanges, triangle Gouraud |
+| 86Box v6.0 installed and runnable, without root | ✅ |
+| Machine POSTs: Pentium II 400 MHz, 65,536 KB, 3 disks detected | ✅ verified by screen capture |
+| Disk images partitioned and formatted from the host | ✅ |
+| Windows 95 source extracted from the player's ISO onto E: | ✅ 63 files, 46 MiB |
+| FreeDOS boot, C:/D:/E: visible from DOS | ✅ proved by a witness written from the guest |
+| Host ↔ guest transfer through `mtools`, without root | ✅ in both directions |
+| Driving with no display: capture + key injection | ✅ `Drive-Win95-VM.sh` |
+| **Windows 95 OSR2.5 installed and starts** | ✅ ScanDisk with no error on C:, D:, E: |
+| Sound Blaster 16 detected by Windows | ✅ |
+| Snapshot / restore | ✅ `Run-Win95-VM.sh --snapshot` / `--restore` |
+| Voodoo 1 and slow-machine configurations | ✅ through environment variables |
+| **3dfx driver 3.01.00 installed and bound to the card** | ✅ "Voodoo2 3D Accelerator", with no warning |
+| **Glide runtime in place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` in `C:\WINDOWS\SYSTEM` |
+| **Glide demonstration** | ✅ 640×480 context, clears, swaps, Gouraud triangle |
 
-Journal écrit par la démonstration depuis l'invité :
+Log written by the demonstration from the guest:
 
 ```text
-glide2x.dll charge / symboles Glide resolus / grGlideInit
-cartes 3dfx detectees : 1
-contexte 640x480 ouvert, double buffer
+glide2x.dll loaded / Glide symbols resolved / grGlideInit
+3dfx boards detected: 1
+640x480 context open, double buffered
 grBufferClear + grBufferSwap x3
-grDrawTriangle : triangle Gouraud
-SUCCES : la pile Glide fonctionne de bout en bout
+grDrawTriangle: Gouraud triangle
+SUCCESS: the Glide stack works end to end
 ```
 
-Livré : `Setup-Win95-TestVM.sh`, `prepare_win95_install.py`, `patch_voodoo2_inf.py`,
+Delivered: `Setup-Win95-TestVM.sh`, `prepare_win95_install.py`, `patch_voodoo2_inf.py`,
 `Run-Win95-VM.sh`, `Drive-Win95-VM.sh`, `Push-To-Win95-VM.sh`,
 `tools/win95/azerty_keys.py`, `tools/win95/glidetest.c` + `build-glidetest.sh`,
 `docs/TEST-ENVIRONMENT.md`.
 
-### Ce que le montage a appris
+### What the assembly taught
 
-**Le pilotage sans écran est acquis**, et il vaut bien au-delà de l'installation :
-c'est le socle du harnais de comparaison visuelle de
-[E09-S02](E09-S02-visual-comparison-harness.md), qui pourra donc tourner en
-intégration continue. Deux pièges le conditionnent, tous deux documentés :
-`xdotool key --window` passe par `XSendEvent` que Qt ignore, et 86Box ne route le
-clavier vers l'invité qu'après un clic de capture dans sa fenêtre.
+**Driving with no display is acquired**, and it is worth far more than the
+installation: it is the foundation of
+[E09-S02](E09-S02-visual-comparison-harness.md)'s visual comparison harness, which will
+therefore be able to run in continuous integration. Two traps condition it, both
+documented: `xdotool key --window` goes through `XSendEvent`, which Qt ignores, and
+86Box routes the keyboard to the guest only after a capture click in its window.
 
-**Le diagnostic par capture d'écran a été décisif.** Quatre tentatives
-d'amorçage ont échoué sans laisser de trace exploitable ; la capture a montré la
-cause en une image — le BIOS attendait `Press F1 to continue` sur une CMOS
-vierge. De l'extérieur, une machine bloquée au BIOS et une machine qui n'amorce
-pas sont indiscernables.
+**Diagnosis by screen capture was decisive.** Four boot attempts failed without leaving
+any usable trace; the capture showed the cause in one image — the BIOS was waiting for
+`Press F1 to continue` on a blank CMOS. From the outside, a machine stuck in the BIOS
+and a machine that does not boot are indistinguishable.
 
-**Quatre erreurs de montage trouvées et corrigées**, chacune invisible autrement :
-un disque dur DOS exige une table de partition — un volume FAT brut n'est pas vu ;
-la partition système doit porter le fanion actif, faute de quoi Windows
-s'installerait sans pouvoir démarrer ; 86Box remet à `none` toute valeur de
-configuration qu'il refuse, ce qui avait silencieusement supprimé la carte 2D
-(`virge375_pci`, et non `s3_virge_375_pci`) — sans carte vidéo, la machine ne
-POST pas ; et surtout la géométrie de disque, ci-dessous.
+**Four assembly errors found and corrected**, each invisible otherwise: a DOS hard disk
+requires a partition table — a raw FAT volume is not seen; the system partition must
+carry the active flag, failing which Windows would install without being able to start;
+86Box resets to `none` any configuration value it refuses, which had silently removed
+the 2D card (`virge375_pci`, and not `s3_virge_375_pci`) — with no video card, the
+machine does not POST; and above all the disk geometry, below.
 
-**Le piège de la géométrie, qui a coûté le plus cher.** Un BIOS d'époque
-n'adresse que 1024 cylindres ; au-delà il double les têtes jusqu'à repasser sous
-la limite et présente **cette** géométrie translatée à `INT 13h`. Le code
-d'amorçage de Windows 95 convertit ses adresses en CHS avec le nombre de têtes
-inscrit dans le BPB du secteur de démarrage. Écrit depuis Linux avec 16 têtes
-alors que le BIOS en présentait 64, chaque lecture tombait à côté : la machine
-chargeait n'importe quoi et se figeait **sans le moindre message**, exactement
-comme un disque non amorçable.
+**The geometry trap, which cost the most.** A BIOS of the period addresses only 1024
+cylinders; beyond that it doubles the heads until it comes back under the limit and
+presents **that** translated geometry to `INT 13h`. Windows 95's boot code converts its
+addresses to CHS with the number of heads written in the boot sector's BPB. Written
+from Linux with 16 heads while the BIOS presented 64, every read fell wide of the mark:
+the machine loaded anything at all and froze **without the slightest message**, exactly
+like a non-bootable disk.
 
-Le POST le signalait pourtant, en une colonne : `Pri. Master : LBA` contre
-`Sec. Slave : CHS`. Seul le disque système dépassait 1024 cylindres, et c'était
-le seul à ne pas démarrer. `prepare_win95_install.py` calcule désormais la
-géométrie translatée **avant** de créer les images.
+The POST did report it, though, in one column: `Pri. Master: LBA` against
+`Sec. Slave: CHS`. Only the system disk exceeded 1024 cylinders, and it was the only one
+that did not start. `prepare_win95_install.py` now computes the translated geometry
+**before** creating the images.
 
-Écartés en chemin, chacun testé : détection de virus au démarrage, séquence
-d'amorçage, `Halt On: All Errors`, présence du lecteur de disquette, et
-réécriture du MBR par `FDISK /MBR`.
+Set aside along the way, each of them tested: boot-time virus detection, the boot
+sequence, `Halt On: All Errors`, the presence of the floppy drive, and rewriting the MBR
+with `FDISK /MBR`.
 
-**La machine a émulé une Voodoo 1 pendant toute l'installation.** 86Box n'a pas
-appliqué les réglages Voodoo écrits à la main dans `86box.cfg` : le fichier
-disait `type = 1` et 4 Mo, le dialogue affichait « Graphique 3dfx Voodoo » et
-2 Mo. Il a conservé le texte tout en émulant autre chose. Symptômes : le POST
-listait `121A 0001`, et Glide répondait « expected Voodoo, none detected ».
-Corrigé en passant une fois par le dialogue de réglages ; les mêmes valeurs sont
-ensuite honorées.
+**The machine emulated a Voodoo 1 throughout the installation.** 86Box did not apply
+the Voodoo settings written by hand in `86box.cfg`: the file said `type = 1` and 4 MB,
+the dialogue displayed "3dfx Voodoo Graphics" and 2 MB. It kept the text while emulating
+something else. Symptoms: the POST listed `121A 0001`, and Glide answered "expected
+Voodoo, none detected". Corrected by going once through the settings dialogue; the same
+values are honoured thereafter.
 
-**Ce point remonte à [E00-S05](../E00-scoping/E00-S05-adr-hardware-target-glide.md) :**
-le modèle de carte doit être vérifié dans le dialogue, jamais déduit du fichier.
-Un budget de mémoire de texture mesuré sur 2 Mo au lieu de 4, ou un test de
-multitexture mené sur une seule TMU, serait faux sans que rien ne le signale.
+**That point goes back to [E00-S05](../E00-scoping/E00-S05-adr-hardware-target-glide.md):**
+the card model must be verified in the dialogue, never deduced from the file. A texture
+memory budget measured on 2 MB instead of 4, or a multitexture test conducted on a
+single TMU, would be wrong with nothing to say so.
 
-**Un piège de Glide trouvé par la démonstration, et qui vaut pour tout E05.** La
-structure `GrVertex` de Glide 2.x range ses champs dans l'ordre
-`x, y, z, r, g, b, ooz, a, oow` : `ooz` et `a` s'intercalent entre les couleurs
-et `oow`. Une structure « logique » compile sans avertissement et rend un
-triangle impeccable **aux couleurs permutées** — un sommet rouge sort vert. Ni le
-compilateur ni Glide ne signalent quoi que ce soit ; seule la comparaison
-visuelle l'attrape. C'est l'argument de
-[E04-S08](../E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) en
+**A Glide trap found by the demonstration, and one that holds for all of E05.** Glide
+2.x's `GrVertex` structure lays its fields out in the order
+`x, y, z, r, g, b, ooz, a, oow`: `ooz` and `a` are interleaved between the colours and
+`oow`. A "logical" structure compiles with no warning and renders an impeccable triangle
+**with the colours permuted** — a red vertex comes out green. Neither the compiler nor
+Glide reports anything at all; only the visual comparison catches it. It is
+[E04-S08](../E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md)'s argument in
 miniature.
 
-**Le pilote 3dfx a demandé deux corrections.** L'assistant de mise à jour de
-pilote n'expose pas « Disquette fournie » — il filtre les modèles par la classe
-du périphérique existant, et un périphérique inconnu ne correspond à aucune
-classe. C'est **Panneau de configuration → Ajout de périphérique** qui fait lire
-l'INF. Et surtout : **86Box expose sa Voodoo 2 avec l'identifiant PCI de la
-Voodoo 1** (`121A:0001`), alors que `voodoo2.inf` ne se lie qu'à `DEV_0002`. Le
-pilote d'origine ne peut donc pas reconnaître la carte émulée.
-`scripts/patch_voodoo2_inf.py` ajoute la liaison manquante.
+**The 3dfx driver required two corrections.** The driver update wizard does not expose
+"Have Disk" — it filters the models by the existing device's class, and an unknown
+device matches no class. It is **Control Panel → Add New Hardware** that makes it read
+the INF. And above all: **86Box exposes its Voodoo 2 with the Voodoo 1's PCI identifier**
+(`121A:0001`), whereas `voodoo2.inf` binds only to `DEV_0002`. The original driver
+therefore cannot recognise the emulated card. `scripts/patch_voodoo2_inf.py` adds the
+missing binding.
 
-Conséquence directe pour
-[E05-S01](../E05-glide/E05-S01-glide-init-and-buffers.md) : **la détection
-de carte à l'exécution ne doit pas se fier à l'identifiant PCI**, qui ment sur
-cette plate-forme de test. Une détection naïve croirait avoir affaire à une
-Voodoo 1 à une seule TMU et prendrait le repli multipasse de E05-S04 sans raison.
-`grSstQueryBoards` et `grGet` font foi.
+A direct consequence for
+[E05-S01](../E05-glide/E05-S01-glide-init-and-buffers.md): **card detection at run time
+must not rely on the PCI identifier**, which lies on this test platform. A naive
+detection would believe it was dealing with a single-TMU Voodoo 1 and would take
+E05-S04's multipass fallback for no reason. `grSstQueryBoards` and `grGet` are
+authoritative.
 
-**Une réponse pour le backlog graphique.** Le pilote 3dfx 3.01.00 embarque
-**Glide 2.54 et Glide 3.01** pour Voodoo 2 : le choix de version d'API dans
-[E00-S05](../E00-scoping/E00-S05-adr-hardware-target-glide.md) ne dépend donc
-pas du matériel — les deux runtimes sont sur la machine.
+**An answer for the graphics backlog.** The 3dfx driver 3.01.00 carries **Glide 2.54 and
+Glide 3.01** for the Voodoo 2: the choice of API version in
+[E00-S05](../E00-scoping/E00-S05-adr-hardware-target-glide.md) therefore does not depend
+on the hardware — both runtimes are on the machine.
 
-Le modèle de carte, en revanche, ne se lit nulle part de façon fiable : le
-gestionnaire de périphériques affiche « Version du matériel : 002 », qui est la
-**révision** et non l'identifiant, et l'identifiant PCI dit `0001`, celui de la
-Voodoo 1. Seul le pilote installé — « Voodoo2 3D Accelerator » — atteste du
-modèle. Raison de plus pour que E05-S01 interroge Glide plutôt que le bus.
+The card model, on the other hand, is nowhere reliably readable: the device manager
+displays "Hardware version: 002", which is the **revision** and not the identifier, and
+the PCI identifier says `0001`, the Voodoo 1's. Only the installed driver — "Voodoo2 3D
+Accelerator" — attests to the model. All the more reason for E05-S01 to interrogate
+Glide rather than the bus.
 
-**Sur l'ISO fournie :** elle n'est pas amorçable (pas d'El Torito), et le CD
-OSR2.5 français n'a pas de `SETUP.EXE` — son installateur s'appelle
-`INSTALL.EXE`. D'où la disquette FreeDOS et la source posée sur un disque dur
-plutôt que sur le CD, ce qui supprime toute dépendance à un pilote CD-ROM DOS.
+**On the ISO supplied:** it is not bootable (no El Torito), and the French OSR2.5 CD has
+no `SETUP.EXE` — its installer is called `INSTALL.EXE`. Hence the FreeDOS floppy and the
+source placed on a hard disk rather than on the CD, which removes any dependency on a
+DOS CD-ROM driver.
 
-86Box a placé une carte 2D S3 ViRGE aux côtés de la Voodoo 2 : ce n'est pas un
-artifice d'émulation mais le montage réel d'une Voodoo 2, qui se branche en
-sortie de la carte 2D et ne prend la main qu'en 3D plein écran — ce qui confirme
-l'hypothèse d'intégration de [E06-S01](../E06-platform/E06-S01-win32-window-and-message-loop.md).
+86Box placed an S3 ViRGE 2D card alongside the Voodoo 2: that is not an emulation
+artifice but the real assembly of a Voodoo 2, which plugs into the 2D card's output and
+takes over only in full-screen 3D — which confirms
+[E06-S01](../E06-platform/E06-S01-win32-window-and-message-loop.md)'s integration
+hypothesis.
 
-## Contexte
+## Context
 
-Ce ticket doit être fait **tôt**, avant presque tout le reste : c'est lui qui rend
-le projet praticable. Sans machine de test rapide à réinitialiser, chaque
-vérification passe par du matériel réel, et le cycle de mise au point devient si
-lent qu'il décourage l'expérimentation — exactement au moment où le projet en
-demande le plus, notamment sur Glide (E05-S01).
+This ticket has to be done **early**, before almost everything else: it is what makes
+the project practicable. Without a test machine that is quick to reset, every check goes
+through real hardware, and the debugging cycle becomes so slow that it discourages
+experiment — exactly when the project demands the most of it, notably on Glide
+(E05-S01).
 
-Deux émulateurs conviennent, et tous deux émulent une Voodoo :
+Two emulators are suitable, and both emulate a Voodoo:
 
-- **PCem** et son fork **86Box**, qui émulent des machines de l'époque au niveau
-  du composant, avec des cartes 3dfx.
+- **PCem** and its fork **86Box**, which emulate machines of the period at component
+  level, with 3dfx cards.
 
-L'émulation Voodoo n'est pas parfaite, et c'est une limite à connaître : elle
-suffira pour la mise au point fonctionnelle, pas pour valider les performances.
-La validation matériel réel de E09-S04 reste indispensable ; l'émulateur ne la
-remplace pas, il la rend rare.
+Voodoo emulation is not perfect, and that is a limit to be aware of: it will suffice for
+functional debugging, not for validating performance. E09-S04's real-hardware validation
+stays indispensable; the emulator does not replace it, it makes it rare.
 
-## Objectif
+## Objective
 
-Livrer un environnement de test reproductible : Windows 95 avec carte 3dfx émulée,
-installable et réinitialisable rapidement.
+To deliver a reproducible test environment: Windows 95 with an emulated 3dfx card,
+installable and quick to reset.
 
-## Périmètre
+## Scope
 
-**Dans :** la machine émulée, sa configuration, le transfert de fichiers, la
-recette.
+**In:** the emulated machine, its configuration, file transfer, the recipe.
 
-**Hors :** le matériel réel (E09-S04).
+**Out:** real hardware (E09-S04).
 
-## Travail
+## Work
 
-1. Choisir l'émulateur en comparant sur un critère concret : la qualité de
-   l'émulation Voodoo, et la présence des pilotes Glide.
-2. Configurer une machine conforme à l'ADR de E00-S05 : processeur, mémoire, carte
-   3dfx, carte son, disque.
-3. Installer Windows 95 OSR2.5, les pilotes 3dfx, DirectX, et la version de
-   `msvcrt` retenue par E01-S03.
-4. Sauvegarder l'état comme image de référence, restaurable en quelques secondes.
-   C'est la propriété la plus importante de cet environnement : un plantage de
-   Glide en plein écran peut laisser le système inutilisable, et sans restauration
-   rapide, chaque essai raté coûte une réinstallation.
-5. Automatiser le transfert de fichiers entre l'hôte de développement et la machine
-   émulée. Un disque virtuel monté des deux côtés est le moyen le plus simple. Ce
-   point décide de la vitesse du cycle de mise au point : il mérite qu'on y passe
-   du temps.
-6. Écrire un script qui construit, transfère et lance en une commande.
-7. Préparer plusieurs configurations : Voodoo 1 à une TMU, Voodoo 2 à deux TMU,
-   et une machine plus lente, pour éprouver les replis de E05-S04 et les limites
-   de performance.
-8. Documenter la recette dans `docs/TEST-ENVIRONMENT.md`, assez précisément pour
-   qu'un tiers puisse reconstruire l'environnement.
+1. Choose the emulator on a concrete criterion: the quality of the Voodoo emulation, and
+   the presence of the Glide drivers.
+2. Configure a machine conforming to E00-S05's ADR: processor, memory, 3dfx card, sound
+   card, disk.
+3. Install Windows 95 OSR2.5, the 3dfx drivers, DirectX, and the version of `msvcrt`
+   retained by E01-S03.
+4. Save the state as a reference image, restorable in a few seconds. It is this
+   environment's most important property: a Glide crash in full screen can leave the
+   system unusable, and without a quick restore, every failed attempt costs a
+   reinstallation.
+5. Automate file transfer between the development host and the emulated machine. A
+   virtual disk mounted on both sides is the simplest means. This point decides the speed
+   of the debugging cycle: it deserves time spent on it.
+6. Write a script that builds, transfers and launches in one command.
+7. Prepare several configurations: a single-TMU Voodoo 1, a two-TMU Voodoo 2, and a
+   slower machine, in order to exercise E05-S04's fallbacks and the performance limits.
+8. Document the recipe in `docs/TEST-ENVIRONMENT.md`, precisely enough for a third party
+   to rebuild the environment.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Une machine Windows 95 avec 3dfx émulée démarre et exécute une démonstration
-      Glide.
-- [ ] L'état de référence se restaure en quelques secondes.
-- [ ] Le transfert de fichiers est automatisé.
-- [ ] Une commande construit, transfère et lance.
-- [ ] Au moins trois configurations distinctes sont disponibles.
-- [ ] `docs/TEST-ENVIRONMENT.md` permet à un tiers de reconstruire l'environnement.
-- [ ] Les limites de l'émulation Voodoo sont documentées, en particulier ce qui ne
-      peut pas y être validé.
+- [ ] A Windows 95 machine with an emulated 3dfx starts and runs a Glide demonstration.
+- [ ] The reference state restores in a few seconds.
+- [ ] File transfer is automated.
+- [ ] One command builds, transfers and launches.
+- [ ] At least three distinct configurations are available.
+- [ ] `docs/TEST-ENVIRONMENT.md` allows a third party to rebuild the environment.
+- [ ] The limits of the Voodoo emulation are documented, in particular what cannot be
+      validated there.
 
-## Risques
+## Risks
 
-L'émulation Voodoo est approximative sur certains points, et il serait coûteux de
-poursuivre un défaut qui n'existe que dans l'émulateur. D'où l'importance de
-documenter ses limites connues, et de confronter au matériel réel (E09-S04) à
-intervalles réguliers plutôt qu'une seule fois à la fin.
+Voodoo emulation is approximate on certain points, and it would be expensive to chase a
+defect that exists only in the emulator. Hence the importance of documenting its known
+limits, and of confronting real hardware (E09-S04) at regular intervals rather than once
+at the end.
 
-## Références
+## References
 
-- PCem · 86Box — émulation de machines d'époque avec cartes 3dfx
-- E00-S05 — configuration matérielle cible
-- E09-S04 — validation sur matériel réel
+- PCem · 86Box — emulation of period machines with 3dfx cards
+- E00-S05 — target hardware configuration
+- E09-S04 — validation on real hardware

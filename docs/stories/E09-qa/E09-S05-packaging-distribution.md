@@ -1,94 +1,89 @@
-# E09-S05 — Empaquetage et distribution
+# E09-S05 — Packaging and distribution
 
 | | |
 |---|---|
-| **Épic** | E09 — Intégration, QA et distribution |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E01-S04, E06-S06, E09-S03, E09-S04 |
-| **Bloque** | — |
+| **Epic** | E09 — Integration, QA and distribution |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E01-S04, E06-S06, E09-S03, E09-S04 |
+| **Blocks** | — |
 
-## Contexte
+## Context
 
-Le paquet doit s'installer sur une machine de 1998, ce qui exclut les formats
-modernes : pas d'archive au format récent, pas d'installeur exigeant un runtime
-absent, pas de nom de fichier long si le support est en FAT16.
+The package has to install on a 1998 machine, which rules out modern formats: no archive
+in a recent format, no installer requiring an absent runtime, no long file name if the
+medium is FAT16.
 
-Trois règles du projet restent entières et priment sur toute considération de
-commodité :
+Three of the project's rules stay whole and take precedence over any consideration of
+convenience:
 
-- **aucun asset redistribué.** Ni ROM, ni sauvegarde, ni asset extrait — le paquet
-  est scanné avant distribution (`scripts/scan_for_game_assets.py`, exigé par
-  `docs/ASSET_POLICY.md`) ;
-- **les licences.** Le runtime hérite du GPL-3.0 de N64ModernRuntime
-  (`runtime-recomp/CMakeLists.txt:57-59`) ; s'y ajoutent les conditions des
-  sources Glide de 3dfx ;
-- **les garde-fous** de E01-S01 et E01-S04 s'appliquent au binaire réellement
-  distribué, pas seulement à celui de développement.
+- **no asset redistributed.** No ROM, no save, no extracted asset — the package is
+  scanned before distribution (`scripts/scan_for_game_assets.py`, required by
+  `docs/ASSET_POLICY.md`);
+- **the licences.** The runtime inherits N64ModernRuntime's GPL-3.0
+  (`runtime-recomp/CMakeLists.txt:57-59`); to which are added the conditions of 3dfx's
+  Glide sources;
+- **the guard rails** of E01-S01 and E01-S04 apply to the binary actually distributed,
+  not only to the development one.
 
-## Objectif
+## Objective
 
-Produire un paquet installable sur Windows 95, complet, vérifié, et conforme aux
-règles de distribution.
+To produce a package installable on Windows 95, complete, verified, and conforming to the
+distribution rules.
 
-## Périmètre
+## Scope
 
-**Dans :** l'empaquetage, l'installation, la documentation utilisateur, les
-vérifications.
+**In:** packaging, installation, user documentation, the checks.
 
-**Hors :** le contenu du jeu.
+**Out:** the game's content.
 
-## Travail
+## Work
 
-1. Choisir le format. Une archive ZIP simple à décompresser dans un dossier est
-   probablement suffisante et plus robuste qu'un installeur ; si un installeur est
-   retenu, il doit fonctionner sans dépendance moderne.
-2. Composer le paquet : exécutable, redistribuables décidés par E01-S03,
-   configuration par défaut commentée (E06-S05), documentation, licences.
-3. Traiter les DLL de Glide. Elles sont fournies par le pilote de la carte et ne
-   doivent pas être redistribuées ; le paquet doit indiquer clairement ce que
-   l'utilisateur doit avoir installé, et le programme le vérifier au lancement
-   (E05-S01).
-4. Écrire le `LISEZMOI` : configuration requise, installation, où placer sa ROM
-   (E06-S06), réglages disponibles, problèmes connus, écarts de rendu assumés
+1. Choose the format. A simple ZIP archive to unpack into a folder is probably sufficient
+   and more robust than an installer; if an installer is retained, it must work with no
+   modern dependency.
+2. Compose the package: executable, redistributables decided by E01-S03, commented
+   default configuration (E06-S05), documentation, licences.
+3. Deal with Glide's DLLs. They are supplied by the card's driver and must not be
+   redistributed; the package must state clearly what the user has to have installed, and
+   the program must check it at launch (E05-S01).
+4. Write the `README.TXT`: required configuration, installation, where to place one's ROM
+   (E06-S06), settings available, known problems, accepted rendering differences
    (`docs/RENDER-DIFFERENCES.md`).
-5. Respecter les contraintes de nommage 8.3 partout où le support peut être en
-   FAT16.
-6. Automatiser la construction du paquet, sur le modèle de
-   `scripts/Package-Windows.ps1` et `Package-Linux-AppImage.sh`, en y intégrant les
-   contrôles bloquants : jeu d'instructions (E01-S01), imports PE (E01-S04),
-   absence d'assets (`scan_for_game_assets.py`), tests (E09-S03).
-7. Vérifier l'installation sur une machine émulée vierge, puis sur du matériel
-   réel — décompression, lancement, première partie, sans aucun outil de
-   développement présent.
-8. Rassembler les licences : GPL-3.0 du runtime, conditions des sources 3dfx,
-   et les mentions déjà présentes dans `THIRD_PARTY.md`.
+5. Respect the 8.3 naming constraints everywhere the medium may be FAT16.
+6. Automate building the package, on the model of `scripts/Package-Windows.ps1` and
+   `Package-Linux-AppImage.sh`, integrating the blocking checks into it: instruction set
+   (E01-S01), PE imports (E01-S04), absence of assets (`scan_for_game_assets.py`), tests
+   (E09-S03).
+7. Check the installation on a pristine emulated machine, then on real hardware —
+   unpacking, launching, a first game, with no development tool present.
+8. Gather the licences: the runtime's GPL-3.0, the conditions of the 3dfx sources, and
+   the notices already present in `THIRD_PARTY.md`.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le paquet s'installe et se lance sur une machine Windows 95 vierge.
-- [ ] Aucun asset de jeu n'est inclus, vérifié par `scan_for_game_assets.py`.
-- [ ] Les licences sont complètes et exactes, sources Glide comprises.
-- [ ] Les DLL Glide ne sont pas redistribuées, et leur absence est signalée
-      clairement au lancement.
-- [ ] Le `LISEZMOI` couvre configuration requise, installation, ROM, réglages,
-      problèmes connus et écarts de rendu.
-- [ ] Les noms de fichiers sont compatibles 8.3.
-- [ ] La construction du paquet est automatisée avec tous les contrôles bloquants.
-- [ ] L'installation est vérifiée sur émulateur **et** sur matériel réel.
+- [ ] The package installs and launches on a pristine Windows 95 machine.
+- [ ] No game asset is included, verified by `scan_for_game_assets.py`.
+- [ ] The licences are complete and accurate, Glide sources included.
+- [ ] The Glide DLLs are not redistributed, and their absence is reported clearly at
+      launch.
+- [ ] The `README.TXT` covers required configuration, installation, ROM, settings, known
+      problems and rendering differences.
+- [ ] The file names are 8.3-compatible.
+- [ ] Building the package is automated with all the blocking checks.
+- [ ] The installation is verified on the emulator **and** on real hardware.
 
-## Risques
+## Risks
 
-Un paquet qui suppose la présence d'un composant non redistribuable — une version
-de DirectX, un runtime C, un pilote 3dfx — échouera chez une partie des
-utilisateurs, sur des machines auxquelles personne n'a accès pour diagnostiquer.
-La vérification sur machine vierge de l'étape 7 est ce qui attrape ces
-suppositions avant qu'elles ne deviennent des rapports d'échec.
+A package that assumes the presence of a non-redistributable component — a version of
+DirectX, a C runtime, a 3dfx driver — will fail for some of the users, on machines nobody
+has access to in order to diagnose. Step 7's check on a pristine machine is what catches
+those assumptions before they become failure reports.
 
-## Références
+## References
 
 - `docs/ASSET_POLICY.md`, `scripts/scan_for_game_assets.py`
 - `scripts/Package-Windows.ps1`, `scripts/Package-Linux-AppImage.sh`
 - `RELEASE-VALIDATION.md`, `THIRD_PARTY.md`
-- `runtime-recomp/CMakeLists.txt:57-59` — licence GPL-3.0 du runtime
+- `runtime-recomp/CMakeLists.txt:57-59` — the runtime's GPL-3.0 licence
