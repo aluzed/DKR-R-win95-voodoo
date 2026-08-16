@@ -1,100 +1,100 @@
-# Les rectangles 2D et l'interface
+# 2D rectangles and the interface
 
-Mesuré le 14 août 2026 sur la machine d'épreuve, par
+Measured on 14 August 2026 on the test machine, by
 `tools/win95/witnesses/rect_probe.c`.
 
-## `TextureOffset` ne fait pas ce que notre décodeur croyait
+## `TextureOffset` does not do what our decoder believed
 
-Le ticket demandait de « relever plutôt que supposer » le comportement de cette
-commande. C'est ce qui a révélé l'erreur.
+The ticket asked that this command's behaviour be "recorded rather than assumed".
+That is what revealed the error.
 
-Notre décodeur lisait `w1` comme **deux décalages de coordonnées** sur seize
-bits : `texture_offset_s = (w1 >> 16)`, `texture_offset_t = (w1 & 0xFFFF)`. Le
-portage voisin, qui tourne, en fait tout autre chose :
+Our decoder read `w1` as **two sixteen-bit coordinate offsets**:
+`texture_offset_s = (w1 >> 16)`, `texture_offset_t = (w1 & 0xFFFF)`. The
+neighbouring port, which runs, makes something else entirely of it:
 
-    data.texture_offset = w1 & 0x00FFFFFF;   // une adresse RDRAM
+    data.texture_offset = w1 & 0x00FFFFFF;   // an RDRAM address
     data.texture_shift  = 0;
     data.texture_count  = 0;
 
-C'est une **base d'adressage pour le chargement de texture**, et la commande
-remet à zéro le décalage et le compte.
+It is an **addressing base for texture loading**, and the command resets the shift
+and the count.
 
-L'erreur ne se serait pas vue tout de suite. Une base d'adresse lue comme deux
-décalages produit des coordonnées absurdes sur les surfaces concernées — donc un
-motif déplacé, pas une absence — et l'on aurait cherché du côté du décodage de
-texture, qui n'y serait pour rien.
+The error would not have shown at once. An address base read as two offsets
+produces absurd coordinates on the surfaces concerned — hence a displaced pattern,
+not an absence — and one would have looked at the texture decoding, which would
+have had nothing to do with it.
 
-## Le décalage de demi-texel : zéro, et la bande sûre
+## The half-texel offset: zero, and the safe band
 
-Le ticket insiste : ce réglage « se détermine par l'expérience, pas par le
-raisonnement ». Grille de 64 texels sur 64 pixels, un trait blanc d'un texel
-toutes les quatre colonnes, échantillonnage au point :
+The ticket insists: this setting "is determined by experiment, not by reasoning".
+A grid of 64 texels over 64 pixels, a one-texel white line every four columns,
+point sampling:
 
-| Décalage | Colonnes en face sur 64 |
+| Offset | Columns in place out of 64 |
 |---|---|
-| −0,50 | 64 |
-| −0,25 | 64 |
-| **0,00** | **64** |
-| +0,25 | 64 |
-| +0,50 | 33 |
-| +0,75 | 33 |
-| +1,00 | 33 |
+| −0.50 | 64 |
+| −0.25 | 64 |
+| **0.00** | **64** |
+| +0.25 | 64 |
+| +0.50 | 33 |
+| +0.75 | 33 |
+| +1.00 | 33 |
 
-**Aucune correction n'est nécessaire.** Avec `s` allant de 0 à la largeur sur
-autant de pixels, l'échantillonnage tombe juste. La rupture est nette entre 0,25
-et 0,50, ce qui est exactement l'endroit où le point échantillonné change de
-texel : la bande sûre est donc bien centrée sur zéro.
+**No correction is necessary.** With `s` running from 0 to the width over as many
+pixels, the sampling lands correctly. The break is clean between 0.25 and 0.50,
+which is exactly where the sampled point changes texel: the safe band is therefore
+centred on zero.
 
-Le résultat compte moins que la bande : savoir qu'il reste un quart de texel de
-marge de chaque côté dit qu'une petite erreur d'arrondi ailleurs dans la chaîne
-ne fera pas basculer l'interface.
+The result matters less than the band: knowing that a quarter of a texel of margin
+remains on each side says that a small rounding error elsewhere in the chain will
+not tip the interface over.
 
-### Une métrique qui ne peut pas échouer ne mesure rien
+### A metric that cannot fail measures nothing
 
-La première version comptait les colonnes « franches » — ni grises ni
-intermédiaires — et rendait 64 sur 64 pour **tous** les décalages. En
-échantillonnage au point il n'y a jamais de valeur intermédiaire, seulement des
-traits déplacés : la métrique ne pouvait pas échouer, donc ne discriminait rien.
+The first version counted the "clean" columns — neither grey nor intermediate —
+and returned 64 out of 64 for **every** offset. Under point sampling there is
+never an intermediate value, only displaced lines: the metric could not fail, so
+it discriminated nothing.
 
-C'est la troisième fois de ce portage qu'un contrôle réussit sans rien établir :
-après le compteur de pixels peints sur un fond non noir, et la vérification de
-cohérence des TMU sur un écran blanc. Le motif est toujours le même — **le
-résultat mesuré n'est pas distinguable de l'absence de résultat**.
+It is the third time in this port that a check passes without establishing
+anything: after the counter of painted pixels on a non-black background, and the
+TMU consistency check on a white screen. The pattern is always the same — **the
+measured result is not distinguishable from the absence of a result**.
 
-Corrigée, la métrique compare à la grille attendue : le texel `x` doit tomber sur
-le pixel `x`.
+Corrected, the metric compares against the expected grid: texel `x` must fall on
+pixel `x`.
 
-## Les jointures
+## The seams
 
-Quatre rectangles adjacents, bord à bord, de couleurs différentes :
+Four adjacent rectangles, edge to edge, of different colours:
 
-    pixels de fond sur la ligne des quatre rectangles : 0 sur 200
+    background pixels on the line of four rectangles: 0 out of 200
 
-Aucune jointure, aucun recouvrement. Un contrôle négatif vérifie en outre que les
-quatre couleurs sont bien distinctes — sans quoi un seul rectangle couvrant tout
-passerait le premier contrôle.
+No seam, no overlap. A negative control further verifies that the four colours
+really are distinct — without which a single rectangle covering everything would
+pass the first check.
 
-C'est cohérent avec la règle de remplissage déjà mesurée en E05-S01 : la fenêtre
-de Glide est incluse à gauche et exclue à droite, et ses triangles comptent
-chaque pixel une fois.
+That is consistent with the fill rule already measured in E05-S01: Glide's window
+is inclusive on the left and exclusive on the right, and its triangles count every
+pixel once.
 
-## Le HUD en écran partagé
+## The HUD in split screen
 
-Un rectangle plein écran, restreint par la fenêtre de ciseaux de E04-S05 :
+A full-screen rectangle, restricted by E04-S05's scissor window:
 
-| Cas | Peints | Attendu |
+| Case | Painted | Expected |
 |---|---|---|
-| 2 joueurs, haut | 153600 | 153600 |
-| 2 joueurs, bas | 153600 | 153600 |
-| 4 joueurs, haut-gauche | 76800 | 76800 |
-| 4 joueurs, bas-droit | 76800 | 76800 |
+| 2 players, top | 153600 | 153600 |
+| 2 players, bottom | 153600 | 153600 |
+| 4 players, top-left | 76800 | 76800 |
+| 4 players, bottom-right | 76800 | 76800 |
 
-Exact dans les quatre cas, au pixel près.
+Exact in all four cases, to the pixel.
 
-## Ce qui reste ouvert
+## What remains open
 
-- **Le texte du jeu**, composé de petites textures assemblées, qui est l'épreuve
-  la plus exigeante du positionnement. Demande la ROM.
-- **Les cinq écrans de référence** comparés au pixel près. Le ticket note à juste
-  titre que l'interface étant statique, la comparaison peut y être exacte plutôt
-  que tolérante — « une occasion rare dans ce projet ». Demande la ROM.
+- **The game's text**, composed of small assembled textures, which is the most
+  demanding trial of positioning. Requires the ROM.
+- **The five reference screens** compared pixel by pixel. The ticket rightly notes
+  that, the interface being static, the comparison there can be exact rather than
+  tolerant — "a rare opportunity in this project". Requires the ROM.

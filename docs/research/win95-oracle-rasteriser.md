@@ -1,92 +1,92 @@
-# Le rastériseur de référence, et pourquoi il se mesure au lieu de se regarder
+# The reference rasteriser, and why it is measured instead of looked at
 
-Relevé de [E04-S08](../stories/E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md),
-14 août 2026.
+A report from
+[E04-S08](../stories/E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md),
+14 August 2026.
 
-## Sa raison d'être tient en une phrase
+## Its reason for being fits in one sentence
 
-Quand une image sera fausse en Glide, il faudra savoir si l'erreur vient du
-décodeur ou du backend. Sans oracle intermédiaire, un pixel faux peut venir de
-dix étages — transformation, découpage, décodage de texture, traduction de
-combineur, réglage Glide, pilote. Avec un second backend implémentant la **même
-interface** (E04-S01), la question se tranche en une exécution.
+When an image comes out wrong under Glide, one will need to know whether the error
+comes from the decoder or from the backend. Without an intermediate oracle, a
+wrong pixel can come from ten stages — transformation, clipping, texture decoding,
+combiner translation, Glide setting, driver. With a second backend implementing
+the **same interface** (E04-S01), the question is settled in one run.
 
-## Un oracle qu'on vérifie à l'œil n'est pas un oracle
+## An oracle one checks by eye is not an oracle
 
-Sa valeur entière tient dans la confiance qu'on lui accorde, et « ça a l'air
-juste » ne se transmet pas. Chaque contrôle compare donc un pixel relu à une
-valeur **calculée analytiquement**.
+Its entire value lies in the trust placed in it, and "it looks right" does not
+transfer. Every check therefore compares a pixel read back against an
+**analytically computed** value.
 
-Le contrôle central est celui de la correction perspective, parce que c'est
-celui qu'un rastériseur naïf rate en silence. Un triangle dont les sommets ont
-des `w` très différents — 1 et 4, le cas d'une surface vue en oblique — donne au
-milieu de l'arête :
+The central check is the one on perspective correction, because it is the one a
+naive rasteriser fails silently. A triangle whose vertices have very different
+`w` — 1 and 4, the case of a surface seen obliquely — gives, at the middle of the
+edge:
 
 ```
-1/w = 0,5 × 1 + 0,5 × 0,25       = 0,625
-s/w = 0      + 0,5 × 0,25        = 0,125
-s   = 0,125 / 0,625              = 0,20
+1/w = 0.5 × 1 + 0.5 × 0.25       = 0.625
+s/w = 0       + 0.5 × 0.25       = 0.125
+s   = 0.125 / 0.625              = 0.20
 ```
 
-Mesuré : **0,2039**. La texture employée est une rampe d'intensité de 256 texels
-où le texel `i` vaut `i` ; relire un pixel donne donc directement la coordonnée
-qui a servi à l'échantillonner.
+Measured: **0.2039**. The texture used is a 256-texel intensity ramp where texel
+`i` is worth `i`; reading a pixel back therefore gives directly the coordinate
+that served to sample it.
 
-### L'auto-test a corrigé mon raisonnement
+### The self-test corrected my reasoning
 
-La première version de ce contrôle disait « ce n'est pas la valeur affine 0,50 ».
-En cassant délibérément la correction perspective, l'auto-test a montré que
-l'oubli de la division ne donne pas 0,50 mais **0,125** — et que le contrôle
-passait donc sur un rastériseur cassé.
+The first version of this check said "it is not the affine value 0.50". By
+deliberately breaking the perspective correction, the self-test showed that
+forgetting the division does not give 0.50 but **0.125** — and that the check was
+therefore passing on a broken rasteriser.
 
-Il y a deux façons de se tromper, et elles ne donnent pas la même valeur :
+There are two ways of getting it wrong, and they do not give the same value:
 
-| | `s` obtenu |
+| | `s` obtained |
 |---|---:|
-| correct — diviser `s/w` par `1/w` | **0,20** |
-| interpoler `s/w` et oublier de diviser | 0,125 |
-| ranger `s` au lieu de `s/w` et interpoler en espace écran | 0,50 |
+| correct — divide `s/w` by `1/w` | **0.20** |
+| interpolate `s/w` and forget to divide | 0.125 |
+| store `s` instead of `s/w` and interpolate in screen space | 0.50 |
 
-Le contrôle vise 0,20 avec une tolérance serrée et **rejette les deux autres
-nommément**. Une tolérance large aurait accepté 0,125.
+The check aims at 0.20 with a tight tolerance and **rejects the other two by
+name**. A loose tolerance would have accepted 0.125.
 
-## L'hôte et Windows 95 rendent le même pixel
+## The host and Windows 95 render the same pixel
 
-Le même code compilé des deux côtés produit des fichiers **identiques, octet pour
-octet**. C'est ce qui autorise à comparer une image produite sur l'hôte à une
-image produite sur la machine — sans quoi l'oracle ne servirait que là où il
-tourne.
+The same code compiled on both sides produces files **identical, byte for byte**.
+That is what allows an image produced on the host to be compared against one
+produced on the machine — without which the oracle would serve only where it runs.
 
-26 contrôles, verts sur l'hôte et sur la cible.
+26 checks, green on the host and on the target.
 
-## Ce qui est couvert
+## What is covered
 
 | | |
 |---|---|
-| Correction perspective | mesurée contre la valeur analytique |
-| Enveloppement | répétition, bornage, miroir, chacun à une coordonnée connue |
-| Filtrage | point et bilinéaire, le bilinéaire vérifié sur la moyenne de deux texels voisins |
-| Profondeur | et **l'indépendance à l'ordre d'émission**, qu'un tampon de profondeur promet |
-| Test alpha | de part et d'autre du seuil |
-| Mélange | alpha à moitié sur du noir |
-| Fenêtre de ciseaux | coupe à gauche, laisse passer, coupe à droite |
-| Sortie en fichier | BMP 24 bits, en-tête et dimensions relus |
+| Perspective correction | measured against the analytical value |
+| Wrapping | repeat, clamp, mirror, each at a known coordinate |
+| Filtering | point and bilinear, the bilinear verified on the average of two neighbouring texels |
+| Depth | and **independence from the emission order**, which a depth buffer promises |
+| Alpha test | on either side of the threshold |
+| Blending | half alpha over black |
+| Scissor window | cuts on the left, lets through, cuts on the right |
+| File output | 24-bit BMP, header and dimensions read back |
 
-Le demi-texel du filtrage bilinéaire mérite une mention : sans lui l'image est
-décalée d'une demi-largeur de texel, ce qui ne se voit pas sur une mire et se
-voit parfaitement sur une comparaison d'images — exactement le genre d'écart que
-ce backend existe pour arbitrer.
+The bilinear filter's half-texel deserves a mention: without it the image is
+shifted by half a texel width, which does not show on a test pattern and shows
+perfectly on an image comparison — exactly the kind of deviation this backend
+exists to arbitrate.
 
-## Ce qui n'est pas fait, et pourquoi
+## What is not done, and why
 
-- **Le combineur du RDP dans sa forme complète.** Les quatre modes de l'interface
-  sont implémentés fidèlement, sans contrainte de matériel ; mais le combineur du
-  RDP a deux étages à quatre entrées, et l'inventaire de ceux que DKR emploie
-  réellement est le travail de **E04-S06**, encore `TODO`.
-- **Une image du jeu.** Le critère « écran-titre, menu, une course » demande que
-  le jeu tourne, donc la ROM. Le rastériseur est prêt à la recevoir.
+- **The RDP's combiner in its complete form.** The interface's four modes are
+  implemented faithfully, without a hardware constraint; but the RDP's combiner
+  has two stages with four inputs, and the inventory of those DKR really uses is
+  **E04-S06**'s work, still `TODO`.
+- **An image from the game.** The criterion "title screen, menu, one race"
+  requires the game to run, hence the ROM. The rasteriser is ready to receive it.
 
-Il a le droit d'être lent, et pas celui d'être compliqué : un rastériseur
-optimisé est un rastériseur dont il faut à son tour vérifier la justesse, et
-l'oracle disparaît. Flottants partout, pas de tuiles, pas de table précalculée,
-une boucle par pixel de la boîte englobante.
+It is allowed to be slow, and not allowed to be complicated: an optimised
+rasteriser is a rasteriser whose own correctness must in turn be checked, and the
+oracle disappears. Floats everywhere, no tiles, no precomputed table, one loop per
+pixel of the bounding box.

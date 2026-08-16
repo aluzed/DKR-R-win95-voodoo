@@ -1,108 +1,110 @@
-# `std::ofstream(path)` ne fonctionne pas sous Windows 95
+# `std::ofstream(path)` does not work under Windows 95
 
-Mesure de [E02-S05](../stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md),
-prise sur la machine de test le 13 août 2026.
+A measurement from
+[E02-S05](../stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md),
+taken on the test machine on 13 August 2026.
 
-## Le relevé
+## The report
 
-`tools/win95/witnesses/wide_stream_probe.cpp`, exécuté sur la machine :
+`tools/win95/witnesses/wide_stream_probe.cpp`, run on the machine:
 
 ```text
-  ofstream(path)                     : ECHEC
+  ofstream(path)                     : FAILED
   ofstream(path.string())            : OK
-  ofstream(litteral etroit)          : OK
-  fopen etroit                       : OK
-  ifstream(path)                     : ECHEC
+  ofstream(narrow literal)           : OK
+  narrow fopen                       : OK
+  ifstream(path)                     : FAILED
   ifstream(path.string())            : OK
 ```
 
-## Pourquoi
+## Why
 
-Sous MinGW, `std::filesystem::path::value_type` est `wchar_t`. Passer un `path`
-à un constructeur de flux choisit donc la surcharge large, qui ouvre le fichier
-par `_wfopen` — et Windows 9x exporte toute cette famille sous forme de
-**bouchons** : le symbole est là, le binaire se charge, et l'ouverture échoue.
+Under MinGW, `std::filesystem::path::value_type` is `wchar_t`. Passing a `path` to
+a stream constructor therefore selects the wide overload, which opens the file
+through `_wfopen` — and Windows 9x exports that whole family as **stubs**: the
+symbol is there, the binary loads, and the open fails.
 
-C'est la troisième catégorie d'API indisponible, et la plus coûteuse à
-diagnostiquer :
+It is the third category of unavailable API, and the most expensive to diagnose:
 
-| | Le binaire se charge ? | Le contrôle des imports le voit ? |
+| | Does the binary load? | Does the import check see it? |
 |---|---|---|
-| symbole **absent** | non | oui, il le nomme |
-| symbole **bouchonné** | oui | oui, s'il est déclaré |
-| symbole **présent qui refuse** | oui | **non** |
+| **absent** symbol | no | yes, it names it |
+| **stubbed** symbol | yes | yes, if it is declared |
+| **present symbol that refuses** | yes | **no** |
 
-`_wfopen` relève de la deuxième. Le contrôle des imports ne s'en plaint pas
-puisque le symbole existe ; rien ne distingue l'appel qui réussit de celui qui
-échoue, sinon l'exécution.
+`_wfopen` belongs to the second. The import check does not complain since the
+symbol exists; nothing distinguishes the call that succeeds from the one that
+fails, except execution.
 
-## Comment il s'est manifesté
+## How it showed itself
 
-Pas par un message clair. La suite `save_manager_tests`, qui passe sur l'hôte,
-mourait sur la machine :
+Not through a clear message. The `save_manager_tests` suite, which passes on the
+host, was dying on the machine:
 
 ```text
 reset failed: Could not create the temporary save file.
 Assertion failed: false, file runtime-recomp/tests/save_manager_tests.cpp, line 68
 ```
 
-Un `std::ofstream` qui ne s'ouvre pas, sans code d'erreur exploitable. Le
-raisonnement menait au bon endroit, mais **cette plate-forme a déjà démenti cinq
-suppositions de ce dépôt** : la sonde a donc été écrite avant la correction.
+A `std::ofstream` that does not open, with no usable error code. The reasoning led
+to the right place, but **this platform has already disproved five of this
+repository's assumptions**: the probe was therefore written before the fix.
 
-## Ce que cela a changé
+## What it changed
 
-`path.string()` est étroit partout et rend les mêmes octets ailleurs : la
-correction ne coûte rien aux cibles qui fonctionnaient déjà.
+`path.string()` is narrow everywhere and returns the same bytes elsewhere: the fix
+costs nothing to the targets that already worked.
 
 | | Sites |
 |---|---:|
-| sources du jeu et suites d'épreuve | 20 |
-| cœur de `librecomp` (correctif 0019) | 5 |
-| système de mods de `librecomp` — hors périmètre | 3 |
+| game sources and trial suites | 20 |
+| `librecomp`'s core (patch 0019) | 5 |
+| `librecomp`'s mod system — out of scope | 3 |
 
-`check-cpp-subset.py` refuse désormais un flux construit sur autre chose qu'une
-chaîne étroite. Son auto-test l'éprouve dans les deux sens, et deux dérogations
-écrites couvrent les cas qu'un contrôle textuel ne peut pas trancher — une
-variable nommée `temporary` qui est déjà une `std::string`.
+`check-cpp-subset.py` now refuses a stream constructed on anything other than a
+narrow string. Its self-test exercises it in both directions, and two written
+waivers cover the cases a textual check cannot settle — a variable named
+`temporary` which is already a `std::string`.
 
-## Et un second bouchon, sur le même chemin
+## And a second stub, on the same path
 
-Avec les flux ouverts correctement, la suite est allée plus loin puis a échoué
-autrement :
+With the streams opening correctly, the suite went further and then failed
+differently (the machine's system messages are in French; the text is translated
+here):
 
 ```text
 reset failed: Could not activate the imported save:
-              Cette fonction n'est valide qu'en mode Win32
+              This function is only valid in Win32 mode
 ```
 
-C'est l'erreur 120, `ERROR_CALL_NOT_IMPLEMENTED`, en français : **`MoveFileExW`**.
-`save_manager::ReplaceFileAtomic` l'appelait directement sous `#if defined(_WIN32)`.
+That is error 120, `ERROR_CALL_NOT_IMPLEMENTED`: **`MoveFileExW`**.
+`save_manager::ReplaceFileAtomic` was calling it directly under
+`#if defined(_WIN32)`.
 
-E02-S05 avait déjà mesuré que `MoveFileExA` refuse sous Windows 95 — c'est la
-raison d'être de la séquence d'écriture durable — mais l'appel direct échappait
-au point d'indirection. Il prend maintenant le repli, et le nom de la fonction
-est démenti dans un commentaire : **sur cette cible, le remplacement n'est pas
-atomique**, et c'est pourquoi l'appelant prend une copie de secours d'abord.
+E02-S05 had already measured that `MoveFileExA` refuses under Windows 95 — it is
+the durable-write sequence's reason for being — but the direct call escaped the
+seam. It now takes the fallback, and the function's name is contradicted in a
+comment: **on this target, the replacement is not atomic**, and that is why the
+caller takes a backup copy first.
 
-## Et `<fstream>` lui-même ne se chargeait pas
+## And `<fstream>` itself would not load
 
-Trouvé en chemin, et plus grave encore : la simple inclusion de `<fstream>`
-rendait le binaire inchargeable. `basic_file.o` de libstdc++ importe
-`__imp___fstat64`, que la MSVCRT de Windows 95 n'exporte pas — elle n'a que la
-famille `_fstat` d'origine.
+Found along the way, and more serious still: the mere inclusion of `<fstream>`
+made the binary unloadable. libstdc++'s `basic_file.o` imports `__imp___fstat64`,
+which Windows 95's MSVCRT does not export — it has only the original `_fstat`
+family.
 
-Treize fichiers du projet incluent `<fstream>`, dont `recomp.cpp`, `pi.cpp` et
-`sp.cpp` de `librecomp` : sans correction, le jeu ne se serait pas lié pour
-cette cible.
+Thirteen of the project's files include `<fstream>`, among them `librecomp`'s
+`recomp.cpp`, `pi.cpp` and `sp.cpp`: without a fix, the game would not have linked
+for this target.
 
-`platform/win95/compat.c` fournit donc `_fstat64`, bâtie sur `GetFileType` et
-`GetFileSize`. Ce dont libstdc++ se sert est étroit — `st_mode` pour savoir si
-le descripteur désigne un fichier ordinaire, `st_size` pour dire combien
-d'octets restent à lire — et le reste de la structure est mis à zéro plutôt que
-rempli au jugé : une date fausse aurait l'air d'une donnée.
+`platform/win95/compat.c` therefore supplies `_fstat64`, built on `GetFileType`
+and `GetFileSize`. What libstdc++ uses is narrow — `st_mode` to know whether the
+descriptor denotes an ordinary file, `st_size` to say how many bytes remain to be
+read — and the rest of the structure is zeroed rather than filled by guesswork: a
+false date would look like data.
 
-## Reproduire
+## Reproducing
 
 ```sh
 i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
@@ -110,5 +112,5 @@ i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
   -o WPROBE.EXE tools/win95/witnesses/wide_stream_probe.cpp \
   -Wl,--whole-archive build/win95/libwin95compat.a -Wl,--no-whole-archive
 
-scripts/Push-To-Win95-VM.sh WPROBE.EXE     # puis l'exécuter, lire D:\WPROBE.TXT
+scripts/Push-To-Win95-VM.sh WPROBE.EXE     # then run it, read D:\WPROBE.TXT
 ```
