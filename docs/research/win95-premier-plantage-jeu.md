@@ -886,6 +886,15 @@ L'hypothèse était plausible, elle expliquait le symptôme, et le correctif qu'
 a inspiré fonctionne. Trois raisons de ne pas la vérifier, et elle est fausse
 quand même. C'est précisément le cas où l'on n'aurait pas mesuré.
 
+**Avec la réserve qui compte, et qui a failli manquer** : cette construction
+emploie le **rendu nul**. Les 60 ms sont le seul parcours de la liste
+d'affichage, sans une ligne rastérisée. La mesure réfute donc l'hypothèse *pour
+ce binaire*, pas pour un rendu Glide réel — lequel coûtera bien davantage et fera
+revenir la question du budget. C'est un argument de plus pour publier le bord
+tôt : non pas un palliatif, mais la seule structure qui tienne quand le rendu
+s'alourdira. Et 60 ms de simple parcours produisent déjà six retraces par liste ;
+onze n'est pas loin, sans rien avoir dessiné.
+
 Ce que le retard coûte n'est pas du temps mais des **retraces traités entre
 temps** : `gCurRDPTaskCounter` est remis à zéro par `__scExec` au démarrage d'une
 tâche, puis incrémenté une fois par `__scHandleRetrace`. Publier le bord DP après

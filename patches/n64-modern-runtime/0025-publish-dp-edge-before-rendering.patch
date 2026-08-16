@@ -39,11 +39,17 @@ worth of retraces land in between.
 
 The first draft of this patch claimed a software Glide frame blows the 167 ms
 that eleven retraces are worth at 60 Hz. The measurement it shipped with refutes
-that outright -- worst case 60 ms over more than a thousand frames, zero
-overruns. The hypothesis was plausible, it explained the symptom, and the fix it
-inspired works; three reasons not to check it, and it was wrong anyway. The
-measurement is kept because it watches the worst case, not because it validates
-anything.
+that -- worst case 60 ms over more than two thousand frames, zero overruns. The
+hypothesis was plausible, it explained the symptom, and the fix it inspired
+works; three reasons not to check it, and it was wrong anyway.
+
+With the caveat that nearly went unwritten: this build uses the NULL RENDERER.
+Those 60 ms are display-list traversal alone, with nothing rasterised. The
+measurement refutes the hypothesis for this binary, not for a real Glide render,
+which will cost far more and bring the budget question back. That argues for
+publishing the edge early on its own merits: not a palliative but the only shape
+that survives a heavier renderer. And 60 ms of bare traversal already produces
+six retraces per display list -- eleven is not far off, with not one line drawn.
 
 What the run does show: 3238 VIDEO messages against 567 RDP_DONE, about six
 retraces per display list -- comfortably under eleven on average and not under it
@@ -77,7 +83,7 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
  static std::atomic<unsigned> g_trace_submits{0};
  static std::atomic<unsigned> g_trace_sp{0};
  static std::atomic<unsigned> g_trace_dp{0};
-@@ -284,6 +291,44 @@
+@@ -284,6 +291,53 @@
                   g_trace_dp.load());
  }
  
@@ -87,10 +93,19 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +//
 +// L'hypothese etait qu'un rendu logiciel Glide depasse les 167 ms que valent
 +// onze retraces a 60 Hz, et fait donc ceder le chien de garde de DKR. Mesure :
-+// **pire cas 60 ms sur plus de mille images, zero depassement**. L'hypothese est
-+// fausse, et sans ce releve elle serait passee pour etablie -- elle etait
-+// plausible, elle expliquait le symptome, et le correctif qu'elle a inspire
-+// fonctionne. Trois raisons de ne pas la verifier, et elle est fausse quand meme.
++// **pire cas 60 ms sur plus de deux mille images, zero depassement**.
++//
++// Avec la reserve qui compte, et qui a failli manquer : cette construction
++// emploie le **rendu nul**. Les 60 ms sont le seul parcours de la liste
++// d'affichage, sans rasterisation. La mesure refute donc l'hypothese *pour ce
++// binaire*, pas pour un rendu Glide reel -- lequel coutera bien davantage, et
++// fera revenir la question du budget. Ce qui plaide pour publier le bord tot :
++// ce n'est pas un palliatif mais la seule structure qui tienne quand le rendu
++// s'alourdira.
++//
++// Ce que la mesure etablit malgre tout : 60 ms de simple parcours produisent
++// deja six retraces par liste. Le seuil de onze n'est pas loin, sans qu'une
++// seule ligne n'ait ete rasterisee.
 +//
 +// Ce que le retard coute n'est pas du temps mais des **retraces traites entre
 +// temps** : gCurRDPTaskCounter est remis a zero par __scExec au demarrage d'une
@@ -122,7 +137,7 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
  void sp_complete() {
      g_trace_sp.fetch_add(1);
      trace_sp("sp", 0);
-@@ -416,11 +461,40 @@
+@@ -416,11 +470,41 @@
                  PTR(u64) displaylist = task_action->task.t.data_ptr;
                  ultramodern::extensions::on_displaylist_submitted(displaylist);
  
@@ -140,9 +155,10 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +                // milliseconds -- gCurRDPTaskCounter is reset in __scExec when a
 +                // task starts and incremented once per __scHandleRetrace. The
 +                // first draft of this comment claimed a software Glide frame
-+                // blows a 167 ms budget; the measurement below refutes that
-+                // outright, worst case 60 ms over a thousand frames. What the
-+                // delay costs is not time but retraces landing in between.
++                // blows a 167 ms budget; the measurement below refutes that for
++                // this build -- worst case 60 ms, and with the null renderer, so
++                // display-list traversal alone. What the delay costs is not time
++                // but retraces landing in between.
 +                //
 +                // The run averages 3238 VIDEO messages against 567 RDP_DONE --
 +                // about six retraces per display list, comfortably under eleven
