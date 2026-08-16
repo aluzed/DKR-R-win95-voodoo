@@ -377,6 +377,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                          l2, total_test_alpha_, context_.state.alpha_ref_max);
         }
         if (context_.state.oow_max > context_.state.oow_min) {
+            total_tex_noires_ += context_.state.textures_noires;
+            total_tex_contenu_ += context_.state.textures_avec_contenu;
+            std::fprintf(stderr, "[gfx]   texels: noires=%lu avec-contenu=%lu\n",
+                         total_tex_noires_, total_tex_contenu_);
+            std::fprintf(stderr, "[gfx]   shade-max=%d alpha-max=%d\n",
+                         static_cast<int>(context_.state.shade_max),
+                         static_cast<int>(context_.state.alpha_max));
             std::fprintf(stderr, "[gfx]   oow=[%d..%d]/1000000\n",
                          static_cast<int>(context_.state.oow_min * 1000000.0F),
                          static_cast<int>(context_.state.oow_max * 1000000.0F));

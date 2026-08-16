@@ -83,6 +83,8 @@ private:
     unsigned long profondeur_[4] = {0};
     unsigned long melange_[8] = {0};
     unsigned long total_test_alpha_ = 0;
+    unsigned long total_tex_noires_ = 0;
+    unsigned long total_tex_contenu_ = 0;
     unsigned long emis_par_combine_[DKR_COMBINE_COUNT] = {0};
     unsigned long total_tex_proportions_ = 0;
     unsigned long total_tex_inconnues_ = 0;

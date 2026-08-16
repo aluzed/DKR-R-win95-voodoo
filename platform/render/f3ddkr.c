@@ -516,6 +516,19 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     const float o = v[q].oow;
                     if (o < c->state.oow_min) { c->state.oow_min = o; }
                     if (o > c->state.oow_max) { c->state.oow_max = o; }
+                    /* **La couleur du sommet.**
+                     *
+                     * Le combineur retenu est `texel * shade`, la texture est
+                     * liée, le mélange est opaque pour cent soixante-quinze
+                     * mille triangles — et l'écran est noir. Une de ces trois
+                     * entrées vaut zéro. La couleur du sommet est celle qu'on
+                     * peut lire sans relire la carte, donc celle par laquelle
+                     * commencer. Un shade nul multiplie le texel par zéro et
+                     * donne exactement du noir, quels que soient les texels. */
+                    if (v[q].r > c->state.shade_max) { c->state.shade_max = v[q].r; }
+                    if (v[q].g > c->state.shade_max) { c->state.shade_max = v[q].g; }
+                    if (v[q].b > c->state.shade_max) { c->state.shade_max = v[q].b; }
+                    if (v[q].a > c->state.alpha_max) { c->state.alpha_max = v[q].a; }
                 }
             }
             if (c->backend && c->backend->draw_triangles) {
@@ -820,6 +833,27 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             }
         }
         c->state.textures_remplies++;
+    }
+
+    /* **Le contenu de la texture, après conversion.**
+     *
+     * Le texel est la dernière des trois entrées du combineur qu'on n'ait pas
+     * regardée : la couleur des sommets atteint 255, le combineur retenu lit
+     * bien le texel, la texture est liée. Si les texels sont nuls, le produit
+     * l'est aussi — et c'est du noir, quoi que valent les deux autres.
+     *
+     * On compte les texels non nuls plutôt que d'en imprimer : une texture
+     * entièrement noire est un fait, pas une valeur à lire. Et l'on ne le fait
+     * qu'au chargement, pas au dessin. */
+    {
+        unsigned int i, n = (unsigned int)c->tex_largeur_remplie *
+                            (unsigned int)c->tex_hauteur_remplie;
+        unsigned int vus = 0;
+        for (i = 0; i < n; i++) {
+            if ((c->texels[i] & 0xFFFEu) != 0u) { vus++; }
+        }
+        if (vus == 0u) { c->state.textures_noires++; }
+        else           { c->state.textures_avec_contenu++; }
     }
 
     if (c->backend && c->backend->texture_upload) {

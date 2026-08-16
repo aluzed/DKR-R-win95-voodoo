@@ -162,6 +162,14 @@ typedef struct {
     unsigned long     emis_par_melange[8];
     unsigned long     emis_avec_test_alpha;
     unsigned          alpha_ref_max;
+    /* Le maximum de couleur et d'alpha atteint par un sommet émis. Un shade nul
+       multiplie le texel par zéro : c'est du noir, quels que soient les
+       texels. */
+    float             shade_max, alpha_max;
+    /* Textures entièrement noires après conversion, contre celles qui portent
+       quelque chose. Le texel est la dernière entrée du combineur qu'on n'ait
+       pas regardée. */
+    unsigned long     textures_noires, textures_avec_contenu;
     /* Les configurations de combineur, répertoriées ou non. `rdp_state.h`
        insiste : un cas manquant ne se voit pas au décodage, il se voit à
        l'écran sous forme d'une couleur inattendue, éventuellement dans un seul
