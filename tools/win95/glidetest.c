@@ -1,21 +1,20 @@
-/* E09-S01 — Démonstration Glide sur la machine de test Windows 95 / 3dfx.
+/* E09-S01 - Glide demonstration on the Windows 95 / 3dfx test machine.
  *
- * Prouve que toute la pile 3dfx fonctionne : `glide2x.dll` se charge,
- * `fxmemmap.vxd` mappe les registres de la carte, un contexte s'ouvre en
- * 640x480, la Voodoo prend le contrôle de l'écran, efface, dessine et échange
- * ses tampons.
+ * Proves the whole 3dfx stack works: `glide2x.dll` loads, `fxmemmap.vxd` maps the
+ * board's registers, a context opens at 640x480, the Voodoo takes control of the
+ * screen, clears, draws and swaps its buffers.
  *
- * C'est aussi, volontairement, la première marche de
- * E00-S02 : ce programme est compilé **sans bibliothèque C**. Il n'importe que
- * kernel32 et user32, et charge Glide par LoadLibrary. Le démarrage du CRT de
- * mingw-w64 — qui est le point d'achoppement attendu sous Windows 95 — est donc
- * hors de l'équation, et l'exécutable ne dépend d'aucun redistribuable.
+ * It is also, deliberately, E00-S02's first step: this program is compiled
+ * **without a C library**. It imports nothing but kernel32 and user32, and loads
+ * Glide through LoadLibrary. mingw-w64's CRT startup - the expected sticking
+ * point under Windows 95 - is therefore out of the equation, and the executable
+ * depends on no redistributable.
  *
- * Le résultat est écrit dans D:\GLIDETST.TXT, lisible depuis l'hôte par mtools
- * une fois la machine arrêtée. Une capture d'écran montre le rendu ; ce fichier
- * prouve le déroulé, y compris ce qui a échoué.
+ * The result is written to D:\GLIDETST.TXT, readable from the host with mtools
+ * once the machine is shut down. A screenshot shows the rendering; this file
+ * proves the sequence of events, including whatever failed.
  *
- * Compilation : voir tools/win95/build-glidetest.sh
+ * Building: see tools/win95/build-glidetest.sh
  */
 
 typedef unsigned int   FxU32;
@@ -25,7 +24,7 @@ typedef unsigned char  FxU8;
 #define WINAPI __stdcall
 #define NULL ((void *)0)
 
-/* --- le strict minimum de l'API Win32, déclaré à la main ------------------ */
+/* --- the bare minimum of the Win32 API, declared by hand ------------------ */
 __declspec(dllimport) void   *WINAPI LoadLibraryA(const char *);
 __declspec(dllimport) void   *WINAPI GetProcAddress(void *, const char *);
 __declspec(dllimport) int     WINAPI FreeLibrary(void *);
@@ -54,22 +53,22 @@ __declspec(dllimport) int     WINAPI MessageBoxA(void *, const char *, const cha
 #define GR_COMBINE_LOCAL_ITERATED 0x0
 #define GR_COMBINE_OTHER_NONE     0x3
 
-/* GrVertex de Glide 2.x — l'ordre des champs est celui de `glide.h`, et il n'est
-   pas intuitif : `ooz` et `a` s'intercalent entre les couleurs et `oow`. Une
-   structure « logique » (x, y, ooz, oow, r, g, b, a) compile parfaitement et
-   rend des couleurs permutées, sans la moindre erreur — Glide lit simplement
-   les flottants aux mauvais décalages. Vérifié à l'écran : avec la mauvaise
-   disposition, un sommet rouge sort vert.
+/* Glide 2.x's GrVertex - the field order is `glide.h`'s, and it is not intuitive:
+   `ooz` and `a` sit between the colours and `oow`. A "logical" structure
+   (x, y, ooz, oow, r, g, b, a) compiles perfectly and renders permuted colours,
+   without the slightest error - Glide simply reads the floats at the wrong
+   offsets. Verified on screen: with the wrong layout, a red vertex comes out
+   green.
 
-   Les coordonnées de texture ne sont pas lues tant qu'aucune texture n'est
-   active ; le remplissage garantit seulement la taille. */
+   The texture coordinates are not read as long as no texture is active; the
+   padding only guarantees the size. */
 typedef struct {
-    float x, y, z;       /* espace écran ; z est ignoré par Glide */
+    float x, y, z;       /* screen space; z is ignored by Glide */
     float r, g, b;       /* 0..255 */
-    float ooz;           /* 65535/Z, tampon de profondeur */
+    float ooz;           /* 65535/Z, depth buffer */
     float a;             /* 0..255 */
-    float oow;           /* 1/W, correction perspective */
-    float tmuvtx[3 * 4]; /* trois TMU, réservées */
+    float oow;           /* 1/W, perspective correction */
+    float tmuvtx[3 * 4]; /* three TMUs, reserved */
 } GrVertex;
 
 typedef FxU32  (WINAPI *pfn_grGlideInit)(void);
@@ -83,7 +82,7 @@ typedef void   (WINAPI *pfn_grBufferSwap)(int);
 typedef void   (WINAPI *pfn_grColorCombine)(int, int, int, int, FxBool);
 typedef void   (WINAPI *pfn_grDrawTriangle)(const void *, const void *, const void *);
 
-/* --- journal ------------------------------------------------------------- */
+/* --- log ----------------------------------------------------------------- */
 static char  log_buf[2048];
 static int   log_len = 0;
 
@@ -117,13 +116,13 @@ static void log_flush(void)
 
 static void fail(const char *msg)
 {
-    logs("ECHEC: "); logs(msg); logs("\r\n");
+    logs("FAILED: "); logs(msg); logs("\r\n");
     log_flush();
-    MessageBoxA(NULL, msg, "Test Glide - echec", 0x10 /* MB_ICONERROR */);
+    MessageBoxA(NULL, msg, "Glide test - failed", 0x10 /* MB_ICONERROR */);
     ExitProcess(1);
 }
 
-/* Point d'entrée : pas de CRT, donc pas de mainCRTStartup. */
+/* Entry point: no CRT, therefore no mainCRTStartup. */
 void start(void)
 {
     void *dll;
@@ -137,18 +136,18 @@ void start(void)
     pfn_grBufferSwap       grBufferSwap;
     pfn_grColorCombine     grColorCombine;
     pfn_grDrawTriangle     grDrawTriangle;
-    static char hwconfig[4096];   /* GrHwConfiguration, généreusement dimensionné */
+    static char hwconfig[4096];   /* GrHwConfiguration, generously sized */
     GrVertex a, b, c;
     int i;
 
-    logs("Test Glide - portage DKR-R vers Windows 95 + 3dfx\r\n");
+    logs("Glide test - DKR-R port to Windows 95 + 3dfx\r\n");
     logs("------------------------------------------------\r\n");
 
     dll = LoadLibraryA("glide2x.dll");
-    if (!dll) fail("glide2x.dll introuvable");
-    logs("glide2x.dll charge\r\n");
+    if (!dll) fail("glide2x.dll not found");
+    logs("glide2x.dll loaded\r\n");
 
-    /* Les exports sont decores __stdcall : _nom@octets. */
+    /* The exports are __stdcall decorated: _name@bytes. */
     grGlideInit        = (pfn_grGlideInit)        GetProcAddress(dll, "_grGlideInit@0");
     grGlideShutdown    = (pfn_grGlideShutdown)    GetProcAddress(dll, "_grGlideShutdown@0");
     grSstQueryHardware = (pfn_grSstQueryHardware) GetProcAddress(dll, "_grSstQueryHardware@4");
@@ -162,30 +161,30 @@ void start(void)
 
     if (!grGlideInit || !grSstQueryHardware || !grSstSelect || !grSstWinOpen ||
         !grBufferClear || !grBufferSwap || !grSstWinClose || !grGlideShutdown)
-        fail("symboles Glide manquants");
-    logs("symboles Glide resolus\r\n");
+        fail("Glide symbols missing");
+    logs("Glide symbols resolved\r\n");
 
     grGlideInit();
     logs("grGlideInit\r\n");
 
     if (!grSstQueryHardware(hwconfig))
-        fail("grSstQueryHardware : aucune carte 3dfx");
-    /* Le premier mot de GrHwConfiguration est le nombre de cartes trouvees. */
-    logs("cartes 3dfx detectees : "); lognum(*(int *)hwconfig); logs("\r\n");
+        fail("grSstQueryHardware: no 3dfx board");
+    /* GrHwConfiguration's first word is the number of boards found. */
+    logs("3dfx boards detected: "); lognum(*(int *)hwconfig); logs("\r\n");
 
     grSstSelect(0);
 
     if (!grSstWinOpen(0, GR_RESOLUTION_640x480, GR_REFRESH_60Hz,
                       GR_COLORFORMAT_ARGB, GR_ORIGIN_UPPER_LEFT, 2, 1))
-        fail("grSstWinOpen : ouverture 640x480 refusee");
-    logs("contexte 640x480 ouvert, double buffer\r\n");
+        fail("grSstWinOpen: 640x480 refused");
+    logs("640x480 context open, double buffered\r\n");
 
-    /* Couleur issue des sommets, sans texture. */
+    /* Colour taken from the vertices, without a texture. */
     if (grColorCombine)
         grColorCombine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_NONE,
                        GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_NONE, 0);
 
-    /* Trois fonds pleins successifs : prouve l'effacement et l'echange. */
+    /* Three solid backgrounds in a row: proves the clear and the swap. */
     for (i = 0; i < 3; i++) {
         static const FxU32 colors[3] = { 0x00203080u, 0x00802030u, 0x00308020u };
         grBufferClear(colors[i], 0, 0xFFFFFFFFu);
@@ -194,7 +193,7 @@ void start(void)
     }
     logs("grBufferClear + grBufferSwap x3\r\n");
 
-    /* Un triangle plein ecran, couleurs interpolees par sommet. */
+    /* A full-screen triangle, colours interpolated per vertex. */
     for (i = 0; i < (int)(sizeof(a) / sizeof(float)); i++) {
         ((float *)&a)[i] = 0.0f; ((float *)&b)[i] = 0.0f; ((float *)&c)[i] = 0.0f;
     }
@@ -205,7 +204,7 @@ void start(void)
     grBufferClear(0x00101018u, 0, 0xFFFFFFFFu);
     if (grDrawTriangle) {
         grDrawTriangle(&a, &b, &c);
-        logs("grDrawTriangle : triangle Gouraud\r\n");
+        logs("grDrawTriangle: Gouraud triangle\r\n");
     }
     grBufferSwap(1);
     Sleep(6000);
@@ -215,12 +214,12 @@ void start(void)
     FreeLibrary(dll);
 
     logs("------------------------------------------------\r\n");
-    logs("SUCCES : la pile Glide fonctionne de bout en bout\r\n");
+    logs("SUCCESS: the Glide stack works end to end\r\n");
     log_flush();
 
     MessageBoxA(NULL,
-                "Glide OK : contexte 640x480 ouvert, effacements, echanges "
-                "et triangle Gouraud rendus.\n\nDetail dans D:\\GLIDETST.TXT",
-                "Test Glide - succes", 0x40 /* MB_ICONINFORMATION */);
+                "Glide OK: 640x480 context open, clears, swaps and Gouraud "
+                "triangle rendered.\n\nDetail in D:\\GLIDETST.TXT",
+                "Glide test - success", 0x40 /* MB_ICONINFORMATION */);
     ExitProcess(0);
 }
