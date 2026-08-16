@@ -65,6 +65,10 @@ private:
     // Commandes reconnues dont l'effet n'est pas encore branché : la part de
     // l'image que ce portage ignore encore, et donc ce qui reste à faire.
     unsigned long total_deferred_ = 0;
+    // Rectangles réellement remis au backend, par opposition aux commandes
+    // FILLRECT décodées. L'écart entre les deux est ce qui distingue « le jeu
+    // n'en demande pas » de « on les décode et on les perd ».
+    unsigned long total_rects_ = 0;
     // Par catégorie, parce que le total ne dit pas quoi corriger : une adresse
     // hors RDRAM accuse l'adressage, un opcode inconnu accuse le décodage, un
     // index de sommet accuse une commande manquée en amont.

@@ -138,6 +138,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         rejects_by_kind_[i] += context_.state.rejects[i];
     }
     for (int i = 0; i < 256; i++) { opcodes_[i] += context_.state.opcodes[i]; }
+    total_rects_ += context_.state.rects;
     total_deferred_ += context_.state.deferred;
     total_commands_ += context_.state.commands;
     total_triangles_ += context_.state.triangles;
@@ -213,9 +214,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // sans triangles désignerait le chemin 2D comme seul travail restant.
         std::fprintf(stderr,
                      "[gfx]   dessin: sommets=%lu triangles=%lu texrect=%lu "
-                     "texrectflip=%lu fillrect=%lu\n",
+                     "texrectflip=%lu fillrect=%lu | remis=%lu couleur=0x%06X "
+                     "tampon=%u\n",
                      opcodes_[0x04], opcodes_[0x05], opcodes_[0xE4],
-                     opcodes_[0xE5], opcodes_[0xF6]);
+                     opcodes_[0xE5], opcodes_[0xF6], total_rects_,
+                     context_.state.fill_color_argb,
+                     context_.state.color_image_width);
     }
 #else
     (void)task;
