@@ -1,35 +1,35 @@
-# Ce qui arrive au joueur sans carte 3dfx
+# What happens to a player without a 3dfx card
 
-Mesuré le 14 août 2026 en retirant la Voodoo 2 de la configuration de
-l'émulateur (`voodoo = 0`), puis en la remettant — configuration restaurée
-octet pour octet, vérifiée par empreinte.
+Measured on 14 August 2026 by removing the Voodoo 2 from the emulator's
+configuration (`voodoo = 0`), then putting it back — the configuration restored
+byte for byte, verified by digest.
 
-## Glide affiche sa propre boîte, et rien ne permet de la devancer
+## Glide displays its own box, and nothing allows one to get ahead of it
 
-`dkr_glide_detect` charge `glide2x.dll` par `LoadLibrary` précisément pour que
-l'absence de carte devienne une phrase plutôt qu'un refus de chargement par le
-système. Cela protège bien contre l'absence de la *bibliothèque*. Contre
-l'absence de la *carte*, non :
+`dkr_glide_detect` loads `glide2x.dll` through `LoadLibrary` precisely so that the
+absence of a card becomes a sentence rather than a refusal to load by the system.
+That does protect against the absence of the *library*. Against the absence of the
+*card*, it does not:
 
     _GlideInitEnvironment: glide2x.dll expected Voodoo, none detected
 
-Ce texte n'est pas le nôtre. Il vient de l'initialisation de la DLL, qui
-s'exécute pendant le `LoadLibrary` lui-même, et il s'affiche dans une **boîte
-modale** que le programme ne voit pas venir. Le joueur reçoit donc un message
-anglais signé d'une bibliothèque dont il n'a jamais entendu parler, avant
-d'atteindre notre chemin d'erreur.
+That text is not ours. It comes from the DLL's initialisation, which runs during
+the `LoadLibrary` itself, and it appears in a **modal box** the program does not
+see coming. The player therefore receives a message signed by a library they have
+never heard of, before reaching our error path.
 
-La boîte a aussi une conséquence qu'on n'attend pas : elle vole le focus, ce qui
-a bloqué l'arrêt de la machine d'épreuve et laissé le volume de transfert marqué
-sale. Une boîte modale imprévue ne gêne pas que la personne devant l'écran.
+The box also has a consequence one does not expect: it steals the focus, which
+blocked the shutdown of the test machine and left the transfer volume marked
+dirty. An unforeseen modal box inconveniences more than the person in front of the
+screen.
 
-## Le registre ne permet pas de savoir
+## The registry does not allow one to know
 
-L'idée naturelle est de vérifier la présence de la carte *avant* de charger la
-DLL. `glide_registry_probe.c` a relevé le registre dans les deux configurations,
-avec et sans carte.
+The natural idea is to check the card's presence *before* loading the DLL.
+`glide_registry_probe.c` recorded the registry in both configurations, with and
+without a card.
 
-Le résultat est net : **les deux relevés sont identiques**.
+The result is clear: **the two reports are identical**.
 
     Enum\PCI
       VEN_121A&DEV_0001   instance BUS_00&DEV_0C&FUNC_00
@@ -39,38 +39,35 @@ Le résultat est net : **les deux relevés sont identiques**.
     Software\3Dfx Interactive\Voodoo2        present
     C:\WINDOWS\SYSTEM\glide2x.dll            present
 
-Windows 95 conserve dans `Enum` les périphériques qu'il a connus, et il ne marque
-pas ceux-ci comme retirés : `ConfigFlags` vaut zéro dans les deux cas. La clef
-logicielle du pilote survit évidemment au retrait de la carte, puisqu'elle
-appartient au pilote.
+Windows 95 keeps in `Enum` the devices it has known, and it does not mark these as
+removed: `ConfigFlags` is zero in both cases. The driver's software key obviously
+survives the card's removal, since it belongs to the driver.
 
-Un détail achève de discréditer le critère : `VEN_121A&DEV_0001` figure dans les
-deux relevés alors que **cette carte-là n'a jamais existé sur cette machine**.
-C'est un reliquat de la configuration Voodoo 1 corrigée par E00-S05, et le
-registre le présente exactement comme la carte réellement présente. Se fier à
-`Enum` aurait donc produit un faux positif sur la machine même qui a servi à
-écrire le test.
+One detail finishes off the criterion: `VEN_121A&DEV_0001` appears in both reports
+although **that card never existed on this machine**. It is a leftover of the
+Voodoo 1 configuration corrected by E00-S05, and the registry presents it exactly
+as it presents the card really present. Trusting `Enum` would therefore have
+produced a false positive on the very machine used to write the test.
 
-Lire l'espace de configuration PCI directement demanderait un VxD, ce qui est
-hors de proportion avec le bénéfice.
+Reading the PCI configuration space directly would require a VxD, which is out of
+proportion with the benefit.
 
-## Ce qui est fait à la place
+## What is done instead
 
-La boîte ne peut pas être évitée ; elle peut être **rattachée**. Le texte de
-`DKR_GLIDE_ERR_NO_BOARD` mentionne désormais explicitement le message anglais qui
-le précède, pour que le joueur lise un seul problème au lieu de deux :
+The box cannot be avoided; it can be **attached to**. The text of
+`DKR_GLIDE_ERR_NO_BOARD` now mentions explicitly the message that precedes it, so
+that the player reads one problem instead of two:
 
-    aucune carte 3dfx detectee — c'est ce que disait aussi le message anglais
-    de glide2x.dll
+    no 3dfx card detected - which is what the glide2x.dll message said as well
 
-Vérifié sur la machine sans carte : après la boîte, le programme reprend la main,
-`grSstQueryHardware` échoue, et `DKR_GLIDE_ERR_NO_BOARD` remonte jusqu'au témoin.
-La séquence complète est donc : boîte anglaise incompréhensible, puis explication
-française qui la désamorce. Ce n'est pas idéal, et c'est le maximum atteignable
-sans réécrire le pilote.
+Verified on the machine without a card: after the box, the program regains
+control, `grSstQueryHardware` fails, and `DKR_GLIDE_ERR_NO_BOARD` travels up to
+the witness. The complete sequence is therefore: an incomprehensible box from a
+third party, then our own explanation that defuses it. That is not ideal, and it
+is the most that can be reached without rewriting the driver.
 
-## Ce qui reste non exercé
+## What remains unexercised
 
-Le repli de résolution. La mémoire de la carte a toujours suffi, et 86Box ne
-propose pas de configuration de Voodoo assez pauvre pour forcer l'échec de
-640×480. Le calcul de budget est écrit et relu, il n'est pas éprouvé.
+The resolution fallback. The card's memory has always sufficed, and 86Box offers
+no Voodoo configuration poor enough to force 640×480 to fail. The budget
+computation is written and reviewed; it is not put to the test.

@@ -1,30 +1,31 @@
-# La machine de test émulait un Voodoo 1, et pourquoi on ne l'avait pas vu
+# The test machine was emulating a Voodoo 1, and why we had not seen it
 
-Relevé de [E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md),
-14 août 2026.
+A survey from
+[E00-S05](../stories/E00-scoping/E00-S05-adr-hardware-target-glide.md),
+14 August 2026.
 
-## Le fichier ne mentait pas — on ne lisait pas la bonne section
+## The file was not lying — we were not reading the right section
 
-L'ADR 0002 concluait que `86box.cfg` « mentait » : Glide rapportait le type `0`
-(Voodoo Graphics) alors que le fichier annonçait `type = 2`. C'était la troisième
-fois qu'on l'accusait, et c'était faux à chaque fois.
+ADR 0002 concluded that `86box.cfg` "lied": Glide reported type `0` (Voodoo
+Graphics) while the file announced `type = 2`. It was the third time we accused
+it, and it was wrong every time.
 
-Il y a **deux sections Voodoo** dans ce fichier :
+There are **two Voodoo sections** in that file:
 
 ```ini
-[3dfx Voodoo Graphics #1]     ← celle que 86Box lit
+[3dfx Voodoo Graphics #1]     ← the one 86Box reads
 type = 1
 
-[3Dfx Voodoo Graphics]        ← écrite à la main, jamais lue
+[3Dfx Voodoo Graphics]        ← written by hand, never read
 type = 2
 ```
 
-86Box lit celle qui porte le **suffixe d'instance**. Elle disait `type = 1`,
-c'est-à-dire *Obsidian SB50 + Amethyst* — un Voodoo 1 à deux TMU — et 86Box
-l'honorait fidèlement. Accuser l'outil de mentir a coûté deux mois pendant
-lesquels la machine n'était pas celle qu'on croyait.
+86Box reads the one carrying the **instance suffix**. It said `type = 1`, that is
+*Obsidian SB50 + Amethyst* — a two-TMU Voodoo 1 — and 86Box honoured it
+faithfully. Accusing the tool of lying cost two months during which the machine
+was not the one we thought.
 
-L'énumération se lit dans le binaire de 86Box :
+The enumeration reads out of 86Box's binary:
 
 ```
 0  3Dfx Voodoo Graphics
@@ -32,47 +33,47 @@ L'énumération se lit dans le binaire de 86Box :
 2  3Dfx Voodoo 2
 ```
 
-## La machine est maintenant sur la carte plancher
+## The machine is now on the floor card
 
-`type = 2`, tampon d'images 2 Mo, textures 2 Mo — la configuration **plancher**
-de l'ADR, celle qui met à l'épreuve les deux contraintes les plus serrées.
-Confirmé dans le dialogue de réglages, seule source qui fasse foi :
+`type = 2`, 2 MB frame buffer, 2 MB texture memory — the ADR's **floor**
+configuration, the one that puts the two tightest constraints to the test.
+Confirmed in the settings dialog, the only authoritative source (its labels appear
+in the interface's own language; they are given here in English):
 
 ```text
-Type de Voodoo                     : 3Dfx Voodoo 2
-Taille memoire du tampon d'images  : 2 Mo
-Taille memoire des textures        : 2 Mo
+Voodoo type            : 3Dfx Voodoo 2
+Frame buffer memory    : 2 MB
+Texture memory         : 2 MB
 ```
 
-Le budget de texture de E05-S02 sera donc éprouvé contre la vraie limite, et non
-contre le double comme c'était le cas avec 4 Mo par TMU.
+E05-S02's texture budget will therefore be tried against the real limit, and not
+against twice it as was the case with 4 MB per TMU.
 
-## Ce que Glide 2.54 en dit, et ce qu'il n'en dit pas
+## What Glide 2.54 says about it, and what it does not
 
-| | Obsidian (avant) | Voodoo 2 (après) |
+| | Obsidian (before) | Voodoo 2 (after) |
 |---|---|---|
 | `type` | 0 | **0** |
-| révision FBI | 261 | **261** |
-| mémoire image | 4 Mo | 2 Mo |
-| TMU | 2 × 4 Mo | 2 × 2 Mo |
+| FBI revision | 261 | **261** |
+| frame buffer | 4 MB | 2 MB |
+| TMUs | 2 × 4 MB | 2 × 2 MB |
 
-**Seules les tailles mémoire changent.** Le type et la révision FBI sont
-identiques.
+**Only the memory sizes change.** The type and the FBI revision are identical.
 
-`GrSstType` de Glide 2.x ne sépare pas les deux générations :
-`GR_SSTTYPE_VOODOO` couvre la famille, et `glide2x` 2.54 *est* le pilote
-Voodoo 2. Ce n'est donc pas une anomalie de l'émulation mais la forme de l'API.
+Glide 2.x's `GrSstType` does not separate the two generations:
+`GR_SSTTYPE_VOODOO` covers the family, and `glide2x` 2.54 *is* the Voodoo 2
+driver. It is therefore not an anomaly of the emulation but the shape of the API.
 
-**Conséquence pour E05-S01 :** la détection à l'exécution ne peut pas reposer sur
-le type. Le nombre de TMU et la mémoire par TMU sont exploitables — et ce sont
-d'ailleurs les deux seules choses dont le moteur ait besoin pour décider entre
-une passe et deux. Le modèle exact ne l'est pas.
+**Consequence for E05-S01:** run-time detection cannot rest on the type. The
+number of TMUs and the memory per TMU are usable — and they are, moreover, the
+only two things the engine needs in order to decide between one pass and two. The
+exact model is not.
 
-**Réserve de portée :** ce relevé est celui de l'émulation. Sur du matériel réel
-la révision FBI diffère entre générations et pourrait discriminer — à vérifier en
-E09-S04, et une raison de plus de ne pas y faire reposer la détection.
+**A reservation on scope:** this report is the emulation's. On real hardware the
+FBI revision differs between generations and could discriminate — to be checked in
+E09-S04, and one more reason not to rest the detection on it.
 
-## Reproduire
+## Reproducing
 
 ```sh
 P=~/.local/dkr-win95
@@ -80,9 +81,8 @@ i686-w64-mingw32-gcc-posix -O2 -march=pentium2 -mno-sse -D_WIN32_WINNT=0x0400 \
   -nostdlib -nostartfiles -e _start -o GLIDEHW.EXE \
   tools/win95/probes/glide_hwinfo.c -lkernel32 -luser32
 
-scripts/Push-To-Win95-VM.sh GLIDEHW.EXE    # puis l'exécuter, lire D:\GLIDEHW.TXT
+scripts/Push-To-Win95-VM.sh GLIDEHW.EXE    # then run it, read D:\GLIDEHW.TXT
 ```
 
-Et **vérifier le modèle dans le dialogue de réglages** : Outils → Réglages →
-Affichage → Configurer, en face de « Graphique Voodoo 1 ou 2 ». Jamais dans le
-fichier.
+And **check the model in the settings dialog**: Tools → Settings → Display →
+Configure, opposite the Voodoo Graphics board. Never in the file.
