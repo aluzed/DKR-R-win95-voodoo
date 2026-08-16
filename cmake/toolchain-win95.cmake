@@ -1,29 +1,29 @@
-# E01-S01 — chaîne de compilation croisée vers Windows 95 / Pentium II.
+# E01-S01 - cross-compilation toolchain for Windows 95 / Pentium II.
 #
 #   cmake -S runtime-recomp -B build/win95 -G Ninja \
 #         --toolchain cmake/toolchain-win95.cmake \
 #         -DDKR_RUNTIME_TARGET_WIN95=ON
 #
-# Le choix du compilateur vient de l'ADR 0001 (E00-S02) : mingw-w64 GCC 13,
-# modèle de threads `posix`, CRT lié statiquement, avec le pont `win95compat`.
-# Open Watcom reste le repli documenté par l'ADR, non retenu ici parce que son
-# C++98 imposerait de réécrire `ultramodern` et `librecomp`.
+# The compiler choice comes from ADR 0001 (E00-S02): mingw-w64 GCC 13, `posix`
+# threading model, statically linked CRT, with the `win95compat` bridge. Open
+# Watcom remains the fallback the ADR documents, not chosen here because its C++98
+# would force `ultramodern` and `librecomp` to be rewritten.
 
 set(CMAKE_SYSTEM_NAME      Windows)
 set(CMAKE_SYSTEM_VERSION   4.0)          # Windows 95
 set(CMAKE_SYSTEM_PROCESSOR i686)
 
 set(DKR_WIN95_PREFIX "$ENV{DKR_WIN95_PREFIX}" CACHE PATH
-    "Préfixe d'installation sans droits de l'outillage Win95")
+    "Unprivileged installation prefix for the Win95 tooling")
 if(DKR_WIN95_PREFIX STREQUAL "")
     set(DKR_WIN95_PREFIX "$ENV{HOME}/.local/dkr-win95")
 endif()
 set(DKR_WIN95_MINGW_BIN "${DKR_WIN95_PREFIX}/opt/mingw/usr/bin")
 
-# Le suffixe `-posix` n'est pas cosmétique : il sélectionne winpthreads plutôt
-# que le modèle `win32`, dont les variables de condition sont celles de Vista.
-# Les deux modèles manquent d'autant de symboles, mais ceux du modèle `posix`
-# s'écrivent en quelques lignes — voir ADR 0001.
+# The `-posix` suffix is not cosmetic: it selects winpthreads rather than the
+# `win32` model, whose condition variables are Vista's. Both models are short of
+# just as many symbols, but the `posix` model's take a few lines to write - see
+# ADR 0001.
 set(DKR_WIN95_TRIPLE  i686-w64-mingw32)
 set(DKR_WIN95_SUFFIX  -posix)
 
@@ -46,29 +46,27 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-# --- Jeu d'instructions ------------------------------------------------------
+# --- Instruction set ---------------------------------------------------------
 #
-# Le Pentium II n'a ni SSE ni SSE2 ; un compilateur moderne en 32 bits émet
-# pourtant du SSE2 par défaut pour l'arithmétique flottante. `-mfpmath=387`
-# force la pile x87.
+# The Pentium II has neither SSE nor SSE2; a modern 32-bit compiler nonetheless
+# emits SSE2 by default for floating-point arithmetic. `-mfpmath=387` forces the
+# x87 stack.
 #
-# Ces options ne suffisent pas à elles seules : elles ne couvrent que le code
-# compilé ici, pas le démarrage du CRT ni la bibliothèque standard. C'est
-# `tools/win95/check-instruction-set.sh`, branché après le lien, qui apporte la
-# preuve — et il est vérifié par injection de SSE.
+# These options do not suffice on their own: they only cover the code compiled
+# here, not the CRT's startup nor the standard library. It is
+# `tools/win95/check-instruction-set.sh`, wired in after the link, that provides
+# the proof - and it is itself verified by injecting SSE.
 set(DKR_WIN95_ARCH_FLAGS
     "-march=pentium2 -mtune=pentium3 -mfpmath=387 -mno-sse -mno-sse2")
 
-# --- Version de Windows ------------------------------------------------------
+# --- Windows version ---------------------------------------------------------
 #
-# 0x0400 masque les API postérieures à Windows 95 dans les en-têtes mingw.
-# Vérifié : `InitializeConditionVariable` disparaît bien de la sortie du
-# préprocesseur.
+# 0x0400 hides the APIs later than Windows 95 in mingw's headers. Verified:
+# `InitializeConditionVariable` does disappear from the preprocessor's output.
 #
-# Mais en C, appeler une fonction non déclarée n'est encore qu'un avertissement
-# avec GCC 13. Sans `-Werror=implicit-function-declaration`, une API de Vista
-# passerait la compilation pour échouer au chargement. En C++ l'erreur est
-# native.
+# But in C, calling an undeclared function is still only a warning with GCC 13.
+# Without `-Werror=implicit-function-declaration`, a Vista API would pass
+# compilation only to fail at load time. In C++ the error is native.
 set(DKR_WIN95_DEFINES "-D_WIN32_WINNT=0x0400 -DWINVER=0x0400 -DDKR_TARGET_WIN95=1")
 
 set(CMAKE_C_FLAGS_INIT
@@ -76,14 +74,14 @@ set(CMAKE_C_FLAGS_INIT
 set(CMAKE_CXX_FLAGS_INIT
     "${DKR_WIN95_ARCH_FLAGS} ${DKR_WIN95_DEFINES}")
 
-# --- Édition de liens --------------------------------------------------------
+# --- Linking -----------------------------------------------------------------
 #
-# Statique sans exception. `libgcc_s_dw2-1.dll` n'existe pas sous Windows 95, et
-# `MSVCRT.DLL` n'est pas présent dans la première génération du système : il
-# arrive avec OSR2 ou Internet Explorer. En dépendre reviendrait à faire dépendre
-# le jeu d'une version d'IE.
+# Static without exception. `libgcc_s_dw2-1.dll` does not exist under Windows 95,
+# and `MSVCRT.DLL` is not present in the system's first generation: it arrives with
+# OSR2 or Internet Explorer. Depending on it would amount to making the game depend
+# on a version of IE.
 set(DKR_WIN95_LINK_STATIC "-static -static-libgcc -static-libstdc++")
 set(CMAKE_EXE_LINKER_FLAGS_INIT    "${DKR_WIN95_LINK_STATIC}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "${DKR_WIN95_LINK_STATIC}")
 
-set(DKR_WIN95_TOOLCHAIN ON CACHE BOOL "Compilation croisée vers Windows 95" FORCE)
+set(DKR_WIN95_TOOLCHAIN ON CACHE BOOL "Cross-compilation to Windows 95" FORCE)
