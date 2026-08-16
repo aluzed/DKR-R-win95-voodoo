@@ -1,103 +1,97 @@
-# E04-S07 — Décodage des textures N64
+# E04-S07 — Decoding the N64 textures
 
 | | |
 |---|---|
-| **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E04-S02, E04-S06 |
-| **Bloque** | E05-S02, E05-S08 |
+| **Epic** | E04 — RT64-independent F3DDKR HLE |
+| **Status** | TODO |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E04-S02, E04-S06 |
+| **Blocks** | E05-S02, E05-S08 |
 
-## Contexte
+## Context
 
-La N64 et la Voodoo ne stockent pas les textures de la même façon, et l'écart
-porte sur trois points à la fois.
+The N64 and the Voodoo do not store textures the same way, and the gap bears on three
+points at once.
 
-**Les formats.** La N64 propose RGBA16, RGBA32, IA16, IA8, IA4, I8, I4, CI8 et
-CI4. La Voodoo propose RGB565, ARGB1555, ARGB4444, intensité, intensité-alpha, et
-un format palettisé 8 bits. La correspondance est bonne pour certains, imparfaite
-pour d'autres : RGBA16 de la N64 est un ARGB1555, transposition directe ; I4 et
-IA4 n'ont pas d'équivalent et demandent une expansion, donc un doublement de
-l'occupation mémoire.
+**The formats.** The N64 offers RGBA16, RGBA32, IA16, IA8, IA4, I8, I4, CI8 and CI4.
+The Voodoo offers RGB565, ARGB1555, ARGB4444, intensity, intensity-alpha, and an
+8-bit palettised format. The match is good for some, imperfect for others: the N64's
+RGBA16 is an ARGB1555, a direct transposition; I4 and IA4 have no equivalent and
+require an expansion, hence a doubling of the memory they occupy.
 
-**Les palettes.** Les textures CI4 et CI8 sont indexées, et la N64 dispose d'une
-mémoire de palette dédiée. La Voodoo n'a **qu'une seule palette active à la fois
-par TMU** : deux textures palettisées de palettes différentes ne peuvent pas être
-liées simultanément. C'est une contrainte structurante, et la solution la plus
-sûre est souvent de développer les textures indexées vers un format direct — au
-prix de la mémoire de texture, qui est justement la ressource rare.
+**The palettes.** CI4 and CI8 textures are indexed, and the N64 has a dedicated
+palette memory. The Voodoo has **only one palette active at a time per TMU**: two
+palettised textures with different palettes cannot be bound simultaneously. It is a
+structuring constraint, and the safest solution is often to expand the indexed
+textures into a direct format — at the price of texture memory, which is precisely the
+scarce resource.
 
-**L'entrelacement.** La N64 stocke ses textures dans un ordre entrelacé par
-lignes impaires. Le décodage doit le défaire.
+**The interleaving.** The N64 stores its textures in an order interleaved on odd
+rows. Decoding must undo it.
 
-S'ajoute la contrainte de format de la carte : dimensions en puissance de deux,
-256 × 256 au maximum, rapport d'aspect borné.
+Added to that is the card's format constraint: power-of-two dimensions, 256 × 256 at
+most, bounded aspect ratio.
 
-## Objectif
+## Objective
 
-Décoder toutes les textures utilisées par DKR vers des formats acceptés par la
-carte cible, avec un coût et une occupation mémoire mesurés.
+To decode every texture DKR uses into formats the target card accepts, with a measured
+cost and memory occupancy.
 
-## Périmètre
+## Scope
 
-**Dans :** décodage, conversion de format, palettes, cache côté hôte.
+**In:** decoding, format conversion, palettes, host-side cache.
 
-**Hors :** le placement en mémoire de texture (E05-S02) et le filtrage (E05-S08).
+**Out:** placement in texture memory (E05-S02) and filtering (E05-S08).
 
-## Travail
+## Work
 
-1. Inventorier les formats et les tailles de texture réellement utilisés par DKR,
-   avec leur fréquence. Le portage natif voisin a extrait **2 687 textures** de la
-   ROM et dispose déjà de cette information.
-2. Écrire le décodeur pour chaque format N64 vers un format cible, en documentant
-   la perte éventuelle. RGBA32 en particulier ne survit pas tel quel : la Voodoo
-   est une carte 16 bits, et la conversion doit être choisie — tramage, ou
-   troncature.
-3. Défaire l'entrelacement N64. Le tester sur des textures de tailles diverses :
-   c'est un bug classique qui ne se manifeste qu'à certaines largeurs.
-4. Trancher le traitement des textures indexées : palette matérielle unique, ou
-   développement vers un format direct. Décider **sur une mesure** de l'occupation
-   mémoire résultante, confrontée au budget de mémoire de texture par TMU de
-   E00-S05.
-5. Traiter les dimensions non conformes : mise à l'échelle vers une puissance de
-   deux, ou remplissage. Vérifier que les coordonnées de texture sont ajustées en
-   conséquence — c'est l'endroit où l'on introduit des décalages d'un demi-texel
-   qui se voient sur les bords.
-6. Implémenter un cache côté hôte indexé par la clé de la texture, pour éviter de
-   redécoder à chaque image. Dimensionner le cache sur le budget de E00-S06.
-7. Mesurer le coût du décodage : par texture et par image, en régime établi et
-   lors d'un chargement de niveau. Un décodage coûteux au chargement est
-   acceptable ; en cours de course, il ne l'est pas.
-8. Comparer les textures décodées à celles de la cible moderne, en tenant compte
-   de la réduction de profondeur de couleur.
+1. Inventory the texture formats and sizes DKR really uses, with their frequency. The
+   neighbouring native port extracted **2,687 textures** from the ROM and already has
+   that information.
+2. Write the decoder for each N64 format into a target format, documenting any loss.
+   RGBA32 in particular does not survive as it is: the Voodoo is a 16-bit card, and
+   the conversion has to be chosen — dithering, or truncation.
+3. Undo the N64 interleaving. Test it on textures of various sizes: it is a classic
+   bug that only manifests at certain widths.
+4. Settle how indexed textures are handled: a single hardware palette, or expansion
+   into a direct format. Decide **on a measurement** of the resulting memory
+   occupancy, confronted with E00-S05's per-TMU texture memory budget.
+5. Deal with non-conforming dimensions: scaling to a power of two, or padding. Check
+   that the texture coordinates are adjusted accordingly — that is the place where
+   half-texel offsets get introduced, and they show at the edges.
+6. Implement a host-side cache indexed by the texture's key, to avoid decoding again
+   every frame. Size the cache on E00-S06's budget.
+7. Measure the cost of decoding: per texture and per frame, in steady state and during
+   a level load. Expensive decoding at load time is acceptable; mid-race, it is not.
+8. Compare the decoded textures against the modern target's, taking the reduction in
+   colour depth into account.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Tous les formats de texture utilisés par DKR sont décodés.
-- [ ] L'entrelacement est correctement défait, testé sur plusieurs largeurs.
-- [ ] Le traitement des textures indexées est tranché sur une mesure d'occupation
-      mémoire, confrontée au budget par TMU.
-- [ ] Les dimensions non conformes sont traitées sans décalage de texel visible.
-- [ ] Le cache évite le redécodage en régime établi, et son occupation respecte le
+- [ ] Every texture format DKR uses is decoded.
+- [ ] The interleaving is correctly undone, tested at several widths.
+- [ ] The handling of indexed textures is settled on a measurement of memory
+      occupancy, confronted with the per-TMU budget.
+- [ ] Non-conforming dimensions are handled with no visible texel offset.
+- [ ] The cache avoids re-decoding in steady state, and its occupancy respects the
       budget.
-- [ ] Le coût de décodage est mesuré, au chargement et en cours de partie.
-- [ ] Les textures décodées sont comparées à la référence moderne, l'écart étant
-      attribuable à la seule réduction de profondeur de couleur.
+- [ ] The decoding cost is measured, at load time and during play.
+- [ ] The decoded textures are compared against the modern reference, the difference
+      being attributable to the reduction in colour depth alone.
 
-## Risques
+## Risks
 
-Le développement des textures indexées vers un format direct peut faire exploser
-l'occupation de mémoire de texture : une CI4 développée en ARGB1555 occupe quatre
-fois plus. Si le pic par niveau dépasse la mémoire de la TMU, il faudra revenir à
-la palette matérielle et gérer ses changements — ce qui impose de regrouper les
-dessins par palette, donc de contraindre l'ordre de rendu. Cette dépendance doit
-être évaluée en E05-S02, pas découverte à l'exécution.
+Expanding indexed textures into a direct format can make texture-memory occupancy
+explode: a CI4 expanded into ARGB1555 takes four times as much. If the peak per level
+exceeds the TMU's memory, we shall have to fall back on the hardware palette and manage
+its changes — which entails grouping the draws by palette, hence constraining the
+render order. That dependency must be assessed in E05-S02, not discovered at run time.
 
-## Références
+## References
 
-- `../../Diddy-Kong-Racing/docs/research/level-working-set.md` — pic de 1,20 Mo
-  par niveau
+- `../../Diddy-Kong-Racing/docs/research/level-working-set.md` — a peak of 1.20 MB
+  per level
 - `../../Diddy-Kong-Racing/docs/stories/E02-assets/E02-S03-conversion-textures-palettes.md`
 - `runtime-recomp/src/game/f3ddkr_rt64.cpp` — `SetTextureImage`, `LoadBlock`
-- E00-S05 — mémoire de texture par TMU
+- E00-S05 — texture memory per TMU

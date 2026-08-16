@@ -1,115 +1,110 @@
-# E04-S01 — Interface de backend de rendu
+# E04-S01 — Render backend interface
 
 | | |
 |---|---|
-| **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E01-S02, E00-S05 |
-| **Bloque** | E04-S02, E04-S08, E05-S01 |
+| **Epic** | E04 — RT64-independent F3DDKR HLE |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E01-S02, E00-S05 |
+| **Blocks** | E04-S02, E04-S08, E05-S01 |
 
-## Contexte
+## Context
 
-Le projet dispose déjà d'une abstraction de rendu de haut niveau :
-`ultramodern::renderer::RendererContext`, avec `send_dl`, `update_screen`,
-`update_config` et `valid`. Deux implémentations existent — `RT64Renderer` et
-`DiagnosticRenderer` — et une troisième, Glide, viendra s'y ajouter.
+The project already has a high-level rendering abstraction:
+`ultramodern::renderer::RendererContext`, with `send_dl`, `update_screen`,
+`update_config` and `valid`. Two implementations exist — `RT64Renderer` and
+`DiagnosticRenderer` — and a third, Glide, will join them.
 
-Mais cette interface est trop haute pour ce dont nous avons besoin. Elle reçoit
-une tâche RSP brute et laisse l'implémentation faire tout le travail. Aujourd'hui,
-`F3DDKRRT64Bridge` décode la display list **directement dans les structures de
-RT64** : il appelle `RT64::State`, manipule des `RT64::DisplayList`, enregistre
-des identités de charge de travail RT64. Le décodeur et le moteur de rendu sont
-soudés.
+But that interface is too high for what we need. It receives a raw RSP task and
+leaves the implementation to do all the work. Today, `F3DDKRRT64Bridge` decodes the
+display list **directly into RT64's structures**: it calls `RT64::State`, manipulates
+`RT64::DisplayList`s, registers RT64 workload identities. The decoder and the render
+engine are welded together.
 
-Il faut les séparer, et donc introduire une seconde interface, plus basse : un
-backend qui reçoit des primitives déjà transformées et un état de rendu abstrait.
-Le décodeur F3DDKR devient alors indépendant du backend, et deux implémentations
-peuvent le consommer : Glide, et un rastériseur logiciel de référence (E04-S08)
-qui servira d'oracle de comparaison.
+They have to be separated, and hence a second, lower interface introduced: a backend
+that receives already-transformed primitives and an abstract render state. The F3DDKR
+decoder then becomes independent of the backend, and two implementations can consume
+it: Glide, and a reference software rasteriser (E04-S08) that will serve as the
+comparison oracle.
 
-## Objectif
+## Objective
 
-Définir `platform/render/backend.h` : l'interface que le décodeur F3DDKR pilote,
-et que Glide comme le rastériseur logiciel implémentent.
+To define `platform/render/backend.h`: the interface the F3DDKR decoder drives, and
+that both Glide and the software rasteriser implement.
 
-## Périmètre
+## Scope
 
-**Dans :** la définition de l'interface, ses structures de données, sa
-documentation.
+**In:** the interface's definition, its data structures, its documentation.
 
-**Hors :** toute implémentation. C'est un ticket de conception, et son livrable
-est un contrat.
+**Out:** any implementation. This is a design ticket, and its deliverable is a
+contract.
 
-## Travail
+## Work
 
-1. Lire `f3ddkr_rt64.cpp` (39 Ko) et relever exactement ce que le décodeur demande
-   au moteur de rendu — pas ce qu'un moteur de rendu offre en général. La liste
-   des primitives à produire se lit dans les gestionnaires déclarés par
-   `f3ddkr_rt64.hpp` : matrices, sommets, triangles, rectangles pleins, image de
-   texture, chargement de bloc, décalage de texture, mots d'état.
-2. Concevoir l'interface autour de ce que Glide sait faire, puisque c'est la
-   contrainte la plus dure. En particulier, le backend reçoit des sommets **déjà
-   projetés en coordonnées écran** : aucune carte 3dfx ne transforme. La
-   transformation, l'éclairage et le découpage restent côté décodeur (E04-S03,
-   E04-S05).
-3. Définir le vertex : position écran, profondeur, couleur, coordonnées de texture
-   par unité de texture. Se caler sur la structure attendue par Glide pour éviter
-   une recopie par sommet — sur un Pentium II, une conversion de format par sommet
-   est un coût réel.
-4. Définir l'état de rendu comme un bloc de valeurs, pas comme une série
-   d'appels : combineur, mode de mélange, test de profondeur, test alpha,
-   brouillard, texture liée, filtrage, enveloppement. Un bloc permet au backend de
-   comparer à l'état courant et de n'émettre que les changements — c'est ce qui
-   rend le suivi d'état bon marché.
-5. Définir la gestion des textures comme un cache à handles : le décodeur fournit
-   une texture décodée et une clé, le backend renvoie un handle et gère seul son
-   placement en mémoire de texture (E05-S02).
-6. Définir le cycle d'une image : début, séquences de dessin, fin, présentation.
-7. Écrire la documentation de l'interface, en indiquant pour chaque élément ce que
-   Glide sait faire nativement et ce qui devra être émulé. C'est ce document qui
-   évitera de concevoir une interface que Glide ne peut pas honorer.
+1. Read `f3ddkr_rt64.cpp` (39 KB) and record exactly what the decoder asks of the
+   render engine — not what a render engine offers in general. The list of primitives
+   to produce is read off the handlers declared by `f3ddkr_rt64.hpp`: matrices,
+   vertices, triangles, filled rectangles, texture image, block load, texture offset,
+   state words.
+2. Design the interface around what Glide can do, since that is the hardest
+   constraint. In particular, the backend receives vertices **already projected into
+   screen coordinates**: no 3dfx card transforms. Transformation, lighting and
+   clipping stay on the decoder's side (E04-S03, E04-S05).
+3. Define the vertex: screen position, depth, colour, texture coordinates per texture
+   unit. Align it with the structure Glide expects, to avoid a per-vertex copy — on a
+   Pentium II, a per-vertex format conversion is a real cost.
+4. Define the render state as a block of values, not as a series of calls: combiner,
+   blending mode, depth test, alpha test, fog, bound texture, filtering, wrapping. A
+   block lets the backend compare against the current state and emit only the changes
+   — that is what makes state tracking cheap.
+5. Define texture management as a handle cache: the decoder supplies a decoded
+   texture and a key, the backend returns a handle and manages its placement in
+   texture memory on its own (E05-S02).
+6. Define a frame's cycle: begin, drawing sequences, end, presentation.
+7. Write the interface's documentation, indicating for each element what Glide can do
+   natively and what will have to be emulated. It is that document which will keep us
+   from designing an interface Glide cannot honour.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] `platform/render/backend.h` définit l'interface complète.
-- [x] Chaque élément est justifié par un besoin réel relevé dans `f3ddkr_rt64.cpp`,
-      pas par généralité. Le relevé a produit une contrainte qui décide de la
-      forme : **le sommet DKR ne porte pas de coordonnées de texture** — ses dix
-      octets sont `x, y, z` en 16 bits signés et `r, g, b, a` en octets — et les
-      `s, t` arrivent **par coin, au moment du triangle**. Une interface à
-      sommets indexés serait donc fausse ici ; l'expansion se fait côté décodeur.
-- [x] La structure de vertex évite une conversion par sommet vers Glide — et ce
-      n'est pas seulement documenté : `backend_layout_check.c` vérifie **à la
-      compilation** que chaque champ est au décalage de `GrVertex`.
-- [x] L'état de rendu est un bloc comparable, permettant l'émission
-      différentielle. Vérifié aussi : le contrôle refuse tout remplissage, qui
-      ferait comparer à `memcmp` des octets indéterminés.
-- [x] L'interface est manifestement implémentable par Glide : chaque élément est
-      annoté « NATIF » ou « A EMULER », avec l'appel Glide correspondant. Un seul
-      relève de la seconde catégorie — le rectangle plein, que Glide ne connaît
-      pas et que le backend fabrique en deux triangles — plus le combineur, dont
-      la traduction est le travail de E05-S03.
-- [x] Une implémentation vide compile et se lie — `backend_null.c`, qui compte ce
-      qu'elle reçoit : un décodeur qui n'émet rien et un backend qui ne dessine
-      rien se ressemblent beaucoup vus de l'écran.
-- [x] L'interface n'expose aucun type propre à RT64, SDL2 ou ImGui.
+- [x] `platform/render/backend.h` defines the complete interface.
+- [x] Every element is justified by a real need recorded in `f3ddkr_rt64.cpp`, not by
+      generality. The survey produced a constraint that decides the shape: **the DKR
+      vertex carries no texture coordinates** — its ten bytes are `x, y, z` as signed
+      16-bit and `r, g, b, a` as bytes — and the `s, t` arrive **per corner, at
+      triangle time**. An indexed-vertex interface would therefore be wrong here; the
+      expansion happens on the decoder's side.
+- [x] The vertex structure avoids a per-vertex conversion towards Glide — and that is
+      not merely documented: `backend_layout_check.c` checks **at compile time** that
+      every field sits at `GrVertex`'s offset.
+- [x] The render state is a comparable block, allowing differential emission. Also
+      checked: the check refuses any padding, which would have `memcmp` comparing
+      indeterminate bytes.
+- [x] The interface is manifestly implementable by Glide: every element is annotated
+      "NATIVE" or "TO EMULATE", with the corresponding Glide call. Only one falls in
+      the second category — the filled rectangle, which Glide does not know and which
+      the backend builds out of two triangles — plus the combiner, whose translation
+      is E05-S03's work.
+- [x] An empty implementation compiles and links — `backend_null.c`, which counts
+      what it receives: a decoder that emits nothing and a backend that draws nothing
+      look very much alike seen from the screen.
+- [x] The interface exposes no type belonging to RT64, SDL2 or ImGui.
 
-## Risques
+## Risks
 
-Une interface trop générique se paie deux fois : à l'écriture du backend Glide,
-qui doit émuler ce que la carte ne fait pas, et à l'exécution, en surcoût par
-primitive. Ici, l'interface doit épouser la carte plutôt que l'abstraire.
+An over-generic interface is paid for twice: when writing the Glide backend, which has
+to emulate what the card does not do, and at run time, in per-primitive overhead.
+Here, the interface must marry the card rather than abstract it.
 
-Une interface trop étroite, elle, empêchera le rastériseur logiciel de référence
-de servir d'oracle. L'équilibre se trouve en écrivant les deux implémentations en
-tête, pas une seule.
+An over-narrow interface, for its part, will prevent the reference software rasteriser
+from serving as an oracle. The balance is found by writing both implementations in
+one's head, not just one.
 
-## Références
+## References
 
-- `runtime-recomp/src/game/f3ddkr_rt64.hpp` — les quatorze gestionnaires de
-  commandes du microcode
-- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — décodeur actuel, soudé à RT64
-- `ultramodern/renderer_context.hpp` — l'interface haute, conservée
+- `runtime-recomp/src/game/f3ddkr_rt64.hpp` — the microcode's fourteen command
+  handlers
+- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — the current decoder, welded to RT64
+- `ultramodern/renderer_context.hpp` — the high interface, kept
 - `docs/F3DDKR.md`

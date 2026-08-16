@@ -1,114 +1,113 @@
-# E04-S06 — Traduction de l'état RDP
+# E04-S06 — Translating the RDP state
 
 | | |
 |---|---|
-| **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E04-S02 |
-| **Bloque** | E05-S03, E05-S05, E05-S06 |
+| **Epic** | E04 — RT64-independent F3DDKR HLE |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E04-S02 |
+| **Blocks** | E05-S03, E05-S05, E05-S06 |
 
-## Contexte
+## Context
 
-Le RDP de la N64 est piloté par un état dense : mode de cycle, combineur de
-couleurs, mode de rendu, mélange, test de profondeur, brouillard, modes de
-texture. Cet état est encodé dans quelques mots de 64 bits aux champs
-entrelacés, et c'est lui qui détermine ce qui apparaît à l'écran.
+The N64's RDP is driven by a dense state: cycle mode, colour combiner, render mode,
+blending, depth test, fog, texture modes. That state is encoded in a few 64-bit words
+with interleaved fields, and it is what determines what appears on screen.
 
-Le combineur de couleurs mérite une mention à part. C'est une unité programmable
-qui calcule, pour chaque pixel, une combinaison de texel, couleur de primitive,
-couleur d'environnement, couleur de shading et constantes — sur un ou deux
-cycles. Le combineur fixe de Glide est bien moins expressif, et la traduction est
-le point dur de tout l'épic E05.
+The colour combiner deserves a mention of its own. It is a programmable unit that
+computes, for each pixel, a combination of texel, primitive colour, environment
+colour, shading colour and constants — over one or two cycles. Glide's fixed combiner
+is far less expressive, and the translation is the hard point of the whole of epic
+E05.
 
-Le travail préparatoire existe déjà, et il vient du portage natif voisin : son
-ticket E00-S01 a inventorié **33 configurations de combiner** effectivement
-utilisées par DKR, dont **3 seulement lisent deux texels**
-(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`). Ce chiffre change
-la nature du problème : il ne s'agit pas de traduire un combineur programmable en
-général, mais 33 cas concrets et énumérés.
+The preparatory work already exists, and it comes from the neighbouring native port:
+its E00-S01 ticket inventoried **33 combiner configurations** actually used by DKR, of
+which **only 3 read two texels**
+(`../../Diddy-Kong-Racing/docs/research/combiner-inventory.md`). That figure changes
+the nature of the problem: it is not a matter of translating a programmable combiner
+in general, but 33 concrete, enumerated cases.
 
-## Objectif
+## Objective
 
-Traduire l'état RDP du jeu vers l'état de rendu abstrait défini en E04-S01, de
-façon exhaustive et vérifiable.
+To translate the game's RDP state into the abstract render state defined in E04-S01,
+exhaustively and verifiably.
 
-## Périmètre
+## Scope
 
-**Dans :** le décodage de l'état RDP et sa traduction vers l'état abstrait.
+**In:** decoding the RDP state and translating it into the abstract state.
 
-**Hors :** la réalisation de cet état par Glide (E05-S03 à E05-S06).
+**Out:** realising that state through Glide (E05-S03 to E05-S06).
 
-## Travail
+## Work
 
-1. Reprendre l'inventaire des 33 configurations du portage natif et **le
-   revérifier** sur ce portage : même jeu, même version, mais un décodeur
-   différent peut voir des configurations que l'autre normalise. L'inventaire est
-   un point de départ solide, pas une vérité importée.
-2. Décoder le mode de cycle. Le cycle unique et le double cycle ne se traduisent
-   pas de la même façon : le double cycle correspond à deux étages de combinaison,
-   donc potentiellement à deux passes ou à deux TMU côté Glide.
-3. Décoder le combineur : les seize entrées possibles de chaque terme, sur un ou
-   deux cycles, et les représenter sous une forme canonique et comparable. Cette
-   forme canonique est ce qui permettra à E05-S03 de faire correspondre une
-   configuration à un réglage Glide par simple recherche.
-4. Décoder le mode de rendu : mélange, test alpha, tramage, test et écriture de
-   profondeur, brouillard, anticrénelage.
-5. Décoder les modes de texture : filtrage, enveloppement, miroir, niveaux de
-   détail, conversion.
-6. Instrumenter le décodeur pour qu'il journalise toute configuration rencontrée
-   et non répertoriée. C'est le filet de sécurité : l'inventaire statique ne peut
-   pas garantir d'avoir vu tous les chemins du jeu, et un cas manquant doit se
-   signaler plutôt que produire un rendu faux en silence.
-7. Rejouer une partie complète — tous les niveaux, tous les modes de jeu, les
-   menus, les cinématiques — avec cette instrumentation, et compléter l'inventaire
-   de ce qui remonte.
-8. Écrire `docs/research/rdp-state-inventory.md` : la liste exhaustive des états
-   rencontrés, leur fréquence, et la surface d'écran qu'ils couvrent. La fréquence
-   et la surface décident de l'ordre de traitement en E05-S03.
+1. Take up the native port's inventory of 33 configurations and **recheck it** on
+   this port: same game, same version, but a different decoder may see configurations
+   that the other normalises. The inventory is a solid starting point, not an imported
+   truth.
+2. Decode the cycle mode. Single cycle and two-cycle do not translate the same way:
+   two-cycle corresponds to two combination stages, hence potentially to two passes or
+   to two TMUs on Glide's side.
+3. Decode the combiner: the sixteen possible inputs of each term, over one or two
+   cycles, and represent them in a canonical, comparable form. That canonical form is
+   what will allow E05-S03 to match a configuration to a Glide setting by a simple
+   lookup.
+4. Decode the render mode: blending, alpha test, dithering, depth test and write, fog,
+   antialiasing.
+5. Decode the texture modes: filtering, wrapping, mirroring, levels of detail,
+   conversion.
+6. Instrument the decoder so that it logs any configuration encountered and not
+   catalogued. That is the safety net: a static inventory cannot guarantee that it has
+   seen all of the game's paths, and a missing case must announce itself rather than
+   silently produce a wrong image.
+7. Replay a complete playthrough — every level, every game mode, the menus, the
+   cutscenes — with that instrumentation, and complete the inventory with what comes
+   back.
+8. Write `docs/research/rdp-state-inventory.md`: the exhaustive list of the states
+   encountered, their frequency, and the screen area they cover. Frequency and area
+   decide the order of work in E05-S03.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] L'inventaire de 33 configurations est revérifié sur ce portage, écarts
-      consignés — **impossible par la même méthode**, et c'est la conclusion.
-      Le voisin l'a dérivé des sources C de la décomposition ; ce portage-ci
-      n'en dispose pas, il travaille depuis du MIPS recompilé. Son équivalent
-      est l'instrumentation à l'exécution, qui demande la ROM.
-- [x] Cycle unique et double cycle sont tous deux décodés et distingués — et le
-      mode de cycle **fait partie de la clé canonique**, le même mot ne produisant
-      pas la même image selon le cycle.
-- [x] Le combineur est représenté sous une forme canonique comparable. Vérifié
-      contre les **63 macros `G_CC_*` des en-têtes de la décomposition**,
-      résolues et encodées par un générateur plutôt que transcrites : les 63 se
-      décodent champ pour champ, sans collision de clé.
-- [x] Les modes de rendu et de texture sont décodés — cycle, filtrage, LOD,
-      détail, perspective, comparaison alpha, source de Z, test et écriture de
-      profondeur. Le blender reste brut : il relève de E05-S05.
-- [~] Toute configuration non répertoriée est journalisée à l'exécution. Le
-      mécanisme existe — `dkr_rdp_combiner_name` rend `NULL` pour l'inconnu —
-      mais **la table n'est amorcée qu'à huit entrées**, et rien ne journalise
-      encore faute de décodeur en fonctionnement (E04-S02).
-- [ ] Une partie complète est rejouée sous instrumentation — **bloqué** par
-      E02-S06, qui demande la ROM.
-- [~] `docs/research/rdp-state-inventory.md` existe et consigne ce qui est
-      établi. **Fréquence et surface d'écran manquent** : les deux se mesurent à
-      l'exécution, et le nombre d'entrées de table du voisin en est un substitut
-      grossier — il compte des déclarations, pas des pixels.
+- [ ] The inventory of 33 configurations is rechecked on this port, with the
+      differences recorded — **impossible by the same method**, and that is the
+      conclusion. The neighbour derived it from the decompilation's C sources; this
+      port does not have them, it works from recompiled MIPS. Its equivalent is
+      instrumentation at run time, which requires the ROM.
+- [x] Single cycle and two-cycle are both decoded and distinguished — and the cycle
+      mode **is part of the canonical key**, the same word not producing the same
+      image depending on the cycle.
+- [x] The combiner is represented in a comparable canonical form. Verified against the
+      **63 `G_CC_*` macros in the decompilation's headers**, resolved and encoded by a
+      generator rather than transcribed: the 63 decode field for field, with no key
+      collision.
+- [x] The render and texture modes are decoded — cycle, filtering, LOD, detail,
+      perspective, alpha comparison, Z source, depth test and write. The blender stays
+      raw: it belongs to E05-S05.
+- [~] Any uncatalogued configuration is logged at run time. The mechanism exists —
+      `dkr_rdp_combiner_name` returns `NULL` for the unknown — but **the table is
+      primed with only eight entries**, and nothing logs yet, for want of a working
+      decoder (E04-S02).
+- [ ] A complete playthrough is replayed under instrumentation — **blocked** by
+      E02-S06, which requires the ROM.
+- [~] `docs/research/rdp-state-inventory.md` exists and records what is established.
+      **Frequency and screen area are missing**: both are measured at run time, and
+      the neighbour's count of table entries is a coarse substitute for them — it
+      counts declarations, not pixels.
 
-> **Correction du 15 août 2026** : ce critère avait été marqué bloqué par l'absence de ROM. La ROM était présente — voir `docs/research/win95-rom-available.md`. Le blocage n'existe plus ; ce qui reste à faire l'est pour d'autres raisons, ou n'a simplement pas encore été fait.
+> **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
-## Risques
+## Risks
 
-Une configuration manquée ne se voit pas au décodage : elle se voit à l'écran,
-sous forme d'une surface d'une couleur inattendue, éventuellement dans un seul
-niveau. L'instrumentation de l'étape 6 et la partie complète de l'étape 7 sont ce
-qui distingue un inventaire réel d'un inventaire plausible.
+A missed configuration does not show at decoding time: it shows on screen, as a
+surface of an unexpected colour, possibly in a single level. Step 6's instrumentation
+and step 7's complete playthrough are what distinguish a real inventory from a
+plausible one.
 
-## Références
+## References
 
 - `../../Diddy-Kong-Racing/docs/research/combiner-inventory.md` — 33 configurations,
-  3 à deux texels
-- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — gestionnaires `MoveWord`,
-  `SetTextureImage`, `LoadBlock`
-- E05-S03 — consommateur principal de cet inventaire
+  3 with two texels
+- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — `MoveWord`, `SetTextureImage`,
+  `LoadBlock` handlers
+- E05-S03 — the main consumer of this inventory

@@ -2,83 +2,81 @@
 
 | | |
 |---|---|
-| **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E04-S03 |
-| **Bloque** | E09-S02 |
+| **Epic** | E04 — RT64-independent F3DDKR HLE |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E04-S03 |
+| **Blocks** | E09-S02 |
 
-## Contexte
+## Context
 
-Le billboarding — l'orientation automatique d'un quadrilatère face à la caméra —
-est une fonction que Rare a câblée dans son microcode, et c'est l'une des raisons
-d'être de F3DDKR. DKR s'en sert massivement : arbres, buissons, particules,
-éléments de décor, et une partie des effets.
+Billboarding — automatically orienting a quadrilateral to face the camera — is a
+function Rare wired into its microcode, and it is one of F3DDKR's reasons to exist.
+DKR uses it massively: trees, bushes, particles, scenery elements, and part of the
+effects.
 
-Cela en fait un poste visuel à fort impact. Un billboard mal orienté ne produit
-pas une petite imprécision : il produit un arbre couché, ou invisible sous un
-certain angle. Et comme le jeu en affiche beaucoup, c'est aussi un poste de calcul
-mesurable.
+That makes it a visual item with a strong impact. A badly oriented billboard does not
+produce a small inaccuracy: it produces a tree lying down, or invisible from a certain
+angle. And since the game displays a great many of them, it is also a measurable
+computation item.
 
-`docs/F3DDKR.md` confirme que les billboards font partie des entités auxquelles le
-portage moderne attache une identité sémantique, ce qui indique que le décodeur
-actuel les traite explicitement — le comportement de référence est donc lisible
-dans `f3ddkr_rt64.cpp`.
+`docs/F3DDKR.md` confirms that billboards are among the entities to which the modern
+port attaches a semantic identity, which indicates that the current decoder handles
+them explicitly — the reference behaviour is therefore legible in `f3ddkr_rt64.cpp`.
 
-## Objectif
+## Objective
 
-Reproduire le billboarding du microcode F3DDKR, avec le même résultat visuel que
-la cible moderne.
+To reproduce F3DDKR's microcode billboarding, with the same visual result as the
+modern target.
 
-## Périmètre
+## Scope
 
-**Dans :** la détection des primitives orientées et le calcul de leur orientation.
+**In:** detecting the oriented primitives and computing their orientation.
 
-**Hors :** leur rendu (E05) et l'ordre de tri en profondeur (E04-S06).
+**Out:** rendering them (E05) and the depth sort order (E04-S06).
 
-## Travail
+## Work
 
-1. Relever le comportement exact dans deux sources indépendantes : le décodeur
-   actuel (`f3ddkr_rt64.cpp`) et le microcode côté decomp
-   (`extern/dkr-decomp`, `include/f3ddkr.h` documente le billboarding). Un
-   désaccord entre les deux est une information à ne pas perdre.
-2. Identifier le déclencheur : quel bit d'état ou quelle commande met le microcode
-   en mode billboard. C'est le point le plus facile à manquer, et une détection
-   trop large orienterait de la géométrie qui ne doit pas l'être.
-3. Implémenter le calcul d'orientation. La forme habituelle consiste à annuler la
-   rotation de la matrice modèle-vue en n'en gardant que la translation et
-   l'échelle, mais le microcode de Rare peut avoir sa propre convention — en
-   particulier sur l'axe conservé, un billboard cylindrique tournant autour de la
-   verticale n'ayant pas le même comportement qu'un billboard sphérique.
-4. Vérifier le cas des billboards imbriqués dans une hiérarchie de matrices : un
-   objet orienté attaché à un objet en mouvement.
-5. Comparer visuellement à la cible moderne sur des scènes de référence riches en
-   billboards, en faisant tourner la caméra sur 360° — c'est la rotation qui
-   révèle les erreurs d'axe, pas une capture fixe.
-6. Mesurer le coût sur une scène dense, et vérifier qu'il reste proportionné au
-   nombre de billboards affichés.
+1. Survey the exact behaviour in two independent sources: the current decoder
+   (`f3ddkr_rt64.cpp`) and the microcode on the decomp's side (`extern/dkr-decomp`,
+   `include/f3ddkr.h` documents the billboarding). A disagreement between the two is
+   a piece of information not to be lost.
+2. Identify the trigger: which state bit or which command puts the microcode in
+   billboard mode. It is the easiest point to miss, and an over-broad detection would
+   orient geometry that must not be.
+3. Implement the orientation computation. The usual form consists of cancelling the
+   model-view matrix's rotation, keeping only its translation and scale, but Rare's
+   microcode may have its own convention — in particular about the axis preserved, a
+   cylindrical billboard turning about the vertical not behaving like a spherical one.
+4. Check the case of billboards nested in a matrix hierarchy: an oriented object
+   attached to a moving object.
+5. Compare visually against the modern target on reference scenes rich in billboards,
+   turning the camera through 360° — it is the rotation that reveals the axis errors,
+   not a fixed capture.
+6. Measure the cost on a dense scene, and check that it stays proportionate to the
+   number of billboards displayed.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le déclencheur du mode billboard est identifié et documenté.
-- [ ] Le comportement est recoupé entre le décodeur actuel et le decomp, tout
-      désaccord étant consigné.
-- [ ] Les billboards restent orientés face à la caméra sur une rotation complète
-      de 360°, comparée à la cible moderne.
-- [ ] Le cas d'un billboard attaché à un objet en mouvement est traité et testé.
-- [ ] Le coût est mesuré sur une scène dense et inscrit au budget de E08-S01.
-- [ ] Aucune géométrie non concernée n'est orientée par erreur — vérifié sur une
-      scène sans billboard.
+- [ ] The billboard mode's trigger is identified and documented.
+- [ ] The behaviour is cross-checked between the current decoder and the decomp, any
+      disagreement being recorded.
+- [ ] The billboards stay oriented towards the camera through a complete 360°
+      rotation, compared against the modern target.
+- [ ] The case of a billboard attached to a moving object is handled and tested.
+- [ ] The cost is measured on a dense scene and entered in E08-S01's budget.
+- [ ] No unconcerned geometry is oriented by mistake — verified on a scene with no
+      billboard.
 
-## Risques
+## Risks
 
-Une convention d'axe erronée produit un résultat correct de face et faux de côté.
-Le test doit donc être une rotation continue, et la comparaison doit se faire à
-plusieurs angles, pas sur une capture unique.
+A wrong axis convention produces a result that is correct head-on and wrong from the
+side. The test must therefore be a continuous rotation, and the comparison must be
+made at several angles, not on a single capture.
 
-## Références
+## References
 
-- `docs/F3DDKR.md` — billboards parmi les entités à identité sémantique
+- `docs/F3DDKR.md` — billboards among the entities with a semantic identity
 - `runtime-recomp/src/game/f3ddkr_rt64.cpp`
 - `extern/dkr-decomp` — `include/f3ddkr.h`

@@ -1,110 +1,104 @@
-# E04-S02 — Parseur de display list F3DDKR autonome
+# E04-S02 — Standalone F3DDKR display-list parser
 
 | | |
 |---|---|
-| **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E04-S01 |
-| **Bloque** | E04-S03, E04-S05, E04-S06, E04-S08 |
+| **Epic** | E04 — RT64-independent F3DDKR HLE |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E04-S01 |
+| **Blocks** | E04-S03, E04-S05, E04-S06, E04-S08 |
 
-## Contexte
+## Context
 
-`F3DDKRRT64Bridge` sait déjà décoder le microcode de Rare : ses quatorze
-gestionnaires couvrent l'ensemble du jeu de commandes utilisé par DKR. C'est un
-travail précieux, validé par un portage qui tourne, et il ne faut surtout pas le
-refaire de zéro.
+`F3DDKRRT64Bridge` already knows how to decode Rare's microcode: its fourteen
+handlers cover the whole of the command set DKR uses. It is valuable work, validated
+by a port that runs, and it must on no account be redone from scratch.
 
-Mais il est écrit contre RT64 : il enregistre ses gestionnaires dans un
-`RT64::GBI`, reçoit des `RT64::DisplayList**`, écrit dans un `RT64::State`. Le
-travail consiste donc à en extraire la logique de décodage — qui est propre au
-microcode et n'a rien à voir avec RT64 — et à la reposer sur l'interface de
-E04-S01.
+But it is written against RT64: it registers its handlers in an `RT64::GBI`, receives
+`RT64::DisplayList**`s, writes into an `RT64::State`. The work therefore consists of
+extracting the decoding logic from it — which belongs to the microcode and has
+nothing to do with RT64 — and resting it on E04-S01's interface.
 
-Un point d'attention hérité, à ne pas perdre au passage : le décodeur actuel
-**valide toutes les plages** avant de les utiliser — matrices, sommets, triangles,
-textures, display lists imbriquées — et rejette les données invalides par une
-erreur bornée plutôt que de laisser adresser la mémoire hôte (`docs/F3DDKR.md`).
-Cette discipline doit survivre à l'extraction : elle protège contre une ROM
-modifiée comme contre un bug du portage.
+An inherited point of care, not to be lost along the way: the current decoder
+**validates every range** before using it — matrices, vertices, triangles, textures,
+nested display lists — and rejects invalid data with a bounded error rather than
+letting host memory be addressed (`docs/F3DDKR.md`). That discipline must survive the
+extraction: it protects against a modified ROM as much as against a bug in the port.
 
-## Objectif
+## Objective
 
-Livrer `platform/render/f3ddkr.{h,cpp}` : un décodeur de display list F3DDKR qui
-ne dépend que de l'interface de E04-S01.
+To deliver `platform/render/f3ddkr.{h,cpp}`: an F3DDKR display-list decoder that
+depends only on E04-S01's interface.
 
-## Périmètre
+## Scope
 
-**Dans :** l'analyse de la display list, la répartition des commandes, la
-validation des plages, la gestion des display lists imbriquées.
+**In:** parsing the display list, dispatching the commands, validating the ranges,
+managing nested display lists.
 
-**Hors :** la transformation des sommets (E04-S03), le découpage (E04-S05), l'état
-RDP (E04-S06), les textures (E04-S07).
+**Out:** transforming the vertices (E04-S03), clipping (E04-S05), the RDP state
+(E04-S06), the textures (E04-S07).
 
-## Travail
+## Work
 
-1. Cartographier les quatorze commandes à partir de `f3ddkr_rt64.cpp` : opcode,
-   disposition des champs, effet. Documenter le tout dans
-   `docs/research/f3ddkr-commands.md` — cette cartographie a une valeur propre,
-   indépendamment du portage.
-2. Extraire la logique de décodage vers le nouveau module, en remplaçant chaque
-   écriture dans `RT64::State` par un appel à l'interface de E04-S01 ou par une
-   écriture dans l'état interne du décodeur.
-3. Reprendre intégralement la validation des plages. Chaque lecture depuis
-   l'instantané RDRAM est bornée, et une plage invalide produit une erreur
-   circonscrite qui interrompt la display list courante sans faire tomber le jeu.
-4. Traiter les display lists imbriquées : `DisplayListBranch`, `EndDisplayList` et
-   `CountedDisplayList`. Borner la profondeur d'imbrication et vérifier que le
-   dépassement est traité proprement.
-5. Traiter `DMAOffsets`, spécificité du microcode de Rare : les sommets et les
-   matrices sont adressés par des décalages relatifs à des bases fournies par la
-   commande. C'est le mécanisme central de F3DDKR, et une erreur de base y produit
-   une géométrie totalement absurde.
-6. Écrire le mode trace : un mode qui journalise chaque commande décodée, ses
-   paramètres et les primitives émises. Sans cet outil, tout diagnostic graphique
-   sur la machine cible se fait à l'aveugle.
-7. Écrire les tests sur des display lists capturées depuis de vraies parties :
-   écran-titre, sélection de personnage, deux niveaux de nature différente. Le
-   test vérifie la séquence de primitives émises, pas seulement l'absence de
-   plantage.
-8. Prévoir la capture de ces display lists depuis la cible moderne, et leur
-   rejeu — c'est le socle du harnais de comparaison de E09-S02.
+1. Map the fourteen commands from `f3ddkr_rt64.cpp`: opcode, field layout, effect.
+   Document the whole in `docs/research/f3ddkr-commands.md` — that map has a value of
+   its own, independently of the port.
+2. Extract the decoding logic into the new module, replacing each write into
+   `RT64::State` by a call to E04-S01's interface or by a write into the decoder's
+   internal state.
+3. Take the range validation over in full. Every read from the RDRAM snapshot is
+   bounded, and an invalid range produces a circumscribed error that interrupts the
+   current display list without bringing the game down.
+4. Deal with nested display lists: `DisplayListBranch`, `EndDisplayList` and
+   `CountedDisplayList`. Bound the nesting depth and check that overrunning it is
+   handled cleanly.
+5. Deal with `DMAOffsets`, a peculiarity of Rare's microcode: the vertices and the
+   matrices are addressed through offsets relative to bases supplied by the command.
+   It is F3DDKR's central mechanism, and an error in a base there produces totally
+   absurd geometry.
+6. Write the trace mode: a mode that logs every decoded command, its parameters and
+   the primitives emitted. Without that tool, any graphics diagnosis on the target
+   machine is done blind.
+7. Write the tests on display lists captured from real play: title screen, character
+   selection, two levels of different natures. The test checks the sequence of
+   primitives emitted, not merely the absence of a crash.
+8. Provide for capturing those display lists from the modern target, and replaying
+   them — it is the foundation of E09-S02's comparison harness.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] `platform/render/f3ddkr.{h,c}` ne référence aucun type RT64 — en C plutôt
-      qu'en C++, l'extraction n'ayant besoin d'aucune facilité du second.
-- [x] Les treize opcodes et le groupe de présentation sont décodés et documentés
-      dans `docs/research/f3ddkr-commands.md`. Le quatorzième « gestionnaire »
-      n'a pas d'opcode : `PresentationGroup` est atteint par `MoveWord` avec un
-      mot magique, et c'est une **extension du portage**, pas du microcode.
-- [x] La validation de plages est intégralement reprise et testée par injection
-      de display lists volontairement corrompues — ce qui rend la suite possible
-      **sans ROM** : une liste corrompue s'écrit, une vraie se capture. Éprouvée
-      dans les deux sens : retirer une des deux disciplines fait échouer trois
-      contrôles.
-- [x] L'imbrication est bornée à 32, et le dépassement produit une erreur
-      circonscrite — vérifié par une liste qui s'appelle elle-même.
-- [~] Le mode trace journalise les commandes. **Pas encore les primitives
-      émises** : le décodeur n'en émet aucune, faute de E04-S03 pour projeter les
-      sommets. Émettre des sommets en espace objet donnerait une image fausse
-      plutôt qu'absente, ce qui est pire — on croirait le chemin complet.
-- [ ] Les tests rejouent au moins quatre display lists capturées — **bloqué**,
-      la capture demandant une partie sur la cible moderne, donc la ROM.
-- [ ] La séquence est identique à celle du décodeur RT64 — **bloqué** pour la
-      même raison, et parce que RT64 est absent de ce dépôt.
+- [x] `platform/render/f3ddkr.{h,c}` references no RT64 type — in C rather than in
+      C++, the extraction needing none of the latter's facilities.
+- [x] The thirteen opcodes and the presentation group are decoded and documented in
+      `docs/research/f3ddkr-commands.md`. The fourteenth "handler" has no opcode:
+      `PresentationGroup` is reached through `MoveWord` with a magic word, and it is
+      an **extension of the port**, not of the microcode.
+- [x] The range validation is taken over in full and tested by injecting deliberately
+      corrupted display lists — which makes the suite possible **without a ROM**: a
+      corrupted list can be written, a real one has to be captured. Exercised in both
+      directions: removing either of the two disciplines makes three checks fail.
+- [x] The nesting is bounded at 32, and overrunning it produces a circumscribed error
+      — verified by a list that calls itself.
+- [~] The trace mode logs the commands. **Not yet the primitives emitted**: the
+      decoder emits none, for want of E04-S03 to project the vertices. Emitting
+      vertices in object space would give a wrong image rather than an absent one,
+      which is worse — one would believe the path complete.
+- [ ] The tests replay at least four captured display lists — **blocked**, the
+      capture requiring a game on the modern target, hence the ROM.
+- [ ] The sequence is identical to the RT64 decoder's — **blocked** for the same
+      reason, and because RT64 is absent from this repository.
 
-## Risques
+## Risks
 
-L'extraction est une réécriture déguisée, et une réécriture perd des correctifs
-subtils si elle procède par relecture. Procéder par déplacement de code plutôt que
-par réimplémentation, et valider par comparaison de séquences plutôt que par
-inspection.
+The extraction is a rewrite in disguise, and a rewrite loses subtle fixes if it
+proceeds by rereading. Proceed by moving code rather than by reimplementing, and
+validate by comparing sequences rather than by inspection.
 
-## Références
+## References
 
-- `runtime-recomp/src/game/f3ddkr_rt64.cpp:1-...` — décodeur actuel
-- `runtime-recomp/src/game/f3ddkr_rt64.hpp` — liste des gestionnaires
-- `docs/F3DDKR.md` — validation des plages, groupes de présentation
-- `extern/dkr-decomp` — `include/f3ddkr.h` documente le microcode côté decomp
+- `runtime-recomp/src/game/f3ddkr_rt64.cpp:1-...` — the current decoder
+- `runtime-recomp/src/game/f3ddkr_rt64.hpp` — the list of handlers
+- `docs/F3DDKR.md` — range validation, presentation groups
+- `extern/dkr-decomp` — `include/f3ddkr.h` documents the microcode on the decomp's
+  side

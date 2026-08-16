@@ -1,120 +1,115 @@
-# E04-S05 — Découpage, viewport et fenêtre de ciseaux
+# E04-S05 — Clipping, viewport and scissor window
 
 | | |
 |---|---|
-| **Épic** | E04 — HLE F3DDKR indépendant de RT64 |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E04-S03 |
-| **Bloque** | E05-S01, E04-S08 |
+| **Epic** | E04 — RT64-independent F3DDKR HLE |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E04-S03 |
+| **Blocks** | E05-S01, E04-S08 |
 
-## Contexte
+## Context
 
-Les cartes 3dfx ne découpent pas la géométrie. Elles disposent d'une fenêtre de
-ciseaux (`grClipWindow`) qui rejette les fragments hors zone, mais un triangle
-dont un sommet passe **derrière la caméra** ne peut pas être rejeté au niveau du
-fragment : sa projection est mathématiquement absurde, et il faut le découper
-avant projection, dans l'espace homogène.
+3dfx cards do not clip geometry. They have a scissor window (`grClipWindow`) that
+rejects fragments outside the zone, but a triangle with a vertex passing **behind the
+camera** cannot be rejected at fragment level: its projection is mathematically
+absurd, and it must be clipped before projection, in homogeneous space.
 
-C'est donc au CPU d'assurer :
+It therefore falls to the CPU to provide:
 
-- le rejet des triangles entièrement hors du volume de vue — bon marché et
-  rentable, car chaque triangle rejeté est un triangle non transformé et non
-  envoyé ;
-- le découpage effectif des triangles qui traversent le plan proche, qui produit
-  de nouveaux sommets et parfois plusieurs triangles pour un ;
-- l'élimination des faces arrière, que la carte ne fait pas non plus.
+- the rejection of triangles entirely outside the view volume — cheap and profitable,
+  since every rejected triangle is a triangle not transformed and not sent;
+- the actual clipping of the triangles that cross the near plane, which produces new
+  vertices and sometimes several triangles for one;
+- back-face culling, which the card does not do either.
 
-Un point favorable : Glide tolère des coordonnées écran modérément hors de
-l'écran, et son unité de ciseaux fait le reste. Seul le plan proche exige un vrai
-découpage. Cette distinction est la clé du coût : le découpage complet aux six
-plans serait très cher et n'est pas nécessaire.
+One favourable point: Glide tolerates screen coordinates moderately off-screen, and
+its scissor unit does the rest. Only the near plane requires real clipping. That
+distinction is the key to the cost: full clipping against the six planes would be very
+expensive and is not necessary.
 
-## Objectif
+## Objective
 
-Livrer un étage de découpage correct et bon marché, qui ne remet au backend que
-des primitives que la carte peut rastériser.
+To deliver a correct and cheap clipping stage, which hands the backend only
+primitives the card can rasterise.
 
-## Périmètre
+## Scope
 
-**Dans :** rejet, découpage au plan proche, élimination des faces arrière,
-viewport, fenêtre de ciseaux.
+**In:** rejection, near-plane clipping, back-face culling, viewport, scissor window.
 
-**Hors :** la configuration Glide de la fenêtre de ciseaux (E05-S01).
+**Out:** the Glide configuration of the scissor window (E05-S01).
 
-## Travail
+## Work
 
-1. Implémenter le rejet par volume englobant, en amont de la transformation quand
-   c'est possible. Un objet entier rejeté avant transformation économise tous ses
-   sommets.
-2. Implémenter le découpage au plan proche dans l'espace homogène, avec
-   interpolation de tous les attributs du sommet : couleur, coordonnées de
-   texture, brouillard. Oublier un attribut produit un artefact visible uniquement
-   sur les triangles découpés, donc rare et déroutant.
-3. Vérifier expérimentalement la marge tolérée par Glide en dehors de l'écran, et
-   caler dessus la décision « découper ou laisser passer ». Cette marge se mesure,
-   elle ne se déduit pas de la documentation.
-4. Implémenter l'élimination des faces arrière selon la convention du microcode.
-   Relever cette convention dans le decomp : le sens d'orientation retenu par la
-   N64 et l'état qui l'active.
-5. Implémenter le viewport à partir de la commande du microcode : échelle et
-   translation, en cohérence avec la transformation de E04-S03.
-6. Implémenter la fenêtre de ciseaux et la traduire vers `grClipWindow`. DKR s'en
-   sert notamment pour l'affichage en écran partagé multijoueur — cas à tester
-   explicitement, y compris à quatre joueurs.
-7. Mesurer la part du budget consommée par cet étage, et le nombre de triangles
-   effectivement découpés sur une scène type. Si ce nombre est faible, l'étage
-   n'a pas à être optimisé ; s'il est élevé, il devient un candidat pour E08-S03.
+1. Implement bounding-volume rejection, upstream of the transformation where
+   possible. A whole object rejected before transformation saves all its vertices.
+2. Implement near-plane clipping in homogeneous space, interpolating all of the
+   vertex's attributes: colour, texture coordinates, fog. Forgetting an attribute
+   produces an artefact visible only on the clipped triangles, hence rare and
+   confusing.
+3. Check experimentally the margin Glide tolerates off-screen, and align on it the
+   "clip or let through" decision. That margin is measured; it is not deduced from
+   the documentation.
+4. Implement back-face culling according to the microcode's convention. Survey that
+   convention in the decomp: the winding the N64 retains and the state that enables
+   it.
+5. Implement the viewport from the microcode's command: scale and translation,
+   consistently with E04-S03's transformation.
+6. Implement the scissor window and translate it into `grClipWindow`. DKR uses it in
+   particular for multiplayer split-screen display — a case to be tested explicitly,
+   including with four players.
+7. Measure the share of the budget this stage consumes, and the number of triangles
+   actually clipped on a typical scene. If that number is low, the stage does not need
+   optimising; if it is high, it becomes a candidate for E08-S03.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] Les triangles traversant le plan proche sont découpés, tous attributs
-      interpolés — position, couleur **et** coordonnées de texture, chacun
-      vérifié séparément. L'oubli d'un seul ne se verrait que sur les triangles
-      découpés, donc rarement ; l'auto-test le confirme en le provoquant.
-      Le cas à un sommet derrière produit bien **deux** triangles : le polygone
-      restant est un quadrilatère, et ne pas le retrianguler ferait disparaître
-      la moitié de la surface.
-- [~] La marge de tolérance de Glide hors écran est mesurée et exploitée — **la
-      marge de Glide n'est toujours pas mesurée** : elle demande de lire le
-      tampon d'image de la carte (`grLfbLock`), la sortie d'une Voodoo
-      passthrough n'apparaissant dans aucune capture de l'émulateur.
-      **Mais une contrainte différente, elle, est mesurée et exploitée** : la
-      précision. Un sommet créé au plan proche projetait à 16 millions de pixels,
-      où les fonctions d'arête perdent tout sens. Le découpeur borne désormais
-      les coordonnées par une **bande de garde** à quatre demi-écrans, ce qui a
-      fait passer l'écart entre l'hôte et la cible de 2,59 % à 0,62 % des pixels.
-      Les deux marges répondent à des questions distinctes et la seconde
-      n'attend pas la première.
-- [x] L'élimination des faces arrière suit la convention du microcode : le sens
-      dépend du **signe de l'échelle en x de la fenêtre**, relevé dans
-      `f3ddkr_rt64.cpp`. Une fenêtre miroir inverse l'orientation apparente, et
-      éliminer le mauvais côté viderait l'écran.
-- [ ] Le viewport correspond à celui de la cible moderne — **bloqué**, la
-      comparaison demandant des scènes capturées.
-- [~] L'écran partagé est correct à deux, trois et quatre joueurs — les quatre
-      dispositions sont calculées et vérifiées, y compris **l'absence de
-      chevauchement** entre quadrants voisins. Mais c'est de la géométrie de
-      rectangles : le jeu ne l'a pas encore exercée.
-- [ ] La part du budget et le nombre de triangles découpés sont mesurés —
-      **bloqué** : le nombre découpé dépend d'une scène réelle, et sans lui la
-      part du budget n'a pas de sens.
-- [~] Aucune primitive ne parvient au backend hors domaine — le rejet hors écran
-      existe et n'écarte un triangle que si **les trois** sommets sont du même
-      côté. **Pas d'assertion en build de développement** : il n'y a pas encore
-      de chemin complet du décodeur au backend où la poser.
+- [x] The triangles crossing the near plane are clipped, with all attributes
+      interpolated — position, colour **and** texture coordinates, each checked
+      separately. Forgetting a single one would show only on the clipped triangles,
+      hence rarely; the self-test confirms it by provoking it.
+      The one-vertex-behind case does indeed produce **two** triangles: the remaining
+      polygon is a quadrilateral, and not re-triangulating it would make half the
+      surface disappear.
+- [~] Glide's off-screen tolerance margin is measured and exploited — **Glide's
+      margin is still not measured**: it requires reading the card's frame buffer
+      (`grLfbLock`), a passthrough Voodoo's output appearing in no capture from the
+      emulator.
+      **But a different constraint is measured and exploited**: precision. A vertex
+      created at the near plane projected to 16 million pixels, where the edge
+      functions lose all meaning. The clipper now bounds the coordinates by a **guard
+      band** at four half-screens, which took the gap between the host and the target
+      from 2.59 % to 0.62 % of the pixels.
+      The two margins answer distinct questions and the second does not wait on the
+      first.
+- [x] Back-face culling follows the microcode's convention: the winding depends on
+      the **sign of the viewport's x scale**, surveyed in `f3ddkr_rt64.cpp`. A
+      mirrored viewport inverts the apparent winding, and culling the wrong side would
+      empty the screen.
+- [ ] The viewport matches the modern target's — **blocked**, the comparison
+      requiring captured scenes.
+- [~] The split screen is correct with two, three and four players — the four layouts
+      are computed and checked, including **the absence of overlap** between
+      neighbouring quadrants. But that is rectangle geometry: the game has not
+      exercised it yet.
+- [ ] The share of the budget and the number of clipped triangles are measured —
+      **blocked**: the number clipped depends on a real scene, and without it the
+      share of the budget has no meaning.
+- [~] No primitive reaches the backend out of domain — the off-screen rejection exists
+      and discards a triangle only if **all three** vertices are on the same side.
+      **No assertion in a development build**: there is not yet a complete path from
+      the decoder to the backend on which to place it.
 
-## Risques
+## Risks
 
-Le découpage est un classique des erreurs subtiles : un triangle mal découpé
-produit un éclat de géométrie qui traverse l'écran, phénomène très visible et
-difficile à reproduire, parce qu'il dépend d'un angle de caméra précis. Les tests
-doivent inclure une caméra qui traverse la géométrie, pas seulement une caméra qui
-la regarde.
+Clipping is a classic source of subtle errors: a badly clipped triangle produces a
+shard of geometry that crosses the screen, a very visible phenomenon and a hard one to
+reproduce, because it depends on a precise camera angle. The tests must include a
+camera that passes through the geometry, not only one that looks at it.
 
-## Références
+## References
 
-- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — commandes de viewport et de ciseaux
-- E04-S03 — transformation, en amont
-- E05-S01 — configuration Glide, en aval
+- `runtime-recomp/src/game/f3ddkr_rt64.cpp` — viewport and scissor commands
+- E04-S03 — transformation, upstream
+- E05-S01 — Glide configuration, downstream
