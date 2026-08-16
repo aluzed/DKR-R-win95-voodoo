@@ -1,29 +1,28 @@
-/* E05-S06 — le brouillard de Glide, mesuré.
+/* E05-S06 - Glide's fog, measured.
  *
- * Le decomp donne le modèle : `gSPFogPosition(min, max)` charge un multiplicateur
- * `128000/(max-min)` et un décalage `(500-min)*256/(max-min)`, dont le RSP tire
- * un facteur par sommet qu'il range dans **l'alpha du sommet**. Le mélangeur
- * l'applique ensuite par `G_RM_FOG_SHADE_A` — source `G_BL_CLR_FOG`, facteur
+ * The decomp gives the model: `gSPFogPosition(min, max)` loads a multiplier
+ * `128000/(max-min)` and an offset `(500-min)*256/(max-min)`, from which the RSP
+ * derives a per-vertex factor that it stores in **the vertex alpha**. The blender
+ * then applies it through `G_RM_FOG_SHADE_A` - source `G_BL_CLR_FOG`, factor
  * `G_BL_A_SHADE`.
  *
- * Glide offre exactement ce modèle : `GR_FOG_WITH_ITERATED_ALPHA`. Le ticket
- * demande de trancher entre cette voie et la table de 64 entrées, « en mesurant
- * si elle a un coût par sommet significatif avant de conclure ». C'est ce que
- * fait ce témoin.
+ * Glide offers exactly that model: `GR_FOG_WITH_ITERATED_ALPHA`. The ticket asks
+ * to decide between that route and the 64-entry table, "by measuring whether it
+ * has a significant per-vertex cost before concluding". That is what this witness
+ * does.
  *
- * ## Ce qu'il vérifie qu'on ne lui a pas demandé
+ * ## What it checks that it was not asked to
  *
- * Le facteur de brouillard occupe l'alpha du sommet. **Tout ce qui voudrait y
- * ranger autre chose entre en conflit avec lui**, et deux choses le voudraient :
+ * The fog factor occupies the vertex alpha. **Anything else that would want to
+ * store something there conflicts with it**, and two things would want to:
  *
- *   - la translucidité d'une surface, quand `XLU_SURF` et le brouillard se
- *     rencontrent — 78 modes translucides contre 74 modes de brouillard dans la
- *     source du jeu, la rencontre est certaine ;
- *   - la seconde couleur constante que E05-S03 propose d'y faire voyager pour
- *     contourner l'unique registre de Glide.
+ *   - a surface's translucency, when `XLU_SURF` and fog meet - 78 translucent
+ *     modes against 74 fog modes in the game's source, the meeting is certain;
+ *   - the second constant colour that E05-S03 proposes to carry there in order to
+ *     work around Glide's single register.
  *
- * Le second point est une conséquence de ce ticket sur un autre, et il vaut
- * mieux la découvrir ici que sur un décor faux.
+ * The second point is one ticket's consequence on another, and it is better
+ * discovered here than on a wrong piece of scenery.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -48,7 +47,7 @@ static void say(const char *fmt, ...)
 
 static void check(const char *what, int ok)
 {
-    say("  %s %s\n", ok ? "ok   " : "ECHEC", what);
+    say("  %s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) { g_fails++; }
 }
 
@@ -56,16 +55,16 @@ static unsigned g_px[640 * 480];
 
 #define FOG_R 0
 #define FOG_G 255
-#define FOG_B 0        /* vert franc : impossible a confondre avec la surface */
+#define FOG_B 0        /* pure green: impossible to confuse with the surface */
 #define SURF_R 255
 #define SURF_G 0
-#define SURF_B 0       /* rouge franc */
+#define SURF_B 0       /* pure red */
 
-/* Un quadrilatère dont l'alpha du sommet varie de gauche à droite. C'est le
-   facteur de brouillard : à gauche zéro, à droite plein. La transition, et non
-   une valeur isolée, est ce qui révèle une courbe fausse — le ticket insiste
-   là-dessus, et c'est vrai à l'échelle d'une image comme d'une séquence. */
-static void quad_degrade(dkr_render_backend *bk, int w, int h)
+/* A quad whose vertex alpha varies from left to right. That is the fog factor:
+   zero on the left, full on the right. The transition, and not an isolated value,
+   is what reveals a wrong curve - the ticket insists on it, and it is true at the
+   scale of a frame as of a sequence. */
+static void quad_gradient(dkr_render_backend *bk, int w, int h)
 {
     dkr_render_vertex v[6];
     const float xs[6] = { 0, (float)w, (float)w, 0, (float)w, 0 };
@@ -82,7 +81,7 @@ static void quad_degrade(dkr_render_backend *bk, int w, int h)
     bk->draw_triangles(bk->self, v, 2);
 }
 
-static unsigned lire(int x, int y, int w)
+static unsigned read_px(int x, int y, int w)
 {
     return g_px[(size_t)y * (size_t)w + (size_t)x] & 0x00FFFFFFu;
 }
@@ -93,16 +92,16 @@ int main(void)
     dkr_render_state   st;
     const int W = 640, H = 480;
     int rw = 0, rh = 0, i;
-    unsigned long t_sans, t_avec;
+    unsigned long t_without, t_with;
 
     g_out = fopen("D:\\FOG.TXT", "w");
-    say("le brouillard de Glide, par facteur de sommet\n\n");
-    say("  couleur de brouillard : vert franc\n");
-    say("  couleur de surface    : rouge franc\n");
-    say("  alpha du sommet : 0 a gauche, 255 a droite\n");
+    say("Glide's fog, by vertex factor\n\n");
+    say("  fog colour     : pure green\n");
+    say("  surface colour : pure red\n");
+    say("  vertex alpha   : 0 on the left, 255 on the right\n");
 
     dkr_render_backend_glide(&bk);
-    if (!bk.open(bk.self, W, H)) { say("ECHEC ouverture\n"); return 1; }
+    if (!bk.open(bk.self, W, H)) { say("FAILED to open\n"); return 1; }
 
     memset(&st, 0, sizeof(st));
     st.combine = DKR_COMBINE_SHADE;
@@ -110,117 +109,117 @@ int main(void)
     st.depth   = DKR_DEPTH_DISABLED;
     st.cull    = DKR_CULL_NONE;
 
-    /* Deux images jetees. La lecon de E05-S05 : mesurer la premiere image apres
-       l'ouverture d'un contexte, c'est mesurer une machine qui n'a pas fini de
-       s'installer. */
+    /* Two frames thrown away. E05-S05's lesson: measuring the first frame after
+       opening a context is measuring a machine that has not finished settling
+       in. */
     for (i = 0; i < 2; i++) {
         bk.begin_frame(bk.self, 0x000000);
         bk.set_state(bk.self, &st);
-        quad_degrade(&bk, W, H);
+        quad_gradient(&bk, W, H);
         bk.present(bk.self);
     }
 
-    /* --- Sans brouillard : la reference -------------------------------------- */
+    /* --- Without fog: the reference ------------------------------------------ */
     bk.begin_frame(bk.self, 0x000000);
     st.fog_enabled = 0;
     bk.set_state(bk.self, &st);
-    quad_degrade(&bk, W, H);
+    quad_gradient(&bk, W, H);
     bk.present(bk.self);
     if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) > 0) {
-        say("\n-- sans brouillard --\n");
-        say("  gauche 0x%06X  milieu 0x%06X  droite 0x%06X\n",
-            lire(rw / 8, rh / 2, rw), lire(rw / 2, rh / 2, rw),
-            lire(rw * 7 / 8, rh / 2, rw));
-        check("la surface est rouge partout, l'alpha du sommet n'y change rien",
-              lire(rw / 8, rh / 2, rw) == lire(rw * 7 / 8, rh / 2, rw));
+        say("\n-- without fog --\n");
+        say("  left 0x%06X  middle 0x%06X  right 0x%06X\n",
+            read_px(rw / 8, rh / 2, rw), read_px(rw / 2, rh / 2, rw),
+            read_px(rw * 7 / 8, rh / 2, rw));
+        check("the surface is red everywhere, the vertex alpha changes nothing",
+              read_px(rw / 8, rh / 2, rw) == read_px(rw * 7 / 8, rh / 2, rw));
     }
 
-    /* --- Avec brouillard ------------------------------------------------------ */
+    /* --- With fog ------------------------------------------------------------- */
     bk.begin_frame(bk.self, 0x000000);
     st.fog_enabled = 1;
     st.fog_color   = (FOG_R << 16) | (FOG_G << 8) | FOG_B;
     bk.set_state(bk.self, &st);
-    quad_degrade(&bk, W, H);
+    quad_gradient(&bk, W, H);
     bk.present(bk.self);
     if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) > 0) {
-        const unsigned g = lire(rw / 8, rh / 2, rw);
-        const unsigned m = lire(rw / 2, rh / 2, rw);
-        const unsigned d = lire(rw * 7 / 8, rh / 2, rw);
-        say("\n-- avec brouillard --\n");
-        say("  gauche 0x%06X  milieu 0x%06X  droite 0x%06X\n", g, m, d);
+        const unsigned l = read_px(rw / 8, rh / 2, rw);
+        const unsigned m = read_px(rw / 2, rh / 2, rw);
+        const unsigned r = read_px(rw * 7 / 8, rh / 2, rw);
+        say("\n-- with fog --\n");
+        say("  left 0x%06X  middle 0x%06X  right 0x%06X\n", l, m, r);
 
-        check("les deux extremites different : le brouillard agit", g != d);
-        /* Quel bout est le brouillard ? On le releve plutot que de le supposer :
-           Glide peut interpreter l'alpha dans un sens ou dans l'autre, et se
-           tromper donnerait un brouillard **inverse** — clair de pres, opaque au
-           loin — ce qui est spectaculaire et facile a attribuer a la courbe
-           plutot qu'au sens. */
-        say("  sens : alpha 255 %s\n",
-            (((d >> 8) & 0xFF) > ((d >> 16) & 0xFF)) ? "= plein brouillard"
-                                                     : "= pas de brouillard");
-        check("un des deux bouts est franchement vert",
-              (((d >> 8) & 0xFF) > 200 && ((d >> 16) & 0xFF) < 60) ||
-              (((g >> 8) & 0xFF) > 200 && ((g >> 16) & 0xFF) < 60));
-        /* Et le milieu doit etre un melange des deux, sans quoi la transition
-           serait abrupte — le defaut que le ticket veut eviter. */
-        check("le milieu est un melange, pas l'un des deux extremes",
-              m != g && m != d);
+        check("the two ends differ: the fog acts", l != r);
+        /* Which end is the fog? We read it off rather than assume it: Glide may
+           interpret the alpha one way or the other, and getting it wrong would
+           give an **inverted** fog - clear up close, opaque far away - which is
+           spectacular and easy to blame on the curve rather than on the
+           direction. */
+        say("  direction: alpha 255 %s\n",
+            (((r >> 8) & 0xFF) > ((r >> 16) & 0xFF)) ? "= full fog"
+                                                     : "= no fog");
+        check("one of the two ends is plainly green",
+              (((r >> 8) & 0xFF) > 200 && ((r >> 16) & 0xFF) < 60) ||
+              (((l >> 8) & 0xFF) > 200 && ((l >> 16) & 0xFF) < 60));
+        /* And the middle must be a blend of the two, without which the transition
+           would be abrupt - the defect the ticket wants to avoid. */
+        check("the middle is a blend, not one of the two extremes",
+              m != l && m != r);
     }
 
-    /* --- L'interaction avec le melange --------------------------------------- *
+    /* --- The interaction with blending ---------------------------------------- *
      *
-     * L'alpha du sommet porte le facteur de brouillard. Une surface translucide
-     * en a besoin pour sa propre transparence, et le jeu emploie 78 modes
-     * translucides pour 74 modes de brouillard : la rencontre est certaine.
-     * On mesure ce qui se passe plutot que de le deduire. */
-    bk.begin_frame(bk.self, 0x0000FF);   /* fond bleu, pour voir a travers */
+     * The vertex alpha carries the fog factor. A translucent surface needs it for
+     * its own transparency, and the game uses 78 translucent modes against 74 fog
+     * modes: the meeting is certain. We measure what happens rather than deduce
+     * it. */
+    bk.begin_frame(bk.self, 0x0000FF);   /* blue background, to see through */
     st.blend = DKR_BLEND_ALPHA;
     st.fog_enabled = 1;
     bk.set_state(bk.self, &st);
-    quad_degrade(&bk, W, H);
+    quad_gradient(&bk, W, H);
     bk.present(bk.self);
     if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) > 0) {
-        const unsigned g = lire(rw / 8, rh / 2, rw);
-        const unsigned d = lire(rw * 7 / 8, rh / 2, rw);
-        say("\n-- brouillard et melange alpha ensemble --\n");
-        say("  gauche 0x%06X  droite 0x%06X\n", g, d);
-        say("  (fond bleu : ce qui laisse voir du bleu est translucide)\n");
-        /* Ce controle n'affirme pas un resultat : il **enregistre** lequel des
-           deux usages de l'alpha l'emporte. Le savoir est ce qui permettra de
-           decider, et l'ignorer donnerait un brouillard ou une transparence
-           faux selon les surfaces. */
-        check("les deux usages de l'alpha ne s'annulent pas mutuellement",
-              g != d);
+        const unsigned l = read_px(rw / 8, rh / 2, rw);
+        const unsigned r = read_px(rw * 7 / 8, rh / 2, rw);
+        say("\n-- fog and alpha blending together --\n");
+        say("  left 0x%06X  right 0x%06X\n", l, r);
+        say("  (blue background: whatever lets blue show is translucent)\n");
+        /* This check asserts no result: it **records** which of the alpha's two
+           uses wins. Knowing that is what will allow a decision, and ignoring it
+           would give either wrong fog or wrong transparency depending on the
+           surface. */
+        check("the alpha's two uses do not cancel each other out",
+              l != r);
     }
 
-    /* --- Le cout -------------------------------------------------------------- */
+    /* --- The cost ------------------------------------------------------------- */
     st.blend = DKR_BLEND_OPAQUE;
     st.fog_enabled = 0;
-    t_sans = GetTickCount();
+    t_without = GetTickCount();
     for (i = 0; i < 100; i++) {
         bk.begin_frame(bk.self, 0x000000);
         bk.set_state(bk.self, &st);
-        quad_degrade(&bk, W, H);
+        quad_gradient(&bk, W, H);
         bk.present(bk.self);
     }
-    t_sans = GetTickCount() - t_sans;
+    t_without = GetTickCount() - t_without;
 
     st.fog_enabled = 1;
-    t_avec = GetTickCount();
+    t_with = GetTickCount();
     for (i = 0; i < 100; i++) {
         bk.begin_frame(bk.self, 0x000000);
         bk.set_state(bk.self, &st);
-        quad_degrade(&bk, W, H);
+        quad_gradient(&bk, W, H);
         bk.present(bk.self);
     }
-    t_avec = GetTickCount() - t_avec;
+    t_with = GetTickCount() - t_with;
 
-    say("\n-- le cout --\n");
-    say("  100 images sans brouillard : %lu ms\n", t_sans);
-    say("  100 images avec            : %lu ms\n", t_avec);
+    say("\n-- the cost --\n");
+    say("  100 frames without fog : %lu ms\n", t_without);
+    say("  100 frames with        : %lu ms\n", t_with);
 
     bk.close(bk.self);
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
