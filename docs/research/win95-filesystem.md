@@ -1,30 +1,30 @@
-# Ce que `<filesystem>` coûte réellement sous Windows 95
+# What `<filesystem>` really costs under Windows 95
 
-Mesures de [E02-S05](../stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md),
-prises sur la machine de test.
+Measurements from
+[E02-S05](../stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md), taken
+on the test machine.
 
-Ce dépôt bannissait `<filesystem>` en bloc, en lui attribuant treize symboles
-absents. **La règle était fausse**, et coûteuse : elle aurait imposé de réécrire
-250 usages d'un type qui fonctionne parfaitement.
+This repository banned `<filesystem>` wholesale, attributing thirteen absent
+symbols to it. **The rule was wrong**, and expensive: it would have forced 250 uses
+of a type that works perfectly to be rewritten.
 
-## Trois sondes, trois réponses différentes
+## Three probes, three different answers
 
-| Ce que fait le programme | Symboles bloquants | Le binaire se charge ? |
+| What the program does | Blocking symbols | Does the binary load? |
 |---|---:|---|
-| `#include <filesystem>` seul | **0** | oui |
-| un objet `std::filesystem::path` | **1** — `LoadLibraryW` | **oui** — c'est un bouchon |
-| un appel à `exists()` | **17** | **non** — 7 sont absents |
+| `#include <filesystem>` alone | **0** | yes |
+| a `std::filesystem::path` object | **1** — `LoadLibraryW` | **yes** — it is a stub |
+| a call to `exists()` | **17** | **no** — 7 are absent |
 
-La distinction entre les deux dernières lignes est celle qui décide de tout, et
-c'est celle que le relevé des bouchons de [E02-S01](win95-blockers.md) permet de
-faire :
+The distinction between the last two rows is the one that decides everything, and
+it is the one [E02-S01](win95-blockers.md)'s stub survey allows one to make:
 
-- un **bouchon** est exporté et ne fait rien. Le chargeur est content, le
-  programme démarre.
-- un symbole **absent** empêche le processus de démarrer, et Windows nomme le
-  symbole dans une boîte d'erreur.
+- a **stub** is exported and does nothing. The loader is content, the program
+  starts.
+- an **absent** symbol stops the process from starting, and Windows names the
+  symbol in an error box.
 
-Le détail des dix-sept :
+The seventeen in detail:
 
 ```
 STUB     CreateFileW  DeleteFileW  GetDiskFreeSpaceExW  GetFileAttributesW
@@ -34,92 +34,88 @@ MISSING  CreateHardLinkW  FindFirstVolumeW  FindNextVolumeW  FindVolumeClose
          GetFileSizeEx  MSVCRT:_fstat64  MSVCRT:_wstat64
 ```
 
-## `std::filesystem::path` fonctionne, vérifié sur la machine
+## `std::filesystem::path` works, verified on the machine
 
-Le type ne tire qu'un bouchon, donc le binaire se charge. Restait à savoir si ce
-que `libstdc++` en fait tient. Relevé de `FSPATH.EXE` sur Windows 95 :
+The type pulls in only one stub, so the binary loads. What remained was whether
+what `libstdc++` makes of it holds. `FSPATH.EXE`'s report on Windows 95:
 
 ```text
-path                : D:\JEU\SAUVE.DAT
-parent_path         : D:\JEU
-filename            : SAUVE.DAT
+path                : D:\GAME\SAVE.DAT
+parent_path         : D:\GAME
+filename            : SAVE.DAT
 extension           : .DAT
-concatenation       : D:\JEU\SAUVE.DAT\AUTRE.DAT
-verdict             : UTILISABLE
+concatenation       : D:\GAME\SAVE.DAT\OTHER.DAT
+verdict             : USABLE
 ```
 
-Construction, décomposition, concaténation : tout est juste. `path` est de la
-manipulation de chaînes, et la manipulation de chaînes ne demande rien au
-système.
+Construction, decomposition, concatenation: all correct. `path` is string
+manipulation, and string manipulation asks nothing of the system.
 
-## Ce que cela change au travail
+## What that changes in the work
 
-L'inventaire des usages, sur `ultramodern`, `librecomp` et `runtime-recomp/src` :
+The inventory of uses, over `ultramodern`, `librecomp` and `runtime-recomp/src`:
 
-| | Occurrences | À faire |
+| | Occurrences | To do |
 |---|---:|---|
-| `std::filesystem::path` — le **type** | **250** | **rien** |
-| opérations — `remove`, `exists`, `create_directories`, `copy_file`, `rename`, `is_directory`, `directory_iterator`, `file_size`, `absolute`… | ~140 | à router vers `platform/win95/fileio.h` |
+| `std::filesystem::path` — the **type** | **250** | **nothing** |
+| operations — `remove`, `exists`, `create_directories`, `copy_file`, `rename`, `is_directory`, `directory_iterator`, `file_size`, `absolute`… | ~140 | to route through `platform/win95/fileio.h` |
 
-Bannir l'en-tête aurait donc fait réécrire les 250 pour un gain nul, **et** laissé
-croire le problème résolu tant que subsistaient les 140 qui comptent. C'est
-l'inverse de ce qu'il faut : on aurait payé cher pour se tromper.
+Banning the header would therefore have made us rewrite the 250 for no gain, **and**
+led us to believe the problem solved while the 140 that matter remained. That is
+the opposite of what is needed: we would have paid dearly to be wrong.
 
-Le contrôleur de sous-ensemble surveille désormais les **opérations**, et elles
-seules. Son auto-test l'éprouve dans les deux sens : un `path` doit passer, un
-`exists()` doit être refusé — parce qu'un contrôleur trop strict finit désactivé,
-et qu'un contrôleur trop laxiste ne sert à rien.
+The subset checker now watches the **operations**, and them alone. Its self-test
+exercises it in both directions: a `path` must pass, an `exists()` must be refused
+— because a checker that is too strict ends up disabled, and one that is too lax is
+good for nothing.
 
-Effet immédiat : `ultramodern` **n'a plus aucune inclusion interdite**, et son
-cliquet `--max 1` a été retiré — le contrôleur l'a signalé lui-même. Restent 23
-signalements dans `librecomp` et 112 dans les sources du jeu, qui sont le travail
-réel de E02-S05 et de E02-S02.
+An immediate effect: `ultramodern` **no longer has a single forbidden include**,
+and its `--max 1` ratchet has been removed — the checker flagged it itself. There
+remain 23 reports in `librecomp` and 112 in the game's sources, which are E02-S05's
+and E02-S02's real work.
 
-## Deux pièges rencontrés en câblant le point d'indirection
+## Two traps met while wiring the seam
 
-Aucun des deux ne concerne `<filesystem>` lui-même, et tous deux valent d'être
-écrits parce qu'ils ont failli faire conclure à tort.
+Neither concerns `<filesystem>` itself, and both are worth writing down because
+they nearly led to a wrong conclusion.
 
-### Le vérificateur de jeu d'instructions accusait à tort
+### The instruction-set verifier was accusing wrongly
 
-Un binaire employant `std::filesystem::path` était refusé avec deux instructions
-« hors Pentium II » : `movaps %xmm0,(%eax)` et `movnti %eax,(%edx)`.
+A binary using `std::filesystem::path` was refused with two instructions "outside
+the Pentium II set": `movaps %xmm0,(%eax)` and `movnti %eax,(%edx)`.
 
-Elles n'étaient pas du code. Le lieur place les tables d'exceptions —
-`.gcc_except_table` — **à l'intérieur de `.text`**, et `objdump -d` les
-désassemble comme le reste ; des octets de données s'y décodent en instructions
-que le processeur n'exécute jamais.
+They were not code. The linker places the exception tables —
+`.gcc_except_table` — **inside `.text`**, and `objdump -d` disassembles them like
+the rest; data bytes there decode into instructions the processor never executes.
 
-Le faux positif n'est pas bénin : il fait échouer un build correct, et la
-réaction naturelle devant un garde-fou qui crie à tort est de le désactiver.
-`check-instruction-set.sh` suit désormais le symbole courant et ignore les
-régions de données. Son auto-test, qui injecte du vrai SSE, refuse toujours.
+The false positive is not benign: it fails a correct build, and the natural
+reaction to a guard rail that cries wolf is to disable it.
+`check-instruction-set.sh` now follows the current symbol and ignores the data
+regions. Its self-test, which injects real SSE, still refuses.
 
-Ce piège avait failli passer inaperçu dans l'autre sens aussi : la première
-sonde `path` n'avait été soumise qu'au contrôle des **imports**, pas à celui des
-instructions. Elle s'exécutait sur la machine émulée, ce qui ne prouvait rien
-d'un vrai Pentium II.
+That trap had nearly gone unnoticed in the other direction too: the first `path`
+probe had only been subjected to the **import** check, not the instruction one. It
+ran on the emulated machine, which proved nothing about a real Pentium II.
 
-### `std::random_device` ne fonctionne pas sous Windows 95
+### `std::random_device` does not work under Windows 95
 
-La présence de `std::filesystem::path` dans un binaire y fait entrer
-`std::random_device::_M_getentropy` de libstdc++, qui appelle `rand_s` de
-libmsvcrt, qui appelle **`LoadLibraryW`** puis `GetProcAddress` pour atteindre le
-générateur du système.
+The presence of `std::filesystem::path` in a binary brings libstdc++'s
+`std::random_device::_M_getentropy` into it, which calls libmsvcrt's `rand_s`,
+which calls **`LoadLibraryW`** then `GetProcAddress` to reach the system's
+generator.
 
-`LoadLibraryW` est un bouchon. `rand_s` obtient donc un pointeur de fonction nul,
-et **appeler `std::random_device` sauterait dedans**.
+`LoadLibraryW` is a stub. `rand_s` therefore obtains a null function pointer, and
+**calling `std::random_device` would jump into it**.
 
-L'import lui-même est inoffensif — un bouchon n'empêche pas le chargement — et
-la manipulation de `path` n'y touche pas, ce que la sonde confirme sur la
-machine. Mais la conclusion est à retenir pour la suite : sur cette cible, le
-hasard doit venir d'ailleurs. Aucun code du projet n'emploie `random_device`
-aujourd'hui.
+The import itself is harmless — a stub does not prevent loading — and manipulating
+a `path` does not touch it, which the probe confirms on the machine. But the
+conclusion is worth keeping for later: on this target, randomness must come from
+elsewhere. No code in the project uses `random_device` today.
 
-## Reproduire
+## Reproducing
 
 ```sh
-# les trois sondes
+# the three probes
 printf '#include <filesystem>\nint main(){return 0;}\n' > p1.cpp
 printf '#include <filesystem>\nstatic std::filesystem::path p;\nint main(){return (int)p.string().size();}\n' > p2.cpp
 printf '#include <filesystem>\nint main(){return (int)std::filesystem::exists("a");}\n' > p3.cpp
@@ -131,169 +127,162 @@ i686-w64-mingw32-g++-posix -std=c++20 -O2 -march=pentium2 -mno-sse -static \
 python3 tools/win95/check_imports.py p1.exe p2.exe p3.exe
 ```
 
-## Ce que l'extension aux sources du jeu a appris — 13 août 2026
+## What extending it to the game's sources taught — 13 August 2026
 
-Les quatre opérations de `librecomp` ne suffisaient pas aux 59 sites du jeu. En
-ajoutant `is_regular_file`, `file_size`, `rename`, `absolute` et l'énumération,
-trois choses sont apparues, dont deux qu'aucune relecture n'aurait données.
+`librecomp`'s four operations did not suffice for the game's 59 sites. On adding
+`is_regular_file`, `file_size`, `rename`, `absolute` and the enumeration, three
+things came to light, two of which no code review would have given.
 
-### `GetFileAttributesExA` est **absente**, pas bouchonnée
+### `GetFileAttributesExA` is **absent**, not stubbed
 
-C'était le choix naturel pour `file_size` : elle rend attributs et taille sans
-ouvrir le fichier. Windows 95 ne l'exporte pas — comme `GetFileSizeEx`. Ce ne
-sont pas des bouchons : le chargeur refuse de démarrer le processus entier.
+It was the natural choice for `file_size`: it returns attributes and size without
+opening the file. Windows 95 does not export it — like `GetFileSizeEx`. These are
+not stubs: the loader refuses to start the whole process.
 
-Le contrôle des imports l'a arrêtée avant la machine, ce qui est exactement son
-rôle. La leçon est générale : **une API `...A` n'est pas garantie par le seul
-fait d'être `...A`.** Ce couple-là a été ajouté par Windows 98, et rien dans son
-nom ne le dit.
+The import check stopped it before the machine did, which is exactly its role. The
+lesson is general: **an `...A` API is not guaranteed by the mere fact of being
+`...A`.** That pair was added by Windows 98, and nothing in its name says so.
 
-Le remplacement est `FindFirstFileA`, qui rend la taille sans ouvrir le fichier
-non plus — donc sans descripteur qui fuirait ni conflit de partage, ce qui était
-la raison du choix initial.
+The replacement is `FindFirstFileA`, which returns the size without opening the
+file either — hence with no descriptor to leak and no sharing conflict, which was
+the reason for the original choice.
 
-### `DeleteFileA` sur un répertoire ne dit pas ce qu'on croit
+### `DeleteFileA` on a directory does not say what one thinks
 
-`dkr_file_remove` essayait `DeleteFileA`, puis se rabattait sur
-`RemoveDirectoryA` si le chemin était un répertoire. Sur Windows 95 l'échec de
-`DeleteFileA` sur un répertoire passait par la branche « déjà absent » et la
-fonction **rendait succès sans rien effacer**.
+`dkr_file_remove` tried `DeleteFileA`, then fell back on `RemoveDirectoryA` if the
+path was a directory. On Windows 95, `DeleteFileA`'s failure on a directory went
+through the "already absent" branch and the function **returned success without
+deleting anything**.
 
-Le défaut ne s'est pas montré par un plantage mais par un faux échec ailleurs :
-le nettoyage préalable de la suite d'épreuve n'opérait pas, et l'exécution
-suivante trouvait l'arborescence de la précédente. Les horodatages du disque de
-transfert l'ont désigné — ils étaient restés à l'heure de la veille.
+The defect showed itself not through a crash but through a false failure elsewhere:
+the trial suite's preliminary cleanup did not operate, and the next run found the
+previous one's directory tree. The transfer disk's timestamps pointed at it — they
+had stayed at the previous day's time.
 
-Le correctif interroge le type **avant** d'agir. Un appel de plus, et plus aucune
-façon de confondre « rien à faire » avec « je n'ai pas su ».
+The fix asks for the type **before** acting. One more call, and no remaining way to
+confuse "nothing to do" with "I did not know how".
 
-### `create_directories` ne rend pas « il est là »
+### `create_directories` does not return "it is there"
 
-Elle rend « j'en ai créé au moins un ». Sur un répertoire déjà présent,
-`std::filesystem` rend **false** ; la couche Windows 95 rendait **true**, parce
-que pour elle un répertoire déjà présent est légitimement un succès.
+It returns "I created at least one". On a directory already present,
+`std::filesystem` returns **false**; the Windows 95 layer returned **true**,
+because to it a directory already present is legitimately a success.
 
-Les deux contrats sont justes séparément, et c'est ce qui rend l'écart pernicieux :
-la suite d'épreuve le validait, puisqu'elle demandait seulement `true`. C'est le
-même piège que `remove` sur un fichier absent, décrit en tête de la suite — et il
-avait été tendu deux fois sans être vu.
+Both contracts are right separately, and that is what makes the discrepancy
+pernicious: the trial suite validated it, since it only asked for `true`. It is the
+same trap as `remove` on an absent file, described at the head of the suite — and it
+had been set twice without being seen.
 
-**Un point d'indirection dont les deux branches diffèrent sur une valeur de
-retour est pire que pas de point d'indirection du tout** : le code marche sur
-l'hôte et se comporte autrement sur la cible. Les épreuves portent désormais sur
-l'effet autant que sur la valeur rendue.
+**A seam whose two branches differ on a return value is worse than no seam at
+all**: the code works on the host and behaves otherwise on the target. The trials
+now bear on the effect as much as on the returned value.
 
-Pour la même raison, `file_size`, `rename` et `absolute` sont enveloppées des
-deux côtés : leurs formes sans `error_code` **lèvent** dans la bibliothèque
-standard, là où la cible ne le peut pas. Aucun site d'appel n'y perd — tous
-emploient déjà la forme à `error_code`.
+For the same reason, `file_size`, `rename` and `absolute` are wrapped on both
+sides: their forms without `error_code` **throw** in the standard library, where the
+target cannot. No call site loses by it — they all already use the `error_code`
+form.
 
-### En passant : la machine de test recevait des chemins faux
+### In passing: the test machine was receiving wrong paths
 
-`Drive-Win95-VM.sh type` passait par `xdotool type`, sans traduction. L'invité
-étant en AZERTY, `D:\FSSEAM.EXE` y arrivait en `DM"FSSEQ?:EXE` — et Windows
-répondait « fichier introuvable », ce qu'on impute volontiers au binaire.
+`Drive-Win95-VM.sh type` went through `xdotool type`, without translation. The
+guest being AZERTY, `D:\FSSEAM.EXE` arrived there as `DM"FSSEQ?:EXE` — and Windows
+answered "file not found", which one readily blames on the binary.
 
-`tools/win95/azerty_keys.py` savait déjà corriger cela, mais n'était pas branché.
-Il l'est désormais, parce qu'aucun chemin Windows ne s'écrit sans « : » ni « \ ».
+`tools/win95/azerty_keys.py` already knew how to correct that, but was not wired
+in. It is now, because no Windows path is written without a ":" or a "\".
 
-### État
+### State
 
-27 contrôles, tous verts sur la machine émulée comme sur l'hôte, la même source
-compilée pour les deux. Ce qui est établi n'est pas « les opérations
-fonctionnent » mais « elles se comportent comme celles qu'elles remplacent ».
+27 checks, all green on the emulated machine as on the host, the same source
+compiled for both. What is established is not "the operations work" but "they
+behave like the ones they replace".
 
-## Le câblage des sources du jeu — 13 août 2026
+## Wiring the game's sources — 13 August 2026
 
-Les 96 sites d'opérations des sources du jeu passent désormais par `dkr::fs`.
-Quatre-vingt-sept se sont réécrits mécaniquement ; les neuf autres demandaient
-une décision, et c'est là que se trouvait le travail.
+The 96 operation sites in the game's sources now go through `dkr::fs`.
+Eighty-seven rewrote themselves mechanically; the other nine required a decision,
+and that is where the work was.
 
-### `copy_options::none` n'est pas `overwrite_existing`
+### `copy_options::none` is not `overwrite_existing`
 
-Six des huit `copy_file` écrasaient ; **deux refusaient de le faire** —
-importer un filtre CRT ou un pack de textures ne doit pas remplacer
-silencieusement celui qui porte déjà ce nom. Le point d'indirection n'offrait que
-la première forme.
+Six of the eight `copy_file` calls overwrote; **two refused to** — importing a CRT
+filter or a texture pack must not silently replace the one that already bears that
+name. The seam offered only the first form.
 
-Les deux sont maintenant nommées, `copy_file_overwrite` et
-`copy_file_no_overwrite`, plutôt que de faire circuler un jeu d'options dont
-personne n'emploie plus de deux valeurs. Le refus est fait par le système —
-`CopyFileA(…, TRUE)` sur la cible, `fopen` en « wbx » sur le véhicule — et non
-par un `exists` préalable : entre le test et la copie il y a un intervalle.
+Both are now named, `copy_file_overwrite` and `copy_file_no_overwrite`, rather than
+passing around an option set of which nobody uses more than two values. The refusal
+is made by the system — `CopyFileA(…, TRUE)` on the target, `fopen` in "wbx" on the
+vehicle — and not by a prior `exists`: between the test and the copy there is an
+interval.
 
-### Une liste vide ne dit pas pourquoi
+### An empty list does not say why
 
-`list_directory` rendait une liste vide aussi bien pour un répertoire vide que
-pour un répertoire illisible. Un site d'appel distingue les deux pour le dire au
-joueur — « T.T. could not read this location ». D'où une forme à `error_code`.
+`list_directory` returned an empty list both for an empty directory and for an
+unreadable one. One call site distinguishes the two in order to tell the player —
+"T.T. could not read this location". Hence a form with an `error_code`.
 
-### Ce qui n'a pas été reproduit, et pourquoi
+### What was not reproduced, and why
 
-`symlink_status` rend un `file_status` : un type, ses accesseurs, ses catégories.
-Son unique site d'appel s'exprime aussi bien en opérations sur le chemin, et
-l'ordre du code — refuser le lien **avant** de tester la présence — est conservé,
-parce qu'un lien cassé n'« existe » pas.
+`symlink_status` returns a `file_status`: a type, its accessors, its categories.
+Its single call site expresses itself just as well in operations on the path, and
+the code's order — refuse the link **before** testing the presence — is preserved,
+because a broken link does not "exist".
 
-`is_symlink` rend toujours false sur la cible. Ce n'est pas un renoncement :
-Windows 95 n'a ni liens symboliques, ni jonctions NTFS — celles-ci n'arrivent
-qu'avec Windows 2000.
+`is_symlink` always returns false on the target. That is not a surrender: Windows
+95 has neither symbolic links nor NTFS junctions — those only arrive with Windows
+2000.
 
-### Ce qui reste invérifiable ici, et ce qui a été mis à sa place
+### What stays unverifiable here, and what was put in its place
 
-Quatre fichiers — `runtime_ui`, `runtime_texture_packs`, `runtime_crt_overlay`,
-`runtime_rice_texture_import` — ne se compilent qu'avec RT64, absent de ce dépôt.
-Windows 95 ne les construit de toute façon jamais : RT64 exige D3D12, Vulkan ou
+Four files — `runtime_ui`, `runtime_texture_packs`, `runtime_crt_overlay`,
+`runtime_rice_texture_import` — only compile with RT64, absent from this
+repository. Windows 95 never builds them anyway: RT64 requires D3D12, Vulkan or
 Metal.
 
-Leurs appels ne peuvent donc pas être éprouvés en les compilant. Ce qui porte le
-risque réel, en revanche, l'est : `test_fileio_signatures.cpp` reprend chaque
-appel avec ses types d'arguments et se compile dans les deux branches. C'est
-ainsi qu'ont été trouvées les surcharges manquantes — `absolute(p, ec)`,
-`is_regular_file(p, ec)`, `current_path(ec)` — dont l'absence ne se voit qu'à la
-compilation.
+Their calls therefore cannot be tried by compiling them. What carries the real
+risk, on the other hand, is: `test_fileio_signatures.cpp` restates every call with
+its argument types and compiles in both branches. That is how the missing overloads
+were found — `absolute(p, ec)`, `is_regular_file(p, ec)`, `current_path(ec)` — whose
+absence only shows at compile time.
 
-**Ce contrôle ne remplace pas la compilation de ces fichiers**, et il faudra la
-faire quand RT64 sera présent. Il couvre la seule chose qui pouvait être couverte
-sans lui.
+**That check does not replace compiling those files**, and it will have to be done
+when RT64 is present. It covers the only thing that could be covered without it.
 
-### État
+### State
 
-39 contrôles sur la machine émulée, autant sur les deux branches de l'hôte, plus
-les signatures. Les 17 sources du jeu que construit la cible Windows 95 compilent
-toutes. Ne subsistent dans les sources du jeu que 11 inclusions de `<mutex>` et
-`<thread>`, qui relèvent de E02-S02.
+39 checks on the emulated machine, as many on both of the host's branches, plus the
+signatures. All 17 of the game's sources that the Windows 95 target builds compile.
+There remain in the game's sources only 11 includes of `<mutex>` and `<thread>`,
+which belong to E02-S02.
 
-## L'échange de sauvegardes, dans les deux sens — 14 août 2026
+## Save interchange, in both directions — 14 August 2026
 
-Le critère demandait qu'une sauvegarde produite par la version moderne soit lue
-par celle de Windows 95, et réciproquement. Le résultat est plus fort :
-**les deux constructions produisent les mêmes octets.**
+The criterion asked that a save produced by the modern build be read by the Windows
+95 one, and conversely. The result is stronger: **both builds produce the same
+bytes.**
 
 ```text
 2673ca1aa7ecf15e5751ae5b894f6d6ca57a6c831b15d9bb1da975db4dae47bc  ADVHOST.BIN
 2673ca1aa7ecf15e5751ae5b894f6d6ca57a6c831b15d9bb1da975db4dae47bc  ADVWIN.BIN
 ```
 
-Le montage a deux moitiés, et c'est ce qui le rend concluant :
+The arrangement has two halves, and that is what makes it conclusive:
 
-- **la moitié productrice**, `save_interchange.cpp`, écrit une sauvegarde
-  d'aventure et la même source est compilée pour les deux cibles ;
-- **la moitié consommatrice** existait déjà — `dkr_save_codec_tests` prend un
-  fichier en argument, le décode, le réencode, et exige l'égalité **octet pour
-  octet**. C'est plus fort qu'un « le décodage réussit » : cela prend aussi les
-  différences d'encodage, qui sont précisément ce qu'un changement de
-  plate-forme risque d'introduire.
+- **the producing half**, `save_interchange.cpp`, writes an adventure save and the
+  same source is compiled for both targets;
+- **the consuming half** already existed — `dkr_save_codec_tests` takes a file as an
+  argument, decodes it, re-encodes it, and demands equality **byte for byte**. That
+  is stronger than a "the decode succeeds": it also catches encoding differences,
+  which are precisely what a change of platform risks introducing.
 
-Le contenu écrit n'est pas une sauvegarde vierge. Une sauvegarde vierge est
-surtout faite de zéros, et des zéros survivent à peu près à n'importe quelle
-erreur de conversion. Les champs de 16 et 32 bits portent donc des motifs
-**asymétriques** — `0x1234` et non `0x1221` — parce qu'une inversion d'octets
-sur une valeur symétrique ne se voit pas, et que c'est le risque principal
-quand la même structure est encodée par deux compilateurs différents.
+The content written is not a blank save. A blank save is mostly made of zeros, and
+zeros survive just about any conversion error. The 16- and 32-bit fields therefore
+carry **asymmetric** patterns — `0x1234` and not `0x1221` — because a byte swap on a
+symmetric value does not show, and that is the main risk when the same structure is
+encoded by two different compilers.
 
-### Et la persistance après redémarrage
+### And persistence across a reboot
 
-Écrite dans une session, la machine arrêtée proprement, relue dans la suivante :
-512 octets intacts, aller-retour sans écart. C'est le dernier des trois volets
-du premier critère — écriture, relecture, persistance.
+Written in one session, the machine shut down cleanly, read back in the next: 512
+bytes intact, a round trip with no discrepancy. It is the last of the first
+criterion's three parts — write, read back, persist.
