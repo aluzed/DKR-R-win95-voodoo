@@ -1,37 +1,36 @@
-/* E02-S05 — ecriture de fichiers de sauvegarde sous Windows 95.
+/* E02-S05 - writing save files under Windows 95.
  *
- * Le contrat, la sequence d'ecriture et surtout ce qu'elle garantit — et ce
- * qu'elle ne garantit pas — sont dans `fileio.h`. Ce fichier ne contient que la
- * mise en oeuvre.
+ * The contract, the write sequence and above all what it guarantees - and what
+ * it does not - are in `fileio.h`. This file contains only the implementation.
  *
- * Comme les autres couches de `platform/win95`, il porte une implementation
- * Windows, la cible, et un vehicule POSIX qui n'existe que pour que la suite
- * tourne aussi sur l'hote. La sequence durable, elle, est commune : c'est elle
- * qu'il faut eprouver, et deux exemplaires finiraient par diverger.
+ * Like the other layers in `platform/win95`, it carries a Windows
+ * implementation, the target, and a POSIX vehicle that exists only so that the
+ * suite also runs on the host. The durable sequence itself is shared: it is what
+ * has to be tested, and two copies would end up diverging.
  */
 #include "fileio.h"
 
 #include <string.h>
 
 /* ========================================================================== *
- * Commun
+ * Shared
  * ========================================================================== */
 
 const char *dkr_file_result_text(dkr_file_result r)
 {
     switch (r) {
-    case DKR_FILE_OK:            return "succes";
-    case DKR_FILE_ERR_PATH:      return "chemin invalide ou trop long";
-    case DKR_FILE_ERR_NOT_FOUND: return "fichier introuvable";
-    case DKR_FILE_ERR_ACCESS:    return "acces refuse (support protege ?)";
-    case DKR_FILE_ERR_NO_SPACE:  return "disque plein";
-    case DKR_FILE_ERR_NOT_READY: return "lecteur vide ou absent";
-    default:                     return "erreur d'entree-sortie";
+    case DKR_FILE_OK:            return "success";
+    case DKR_FILE_ERR_PATH:      return "invalid or over-long path";
+    case DKR_FILE_ERR_NOT_FOUND: return "file not found";
+    case DKR_FILE_ERR_ACCESS:    return "access denied (write-protected medium?)";
+    case DKR_FILE_ERR_NO_SPACE:  return "disk full";
+    case DKR_FILE_ERR_NOT_READY: return "drive empty or absent";
+    default:                     return "input/output error";
     }
 }
 
-/* Le 8.3 strict : au plus huit caracteres, un point facultatif, au plus trois.
-   Aucun des caracteres que FAT refuse. On repond, on ne corrige pas. */
+/* Strict 8.3: at most eight characters, an optional dot, at most three. None of
+   the characters FAT refuses. We answer, we do not correct. */
 int dkr_file_name_is_8dot3(const char *name)
 {
     const char *dot;
@@ -40,7 +39,7 @@ int dkr_file_name_is_8dot3(const char *name)
     if (!name || !*name) {
         return 0;
     }
-    /* Les caracteres refuses par FAT, plus l'espace, que DOS accepte mal. */
+    /* The characters FAT refuses, plus the space, which DOS handles badly. */
     for (i = 0; name[i]; i++) {
         const char c = name[i];
         if (c == '"' || c == '*' || c == '+' || c == ',' || c == '/' ||
@@ -55,7 +54,7 @@ int dkr_file_name_is_8dot3(const char *name)
     if (dot == NULL) {
         return strlen(name) <= 8;
     }
-    /* Un seul point : `SAUVE.DAT.BAK` n'est pas du 8.3. */
+    /* One dot only: `SAVE.DAT.BAK` is not 8.3. */
     if (strchr(dot + 1, '.') != NULL) {
         return 0;
     }
@@ -64,9 +63,9 @@ int dkr_file_name_is_8dot3(const char *name)
     return base_len >= 1 && base_len <= 8 && ext_len <= 3;
 }
 
-/* Derive les noms auxiliaires du nom final. On remplace l'extension plutot que
-   d'en ajouter une : `SAUVE.DAT.TMP` ne serait pas du 8.3, et le volume cible
-   peut n'accepter que cela. */
+/* Derives the auxiliary names from the final name. We replace the extension
+   rather than add one: `SAVE.DAT.TMP` would not be 8.3, and the target volume
+   may accept nothing else. */
 static int derive_sibling(char *out, size_t out_size,
                           const char *path, const char *extension)
 {
@@ -77,7 +76,7 @@ static int derive_sibling(char *out, size_t out_size,
         return 0;
     }
     dot = strrchr(path, '.');
-    /* Un point dans un repertoire parent ne compte pas. */
+    /* A dot in a parent directory does not count. */
     if (dot != NULL && strpbrk(dot, "\\/") != NULL) {
         dot = NULL;
     }
@@ -95,7 +94,7 @@ static int derive_sibling(char *out, size_t out_size,
 #if defined(_WIN32)
 
 /* ========================================================================== *
- * Windows — la cible
+ * Windows - the target
  * ========================================================================== */
 
 #include <windows.h>
@@ -126,11 +125,11 @@ dkr_file_result dkr_file_app_directory(char *out, size_t out_size)
     if (!out || out_size == 0) {
         return DKR_FILE_ERR_PATH;
     }
-    /* `GetModuleFileNameA` et jamais le repertoire courant : lance depuis le
-       menu Demarrer, un programme herite d'un courant sans rapport avec
-       l'endroit ou il est installe. Mesure sur la machine : l'executable etait
-       en D:\ et le courant aussi, mais c'est une coincidence du protocole de
-       test, pas une propriete. */
+    /* `GetModuleFileNameA` and never the current directory: launched from the
+       Start menu, a program inherits a current directory unrelated to where it
+       is installed. Measured on the machine: the executable was in D:\ and so
+       was the current directory, but that is a coincidence of the test protocol,
+       not a property. */
     n = GetModuleFileNameA(NULL, path, sizeof(path));
     if (n == 0 || n >= sizeof(path)) {
         return DKR_FILE_ERR_PATH;
@@ -163,14 +162,14 @@ static dkr_file_result write_whole(const char *path, const void *data, size_t si
         return r;
     }
     if (written != (DWORD)size) {
-        /* Une ecriture courte sur un disque plein ne remonte pas toujours
-           d'erreur : le compte rendu, lui, ne ment pas. */
+        /* A short write on a full disk does not always report an error: the
+           byte count, on the other hand, does not lie. */
         CloseHandle(h);
         return DKR_FILE_ERR_NO_SPACE;
     }
-    /* Vidange avant fermeture. Sans elle, « le fichier est ecrit » ne veut rien
-       dire : les donnees sont dans le cache du systeme, et c'est precisement le
-       cache que la coupure de courant emporte. */
+    /* Flush before closing. Without it, "the file is written" means nothing: the
+       data is in the system's cache, and it is precisely the cache that a power
+       cut carries away. */
     if (!FlushFileBuffers(h)) {
         dkr_file_result r = from_last_error();
         CloseHandle(h);
@@ -199,19 +198,19 @@ dkr_file_result dkr_file_write_durable(const char *path,
         return DKR_FILE_ERR_PATH;
     }
 
-    /* 1. La nouvelle version, complete et sur le disque. */
+    /* 1. The new version, complete and on the disk. */
     r = write_whole(tmp, data, size);
     if (r != DKR_FILE_OK) {
         return r;
     }
 
-    /* 2 et 3. La precedente devient la copie de secours. `MoveFileA` refuse
-       d'ecraser — mesure sur la machine — d'ou l'effacement prealable. Et
-       `MoveFileExA(REPLACE_EXISTING)`, qui eviterait les deux, echoue avec
-       ERROR_CALL_NOT_IMPLEMENTED sous Windows 95 : elle est exportee, elle a du
-       vrai code, et elle refuse. */
+    /* 2 and 3. The previous one becomes the backup copy. `MoveFileA` refuses to
+       overwrite - measured on the machine - hence the prior delete. And
+       `MoveFileExA(REPLACE_EXISTING)`, which would avoid both, fails with
+       ERROR_CALL_NOT_IMPLEMENTED under Windows 95: it is exported, it has real
+       code, and it refuses. */
     if (file_exists(path)) {
-        DeleteFileA(bak);                    /* absent : sans importance */
+        DeleteFileA(bak);                    /* absent: no matter */
         if (!MoveFileA(path, bak)) {
             r = from_last_error();
             DeleteFileA(tmp);
@@ -219,14 +218,14 @@ dkr_file_result dkr_file_write_durable(const char *path,
         }
     }
 
-    /* 4. Et la nouvelle prend sa place. C'est ici qu'est la fenetre : entre 3 et
-       4, le fichier final n'existe pas. Une coupure a cet instant laisse la
-       precedente dans .BAK et la nouvelle, complete, dans .TMP — et la
-       relecture prefere la premiere, parce que rien ne prouve la seconde. */
+    /* 4. And the new one takes its place. This is where the window is: between 3
+       and 4 the final file does not exist. A power cut at that moment leaves the
+       previous one in .BAK and the new, complete one in .TMP - and read-back
+       prefers the first, because nothing proves the second. */
     if (!MoveFileA(tmp, path)) {
         r = from_last_error();
-        /* On a deja deplace l'ancienne : la remettre, sinon l'echec de la
-           derniere etape aurait detruit une sauvegarde valide. */
+        /* The old one has already been moved: put it back, otherwise the last
+           step's failure would have destroyed a valid save. */
         if (file_exists(bak) && !file_exists(path)) {
             MoveFileA(bak, path);
         }
@@ -259,23 +258,23 @@ dkr_file_result dkr_file_remove(const char *path)
     if (!path) {
         return DKR_FILE_ERR_PATH;
     }
-    /* Le cas du repertoire vient **en premier**, et l'ordre n'est pas
-       cosmetique. Ce code essayait d'abord `DeleteFileA`, puis se rabattait sur
-       `RemoveDirectoryA` ; il rendait DKR_FILE_OK sur un repertoire sans rien
-       effacer, parce que l'echec de `DeleteFileA` sur un repertoire passait par
-       la branche « deja absent ». L'appelant croyait avoir efface, le
-       repertoire restait, et le nettoyage prealable de la suite d'epreuve
-       n'operait pas — c'est ainsi que le defaut s'est montre.
+    /* The directory case comes **first**, and the order is not cosmetic. This
+       code tried `DeleteFileA` first and then fell back on `RemoveDirectoryA`;
+       it returned DKR_FILE_OK on a directory without deleting anything, because
+       `DeleteFileA`'s failure on a directory went through the "already absent"
+       branch. The caller believed it had deleted, the directory stayed, and the
+       test suite's prior cleanup did nothing - that is how the defect showed
+       itself.
 
-       Interroger le type avant d'agir coute un appel et supprime la
-       possibilite de confondre « rien a faire » avec « je n'ai pas su ». */
+       Asking for the type before acting costs one call and removes the
+       possibility of conflating "nothing to do" with "I could not". */
     if (dkr_file_is_directory(path)) {
         return RemoveDirectoryA(path) ? DKR_FILE_OK : from_last_error();
     }
     if (DeleteFileA(path)) {
         return DKR_FILE_OK;
     }
-    /* Deja absent : l'appelant voulait qu'il ne soit plus la, il ne l'est pas. */
+    /* Already absent: the caller wanted it gone, and it is gone. */
     if (GetLastError() == ERROR_FILE_NOT_FOUND ||
         GetLastError() == ERROR_PATH_NOT_FOUND) {
         return DKR_FILE_OK;
@@ -297,21 +296,21 @@ dkr_file_result dkr_file_create_directories(const char *path)
     }
     memcpy(work, path, len + 1);
 
-    /* On cree chaque niveau, du plus court au plus long. `CreateDirectoryA` ne
-       cree qu'un niveau a la fois — il n'y a pas d'equivalent de
-       `create_directories` sous Windows 95. */
+    /* We create each level, shortest to longest. `CreateDirectoryA` only creates
+       one level at a time - there is no equivalent of `create_directories` under
+       Windows 95. */
     for (i = 0; i <= len; i++) {
         const int at_end = (i == len);
         if (!at_end && work[i] != '\\' && work[i] != '/') {
             continue;
         }
         if (i == 0) {
-            continue;                       /* separateur de tete */
+            continue;                       /* leading separator */
         }
         {
             const char saved = work[i];
             work[i] = '\0';
-            /* « D: » n'est pas un repertoire a creer, c'est un volume. */
+            /* "D:" is not a directory to create, it is a volume. */
             if (!(i == 2 && work[1] == ':')) {
                 if (!CreateDirectoryA(work, NULL) &&
                     GetLastError() != ERROR_ALREADY_EXISTS) {
@@ -331,7 +330,7 @@ dkr_file_result dkr_file_copy(const char *from, const char *to)
     if (!from || !to) {
         return DKR_FILE_ERR_PATH;
     }
-    /* FALSE : ecraser si la destination existe, ce qui est
+    /* FALSE: overwrite if the destination exists, which is
        `copy_options::overwrite_existing`. */
     if (!CopyFileA(from, to, FALSE)) {
         return from_last_error();
@@ -344,7 +343,7 @@ dkr_file_result dkr_file_copy_no_overwrite(const char *from, const char *to)
     if (!from || !to) {
         return DKR_FILE_ERR_PATH;
     }
-    /* TRUE : echouer si la destination existe. */
+    /* TRUE: fail if the destination exists. */
     if (!CopyFileA(from, to, TRUE)) {
         return (GetLastError() == ERROR_FILE_EXISTS)
                ? DKR_FILE_ERR_ACCESS : from_last_error();
@@ -372,19 +371,18 @@ unsigned long long dkr_file_size(const char *path, int *ok)
     if (!path) {
         return 0;
     }
-    /* `GetFileAttributesExA` serait le choix naturel, et c'est celui que ce code
-       faisait d'abord. **Windows 95 ne l'exporte pas** — pas un bouchon, une
-       absence, et le chargeur refuse alors de demarrer le processus entier. Le
-       controle des imports l'a arrete avant la machine ; c'est exactement le
-       genre de symbole que Windows 98 a ajoute et qu'on suppose acquis.
-       `GetFileSizeEx` est absent pour la meme raison.
+    /* `GetFileAttributesExA` would be the natural choice, and it is what this
+       code did first. **Windows 95 does not export it** - not a stub, an
+       absence, and the loader then refuses to start the whole process. The
+       import check stopped it before the machine did; it is exactly the kind of
+       symbol Windows 98 added and that one assumes is there. `GetFileSizeEx` is
+       absent for the same reason.
      *
-       `FindFirstFileA` rend la taille sans ouvrir le fichier — donc sans
-       descripteur qui fuirait ni conflit de partage avec un fichier deja
-       ouvert, ce qui etait la raison du choix initial. Elle attend un chemin
-       litteral : un appelant qui y glisserait un `*` ferait mesurer une autre
-       entree. Aucun ne le fait, et le nom de la fonction ne le laisse pas
-       entendre. */
+       `FindFirstFileA` returns the size without opening the file - hence with no
+       handle to leak and no sharing conflict with an already open file, which
+       was the reason for the initial choice. It expects a literal path: a caller
+       that slipped a `*` into it would measure a different entry. None does, and
+       the function's name does not suggest otherwise. */
     h = FindFirstFileA(path, &fd);
     if (h == INVALID_HANDLE_VALUE) {
         return 0;
@@ -400,10 +398,10 @@ dkr_file_result dkr_file_rename(const char *from, const char *to)
     if (!from || !to) {
         return DKR_FILE_ERR_PATH;
     }
-    /* `MoveFileA` refuse une cible existante et `MoveFileExA` n'est pas
-       implementee ici — mesure de E02-S05. On efface donc d'abord, ce qui ouvre
-       la meme fenetre que l'ecriture durable : entre l'effacement et le
-       renommage, ni l'ancien ni le nouveau ne sont a leur place. */
+    /* `MoveFileA` refuses an existing target and `MoveFileExA` is not
+       implemented here - E02-S05's measurement. So we delete first, which opens
+       the same window as the durable write: between the delete and the rename,
+       neither the old nor the new is in place. */
     if (dkr_file_exists(to)) {
         DeleteFileA(to);
     }
@@ -447,10 +445,10 @@ dkr_file_result dkr_file_temp_directory(char *out, size_t out_size)
     if (n == 0 || n >= out_size) {
         return DKR_FILE_ERR_PATH;
     }
-    /* `GetTempPathA` termine par une contre-oblique, la ou
-       `std::filesystem::temp_directory_path` ne le fait pas. Sans cela un
-       `path / "x"` produirait un double separateur, et les deux branches
-       rendraient des chemins differents pour le meme repertoire. */
+    /* `GetTempPathA` ends with a backslash, where
+       `std::filesystem::temp_directory_path` does not. Without this a
+       `path / "x"` would produce a double separator, and the two branches would
+       return different paths for the same directory. */
     len = strlen(out);
     if (len > 1 && (out[len - 1] == '\\' || out[len - 1] == '/')) {
         out[len - 1] = '\0';
@@ -461,7 +459,7 @@ dkr_file_result dkr_file_temp_directory(char *out, size_t out_size)
 struct dkr_dir {
     HANDLE           handle;
     WIN32_FIND_DATAA data;
-    int              pending;   /* une entree deja lue attend d'etre rendue */
+    int              pending;   /* an already read entry waits to be returned */
 };
 
 dkr_dir *dkr_dir_open(const char *path)
@@ -478,7 +476,7 @@ dkr_dir *dkr_dir_open(const char *path)
         return NULL;
     }
     memcpy(pattern, path, len);
-    /* `FindFirstFileA` veut un motif, pas un repertoire. */
+    /* `FindFirstFileA` wants a pattern, not a directory. */
     if (len > 0 && pattern[len - 1] != '\\' && pattern[len - 1] != '/') {
         pattern[len++] = '\\';
     }
@@ -509,7 +507,7 @@ const char *dkr_dir_next(dkr_dir *d)
             }
         }
         d->pending = 0;
-        /* « . » et « .. » sont ecartes, comme le fait `directory_iterator`. */
+        /* "." and ".." are skipped, as `directory_iterator` does. */
         if (strcmp(d->data.cFileName, ".") != 0 &&
             strcmp(d->data.cFileName, "..") != 0) {
             return d->data.cFileName;
@@ -551,7 +549,7 @@ static dkr_file_result read_whole(const char *path, void *buffer,
 #else
 
 /* ========================================================================== *
- * POSIX — vehicule de test, pas une plate-forme supportee
+ * POSIX - a test vehicle, not a supported platform
  * ========================================================================== */
 
 #include <dirent.h>
@@ -582,8 +580,8 @@ static dkr_file_result from_errno(void)
 
 dkr_file_result dkr_file_app_directory(char *out, size_t out_size)
 {
-    /* Sur l'hote, seul le comportement de la sequence durable nous interesse ;
-       l'emplacement est celui du repertoire courant. */
+    /* On the host, only the durable sequence's behaviour interests us; the
+       location is the current directory. */
     if (!out || out_size < 2) {
         return DKR_FILE_ERR_PATH;
     }
@@ -611,8 +609,8 @@ static dkr_file_result write_whole(const char *path, const void *data, size_t si
         fclose(f);
         return from_errno();
     }
-    /* L'equivalent de FlushFileBuffers : `fflush` ne descend que jusqu'au
-       systeme, `fsync` jusqu'au disque. */
+    /* The equivalent of FlushFileBuffers: `fflush` only goes down to the system,
+       `fsync` down to the disk. */
     fsync(fileno(f));
     fclose(f);
     return DKR_FILE_OK;
@@ -713,8 +711,8 @@ static dkr_file_result copy_bytes(const char *from, const char *to,
     return fclose(out) == 0 ? DKR_FILE_OK : DKR_FILE_ERR_IO;
 }
 
-/* « wx » refuse une destination existante, et c'est le systeme qui tranche —
-   comme le TRUE de CopyFileA sur la cible. */
+/* "wx" refuses an existing destination, and it is the system that decides - like
+   CopyFileA's TRUE on the target. */
 dkr_file_result dkr_file_copy_no_overwrite(const char *from, const char *to)
 {
     return copy_bytes(from, to, "wbx");
@@ -774,9 +772,9 @@ dkr_file_result dkr_file_rename(const char *from, const char *to)
     if (!from || !to) {
         return DKR_FILE_ERR_PATH;
     }
-    /* On reproduit la sequence de la cible — effacer puis renommer — plutot que
-       d'employer le `rename` de POSIX, qui ecrase de lui-meme. Un vehicule de
-       test qui prend un raccourci que la cible n'a pas ne teste pas la cible. */
+    /* We reproduce the target's sequence - delete then rename - rather than use
+       POSIX's `rename`, which overwrites on its own. A test vehicle that takes a
+       shortcut the target does not have is not testing the target. */
     if (dkr_file_exists(to)) {
         unlink(to);
     }
@@ -786,17 +784,17 @@ dkr_file_result dkr_file_rename(const char *from, const char *to)
     return DKR_FILE_OK;
 }
 
-/* Resout « . » et « .. » sur place, sans toucher au disque.
+/* Resolves "." and ".." in place, without touching the disk.
  *
- * `GetFullPathNameA` le fait pour la cible ; sans equivalent ici, la dorsale de
- * test se comporterait autrement que la plate-forme qu'elle sert a eprouver, et
- * l'epreuve ne prouverait rien. C'est le nouveau montage — la branche Windows 95
- * compilee sur l'hote — qui l'a montre : `weakly_canonical` y rendait deux
- * chemins differents pour un meme fichier.
+ * `GetFullPathNameA` does it for the target; with no equivalent here, the test
+ * backend would behave differently from the platform it serves to test, and the
+ * test would prove nothing. It is the new arrangement - the Windows 95 branch
+ * compiled on the host - that showed it: `weakly_canonical` returned two
+ * different paths there for the same file.
  *
- * La resolution est purement lexicale, comme celle de Windows : elle ne suit pas
- * les liens symboliques et n'exige pas que le chemin existe. C'est exactement ce
- * que demande `weakly_canonical`, et `realpath` en ferait trop. */
+ * The resolution is purely lexical, like Windows': it does not follow symbolic
+ * links and does not require the path to exist. That is exactly what
+ * `weakly_canonical` asks for, and `realpath` would do too much. */
 static void normalize_lexically(char *p)
 {
     char *out = p;
@@ -809,13 +807,13 @@ static void normalize_lexically(char *p)
         size_t len = end ? (size_t)(end - seg) : strlen(seg);
 
         if (len == 0 || (len == 1 && seg[0] == '.')) {
-            /* rien : un separateur double ou « . » ne dit rien */
+            /* nothing: a double separator or "." says nothing */
         } else if (len == 2 && seg[0] == '.' && seg[1] == '.') {
-            /* Remonter : effacer le dernier segment ecrit. A la racine, « .. »
-               ne mene nulle part et s'ignore — comme sous Windows. */
+            /* Go up: erase the last written segment. At the root, ".." leads
+               nowhere and is ignored - as under Windows. */
             char *base = p + (absolute ? 1 : 0);
             if (out > base) {
-                out--;                                   /* le '/' de fin */
+                out--;                                   /* the trailing '/' */
                 while (out > base && out[-1] != '/') { out--; }
             }
         } else {
@@ -826,7 +824,7 @@ static void normalize_lexically(char *p)
         if (!end) { break; }
         seg = end + 1;
     }
-    /* Retirer le separateur final, sauf s'il est la racine a lui seul. */
+    /* Remove the trailing separator, unless it is the root on its own. */
     if (out > p + (absolute ? 1 : 0) && out[-1] == '/') { out--; }
     if (out == p) { *out++ = absolute ? '/' : '.'; }
     *out = '\0';
@@ -916,10 +914,10 @@ static dkr_file_result read_whole(const char *path, void *buffer,
     return DKR_FILE_OK;
 }
 
-/* `rename` de POSIX ecrase, la ou `MoveFileA` refuse. On reproduit malgre tout
-   la sequence de la cible — effacer puis renommer — parce que c'est **elle**
-   que la suite doit eprouver. Un vehicule de test qui prendrait un raccourci
-   que la cible n'a pas ne testerait pas la cible. */
+/* POSIX's `rename` overwrites, where `MoveFileA` refuses. We reproduce the
+   target's sequence all the same - delete then rename - because it is **that**
+   which the suite has to test. A test vehicle that took a shortcut the target
+   does not have would not be testing the target. */
 static int move_no_replace(const char *from, const char *to)
 {
     if (file_exists(to)) {
@@ -992,28 +990,27 @@ dkr_file_result dkr_file_temp_directory(char *out, size_t out_size)
 
 
 /* ========================================================================== *
- * Commun : effacement recursif
+ * Shared: recursive deletion
  * ========================================================================== *
  *
- * Ecrit une seule fois, au-dessus des primitives, et non deux fois dans chaque
- * dorsale : c'est de la logique d'arborescence, pas d'appel systeme. Les deux
- * cibles executent donc exactement le meme parcours, ce qui est precisement ce
- * qu'on cherche a garantir ailleurs a coups d'epreuves.
+ * Written once, above the primitives, and not twice in each backend: this is
+ * tree logic, not system calls. Both targets therefore run exactly the same
+ * walk, which is precisely what we try to guarantee elsewhere through tests.
  *
- * La recursion est bornee par la profondeur de l'arborescence, et MAX_PATH la
- * borne a son tour : un chemin qui ne tient pas dans le tampon fait echouer la
- * jointure avant l'appel recursif.
+ * The recursion is bounded by the tree's depth, and MAX_PATH bounds it in turn:
+ * a path that does not fit in the buffer fails the join before the recursive
+ * call.
  *
- * Le repertoire est ferme **avant** de descendre dans ses entrees. Garder une
- * recherche ouverte sur un repertoire dont on efface le contenu est le genre de
- * chose que Windows 95 tolere mal, et rien n'oblige a le faire : la liste des
- * noms est recopiee d'abord.
+ * The directory is closed **before** descending into its entries. Keeping a
+ * search open on a directory whose contents are being deleted is the kind of
+ * thing Windows 95 tolerates badly, and nothing forces it: the list of names is
+ * copied first.
  */
 dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *removed)
 {
-    /* Les noms d'un niveau, recopies avant de descendre. La borne est celle
-       d'un repertoire de travail ordinaire ; au-dela, on traite ce qu'on a vu
-       puis on recommence, plutot que de renoncer ou de grossir sans fin. */
+    /* One level's names, copied before descending. The bound is that of an
+       ordinary working directory; beyond it we handle what we saw and then start
+       again, rather than give up or grow without end. */
     enum { BATCH = 64 };
     char names[BATCH][MAX_PATH];
     char child[MAX_PATH];
@@ -1025,7 +1022,7 @@ dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *remove
         return DKR_FILE_ERR_PATH;
     }
     if (!dkr_file_exists(path)) {
-        return DKR_FILE_OK;      /* rien a faire : comme std::filesystem */
+        return DKR_FILE_OK;      /* nothing to do: like std::filesystem */
     }
 
     while (again && dkr_file_is_directory(path)) {
@@ -1041,12 +1038,12 @@ dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *remove
         while (count < BATCH && (name = dkr_dir_next(d)) != NULL) {
             size_t len = strlen(name);
             if (len >= sizeof(names[0])) {
-                continue;        /* impossible a former : signale plus bas */
+                continue;        /* impossible to form: reported below */
             }
             memcpy(names[count], name, len + 1);
             count++;
         }
-        /* S'il restait des entrees, on repassera. */
+        /* If entries were left over, we will come back round. */
         again = (count == BATCH) && (dkr_dir_next(d) != NULL);
         dkr_dir_close(d);
 
@@ -1078,7 +1075,7 @@ dkr_file_result dkr_file_remove_all(const char *path, unsigned long long *remove
 
 
 /* ========================================================================== *
- * Commun : la relecture, et son ordre de preference
+ * Shared: read-back, and its order of preference
  * ========================================================================== */
 
 dkr_file_result dkr_file_join(char *out, size_t out_size,
@@ -1096,7 +1093,7 @@ dkr_file_result dkr_file_join(char *out, size_t out_size,
     }
     d_len = strlen(directory);
     n_len = strlen(name);
-    /* Un separateur de trop est un chemin invalide sous DOS. */
+    /* One separator too many is an invalid path under DOS. */
     while (d_len > 0 && (directory[d_len - 1] == '\\' || directory[d_len - 1] == '/')) {
         d_len--;
     }
@@ -1125,10 +1122,10 @@ dkr_file_result dkr_file_read_durable(const char *path,
     if (r == DKR_FILE_OK) {
         return r;
     }
-    /* Un echec autre que « absent » ne doit pas faire basculer sur la copie de
-       secours : un support protege ou un fichier verrouille se dit tel quel,
-       sinon le joueur croirait avoir perdu sa derniere partie alors que le
-       fichier est intact. */
+    /* A failure other than "absent" must not fall back to the backup copy: a
+       write-protected medium or a locked file is reported as such, otherwise the
+       player would believe they had lost their last session while the file is
+       intact. */
     if (r != DKR_FILE_ERR_NOT_FOUND) {
         return r;
     }
@@ -1140,10 +1137,9 @@ dkr_file_result dkr_file_read_durable(const char *path,
     if (r == DKR_FILE_OK && from_backup) {
         *from_backup = 1;
     }
-    /* `.TMP` n'est jamais relu, meme s'il est la : rien ne prouve qu'il soit
-       complet, et le format de DKR-R ne porte pas de somme de controle qui
-       permettrait de le verifier sans le modifier. Perdre la derniere ecriture
-       est desagreable ; charger une sauvegarde tronquee ne l'est pas moins et
-       se decouvre bien plus tard. */
+    /* `.TMP` is never read back, even if it is there: nothing proves it is
+       complete, and DKR-R's format carries no checksum that would allow checking
+       it without modifying it. Losing the last write is annoying; loading a
+       truncated save is no less so and is discovered much later. */
     return r;
 }
