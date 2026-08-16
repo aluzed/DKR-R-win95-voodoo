@@ -1,162 +1,156 @@
-# E01-S04 — Garde-fou : vérification des imports du PE
+# E01-S04 — Guard rail: checking the PE's imports
 
 | | |
 |---|---|
-| **Épic** | E01 — Chaîne de build 32 bits Windows 95 |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | S |
-| **Dépend de** | E01-S03 |
-| **Bloque** | E09-S05 |
+| **Epic** | E01 — 32-bit Windows 95 build chain |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | S |
+| **Depends on** | E01-S03 |
+| **Blocks** | E09-S05 |
 
-## État au 2026-08-12 — livré
+## State as of 2026-08-12 — delivered
 
-| Livrable | Fichier |
+| Deliverable | File |
 |---|---|
-| Base d'exports versionnée | `tools/win95/exports/*.txt` — **3 201 symboles, 14 DLL** |
+| Versioned export baseline | `tools/win95/exports/*.txt` — **3,201 symbols, 14 DLLs** |
 | Provenance | `tools/win95/exports/PROVENANCE.md` |
 | Exceptions | `tools/win95/exports/exceptions.json` |
-| Outil | `tools/win95/check_imports.py` |
-| Branchement | post-build bloquant, `cmake/win95-target.cmake` |
+| Tool | `tools/win95/check_imports.py` |
+| Wiring | blocking post-build step, `cmake/win95-target.cmake` |
 
-**Trois catégories de DLL, et la distinction est le cœur de l'outil :**
+**Three categories of DLL, and the distinction is the tool's core:**
 
-| Catégorie | Traitement | Vérifié |
+| Category | Treatment | Verified |
 |---|---|---|
-| Système | chaque symbole confronté à la base | ✅ bloquant |
-| Pilote (`glide2x`, `glide3x`) | signalée, non vérifiable ici | ✅ testé par bibliothèque d'import fabriquée |
-| Inconnue | **erreur** | ✅ testé avec `winspool.drv` |
+| System | every symbol set against the baseline | ✅ blocking |
+| Driver (`glide2x`, `glide3x`) | reported, not verifiable here | ✅ tested with a fabricated import library |
+| Unknown | **error** | ✅ tested with `winspool.drv` |
 
-La troisième catégorie est celle qui compte : sans elle, une nouvelle dépendance
-passerait inaperçue.
+The third category is the one that counts: without it, a new dependency would go
+unnoticed.
 
-**Le rapport nomme l'objet fautif.** La table d'imports du PE ne conserve pas
-cette information — elle est perdue au lien. `--objects` la reconstitue en
-relisant les objets avec `nm`. Sur l'épreuve :
+**The report names the offending object.** The PE's import table does not keep that
+information — it is lost at link time. `--objects` reconstitutes it by re-reading the
+objects with `nm`. On the trial:
 
 ```
 MISSING KERNEL32.DLL:InitializeConditionVariable  <- import_canary.c.obj
 ```
 
-**Le contrôle est éprouvé par injection, à deux niveaux**, comme celui du jeu
-d'instructions : `--self-test` compile un binaire important `GetTickCount64` et
-vérifie qu'il est refusé ; `-DDKR_WIN95_SELFTEST_IMPORT=ON` ajoute une unité de
-compilation au témoin et **le build échoue**.
+**The check is tried by injection, at two levels**, like the instruction-set one:
+`--self-test` compiles a binary importing `GetTickCount64` and checks that it is
+refused; `-DDKR_WIN95_SELFTEST_IMPORT=ON` adds a translation unit to the witness and
+**the build fails**.
 
-Détail instructif : la première version du canari importait `GetTickCount64` et
-le build passait — parce que `win95compat` la fournit, et que le lieur résolvait
-l'import vers le pont plutôt que vers KERNEL32. L'épreuve échouait à échouer, ce
-qui était en soi la démonstration que le pont intercepte correctement. Le canari
-importe désormais `InitializeConditionVariable`, que le pont ne couvre pas.
+An instructive detail: the canary's first version imported `GetTickCount64` and the
+build passed — because `win95compat` supplies it, and the linker resolved the import
+to the bridge rather than to KERNEL32. The trial failed to fail, which was in itself
+the demonstration that the bridge intercepts correctly. The canary now imports
+`InitializeConditionVariable`, which the bridge does not cover.
 
-**Une base unique.** L'outil de E00-S01 tenait sa référence dans
-`$DKR_WIN95_PREFIX/win95-exports.txt`, hors du dépôt.
-`tools/win95/check-win95-imports.sh` est devenu une enveloppe vers le nouvel
-outil : deux bases qui divergent seraient pires qu'une seule imparfaite.
+**A single baseline.** E00-S01's tool kept its reference in
+`$DKR_WIN95_PREFIX/win95-exports.txt`, outside the repository.
+`tools/win95/check-win95-imports.sh` has become a wrapper around the new tool: two
+baselines that diverge would be worse than one imperfect one.
 
-**Deux constats versés au passage :**
+**Two findings recorded along the way:**
 
-- **`MSVCRT.DLL` n'est pas d'origine** — datée du 3 novembre 1997 quand tout le
-  reste porte le 24 août 1996. Elle arrive avec une mise à jour, et un
-  Windows 95 de première génération ne l'a pas. C'est ce qui justifie la liaison
-  statique du CRT (ADR 0001).
-- **DirectInput est absent.** L'installation porte DirectX 2 — `DDRAW`, `DSOUND`,
-  `D3DIM`, `D3DRM` — mais aucun `DINPUT.DLL`. La lecture de manette
-  ([E06-S02](../E06-platform/E06-S02-keyboard-and-gamepad-input.md)) doit passer
-  par `joyGetPosEx` de `WINMM`, ou le paquet doit embarquer une mise à jour de
-  DirectX.
+- **`MSVCRT.DLL` is not original** — dated 3 November 1997 when everything else
+  carries 24 August 1996. It arrives with an update, and a first-generation Windows
+  95 does not have it. That is what justifies linking the CRT statically (ADR 0001).
+- **DirectInput is absent.** The installation carries DirectX 2 — `DDRAW`, `DSOUND`,
+  `D3DIM`, `D3DRM` — but no `DINPUT.DLL`. Gamepad reading
+  ([E06-S02](../E06-platform/E06-S02-keyboard-and-gamepad-input.md)) must go through
+  `WINMM`'s `joyGetPosEx`, or the package must ship a DirectX update.
 
-**Reste à faire :** le point 7 du ticket — le même contrôle à l'étape de
-packaging — attend [E09-S05](../E09-qa/E09-S05-packaging-distribution.md), qui
-n'existe pas encore. L'outil est prêt à y être appelé tel quel.
+**Still to do:** the ticket's point 7 — the same check at the packaging stage —
+awaits [E09-S05](../E09-qa/E09-S05-packaging-distribution.md), which does not exist
+yet. The tool is ready to be called there as it stands.
 
-## État antérieur — l'outil de E00-S01
+## Earlier state — E00-S01's tool
 
-[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) avait
-besoin de ce contrôle pour ses propres mesures, et l'a donc écrit :
+[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) needed
+this check for its own measurements, and therefore wrote it:
 
-- `tools/win95/pe_symbols.py` — tables d'exports et d'imports d'un PE32, sans
-  dépendance ;
-- `tools/win95/check-win95-imports.sh` — compare les imports d'un binaire à la
-  référence, et **renvoie un code de retour non nul** s'il en manque.
+- `tools/win95/pe_symbols.py` — a PE32's export and import tables, with no
+  dependency;
+- `tools/win95/check-win95-imports.sh` — compares a binary's imports against the
+  reference, and **returns a non-zero exit code** if any are missing.
 
-La référence n'est pas une liste écrite à la main : `--refresh` l'extrait des six
-DLL de `C:\WINDOWS\SYSTEM` de la machine de test (2 754 symboles). Le script
-signale aussi séparément les imports `...W` de KERNEL32, qui passent le contrôle
-mais sont des stubs inopérants sous 9x.
+The reference is not a hand-written list: `--refresh` extracts it from the six DLLs
+in the test machine's `C:\WINDOWS\SYSTEM` (2,754 symbols). The script also reports
+separately KERNEL32's `...W` imports, which pass the check but are inert stubs under
+9x.
 
-Reste à faire : l'appeler depuis CMake en post-build, et décider si un manque
-casse le build ou se contente d'avertir.
+Still to do: call it from CMake as a post-build step, and decide whether a gap breaks
+the build or merely warns.
 
-## Contexte
+## Context
 
-Sous Windows 95, un import manquant est une erreur de chargement : le processus
-ne démarre pas du tout. Le symptôme est donc binaire et tardif — on ne le
-découvre qu'en lançant le binaire sur la machine cible, ce qui, au rythme d'un
-aller-retour vers un émulateur ou une machine réelle, coûte plusieurs minutes à
-chaque fois.
+Under Windows 95, a missing import is a load error: the process does not start at
+all. The symptom is therefore binary and late — one only discovers it by running the
+binary on the target machine, which, at the pace of a round trip to an emulator or a
+real machine, costs several minutes each time.
 
-Cette classe d'erreur est entièrement vérifiable à froid : la table d'imports du
-PE est statique, et la liste des exports de Windows 95 aussi. C'est exactement le
-genre de vérification qui doit tourner à chaque build plutôt que dans la tête de
-celui qui relit le code.
+That class of error is entirely checkable cold: the PE's import table is static, and
+so is the list of Windows 95's exports. It is exactly the kind of check that must run
+at every build rather than in the head of whoever reviews the code.
 
-Le même raisonnement vaut pour le jeu d'instructions, déjà couvert par E01-S01 :
-ce ticket ajoute le second garde-fou, celui des symboles.
+The same reasoning holds for the instruction set, already covered by E01-S01: this
+ticket adds the second guard rail, the one on symbols.
 
-## Objectif
+## Objective
 
-Refuser à la construction tout binaire qui ne pourrait pas se charger sous
-Windows 95.
+To refuse at build time any binary that could not load under Windows 95.
 
-## Périmètre
+## Scope
 
-**Dans :** l'outil de vérification, sa base de référence, son intégration.
+**In:** the checking tool, its reference baseline, its integration.
 
-**Hors :** la couche de compatibilité elle-même (E01-S03).
+**Out:** the compatibility layer itself (E01-S03).
 
-## Travail
+## Work
 
-1. Constituer la base de référence : les exports de `kernel32`, `user32`, `gdi32`,
-   `advapi32`, `winmm`, `ddraw`, `dinput` et `dsound` tels qu'ils existent sous
-   Windows 95 OSR2.5. Les extraire des DLL de la machine de test — une liste
-   recopiée depuis une documentation est une liste fausse.
-2. Verser cette base sous `tools/win95/exports/`, avec la provenance et la version
-   exacte du système dont elle est issue.
-3. Écrire `tools/win95/check_imports.py` : lecture de la table d'imports du PE,
-   confrontation à la base, échec avec la liste des symboles fautifs et la DLL de
-   chacun.
-4. Traiter le cas des DLL hors système. `glide2x.dll` ou `glide3x.dll` sont
-   fournis par le pilote de la carte, non par l'OS : l'outil doit distinguer
-   « DLL système, symboles vérifiables » de « DLL fournie, présence à vérifier au
-   lancement », et non pas ignorer silencieusement la seconde catégorie.
-5. Brancher l'outil en post-build de la cible Win95, en échec bloquant.
-6. Prévoir une liste d'exceptions explicites, chaque entrée portant une
-   justification écrite — sans quoi la liste devient l'endroit où l'on fait taire
-   l'outil.
-7. Ajouter le même contrôle à l'étape de packaging (E09-S05), sur le binaire
-   réellement distribué.
+1. Build the reference baseline: the exports of `kernel32`, `user32`, `gdi32`,
+   `advapi32`, `winmm`, `ddraw`, `dinput` and `dsound` as they exist under Windows 95
+   OSR2.5. Extract them from the test machine's DLLs — a list copied from
+   documentation is a wrong list.
+2. Put that baseline under `tools/win95/exports/`, with the provenance and the exact
+   version of the system it comes from.
+3. Write `tools/win95/check_imports.py`: read the PE's import table, set it against
+   the baseline, fail with the list of offending symbols and each one's DLL.
+4. Deal with the case of non-system DLLs. `glide2x.dll` or `glide3x.dll` are supplied
+   by the card's driver, not by the OS: the tool must distinguish "system DLL,
+   verifiable symbols" from "supplied DLL, presence to be checked at launch", and not
+   silently ignore the second category.
+5. Wire the tool in as a post-build step of the Win95 target, as a blocking failure.
+6. Provide for a list of explicit exceptions, every entry carrying a written
+   justification — without which the list becomes the place where the tool is
+   silenced.
+7. Add the same check at the packaging stage (E09-S05), on the binary actually
+   distributed.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] La base d'exports est extraite d'un Windows 95 réel et sa provenance est
-      documentée.
-- [ ] `check_imports.py` détecte un import interdit introduit volontairement —
-      testé, pas supposé.
-- [ ] Le contrôle est bloquant en post-build et au packaging.
-- [ ] Les DLL fournies par un pilote sont traitées à part, pas ignorées.
-- [ ] Chaque exception porte une justification écrite.
-- [ ] Le rapport d'échec nomme le symbole, sa DLL, et l'objet qui l'importe —
-      sans le dernier, le diagnostic reste à faire à la main.
+- [ ] The export baseline is extracted from a real Windows 95 and its provenance is
+      documented.
+- [ ] `check_imports.py` detects a forbidden import introduced deliberately —
+      tested, not assumed.
+- [ ] The check is blocking at post-build and at packaging.
+- [ ] DLLs supplied by a driver are treated separately, not ignored.
+- [ ] Every exception carries a written justification.
+- [ ] The failure report names the symbol, its DLL, and the object that imports it —
+      without the last, the diagnosis is left to be done by hand.
 
-## Risques
+## Risks
 
-Une base d'exports incomplète produit des faux positifs, et des faux positifs
-répétés conduisent à désactiver l'outil. Mieux vaut une base restreinte à
-quelques DLL, exacte et respectée, qu'une base large et approximative.
+An incomplete export baseline produces false positives, and repeated false positives
+lead to the tool being disabled. Better a baseline restricted to a few DLLs, exact
+and respected, than a wide and approximate one.
 
-## Références
+## References
 
-- E01-S01 — vérificateur de jeu d'instructions, même principe
-- E01-S03 — couche de compatibilité qui fournit les remplacements
-- `scripts/scan_for_game_assets.py` — précédent de contrôle bloquant au packaging
+- E01-S01 — instruction-set verifier, the same principle
+- E01-S03 — the compatibility layer that supplies the replacements
+- `scripts/scan_for_game_assets.py` — a precedent for a blocking check at packaging

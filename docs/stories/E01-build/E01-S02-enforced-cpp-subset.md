@@ -1,88 +1,87 @@
-# E01-S02 — Sous-ensemble C++ imposé et dépendances à la bibliothèque standard
+# E01-S02 — An enforced C++ subset and the standard library's dependencies
 
 | | |
 |---|---|
-| **Épic** | E01 — Chaîne de build 32 bits Windows 95 |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | ~~L~~ **M** |
-| **Dépend de** | E00-S01, E00-S02, E01-S01 |
-| **Bloque** | E02-S01, E02-S02, E04-S01 |
+| **Epic** | E01 — 32-bit Windows 95 build chain |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | ~~L~~ **M** |
+| **Depends on** | E00-S01, E00-S02, E01-S01 |
+| **Blocks** | E02-S01, E02-S02, E04-S01 |
 
-## État au 2026-08-12 — livré
+## State as of 2026-08-12 — delivered
 
-[`docs/CPP-SUBSET.md`](../../CPP-SUBSET.md), vérificateur
-`tools/win95/check-cpp-subset.py` branché en **pré-build**.
+[`docs/CPP-SUBSET.md`](../../CPP-SUBSET.md), with the
+`tools/win95/check-cpp-subset.py` checker wired in as a **pre-build** step.
 
-### Le décompte, seule mesure d'avancement honnête
+### The count, the only honest measure of progress
 
-| Dépendance | Fichiers | Erreurs | Reste |
+| Dependency | Files | Errors | Remaining |
 |---|---:|---:|---|
 | **`ultramodern`** | 15 | **0** | — |
-| **`librecomp`** | 26 | **6** | attribuées ci-dessous |
+| **`librecomp`** | 26 | **6** | accounted for below |
 
-**`ultramodern` compile pour Windows 95** avec un seul patch de deux hunks,
-`patches/n64-modern-runtime/0014-build-for-windows-95-targets.patch` :
+**`ultramodern` compiles for Windows 95** with a single two-hunk patch,
+`patches/n64-modern-runtime/0014-build-for-windows-95-targets.patch`:
 
-- `std::quick_exit` n'existe pas — mingw ne la déclare que sous `_UCRT`, et la
-  cible lie le msvcrt hérité. Remplacée par `std::_Exit`, ce que la branche
-  `__APPLE__` juste au-dessus choisit déjà ;
-- `SetThreadDescription` est de Windows 10 et ne fait que nommer un fil pour un
-  débogueur qui n'existe pas ici. L'appel est supprimé, pas émulé.
+- `std::quick_exit` does not exist — mingw only declares it under `_UCRT`, and the
+  target links the legacy msvcrt. Replaced by `std::_Exit`, which the `__APPLE__`
+  branch just above already chooses;
+- `SetThreadDescription` is from Windows 10 and does nothing but name a thread for a
+  debugger that does not exist here. The call is removed, not emulated.
 
-Vérifié sur les deux cibles : **0 erreur en Windows 95, 0 erreur sur l'hôte
-Linux 64 bits.** Un patch qui casse l'amont casse l'oracle.
+Verified on both targets: **0 errors on Windows 95, 0 errors on the 64-bit Linux
+host.** A patch that breaks upstream breaks the oracle.
 
-La prédiction de E00-S01 — « `ultramodern` se patche, il ne se réécrit pas » —
-est confirmée : deux hunks.
+E00-S01's prediction — "`ultramodern` gets patched, it does not get rewritten" — is
+confirmed: two hunks.
 
-**`librecomp` : 6 erreurs, toutes attribuées.**
+**`librecomp`: 6 errors, all accounted for.**
 
-| Erreur | × | Nature | Suite |
+| Error | × | Nature | What follows |
 |---|---:|---|---|
-| `static_assert(sizeof(std::size_t) == 8)`, `mods.hpp:53` | 4 | hypothèse 64 bits réelle | système de mods, candidat au fork |
-| `rabbitizer.hpp` introuvable | 2 | dépendance non récupérée | E01-S05 |
+| `static_assert(sizeof(std::size_t) == 8)`, `mods.hpp:53` | 4 | a real 64-bit assumption | the mod system, a fork candidate |
+| `rabbitizer.hpp` not found | 2 | dependency not fetched | E01-S05 |
 
-### Compiler n'est pas se charger
+### Compiling is not loading
 
-`ultramodern` compile sans erreur **et reste inchargeable** : il inclut encore
-`<thread>`, `<mutex>` et `<filesystem>`, soit **9 inclusions interdites** que le
-vérificateur relève. Une inclusion interdite compile parfaitement et ne se
-manifeste qu'au chargement sur la machine cible.
+`ultramodern` compiles without an error **and stays unloadable**: it still includes
+`<thread>`, `<mutex>` and `<filesystem>`, that is **9 forbidden includes** which the
+checker reports. A forbidden include compiles perfectly and only shows itself when
+loading on the target machine.
 
-C'est exactement le travail de **E02-S01**, et c'est pourquoi le contrôle
-s'exécute en pré-build sur les sources de la cible plutôt qu'en post-lien.
+That is exactly **E02-S01**'s work, and it is why the check runs as a pre-build step
+on the target's sources rather than as a post-link one.
 
-### Il n'y a pas de norme à restreindre
+### There is no standard to restrict
 
-C++20 est autorisé **en entier**. `<format>`, `<ranges>`, `<span>`, `<bit>` et
-`<atomic>` sont mesurés à **0 symbole absent**. Ce qui est interdit tient à la
-table d'imports, pas au dialecte.
+C++20 is permitted **in full**. `<format>`, `<ranges>`, `<span>`, `<bit>` and
+`<atomic>` are measured at **0 absent symbols**. What is forbidden comes down to the
+import table, not to the dialect.
 
-**Exceptions et RTTI conservées** : le témoin T3b les exerce sous Windows 95.
-Détail qui explique beaucoup : ce sont elles qui font importer `GetThreadId` par
-`libstdc++` — on ne peut donc pas échapper à la couche de compatibilité en
-évitant `std::thread`.
+**Exceptions and RTTI kept**: the T3b witness exercises them under Windows 95. A
+detail that explains a great deal: they are what makes `libstdc++` import
+`GetThreadId` — one therefore cannot escape the compatibility layer by avoiding
+`std::thread`.
 
-### Une correction
+### One correction
 
-`docs/research/win95-blockers.md` affirmait qu'aucune hypothèse 64 bits ne
-subsistait. C'était faux : ma recherche employait `sizeof(size_t)` sans accepter
-le préfixe `std::`. Compiler réellement `librecomp` l'a révélée. Un balayage
-corrigé n'en trouve qu'une, et le document est rectifié.
+`docs/research/win95-blockers.md` asserted that no 64-bit assumption remained. That
+was false: my search used `sizeof(size_t)` without accepting the `std::` prefix.
+Actually compiling `librecomp` revealed it. A corrected sweep finds only one, and
+the document is amended.
 
-## État antérieur — la question de départ était mal posée
+## Earlier state — the initial question was badly put
 
-[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) a
-mesuré, et le postulat de ce ticket ne tient pas : **il n'y a pas de
-sous-ensemble C++ à imposer.** GCC 13 cible i686 PE32 et implémente tout C++20 ;
-concepts, `<ranges>`, `<span>`, `consteval` et `operator<=>` ne coûtent rien à
-l'exécution et ne bloquent rien.
+[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md)
+measured, and this ticket's premise does not hold: **there is no C++ subset to
+impose.** GCC 13 targets i686 PE32 and implements all of C++20; concepts,
+`<ranges>`, `<span>`, `consteval` and `operator<=>` cost nothing at run time and
+block nothing.
 
-Ce qui bloque, ce sont des **facilités de bibliothèque**, mesurées par table
-d'imports :
+What blocks are **library facilities**, measured by import table:
 
-| Facilité | API absentes de Win95 |
+| Facility | APIs absent from Win95 |
 |---|---:|
 | `printf`, `std::atomic` | **0** |
 | `std::chrono` | 2 |
@@ -90,92 +89,90 @@ d'imports :
 | `std::thread` | 7 |
 | `std::filesystem` | **13** |
 
-Le ticket doit donc être reformulé : non pas « quel dialecte s'interdire », mais
-**« quelles facilités de bibliothèque remplacer »** — en pratique
-`std::filesystem` (400 sites d'appel, dont 139 disparaissent avec RT64 éteint) et
-la couche threads (E02-S01).
+The ticket must therefore be reworded: not "which dialect to forbid ourselves", but
+**"which library facilities to replace"** — in practice `std::filesystem` (400 call
+sites, of which 139 disappear with RT64 off) and the threading layer (E02-S01).
 
-Détail : [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
+Detail: [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
 
-## Contexte
+## Context
 
-L'ADR de E00-S02 fixe la norme C++ disponible. Deux issues très différentes :
+E00-S02's ADR fixes the C++ standard available. Two very different outcomes:
 
-- **C++17 ou C++20 tiennent** — `ultramodern` et `librecomp` se patchent à la
-  marge, et l'essentiel du travail se déplace vers la bibliothèque standard :
-  quelles parties de la libstdc++ ou de la libc++ fonctionnent réellement sous
-  Windows 95, en particulier les fils d'exécution et la synchronisation.
-- **C++98 seulement** — `ultramodern` et `librecomp` sont à réécrire, et le
-  projet double de taille. Le compte de constructions C++20 par fichier établi en
-  E00-S01 dit alors quoi réécrire en premier.
+- **C++17 or C++20 hold** — `ultramodern` and `librecomp` get patched at the
+  margins, and the bulk of the work moves to the standard library: which parts of
+  libstdc++ or libc++ really work under Windows 95, in particular threads and
+  synchronisation.
+- **C++98 only** — `ultramodern` and `librecomp` are to be rewritten, and the
+  project doubles in size. The per-file count of C++20 constructs established in
+  E00-S01 then says what to rewrite first.
 
-Dans les deux cas, une règle doit être écrite puis **outillée** : sans
-vérification automatique, une construction interdite se réintroduit à la première
-contribution et ne se découvre qu'au lien, ou pire, à l'exécution.
+In both cases a rule must be written and then **tooled**: without an automatic
+check, a forbidden construct is reintroduced at the first contribution and is only
+discovered at link time, or worse, at run time.
 
-## Objectif
+## Objective
 
-Fixer le sous-ensemble C++ autorisé pour la cible Win95, le faire respecter
-mécaniquement, et rendre `ultramodern` et `librecomp` compilables dans ce
-sous-ensemble.
+To fix the C++ subset permitted for the Win95 target, to enforce it mechanically,
+and to make `ultramodern` and `librecomp` compilable within that subset.
 
-## Périmètre
+## Scope
 
-**Dans :** la règle, son outillage, et les patchs de dépendances nécessaires.
+**In:** the rule, its tooling, and the dependency patches needed.
 
-**Hors :** la couche système elle-même (E02-S01) et le code de rendu (E04, E05).
+**Out:** the system layer itself (E02-S01) and the rendering code (E04, E05).
 
-## Travail
+## Work
 
-1. Écrire `docs/CPP-SUBSET.md` : normes autorisées, en-têtes standard autorisés,
-   en-têtes interdits avec le remplacement à utiliser pour chacun. Les candidats
-   à l'interdiction, à confirmer par la mesure de E00-S02 plutôt que par
-   présomption : `<thread>`, `<mutex>`, `<condition_variable>`, `<filesystem>`,
-   `<format>`, `<ranges>`, `<latch>`, `<barrier>`, `<semaphore>`.
-2. Trancher l'usage des exceptions et de la RTTI. Le témoin T3 de E00-S02 a déjà
-   la réponse pour la toolchain retenue. Les désactiver réduit la taille du
-   binaire — ce qui compte sur cette cible — mais impose de vérifier que le code
-   conservé n'en dépend pas.
-3. Écrire le vérificateur de sous-ensemble : un script qui parcourt les sources de
-   la cible Win95 et échoue sur un en-tête interdit. Le brancher en pré-build.
-4. Compiler `ultramodern` avec la toolchain de E01-S01 et traiter les erreurs
-   dans l'ordre décroissant de fréquence. Toute correction passe par
-   `patches/n64-modern-runtime/`, jamais par une édition directe du worktree —
-   c'est la règle du dépôt (`docs/ARCHITECTURE.md`).
-5. Même travail pour `librecomp`, en isolant à part son émulation vectorielle du
-   RSP : elle est traitée par E03-S01 et ne doit pas bloquer ce ticket.
-6. Repousser derrière l'interface de E02-S01 tout ce qui relève des fils
-   d'exécution et de la synchronisation, plutôt que de le corriger sur place.
-   Ce ticket prépare le terrain ; E02-S02 le remplit.
-7. Tenir le décompte des erreurs de compilation restantes, dépendance par
-   dépendance, dans le ticket. C'est la seule mesure d'avancement honnête ici.
+1. Write `docs/CPP-SUBSET.md`: permitted standards, permitted standard headers,
+   forbidden headers with the replacement to use for each. The candidates for
+   prohibition, to be confirmed by E00-S02's measurement rather than by presumption:
+   `<thread>`, `<mutex>`, `<condition_variable>`, `<filesystem>`, `<format>`,
+   `<ranges>`, `<latch>`, `<barrier>`, `<semaphore>`.
+2. Decide on the use of exceptions and RTTI. E00-S02's T3 witness already has the
+   answer for the retained toolchain. Disabling them reduces the binary's size —
+   which counts on this target — but requires checking that the code kept does not
+   depend on them.
+3. Write the subset checker: a script that walks the Win95 target's sources and
+   fails on a forbidden header. Wire it in as a pre-build step.
+4. Compile `ultramodern` with E01-S01's toolchain and deal with the errors in
+   decreasing order of frequency. Every correction goes through
+   `patches/n64-modern-runtime/`, never through a direct edit of the worktree —
+   that is the repository's rule (`docs/ARCHITECTURE.md`).
+5. The same work for `librecomp`, setting aside its RSP vector emulation: that is
+   E03-S01's business and must not block this ticket.
+6. Push everything that belongs to threads and synchronisation behind E02-S01's
+   interface, rather than fixing it in place. This ticket prepares the ground;
+   E02-S02 fills it.
+7. Keep the count of remaining compilation errors, dependency by dependency, in the
+   ticket. It is the only honest measure of progress here.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] `docs/CPP-SUBSET.md` existe : normes, en-têtes autorisés, en-têtes interdits
-      avec leur remplacement.
-- [ ] La décision sur les exceptions et la RTTI est prise et justifiée.
-- [ ] Le vérificateur de sous-ensemble s'exécute en pré-build et échoue sur un
-      en-tête interdit introduit volontairement.
-- [ ] `ultramodern` compile pour la cible Win95, ou ses erreurs restantes sont
-      dénombrées et attribuées à un ticket nommé.
-- [ ] `librecomp` compile pour la cible Win95, hors émulation vectorielle du RSP
-      explicitement renvoyée à E03-S01.
-- [ ] Toutes les modifications de dépendances sont des patchs sous `patches/`,
-      référencés depuis `patches/manifest.json`.
-- [ ] Les cibles modernes compilent toujours avec les mêmes patchs appliqués —
-      un patch qui casse l'amont casse l'oracle.
+- [ ] `docs/CPP-SUBSET.md` exists: standards, permitted headers, forbidden headers
+      with their replacement.
+- [ ] The decision on exceptions and RTTI is taken and justified.
+- [ ] The subset checker runs as a pre-build step and fails on a forbidden header
+      introduced deliberately.
+- [ ] `ultramodern` compiles for the Win95 target, or its remaining errors are
+      counted and assigned to a named ticket.
+- [ ] `librecomp` compiles for the Win95 target, excluding the RSP vector emulation
+      explicitly referred to E03-S01.
+- [ ] Every dependency change is a patch under `patches/`, referenced from
+      `patches/manifest.json`.
+- [ ] The modern targets still compile with the same patches applied — a patch that
+      breaks upstream breaks the oracle.
 
-## Risques
+## Risks
 
-La tentation sera de modifier directement les worktrees de dépendances pour
-avancer vite. `Prepare-DKR-Runtime` les recrée, et le travail disparaît sans
-prévenir. Le pipeline de patchs n'est pas une formalité administrative : c'est le
-seul endroit où les modifications survivent.
+The temptation will be to modify the dependency worktrees directly in order to move
+fast. `Prepare-DKR-Runtime` recreates them, and the work disappears without warning.
+The patch pipeline is not an administrative formality: it is the only place where
+changes survive.
 
-## Références
+## References
 
-- `docs/ARCHITECTURE.md` — frontières protégées et pipeline de patchs
-- `patches/manifest.json` — 13 patchs `n64-modern-runtime` déjà en place, dont
-  `0001-use-msvc-compatible-warning-options.patch` : le précédent existe
-- E00-S01 — compte des constructions C++20 par fichier
+- `docs/ARCHITECTURE.md` — protected boundaries and patch pipeline
+- `patches/manifest.json` — 13 `n64-modern-runtime` patches already in place, among
+  them `0001-use-msvc-compatible-warning-options.patch`: the precedent exists
+- E00-S01 — per-file count of C++20 constructs

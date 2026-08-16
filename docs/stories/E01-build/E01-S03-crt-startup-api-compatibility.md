@@ -1,152 +1,145 @@
-# E01-S03 — CRT, démarrage et couche de compatibilité d'API
+# E01-S03 — CRT, startup and the API compatibility layer
 
 | | |
 |---|---|
-| **Épic** | E01 — Chaîne de build 32 bits Windows 95 |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E00-S01, E01-S01 |
-| **Bloque** | E01-S04, E02-S01, E06-S01 |
+| **Epic** | E01 — 32-bit Windows 95 build chain |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E00-S01, E01-S01 |
+| **Blocks** | E01-S04, E02-S01, E06-S01 |
 
-## État au 2026-08-12 — livré et exécuté sur la machine
+## State as of 2026-08-12 — delivered and run on the machine
 
-`platform/win95/` : `compat.{h,c}`, `tick64.c`, `startup.{h,c}`, `witness.c`.
-Sémantique perdue documentée dans [`docs/WIN95-COMPAT.md`](../../WIN95-COMPAT.md).
+`platform/win95/`: `compat.{h,c}`, `tick64.c`, `startup.{h,c}`, `witness.c`. The
+lost semantics are documented in
+[`docs/WIN95-COMPAT.md`](../../WIN95-COMPAT.md).
 
-Le témoin exerçant **la couche entière** tourne sous Windows 95 :
-
-```
-IsDebuggerPresent      : faux
-SetProcessAffinityMask : accepte
-GetTickCount64         : 123 ms ecoulees        (pour un Sleep de 120 ms)
-TryEnterCriticalSection: verrou libre pris
-deux fils, 4000 tours  : compteur = 4000 / 4000
-```
-
-et son journal de démarrage identifie le système :
+The witness exercising **the whole layer** runs under Windows 95:
 
 ```
-systeme : plate-forme 1, version 4.0 build 1111
+IsDebuggerPresent      : false
+SetProcessAffinityMask : accepted
+GetTickCount64         : 123 ms elapsed        (for a 120 ms Sleep)
+TryEnterCriticalSection: free lock taken
+two threads, 4000 turns: counter = 4000 / 4000
+```
+
+and its startup log identifies the system:
+
+```
+system: platform 1, version 4.0 build 1111
  C
 ```
 
-soit `VER_PLATFORM_WIN32_WINDOWS`, 4.0 build 1111 marqueur « C » — la signature
-de Windows 95 OSR2.
+that is `VER_PLATFORM_WIN32_WINDOWS`, 4.0 build 1111 with the "C" marker — Windows
+95 OSR2's signature.
 
-**Le rebouclage de `GetTickCount` est simulé, pas attendu.** La logique est
-isolée en fonction pure dans `tick64.c` ; neuf vérifications la pilotent avec des
-valeurs choisies, dont deux rebouclages successifs et une propriété de monotonie.
-Exécuté par CTest sur l'hôte (`DKRWin95Tick64`), sans émulateur.
+**`GetTickCount`'s wraparound is simulated, not waited for.** The logic is isolated
+as a pure function in `tick64.c`; nine checks drive it with chosen values, among
+them two successive wraparounds and a monotonicity property. Run by CTest on the
+host (`DKRWin95Tick64`), without an emulator.
 
-**Deux contournements que le ticket anticipait n'ont pas eu à être écrits**, et
-c'est mesuré plutôt que supposé : ni `SignalObjectAndWait` ni
-`InitializeCriticalSectionAndSpinCount` n'apparaissent dans les imports de
-`libwinpthread`, `libstdc++` ou `libgcc`. **Le risque annoncé par le ticket — perdre
-l'atomicité de `SignalObjectAndWait` — ne se matérialise pas.**
+**Two workarounds the ticket anticipated did not have to be written**, and that is
+measured rather than assumed: neither `SignalObjectAndWait` nor
+`InitializeCriticalSectionAndSpinCount` appears in the imports of `libwinpthread`,
+`libstdc++` or `libgcc`. **The risk the ticket announced — losing
+`SignalObjectAndWait`'s atomicity — does not materialise.**
 
-**Unicode.** `librecomp` travaille en `std::u8string`, donc en octets UTF-8 : 236
-usages de chaînes étroites contre 25 de chaînes larges, toutes des `u8string` et
-non des `wchar_t`. Il n'y a pas de conversion large à supprimer. **Une exception
-subsiste** — `mod_manifest.cpp:52` appelle `_wfopen_s`, qui n'est pas exportée par
-le `MSVCRT.DLL` de la machine. C'est dans le système de mods, déjà désigné comme
-premier candidat au fork.
+**Unicode.** `librecomp` works in `std::u8string`, hence in UTF-8 bytes: 236 uses of
+narrow strings against 25 of wide ones, all of them `u8string` and not `wchar_t`.
+There is no wide conversion to remove. **One exception remains** —
+`mod_manifest.cpp:52` calls `_wfopen_s`, which the machine's `MSVCRT.DLL` does not
+export. It is in the mod system, already named as the first fork candidate.
 
-**CRT : liaison statique**, décision de l'ADR 0001. Conséquence écrite pour
-E09-S05 : le paquet n'a aucun redistribuable à embarquer pour le CRT.
+**CRT: static linking**, ADR 0001's decision. A consequence written down for
+E09-S05: the package has no redistributable to embed for the CRT.
 
-**Une découverte de conception :** le garde `_WIN32_WINNT=0x0400` posé par
-E01-S01 masque aussi les API que *cette couche fournit* — il ne fait pas la
-différence entre une API utilisée par inadvertance et une API remplacée.
-`compat.h` doit donc redéclarer ce qu'il implémente, sous condition de version.
-Constaté en compilant le témoin, qui a échoué sur `GetTickCount64`.
+**A design discovery:** the `_WIN32_WINNT=0x0400` guard E01-S01 set also hides the
+APIs *this layer supplies* — it does not tell an API used by inadvertence from an
+API replaced. `compat.h` must therefore redeclare what it implements, conditionally
+on the version. Observed while compiling the witness, which failed on
+`GetTickCount64`.
 
-## Contexte
+## Context
 
-Un binaire peut compiler, se lier, et refuser de démarrer sous Windows 95 pour
-deux raisons qui n'apparaissent nulle part dans les journaux de build :
+A binary can compile, link, and refuse to start under Windows 95 for two reasons
+that appear nowhere in the build logs:
 
-1. Il importe un symbole absent de la `kernel32.dll` de Windows 95. Le chargeur
-   refuse alors le processus **avant** toute exécution, avec un message qui nomme
-   au mieux la DLL. Le code de démarrage du CRT est le premier suspect : il
-   s'exécute avant `main` et dépend d'API que les runtimes récents supposent
-   acquises.
-2. Il dépend d'une DLL absente. `msvcrt.dll` n'est pas fourni par le Windows 95
-   de première génération — il arrive avec OSR2, avec Internet Explorer 4, ou
-   avec une application qui l'installe.
+1. It imports a symbol absent from Windows 95's `kernel32.dll`. The loader then
+   refuses the process **before** any execution, with a message that at best names
+   the DLL. The CRT's startup code is the first suspect: it runs before `main` and
+   depends on APIs that recent runtimes take for granted.
+2. It depends on an absent DLL. `msvcrt.dll` is not supplied by first-generation
+   Windows 95 — it arrives with OSR2, with Internet Explorer 4, or with an
+   application that installs it.
 
-E00-S01 a inventorié les manques et E00-S02 a validé un exécutable témoin. Ce
-ticket transforme ce témoin en fondation utilisable par tout le projet.
+E00-S01 inventoried the gaps and E00-S02 validated a witness executable. This ticket
+turns that witness into a foundation usable by the whole project.
 
-## Objectif
+## Objective
 
-Livrer `platform/win95/` : le démarrage, la stratégie de CRT, et une couche de
-compatibilité qui fournit les API manquantes — de sorte qu'aucun autre ticket
-n'ait à s'en préoccuper.
+To deliver `platform/win95/`: the startup, the CRT strategy, and a compatibility
+layer that supplies the missing APIs — so that no other ticket has to worry about
+them.
 
-## Périmètre
+## Scope
 
-**Dans :** démarrage, CRT, remplacement des API manquantes, redistribuables.
+**In:** startup, CRT, replacement of the missing APIs, redistributables.
 
-**Hors :** les fils d'exécution et la synchronisation (E02-S01), la fenêtre
-(E06-S01).
+**Out:** threads and synchronisation (E02-S01), the window (E06-S01).
 
-## Travail
+## Work
 
-1. Trancher la stratégie de CRT selon le résultat du témoin T2 de E00-S02 :
-   édition de liens statique — binaire plus gros, aucune dépendance — ou
-   `msvcrt.dll` redistribué. Écrire la décision et sa conséquence sur le
-   paquet de distribution (E09-S05).
-2. Écrire `platform/win95/compat.h` et `compat.c` : une implémentation pour chaque
-   API manquante relevée en E00-S01. Les cas attendus, chacun à confirmer par la
-   mesure :
-   - `TryEnterCriticalSection` — repli sur une section critique classique, ou sur
-     un objet mutex nommé si la sémantique non bloquante est réellement requise ;
-   - `InitializeCriticalSectionAndSpinCount` — `InitializeCriticalSection`, le
-     paramètre de rotation étant sans objet sur un monoprocesseur ;
-   - `GetTickCount64` — `GetTickCount` sur 32 bits, avec détection de
-     débordement ; le compteur repasse à zéro après 49,7 jours, ce qui ne se
-     rencontre pas en test et se rencontre chez un joueur ;
-   - `SignalObjectAndWait` — décomposition non atomique, avec une note explicite
-     sur la fenêtre de course ainsi ouverte ;
-   - variables de condition — construction sur événements et section critique.
-3. Traiter le cas Unicode. Sous Windows 9x, les API `...W` sont des stubs qui
-   échouent. Imposer les API `...A` et les chaînes en pages de code, y compris
-   pour les chemins de fichiers. Vérifier ce que `librecomp` fait des chemins.
-4. Écrire le point d'entrée : `WinMain` ou `main`, initialisation du CRT, capture
-   des exceptions structurées, et un journal de démarrage écrit dans un fichier —
-   il n'y a pas de console utilisable pour diagnostiquer sur la machine cible.
-5. Ajouter un contrôle de version au lancement : refuser proprement un système
-   antérieur au plancher retenu, avec un message compréhensible plutôt qu'un
-   plantage.
-6. Documenter chaque contournement dans `docs/WIN95-COMPAT.md`, avec la
-   sémantique exacte perdue par rapport à l'API d'origine. Un contournement dont
-   la différence n'est pas écrite est un bug en attente.
+1. Decide the CRT strategy according to E00-S02's T2 witness result: static linking
+   — a larger binary, no dependency — or a redistributed `msvcrt.dll`. Write the
+   decision and its consequence for the distribution package (E09-S05).
+2. Write `platform/win95/compat.h` and `compat.c`: one implementation for every
+   missing API recorded in E00-S01. The expected cases, each to be confirmed by
+   measurement:
+   - `TryEnterCriticalSection` — fall back on a classic critical section, or on a
+     named mutex object if the non-blocking semantics really are required;
+   - `InitializeCriticalSectionAndSpinCount` — `InitializeCriticalSection`, the spin
+     parameter being moot on a single processor;
+   - `GetTickCount64` — 32-bit `GetTickCount`, with overflow detection; the counter
+     returns to zero after 49.7 days, which is not met in testing and is met at a
+     player's;
+   - `SignalObjectAndWait` — a non-atomic decomposition, with an explicit note on the
+     race window thereby opened;
+   - condition variables — built on events and a critical section.
+3. Deal with the Unicode case. Under Windows 9x, the `...W` APIs are stubs that
+   fail. Impose the `...A` APIs and code-page strings, including for file paths.
+   Check what `librecomp` does with paths.
+4. Write the entry point: `WinMain` or `main`, CRT initialisation, structured
+   exception capture, and a startup log written to a file — there is no usable
+   console for diagnosing on the target machine.
+5. Add a version check at launch: cleanly refuse a system earlier than the retained
+   floor, with a comprehensible message rather than a crash.
+6. Document every workaround in `docs/WIN95-COMPAT.md`, with the exact semantics
+   lost relative to the original API. A workaround whose difference is not written
+   down is a bug waiting to happen.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] `platform/win95/compat.{h,c}` couvre toutes les API manquantes de E00-S01.
-- [ ] Chaque contournement documente la sémantique perdue dans
-      `docs/WIN95-COMPAT.md`.
-- [ ] Le débordement de `GetTickCount` est traité et couvert par un test qui
-      simule le passage à zéro.
-- [ ] La stratégie de CRT est tranchée, et sa conséquence sur la distribution
-      écrite.
-- [ ] Le point d'entrée écrit un journal de démarrage dans un fichier.
-- [ ] Un système trop ancien est refusé par un message clair.
-- [ ] Un exécutable témoin utilisant l'ensemble de la couche démarre sous
-      Windows 95 émulé.
+- [ ] `platform/win95/compat.{h,c}` covers every missing API from E00-S01.
+- [ ] Every workaround documents the lost semantics in `docs/WIN95-COMPAT.md`.
+- [ ] `GetTickCount`'s overflow is handled and covered by a test that simulates the
+      return to zero.
+- [ ] The CRT strategy is settled, and its consequence for distribution written.
+- [ ] The entry point writes a startup log to a file.
+- [ ] Too old a system is refused with a clear message.
+- [ ] A witness executable using the whole layer starts under emulated Windows 95.
 
-## Risques
+## Risks
 
-Un contournement qui affaiblit la sémantique d'une primitive de synchronisation
-produit des courses rares, non reproductibles, et découvertes très tard. C'est
-notamment le cas de `SignalObjectAndWait`, dont l'atomicité est précisément la
-raison d'être. Si `ultramodern` en dépend, la décomposition n'est pas une
-solution acceptable — il faut revoir l'appelant, pas imiter l'appelé.
+A workaround that weakens a synchronisation primitive's semantics produces rare,
+non-reproducible races, discovered very late. That is notably the case of
+`SignalObjectAndWait`, whose atomicity is precisely its reason for being. If
+`ultramodern` depends on it, decomposition is not an acceptable solution — the
+caller must be revisited, not the callee imitated.
 
-## Références
+## References
 
 - `docs/ARCHITECTURE.md`
-- E00-S01 — inventaire des API manquantes
-- E00-S02 — témoins T1 à T3
+- E00-S01 — inventory of the missing APIs
+- E00-S02 — witnesses T1 to T3
