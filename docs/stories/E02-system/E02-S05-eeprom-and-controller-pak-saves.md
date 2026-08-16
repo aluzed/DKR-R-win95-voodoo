@@ -126,7 +126,7 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
       l'avance depuis l'hôte et montée en A:.
 
       ```text
-      cible              : A:\PLEIN.DAT
+      cible              : A:\FULL.DAT
       taille demandee    : 2097152 octets
       code rendu         : 4
       texte              : disque plein

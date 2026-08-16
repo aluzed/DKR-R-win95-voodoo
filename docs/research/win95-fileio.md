@@ -121,7 +121,7 @@ support réellement plein rende `DKR_FILE_ERR_NO_SPACE` plutôt que le
 `DKR_FILE_ERR_IO` fourre-tout.
 
 ```text
-cible              : A:\PLEIN.DAT
+cible              : A:\FULL.DAT
 taille demandee    : 2097152 octets
 code rendu         : 4              (DKR_FILE_ERR_NO_SPACE)
 texte              : disque plein

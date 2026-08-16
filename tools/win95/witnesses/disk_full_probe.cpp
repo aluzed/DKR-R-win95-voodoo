@@ -1,27 +1,26 @@
-/* E02-S05 — que rend l'ecriture durable quand le support est plein ?
+/* E02-S05 - what does the durable write return when the medium is full?
  *
- * Le ticket demandait des codes d'erreur distincts et exploitables : « disque
- * plein » et « support protege » n'appellent pas le meme geste de la part du
- * joueur. La suite d'epreuve verifiait jusqu'ici que les codes sont *distincts*
- * et portent un texte — ce qui est necessaire et pas suffisant. Rien ne prouvait
- * qu'un disque reellement plein rende `DKR_FILE_ERR_NO_SPACE` plutot que
- * `DKR_FILE_ERR_IO`.
+ * The ticket asked for distinct, usable error codes: "disk full" and "medium
+ * write-protected" do not call for the same action from the player. The trial
+ * suite so far checked that the codes are *distinct* and carry a text - which is
+ * necessary and not sufficient. Nothing proved that a genuinely full disk returns
+ * `DKR_FILE_ERR_NO_SPACE` rather than `DKR_FILE_ERR_IO`.
  *
- * C'est ce que cette sonde etablit, et elle demande un volume qu'on puisse
- * remplir : une disquette de 1,44 Mo montee en A:, remplie a l'avance depuis
- * l'hote. Le disque dur de transfert a un demi-gigaoctet de libre, ce qui rend
- * l'exercice impraticable par ce chemin.
+ * That is what this probe establishes, and it needs a volume one can fill: a
+ * 1.44 MB floppy mounted as A:, filled in advance from the host. The transfer hard
+ * disk has half a gigabyte free, which makes the exercise impractical by that
+ * route.
  *
- * Deux precautions valent d'etre dites :
+ * Two precautions are worth stating:
  *
- *   - L'ecriture visee est **plus grande que le volume entier**, et non
- *     seulement que l'espace restant. Une ecriture qui tiendrait tout juste ne
- *     prouverait rien de reproductible : la place libre depend de ce qui traine
- *     sur le support.
+ *   - The write attempted is **larger than the whole volume**, and not merely than
+ *     the space remaining. A write that only just fitted would prove nothing
+ *     reproducible: the free space depends on whatever is lying around on the
+ *     medium.
  *
- *   - Le code rendu est imprime **avec son texte**, parce que c'est le texte que
- *     le joueur lira. Un code juste accompagne d'un message faux serait un
- *     progres illusoire.
+ *   - The returned code is printed **with its text**, because it is the text the
+ *     player will read. A correct code with a wrong message would be an illusory
+ *     advance.
  */
 #include "fileio.h"
 
@@ -31,9 +30,9 @@
 
 int main(int argc, char **argv)
 {
-    const char *path = (argc >= 2) ? argv[1] : "A:\\PLEIN.DAT";
-    /* 2 Mo : au-dela de la capacite d'une disquette 3,5" haute densite, quoi
-       qu'elle contienne deja. */
+    const char *path = (argc >= 2) ? argv[1] : "A:\\FULL.DAT";
+    /* 2 MB: beyond the capacity of a 3.5" high-density floppy, whatever it already
+       contains. */
     const size_t size = 2u * 1024u * 1024u;
     unsigned char *buffer;
     dkr_file_result r;
@@ -43,8 +42,8 @@ int main(int argc, char **argv)
 
     buffer = (unsigned char *)malloc(size);
     if (!buffer) {
-        printf("  memoire insuffisante pour la sonde\n");
-        if (log) { fprintf(log, "  memoire insuffisante pour la sonde\n"); fclose(log); }
+        printf("  not enough memory for the probe\n");
+        if (log) { fprintf(log, "  not enough memory for the probe\n"); fclose(log); }
         return 2;
     }
     memset(buffer, 0xA5, size);
@@ -52,21 +51,21 @@ int main(int argc, char **argv)
     r = dkr_file_write_durable(path, buffer, size);
     free(buffer);
 
-    printf("  cible              : %s\n", path);
-    printf("  taille demandee    : %u octets\n", (unsigned)size);
-    printf("  code rendu         : %d\n", (int)r);
-    printf("  texte              : %s\n", dkr_file_result_text(r));
+    printf("  target             : %s\n", path);
+    printf("  size requested     : %u bytes\n", (unsigned)size);
+    printf("  code returned      : %d\n", (int)r);
+    printf("  text               : %s\n", dkr_file_result_text(r));
     printf("  verdict            : %s\n",
-           (r == DKR_FILE_ERR_NO_SPACE) ? "DISQUE PLEIN, correctement nomme"
-                                        : "PAS le code disque plein");
+           (r == DKR_FILE_ERR_NO_SPACE) ? "DISK FULL, correctly named"
+                                        : "NOT the disk-full code");
     if (log) {
-        fprintf(log, "  cible              : %s\n", path);
-        fprintf(log, "  taille demandee    : %u octets\n", (unsigned)size);
-        fprintf(log, "  code rendu         : %d\n", (int)r);
-        fprintf(log, "  texte              : %s\n", dkr_file_result_text(r));
+        fprintf(log, "  target             : %s\n", path);
+        fprintf(log, "  size requested     : %u bytes\n", (unsigned)size);
+        fprintf(log, "  code returned      : %d\n", (int)r);
+        fprintf(log, "  text               : %s\n", dkr_file_result_text(r));
         fprintf(log, "  verdict            : %s\n",
-                (r == DKR_FILE_ERR_NO_SPACE) ? "DISQUE PLEIN, correctement nomme"
-                                             : "PAS le code disque plein");
+                (r == DKR_FILE_ERR_NO_SPACE) ? "DISK FULL, correctly named"
+                                             : "NOT the disk-full code");
         fclose(log);
     }
     return (r == DKR_FILE_ERR_NO_SPACE) ? 0 : 1;
