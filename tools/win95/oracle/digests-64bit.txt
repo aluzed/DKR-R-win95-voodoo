@@ -1,5 +1,5 @@
-# empreintes du code recompile — 96 fonctions
-# 64 bits
+# digests of the recompiled code - 96 functions
+# 64-bit
 func_80014B50                    4C4E693D94850625
 collision_get_y                  F1415FD72BFC0752
 obj_animate                      FAUTE

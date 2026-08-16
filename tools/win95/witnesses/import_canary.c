@@ -1,19 +1,19 @@
-/* E01-S04 — source d'epreuve du controle des imports.
+/* E01-S04 - test source for the import check.
  *
- * Compilee uniquement quand `DKR_WIN95_SELFTEST_IMPORT` est actif. Elle importe
- * une API que Windows 95 n'exporte pas : le controle post-lien doit faire
- * echouer le build en la nommant, et en nommant cet objet.
+ * Compiled only when `DKR_WIN95_SELFTEST_IMPORT` is active. It imports an API
+ * Windows 95 does not export: the post-link check must fail the build while
+ * naming it, and naming this object.
  *
- * La fonction est declaree ici plutot qu'incluse depuis <windows.h> : la
- * toolchain pose `_WIN32_WINNT=0x0400`, qui la masque justement — et c'est
- * l'autre garde-fou, celui de la compilation. Le contourner volontairement est
- * le seul moyen d'eprouver celui du lien.
+ * The function is declared here rather than included from <windows.h>: the
+ * toolchain sets `_WIN32_WINNT=0x0400`, which hides it precisely - and that is
+ * the other guard rail, the compile-time one. Deliberately circumventing it is
+ * the only way to test the link-time one.
  *
- * Le choix du symbole n'est pas indifferent. La premiere version de ce canari
- * importait `GetTickCount64` et le build passait : `win95compat` la fournit, et
- * le lieur resolvait donc l'import vers le pont plutot que vers KERNEL32.
- * L'epreuve echouait a echouer — ce qui etait, en soi, la demonstration que le
- * pont intercepte bien. Il faut donc un symbole que le pont ne couvre pas.
+ * The choice of symbol is not incidental. The first version of this canary
+ * imported `GetTickCount64` and the build passed: `win95compat` supplies it, so
+ * the linker resolved the import to the bridge rather than to KERNEL32. The test
+ * failed to fail - which was, in itself, the demonstration that the bridge does
+ * intercept. So a symbol the bridge does not cover is needed.
  */
 typedef struct { void *p; } DKR_FAKE_CONDITION_VARIABLE;
 

@@ -1,13 +1,13 @@
-/* E02-S05 — `std::ofstream` construit sur un `std::filesystem::path`.
+/* E02-S05 - `std::ofstream` constructed on a `std::filesystem::path`.
  *
- * Sous MinGW, `path::value_type` est `wchar_t` : passer un `path` a un flux le
- * fait ouvrir par `_wfopen`, donc par l'API large. Sous Windows 9x cette
- * famille est un bouchon — elle se charge et ne fait rien.
+ * Under MinGW, `path::value_type` is `wchar_t`: handing a `path` to a stream
+ * makes it open through `_wfopen`, hence through the wide API. Under Windows 9x
+ * that family is a stub - it loads and does nothing.
  *
- * La question n'est pas theorique : `save_manager` echoue sur la machine avec
- * « Could not create the temporary save file », et c'est la l'explication
- * probable. Cette sonde la transforme en mesure, en ouvrant le meme fichier de
- * quatre facons.
+ * The question is not theoretical: `save_manager` fails on the machine with
+ * "Could not create the temporary save file", and this is the likely
+ * explanation. This probe turns it into a measurement, by opening the same file
+ * four ways.
  */
 #include <cstdio>
 #include <filesystem>
@@ -16,8 +16,8 @@
 static FILE *g_log;
 static void say(const char *what, bool ok)
 {
-    std::printf("  %-34s : %s\n", what, ok ? "OK" : "ECHEC");
-    if (g_log) std::fprintf(g_log, "  %-34s : %s\n", what, ok ? "OK" : "ECHEC");
+    std::printf("  %-34s : %s\n", what, ok ? "OK" : "FAILED");
+    if (g_log) std::fprintf(g_log, "  %-34s : %s\n", what, ok ? "OK" : "FAILED");
 }
 
 int main()
@@ -31,9 +31,9 @@ int main()
       say("ofstream(path.string())", (bool)f); }
     { std::ofstream f("D:\\WPROBE.DAT", std::ios::binary);
       f << "abc";
-      say("ofstream(litteral etroit)", (bool)f); }
+      say("ofstream(narrow literal)", (bool)f); }
     { FILE *f = std::fopen("D:\\WPROBE.DAT", "rb");
-      say("fopen etroit", f != nullptr); if (f) std::fclose(f); }
+      say("narrow fopen", f != nullptr); if (f) std::fclose(f); }
     { std::ifstream f(p, std::ios::binary);
       say("ifstream(path)", (bool)f); }
     { std::ifstream f(p.string(), std::ios::binary);

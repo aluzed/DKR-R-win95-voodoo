@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Table d'exports et d'imports d'un binaire PE32, sans dependance.
+"""Export and import tables of a PE32 binary, with no dependencies.
 
     pe_symbols.py --exports KERNEL32.DLL
     pe_symbols.py --imports DKR-R.EXE
 
-Sert a deux choses dans ce projet :
+It serves two purposes in this project:
 
-  * constituer la reference des symboles reellement offerts par Windows 95, en
-    lisant les DLL de la machine cible plutot qu'une documentation ;
-  * verifier qu'un binaire produit pour Win95 ne reclame que ces symboles.
+  * building the reference of the symbols Windows 95 actually offers, by reading
+    the target machine's DLLs rather than a piece of documentation;
+  * checking that a binary produced for Win95 asks for none but those symbols.
 
-La verification porte sur la table d'imports et non sur le graphe d'appels :
-Windows 95 resout *tous* les imports au chargement, donc un symbole absent est
-fatal meme si la fonction n'est jamais appelee.
+The check bears on the import table and not on the call graph: Windows 95
+resolves *every* import at load time, so a missing symbol is fatal even if the
+function is never called.
 """
 import struct
 import sys
@@ -22,10 +22,10 @@ class PE:
     def __init__(self, path):
         self.d = d = open(path, "rb").read()
         if d[:2] != b"MZ":
-            raise ValueError(f"{path} : pas un executable MZ")
+            raise ValueError(f"{path}: not an MZ executable")
         pe = struct.unpack_from("<I", d, 0x3C)[0]
         if d[pe:pe + 4] != b"PE\0\0":
-            raise ValueError(f"{path} : pas un binaire PE")
+            raise ValueError(f"{path}: not a PE binary")
         nsec, = struct.unpack_from("<H", d, pe + 6)
         optsz, = struct.unpack_from("<H", d, pe + 20)
         opt = pe + 24
@@ -75,7 +75,7 @@ class PE:
                 v, = struct.unpack_from("<I", self.d, thunk)
                 if v == 0:
                     break
-                # Bit 31 : import par ordinal, sans nom.
+                # Bit 31: import by ordinal, with no name.
                 out.append((dll, f"#{v & 0xFFFF}" if v & 0x80000000
                             else self.cstr(self.off(v) + 2)))
                 thunk += 4

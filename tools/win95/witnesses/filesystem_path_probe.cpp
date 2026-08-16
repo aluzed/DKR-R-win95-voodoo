@@ -1,15 +1,15 @@
-/* E02-S05 — un objet std::filesystem::path est-il utilisable sous Windows 95 ?
+/* E02-S05 - is a std::filesystem::path object usable under Windows 95?
  *
- * Il ne tire qu'un seul symbole bloquant, `LoadLibraryW`, et c'est un bouchon :
- * le binaire se charge donc. Reste a savoir si ce que libstdc++ en fait tient.
+ * It pulls in only one blocking symbol, `LoadLibraryW`, and that one is a stub:
+ * so the binary loads. What remains is whether what libstdc++ makes of it holds.
  */
 #include <filesystem>
 #include <cstdio>
 int main(){
   FILE *f = fopen("D:\\FSPATH.TXT", "w");
-  std::filesystem::path p{"D:\\JEU\\SAUVE.DAT"};
+  std::filesystem::path p{"D:\\GAME\\SAVE.DAT"};
   std::filesystem::path q = p.parent_path();
-  std::filesystem::path r = p / "AUTRE.DAT";
+  std::filesystem::path r = p / "OTHER.DAT";
   if (f) {
     fprintf(f, "path                : %s\n", p.string().c_str());
     fprintf(f, "parent_path         : %s\n", q.string().c_str());
@@ -17,8 +17,8 @@ int main(){
     fprintf(f, "extension           : %s\n", p.extension().string().c_str());
     fprintf(f, "concatenation       : %s\n", r.string().c_str());
     fprintf(f, "verdict             : %s\n",
-            (p.string() == "D:\\JEU\\SAUVE.DAT" && p.filename().string() == "SAUVE.DAT")
-              ? "UTILISABLE" : "INCORRECT");
+            (p.string() == "D:\\GAME\\SAVE.DAT" && p.filename().string() == "SAVE.DAT")
+              ? "USABLE" : "INCORRECT");
     fclose(f);
   }
   return 0;

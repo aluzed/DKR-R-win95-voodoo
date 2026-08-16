@@ -1,12 +1,12 @@
-/* E01-S05 — les fonctions du jeu soumises a la comparaison avec l'oracle.
+/* E01-S05 - the game functions submitted to the oracle comparison.
  *
- * Selection automatique et non a la main : ce sont les fonctions **feuilles**
- * — aucun appel a une autre fonction recompilee, aucun saut indirect — les plus
- * riches en arithmetique. Les feuilles parce qu'elles s'executent isolement sans
- * le reste du runtime ; les plus arithmetiques parce que c'est l'arithmetique 64
- * bits que la cible 32 bits traite differemment.
+ * Selected automatically and not by hand: these are the **leaf** functions - no
+ * call to another recompiled function, no indirect jump - richest in arithmetic.
+ * Leaves because they run in isolation without the rest of the runtime; richest
+ * in arithmetic because it is 64-bit arithmetic that the 32-bit target handles
+ * differently.
  *
- * Regenerer : tools/win95/oracle/select-functions.py
+ * To regenerate: tools/win95/oracle/select-functions.py
  */
 DKR_ORACLE_FN(func_80014B50)
 DKR_ORACLE_FN(collision_get_y)

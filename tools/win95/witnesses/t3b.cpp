@@ -34,14 +34,14 @@ int main(void)
 {
     char msg[512];
     const char *rtti = "?";
-    const char *exc  = "non";
+    const char *exc  = "no";
     DWORD tid = 0;
 
     InitializeCriticalSection(&cs);
     done_event = CreateEventA(NULL, TRUE, FALSE, NULL);
 
     HANDLE th = CreateThread(NULL, 0, producer, NULL, 0, &tid);
-    if (!th) { MessageBoxA(NULL, "T3b: CreateThread a echoue", "T3b", 0x10); return 1; }
+    if (!th) { MessageBoxA(NULL, "T3b: CreateThread failed", "T3b", 0x10); return 1; }
 
     WaitForSingleObject(done_event, 5000);
     WaitForSingleObject(th, 5000);
@@ -51,14 +51,14 @@ int main(void)
 
     Derived d;
     Base *p = &d;
-    rtti = (typeid(*p) == typeid(Derived)) ? "ok" : "ECHEC";
+    rtti = (typeid(*p) == typeid(Derived)) ? "ok" : "FAILED";
 
     try { throw Boom(); } catch (const Boom &b) { exc = b.what(); }
 
-    sprintf(msg, "T3b Win32\r\n  compteur : %d / 1000\r\n"
+    sprintf(msg, "T3b Win32\r\n  counter  : %d / 1000\r\n"
                  "  RTTI     : %s\r\n  exception: %s\r\n", counter, rtti, exc);
     FILE *f = fopen("D:\\T3B.TXT", "wb");
     if (f) { fwrite(msg, 1, strlen(msg), f); fclose(f); }
-    MessageBoxA(NULL, msg, "Temoin T3b", 0x40);
+    MessageBoxA(NULL, msg, "Witness T3b", 0x40);
     return 0;
 }

@@ -1,15 +1,14 @@
-/* E01-S01 — source d'epreuve du verificateur de jeu d'instructions.
+/* E01-S01 - test source for the instruction-set checker.
  *
- * Compilee uniquement quand `DKR_WIN95_SELFTEST_SSE` est actif, et alors avec
- * `-msse -mfpmath=sse`. Elle produit du SSE que le controle post-lien doit
- * refuser : c'est ainsi que l'on verifie le verificateur au lieu de le supposer
- * correct.
+ * Compiled only when `DKR_WIN95_SELFTEST_SSE` is active, and then with
+ * `-msse -mfpmath=sse`. It produces SSE that the post-link check must refuse:
+ * that is how the checker is verified instead of being assumed correct.
  *
- * Un verificateur casse ressemble exactement a un verificateur satisfait.
+ * A broken checker looks exactly like a satisfied one.
  *
- * En `float` et non en `double` : `-msse` seul ne couvre que la simple
- * precision, et GCC retomberait sur x87 pour les doubles — l'injection serait
- * alors inerte, ce qui a ete constate avant de corriger.
+ * In `float` and not in `double`: `-msse` alone only covers single precision,
+ * and GCC would fall back to x87 for doubles - the injection would then be
+ * inert, which was observed before it was fixed.
  */
 float dkr_sse_canary(float a, float b)
 {

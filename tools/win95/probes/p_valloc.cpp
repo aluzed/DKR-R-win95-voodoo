@@ -1,8 +1,8 @@
-/* E00-S01 / E00-S06 — que peut reellement reserver et valider Windows 95 ?
+/* E00-S01 / E00-S06 - what can Windows 95 actually reserve and commit?
  *
- * librecomp reserve `allocation_size` (4 Gio) puis valide `mem_size` (512 Mio).
- * Aucune des deux valeurs n'est atteignable sur la cible ; ce banc mesure ce
- * qui l'est, pour donner un plancher chiffre a l'ADR du budget memoire.
+ * librecomp reserves `allocation_size` (4 GiB) then commits `mem_size`
+ * (512 MiB). Neither value is reachable on the target; this bench measures what
+ * is, to give the memory-budget ADR a figure to stand on.
  */
 #include <windows.h>
 #include <stdio.h>
@@ -28,27 +28,27 @@ int main(void)
                  (unsigned long)(size_t)(4096ULL*1024ULL*1024ULL));
     n += sprintf(buf+n, "mem_size 32b        = %lu\r\n",
                  (unsigned long)(size_t)(512ULL*1024ULL*1024ULL));
-    n += sprintf(buf+n, "RAM physique        = %lu Mio\r\n",
+    n += sprintf(buf+n, "physical RAM        = %lu MiB\r\n",
                  (unsigned long)(ms.dwTotalPhys >> 20));
-    n += sprintf(buf+n, "RAM dispo           = %lu Mio\r\n",
+    n += sprintf(buf+n, "available RAM       = %lu MiB\r\n",
                  (unsigned long)(ms.dwAvailPhys >> 20));
-    n += sprintf(buf+n, "espace virtuel total= %lu Mio\r\n",
+    n += sprintf(buf+n, "total virtual space = %lu MiB\r\n",
                  (unsigned long)(ms.dwTotalVirtual >> 20));
-    n += sprintf(buf+n, "granularite         = %lu\r\n",
+    n += sprintf(buf+n, "granularity         = %lu\r\n",
                  (unsigned long)si.dwAllocationGranularity);
-    n += sprintf(buf+n, "MAX reserve         = %lu Mio\r\n",
+    n += sprintf(buf+n, "MAX reserve         = %lu MiB\r\n",
                  (unsigned long)probe(MEM_RESERVE, PAGE_NOACCESS));
-    n += sprintf(buf+n, "MAX commit RW       = %lu Mio\r\n",
+    n += sprintf(buf+n, "MAX commit RW       = %lu MiB\r\n",
                  (unsigned long)probe(MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE));
 
-    /* Le schema exact de librecomp : reserver puis valider une fenetre. */
+    /* librecomp's exact scheme: reserve then commit a window. */
     void *p = VirtualAlloc(NULL, 8u*1024u*1024u, MEM_RESERVE, PAGE_NOACCESS);
     DWORD old = 0;
     int ok = 0;
     if (p) { ok = VirtualAlloc(p, 8u*1024u*1024u, MEM_COMMIT, PAGE_READWRITE) != NULL
                   && VirtualProtect(p, 8u*1024u*1024u, PAGE_READWRITE, &old) != 0;
              VirtualFree(p, 0, MEM_RELEASE); }
-    n += sprintf(buf+n, "schema librecomp 8Mio = %s\r\n", ok ? "OK" : "ECHEC");
+    n += sprintf(buf+n, "librecomp scheme 8MiB = %s\r\n", ok ? "OK" : "FAILED");
 
     fputs(buf, stdout);
     { FILE *f = fopen("D:\\VALLOC.TXT", "wb"); if (f) { fwrite(buf,1,n,f); fclose(f);} }

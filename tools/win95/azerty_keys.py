@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Traduit un texte en sequence de touches physiques pour un invite AZERTY.
+"""Translates text into a sequence of physical keys for an AZERTY guest.
 
-L'hote envoie des scancodes ; l'invite les interprete avec SA disposition. Les
-lettres croisees (A/Q, Z/W, M) et toute la rangee des chiffres doivent donc etre
-envoyees depuis la position QWERTY correspondante.
+The host sends scancodes; the guest interprets them with ITS layout. The swapped
+letters (A/Q, Z/W, M) and the whole digit row must therefore be sent from the
+corresponding QWERTY position.
 """
 import sys
 
