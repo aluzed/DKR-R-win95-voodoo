@@ -1,25 +1,24 @@
-/* E02-S03 — quelle base de temps Windows 95 offre reellement.
+/* E02-S03 - what time base Windows 95 really offers.
  *
- * Le ticket dresse un tableau des sources candidates avec, pour chacune, une
- * resolution supposee. Ce programme le remplace par des mesures prises sur la
- * machine : `QueryPerformanceFrequency` « varie selon le chipset », et la
- * resolution de `timeGetTime` depend de `timeBeginPeriod`, dont l'effet reel
- * doit se constater.
+ * The ticket draws up a table of candidate sources with, for each, an assumed
+ * resolution. This program replaces it with measurements taken on the machine:
+ * `QueryPerformanceFrequency` "varies with the chipset", and `timeGetTime`'s
+ * resolution depends on `timeBeginPeriod`, whose real effect must be observed.
  *
- * Ce qui est mesure, pour chaque source :
+ * What is measured, for each source:
  *
- *   frequence      ce que le systeme annonce
- *   resolution     le plus petit ecart non nul observe entre deux lectures
- *                  consecutives — c'est la vraie granularite, pas celle annoncee
- *   monotonie      un recul, meme d'un pas, disqualifie une source
- *   cout           duree moyenne d'un appel
+ *   frequency      what the system announces
+ *   resolution     the smallest non-zero gap observed between two consecutive
+ *                  reads - that is the real granularity, not the announced one
+ *   monotonicity   a step backwards, even by one tick, disqualifies a source
+ *   cost           the average duration of one call
  *
- * **Le cout mesure ici n'est pas transposable au materiel reel.** L'emulation
- * d'86Box est fonctionnelle et non temporelle ; le chiffre dit l'ordre de
- * grandeur et le classement des sources entre elles, pas le budget d'un
- * Pentium II de 1998. C'est E09-S04 qui tranchera sur machine reelle.
+ * **The cost measured here does not transfer to real hardware.** 86Box's emulation
+ * is functional and not temporal; the figure gives the order of magnitude and the
+ * ranking of the sources against each other, not a 1998 Pentium II's budget.
+ * E09-S04 will decide on a real machine.
  *
- * Ecrit son releve dans D:\CLOCK.TXT, lisible depuis l'hote.
+ * Writes its report to D:\CLOCK.TXT, readable from the host.
  */
 #include <windows.h>
 #include <mmsystem.h>
@@ -38,11 +37,11 @@ static void say(const char *fmt, ...)
     if (out) { fputs(line, out); fflush(out); }
 }
 
-/* --- Resolution : le plus petit pas non nul reellement observe ------------- *
+/* --- Resolution: the smallest non-zero step actually observed -------------- *
  *
- * On ne demande pas au systeme sa resolution, on la constate. Une source qui
- * annonce la microseconde et n'avance que toutes les 55 ms est le piege que
- * cette mesure existe pour eviter.
+ * We do not ask the system for its resolution, we observe it. A source that
+ * announces the microsecond and only advances every 55 ms is the trap this
+ * measurement exists to avoid.
  */
 static unsigned long resolution_ms_gettickcount(void)
 {
@@ -60,7 +59,7 @@ static unsigned long resolution_ms_timegettime(void)
     return (unsigned long)(now - start);
 }
 
-/* Pour QPC on rend le pas en unites de compteur, et on le convertit ensuite. */
+/* For QPC we return the step in counter units, and convert it afterwards. */
 static LONGLONG resolution_ticks_qpc(void)
 {
     LARGE_INTEGER a, b;
@@ -69,11 +68,11 @@ static LONGLONG resolution_ticks_qpc(void)
     return b.QuadPart - a.QuadPart;
 }
 
-/* --- Monotonie ------------------------------------------------------------ *
+/* --- Monotonicity --------------------------------------------------------- *
  *
- * Un recul, meme d'un seul pas, disqualifie une source : toute la simulation
- * repose sur une base qui n'en fait jamais. On echantillonne serre, la ou un
- * defaut se verrait.
+ * A step backwards, even by a single tick, disqualifies a source: the whole
+ * simulation rests on a base that never takes one. We sample tightly, where a
+ * defect would show.
  */
 #define MONOTONIC_SAMPLES 200000
 
@@ -104,12 +103,12 @@ static long monotonic_faults_timegettime(void)
     return faults;
 }
 
-/* --- Cout d'un appel ------------------------------------------------------ *
+/* --- The cost of a call --------------------------------------------------- *
  *
- * La base est consultee plusieurs fois par image. Sur un Pentium II, un appel
- * systeme coûteux repete devient un poste de budget a part entiere (E08-S01).
- * La mesure exterieure passe par `timeGetTime`, dont on connait desormais la
- * resolution.
+ * The time base is consulted several times per frame. On a Pentium II, an
+ * expensive system call repeated becomes a budget item in its own right
+ * (E08-S01). The outer measurement goes through `timeGetTime`, whose resolution
+ * we now know.
  */
 #define COST_CALLS 200000
 
@@ -117,7 +116,7 @@ static double cost_ns(void (*fn)(void), int calls)
 {
     DWORD start, elapsed;
     int   i;
-    /* Un tour a vide d'abord, pour ne pas mesurer le premier defaut de cache. */
+    /* An empty round first, so as not to measure the first cache miss. */
     for (i = 0; i < 1000; i++) { fn(); }
     start = timeGetTime();
     for (i = 0; i < calls; i++) { fn(); }
@@ -138,75 +137,77 @@ int main(void)
     LONGLONG      res_qpc_ticks;
 
     out = fopen("D:\\CLOCK.TXT", "w");
-    say("Sources de temps de Windows 95 — mesure, non supposition\n\n");
+    say("Windows 95's time sources - measured, not assumed\n\n");
 
-    /* --- Ce que le systeme annonce ---------------------------------------- */
+    /* --- What the system announces ---------------------------------------- */
 
     has_qpc = QueryPerformanceFrequency(&freq) && freq.QuadPart > 0
               && QueryPerformanceCounter(&dummy);
     if (has_qpc) {
         say("QueryPerformanceFrequency : %ld Hz\n", (long)freq.QuadPart);
     } else {
-        say("QueryPerformanceFrequency : ABSENTE ou incoherente\n");
+        say("QueryPerformanceFrequency : ABSENT or inconsistent\n");
     }
 
     if (timeGetDevCaps(&caps, sizeof(caps)) == TIMERR_NOERROR) {
-        say("timeGetDevCaps            : periode de %lu a %lu ms\n",
+        say("timeGetDevCaps            : period from %lu to %lu ms\n",
             (unsigned long)caps.wPeriodMin, (unsigned long)caps.wPeriodMax);
     } else {
-        say("timeGetDevCaps            : echec\n");
+        say("timeGetDevCaps            : failed\n");
     }
 
-    /* --- Resolution reellement observee ------------------------------------ */
+    /* --- The resolution actually observed ---------------------------------- */
 
-    say("\nResolution observee (plus petit pas non nul)\n");
+    say("\nObserved resolution (smallest non-zero step)\n");
 
     res_gtc = resolution_ms_gettickcount();
     say("  GetTickCount            : %lu ms\n", res_gtc);
 
     res_tgt_before = resolution_ms_timegettime();
-    say("  timeGetTime  (avant)    : %lu ms\n", res_tgt_before);
+    say("  timeGetTime  (before)   : %lu ms\n", res_tgt_before);
 
-    /* C'est ici que se joue le seul reglage du ticket : `timeBeginPeriod(1)`
-       doit faire tomber la granularite a la milliseconde. S'il n'y parvient
-       pas, tout le reste du choix change. */
+    /* This is where the ticket's only setting is decided: `timeBeginPeriod(1)`
+       must bring the granularity down to the millisecond. If it does not, the rest
+       of the choice changes. */
     if (timeBeginPeriod(1) == TIMERR_NOERROR) {
         res_tgt_after = resolution_ms_timegettime();
-        say("  timeGetTime  (apres timeBeginPeriod(1)) : %lu ms\n", res_tgt_after);
+        say("  timeGetTime  (after timeBeginPeriod(1)) : %lu ms\n", res_tgt_after);
     } else {
         res_tgt_after = res_tgt_before;
-        say("  timeBeginPeriod(1)      : REFUSE\n");
+        say("  timeBeginPeriod(1)      : REFUSED\n");
     }
 
     if (has_qpc) {
         res_qpc_ticks = resolution_ticks_qpc();
-        say("  QueryPerformanceCounter : %ld pas = %.3f us\n",
+        say("  QueryPerformanceCounter : %ld ticks = %.3f us\n",
             (long)res_qpc_ticks,
             (double)res_qpc_ticks * 1000000.0 / (double)freq.QuadPart);
     }
 
-    /* --- Monotonie --------------------------------------------------------- */
+    /* --- Monotonicity ------------------------------------------------------ */
 
-    say("\nMonotonie sur %d lectures consecutives\n", MONOTONIC_SAMPLES);
+    say("\nMonotonicity over %d consecutive reads\n", MONOTONIC_SAMPLES);
     if (has_qpc) {
-        say("  QueryPerformanceCounter : %ld recul(s)\n", monotonic_faults_qpc());
+        say("  QueryPerformanceCounter : %ld step(s) backwards\n",
+            monotonic_faults_qpc());
     }
-    say("  timeGetTime             : %ld recul(s)\n", monotonic_faults_timegettime());
+    say("  timeGetTime             : %ld step(s) backwards\n",
+        monotonic_faults_timegettime());
 
-    /* --- Cout -------------------------------------------------------------- */
+    /* --- Cost -------------------------------------------------------------- */
 
-    say("\nCout par appel — ordre de grandeur sous emulation, NON transposable\n");
+    say("\nCost per call - order of magnitude under emulation, NOT transferable\n");
     say("  GetTickCount            : %.0f ns\n", cost_ns(call_gettickcount, COST_CALLS));
     say("  timeGetTime             : %.0f ns\n", cost_ns(call_timegettime, COST_CALLS));
     if (has_qpc) {
         say("  QueryPerformanceCounter : %.0f ns\n", cost_ns(call_qpc, COST_CALLS));
     }
 
-    /* Relache le reglage : sous Windows 9x, un `timeBeginPeriod` laisse en place
-       degrade tout le systeme jusqu'au redemarrage. */
+    /* Releases the setting: under Windows 9x, a `timeBeginPeriod` left in place
+       degrades the whole system until the next reboot. */
     timeEndPeriod(1);
 
-    say("\nreleve termine\n");
+    say("\nreport finished\n");
     if (out) { fclose(out); }
     return 0;
 }
