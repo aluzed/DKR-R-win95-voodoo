@@ -1,32 +1,32 @@
-/* Ce que la TMU exige réellement — mesuré avant d'écrire l'allocateur.
+/* What the TMU really demands - measured before writing the allocator.
  *
- * Le ticket E05-S02 demande de mesurer avant de concevoir. La mesure qu'il vise
- * porte sur le jeu — nombre de textures par niveau, motif de réutilisation — et
- * suppose la ROM. Celle-ci porte sur **le matériel**, ne la suppose pas, et
- * conditionne autant l'allocateur : l'alignement et la granularité de la TMU
- * décident de la fragmentation, et se supposer est ici particulièrement risqué.
+ * Ticket E05-S02 asks to measure before designing. The measurement it aims at
+ * bears on the game - number of textures per level, reuse pattern - and assumes
+ * the ROM. This one bears on **the hardware**, does not assume it, and governs
+ * the allocator just as much: the TMU's alignment and granularity decide the
+ * fragmentation, and assuming is particularly risky here.
  *
- * ## Pourquoi ce ne sont pas des constantes qu'on peut lire dans un livre
+ * ## Why these are not constants one can read in a book
  *
- * Glide n'a pas de gestionnaire de textures. Elle expose la mémoire de la TMU
- * comme un espace d'adressage brut : l'application choisit une adresse, y
- * télécharge, et lie cette adresse au dessin. `grTexTextureMemRequired` dit
- * combien d'octets une texture occupe — et ce nombre inclut l'arrondi que la
- * carte impose, qui n'est pas déductible de la largeur et de la hauteur.
+ * Glide has no texture manager. It exposes the TMU's memory as a raw address
+ * space: the application picks an address, downloads there, and binds that
+ * address for drawing. `grTexTextureMemRequired` says how many bytes a texture
+ * occupies - and that number includes the rounding the card imposes, which is not
+ * deducible from the width and the height.
  *
- * Un allocateur qui se contenterait de `largeur × hauteur × 2` empilerait les
- * textures trop serré. Le symptôme ne serait pas une erreur : ce serait une
- * texture qui en écrase une autre, donc un décor qui porte le motif d'un autre,
- * à un endroit qui dépend de l'ordre de chargement. C'est-à-dire le genre de
- * défaut qu'on poursuit pendant des jours.
+ * An allocator content with `width x height x 2` would stack the textures too
+ * tightly. The symptom would not be an error: it would be one texture overwriting
+ * another, hence a piece of scenery carrying another's pattern, in a place that
+ * depends on the load order. That is to say, the kind of defect one chases for
+ * days.
  *
- * ## Ce témoin valide aussi ses propres constantes
+ * ## This witness also validates its own constants
  *
- * Comme pour les états (`win95-glide-states.md`), il n'y a pas de `glide.h` sur
- * cette machine et les énumérations sont écrites de mémoire. Elles sont ici
- * vérifiables sans matériel supplémentaire : pour une texture 16 bits sans
- * mipmap, la taille attendue est connue analytiquement. Si `GR_LOD_*` ou
- * `GR_ASPECT_*` étaient faux, la taille rendue le dirait immédiatement.
+ * As with the states (`win95-glide-states.md`), there is no `glide.h` on this
+ * machine and the enumerations are written from memory. They are checkable here
+ * without extra hardware: for a 16-bit texture without mipmaps, the expected size
+ * is known analytically. If `GR_LOD_*` or `GR_ASPECT_*` were wrong, the returned
+ * size would say so immediately.
  */
 #include "render/glide.h"
 
@@ -49,15 +49,15 @@ static void say(const char *fmt, ...)
 
 static void check(const char *what, int ok)
 {
-    say("  %s %s\n", ok ? "ok   " : "ECHEC", what);
+    say("  %s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) { g_fails++; }
 }
 
-/* --- Les énumérations de texture de Glide 2.x -------------------------------- */
+/* --- Glide 2.x's texture enumerations ---------------------------------------- */
 
-/* Le niveau de détail nomme la **plus grande dimension**, et décroît : 256 vaut
-   zéro, 1 vaut huit. C'est l'inverse de l'intuition et la première chose à
-   vérifier. */
+/* The level of detail names the **largest dimension**, and decreases: 256 is
+   zero, 1 is eight. That is the reverse of intuition and the first thing to
+   check. */
 #define GR_LOD_256   0
 #define GR_LOD_128   1
 #define GR_LOD_64    2
@@ -99,8 +99,8 @@ typedef unsigned int (__stdcall *pfn_required)(unsigned evenOdd, GrTexInfo *info
 typedef void         (__stdcall *pfn_download)(int tmu, unsigned start,
                                                unsigned evenOdd, GrTexInfo *info);
 
-/* La taille analytique d'une texture 16 bits, à partir du couple (lod, aspect).
-   C'est ce que l'allocateur *croirait* si personne n'interrogeait la carte. */
+/* The analytical size of a 16-bit texture, from the (lod, aspect) pair. This is
+   what the allocator *would believe* if nobody asked the card. */
 static void dims_of(int lod, int aspect, int *w, int *h)
 {
     const int big = 256 >> lod;
@@ -126,19 +126,19 @@ int main(void)
     pfn_download download;
 
     g_out = fopen("D:\\TMU.TXT", "w");
-    say("ce que la TMU exige, mesure sur la carte\n\n");
+    say("what the TMU demands, measured on the card\n\n");
 
     if (dkr_glide_detect(&hw) != DKR_GLIDE_OK) {
-        say("ECHEC : pas de carte\n");
+        say("FAILED: no board\n");
         if (g_out) { fclose(g_out); }
         return 1;
     }
-    say("  TMU presentes    : %d\n", hw.tmu_count);
-    say("  memoire par TMU  : %u Ko, %u Ko\n",
+    say("  TMUs present     : %d\n", hw.tmu_count);
+    say("  memory per TMU   : %u KB, %u KB\n",
         hw.tmu_memory_kb[0], hw.tmu_memory_kb[1]);
 
     if (dkr_glide_open(DKR_GLIDE_RES_640x480, &ctx) != DKR_GLIDE_OK) {
-        say("ECHEC : contexte refuse\n");
+        say("FAILED: context refused\n");
         if (g_out) { fclose(g_out); }
         return 1;
     }
@@ -148,36 +148,36 @@ int main(void)
     required = (pfn_required) dkr_glide_symbol("_grTexTextureMemRequired@8");
     download = (pfn_download) dkr_glide_symbol("_grTexDownloadMipMap@16");
 
-    say("\n-- les symboles --\n");
+    say("\n-- the symbols --\n");
     check("grTexMinAddress",        tex_min  != 0);
     check("grTexMaxAddress",        tex_max  != 0);
     check("grTexTextureMemRequired",required != 0);
     check("grTexDownloadMipMap",    download != 0);
 
-    /* --- L'espace adressable ------------------------------------------------- *
+    /* --- The addressable space ----------------------------------------------- *
      *
-     * Ce n'est pas « zéro à deux mégaoctets ». Glide réserve, et l'adresse
-     * minimale n'est pas nécessairement nulle. Un allocateur qui partirait de
-     * zéro écraserait ce que la bibliothèque y a mis. */
+     * It is not "zero to two megabytes". Glide reserves, and the minimum address
+     * is not necessarily zero. An allocator starting from zero would overwrite
+     * what the library put there. */
     if (tex_min && tex_max) {
         int t;
-        say("\n-- l'espace adressable, par TMU --\n");
+        say("\n-- the addressable space, per TMU --\n");
         for (t = 0; t < hw.tmu_count && t < 3; t++) {
             const unsigned lo = tex_min(t);
             const unsigned hi = tex_max(t);
-            say("  TMU %d : de 0x%08X a 0x%08X, soit %u Ko utilisables\n",
+            say("  TMU %d: from 0x%08X to 0x%08X, that is %u KB usable\n",
                 t, lo, hi, (hi - lo) / 1024u);
         }
-        check("l'espace de la TMU 0 est non vide", tex_max(0) > tex_min(0));
+        check("TMU 0's space is not empty", tex_max(0) > tex_min(0));
         if (hw.tmu_count > 1) {
-            check("les deux TMU exposent le meme espace",
+            check("both TMUs expose the same space",
                   tex_min(0) == tex_min(1) && tex_max(0) == tex_max(1));
         }
     }
 
-    /* --- Ce qu'une texture coûte réellement ---------------------------------- */
+    /* --- What a texture really costs ----------------------------------------- */
     if (required) {
-        static const struct { int lod, aspect; const char *nom; } CAS[] = {
+        static const struct { int lod, aspect; const char *name; } CASES[] = {
             { GR_LOD_256, GR_ASPECT_1x1, "256x256" },
             { GR_LOD_128, GR_ASPECT_1x1, "128x128" },
             { GR_LOD_64,  GR_ASPECT_1x1, "64x64"   },
@@ -194,47 +194,47 @@ int main(void)
             { GR_LOD_64,  GR_ASPECT_1x8, "8x64"    },
             { GR_LOD_32,  GR_ASPECT_2x1, "32x16"   },
         };
-        const int n = (int)(sizeof(CAS) / sizeof(CAS[0]));
+        const int n = (int)(sizeof(CASES) / sizeof(CASES[0]));
         int i, exact = 0, rounded = 0;
 
-        say("\n-- ce qu'une texture 16 bits coute en TMU --\n");
-        say("  %-9s %8s %8s %s\n", "taille", "calcule", "carte", "");
+        say("\n-- what a 16-bit texture costs in TMU memory --\n");
+        say("  %-9s %8s %8s %s\n", "size", "computed", "card", "");
         for (i = 0; i < n; i++) {
             GrTexInfo info;
             int w = 0, h = 0;
             unsigned got, want;
 
-            dims_of(CAS[i].lod, CAS[i].aspect, &w, &h);
+            dims_of(CASES[i].lod, CASES[i].aspect, &w, &h);
             want = (unsigned)(w * h * 2);
 
             memset(&info, 0, sizeof(info));
-            info.smallLod    = CAS[i].lod;
-            info.largeLod    = CAS[i].lod;      /* pas de mipmap : un seul niveau */
-            info.aspectRatio = CAS[i].aspect;
+            info.smallLod    = CASES[i].lod;
+            info.largeLod    = CASES[i].lod;    /* no mipmap: a single level */
+            info.aspectRatio = CASES[i].aspect;
             info.format      = GR_TEXFMT_RGB_565;
             info.data        = 0;
 
             got = required(GR_MIPMAPLEVELMASK_BOTH, &info);
-            say("  %-9s %8u %8u %s\n", CAS[i].nom, want, got,
-                (got == want) ? "" : (got > want ? "<-- arrondi" : "<-- INFERIEUR ?!"));
+            say("  %-9s %8u %8u %s\n", CASES[i].name, want, got,
+                (got == want) ? "" : (got > want ? "<-- rounded up" : "<-- SMALLER ?!"));
             if (got == want)      { exact++; }
             else if (got > want)  { rounded++; }
         }
-        say("\n  exactes : %d, arrondies : %d, sur %d\n", exact, rounded, n);
+        say("\n  exact: %d, rounded up: %d, out of %d\n", exact, rounded, n);
 
-        /* Si tout est exact, l'allocateur peut empiler au plus serré. Sinon, il
-           doit demander la taille à la carte pour *chaque* texture — ce que
-           l'allocateur fera de toute façon, mais il est utile de savoir si l'on
-           gaspille. */
-        check("aucune taille rendue n'est inferieure au calcul",
+        /* If everything is exact, the allocator can pack as tightly as possible.
+           Otherwise it must ask the card for the size of *every* texture - which
+           the allocator will do anyway, but it is useful to know whether we are
+           wasting space. */
+        check("no returned size is smaller than the computation",
               exact + rounded == n);
 
-        /* --- La granularité d'adresse ---------------------------------------- *
+        /* --- The address granularity ----------------------------------------- *
          *
-         * Deux textures consécutives se placent à `addr += required(...)`. Reste
-         * à savoir si l'adresse elle-même doit être alignée. On le déduit du
-         * plus petit coût rendu : s'il vaut 8 pour une texture de 1x1 en 16
-         * bits, c'est-à-dire 2 octets utiles, l'alignement est de 8. */
+         * Two consecutive textures are placed at `addr += required(...)`. What
+         * remains is whether the address itself must be aligned. We deduce it from
+         * the smallest returned cost: if it is 8 for a 1x1 texture in 16 bits -
+         * that is, 2 useful bytes - the alignment is 8. */
         {
             GrTexInfo info;
             unsigned smallest;
@@ -243,25 +243,25 @@ int main(void)
             info.aspectRatio = GR_ASPECT_1x1;
             info.format = GR_TEXFMT_RGB_565;
             smallest = required(GR_MIPMAPLEVELMASK_BOTH, &info);
-            say("\n  plus petite allocation possible : %u octets\n", smallest);
-            say("  (une texture 1x1 en 16 bits n'occupe que 2 octets utiles)\n");
+            say("\n  smallest possible allocation: %u bytes\n", smallest);
+            say("  (a 1x1 texture in 16 bits occupies only 2 useful bytes)\n");
         }
     }
 
-    /* --- Les formats ---------------------------------------------------------- *
-     * Un format 8 bits doit coûter moitié moins. Si ce n'est pas le cas, c'est
-     * que la valeur d'énumération est fausse — et une valeur de format fausse
-     * ne provoque pas d'erreur, elle produit une texture illisible. */
+    /* --- The formats ---------------------------------------------------------- *
+     * An 8-bit format must cost half as much. If it does not, the enumeration
+     * value is wrong - and a wrong format value causes no error, it produces an
+     * unreadable texture. */
     if (required) {
-        static const struct { int fmt; const char *nom; int bpp; } FMT[] = {
+        static const struct { int fmt; const char *name; int bpp; } FMT[] = {
             { GR_TEXFMT_RGB_565,   "RGB 565",   16 },
             { GR_TEXFMT_ARGB_1555, "ARGB 1555", 16 },
             { GR_TEXFMT_ARGB_4444, "ARGB 4444", 16 },
             { GR_TEXFMT_ALPHA_8,   "ALPHA 8",    8 },
-            { GR_TEXFMT_P_8,       "palettise 8",8 },
+            { GR_TEXFMT_P_8,       "palettised 8", 8 },
         };
-        int i, coherents = 0;
-        say("\n-- les formats, sur une texture 64x64 --\n");
+        int i, consistent = 0;
+        say("\n-- the formats, on a 64x64 texture --\n");
         for (i = 0; i < 5; i++) {
             GrTexInfo info;
             unsigned got;
@@ -271,26 +271,26 @@ int main(void)
             info.aspectRatio = GR_ASPECT_1x1;
             info.format = FMT[i].fmt;
             got = required(GR_MIPMAPLEVELMASK_BOTH, &info);
-            say("  %-12s %2d bits : %6u octets (calcule %6u) %s\n",
-                FMT[i].nom, FMT[i].bpp, got, want, (got == want) ? "" : "<-- ecart");
-            if (got == want) { coherents++; }
+            say("  %-12s %2d bits: %6u bytes (computed %6u) %s\n",
+                FMT[i].name, FMT[i].bpp, got, want, (got == want) ? "" : "<-- differs");
+            if (got == want) { consistent++; }
         }
-        check("les cinq formats coutent ce que leur profondeur annonce",
-              coherents == 5);
+        check("the five formats cost what their depth announces",
+              consistent == 5);
     }
 
-    /* --- Un téléchargement réel ---------------------------------------------- *
+    /* --- A real download ------------------------------------------------------ *
      *
-     * La mesure ne vaut que si l'on peut effectivement écrire dans cet espace.
-     * On télécharge une texture reconnaissable ; E05-S02 verifiera ensuite
-     * qu'elle apparait a l'ecran, ce que la relecture du tampon rend possible. */
+     * The measurement is only worth something if one can actually write into that
+     * space. We download a recognisable texture; E05-S02 will then verify that it
+     * appears on screen, which reading the buffer back makes possible. */
     if (download && tex_min) {
-        static unsigned short damier[64 * 64];
+        static unsigned short checker[64 * 64];
         GrTexInfo info;
         int x, y;
         for (y = 0; y < 64; y++) {
             for (x = 0; x < 64; x++) {
-                damier[y * 64 + x] = (unsigned short)
+                checker[y * 64 + x] = (unsigned short)
                     (((x / 8 + y / 8) & 1) ? 0xF800 : 0x001F);
             }
         }
@@ -298,16 +298,16 @@ int main(void)
         info.smallLod = info.largeLod = GR_LOD_64;
         info.aspectRatio = GR_ASPECT_1x1;
         info.format = GR_TEXFMT_RGB_565;
-        info.data = damier;
+        info.data = checker;
         download(GR_TMU0, tex_min(0), GR_MIPMAPLEVELMASK_BOTH, &info);
-        say("\n  telechargement d'un damier 64x64 a 0x%08X : rendu la main\n",
+        say("\n  download of a 64x64 checkerboard at 0x%08X: returned\n",
             tex_min(0));
-        /* Glide ne rend rien : l'absence de plantage est tout ce qu'on obtient
-           ici, et c'est pourquoi la vraie verification est visuelle. */
+        /* Glide returns nothing: the absence of a crash is all one gets here, and
+           that is why the real verification is visual. */
     }
 
     dkr_glide_shutdown();
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
