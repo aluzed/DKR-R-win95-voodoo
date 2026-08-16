@@ -78,9 +78,9 @@ would be discovered much later and much worse.
 
 ## Long names work, but 8.3 stays the reference
 
-VFAT is active: the probe's 28-character name is created, and read back by its long
-name as by its `RACESA~1.DKR` alias. The alias truncates the extension from `.dkrsave` to
-`.DKR`, which would be enough to make two similar names diverge.
+VFAT is active: the probe's 28-character name is created, and read back by its
+long name as by its `RACESA~1.DKR` alias. The alias truncates the extension from
+`.dkrsave` to `.DKR`, which would be enough to make two similar names diverge.
 
 The layer corrects nothing and assumes nothing: `dkr_file_name_is_8dot3`
 **answers**, and the names it builds itself — `.DAT`, `.TMP`, `.BAK` on a base of
