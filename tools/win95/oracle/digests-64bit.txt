@@ -96,4 +96,4 @@ ainode_find_next                 6B453A8F9FB4E80A
 func_80052988                    C3DFBAA540F2BAA2
 func_8002AC00                    FAULT
 waves_block_hq                   FAULT
-# 56 faute(s) sur 96
+# 56 fault(s) out of 96

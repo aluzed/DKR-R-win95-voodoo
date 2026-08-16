@@ -44,7 +44,7 @@ static LONG WINAPI on_fault(EXCEPTION_POINTERS *info)
     (void)info;
     faulted = 1;
     longjmp(escape, 1);
-    return EXCEPTION_EXECUTE_HANDLER;   /* jamais atteint */
+    return EXCEPTION_EXECUTE_HANDLER;   /* never reached */
 }
 
 /* --- loading the PT_LOAD segments (big-endian ELF, MIPS) ------------------ */
