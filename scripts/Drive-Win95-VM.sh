@@ -10,6 +10,11 @@
 #   scripts/Drive-Win95-VM.sh shot ecran.png       capture l'écran
 #   scripts/Drive-Win95-VM.sh key F1               envoie une touche
 #   scripts/Drive-Win95-VM.sh type "E:\WIN95\INSTALL.EXE"
+#   scripts/Drive-Win95-VM.sh run "D:\DKRR.EXE D:\DKR.Z64"   lance le jeu
+#
+# Le jeu **exige le chemin de la ROM en argument** ; sans lui il s'arrête sur
+# « The diagnostic runtime requires a ROM path » et referme sa fenêtre, ce qui
+# ressemble à s'y méprendre à un plantage silencieux. La ROM est sur D:.
 #   scripts/Drive-Win95-VM.sh grab                 capture le clavier/souris
 #   scripts/Drive-Win95-VM.sh stop
 #
@@ -46,6 +51,24 @@ case "${1:-}" in
     [[ -x "$XVFB" ]] || die "Xvfb absent sous $PREFIX/opt/xvfb"
     [[ -x "$XDO" ]]  || die "xdotool absent sous $PREFIX/bin"
     [[ -f "$VM/86box.cfg" ]] || die "machine absente : $VM"
+    # **Une seule instance à la fois.**
+    #
+    # Rien n'empêchait `start` d'en lancer une de plus sur une machine déjà
+    # démarrée, et une session de mise au point appelle `boot` à chaque essai.
+    # Trente et une instances se sont ainsi accumulées, toutes montant la même
+    # image disque en écriture.
+    #
+    # Le symptôme n'a rien à voir avec la cause : c'est `Push-To-Win95-VM.sh`
+    # qui échoue, sur « Error reading FAT », parce que la FAT que mtools lit est
+    # celle que trente autres émulateurs sont en train de réécrire. On soupçonne
+    # le volume sale, on ajoute MTOOLS_SKIP_CHECK, et on écrit dans une image
+    # corrompue par des instances qu'on ne voit pas.
+    #
+    # Le garde-fou coûte trois lignes. L'heure perdue à chercher ailleurs, non.
+    if [[ -n "$(box_pids)" ]]; then
+      say "une machine tourne déjà (pid $(box_pids | tr '\n' ' ')) — rien à faire"
+      exit 0
+    fi
     if ! DISPLAY="$DISP" "$XDO" getactivewindow >/dev/null 2>&1 \
          && ! pgrep -f "Xvfb $DISP" >/dev/null 2>&1; then
       say "Démarrage de l'affichage virtuel $DISP"
