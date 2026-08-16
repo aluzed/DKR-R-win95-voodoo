@@ -1,97 +1,94 @@
-# E08-S03 — Optimisation du chemin sommet
+# E08-S03 — Optimising the vertex path
 
 | | |
 |---|---|
-| **Épic** | E08 — Performance |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | L |
-| **Dépend de** | E08-S01, E04-S03, E04-S05 |
-| **Bloque** | — |
+| **Epic** | E08 — Performance |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | L |
+| **Depends on** | E08-S01, E04-S03, E04-S05 |
+| **Blocks** | — |
 
-## Contexte
+## Context
 
-La transformation des sommets est un travail que la N64 confiait au RSP et qui
-revient ici au processeur hôte. C'est du calcul régulier, en volume, sur des
-données contiguës — exactement le profil qui se prête à l'optimisation.
+Vertex transformation is work the N64 entrusted to the RSP and that here falls to the
+host processor. It is regular computation, in volume, on contiguous data — exactly the
+profile that lends itself to optimisation.
 
-Trois leviers, dans l'ordre de rentabilité habituelle :
+Three levers, in the usual order of profitability:
 
-1. **Ne pas calculer.** Le rejet précoce par volume englobant (E04-S05) est le
-   gain le moins cher : un objet rejeté est un objet dont aucun sommet n'est
-   transformé. C'est presque toujours le levier le plus rentable, et il est
-   souvent négligé au profit du suivant.
-2. **Calculer mieux.** Le choix entre x87 et virgule fixe, tranché en E04-S03,
-   peut être réexaminé à la lumière du profil réel. Le x87 du Pentium II a une
-   latence notable et une pile de registres contrainte ; MMX offre des entiers
-   16 bits en parallèle, ce qui convient à la virgule fixe.
-3. **Calculer moins souvent.** La géométrie statique d'un niveau est transformée à
-   chaque image alors que seule la matrice de vue change ; il peut y avoir des
-   invariants à exploiter, à condition de vérifier qu'ils tiennent réellement.
+1. **Not computing.** Early rejection by bounding volume (E04-S05) is the cheapest
+   gain: a rejected object is an object none of whose vertices is transformed. It is
+   almost always the most profitable lever, and it is often neglected in favour of the
+   next.
+2. **Computing better.** The choice between x87 and fixed point, settled in E04-S03,
+   may be re-examined in the light of the real profile. The Pentium II's x87 has a
+   notable latency and a constrained register stack; MMX offers 16-bit integers in
+   parallel, which suits fixed point.
+3. **Computing less often.** A level's static geometry is transformed every frame
+   whereas only the view matrix changes; there may be invariants to exploit, provided
+   one checks that they really hold.
 
-Un point de vigilance : MMX partage ses registres avec la pile x87 (voir E03-S01),
-et mélanger les deux dans le pipeline sommet impose des transitions coûteuses. Si
-MMX est retenu, il doit couvrir un bloc entier, pas quelques opérations isolées.
+A point of vigilance: MMX shares its registers with the x87 stack (see E03-S01), and
+mixing the two in the vertex pipeline imposes expensive transitions. If MMX is
+retained, it must cover a whole block, not a few isolated operations.
 
-## Objectif
+## Objective
 
-Ramener le chemin sommet dans son allocation de budget, mesure à l'appui.
+To bring the vertex path back within its budget allocation, measurement in hand.
 
-## Périmètre
+## Scope
 
-**Dans :** transformation, découpage, préparation des sommets pour Glide.
+**In:** transformation, clipping, preparing the vertices for Glide.
 
-**Hors :** le code recompilé (E08-S02) et le backend Glide côté carte.
+**Out:** the recompiled code (E08-S02) and the Glide backend on the card's side.
 
-## Travail
+## Work
 
-1. Établir le profil détaillé du chemin sommet à partir de E08-S01 : part de la
-   transformation, du découpage, du rejet, de la préparation.
-2. Travailler d'abord le rejet. Mesurer combien de sommets sont transformés pour
-   rien — c'est-à-dire appartenant à de la géométrie finalement invisible. Si ce
-   chiffre est élevé, tout le reste du ticket est secondaire.
-3. Optimiser la boucle de transformation : disposition des données en mémoire,
-   déroulage, préchargement si l'architecture le permet. Sur un Pentium II, la
-   disposition des données pèse souvent plus que le nombre d'instructions.
-4. Évaluer MMX pour la virgule fixe, en couvrant un bloc entier du pipeline pour
-   éviter les transitions avec x87. Mesurer avant d'écrire beaucoup de code.
-5. Éliminer les recopies. Le vertex doit être produit directement au format Glide
-   (E04-S01) ; vérifier qu'aucune conversion intermédiaire ne subsiste, et que le
-   tampon de sommets est réutilisé plutôt que réalloué.
-6. Explorer le dessin par tableaux de sommets plutôt que triangle par triangle, si
-   la version de Glide retenue le permet : cela réduit le nombre d'appels, dont le
-   coût unitaire n'est pas négligeable.
-7. Mesurer le gain à chaque étape et l'inscrire au budget. Une optimisation dont
-   le gain n'est pas mesuré est une complication.
-8. Vérifier la non-régression visuelle après chaque changement, par comparaison
-   d'images (E09-S02). Une optimisation de calcul géométrique qui change une
-   position d'un pixel doit se voir.
+1. Establish the vertex path's detailed profile from E08-S01: the share of
+   transformation, of clipping, of rejection, of preparation.
+2. Work on rejection first. Measure how many vertices are transformed for nothing —
+   that is, belonging to geometry that ends up invisible. If that figure is high, all
+   the rest of the ticket is secondary.
+3. Optimise the transformation loop: data layout in memory, unrolling, prefetching if
+   the architecture allows it. On a Pentium II, data layout often weighs more than the
+   number of instructions.
+4. Evaluate MMX for fixed point, covering a whole block of the pipeline to avoid
+   transitions with x87. Measure before writing a lot of code.
+5. Eliminate the copies. The vertex must be produced directly in Glide's format
+   (E04-S01); check that no intermediate conversion remains, and that the vertex buffer
+   is reused rather than reallocated.
+6. Explore drawing through vertex arrays rather than triangle by triangle, if the
+   retained version of Glide allows it: it reduces the number of calls, whose unit cost
+   is not negligible.
+7. Measure the gain at each step and enter it in the budget. An optimisation whose gain
+   is not measured is a complication.
+8. Check for visual regressions after each change, by image comparison (E09-S02). An
+   optimisation of geometric computation that moves a position by a pixel must show.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le profil détaillé du chemin sommet est établi.
-- [ ] Le nombre de sommets transformés inutilement est mesuré, et le rejet
-      travaillé en premier.
-- [ ] Chaque optimisation est mesurée séparément.
-- [ ] MMX n'est employé que si la mesure le justifie, et sur des blocs entiers.
-- [ ] Aucune recopie ni réallocation par image dans le chemin sommet.
-- [ ] Le dessin par tableaux de sommets est évalué.
-- [ ] Le chemin sommet tient dans son allocation de budget.
-- [ ] Aucune régression visuelle après optimisation, vérifiée par comparaison
-      d'images.
+- [ ] The vertex path's detailed profile is established.
+- [ ] The number of vertices transformed needlessly is measured, and rejection worked on
+      first.
+- [ ] Every optimisation is measured separately.
+- [ ] MMX is used only if the measurement justifies it, and on whole blocks.
+- [ ] No copy and no reallocation per frame in the vertex path.
+- [ ] Drawing through vertex arrays is evaluated.
+- [ ] The vertex path fits within its budget allocation.
+- [ ] No visual regression after optimisation, verified by image comparison.
 
-## Risques
+## Risks
 
-L'optimisation de code géométrique introduit facilement des écarts de précision.
-Un changement d'ordre d'opérations en flottant, un arrondi différent en virgule
-fixe, et la géométrie se met à trembler. La vérification par comparaison d'images
-après chaque étape n'est pas une précaution excessive : c'est ce qui permet
-d'attribuer une régression à l'optimisation qui l'a causée, plutôt qu'à
-l'ensemble.
+Optimising geometric code easily introduces precision deviations. A change in the order
+of floating-point operations, a different rounding in fixed point, and the geometry
+starts to wobble. Checking by image comparison after each step is not an excessive
+precaution: it is what allows a regression to be attributed to the optimisation that
+caused it, rather than to the whole.
 
-## Références
+## References
 
-- E04-S03 — transformation, choix flottant / virgule fixe
-- E04-S05 — découpage et rejet
-- E03-S01 — MMX et transitions avec x87
-- E08-S01 — profil et budget
+- E04-S03 — transformation, floating-point / fixed-point choice
+- E04-S05 — clipping and rejection
+- E03-S01 — MMX and transitions with x87
+- E08-S01 — profile and budget

@@ -1,102 +1,95 @@
-# E08-S02 — Optimisation du code recompilé
+# E08-S02 — Optimising the recompiled code
 
 | | |
 |---|---|
-| **Épic** | E08 — Performance |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | L |
-| **Dépend de** | E08-S01, E01-S05 |
-| **Bloque** | — |
+| **Epic** | E08 — Performance |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | L |
+| **Depends on** | E08-S01, E01-S05 |
+| **Blocks** | — |
 
-## Contexte
+## Context
 
-Le code recompilé est le plus gros poste du budget, et c'est aussi le plus
-difficile à optimiser : il est généré, on ne l'édite pas, et il traduit fidèlement
-les instructions du VR4300 y compris quand cette fidélité coûte cher.
+The recompiled code is the budget's largest item, and it is also the hardest to
+optimise: it is generated, one does not edit it, and it translates the VR4300's
+instructions faithfully including when that fidelity is expensive.
 
-Les leviers disponibles, du moins risqué au plus risqué :
+The levers available, from the least risky to the most:
 
-1. **Les options du compilateur.** Le code généré est très répétitif ; le choix du
-   niveau d'optimisation, de la stratégie d'inlining et de l'ordonnancement pour le
-   Pentium II peut donner un gain notable pour un risque nul.
-2. **La disposition du code.** Un binaire de plusieurs dizaines de mégaoctets sur
-   une machine dont le cache d'instructions se compte en kilooctets : regrouper les
-   fonctions chaudes améliore la localité, et c'est souvent là que se trouve le
-   gain le plus important sur cette classe de machine.
-3. **La politique de recompilation.** `dkr.us.v77.recomp-policy.json` pilote la
-   génération. Certaines options de N64Recomp changent le code produit ; les
-   examiner.
-4. **Le remplacement de fonctions.** Le pipeline de crochets permet de remplacer
-   une fonction du jeu par une implémentation native. Pour les rares fonctions
-   très chaudes et purement calculatoires, c'est le levier le plus puissant — et
-   celui qui met le plus en péril la fidélité, puisqu'il substitue du code écrit à
-   la main à du code traduit.
+1. **The compiler's options.** The generated code is very repetitive; the choice of
+   optimisation level, of inlining strategy and of scheduling for the Pentium II can
+   give a notable gain for no risk.
+2. **Code layout.** A binary of several tens of megabytes on a machine whose
+   instruction cache is counted in kilobytes: grouping the hot functions improves
+   locality, and that is often where the largest gain is found on this class of
+   machine.
+3. **The recompilation policy.** `dkr.us.v77.recomp-policy.json` drives the generation.
+   Some of N64Recomp's options change the code produced; examine them.
+4. **Replacing functions.** The hook pipeline allows a game function to be replaced by
+   a native implementation. For the rare very hot and purely computational functions,
+   it is the most powerful lever — and the one that most endangers fidelity, since it
+   substitutes hand-written code for translated code.
 
-L'ordre importe : les trois premiers leviers ne changent pas le comportement du
-jeu, le quatrième si.
+The order matters: the first three levers do not change the game's behaviour, the
+fourth does.
 
-## Objectif
+## Objective
 
-Réduire le coût du code recompilé, en préservant strictement le comportement du
-jeu.
+To reduce the recompiled code's cost, strictly preserving the game's behaviour.
 
-## Périmètre
+## Scope
 
-**Dans :** options de compilation, disposition, politique de recompilation,
-remplacement ciblé de fonctions.
+**In:** compilation options, layout, recompilation policy, targeted function
+replacement.
 
-**Hors :** le chemin graphique (E08-S03) et la mémoire (E08-S04).
+**Out:** the graphics path (E08-S03) and memory (E08-S04).
 
-## Travail
+## Work
 
-1. Identifier les fonctions chaudes à partir de l'export de E08-S01, sur une
-   session de jeu réelle et non sur une boucle synthétique.
-2. Explorer les options du compilateur, en mesurant chaque variante. Sur cette
-   architecture, optimiser pour la taille peut battre optimiser pour la vitesse,
-   parce que le cache est le facteur limitant — c'est contre-intuitif et cela se
-   mesure.
-3. Travailler la disposition du code : regrouper les fonctions chaudes. Si la
-   toolchain retenue le permet, l'optimisation guidée par le profil est le moyen le
-   plus direct d'y parvenir.
-4. Examiner les options de la politique de recompilation et mesurer leur effet.
-5. Pour les fonctions les plus chaudes, évaluer le remplacement natif. Le decomp
-   (`extern/dkr-decomp`) fournit le C d'origine, ce qui rend l'exercice bien moins
-   risqué qu'une réécriture : on compile la source d'origine plutôt que d'imiter
-   son comportement. Attention toutefois — le portage natif voisin a découvert que
-   ce C, sous `#ifdef NON_MATCHING`, **n'avait jamais été compilé par aucune
-   cible** et portait cinq défauts francs. Il se vérifie, il ne se fait pas
-   confiance.
-6. Pour chaque remplacement, prouver l'équivalence par comparaison de sortie sur
-   un large échantillon d'entrées, contre la version recompilée.
-7. Mesurer le gain cumulé et le reporter au budget de E08-S01.
-8. Vérifier la non-régression du jeu après chaque changement : une séance de jeu
-   complète, pas seulement le démarrage.
+1. Identify the hot functions from E08-S01's export, on a real play session and not on
+   a synthetic loop.
+2. Explore the compiler's options, measuring each variant. On this architecture,
+   optimising for size may beat optimising for speed, because the cache is the limiting
+   factor — that is counter-intuitive and it is measured.
+3. Work on code layout: group the hot functions. If the retained toolchain allows it,
+   profile-guided optimisation is the most direct way of getting there.
+4. Examine the recompilation policy's options and measure their effect.
+5. For the hottest functions, evaluate native replacement. The decomp
+   (`extern/dkr-decomp`) supplies the original C, which makes the exercise far less
+   risky than a rewrite: one compiles the original source rather than imitating its
+   behaviour. Beware all the same — the neighbouring native port discovered that this
+   C, under `#ifdef NON_MATCHING`, **had never been compiled by any target** and
+   carried five outright defects. It is to be checked, not trusted.
+6. For each replacement, prove the equivalence by comparing output over a large sample
+   of inputs, against the recompiled version.
+7. Measure the cumulative gain and report it to E08-S01's budget.
+8. Check the game for regressions after each change: a complete play session, not just
+   the startup.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Les fonctions chaudes sont identifiées sur une session de jeu réelle.
-- [ ] Chaque option de compilation est mesurée, pas supposée.
-- [ ] L'effet de la disposition du code est mesuré séparément.
-- [ ] Tout remplacement natif est prouvé équivalent par comparaison de sortie sur
-      un large échantillon.
-- [ ] Le gain cumulé est mesuré et reporté au budget.
-- [ ] Le jeu se comporte identiquement, vérifié par une séance complète.
-- [ ] Aucun remplacement natif n'est fait sans mesure préalable prouvant que la
-      fonction est chaude.
+- [ ] The hot functions are identified on a real play session.
+- [ ] Every compilation option is measured, not assumed.
+- [ ] The effect of code layout is measured separately.
+- [ ] Any native replacement is proved equivalent by comparing output over a large
+      sample.
+- [ ] The cumulative gain is measured and reported to the budget.
+- [ ] The game behaves identically, verified by a complete session.
+- [ ] No native replacement is made without a prior measurement proving the function is
+      hot.
 
-## Risques
+## Risks
 
-Le remplacement de fonctions est le levier le plus tentant et le plus dangereux :
-il substitue du code écrit à la main à un code traduit fidèlement, et une
-différence de comportement peut ne se manifester que dans une situation de jeu
-rare. Ne l'employer que sur des fonctions dont le profil prouve qu'elles comptent,
-et jamais sans preuve d'équivalence.
+Replacing functions is the most tempting and the most dangerous lever: it substitutes
+hand-written code for faithfully translated code, and a difference in behaviour may
+manifest only in a rare game situation. Use it only on functions the profile proves
+matter, and never without proof of equivalence.
 
-## Références
+## References
 
 - `runtime-recomp/dkr.us.v77.recomp-policy.json`
-- `extern/dkr-decomp` — source C d'origine
+- `extern/dkr-decomp` — original C source
 - `../../Diddy-Kong-Racing/docs/stories/E01-build/E01-S04-porter-hasm-en-c.md` —
-  cinq défauts trouvés dans le C `NON_MATCHING` du decomp
-- E08-S01 — profil et budget
+  five defects found in the decomp's `NON_MATCHING` C
+- E08-S01 — profile and budget

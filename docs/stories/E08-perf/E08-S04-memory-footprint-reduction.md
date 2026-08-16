@@ -1,85 +1,80 @@
-# E08-S04 — Réduction de l'empreinte mémoire
+# E08-S04 — Reducing the memory footprint
 
 | | |
 |---|---|
-| **Épic** | E08 — Performance |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E00-S06, E08-S01, E07-S01 |
-| **Bloque** | E09-S04 |
+| **Epic** | E08 — Performance |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E00-S06, E08-S01, E07-S01 |
+| **Blocks** | E09-S04 |
 
-## Contexte
+## Context
 
-Sur une machine à 64 Mo, la mémoire n'est pas seulement une contrainte de
-capacité : c'est une contrainte de performance. Dès que le jeu dépasse la mémoire
-physique, Windows 95 pagine sur un disque de 1998, et le résultat n'est pas une
-dégradation progressive mais un effondrement.
+On a 64 MB machine, memory is not only a constraint of capacity: it is a constraint of
+performance. As soon as the game exceeds physical memory, Windows 95 pages onto a 1998
+disk, and the result is not a gradual degradation but a collapse.
 
-E00-S06 a établi le budget et les décisions de réduction. Ce ticket les applique
-et vérifie le résultat en fonctionnement réel.
+E00-S06 established the budget and the reduction decisions. This ticket applies them and
+verifies the result in real operation.
 
-Le poste le plus évident est l'instantané RDRAM : **8 Mio par tâche graphique en
-attente**, dimensionné pour un usage — l'interpolation moderne — qui disparaît
-avec E07-S01. Sans interpolation, il n'y a plus besoin d'apparier deux images, et
-une seule tâche en vol suffit.
+The most obvious item is the RDRAM snapshot: **8 MiB per pending graphics task**, sized
+for a use — modern interpolation — that disappears with E07-S01. Without interpolation,
+there is no longer any need to match two frames, and a single task in flight suffices.
 
-## Objectif
+## Objective
 
-Ramener l'empreinte dans le budget de E00-S06, et prouver qu'il n'y a pas de
-pagination en cours de partie.
+To bring the footprint back within E00-S06's budget, and to prove there is no paging
+during play.
 
-## Périmètre
+## Scope
 
-**Dans :** l'application des décisions de E00-S06 et leur vérification.
+**In:** applying E00-S06's decisions and verifying them.
 
-**Hors :** la définition du budget lui-même (E00-S06).
+**Out:** defining the budget itself (E00-S06).
 
-## Travail
+## Work
 
-1. Appliquer la décision sur l'instantané RDRAM : taille réduite à ce que DKR
-   utilise réellement, et nombre de tâches en vol ramené à ce qu'exige le profil
-   Accurate. Le patch existant
-   (`0007-snapshot-rdram-for-queued-graphics-tasks.patch`) est le point d'entrée.
-2. Appliquer la décision sur l'accès à la ROM (E02-S04).
-3. Revoir les caches côté hôte : textures décodées (E04-S07), display lists,
-   tampons de sommets. Chacun doit avoir un plafond explicite plutôt qu'une
-   croissance libre.
-4. Mesurer la fragmentation du tas sur une session longue. Un jeu qui alloue et
-   libère pendant des heures fragmente, et sous Windows 95 le tas ne se compacte
-   pas. Si la fragmentation croît, préférer des tampons préalloués aux allocations
-   dynamiques dans les chemins chauds.
-5. Vérifier l'absence de pagination en fonctionnement : compter les défauts de
-   page sur une session de jeu réelle. C'est le critère qui compte réellement — la
-   somme des postes peut tenir sur le papier et le système paginer quand même.
-6. Vérifier le comportement sur une machine de 32 Mo, configuration de repli
-   évaluée par E00-S06 : ce qui se dégrade, et si le jeu reste jouable.
-7. Mettre à jour le budget de E00-S06 avec les chiffres réels après réduction.
+1. Apply the decision on the RDRAM snapshot: size reduced to what DKR really uses, and
+   the number of tasks in flight brought back to what the Accurate profile requires. The
+   existing patch (`0007-snapshot-rdram-for-queued-graphics-tasks.patch`) is the entry
+   point.
+2. Apply the decision on ROM access (E02-S04).
+3. Review the host-side caches: decoded textures (E04-S07), display lists, vertex
+   buffers. Each must have an explicit ceiling rather than free growth.
+4. Measure heap fragmentation over a long session. A game that allocates and frees for
+   hours fragments, and under Windows 95 the heap does not compact. If the fragmentation
+   grows, prefer preallocated buffers to dynamic allocations in the hot paths.
+5. Check the absence of paging in operation: count the page faults over a real play
+   session. That is the criterion that really counts — the sum of the items may fit on
+   paper and the system page all the same.
+6. Check the behaviour on a 32 MB machine, the fallback configuration assessed by
+   E00-S06: what degrades, and whether the game stays playable.
+7. Update E00-S06's budget with the real figures after reduction.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] L'instantané RDRAM et le nombre de tâches en vol sont réduits selon
+- [ ] The RDRAM snapshot and the number of tasks in flight are reduced according to
       E00-S06.
-- [ ] Chaque cache côté hôte a un plafond explicite.
-- [ ] La fragmentation du tas est mesurée sur une session longue et ne croît pas
-      sans borne.
-- [ ] Aucune pagination en cours de partie sur la configuration cible — vérifié
-      par comptage de défauts de page, pas par observation.
-- [ ] Le comportement sur 32 Mo est évalué et documenté.
-- [ ] Le budget de E00-S06 est mis à jour avec les chiffres réels.
-- [ ] Aucune régression de comportement du jeu.
+- [ ] Every host-side cache has an explicit ceiling.
+- [ ] Heap fragmentation is measured over a long session and does not grow without
+      bound.
+- [ ] No paging during play on the target configuration — verified by counting page
+      faults, not by observation.
+- [ ] The behaviour on 32 MB is assessed and documented.
+- [ ] E00-S06's budget is updated with the real figures.
+- [ ] No regression in the game's behaviour.
 
-## Risques
+## Risks
 
-Réduire l'instantané RDRAM touche à un mécanisme dont
-`docs/RENDER_SNAPSHOT_ARCHITECTURE.md` explique qu'il protège la mémoire de
-simulation : le décodeur ne doit jamais réécrire dans la RDRAM vivante. Cette
-propriété doit survivre à la réduction. La réduire est légitime, la supprimer ne
-l'est pas.
+Reducing the RDRAM snapshot touches a mechanism which
+`docs/RENDER_SNAPSHOT_ARCHITECTURE.md` explains protects the simulation's memory: the
+decoder must never write back into live RDRAM. That property must survive the
+reduction. Reducing it is legitimate, removing it is not.
 
-## Références
+## References
 
 - `docs/RENDER_SNAPSHOT_ARCHITECTURE.md`
 - `patches/n64-modern-runtime/0007-snapshot-rdram-for-queued-graphics-tasks.patch`
-- E00-S06 — budget et décisions
-- E07-S01 — suppression de l'interpolation, qui rend la réduction possible
+- E00-S06 — budget and decisions
+- E07-S01 — removing the interpolation, which makes the reduction possible
