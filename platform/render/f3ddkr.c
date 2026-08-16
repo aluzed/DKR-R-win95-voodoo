@@ -31,6 +31,7 @@
 #define VIEWPORT_BYTES    16u
 #define OP_SETTILE        0xF5
 #define OP_SETTILESIZE    0xF2
+#define OP_RDPSETOTHERMODE 0xEF
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -1107,6 +1108,36 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         case OP_FILLRECT:
             cmd_fill_rect(c, w0, w1);
+            break;
+
+        case OP_RDPSETOTHERMODE:
+            /* --- Le mot de mode, écrit en entier ------------------------------ *
+             *
+             * `SETOTHERMODE_H` et `_L` sont des écritures **partielles** ;
+             * celle-ci remplace les deux moitiés d'un coup. Elle était enjambée,
+             * et le mode restait donc figé sur le dernier réglage partiel — en
+             * pratique celui des remplissages plein écran, c'est-à-dire le mode
+             * de cycle FILL.
+             *
+             * Le symptôme n'accusait rien : les 32 411 configurations de
+             * combineur du jeu étaient toutes enregistrées en cycle FILL, donc
+             * aucune ne pouvait correspondre à la table — le mode de cycle fait
+             * partie de la clé. On aurait conclu que la table était incomplète
+             * et on l'aurait enrichie de configurations qui n'auraient rien
+             * reconnu non plus.
+             *
+             * L'histogramme des opcodes portait la réponse depuis le début :
+             * `EF:1798`, mille sept cent quatre-vingt-dix-huit fois par course,
+             * dans les huit premiers. Il était enjambé au même titre que les
+             * synchronisations, faute d'avoir regardé ce qu'il faisait.
+             *
+             * La moitié haute ne tient que sur vingt-quatre bits — c'est ce que
+             * la commande transporte, le reste du mot n'existant pas côté RDP. */
+            c->mode_h = w0 & 0x00FFFFFFu;
+            c->mode_l = w1;
+            c->etat_sale = 1;
+            trace(c, "SetOtherMode entier h=0x%06X l=0x%08X",
+                  c->mode_h, c->mode_l);
             break;
 
         case OP_SETOTHERMODE_H:
