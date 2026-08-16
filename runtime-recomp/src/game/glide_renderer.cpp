@@ -11,90 +11,86 @@
 namespace {
 
 #if defined(DKR_TARGET_WIN95)
-// La taille de l'instantané que le fil graphique reçoit. Elle est fixée dans
-// `submit_rsp_task` (events.cpp) et vaut 8 Mio, la RDRAM étendue de la N64 —
-// **et non les 20 Mio auxquels le correctif 0017 dimensionne l'espace de
-// librecomp**, qui couvre bien plus que la RDRAM invitée.
+// The size of the snapshot the graphics thread receives. It is fixed in
+// `submit_rsp_task` (events.cpp) at 8 MiB, the N64's expanded RDRAM -- **not the
+// 20 MiB patch 0017 sizes librecomp's space to**, which covers far more than the
+// guest's RDRAM.
 //
-// Se tromper ici ne planterait pas : le décodeur borne chaque plage sur cette
-// taille, donc une valeur trop grande transformerait un accès hors instantané en
-// lecture de mémoire voisine, et une valeur trop petite ferait rejeter de la
-// géométrie légitime en la comptant comme adresse invalide.
+// Getting this wrong would not crash: the decoder bounds every range against
+// this size, so too large a value turns an access past the snapshot into a read
+// of neighbouring memory, and too small a value rejects legitimate geometry by
+// counting it as an invalid address.
 constexpr unsigned kSnapshotBytes = 0x800000u;
 
-// La Voodoo 2 de cette machine. 640x480 est le mode que E05 a mesuré, et le seul
-// que ce portage ouvre pour l'instant.
+// This machine's Voodoo 2. 640x480 is the mode E05 measured, and the only one
+// this port opens for now.
 constexpr int kWidth = 640;
 constexpr int kHeight = 480;
 
-// --- Lire l'état du jeu, plutôt que de le déduire du rendu -------------------
+// --- Read the game's state, rather than inferring it from the rendering ------
 //
-// Toutes les mesures jusqu'ici décrivaient le même état stationnaire — même
-// nombre de commandes par liste, même couleur de fond, aucun tri de profondeur.
-// Elles disent ce que le jeu dessine, jamais **où il en est**. Continuer à
-// perfectionner le rendu d'une image que le jeu n'a peut-être pas l'intention
-// de faire évoluer serait mal employer l'effort.
+// Every measurement so far described the same steady state -- same command count
+// per list, same background colour, no depth sorting at all. They say what the
+// game draws, never **where it has got to**. Going on perfecting the rendering of
+// a frame the game may have no intention of advancing would misspend the effort.
 //
-// `gGameMode` est la variable que DKR lui-même consulte pour savoir quoi faire.
-// Son adresse vient de la carte des symboles du décomp :
+// `gGameMode` is the variable DKR itself consults to decide what to do. Its
+// address comes from the decomp's symbol map:
 //
 //     0x801234ec  gGameMode          -1 INTRO, 0 INGAME, 1 MENU, 5 LOCKUP
 //     0x800dd394  gLevelLoadTimer
 //     0x80121168  gCurrentLevelHeader
 //
-// `GAMEMODE_LOCKUP` mérite une mention : le jeu s'y met lui-même quand
-// `get_lockup_status()` répond vrai, et il affiche alors un écran de plantage.
-// S'il y est, aucune correction de rendu n'y changera rien.
+// `GAMEMODE_LOCKUP` deserves a mention: the game puts itself there when
+// `get_lockup_status()` returns true, and shows a crash screen. If it is there,
+// no rendering fix will change anything.
 //
-// **La lecture est native, sans permutation d'octets.** La RDRAM de librecomp
-// est entrelacée par XOR-3, et pour un mot de 32 bits aligné l'entrelacement et
-// le petit-boutisme de l'hôte s'annulent exactement. Retourner les octets « pour
-// corriger le boutisme » est l'erreur déjà commise une fois cette session, sur
-// la lecture de `curRDPTask`.
-constexpr unsigned kAdrGameMode = 0x1234ECu;
-constexpr unsigned kAdrLevelLoadTimer = 0x0DD394u;
-constexpr unsigned kAdrLevelHeader = 0x121168u;
+// **The read is native, with no byte swapping.** librecomp's RDRAM is XOR-3
+// interleaved, and for an aligned 32-bit word the interleave and the host's
+// little-endianness cancel exactly. Flipping the bytes "to fix the endianness"
+// is the mistake already made once this session, on reading `curRDPTask`.
+constexpr unsigned kAddrGameMode = 0x1234ECu;
+constexpr unsigned kAddrLevelLoadTimer = 0x0DD394u;
+constexpr unsigned kAddrLevelHeader = 0x121168u;
 
-int lire_mot(const std::uint8_t* rdram, unsigned adresse) {
+int read_word(const std::uint8_t* rdram, unsigned address) {
     int v = 0;
-    std::memcpy(&v, rdram + adresse, sizeof(v));
+    std::memcpy(&v, rdram + address, sizeof(v));
     return v;
 }
 
-// La trace du décodeur, bornée.
+// The decoder trace, bounded -- and **two budgets, not one**.
 //
-// Sans elle on lit « un rejet par liste » et l'on ne sait pas lequel : le
-// compteur dit qu'il y a un problème, la trace dit lequel. Elle est bornée
-// parce que le journal part sur une disquette émulée, et parce que les
-// premières occurrences suffisent — un rejet qui se répète six cents fois se
-// diagnostique sur la première.
-// **Deux budgets, pas un.**
+// Without a trace one reads "one reject per list" and cannot tell which: the
+// counter says there is a problem, the trace says which one. It is bounded
+// because the log goes to an emulated floppy, and because the first few
+// occurrences suffice -- a reject repeating six hundred times is diagnosed on
+// the first.
 //
-// Un budget unique a déjà coûté un aller-retour : les commandes différées, bien
-// plus nombreuses, l'épuisaient avant qu'un seul rejet n'ait été écrit. Le
-// journal montrait alors « 589 rejets d'opcode » sans dire lequel — le compteur
-// disait qu'il y avait un problème, et la trace, censée dire lequel, avait été
-// dépensée sur du bruit.
+// A single budget already cost a round trip: the deferred commands, far more
+// numerous, exhausted it before a single reject had been written. The log then
+// showed "589 opcode rejects" without saying which -- the trace meant to say
+// which had been spent on noise.
 //
-// Le rejet est ce qu'on cherche ; le reste est du contexte. Ils ne peuvent pas
-// puiser au même seau.
-unsigned g_trace_rejets = 24;
-unsigned g_trace_contexte = 24;
+// The reject is what we are after; the rest is context. They cannot draw from
+// the same bucket.
+unsigned g_trace_rejects = 24;
+unsigned g_trace_context = 24;
 
-bool commence_par(const char* ligne, const char* prefixe) {
-    while (*prefixe != '\0') {
-        if (*ligne != *prefixe) { return false; }
-        ligne++;
-        prefixe++;
+bool starts_with(const char* line, const char* prefix) {
+    while (*prefix != '\0') {
+        if (*line != *prefix) { return false; }
+        line++;
+        prefix++;
     }
     return true;
 }
 
-void trace_decodeur(void*, const char* ligne) {
-    unsigned* seau = commence_par(ligne, "REJET") ? &g_trace_rejets : &g_trace_contexte;
-    if (*seau == 0) { return; }
-    (*seau)--;
-    std::fprintf(stderr, "[gfx][f3d] %s\n", ligne);
+void trace_decoder(void*, const char* line) {
+    unsigned* bucket = starts_with(line, "REJECT") ? &g_trace_rejects : &g_trace_context;
+    if (*bucket == 0) { return; }
+    (*bucket)--;
+    std::fprintf(stderr, "[gfx][f3d] %s\n", line);
 }
 #endif
 
@@ -147,42 +143,40 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 
     backend_.begin_frame(backend_.self, 0x000000);
 
-    // Réinitialisé à chaque display list, et non conservé d'une image à l'autre.
-    // C'est le contrat du microcode : chaque tâche graphique arrive avec ses
-    // propres `DMAOffsets` et sa propre matrice. Conserver l'état ferait
-    // dépendre une image de la précédente, et le premier symptôme serait une
-    // géométrie juste au démarrage puis dérivante — le pire cas à diagnostiquer.
+    // Reset for every display list, not carried across frames. That is the
+    // microcode's contract: each graphics task arrives with its own DMAOffsets
+    // and its own matrix. Keeping state would make one frame depend on the
+    // previous, and the first symptom would be geometry correct at boot then
+    // drifting -- the worst case to diagnose.
     dkr_f3d_init(&context_, rdram_snapshot, kSnapshotBytes, &backend_);
-    // La disposition de librecomp, entrelacée par XOR-3. Sans ce drapeau le
-    // décodeur lirait des opcodes plausibles à des adresses absurdes.
+    // librecomp's XOR-3 interleaved layout. Without this flag the decoder would
+    // read plausible opcodes at absurd addresses.
     context_.rdram_native = 1;
-    context_.trace = trace_decodeur;
-    // `DKR_NO_DEPTH=1` désactive le tri de profondeur. Diagnostic : il répond en
-    // une course à une question que l'inspection du code ne tranche pas.
+    context_.trace = trace_decoder;
+    // `DKR_NO_DEPTH=1` turns depth sorting off. A diagnostic switch: it answers
+    // in one run a question that reading the code does not settle.
     {
-        static const bool sans = (std::getenv("DKR_NO_DEPTH") != nullptr);
-        context_.sans_profondeur = sans ? 1 : 0;
+        static const bool no_depth = (std::getenv("DKR_NO_DEPTH") != nullptr);
+        context_.no_depth = no_depth ? 1 : 0;
     }
-    // La résolution réellement ouverte : le décodeur en a besoin pour porter le
-    // tampon du jeu (320 de large) à l'écran, aussi bien pour les rectangles 2D
-    // que pour la fenêtre d'affichage 3D.
+    // The resolution actually opened: the decoder needs it to carry the game's
+    // buffer (320 wide) onto the screen, for the 2D rectangles as well as for
+    // the 3D viewport.
     context_.screen_width = static_cast<unsigned>(width_);
     context_.screen_height = static_cast<unsigned>(height_);
 
-    // **Une liste entière, vidée une seule fois.**
+    // **One whole list, dumped once.**
     //
-    // Les compteurs ont mené jusqu'ici puis se sont tus : 70 commandes par
-    // liste, constant depuis la liste 300, deux remplissages et rien d'autre.
-    // Un chiffre stable ne dit plus rien de ce que le jeu fabrique ; il faut
-    // voir la liste.
+    // The counters led this far then went quiet: 70 commands per list, constant
+    // from list 300 on, two fills and nothing else. A stable number says nothing
+    // more about what the game is building; the list has to be seen.
     //
-    // Le choix de la 300e n'est pas arbitraire : c'est à partir de là que le
-    // débit se stabilise, donc la première qui décrit l'état où le jeu reste.
-    // Vider la première donnerait la séquence d'initialisation, qui n'est pas
-    // celle où il est bloqué.
+    // The 300th is not an arbitrary choice: that is where the rate settles, so
+    // it is the first list describing the state the game stays in. Dumping the
+    // first would give the initialisation sequence instead.
     if (index == 300) {
-        g_trace_contexte = 400;
-        std::fprintf(stderr, "[gfx] --- liste 300, contenu integral ---\n");
+        g_trace_context = 400;
+        std::fprintf(stderr, "[gfx] --- list 300, full contents ---\n");
     }
     dkr_transform_set_viewport(&context_.transform,
                                static_cast<float>(width_) * 0.5F,
@@ -190,8 +184,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                                static_cast<float>(width_) * 0.5F,
                                static_cast<float>(height_) * 0.5F);
 
-    // L'adresse est virtuelle côté invité (0x80xxxxxx) ; l'instantané est
-    // indexé physiquement.
+    // The address is guest-virtual (0x80xxxxxx); the snapshot is indexed
+    // physically.
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
 
     backend_.present(backend_.self);
@@ -202,36 +196,35 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     for (int i = 0; i < 256; i++) { opcodes_[i] += context_.state.opcodes[i]; }
     total_rects_ += context_.state.rects;
     total_viewports_ += context_.state.viewports;
-    total_tex_chargees_ += context_.state.textures_chargees;
-    total_tex_reutilisees_ += context_.state.textures_reutilisees;
-    total_tex_refusees_ += context_.state.textures_refusees;
-    total_tex_remplies_ += context_.state.textures_remplies;
-    total_emis_texture_ += context_.state.emis_avec_texture;
-    // **Accumuler à chaque image, pas dans le bloc de rapport.**
+    total_tex_loaded_ += context_.state.textures_loaded;
+    total_tex_reused_ += context_.state.textures_reused;
+    total_tex_refused_ += context_.state.textures_refused;
+    total_tex_padded_ += context_.state.textures_padded;
+    total_emitted_textured_ += context_.state.emitted_textured;
+    // **Accumulate every frame, not inside the reporting block.**
     //
-    // La première version de ce compteur additionnait à l'intérieur du `if` qui
-    // n'imprime qu'une liste sur soixante : il ne voyait donc qu'un soixantième
-    // des images, et le total était soixante fois trop bas. Il l'était de façon
-    // *cohérente*, ce qui est le pire cas — 5 731 contre 380 000 émis se lit
-    // comme « le mélange n'est presque jamais posé » plutôt que comme une erreur
-    // d'échantillonnage.
-    for (int m = 0; m < 8; m++) { melange_[m] += context_.state.emis_par_melange[m]; }
-    total_test_alpha_ += context_.state.emis_avec_test_alpha;
+    // The first version of this counter added inside the `if` that only prints
+    // one list in sixty: it therefore saw one sixtieth of the frames, and the
+    // total was sixty times too low. It was too low *consistently*, which is the
+    // worst case -- 5,731 against 380,000 emitted reads as "blending is almost
+    // never set" rather than as a sampling error.
+    for (int m = 0; m < 8; m++) { blend_[m] += context_.state.emitted_per_blend[m]; }
+    total_alpha_test_ += context_.state.emitted_alpha_test;
     for (int i = 0; i < 4; i++) {
-        aire_[i] += context_.state.aire[i];
-        profondeur_[i] += context_.state.emis_par_profondeur[i];
+        area_[i] += context_.state.area[i];
+        depth_[i] += context_.state.emitted_per_depth[i];
     }
     for (int i = 0; i < DKR_COMBINE_COUNT; i++) {
-        emis_par_combine_[i] += context_.state.emis_par_combine[i];
+        emitted_per_combine_[i] += context_.state.emitted_per_combine[i];
     }
-    total_tex_proportions_ += context_.state.textures_hors_proportions;
-    total_tex_inconnues_ += context_.state.textures.non_prises_en_charge;
-    total_tex_hors_ += context_.state.textures.hors_rdram;
-    total_etats_ += context_.state.etats_appliques;
-    total_comb_connus_ += context_.state.combineurs_connus;
-    total_comb_inconnus_ += context_.state.combineurs_inconnus;
-    total_approches_ += context_.state.etats_approches;
-    total_fill_hors_cycle_ += context_.state.fill_hors_cycle;
+    total_tex_aspect_ += context_.state.textures_bad_aspect;
+    total_tex_unsupported_ += context_.state.textures.unsupported;
+    total_tex_out_of_rdram_ += context_.state.textures.out_of_rdram;
+    total_states_ += context_.state.states_applied;
+    total_combiners_known_ += context_.state.combiners_known;
+    total_combiners_unknown_ += context_.state.combiners_unknown;
+    total_approximate_ += context_.state.states_approximate;
+    total_fill_wrong_cycle_ += context_.state.fills_wrong_cycle;
     total_deferred_ += context_.state.deferred;
     total_commands_ += context_.state.commands;
     total_triangles_ += context_.state.triangles;
@@ -243,22 +236,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         }
     }
 
-    // Un relevé périodique plutôt qu'une ligne par image : le journal part sur
-    // une disquette émulée, et soixante lignes par seconde la saturent.
+    // A periodic report rather than a line per frame: the log goes to an
+    // emulated floppy, and sixty lines a second saturate it.
     //
-    // Les trois chiffres se lisent ensemble et c'est leur écart qui renseigne.
-    // Des triangles nombreux et zéro émis désignent le découpage ou la culling ;
-    // zéro triangle avec des commandes désigne le décodeur ; des rejets qui
-    // montent désignent l'adressage, donc la disposition mémoire.
+    // The three numbers are read together, and it is their gap that informs.
+    // Many triangles and zero emitted points at clipping or culling; zero
+    // triangles with commands points at the decoder; rising rejects point at
+    // addressing, hence at the memory layout.
     if (index <= 3 || index % 60 == 0) {
         std::fprintf(stderr,
                      "[gfx] liste=%llu cmd=%lu tri=%lu emis=%lu rejets=%lu\n",
                      static_cast<unsigned long long>(index), total_commands_,
                      total_triangles_, total_emitted_, total_rejects_);
-        // Le total de rejets ne dit pas quoi corriger : une adresse hors RDRAM
-        // accuse l'adressage, un opcode inconnu accuse le décodage, un index de
-        // sommet accuse une commande manquée en amont. Les compter séparément
-        // est ce qui transforme « ça rejette » en une piste.
+        // The reject total does not say what to fix: an address outside RDRAM
+        // accuses the addressing, an unknown opcode the decoding, a vertex index
+        // a command missed upstream. Counting them apart is what turns "it
+        // rejects" into a lead.
         std::fprintf(stderr,
                      "[gfx]   differees=%lu | adresse=%lu nombre=%lu index=%lu "
                      "profondeur=%lu opcode=%lu\n",
@@ -268,9 +261,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      rejects_by_kind_[DKR_F3D_REJECT_INDEX],
                      rejects_by_kind_[DKR_F3D_REJECT_DEPTH],
                      rejects_by_kind_[DKR_F3D_REJECT_OPCODE]);
-        // Les huit opcodes les plus fréquents, par ordre décroissant. Huit
-        // suffisent : la distribution est très inégale, et ce qu'on cherche est
-        // ce qui domine l'image, pas la queue.
+        // The eight most frequent opcodes, descending. Eight is enough: the
+        // distribution is very uneven, and what we are after is what dominates
+        // the frame, not the tail.
         {
             char ligne[160];
             int pris[8] = {0};
@@ -294,17 +287,17 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             }
             std::fprintf(stderr, "[gfx]   opcodes%s\n", ligne);
         }
-        // Les ordres de dessin, nommés et cherchés explicitement.
+        // The drawing commands, named and looked for explicitly.
         //
-        // Les huit premiers de l'histogramme sont tous de l'état RDP, ce qui
-        // laisse une question ouverte que le classement ne tranche pas : y a-t-il
-        // *le moindre* ordre de dessin dans ces images, ou aucun ? Un opcode
-        // absent ne figure dans aucun classement, et « absent du top huit » se
-        // lit trop facilement comme « rare » alors qu'il peut valoir zéro.
+        // The histogram's top eight are all RDP state, which leaves a question
+        // the ranking does not settle: is there *any* drawing command in these
+        // frames, or none? An absent opcode appears in no ranking, and "absent
+        // from the top eight" reads far too easily as "rare" when it may be
+        // zero.
         //
-        // Zéro partout dirait que la séquence de démarrage ne dessine rien du
-        // tout et que l'on regarde l'écran de chargement du jeu. Des rectangles
-        // sans triangles désignerait le chemin 2D comme seul travail restant.
+        // Zero everywhere would say the boot sequence draws nothing at all.
+        // Rectangles without triangles would name the 2D path as the only work
+        // left.
         std::fprintf(stderr,
                      "[gfx]   dessin: sommets=%lu triangles=%lu texrect=%lu "
                      "texrectflip=%lu fillrect=%lu | remis=%lu couleur=0x%06X "
@@ -321,8 +314,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         std::fprintf(stderr,
                      "[gfx]   etat: appliques=%lu approches=%lu "
                      "remplissages-hors-cycle=%lu cycle=%u fenetres=%lu\n",
-                     total_etats_, total_approches_, total_fill_hors_cycle_,
-                     static_cast<unsigned>(context_.state.cycle_courant),
+                     total_states_, total_approximate_, total_fill_wrong_cycle_,
+                     static_cast<unsigned>(context_.state.current_cycle),
                      total_viewports_);
         // Les textures. `chargees` contre `reutilisees` dit si le cache tient —
         // sans lui on reconvertirait la meme texture des milliers de fois par
@@ -332,8 +325,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         std::fprintf(stderr,
                      "[gfx]   textures: chargees=%lu reutilisees=%lu "
                      "refusees-tmu=%lu format-inconnu=%lu hors-rdram=%lu\n",
-                     total_tex_chargees_, total_tex_reutilisees_,
-                     total_tex_refusees_, total_tex_inconnues_, total_tex_hors_);
+                     total_tex_loaded_, total_tex_reused_,
+                     total_tex_refused_, total_tex_unsupported_, total_tex_out_of_rdram_);
         std::fprintf(stderr,
                      "[gfx]   refus-detail: proportions=%lu taille=%lu "
                      "emplacements=%lu memoire-tmu=%lu\n",
@@ -344,43 +337,43 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         std::fprintf(stderr,
                      "[gfx]   remplies-en-puissance-de-2=%lu "
                      "refusees-proportions=%lu\n",
-                     total_tex_remplies_, total_tex_proportions_);
+                     total_tex_padded_, total_tex_aspect_);
         // Les coordonnées normalisées. Un voisinage de [0,1] confirme le format
         // 10.5 et la largeur employée ; des milliers le réfutent.
         std::fprintf(stderr,
                      "[gfx]   emis: avec-texture=%lu | shade=%lu texel=%lu "
                      "texel*shade=%lu texel*shade+a=%lu\n",
-                     total_emis_texture_, emis_par_combine_[0],
-                     emis_par_combine_[1], emis_par_combine_[2],
-                     emis_par_combine_[3]);
+                     total_emitted_textured_, emitted_per_combine_[0],
+                     emitted_per_combine_[1], emitted_per_combine_[2],
+                     emitted_per_combine_[3]);
         std::fprintf(stderr,
                      "[gfx]   aires: <1px=%lu <100px=%lu <10000px=%lu "
                      ">=10000px=%lu\n",
-                     aire_[0], aire_[1], aire_[2], aire_[3]);
+                     area_[0], area_[1], area_[2], area_[3]);
         std::fprintf(stderr,
                      "[gfx]   profondeur: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
-                     profondeur_[0], profondeur_[1], profondeur_[2],
-                     profondeur_[3]);
+                     depth_[0], depth_[1], depth_[2],
+                     depth_[3]);
         {
             char l2[128];
             std::size_t e2 = 0;
             int m;
             l2[0] = '\0';
             for (m = 0; m < 8; m++) {
-                if (melange_[m] != 0) {
+                if (blend_[m] != 0) {
                     e2 += static_cast<std::size_t>(std::snprintf(
-                        l2 + e2, sizeof(l2) - e2, " %d:%lu", m, melange_[m]));
+                        l2 + e2, sizeof(l2) - e2, " %d:%lu", m, blend_[m]));
                 }
             }
             std::fprintf(stderr,
                          "[gfx]   melange:%s | test-alpha=%lu ref-max=%u\n",
-                         l2, total_test_alpha_, context_.state.alpha_ref_max);
+                         l2, total_alpha_test_, context_.state.alpha_ref_max);
         }
         if (context_.state.oow_max > context_.state.oow_min) {
-            total_tex_noires_ += context_.state.textures_noires;
-            total_tex_contenu_ += context_.state.textures_avec_contenu;
+            total_tex_black_ += context_.state.textures_black;
+            total_tex_with_content_ += context_.state.textures_with_content;
             std::fprintf(stderr, "[gfx]   texels: noires=%lu avec-contenu=%lu\n",
-                         total_tex_noires_, total_tex_contenu_);
+                         total_tex_black_, total_tex_with_content_);
             std::fprintf(stderr, "[gfx]   shade-max=%d alpha-max=%d\n",
                          static_cast<int>(context_.state.shade_max),
                          static_cast<int>(context_.state.alpha_max));
@@ -393,26 +386,26 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             std::size_t ecrit = 0;
             unsigned i;
             ligne[0] = '\0';
-            for (i = 0; i < context_.state.cles_inconnues_n && ecrit < 100; i++) {
+            for (i = 0; i < context_.state.unknown_keys_n && ecrit < 100; i++) {
                 ecrit += static_cast<std::size_t>(std::snprintf(
                     ligne + ecrit, sizeof(ligne) - ecrit, " %08X",
-                    static_cast<unsigned>(context_.state.cles_inconnues[i])));
+                    static_cast<unsigned>(context_.state.unknown_keys[i])));
             }
             std::fprintf(stderr,
                          "[gfx]   combineurs: repertories=%lu inconnus=%lu%s%s\n",
-                         total_comb_connus_, total_comb_inconnus_,
+                         total_combiners_known_, total_combiners_unknown_,
                          (ligne[0] != '\0') ? " cles:" : "", ligne);
             // La composition, sous la forme (a,b,c,d) que `gDPSetCombineLERP`
             // prend — c'est celle des macros G_CC_*, donc celle qui permet de
             // nommer la configuration et de l'ajouter à la table.
-            for (i = 0; i < context_.state.cles_inconnues_n; i++) {
-                const dkr_combiner& k = context_.state.compo_inconnues[i];
+            for (i = 0; i < context_.state.unknown_keys_n; i++) {
+                const dkr_combiner& k = context_.state.unknown_combiners[i];
                 std::fprintf(stderr,
                              "[gfx]     %08X cycle=%u rgb0=(%u,%u,%u,%u) "
                              "a0=(%u,%u,%u,%u) rgb1=(%u,%u,%u,%u) "
                              "a1=(%u,%u,%u,%u)\n",
-                             static_cast<unsigned>(context_.state.cles_inconnues[i]),
-                             context_.state.cycle_inconnu[i],
+                             static_cast<unsigned>(context_.state.unknown_keys[i]),
+                             context_.state.unknown_cycle[i],
                              k.rgb[0].a, k.rgb[0].b, k.rgb[0].c, k.rgb[0].d,
                              k.alpha[0].a, k.alpha[0].b, k.alpha[0].c, k.alpha[0].d,
                              k.rgb[1].a, k.rgb[1].b, k.rgb[1].c, k.rgb[1].d,
@@ -422,16 +415,16 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // L'état du jeu, lu chez lui. C'est la seule mesure de cette série qui
         // ne parle pas du rendu.
         {
-            const int mode = lire_mot(rdram_snapshot, kAdrGameMode);
+            const int mode = read_word(rdram_snapshot, kAddrGameMode);
             static const char* noms[] = { "INGAME", "MENU", "UNUSED2",
                                           "UNUSED3", "UNUSED4", "LOCKUP" };
             const char* nom = (mode == -1) ? "INTRO"
                             : (mode >= 0 && mode <= 5) ? noms[mode] : "?";
             std::fprintf(stderr,
                          "[jeu] gGameMode=%d (%s) chargement=%d niveau=0x%08X\n",
-                         mode, nom, lire_mot(rdram_snapshot, kAdrLevelLoadTimer),
+                         mode, nom, read_word(rdram_snapshot, kAddrLevelLoadTimer),
                          static_cast<unsigned>(
-                             lire_mot(rdram_snapshot, kAdrLevelHeader)));
+                             read_word(rdram_snapshot, kAddrLevelHeader)));
         }
         if (context_.state.s_max > context_.state.s_min) {
             std::fprintf(stderr,

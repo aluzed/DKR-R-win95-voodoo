@@ -44,7 +44,7 @@
 #define MAX_NESTED           32u
 /* Une liste ordinaire va jusqu'a son ENDDL ; une liste comptee s'arrete a son
    compte. Zero ne peut pas dire les deux. */
-#define SANS_COMPTE          0xFFFFFFFFu
+#define NO_COUNT          0xFFFFFFFFu
 #define VERTEX_STRIDE        10u
 #define TRIANGLE_STRIDE      16u
 #define MATRIX_BYTES         64u
@@ -85,7 +85,7 @@
  * un `break`, et elle vaut d'être gardée — c'est elle qui a permis de voir que
  * la disposition mémoire était juste, puisque *aucun* rejet d'adresse n'est
  * apparu. */
-static int opcode_effet_differe(unsigned int opcode)
+static int opcode_effect_deferred(unsigned int opcode)
 {
     return (opcode >= 0xB0u && opcode <= 0xBFu) ||
            (opcode >= 0xE4u && opcode <= 0xFFu);
@@ -186,7 +186,7 @@ static void reject(dkr_f3d_context *c, dkr_f3d_reject why, const char *detail)
  * que supposé, et il sert à deux endroits : les rectangles pleins et la fenêtre
  * d'affichage. Les faire diverger donnerait une interface 2D et une géométrie 3D
  * à deux échelles différentes, ce qui se voit mais ne se comprend pas. */
-static float echelle_ecran(const dkr_f3d_context *c)
+static float screen_scale(const dkr_f3d_context *c)
 {
     if (c->screen_width == 0u || c->state.color_image_width == 0u) {
         return 1.0f;
@@ -196,7 +196,7 @@ static float echelle_ecran(const dkr_f3d_context *c)
 
 /* Declaree ici parce que le dessin de triangles la precede dans ce fichier : la
    traduction d'etat vit avec le reste du chemin 2D, plus bas. */
-static void appliquer_etat(dkr_f3d_context *c);
+static void apply_state(dkr_f3d_context *c);
 
 /* --- Les commandes --------------------------------------------------------- */
 
@@ -388,8 +388,8 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             {
                 const float sb = (float)read_s16(c, a + 4 + corner * 4);
                 const float tb = (float)read_s16(c, a + 6 + corner * 4);
-                tri[corner].s = sb * c->tex_echelle_s;
-                tri[corner].t = tb * c->tex_echelle_t;
+                tri[corner].s = sb * c->tex_scale_s;
+                tri[corner].t = tb * c->tex_scale_t;
                 /* La mesure qui peut réfuter l'interprétation ci-dessus : si le
                    10.5 est le bon format et la largeur la bonne, les extrêmes
                    doivent tenir dans un voisinage de [0,1]. Des milliers
@@ -432,7 +432,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 c->state.clipped_away++;
                 continue;
             }
-            appliquer_etat(c);
+            apply_state(c);
             /* **De quoi les triangles émis sont faits.**
              *
              * L'écran reste blanc alors que les textures chargent et que les
@@ -442,10 +442,10 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * échantillonnage muet. Les deux premières se comptent ici, et
              * c'est trois entiers contre une nouvelle hypothèse au hasard. */
             if (c->render_state.combine < DKR_COMBINE_COUNT) {
-                c->state.emis_par_combine[c->render_state.combine]++;
+                c->state.emitted_per_combine[c->render_state.combine]++;
             }
             if (c->render_state.texture != 0) {
-                c->state.emis_avec_texture++;
+                c->state.emitted_textured++;
             }
             /* **La taille des triangles à l'écran.**
              *
@@ -457,18 +457,18 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * distribution normale dirait au contraire que la géométrie est
              * juste et que c'est l'échantillonnage qui manque.
              *
-             * L'aire par le produit vectoriel, en valeur absolue et sans
-             * division : on ne cherche pas l'aire exacte mais l'ordre de
+             * L'area par le produit vectoriel, en valeur absolue et sans
+             * division : on ne cherche pas l'area exacte mais l'ordre de
              * grandeur, et une racine par triangle se paierait. */
             {
                 const float ax = v[1].x - v[0].x, ay = v[1].y - v[0].y;
                 const float bx = v[2].x - v[0].x, by = v[2].y - v[0].y;
-                float aire = (ax * by - ay * bx) * 0.5f;
-                if (aire < 0.0f) { aire = -aire; }
-                if (aire < 1.0f)         { c->state.aire[0]++; }
-                else if (aire < 100.0f)  { c->state.aire[1]++; }
-                else if (aire < 10000.0f){ c->state.aire[2]++; }
-                else                     { c->state.aire[3]++; }
+                float area = (ax * by - ay * bx) * 0.5f;
+                if (area < 0.0f) { area = -area; }
+                if (area < 1.0f)         { c->state.area[0]++; }
+                else if (area < 100.0f)  { c->state.area[1]++; }
+                else if (area < 10000.0f){ c->state.area[2]++; }
+                else                     { c->state.area[3]++; }
             }
             /* **Le mode de profondeur au moment du dessin.**
              *
@@ -480,7 +480,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * avant. Compter les modes dit si le test est actif, plutôt que de
              * le supposer d'après le code qui le traduit. */
             if (c->render_state.depth < 4) {
-                c->state.emis_par_profondeur[c->render_state.depth]++;
+                c->state.emitted_per_depth[c->render_state.depth]++;
             }
             /* **La plage des profondeurs transmises.**
              *
@@ -502,10 +502,10 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * seule — c'est exactement la faute qui a coûté un correctif inutile
              * sur les refus de texture. On les sépare avant d'en corriger une. */
             if (c->render_state.blend < 8) {
-                c->state.emis_par_melange[c->render_state.blend]++;
+                c->state.emitted_per_blend[c->render_state.blend]++;
             }
             if (c->render_state.alpha_test) {
-                c->state.emis_avec_test_alpha++;
+                c->state.emitted_alpha_test++;
                 if (c->render_state.alpha_reference > c->state.alpha_ref_max) {
                     c->state.alpha_ref_max = c->render_state.alpha_reference;
                 }
@@ -582,7 +582,7 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
  * L'état n'est traduit qu'au moment de dessiner. Le faire à chaque écriture
  * coûterait une traduction complète par commande, et il y en a plus de six mille
  * par image ; le faire au dessin la fait payer une fois par changement réel. */
-static void ecrire_othermode(unsigned int *mot, unsigned int w0, unsigned int w1)
+static void write_othermode(unsigned int *mot, unsigned int w0, unsigned int w1)
 {
     const unsigned int sft = (w0 >> 8) & 0xFFu;
     const unsigned int len = w0 & 0xFFu;
@@ -596,15 +596,15 @@ static void ecrire_othermode(unsigned int *mot, unsigned int w0, unsigned int w1
 
 /* Traduit l'état RDP accumulé et le remet au backend, si quelque chose a changé
    depuis le dernier dessin. */
-static void appliquer_etat(dkr_f3d_context *c)
+static void apply_state(dkr_f3d_context *c)
 {
     dkr_rdp_state rdp;
     int exact = 1;
 
-    if (!c->etat_sale) {
+    if (!c->state_dirty) {
         return;
     }
-    c->etat_sale = 0;
+    c->state_dirty = 0;
 
     memset(&rdp, 0, sizeof(rdp));
     dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &rdp);
@@ -613,7 +613,7 @@ static void appliquer_etat(dkr_f3d_context *c)
     /* Le type de cycle décodé se vérifie tout seul : pendant un `FILLRECT` il
        doit valoir `FILL`. Un décalage mal placé le mettrait ailleurs, et ce
        compteur le dirait sans qu'on ait à regarder l'écran. */
-    c->state.cycle_courant = (unsigned char)rdp.cycle;
+    c->state.current_cycle = (unsigned char)rdp.cycle;
 
     /* --- Le filet que `rdp_state.h` réclame, et que personne ne tenait ------- *
      *
@@ -630,24 +630,24 @@ static void appliquer_etat(dkr_f3d_context *c)
     {
         const unsigned long long cle = dkr_rdp_combiner_key(&rdp.combiner, rdp.cycle);
         if (dkr_rdp_combiner_name(cle) != 0) {
-            c->state.combineurs_connus++;
+            c->state.combiners_known++;
         } else {
             unsigned i;
             int vue = 0;
-            c->state.combineurs_inconnus++;
-            for (i = 0; i < c->state.cles_inconnues_n; i++) {
-                if (c->state.cles_inconnues[i] == cle) { vue = 1; break; }
+            c->state.combiners_unknown++;
+            for (i = 0; i < c->state.unknown_keys_n; i++) {
+                if (c->state.unknown_keys[i] == cle) { vue = 1; break; }
             }
-            if (!vue && c->state.cles_inconnues_n < 8u) {
+            if (!vue && c->state.unknown_keys_n < 8u) {
                 /* **La clé ne suffit pas.** Elle identifie une configuration ;
                    elle ne dit pas ce qu'elle calcule, donc elle ne permet pas de
                    l'ajouter à la table. On garde la composition, qui est ce dont
                    on a besoin pour la nommer contre les macros `G_CC_*`. */
-                const unsigned i2 = c->state.cles_inconnues_n;
-                c->state.cles_inconnues[i2] = cle;
-                c->state.compo_inconnues[i2] = rdp.combiner;
-                c->state.cycle_inconnu[i2] = (unsigned char)rdp.cycle;
-                c->state.cles_inconnues_n++;
+                const unsigned i2 = c->state.unknown_keys_n;
+                c->state.unknown_keys[i2] = cle;
+                c->state.unknown_combiners[i2] = rdp.combiner;
+                c->state.unknown_cycle[i2] = (unsigned char)rdp.cycle;
+                c->state.unknown_keys_n++;
             }
         }
     }
@@ -662,7 +662,7 @@ static void appliquer_etat(dkr_f3d_context *c)
      * une course à une question que l'inspection ne tranche pas, et l'on garde
      * l'interrupteur : il resservira à chaque fois qu'un doute portera sur le
      * tri plutôt que sur ce qui est dessiné. */
-    if (c->sans_profondeur) {
+    if (c->no_depth) {
         c->render_state.depth = DKR_DEPTH_DISABLED;
     }
     /* --- Le handle de texture ne survit pas à la traduction ------------------ *
@@ -680,14 +680,14 @@ static void appliquer_etat(dkr_f3d_context *c)
      * Le handle vit donc dans le contexte, qui est sa vraie place — c'est une
      * ressource du décodeur, pas un mode du RDP — et il est reposé après la
      * traduction. */
-    c->render_state.texture = c->texture_liee;
+    c->render_state.texture = c->bound_texture;
     if (!exact) {
         /* **Une traduction approchée qui ne s'annonce pas est pire qu'un
            échec** : elle produit une image plausible et fausse. Le compteur est
            le filet que `rdp_state.h` réclame explicitement. */
-        c->state.etats_approches++;
+        c->state.states_approximate++;
     }
-    c->state.etats_appliques++;
+    c->state.states_applied++;
 
     if (c->backend && c->backend->set_state) {
         c->backend->set_state(c->backend->self, &c->render_state);
@@ -744,7 +744,7 @@ static void appliquer_etat(dkr_f3d_context *c)
  * l'enveloppement dix-huit fois contre le bornage quatre fois, donc la question
  * se posera. La réponse propre est de répéter le motif dans le remplissage
  * plutôt que de le laisser vide ; c'est ce qui est fait ici. */
-static int puissance_de_deux(int n)
+static int next_power_of_two(int n)
 {
     int p = 1;
     while (p < n && p < 256) { p <<= 1; }
@@ -773,17 +773,17 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         ^ ((unsigned long long)largeur << 9)
         ^ (unsigned long long)hauteur;
 
-    if (cle == c->texture_cle && c->render_state.texture != 0) {
+    if (cle == c->texture_key && c->render_state.texture != 0) {
         /* Déjà chargée et encore liée : rien à faire. Sans ce test on
            reconvertirait la même texture des milliers de fois par image, et sur
            un Pentium II cela seul suffirait à rendre le portage injouable. */
-        c->state.textures_reutilisees++;
+        c->state.textures_reused++;
         return;
     }
 
     {
-        const int pl = puissance_de_deux(largeur);
-        const int ph = puissance_de_deux(hauteur);
+        const int pl = next_power_of_two(largeur);
+        const int ph = next_power_of_two(hauteur);
         /* Le rapport d'au plus 8:1 de la carte. On ne peut pas remplir pour le
            satisfaire — cela reviendrait à multiplier la mémoire par huit — donc
            on refuse, et on le compte plutôt que de le taire. */
@@ -791,16 +791,16 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         const int petit = (pl > ph) ? ph : pl;
         if (grand > 256 || (petit > 0 && grand / petit > 8)) {
             c->render_state.texture = 0;
-            c->texture_liee = 0;
-            c->texture_cle = 0;
-            c->state.textures_hors_proportions++;
-            c->etat_sale = 1;
+            c->bound_texture = 0;
+            c->texture_key = 0;
+            c->state.textures_bad_aspect++;
+            c->state_dirty = 1;
             return;
         }
-        c->tex_largeur = largeur;
-        c->tex_hauteur = hauteur;
-        c->tex_largeur_remplie = pl;
-        c->tex_hauteur_remplie = ph;
+        c->tex_width = largeur;
+        c->tex_height = hauteur;
+        c->tex_padded_width = pl;
+        c->tex_padded_height = ph;
     }
 
     if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
@@ -812,9 +812,9 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
            texture périmée sur une surface est plus déroutante qu'une surface
            sans texture, parce qu'elle passe pour du rendu. */
         c->render_state.texture = 0;
-        c->texture_liee = 0;
-        c->texture_cle = 0;
-        c->etat_sale = 1;
+        c->bound_texture = 0;
+        c->texture_key = 0;
+        c->state_dirty = 1;
         return;
     }
 
@@ -822,17 +822,17 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
        recopie. Le motif est **répété** plutôt que laissé vide : c'est ce qui
        rend le remplissage invisible quand la texture est enveloppée, et cela ne
        coûte rien de plus qu'un remplissage nul. */
-    if (c->tex_largeur_remplie != largeur || c->tex_hauteur_remplie != hauteur) {
+    if (c->tex_padded_width != largeur || c->tex_padded_height != hauteur) {
         int y, x;
-        for (y = c->tex_hauteur_remplie - 1; y >= 0; y--) {
+        for (y = c->tex_padded_height - 1; y >= 0; y--) {
             const int sy = y % hauteur;
-            for (x = c->tex_largeur_remplie - 1; x >= 0; x--) {
+            for (x = c->tex_padded_width - 1; x >= 0; x--) {
                 const int sx = x % largeur;
-                c->texels[(size_t)y * (size_t)c->tex_largeur_remplie + (size_t)x] =
+                c->texels[(size_t)y * (size_t)c->tex_padded_width + (size_t)x] =
                     c->texels[(size_t)sy * (size_t)largeur + (size_t)sx];
             }
         }
-        c->state.textures_remplies++;
+        c->state.textures_padded++;
     }
 
     /* **Le contenu de la texture, après conversion.**
@@ -846,14 +846,14 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
      * entièrement noire est un fait, pas une valeur à lire. Et l'on ne le fait
      * qu'au chargement, pas au dessin. */
     {
-        unsigned int i, n = (unsigned int)c->tex_largeur_remplie *
-                            (unsigned int)c->tex_hauteur_remplie;
+        unsigned int i, n = (unsigned int)c->tex_padded_width *
+                            (unsigned int)c->tex_padded_height;
         unsigned int vus = 0;
         for (i = 0; i < n; i++) {
             if ((c->texels[i] & 0xFFFEu) != 0u) { vus++; }
         }
-        if (vus == 0u) { c->state.textures_noires++; }
-        else           { c->state.textures_avec_contenu++; }
+        if (vus == 0u) { c->state.textures_black++; }
+        else           { c->state.textures_with_content++; }
     }
 
     if (c->backend && c->backend->texture_upload) {
@@ -862,30 +862,30 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         memset(&d, 0, sizeof(d));
         d.key = cle;
         d.format = DKR_TEXFMT_RGBA5551;
-        d.width = c->tex_largeur_remplie;
-        d.height = c->tex_hauteur_remplie;
+        d.width = c->tex_padded_width;
+        d.height = c->tex_padded_height;
         d.pixels = c->texels;
-        d.size_bytes = (size_t)c->tex_largeur_remplie *
-                       (size_t)c->tex_hauteur_remplie * 2u;
+        d.size_bytes = (size_t)c->tex_padded_width *
+                       (size_t)c->tex_padded_height * 2u;
         h = c->backend->texture_upload(c->backend->self, &d);
         if (h != 0) {
-            c->texture_liee = h;
+            c->bound_texture = h;
             /* 1/32 pour le 10.5 du microcode, 1/largeur pour passer en [0,1].
                Les deux en une seule multiplication par sommet : la
                transformation est déjà le poste le plus lourd du portage. */
-            c->tex_echelle_s = 1.0f / (32.0f * (float)c->tex_largeur_remplie);
-            c->tex_echelle_t = 1.0f / (32.0f * (float)c->tex_hauteur_remplie);
+            c->tex_scale_s = 1.0f / (32.0f * (float)c->tex_padded_width);
+            c->tex_scale_t = 1.0f / (32.0f * (float)c->tex_padded_height);
             c->render_state.texture = h;
-            c->texture_cle = cle;
-            c->etat_sale = 1;
-            c->state.textures_chargees++;
+            c->texture_key = cle;
+            c->state_dirty = 1;
+            c->state.textures_loaded++;
         } else {
             /* Mémoire de texture pleine. C'est E05-S02 qui l'administre ; ici on
                se contente de ne pas dessiner avec une poignée invalide. */
             c->render_state.texture = 0;
-            c->texture_liee = 0;
-            c->texture_cle = 0;
-            c->state.textures_refusees++;
+            c->bound_texture = 0;
+            c->texture_key = 0;
+            c->state.textures_refused++;
         }
     }
 
@@ -922,7 +922,7 @@ static void cmd_viewport(dkr_f3d_context *c, unsigned int address)
     const short sy = read_s16(c, address + 2u);
     const short tx = read_s16(c, address + 8u);
     const short ty = read_s16(c, address + 10u);
-    const float echelle = echelle_ecran(c);
+    const float echelle = screen_scale(c);
 
     /* Une fenêtre nulle n'est pas une fenêtre : elle projetterait tous les
        sommets au même point, ce qui ressemble à une matrice fausse. On garde
@@ -978,7 +978,7 @@ static void cmd_viewport(dkr_f3d_context *c, unsigned int address)
  * les seize bits de poids faible : les deux moitiés sont identiques pour un
  * remplissage uni, et une couleur à demi fausse serait plus déroutante qu'une
  * couleur franchement fausse. */
-static unsigned int couleur_depuis_5551(unsigned int pixel)
+static unsigned int colour_from_5551(unsigned int pixel)
 {
     const unsigned int r = (pixel >> 11) & 0x1Fu;
     const unsigned int v = (pixel >>  6) & 0x1Fu;
@@ -1011,7 +1011,7 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
 
     if (c->state.color_image_width > 0u && ecran_w > 0.0f) {
-        echelle_x = echelle_ecran(c);
+        echelle_x = screen_scale(c);
         /* La hauteur du tampon n'est portée par aucune commande — le RDP ne la
            connaît pas, il n'a que la largeur et l'adresse. On applique donc le
            même facteur qu'en x, ce qui est juste tant que le tampon a le rapport
@@ -1035,7 +1035,7 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         dkr_rdp_state verif;
         memset(&verif, 0, sizeof(verif));
         dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &verif);
-        if (verif.cycle != DKR_CYCLE_FILL) { c->state.fill_hors_cycle++; }
+        if (verif.cycle != DKR_CYCLE_FILL) { c->state.fills_wrong_cycle++; }
     }
     c->backend->fill_rect(c->backend->self, x0, y0, x1, y1,
                           c->state.fill_color_argb);
@@ -1063,11 +1063,11 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
      * sept commandes, et toute la géométrie vient *après* ce retour. Elle était
      * perdue là, à chaque image, depuis le début.
      *
-     * `SANS_COMPTE` distingue « jusqu'à `ENDDL` » de « plus une seule commande ».
+     * `NO_COUNT` distingue « jusqu'à `ENDDL` » de « plus une seule commande ».
      * Sans ce sentinelle, zéro voudrait dire les deux, et une liste ordinaire se
      * terminerait à sa première commande. */
-    unsigned int reste_stack[MAX_NESTED];
-    unsigned int reste = SANS_COMPTE;
+    unsigned int remaining_stack[MAX_NESTED];
+    unsigned int remaining = NO_COUNT;
     unsigned int depth = 0;
     unsigned long executed = 0;
     int running = 1;
@@ -1096,7 +1096,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         /* Decompte avant d'executer, pour que la valeur empilee par un appel
            imbrique soit celle du parent **apres** cette commande. La decrementer
            apres la ferait recompter au retour. */
-        if (reste != SANS_COMPTE && reste > 0u) { reste--; }
+        if (remaining != NO_COUNT && remaining > 0u) { remaining--; }
 
         switch (opcode) {
         case OP_DMAOFFSETS: cmd_dma_offsets(c, w0, w1); break;
@@ -1145,9 +1145,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                     reject(c, DKR_F3D_REJECT_DEPTH, d);
                     break;
                 }
-                reste_stack[depth] = reste;
+                remaining_stack[depth] = remaining;
                 return_stack[depth++] = address;
-                reste = SANS_COMPTE;   /* une liste appelee va jusqu'a son ENDDL */
+                remaining = NO_COUNT;   /* une liste appelee va jusqu'a son ENDDL */
             }
             trace(c, "DisplayList %s vers 0x%06X",
                   branch ? "branchement" : "appel", target);
@@ -1161,7 +1161,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 running = 0;
             } else {
                 address = return_stack[--depth];
-                reste = reste_stack[depth];
+                remaining = remaining_stack[depth];
                 trace(c, "EndDisplayList — retour a 0x%06X", address);
             }
             break;
@@ -1180,9 +1180,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 reject(c, DKR_F3D_REJECT_DEPTH, "liste comptee");
                 break;
             }
-            reste_stack[depth] = reste;
+            remaining_stack[depth] = remaining;
             return_stack[depth++] = address;
-            reste = count;
+            remaining = count;
             trace(c, "CountedDisplayList %u commandes a 0x%06X", count, target);
             address = target;
             break;
@@ -1217,29 +1217,29 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
              * la commande transporte, le reste du mot n'existant pas côté RDP. */
             c->mode_h = w0 & 0x00FFFFFFu;
             c->mode_l = w1;
-            c->etat_sale = 1;
+            c->state_dirty = 1;
             trace(c, "SetOtherMode entier h=0x%06X l=0x%08X",
                   c->mode_h, c->mode_l);
             break;
 
         case OP_SETOTHERMODE_H:
-            ecrire_othermode(&c->mode_h, w0, w1);
-            c->etat_sale = 1;
+            write_othermode(&c->mode_h, w0, w1);
+            c->state_dirty = 1;
             break;
 
         case OP_SETOTHERMODE_L:
-            ecrire_othermode(&c->mode_l, w0, w1);
-            c->etat_sale = 1;
+            write_othermode(&c->mode_l, w0, w1);
+            c->state_dirty = 1;
             break;
 
         case OP_SETCOMBINE:
             dkr_rdp_decode_combine(w0, w1, &c->combiner);
-            c->etat_sale = 1;
+            c->state_dirty = 1;
             break;
 
         case OP_SETFILLCOLOR:
             c->state.fill_color_raw = w1;
-            c->state.fill_color_argb = couleur_depuis_5551(w1 & 0xFFFFu);
+            c->state.fill_color_argb = colour_from_5551(w1 & 0xFFFFu);
             trace(c, "SetFillColor brut=0x%08X -> 0x%06X",
                   w1, c->state.fill_color_argb);
             break;
@@ -1292,7 +1292,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         default: {
             char d[48];
-            if (opcode_effet_differe(opcode)) {
+            if (opcode_effect_deferred(opcode)) {
                 /* Reconnue, enjambee. Comptee a part de `commands` : ce chiffre
                    dit **quelle part de l'image on ignore encore**, et c'est la
                    mesure qui manquerait le plus quand le decor sortira faux. */
@@ -1316,9 +1316,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         /* Le compte est epuise : on revient, sans attendre d'ENDDL. C'est le
            seul terminateur d'une liste comptee, et l'oublier faisait sortir le
            decodeur par le bas de la liste dans la memoire qui suit. */
-        if (running && reste == 0u && depth > 0u) {
+        if (running && remaining == 0u && depth > 0u) {
             address = return_stack[--depth];
-            reste = reste_stack[depth];
+            remaining = remaining_stack[depth];
             trace(c, "CountedDisplayList terminee — retour a 0x%06X", address);
         }
     }
@@ -1335,8 +1335,8 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
     /* Une échelle non nulle par défaut : sans texture liée les coordonnées ne
        servent pas, mais zéro les écraserait toutes sur un point, ce qui
        ressemblerait à un défaut de transformation plutôt qu'à une absence. */
-    ctx->tex_echelle_s = 1.0f / 32.0f;
-    ctx->tex_echelle_t = 1.0f / 32.0f;
+    ctx->tex_scale_s = 1.0f / 32.0f;
+    ctx->tex_scale_t = 1.0f / 32.0f;
     ctx->state.s_min = 1.0e30f;
     ctx->state.t_min = 1.0e30f;
     ctx->state.s_max = -1.0e30f;

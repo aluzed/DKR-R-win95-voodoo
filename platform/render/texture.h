@@ -1,34 +1,33 @@
-/* E04-S07 — décodage des formats de texture de la N64.
+/* E04-S07 -- decoding the N64 texture formats.
  *
- * Le RDP échantillonne huit combinaisons de format et de taille. La Voodoo n'en
- * connaît qu'une qui nous intéresse : **RGBA5551**, son format naturel, mesuré
- * par E05-S02. Tout ce que ce module fait est donc de ramener les huit à celui-
- * là, une fois, au chargement — et non par texel au dessin, ce qu'un Pentium II
- * ne pardonnerait pas.
+ * The RDP samples eight combinations of format and size. The Voodoo knows only
+ * one that concerns us: **RGBA5551**, its native format, measured in E05-S02.
+ * All this module does is bring the eight down to that one -- once, at load
+ * time, and not per texel at draw time, which a Pentium II would not forgive.
  *
- * ## Ce qui rend le problème abordable, et ce qui ne l'est pas
+ * ## What makes the problem tractable, and what does not
  *
- * Abordable : DKR emploie surtout RGBA16, c'est-à-dire **déjà du 5551**. La
- * conversion y est une recopie, à l'ordre des octets près.
+ * Tractable: DKR mostly uses RGBA16, which is **already 5551**. Conversion there
+ * is a copy, byte order aside.
  *
- * Moins abordable : les formats indexés (CI4, CI8) demandent la palette, que le
- * RDP charge par une commande distincte (`LOADTLUT`) dans une autre moitié de
- * la mémoire de texture. Un décodeur qui les ignorerait produirait des surfaces
- * uniformément noires plutôt qu'une erreur — d'où le compte de formats non pris
- * en charge, que l'appelant doit regarder.
+ * Less tractable: the indexed formats (CI4, CI8) need the palette, which the RDP
+ * loads through a separate command (`LOADTLUT`) into the other half of texture
+ * memory. A decoder that ignored them would produce uniformly black surfaces
+ * rather than an error -- hence the count of unsupported formats, which the
+ * caller is meant to look at.
  *
- * ## Le raccourci assumé : lire la RDRAM plutôt qu'émuler la TMEM
+ * ## The shortcut, taken deliberately: read RDRAM instead of emulating TMEM
  *
- * Le RDP ne dessine pas depuis la RDRAM : il copie d'abord dans ses 4 Kio de
- * mémoire de texture par `LOADBLOCK` ou `LOADTILE`, et échantillonne ensuite
- * depuis là. Émuler fidèlement cette mémoire — avec l'entrelacement par mot pair
- * et impair sur les lignes impaires — est un travail à part entière.
+ * The RDP does not draw from RDRAM. It first copies into its 4 KiB of texture
+ * memory through `LOADBLOCK` or `LOADTILE`, and samples from there. Emulating
+ * that memory faithfully -- with its odd-line word interleave -- is a piece of
+ * work in itself.
  *
- * Ce module lit **directement en RDRAM**, à l'adresse de `SETTIMG`, avec les
- * dimensions de `SETTILESIZE`. C'est exact tant qu'une texture est chargée d'un
- * bloc et dessinée entière, ce qui est le cas courant, et faux pour les atlas
- * dont on ne charge qu'un pavé. Le raccourci est nommé ici plutôt que découvert
- * plus tard sur une texture décalée.
+ * This module reads **straight from RDRAM**, at the `SETTIMG` address, with the
+ * dimensions from `SETTILESIZE`. That is exact as long as a texture is loaded in
+ * one block and drawn whole, which is the common case, and wrong for atlases
+ * where only a tile is loaded. The shortcut is named here rather than discovered
+ * later on a shifted texture.
  */
 #ifndef DKR_RENDER_TEXTURE_H
 #define DKR_RENDER_TEXTURE_H
@@ -39,7 +38,7 @@
 extern "C" {
 #endif
 
-/* Les formats du RDP, valeurs de `G_IM_FMT_*`. */
+/* The RDP formats, values of `G_IM_FMT_*`. */
 typedef enum {
     DKR_N64_FMT_RGBA = 0,
     DKR_N64_FMT_YUV,
@@ -48,7 +47,7 @@ typedef enum {
     DKR_N64_FMT_I
 } dkr_n64_format;
 
-/* Les tailles, valeurs de `G_IM_SIZ_*` : 4, 8, 16 et 32 bits par texel. */
+/* The sizes, values of `G_IM_SIZ_*`: 4, 8, 16 and 32 bits per texel. */
 typedef enum {
     DKR_N64_SIZ_4 = 0,
     DKR_N64_SIZ_8,
@@ -56,38 +55,36 @@ typedef enum {
     DKR_N64_SIZ_32
 } dkr_n64_size;
 
-/* Ce que le décodeur a rencontré. Les compteurs sont là parce qu'un format non
-   pris en charge ne se voit pas : il produit une surface noire, pas une
-   erreur. */
+/* What the decoder ran into. The counters exist because an unsupported format
+   does not show: it produces a black surface, not an error. */
 typedef struct {
-    unsigned long converties;
-    unsigned long non_prises_en_charge;
-    unsigned long trop_grandes;
-    unsigned long hors_rdram;
+    unsigned long converted;
+    unsigned long unsupported;
+    unsigned long too_large;
+    unsigned long out_of_rdram;
 } dkr_texture_stats;
 
-/* Convertit une texture de la RDRAM vers RGBA5551.
+/* Converts a texture from RDRAM to RGBA5551.
  *
- * `rdram` est l'instantané, `rdram_size` sa taille, `native` la disposition
- * entrelacée par XOR-3 de librecomp (voir `f3ddkr.h`). `sortie` reçoit
- * `width * height` demi-mots.
+ * `rdram` is the snapshot, `rdram_size` its size, `native` selects librecomp's
+ * XOR-3 interleaved layout (see `f3ddkr.h`). `out` receives `width * height`
+ * halfwords.
  *
- * Rend 1 en cas de succès, 0 sinon — et dans ce cas l'appelant ne doit pas
- * dessiner avec, plutôt que de dessiner du noir.
+ * Returns 1 on success, 0 otherwise -- and in that case the caller must not draw
+ * with it, rather than drawing black.
  */
 int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
                         int native, unsigned int address,
                         dkr_n64_format format, dkr_n64_size size,
                         int width, int height,
-                        unsigned short *sortie, dkr_texture_stats *stats);
+                        unsigned short *out, dkr_texture_stats *stats);
 
-/* La taille en octets d'une texture de ces dimensions dans ce format. Rend 0
-   si la combinaison n'a pas de sens. */
+/* The size in bytes of a texture of these dimensions in this format. Returns 0
+   if the combination makes no sense. */
 unsigned int dkr_texture_bytes(dkr_n64_size size, int width, int height);
 
-/* Le nom du format, pour les journaux. Un format non pris en charge doit
-   pouvoir être nommé dans le compte rendu, sans quoi « non pris en charge :
-   1240 » n'oriente vers rien. */
+/* The format's name, for logs. An unsupported format has to be nameable in the
+   report, otherwise "unsupported: 1240" points at nothing. */
 const char *dkr_texture_format_name(dkr_n64_format format, dkr_n64_size size);
 
 #ifdef __cplusplus

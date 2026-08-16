@@ -196,7 +196,7 @@ int dkr_cull_accept(const dkr_render_vertex v[3], dkr_cull_mode mode)
     if (!v || mode == DKR_CULL_NONE) {
         return 1;
     }
-    /* L'aire signée en espace écran, origine en haut à gauche. Le rastériseur de
+    /* L'area signée en espace écran, origine en haut à gauche. Le rastériseur de
        E04-S08 emploie la même convention : les deux doivent coïncider, sans quoi
        l'oracle et Glide n'élimineraient pas les mêmes triangles. */
     area = (v[1].x - v[0].x) * (v[2].y - v[0].y) -

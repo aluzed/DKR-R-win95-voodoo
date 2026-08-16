@@ -265,10 +265,10 @@ static void raster_triangle(const dkr_render_vertex *v0,
     if (area == 0.0f) {
         return;                     /* triangle dégénéré */
     }
-    /* La culling se lit sur le signe de l'aire. Glide la fait dans le matériel ;
+    /* La culling se lit sur le signe de l'area. Glide la fait dans le matériel ;
        ici on l'écrit, et il faut que les deux conventions coïncident — l'origine
        est en haut à gauche des deux côtés, donc un triangle antihoraire à
-       l'écran a une aire négative. */
+       l'écran a une area négative. */
     if (st->cull == DKR_CULL_BACK  && area > 0.0f) { return; }
     if (st->cull == DKR_CULL_FRONT && area < 0.0f) { return; }
 

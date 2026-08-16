@@ -1,40 +1,40 @@
-/* E04-S07 — mise en œuvre. Le contrat et le raccourci assumé sont dans
+/* E04-S07 -- implementation. The contract and the deliberate shortcut are in
  * `texture.h`. */
 #include "texture.h"
 
 #include <stdio.h>
 #include <string.h>
 
-/* La plus grande texture que le RDP puisse tenir : 4 Kio de mémoire de texture,
-   soit 2048 texels en 16 bits. On borne large — 256x256 — pour attraper une
-   dimension absurde issue d'un décodage faux sans refuser de vraies textures. */
-#define MAX_COTE 256
+/* The largest texture the RDP can hold: 4 KiB of texture memory, so 2048 texels
+   at 16 bits. We bound generously -- 256x256 -- to catch an absurd dimension
+   coming out of a bad decode without refusing real textures. */
+#define MAX_SIDE 256
 
-static unsigned char lire8(const unsigned char *rdram, int native, unsigned int a)
+static unsigned char read8(const unsigned char *rdram, int native, unsigned int a)
 {
     return rdram[native ? (a ^ 3u) : a];
 }
 
-static unsigned short lire16(const unsigned char *rdram, int native, unsigned int a)
+static unsigned short read16(const unsigned char *rdram, int native, unsigned int a)
 {
-    return (unsigned short)(((unsigned)lire8(rdram, native, a) << 8) |
-                            lire8(rdram, native, a + 1u));
+    return (unsigned short)(((unsigned)read8(rdram, native, a) << 8) |
+                            read8(rdram, native, a + 1u));
 }
 
-/* --- Les conversions ------------------------------------------------------- *
+/* --- The conversions --------------------------------------------------------
  *
- * Toutes produisent du RGBA5551 avec l'alpha en bit 0, la disposition que
- * E05-S02 a mesurée sur la carte.
+ * All of them produce RGBA5551 with alpha in bit 0, the layout E05-S02 measured
+ * on the card.
  *
- * **L'alpha est le piège de ces formats.** Un seul bit d'alpha sur la Voodoo
- * contre huit sur la N64 pour IA8 et IA16 : ce qui était un dégradé de
- * transparence devient un seuil. Le résultat n'est pas faux au sens d'une
- * couleur erronée — il est *dur* là où le jeu voulait du doux, et cela se
- * remarque surtout sur les ombres et les halos. Le seuil est à mi-course,
- * faute d'un meilleur choix, et il est signalé ici plutôt que découvert. */
-static unsigned short gris_vers_5551(unsigned int i, unsigned int alpha)
+ * **Alpha is the trap in these formats.** One alpha bit on the Voodoo against
+ * eight on the N64 for IA8 and IA16: what was a transparency gradient becomes a
+ * threshold. The result is not wrong in the sense of a wrong colour -- it is
+ * *hard* where the game wanted soft, and that shows mostly on shadows and
+ * haloes. The threshold sits at midpoint for want of a better choice, and it is
+ * flagged here rather than discovered. */
+static unsigned short grey_to_5551(unsigned int i, unsigned int alpha)
 {
-    const unsigned int c = i >> 3;   /* 8 bits vers 5 */
+    const unsigned int c = i >> 3;   /* 8 bits down to 5 */
     return (unsigned short)((c << 11) | (c << 6) | (c << 1) | (alpha ? 1u : 0u));
 }
 
@@ -56,7 +56,7 @@ unsigned int dkr_texture_bytes(dkr_n64_size size, int width, int height)
 const char *dkr_texture_format_name(dkr_n64_format format, dkr_n64_size size)
 {
     static const char *bits[4] = { "4", "8", "16", "32" };
-    static char nom[16];
+    static char name[16];
     const char *f;
     switch (format) {
     case DKR_N64_FMT_RGBA: f = "RGBA"; break;
@@ -66,116 +66,116 @@ const char *dkr_texture_format_name(dkr_n64_format format, dkr_n64_size size)
     case DKR_N64_FMT_I:    f = "I";    break;
     default:               f = "?";    break;
     }
-    sprintf(nom, "%s%s", f, bits[(int)size & 3]);
-    return nom;
+    sprintf(name, "%s%s", f, bits[(int)size & 3]);
+    return name;
 }
 
 int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
                         int native, unsigned int address,
                         dkr_n64_format format, dkr_n64_size size,
                         int width, int height,
-                        unsigned short *sortie, dkr_texture_stats *stats)
+                        unsigned short *out, dkr_texture_stats *stats)
 {
-    const unsigned int octets = dkr_texture_bytes(size, width, height);
+    const unsigned int bytes = dkr_texture_bytes(size, width, height);
     unsigned int i, n;
 
-    if (!rdram || !sortie || octets == 0u) {
+    if (!rdram || !out || bytes == 0u) {
         return 0;
     }
-    if (width > MAX_COTE || height > MAX_COTE) {
-        if (stats) { stats->trop_grandes++; }
+    if (width > MAX_SIDE || height > MAX_SIDE) {
+        if (stats) { stats->too_large++; }
         return 0;
     }
-    /* La borne est vérifiée ici et une seule fois, plutôt qu'à chaque texel :
-       c'est le même choix que dans le décodeur de display list, et pour la même
-       raison — un seul endroit à relire pour s'assurer que rien ne sort. */
-    if ((unsigned long long)address + octets > (unsigned long long)rdram_size) {
-        if (stats) { stats->hors_rdram++; }
+    /* The bound is checked here and once, rather than per texel: the same choice
+       as in the display-list decoder, and for the same reason -- one place to
+       re-read to be sure nothing leaves RDRAM. */
+    if ((unsigned long long)address + bytes > (unsigned long long)rdram_size) {
+        if (stats) { stats->out_of_rdram++; }
         return 0;
     }
 
     n = (unsigned int)width * (unsigned int)height;
 
     if (format == DKR_N64_FMT_RGBA && size == DKR_N64_SIZ_16) {
-        /* Le cas courant de DKR, et le seul qui soit une recopie : le RDP range
-           déjà du 5551 avec l'alpha en bit 0. Rien à convertir, seulement à
-           remettre dans l'ordre des octets de l'hôte. */
+        /* DKR's common case, and the only one that is a copy: the RDP already
+           stores 5551 with alpha in bit 0. Nothing to convert, only to put back
+           into the host's byte order. */
         for (i = 0; i < n; i++) {
-            sortie[i] = lire16(rdram, native, address + i * 2u);
+            out[i] = read16(rdram, native, address + i * 2u);
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
     if (format == DKR_N64_FMT_RGBA && size == DKR_N64_SIZ_32) {
         for (i = 0; i < n; i++) {
             const unsigned int a = address + i * 4u;
-            const unsigned int r = lire8(rdram, native, a) >> 3;
-            const unsigned int v = lire8(rdram, native, a + 1u) >> 3;
-            const unsigned int b = lire8(rdram, native, a + 2u) >> 3;
-            const unsigned int al = lire8(rdram, native, a + 3u);
-            sortie[i] = (unsigned short)((r << 11) | (v << 6) | (b << 1) |
-                                         (al >= 128u ? 1u : 0u));
+            const unsigned int r = read8(rdram, native, a) >> 3;
+            const unsigned int g = read8(rdram, native, a + 1u) >> 3;
+            const unsigned int b = read8(rdram, native, a + 2u) >> 3;
+            const unsigned int al = read8(rdram, native, a + 3u);
+            out[i] = (unsigned short)((r << 11) | (g << 6) | (b << 1) |
+                                      (al >= 128u ? 1u : 0u));
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
     if (format == DKR_N64_FMT_I && size == DKR_N64_SIZ_8) {
         for (i = 0; i < n; i++) {
-            sortie[i] = gris_vers_5551(lire8(rdram, native, address + i), 1u);
+            out[i] = grey_to_5551(read8(rdram, native, address + i), 1u);
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
     if (format == DKR_N64_FMT_I && size == DKR_N64_SIZ_4) {
         for (i = 0; i < n; i++) {
-            const unsigned char o = lire8(rdram, native, address + i / 2u);
+            const unsigned char o = read8(rdram, native, address + i / 2u);
             const unsigned int  q = (i & 1u) ? (o & 0x0Fu) : (unsigned int)(o >> 4);
-            /* 4 bits vers 8 par réplication : 15 doit donner 255, non 240. */
-            sortie[i] = gris_vers_5551((q << 4) | q, 1u);
+            /* 4 bits to 8 by replication: 15 must give 255, not 240. */
+            out[i] = grey_to_5551((q << 4) | q, 1u);
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
     if (format == DKR_N64_FMT_IA && size == DKR_N64_SIZ_16) {
         for (i = 0; i < n; i++) {
-            const unsigned short m = lire16(rdram, native, address + i * 2u);
-            sortie[i] = gris_vers_5551((m >> 8) & 0xFFu, (m & 0xFFu) >= 128u);
+            const unsigned short m = read16(rdram, native, address + i * 2u);
+            out[i] = grey_to_5551((m >> 8) & 0xFFu, (m & 0xFFu) >= 128u);
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
     if (format == DKR_N64_FMT_IA && size == DKR_N64_SIZ_8) {
         for (i = 0; i < n; i++) {
-            const unsigned char o = lire8(rdram, native, address + i);
+            const unsigned char o = read8(rdram, native, address + i);
             const unsigned int  it = (unsigned int)(o >> 4);
-            sortie[i] = gris_vers_5551((it << 4) | it, (o & 0x0Fu) >= 8u);
+            out[i] = grey_to_5551((it << 4) | it, (o & 0x0Fu) >= 8u);
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
     if (format == DKR_N64_FMT_IA && size == DKR_N64_SIZ_4) {
         for (i = 0; i < n; i++) {
-            const unsigned char o = lire8(rdram, native, address + i / 2u);
+            const unsigned char o = read8(rdram, native, address + i / 2u);
             const unsigned int  q = (i & 1u) ? (o & 0x0Fu) : (unsigned int)(o >> 4);
-            const unsigned int  it = q >> 1;   /* trois bits d'intensité */
+            const unsigned int  it = q >> 1;   /* three bits of intensity */
             const unsigned int  it8 = (it << 5) | (it << 2) | (it >> 1);
-            sortie[i] = gris_vers_5551(it8, q & 1u);
+            out[i] = grey_to_5551(it8, q & 1u);
         }
-        if (stats) { stats->converties++; }
+        if (stats) { stats->converted++; }
         return 1;
     }
 
-    /* CI4, CI8 et YUV restent dehors. Les indexés demandent la palette, que le
-       RDP charge par `LOADTLUT` dans l'autre moitié de la mémoire de texture ;
-       les servir sans elle donnerait des couleurs arbitraires, ce qui est pire
-       qu'une absence puisque cela passe pour du rendu. On refuse, on compte, et
-       l'appelant ne dessine pas plutôt que de dessiner faux. */
-    if (stats) { stats->non_prises_en_charge++; }
+    /* CI4, CI8 and YUV stay out. The indexed formats need the palette, which the
+       RDP loads through `LOADTLUT` into the other half of texture memory;
+       serving them without it would give arbitrary colours, which is worse than
+       an absence because it passes for rendering. We refuse, we count, and the
+       caller does not draw rather than drawing wrong. */
+    if (stats) { stats->unsupported++; }
     return 0;
 }

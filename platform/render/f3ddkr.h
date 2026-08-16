@@ -109,31 +109,31 @@ typedef struct {
     unsigned long rects;              /* rectangles réellement remis au backend */
 
     /* --- L'état RDP, et ce qu'il coûte en fidélité -------------------------- */
-    unsigned long etats_appliques;    /* traductions réellement remises au backend */
+    unsigned long states_applied;    /* traductions réellement remises au backend */
     /* Traductions **approchées**. `rdp_state.h` insiste : une approximation qui
        ne s'annonce pas est pire qu'un échec, parce qu'elle produit une image
        plausible et fausse. Ce compteur est ce filet. */
-    unsigned long etats_approches;
+    unsigned long states_approximate;
     /* Remplissages survenus hors du mode `FILL`. Le RDP ne remplit qu'en mode
        FILL ; toute autre valeur accuse l'écriture partielle du mot de mode, donc
        le décalage — et le dit en chiffres plutôt qu'à l'écran. */
-    unsigned long fill_hors_cycle;
-    unsigned char cycle_courant;
+    unsigned long fills_wrong_cycle;
+    unsigned char current_cycle;
     /* Fenêtres d'affichage installées par le jeu. Zéro signifie qu'on dessine
        encore avec le défaut, donc à une échelle inventée. */
     unsigned long viewports;
 
     /* --- Les textures ------------------------------------------------------- */
     dkr_texture_stats textures;          /* converties, refusees, hors bornes */
-    unsigned long     textures_chargees;    /* remises au backend */
-    unsigned long     textures_reutilisees; /* servies par le cache */
-    unsigned long     textures_refusees;    /* memoire de texture pleine */
+    unsigned long     textures_loaded;    /* remises au backend */
+    unsigned long     textures_reused; /* servies par le cache */
+    unsigned long     textures_refused;    /* memoire de texture pleine */
     /* Remplies jusqu'a la puissance de deux superieure, ce que la Voodoo exige
        et que la N64 n'impose pas. */
-    unsigned long     textures_remplies;
+    unsigned long     textures_padded;
     /* Refusees pour un rapport au-dela de 8:1, que le remplissage ne peut pas
        corriger sans multiplier la memoire par huit. */
-    unsigned long     textures_hors_proportions;
+    unsigned long     textures_bad_aspect;
     /* Les extrêmes des coordonnées normalisées. Elles doivent tenir dans un
        voisinage de [0,1] ; des milliers diraient que l'échelle est fausse. La
        mesure existe pour pouvoir contredire l'interprétation du format 10.5,
@@ -142,16 +142,16 @@ typedef struct {
     /* Les triangles émis, ventilés par mode de combineur et selon qu'une
        texture était liée. « Émis » seul confond trois causes distinctes de
        surface blanche ; ces deux compteurs en séparent deux. */
-    unsigned long     emis_par_combine[DKR_COMBINE_COUNT];
-    unsigned long     emis_avec_texture;
-    /* Les triangles émis par ordre de grandeur d'aire à l'écran : moins d'un
+    unsigned long     emitted_per_combine[DKR_COMBINE_COUNT];
+    unsigned long     emitted_textured;
+    /* Les triangles émis par ordre de grandeur d'area à l'écran : moins d'un
        pixel, moins de cent, moins de dix mille, au-delà. Une distribution
        dominée par le dernier seau accuse la projection ou les matrices ; une
        distribution normale dit que la géométrie est juste. */
-    unsigned long     aire[4];
+    unsigned long     area[4];
     /* Les triangles émis par mode de profondeur. Un tri absent produit
        exactement l'image observée : le dernier grand polygone recouvre tout. */
-    unsigned long     emis_par_profondeur[4];
+    unsigned long     emitted_per_depth[4];
     /* La plage des profondeurs remises à la carte. Glide en tampon W consomme
        `oow` telle quelle ; des valeurs dégénérées donnent un écran noir sans
        qu'aucune convention de comparaison ne soit en cause. */
@@ -159,8 +159,8 @@ typedef struct {
     /* Le mélange et le test alpha. Trois causes peuvent noircir un écran —
        profondeur, mélange, seuil alpha — et les confondre fait corriger la
        mauvaise. */
-    unsigned long     emis_par_melange[8];
-    unsigned long     emis_avec_test_alpha;
+    unsigned long     emitted_per_blend[8];
+    unsigned long     emitted_alpha_test;
     unsigned          alpha_ref_max;
     /* Le maximum de couleur et d'alpha atteint par un sommet émis. Un shade nul
        multiplie le texel par zéro : c'est du noir, quels que soient les
@@ -169,20 +169,20 @@ typedef struct {
     /* Textures entièrement noires après conversion, contre celles qui portent
        quelque chose. Le texel est la dernière entrée du combineur qu'on n'ait
        pas regardée. */
-    unsigned long     textures_noires, textures_avec_contenu;
+    unsigned long     textures_black, textures_with_content;
     /* Les configurations de combineur, répertoriées ou non. `rdp_state.h`
        insiste : un cas manquant ne se voit pas au décodage, il se voit à
        l'écran sous forme d'une couleur inattendue, éventuellement dans un seul
        niveau. On retient les clés plutôt que leur seul nombre — un compte dit
        qu'il en manque, pas lesquelles. */
-    unsigned long      combineurs_connus;
-    unsigned long      combineurs_inconnus;
-    unsigned long long cles_inconnues[8];
-    unsigned           cles_inconnues_n;
+    unsigned long      combiners_known;
+    unsigned long      combiners_unknown;
+    unsigned long long unknown_keys[8];
+    unsigned           unknown_keys_n;
     /* La composition de chaque configuration inconnue, sans quoi la clé ne
        permet que de constater le manque, pas de le combler. */
-    dkr_combiner       compo_inconnues[8];
-    unsigned char      cycle_inconnu[8];
+    dkr_combiner       unknown_combiners[8];
+    unsigned char      unknown_cycle[8];
 
     /* Combien de fois chaque opcode a été vu.
      *
@@ -230,10 +230,10 @@ typedef struct {
     unsigned int         mode_h;
     unsigned int         mode_l;
     dkr_combiner         combiner;
-    unsigned char        etat_sale;
+    unsigned char        state_dirty;
     /* Force la profondeur inactive, pour isoler le tri d'un défaut de rendu.
        Posé par l'appelant ; zéro par défaut. */
-    unsigned char        sans_profondeur;
+    unsigned char        no_depth;
 
     /* La résolution réellement ouverte par le backend. Le décodeur en a besoin
        pour porter le tampon du jeu à l'écran, et la déduire de la fenêtre
@@ -247,11 +247,11 @@ typedef struct {
     unsigned int         timg_format;
     unsigned int         timg_size;
     /* La texture actuellement liee, par sa cle. Zero signifie aucune. */
-    unsigned long long   texture_cle;
+    unsigned long long   texture_key;
     /* Le handle courant. Il vit ici et non dans `render_state` parce que la
        traduction de l'état RDP réécrit ce bloc en entier : le handle y serait
        écrasé à chaque application, ce qui est exactement ce qui se passait. */
-    dkr_texture_handle   texture_liee;
+    dkr_texture_handle   bound_texture;
     /* Le tampon de conversion. 256x256 en 5551 : 128 Kio, portes par le contexte
        plutot qu'alloues par texture — un Pentium II n'a pas les moyens d'un
        malloc par changement de texture, et il y en a des milliers par seconde. */
@@ -259,11 +259,11 @@ typedef struct {
     /* Les dimensions reelles et celles apres remplissage. Leur rapport sert aux
        coordonnees de texture : la texture reelle n'occupe que le coin superieur
        gauche de ce qu'on charge. */
-    int                  tex_largeur, tex_hauteur;
-    int                  tex_largeur_remplie, tex_hauteur_remplie;
+    int                  tex_width, tex_height;
+    int                  tex_padded_width, tex_padded_height;
     /* Le facteur qui porte le 10.5 du microcode vers le [0,1] de la projection,
        largeur de remplissage comprise. */
-    float                tex_echelle_s, tex_echelle_t;
+    float                tex_scale_s, tex_scale_t;
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne

@@ -184,7 +184,7 @@ int main(void)
     {
         dkr_render_vertex tri[3];
         memset(tri, 0, sizeof(tri));
-        /* Horaire a l'ecran, origine en haut a gauche : aire positive. */
+        /* Horaire a l'ecran, origine en haut a gauche : area positive. */
         tri[0].x =  0.0f; tri[0].y =  0.0f;
         tri[1].x = 10.0f; tri[1].y =  0.0f;
         tri[2].x =  0.0f; tri[2].y = 10.0f;
