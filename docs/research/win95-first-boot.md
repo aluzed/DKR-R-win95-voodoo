@@ -1,7 +1,7 @@
-# Le jeu démarre sous Windows 95
+# The game starts under Windows 95
 
-Relevé du 13 août 2026, sur la machine de test — Pentium II 400 MHz,
-Windows 95 OSR2.
+A report from 13 August 2026, on the test machine — Pentium II 400 MHz, Windows 95
+OSR2.
 
 ```text
 [boot][input] keyboard: WASD=stick arrows=d-pad Space=A Shift=B Z=Z Enter=Start
@@ -9,180 +9,173 @@ Windows 95 OSR2.
 The diagnostic runtime requires a ROM path.
 ```
 
-Le programme se charge, initialise sa couche d'entrée, affiche sa configuration
-clavier et s'arrête sur le message prévu : aucune ROM ne lui a été fournie. Ce
-n'est pas un plantage — c'est le chemin nominal jusqu'au point où il manque une
-donnée.
+The program loads, initialises its input layer, displays its keyboard
+configuration and stops on the expected message: no ROM was supplied to it. That
+is not a crash — it is the nominal path up to the point where a piece of data is
+missing.
 
-## Ce que l'édition de liens a coûté
+## What the link cost
 
-55 unités de traduction — 37 fichiers recompilés, le microcode RSP, les 17
-sources du jeu — plus le recompilateur à la volée et ses dépendances.
+55 translation units — 37 recompiled files, the RSP microcode, the game's 17
+sources — plus the live recompiler and its dependencies.
 
-| | Symboles réclamés |
+| | Symbols required |
 |---|---:|
-| première tentative | 30 |
-| o1heap, absent de la construction | −3 |
-| miniz, idem — **et quatre fichiers, pas un** | −6 |
-| DbgHelp, que Windows 95 n'a pas | −8 |
-| recompilateur à la volée, N64Recomp et rabbitizer | −13 |
+| first attempt | 30 |
+| o1heap, absent from the build | −3 |
+| miniz, likewise — **and four files, not one** | −6 |
+| DbgHelp, which Windows 95 does not have | −8 |
+| live recompiler, N64Recomp and rabbitizer | −13 |
 
-Puis le contrôle des imports en a trouvé cinq autres, invisibles au lieur parce
-qu'il les résolvait depuis les bibliothèques d'import de mingw : `_wfopen_s`,
-`_wfreopen_s`, `_strtoi64`, `_strtoui64`, `GetModuleHandleExW`.
+Then the import check found five more, invisible to the linker because it was
+resolving them from mingw's import libraries: `_wfopen_s`, `_wfreopen_s`,
+`_strtoi64`, `_strtoui64`, `GetModuleHandleExW`.
 
-**Aucun symbole non résolu ne venait de la couche plate-forme, d'`ultramodern`,
-des sources du jeu ni du code recompilé.** C'était la question que cette édition
-de liens posait, et la réponse est la meilleure possible.
+**No unresolved symbol came from the platform layer, from `ultramodern`, from the
+game's sources or from the recompiled code.** That was the question this link
+asked, and the answer is the best possible one.
 
-## Trois pièges, tous de la même famille
+## Three traps, all of the same family
 
-### `strtoll` cache `_strtoi64`
+### `strtoll` hides `_strtoi64`
 
-`_strtoi64` a d'abord été écrite en appelant `strtoll`. Sous mingw, `strtoll`
-**est** un renvoi vers `_strtoi64` importé de MSVCRT : la définition était
-circulaire. Elle compilait, se liait, et le symbole absent réapparaissait dans
-la table d'imports sans que rien ne le signale.
+`_strtoi64` was first written by calling `strtoll`. Under mingw, `strtoll` **is** a
+forwarder to `_strtoi64` imported from MSVCRT: the definition was circular. It
+compiled, it linked, and the missing symbol reappeared in the import table with
+nothing to flag it.
 
-L'analyse est donc écrite à la main, et `strtoll`/`strtoull` sont fournies
-par-dessus — sans quoi `mod_manifest.cpp`, qui les appelle, ramenait l'import par
-la porte de service.
+The parsing is therefore written by hand, and `strtoll`/`strtoull` are supplied on
+top — without which `mod_manifest.cpp`, which calls them, brought the import back
+in through the service entrance.
 
-### `std::thread` sans `#include <thread>`
+### `std::thread` without `#include <thread>`
 
-Le contrôleur de sous-ensemble lisait les inclusions. `librecomp` n'inclut
-`<thread>` nulle part directement — il arrive par transitivité — et `recomp.cpp`
-construisait pourtant **le fil du jeu** avec `std::thread`. Rien n'a protesté.
+The subset checker read the includes. `librecomp` includes `<thread>` nowhere
+directly — it arrives transitively — and yet `recomp.cpp` constructed **the game's
+thread** with `std::thread`. Nothing protested.
 
-Le binaire s'est chargé et est mort au démarrage :
+The binary loaded and died at startup:
 
 ```text
 terminate called after throwing an instance of 'std::system_error'
   what():  Resource temporarily unavailable
 ```
 
-C'est `pthread_create` qui échoue derrière la bibliothèque standard — la même
-cause que le bouchon `GetHandleInformation` documenté depuis E02-S01.
+It is `pthread_create` that fails behind the standard library — the same cause as
+the `GetHandleInformation` stub documented since E02-S01.
 
-**Un contrôle qui lit les inclusions ne peut pas voir un usage.** C'est
-exactement la leçon que `<filesystem>` avait déjà donnée, où la surveillance
-porte sur les opérations et non sur l'en-tête. Le contrôleur surveille désormais
-les types eux-mêmes.
+**A check that reads the includes cannot see a use.** That is exactly the lesson
+`<filesystem>` had already given, where the watch bears on the operations and not
+on the header. The checker now watches the types themselves.
 
-### Le pont de fils n'acceptait pas les pointeurs sur membre
+### The thread bridge did not accept pointers to members
 
-Son constructeur variadique appelait directement, avec ce commentaire :
-« aucun appel d'`ultramodern` n'est un pointeur sur membre ». C'était vrai
-d'`ultramodern`. `librecomp` démarre un fil sur
-`&ModContext::dirty_mod_configuration_thread_process`, et la forme directe ne
-compile pas pour lui.
+Its variadic constructor called directly, with this comment: "no call from
+`ultramodern` is a pointer to a member". That was true of `ultramodern`.
+`librecomp` starts a thread on
+`&ModContext::dirty_mod_configuration_thread_process`, and the direct form does not
+compile for it.
 
-`std::invoke` est ce qu'emploie `std::thread`, et c'est le contrat qu'il fallait
-reproduire. La supposition d'origine économisait un en-tête — `<functional>` est
-de la bibliothèque pure et n'ajoute aucun import — au prix d'une divergence de
-contrat. Le mauvais côté du marché.
+`std::invoke` is what `std::thread` uses, and it is the contract that had to be
+reproduced. The original assumption saved one header — `<functional>` is pure
+library and adds no import — at the price of a divergence of contract. The wrong
+side of the bargain.
 
-## Ce qui reste bouchonné, et ce que cela coûte
+## What remains stubbed, and what that costs
 
-Six symboles sont exportés et vides. Aucun n'empêche le chargement ; chacun est
-justifié dans `tools/win95/exports/exceptions.json`.
+Six symbols are exported and empty. None prevents loading; each is justified in
+`tools/win95/exports/exceptions.json`.
 
-| Symbole | Origine | Conséquence |
+| Symbol | Origin | Consequence |
 |---|---|---|
-| `GetProcessTimes`, `GetThreadTimes`, `GetSystemTimeAdjustment` | `clock.o` de libwinpthread, tiré par `<chrono>` | aucune — seuls les identifiants d'horloge processeur y mènent, et personne ne les demande |
-| `MoveFileExW` | `fs_ops.o` de libstdc++ | aucune — plus aucun code n'appelle `std::filesystem::rename` ici |
-| `LoadLibraryExW` | `mods.cpp` | les mods natifs ne se chargent pas — hors périmètre |
-| `WriteConsoleW` | `fmt`, via `N64Recomp` | les diagnostics du recompilateur à la volée n'apparaissent pas |
+| `GetProcessTimes`, `GetThreadTimes`, `GetSystemTimeAdjustment` | libwinpthread's `clock.o`, pulled in by `<chrono>` | none — only the process-clock identifiers lead there, and nobody asks for them |
+| `MoveFileExW` | libstdc++'s `fs_ops.o` | none — no code calls `std::filesystem::rename` here any more |
+| `LoadLibraryExW` | `mods.cpp` | native mods do not load — out of scope |
+| `WriteConsoleW` | `fmt`, through `N64Recomp` | the live recompiler's diagnostics do not appear |
 
-`CreateProcessW` en faisait partie : le redémarrage rapide aurait échoué en
-silence. Il est passé en `CreateProcessA`, qui fait la même chose partout.
+`CreateProcessW` was among them: the quick restart would have failed silently. It
+has moved to `CreateProcessA`, which does the same thing everywhere.
 
-## Ce que cela ne prouve pas
+## What this does not prove
 
-Le jeu **démarre**. Il n'a pas encore tourné avec une ROM, et rien de ce qui
-suit le chargement n'est éprouvé : ni la boucle de jeu, ni le rendu Voodoo, ni
-le son, ni la cadence. Le recompilateur à la volée est lié et n'a jamais été
-exécuté sur cette machine — il alloue une page et y écrit du code, ce qui reste
-à voir sous Windows 95.
+The game **starts**. It has not yet run with a ROM, and nothing that follows the
+loading is tried: neither the game loop, nor the Voodoo rendering, nor the sound,
+nor the pacing. The live recompiler is linked and has never been run on this
+machine — it allocates a page and writes code into it, which remains to be seen
+under Windows 95.
 
-## La construction est reproductible
+## The build is reproducible
 
-Le premier démarrage est venu d'un enchaînement de commandes dans un répertoire
-de travail. Ce n'était pas un livrable : le binaire existait, le projet ne savait
-pas le refaire.
+The first boot came from a chain of commands in a working directory. That was not
+a deliverable: the binary existed, the project did not know how to remake it.
 
-Trois cibles ont été ajoutées à `cmake/win95-target.cmake` :
+Three targets were added to `cmake/win95-target.cmake`:
 
-| Cible | Contenu |
+| Target | Contents |
 |---|---|
-| `win95liverecomp` | le cœur de `N64Recomp`, `sljit`, `rabbitizer`, le générateur à la volée |
-| `win95recompiled` | les 37 fichiers recompilés et le microcode RSP |
-| `DKRWin95Game` | les 17 sources du jeu, liées en `DKRR.EXE` |
+| `win95liverecomp` | the core of `N64Recomp`, `sljit`, `rabbitizer`, the live generator |
+| `win95recompiled` | the 37 recompiled files and the RSP microcode |
+| `DKRWin95Game` | the game's 17 sources, linked as `DKRR.EXE` |
 
-Construction complète depuis zéro : **34 secondes**, les deux garde-fous
-compris, et le binaire se comporte sur la machine exactement comme celui lié à
-la main.
+A complete build from scratch: **34 seconds**, both guard rails included, and the
+binary behaves on the machine exactly like the one linked by hand.
 
-### Deux pièges du câblage
+### Two traps in the wiring
 
-**L'archive de compatibilité était ajoutée deux fois.** `win95compat` s'ajoute
-elle-même, en tête et sous `--whole-archive`, par ses options d'interface. La
-nommer une seconde fois donnait « définitions multiples ».
+**The compatibility archive was added twice.** `win95compat` adds itself, first and
+under `--whole-archive`, through its interface options. Naming it a second time
+gave "multiple definitions".
 
-**`file(GLOB)` à profondeur fixe laissait des sources derrière.** Celles de
-`rabbitizer` sont réparties sur deux niveaux ; le motif `src/*/*.c` en manquait
-treize, et le lieur réclamait `RabbitizerInstruction_getRaw` et une trentaine
-d'autres. `GLOB_RECURSE`.
+**`file(GLOB)` at a fixed depth left sources behind.** `rabbitizer`'s are spread
+over two levels; the `src/*/*.c` pattern missed thirteen of them, and the linker
+asked for `RabbitizerInstruction_getRaw` and thirty or so others. `GLOB_RECURSE`.
 
-### Et un piège qui ne venait pas du câblage
+### And a trap that did not come from the wiring
 
-CMake laisse `CMAKE_BUILD_TYPE` vide par défaut. Sur les cibles modernes c'est
-un désagrément ; ici c'est un piège silencieux :
+CMake leaves `CMAKE_BUILD_TYPE` empty by default. On modern targets that is an
+annoyance; here it is a silent trap:
 
-| | Taille de `DKRR.EXE` |
+| | Size of `DKRR.EXE` |
 |---|---:|
-| sans type de construction | **20,6 Mo** |
-| `Release` | 8,5 Mo |
+| with no build type | **20.6 MB** |
+| `Release` | 8.5 MB |
 
-Et la taille n'est pas le pire. Le cœur de ce portage est du MIPS recompilé en
-C, dont le coût par instruction décide de tout sur un Pentium II à 400 MHz.
-Non optimisé, il ne serait pas « plus lent » : il serait injouable, sans que
-rien ne l'annonce. La cible impose donc `Release` quand l'appelant n'a rien
-choisi, et le dit à la configuration.
+And the size is not the worst of it. The heart of this port is MIPS recompiled
+into C, whose per-instruction cost decides everything on a 400 MHz Pentium II.
+Unoptimised it would not be "slower": it would be unplayable, with nothing to
+announce it. The target therefore imposes `Release` when the caller has chosen
+nothing, and says so at configuration time.
 
-## Le câblage a trouvé un défaut que la construction manuelle cachait
+## The wiring found a defect the manual build was hiding
 
-Les deux suites de sauvegarde étaient elles aussi construites à la main. Une
-fois passées par CMake, elles ont affiché leurs quatre phases sur la machine
-puis **planté** — faute de protection générale.
+The two save suites were also built by hand. Once put through CMake, they printed
+their four phases on the machine then **crashed** — a general protection fault.
 
-La cause est dans le mode `Release`, qui définit `NDEBUG`. Ces suites sont
-faites d'assertions, et elles mettent leurs appels **dans** les assertions :
+The cause is in `Release` mode, which defines `NDEBUG`. Those suites are made of
+assertions, and they put their calls **inside** the assertions:
 
 ```cpp
 assert(dkr::runtime::saves::backup_adventure(backup, error));
 ```
 
-Sous `NDEBUG`, l'appel disparaît avec l'assertion. La sauvegarde n'est jamais
-écrite, l'état n'est jamais construit, et le nettoyage final travaille sur un
-vide.
+Under `NDEBUG`, the call disappears with the assertion. The save is never written,
+the state is never built, and the final cleanup works on nothing.
 
-**Une suite d'épreuve qui passe en ne testant rien est le pire des résultats.**
-Ici elle ne passait même pas, et c'est ce qui a permis de la voir : le plantage
-est un cadeau. Les deux cibles sont donc compilées avec `-UNDEBUG`.
+**A trial suite that passes by testing nothing is the worst of results.** Here it
+did not even pass, and that is what made it visible: the crash is a gift. Both
+targets are therefore compiled with `-UNDEBUG`.
 
-À noter pour la suite : le danger reste dans la source. Ces 35 assertions à
-effet de bord sont inoffensives tant que personne ne construit ces suites avec
-`NDEBUG` — ce qui est exactement ce que fait un `Release` ordinaire, sur
-n'importe quelle plate-forme.
+Worth noting for what follows: the danger stays in the source. Those 35 assertions
+with side effects are harmless as long as nobody builds those suites with `NDEBUG`
+— which is exactly what an ordinary `Release` does, on any platform.
 
-## Ce que la cible construit désormais
+## What the target now builds
 
-Onze exécutables, tous soumis aux deux garde-fous après le lien :
+Eleven executables, all subjected to both guard rails after the link:
 
 ```text
 CLOCKT  DKRR  FILEIOT  FSSEAM  PLATFORM  SAVECDC
 SAVEMGR  THRCPP  THREADS  WITNESS  WPROBE
 ```
 
-et cinq suites enregistrées dans CTest, qui passent en 20 secondes.
+and five suites registered in CTest, which pass in 20 seconds.
