@@ -122,6 +122,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // décodeur lirait des opcodes plausibles à des adresses absurdes.
     context_.rdram_native = 1;
     context_.trace = trace_decodeur;
+
+    // **Une liste entière, vidée une seule fois.**
+    //
+    // Les compteurs ont mené jusqu'ici puis se sont tus : 70 commandes par
+    // liste, constant depuis la liste 300, deux remplissages et rien d'autre.
+    // Un chiffre stable ne dit plus rien de ce que le jeu fabrique ; il faut
+    // voir la liste.
+    //
+    // Le choix de la 300e n'est pas arbitraire : c'est à partir de là que le
+    // débit se stabilise, donc la première qui décrit l'état où le jeu reste.
+    // Vider la première donnerait la séquence d'initialisation, qui n'est pas
+    // celle où il est bloqué.
+    if (index == 300) {
+        g_trace_contexte = 400;
+        std::fprintf(stderr, "[gfx] --- liste 300, contenu integral ---\n");
+    }
     dkr_transform_set_viewport(&context_.transform,
                                static_cast<float>(width_) * 0.5F,
                                -static_cast<float>(height_) * 0.5F,

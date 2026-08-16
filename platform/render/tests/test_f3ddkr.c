@@ -475,6 +475,60 @@ int main(void)
               ctx4.state.fill_color_argb == 0x00FF0000u);
     }
 
+    /* --- Le retour d'une liste comptee ---------------------------------------- *
+     *
+     * Une liste comptee n'a pas d'`ENDDL` : c'est son compte qui la termine. Le
+     * decodeur empilait l'adresse de retour et l'ignorait, donc il sortait de la
+     * liste par le bas et continuait dans la memoire qui suit.
+     *
+     * Le symptome sur la machine etait muet et couteux : 70 commandes par liste,
+     * constant, deux remplissages et **pas un triangle**. DKR charge ses textures
+     * par une liste comptee de sept commandes, et toute la geometrie vient apres
+     * ce retour. Elle etait perdue la, a chaque image.
+     *
+     * L'epreuve reproduit exactement ce piege : de l'ordure est posee juste apres
+     * la liste comptee, la ou le decodeur derapait. Sans le retour, il la lit et
+     * rejette ; avec, il ne la voit jamais. C'est ce qui fait que le controle
+     * porte sur la correction plutot que sur sa formulation. */
+    {
+        dkr_f3d_context ctx5;
+        unsigned int at5 = 0, corps, k;
+
+        memset(g_ram, 0, sizeof(g_ram));
+        /* La liste principale : appelle une liste comptee de 3 commandes, puis
+           charge trois sommets et un triangle, puis se termine. */
+        at5 = put_cmd(at5, 0xBF000000u, 0x00000000u);           /* DMAOffsets */
+        at5 = put_cmd(at5, 0x07000000u | (3u << 16), 0x600u);   /* liste comptee */
+        at5 = put_cmd(at5, 0x04000000u | (2u << 19), 0x300u);   /* Vertex x3 */
+        at5 = put_cmd(at5, 0x05000000u, 0x00000102u);           /* Triangle */
+        (void)put_cmd(at5, 0xB8000000u, 0u);
+
+        /* Le corps compte : trois commandes RDP anodines, **sans ENDDL**, et
+           immediatement suivies d'ordure. C'est la disposition reelle. */
+        corps = 0x600u;
+        corps = put_cmd(corps, 0xE7000000u, 0u);                /* PipeSync */
+        corps = put_cmd(corps, 0xE7000000u, 0u);
+        corps = put_cmd(corps, 0xE7000000u, 0u);
+        (void)put_cmd(corps, 0x99000000u, 0x99999999u);         /* ordure */
+
+        for (k = 0; k < 3; k++) {
+            put16(0x300u + k * 16u + 0u, (int)(10 * (k + 1)));
+            put16(0x300u + k * 16u + 2u, (int)(20 * (k + 1)));
+            put16(0x300u + k * 16u + 4u, 200);
+        }
+
+        dkr_f3d_init(&ctx5, g_ram, RAM_SIZE, NULL);
+        (void)dkr_f3d_run(&ctx5, 0);
+
+        check("la liste comptee rend la main a son compte, sans ENDDL",
+              ctx5.state.rejects[DKR_F3D_REJECT_OPCODE] == 0);
+        /* Le controle qui compte vraiment : ce qui suit le retour est atteint.
+           Sans le retour, les sommets et le triangle sont derriere l'ordure et
+           ne sont jamais lus — exactement ce que la machine montrait. */
+        check("et ce qui suit le retour est decode",
+              ctx5.state.vertices == 3 && ctx5.state.triangles == 1);
+    }
+
     printf("\n%d echec(s)\n", g_fails);
     if (g_out) { fprintf(g_out, "\n%d echec(s)\n", g_fails); fclose(g_out); }
     return g_fails != 0;

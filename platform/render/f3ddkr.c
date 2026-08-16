@@ -32,6 +32,9 @@
 #define RDRAM_MASK           0x00FFFFFFu
 #define MAX_VERTICES         32u
 #define MAX_NESTED           32u
+/* Une liste ordinaire va jusqu'a son ENDDL ; une liste comptee s'arrete a son
+   compte. Zero ne peut pas dire les deux. */
+#define SANS_COMPTE          0xFFFFFFFFu
 #define VERTEX_STRIDE        10u
 #define TRIANGLE_STRIDE      16u
 #define MATRIX_BYTES         64u
@@ -497,6 +500,25 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 {
     unsigned int return_stack[MAX_NESTED];
+    /* --- Ce qui termine une liste comptée --------------------------------- *
+     *
+     * Une liste comptée n'a **pas** d'`ENDDL` : c'est son compte qui la termine.
+     * Le décodeur l'ignorait — il empilait l'adresse de retour, sautait, et
+     * attendait un `ENDDL` qui ne viendrait jamais. Il sortait donc de la liste
+     * par le bas et continuait dans la mémoire qui suit, jusqu'à buter sur du
+     * hasard.
+     *
+     * Le symptôme, mesuré sur la machine : **soixante-dix commandes par liste,
+     * constant, deux remplissages et pas un triangle**, et un rejet par image.
+     * La liste d'affichage de DKR charge une texture par une liste comptée de
+     * sept commandes, et toute la géométrie vient *après* ce retour. Elle était
+     * perdue là, à chaque image, depuis le début.
+     *
+     * `SANS_COMPTE` distingue « jusqu'à `ENDDL` » de « plus une seule commande ».
+     * Sans ce sentinelle, zéro voudrait dire les deux, et une liste ordinaire se
+     * terminerait à sa première commande. */
+    unsigned int reste_stack[MAX_NESTED];
+    unsigned int reste = SANS_COMPTE;
     unsigned int depth = 0;
     unsigned long executed = 0;
     int running = 1;
@@ -522,6 +544,10 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         executed++;
         c->state.commands++;
         c->state.opcodes[opcode]++;
+        /* Decompte avant d'executer, pour que la valeur empilee par un appel
+           imbrique soit celle du parent **apres** cette commande. La decrementer
+           apres la ferait recompter au retour. */
+        if (reste != SANS_COMPTE && reste > 0u) { reste--; }
 
         switch (opcode) {
         case OP_DMAOFFSETS: cmd_dma_offsets(c, w0, w1); break;
@@ -570,7 +596,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                     reject(c, DKR_F3D_REJECT_DEPTH, d);
                     break;
                 }
+                reste_stack[depth] = reste;
                 return_stack[depth++] = address;
+                reste = SANS_COMPTE;   /* une liste appelee va jusqu'a son ENDDL */
             }
             trace(c, "DisplayList %s vers 0x%06X",
                   branch ? "branchement" : "appel", target);
@@ -584,6 +612,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 running = 0;
             } else {
                 address = return_stack[--depth];
+                reste = reste_stack[depth];
                 trace(c, "EndDisplayList — retour a 0x%06X", address);
             }
             break;
@@ -602,7 +631,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 reject(c, DKR_F3D_REJECT_DEPTH, "liste comptee");
                 break;
             }
+            reste_stack[depth] = reste;
             return_stack[depth++] = address;
+            reste = count;
             trace(c, "CountedDisplayList %u commandes a 0x%06X", count, target);
             address = target;
             break;
@@ -658,6 +689,15 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             running = 0;
             break;
         }
+        }
+
+        /* Le compte est epuise : on revient, sans attendre d'ENDDL. C'est le
+           seul terminateur d'une liste comptee, et l'oublier faisait sortir le
+           decodeur par le bas de la liste dans la memoire qui suit. */
+        if (running && reste == 0u && depth > 0u) {
+            address = return_stack[--depth];
+            reste = reste_stack[depth];
+            trace(c, "CountedDisplayList terminee — retour a 0x%06X", address);
         }
     }
     return executed;
