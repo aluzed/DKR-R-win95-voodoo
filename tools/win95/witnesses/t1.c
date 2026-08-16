@@ -1,5 +1,5 @@
-/* E00-S02 — Temoin T1 : format PE, sous-systeme, imports de base.
- * Aucun CRT, aucune bibliotheque : si ceci ne demarre pas, rien ne demarrera. */
+/* E00-S02 - Witness T1: PE format, subsystem, basic imports.
+ * No CRT, no library: if this does not start, nothing will. */
 #ifdef __WATCOMC__
 #  include <windows.h>
 #else
@@ -12,13 +12,13 @@ __declspec(dllimport) void WINAPI ExitProcess(unsigned);
 #ifdef __WATCOMC__
 int main(void)
 {
-    MessageBoxA(NULL, "T1 : PE32 demarre sous Windows 95.", "Temoin T1", 0x40);
+    MessageBoxA(NULL, "T1: PE32 starts under Windows 95.", "Witness T1", 0x40);
     return 0;
 }
 #else
 void start(void)
 {
-    MessageBoxA(NULL, "T1 : PE32 demarre sous Windows 95.", "Temoin T1", 0x40);
+    MessageBoxA(NULL, "T1: PE32 starts under Windows 95.", "Witness T1", 0x40);
     ExitProcess(0);
 }
 #endif

@@ -1,37 +1,37 @@
-/* E00-S04 — coût de l'unité vectorielle du RSP, avec et sans SIMD.
+/* E00-S04 - the cost of the RSP's vector unit, with and without SIMD.
  *
- * Le microcode audio de Rare est recompilé instruction par instruction, et ses
- * opérations vectorielles passent par l'émulation de `librecomp`. Celle-ci a
- * deux implémentations, choisies à la compilation par `rsp_vu.hpp` :
+ * Rare's audio microcode is recompiled instruction by instruction, and its
+ * vector operations go through `librecomp`'s emulation. That emulation has two
+ * implementations, chosen at compile time by `rsp_vu.hpp`:
  *
- *   x86-64 / arm64  ->  SIMD, via SSE4.1 (ou sse2neon)
- *   tout le reste   ->  SISD, boucle scalaire sur les huit voies
+ *   x86-64 / arm64  ->  SIMD, through SSE4.1 (or sse2neon)
+ *   everything else ->  SISD, a scalar loop over the eight lanes
  *
- * Sur x86 32 bits, aucune des deux conditions d'architecture n'est vraie : le
- * chemin scalaire est donc retenu **automatiquement**, sans rien à écrire. La
- * question n'est pas de le faire exister, elle est de savoir ce qu'il coûte.
+ * On 32-bit x86, neither architecture condition holds: the scalar path is
+ * therefore chosen **automatically**, with nothing to write. The question is not
+ * to make it exist, it is to know what it costs.
  *
- * Ce banc mesure les opérations dans les proportions où le microcode les
- * emploie réellement — profil relevé sur `aspMain.cpp` :
+ * This bench measures the operations in the proportions the microcode actually
+ * uses them - a profile taken from `aspMain.cpp`:
  *
  *   vmadh 33 · vmulf 26 · vxor 24 · vmadn 17 · vmacf 14 · vadd 13 · vmudn 10
  *   vand 8 · vsar 6 · vmadm 6 · vmudm 5 · vaddc 5 · vmudl 4 · vge 4 · vcl 4
  *   vmudh 3 · vsub 2                          (184 instructions vectorielles)
  *
- * Les huit opérations retenues ci-dessous couvrent 80 % de ce profil.
+ * The eight operations chosen below cover 80 % of that profile.
  *
- * Se compile pour l'hôte (SIMD) et pour la cible (SISD) sans changement de
- * source : c'est le même code, seule l'architecture change.
+ * Compiles for the host (SIMD) and for the target (SISD) with no source change:
+ * it is the same code, only the architecture changes.
  */
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 
-#include "librecomp/rsp.hpp"        /* doit precéder rsp_vu_impl.hpp */
+#include "librecomp/rsp.hpp"        /* must precede rsp_vu_impl.hpp */
 #include "librecomp/rsp_vu_impl.hpp"
 
-/* `dmem` est declare extern par rsp.hpp ; le microcode le definit ailleurs.
-   Ce banc n'appelle que l'unite vectorielle, mais le symbole doit exister. */
+/* `dmem` is declared extern by rsp.hpp; the microcode defines it elsewhere.
+   This bench only calls the vector unit, but the symbol must exist. */
 uint8_t dmem[0x1000];
 
 #ifdef _WIN32
@@ -53,10 +53,10 @@ static double now_seconds(void)
 }
 #endif
 
-/* Le microcode audio manipule des échantillons 16 bits signés et des
-   coefficients ADPCM : on remplit les registres avec des valeurs de cet
-   ordre plutôt qu'avec des motifs dégénérés, dont les saturations et les
-   chemins rapides ne seraient pas représentatifs. */
+/* The audio microcode manipulates signed 16-bit samples and ADPCM coefficients:
+   we fill the registers with values of that magnitude rather than with
+   degenerate patterns, whose saturations and fast paths would not be
+   representative. */
 static void seed_registers(RSP &rsp)
 {
     for (int r = 0; r < 32; r++)
@@ -89,9 +89,9 @@ int main(int argc, char **argv)
         n++;                                                            \
     } while (0)
 
-    /* Les huit opérations dominantes du microcode audio. L'accumulateur est
-       volontairement laissé vivant d'une itération à l'autre : c'est ainsi que
-       le microcode les enchaîne (multiplication-accumulation). */
+    /* The eight dominant operations of the audio microcode. The accumulator is
+       deliberately left live from one iteration to the next: that is how the
+       microcode chains them (multiply-accumulate). */
     MEASURE("vmadh", (rsp.VMADH<0>(rsp.vpu.r[1], rsp.vpu.r[2], rsp.vpu.r[3])));
     MEASURE("vmulf", (rsp.VMULF<0>(rsp.vpu.r[4], rsp.vpu.r[5], rsp.vpu.r[6])));
     MEASURE("vxor",  (rsp.VXOR<0>(rsp.vpu.r[7], rsp.vpu.r[8], rsp.vpu.r[9])));
@@ -102,19 +102,19 @@ int main(int argc, char **argv)
     MEASURE("vand",  (rsp.VAND<0>(rsp.vpu.r[22], rsp.vpu.r[23], rsp.vpu.r[24])));
 
     rlen += sprintf(report + rlen,
-        "Cout de l'unite vectorielle du RSP\r\n"
-        "==================================\r\n"
+        "Cost of the RSP's vector unit\r\n"
+        "=============================\r\n"
         "implementation : %s\r\n"
-        "iterations     : %ld par operation\r\n\r\n",
-        Accuracy::RSP::SIMD ? "SIMD (SSE4.1)" : "SISD (scalaire, 8 voies)",
+        "iterations     : %ld per operation\r\n\r\n",
+        Accuracy::RSP::SIMD ? "SIMD (SSE4.1)" : "SISD (scalar, 8 lanes)",
         iters);
     rlen += sprintf(report + rlen, "%-10s %14s\r\n", "operation", "ns/op");
     for (int i = 0; i < n; i++)
         rlen += sprintf(report + rlen, "%-10s %14.2f\r\n", results[i].name, results[i].ns);
-    rlen += sprintf(report + rlen, "\r\nmoyenne des 8 dominantes : %.2f ns/op\r\n", total / n);
+    rlen += sprintf(report + rlen, "\r\nmean of the 8 dominant ops: %.2f ns/op\r\n", total / n);
 
-    /* Somme empirique : ne pas laisser le compilateur supprimer les calculs. */
-    rlen += sprintf(report + rlen, "temoin (ignorer) : %u\r\n",
+    /* An empirical sum: do not let the compiler delete the computations. */
+    rlen += sprintf(report + rlen, "witness (ignore): %u\r\n",
                     (unsigned)(rsp.vpu.r[1].u16(0) ^ rsp.vpu.r[13].u16(3)));
 
     fputs(report, stdout);
@@ -122,8 +122,8 @@ int main(int argc, char **argv)
     {
         FILE *f = fopen("D:\\RSPVU.TXT", "wb");
         if (f) { fwrite(report, 1, (size_t)rlen, f); fclose(f); }
-        MessageBoxA(NULL, "Mesure terminee.\n\nResultat dans D:\\RSPVU.TXT",
-                    "Banc RSP", MB_ICONINFORMATION);
+        MessageBoxA(NULL, "Measurement complete.\n\nResult in D:\\RSPVU.TXT",
+                    "RSP bench", MB_ICONINFORMATION);
     }
 #endif
     return 0;

@@ -1,11 +1,11 @@
-/* E00-S02 — Temoin T3b : le meme modele d'execution, mais ecrit sur les
- * primitives Win32 que Windows 95 possede reellement.
+/* E00-S02 - Witness T3b: the same execution model, but written on the Win32
+ * primitives Windows 95 actually has.
  *
- * CreateThread et CRITICAL_SECTION au lieu de std::thread et std::mutex ; un
- * evenement manuel au lieu d'une variable de condition. Exceptions et RTTI sont
- * conserves a l'identique — ils ne dependent pas du modele de threads.
+ * CreateThread and CRITICAL_SECTION instead of std::thread and std::mutex; a
+ * manual event instead of a condition variable. Exceptions and RTTI are kept
+ * identical - they do not depend on the threading model.
  *
- * Se compile avec les deux candidats, ce qui en fait le point de comparaison. */
+ * Compiles with both candidates, which makes it the point of comparison. */
 #include <typeinfo>
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +13,7 @@
 
 struct Base           { virtual ~Base() {} virtual int kind() const { return 0; } };
 struct Derived : Base { int kind() const { return 1; } };
-struct Boom { const char *what() const { return "exception rattrapee"; } };
+struct Boom { const char *what() const { return "exception caught"; } };
 
 static CRITICAL_SECTION cs;
 static HANDLE done_event;

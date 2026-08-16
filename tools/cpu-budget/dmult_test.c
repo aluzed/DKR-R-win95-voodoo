@@ -1,9 +1,9 @@
-/* Equivalence de DMULT/DMULTU portable contre __int128, sur x86-64. */
+/* Equivalence of the portable DMULT/DMULTU against __int128, on x86-64. */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 
-/* Reference : la version __int128 de recomp.h */
+/* Reference: recomp.h's __int128 version */
 static void DMULT_ref(int64_t a, int64_t b, int64_t* lo, int64_t* hi) {
     __int128 f = ((__int128)a) * ((__int128)b);
     *hi = (int64_t)(f >> 64); *lo = (int64_t)(f >> 0);
@@ -13,7 +13,7 @@ static void DMULTU_ref(uint64_t a, uint64_t b, uint64_t* lo, uint64_t* hi) {
     *hi = (uint64_t)(f >> 64); *lo = (uint64_t)(f >> 0);
 }
 
-/* Candidat : la version portable du patch 0002 */
+/* Candidate: patch 0002's portable version */
 static void DMULTU_new(uint64_t a, uint64_t b, uint64_t* lo64, uint64_t* hi64) {
     const uint64_t a_lo = (uint32_t)a, a_hi = a >> 32;
     const uint64_t b_lo = (uint32_t)b, b_hi = b >> 32;

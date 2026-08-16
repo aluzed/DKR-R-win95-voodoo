@@ -1,11 +1,12 @@
-/* E00-S02 — Temoin T3a : le modele d'execution tel que `ultramodern` l'ecrit.
+/* E00-S02 - Witness T3a: the execution model as `ultramodern` writes it.
  *
- * Deux fils, un mutex, une variable de condition, plus une hierarchie de classes
- * avec exceptions et RTTI. C'est exactement la forme du code a porter, et donc
- * le temoin qui decide si `ultramodern` se patche ou se reecrit.
+ * Two threads, a mutex, a condition variable, plus a class hierarchy with
+ * exceptions and RTTI. It is exactly the shape of the code to be ported, and
+ * therefore the witness that decides whether `ultramodern` is patched or
+ * rewritten.
  *
- * Ne se compile qu'avec une bibliotheque standard C++11 : Open Watcom n'a pas
- * <thread>. Voir t3b.cpp pour l'equivalent Win32. */
+ * Only compiles with a C++11 standard library: Open Watcom has no <thread>. See
+ * t3b.cpp for the Win32 equivalent. */
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -16,7 +17,7 @@
 
 struct Base        { virtual ~Base() {} virtual int kind() const { return 0; } };
 struct Derived : Base { int kind() const { return 1; } };
-struct Boom { const char *what() const { return "exception rattrapee"; } };
+struct Boom { const char *what() const { return "exception caught"; } };
 
 static std::mutex m;
 static std::condition_variable cv;
@@ -27,7 +28,7 @@ int main()
 {
     char msg[512];
     const char *rtti = "?";
-    const char *exc  = "non";
+    const char *exc  = "no";
 
     std::thread producer([] {
         for (int i = 0; i < 1000; i++) { std::lock_guard<std::mutex> g(m); counter++; }
@@ -43,14 +44,14 @@ int main()
 
     Derived d;
     Base *p = &d;
-    rtti = (typeid(*p) == typeid(Derived)) ? "ok" : "ECHEC";
+    rtti = (typeid(*p) == typeid(Derived)) ? "ok" : "FAILED";
 
     try { throw Boom(); } catch (const Boom &b) { exc = b.what(); }
 
-    sprintf(msg, "T3a std::thread\r\n  compteur : %d / 1000\r\n"
+    sprintf(msg, "T3a std::thread\r\n  counter  : %d / 1000\r\n"
                  "  RTTI     : %s\r\n  exception: %s\r\n", counter, rtti, exc);
     FILE *f = fopen("D:\\T3A.TXT", "wb");
     if (f) { fwrite(msg, 1, strlen(msg), f); fclose(f); }
-    MessageBoxA(NULL, msg, "Temoin T3a", 0x40);
+    MessageBoxA(NULL, msg, "Witness T3a", 0x40);
     return 0;
 }

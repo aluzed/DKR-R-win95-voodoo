@@ -1,26 +1,26 @@
-/* E00-S03 — banc d'essai du code recompilé, côté Windows 95.
+/* E00-S03 - bench for the recompiled code, on the Windows 95 side.
  *
- * Même protocole que `bench.c` (hôte Linux), même jeu de fonctions, mêmes
- * entrées : la seule différence est la machine. C'est ce qui rend le rapport
- * entre les deux mesures exploitable — le facteur cherché est la normalisation
- * entre un cœur moderne et le Pentium II de la cible.
+ * The same protocol as `bench.c` (the Linux host), the same set of functions,
+ * the same inputs: the only difference is the machine. That is what makes the
+ * ratio between the two measurements usable - the factor sought is the
+ * normalisation between a modern core and the target's Pentium II.
  *
- * Le résultat est écrit dans D:\CPUBUDG.TXT, lisible depuis l'hôte par mtools
- * une fois la machine arrêtée.
+ * The result is written to D:\CPUBUDG.TXT, readable from the host through
+ * mtools once the machine is stopped.
  *
- * Deux écarts avec la version Linux, tous deux imposés par la cible :
+ * Two departures from the Linux version, both imposed by the target:
  *
- *  - la RDRAM émulée est réduite à 16 Mio au lieu de 512. La version Linux
- *    s'offrait une fenêtre couvrant KSEG0 et KSEG1 parce que la mémoire y est
- *    gratuite ; ici, committer 512 Mio sur une machine de 64 Mo ferait pagi-
- *    ner, et une mesure de temps sous pagination ne vaut rien. Les segments
- *    PT_LOAD de l'ELF s'arrêtent à 11,04 Mio, donc 16 Mio les couvrent tous.
- *  - les fautes sont interceptées par SetUnhandledExceptionFilter plutôt que
- *    par un gestionnaire de signal. Une fonction qui adresse hors de la fenêtre
- *    est écartée et signalée, au lieu de faire tomber le banc.
+ *  - the emulated RDRAM is reduced to 16 MiB instead of 512. The Linux version
+ *    allowed itself a window covering KSEG0 and KSEG1 because memory is free
+ *    there; here, committing 512 MiB on a 64 MB machine would page, and a
+ *    timing measurement under paging is worthless. The ELF's PT_LOAD segments
+ *    stop at 11.04 MiB, so 16 MiB covers them all.
+ *  - faults are caught by SetUnhandledExceptionFilter rather than by a signal
+ *    handler. A function that addresses outside the window is discarded and
+ *    reported, instead of bringing the bench down.
  *
- * Le sous-ensemble finalement mesuré est écrit dans le rapport : la comparaison
- * avec l'hôte doit porter sur les mêmes fonctions, sans quoi elle ne compare
+ * The subset finally measured is written into the report: the comparison with
+ * the host must bear on the same functions, otherwise it does not compare
  * rien.
  */
 #include <windows.h>
@@ -47,7 +47,7 @@ static LONG WINAPI on_fault(EXCEPTION_POINTERS *info)
     return EXCEPTION_EXECUTE_HANDLER;   /* jamais atteint */
 }
 
-/* --- chargement des segments PT_LOAD (ELF big endian, MIPS) --------------- */
+/* --- loading the PT_LOAD segments (big-endian ELF, MIPS) ------------------ */
 static uint32_t be32(const uint8_t *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
@@ -88,7 +88,7 @@ static int load_elf(const char *path)
     return loaded;
 }
 
-/* --- fonctions mesurées --------------------------------------------------- */
+/* --- measured functions --------------------------------------------------- */
 typedef void (*fn_t)(uint8_t *, recomp_context *);
 typedef struct { const char *name; fn_t fn; } entry_t;
 
@@ -129,34 +129,34 @@ int main(int argc, char **argv)
     iterations = (argc > 2) ? atol(argv[2]) : 200000L;
 
     rlen += sprintf(report + rlen,
-        "Budget CPU - code recompile sur la machine cible\r\n"
-        "===============================================\r\n");
+        "CPU budget - recompiled code on the target machine\r\n"
+        "=================================================\r\n");
 
     if (!QueryPerformanceFrequency(&freq) || freq.QuadPart == 0) {
-        MessageBoxA(NULL, "QueryPerformanceCounter indisponible", "Banc CPU", MB_ICONERROR);
+        MessageBoxA(NULL, "QueryPerformanceCounter unavailable", "CPU bench", MB_ICONERROR);
         return 2;
     }
-    rlen += sprintf(report + rlen, "frequence du compteur : %ld Hz\r\n", (long)freq.QuadPart);
+    rlen += sprintf(report + rlen, "counter frequency : %ld Hz\r\n", (long)freq.QuadPart);
 
-    /* Reserver puis committer : la fenetre est petite, mais explicite. */
+    /* Reserve then commit: the window is small, but explicit. */
     rdram = (uint8_t *)VirtualAlloc(NULL, RDRAM_BYTES, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!rdram) {
-        MessageBoxA(NULL, "VirtualAlloc 16 Mio a echoue", "Banc CPU", MB_ICONERROR);
+        MessageBoxA(NULL, "VirtualAlloc of 16 MiB failed", "CPU bench", MB_ICONERROR);
         return 2;
     }
     memset(rdram, 0, RDRAM_BYTES);
 
     if (load_elf(elf_path) <= 0) {
         char msg[256];
-        sprintf(msg, "ELF illisible : %s", elf_path);
-        MessageBoxA(NULL, msg, "Banc CPU", MB_ICONERROR);
+        sprintf(msg, "unreadable ELF: %s", elf_path);
+        MessageBoxA(NULL, msg, "CPU bench", MB_ICONERROR);
         return 2;
     }
-    rlen += sprintf(report + rlen, "image memoire chargee depuis %s\r\n\r\n", elf_path);
+    rlen += sprintf(report + rlen, "memory image loaded from %s\r\n\r\n", elf_path);
 
     SetUnhandledExceptionFilter(on_fault);
 
-    /* Passe de selection : mêmes huit appels d'essai que sur l'hote. */
+    /* Selection pass: the same eight trial calls as on the host. */
     for (i = 0; i < ENTRY_COUNT; i++) {
         int ok = 1;
         uint32_t t;
@@ -168,15 +168,15 @@ int main(int argc, char **argv)
         usable[i] = ok;
         usable_count += ok;
     }
-    rlen += sprintf(report + rlen, "fonctions retenues : %d / %d\r\n\r\n",
+    rlen += sprintf(report + rlen, "functions kept : %d / %d\r\n\r\n",
                     usable_count, (int)ENTRY_COUNT);
-    rlen += sprintf(report + rlen, "%-34s %12s %12s\r\n", "fonction", "appels", "ns/appel");
+    rlen += sprintf(report + rlen, "%-34s %12s %12s\r\n", "function", "calls", "ns/call");
 
     for (i = 0; i < ENTRY_COUNT; i++) {
         long done = 0;
         double ns;
         if (!usable[i]) {
-            rlen += sprintf(report + rlen, "%-34s %12s %12s\r\n", entries[i].name, "-", "ecartee");
+            rlen += sprintf(report + rlen, "%-34s %12s %12s\r\n", entries[i].name, "-", "discarded");
             continue;
         }
         seed_context(&ctx, 0);
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
     out = fopen("D:\\CPUBUDG.TXT", "wb");
     if (out) { fwrite(report, 1, (size_t)rlen, out); fclose(out); }
 
-    MessageBoxA(NULL, "Mesure terminee.\n\nResultat dans D:\\CPUBUDG.TXT",
-                "Banc CPU", MB_ICONINFORMATION);
+    MessageBoxA(NULL, "Measurement complete.\n\nResult in D:\\CPUBUDG.TXT",
+                "CPU bench", MB_ICONINFORMATION);
     return 0;
 }

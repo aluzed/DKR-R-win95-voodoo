@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Selectionne les fonctions feuilles du code recompile pour le banc E00-S03.
+"""Selects the leaf functions of the recompiled code for the E00-S03 bench.
 
-Une fonction feuille n'appelle aucune autre fonction du jeu : son temps est donc
-attribuable a elle seule, sans qu'il faille reconstruire une pile d'appels.
+A leaf function calls no other function of the game: its time is therefore
+attributable to it alone, with no call stack to rebuild.
 """
 import argparse, pathlib, re, sys
 
