@@ -64,7 +64,7 @@
         },
         {
           "path": "patches/n64-modern-runtime/0015-platform-seam-for-threading-primitives.patch",
-          "sha256": "4563032ca79a22abe063a1ac084b48610d77971d934fb881e585f0fd945d7d52"
+          "sha256": "4a5a73a03ddf22fe002c186015ce07baba2cc76f9ea2ef2a14aba162425575a9"
         },
         {
           "path": "patches/n64-modern-runtime/0016-build-librecomp-for-32-bit-targets.patch",
@@ -76,7 +76,7 @@
         },
         {
           "path": "patches/n64-modern-runtime/0018-platform-seam-for-filesystem-operations.patch",
-          "sha256": "dd433fef5d814a0f19b454575c5fd1ddad6b6b29e9d1c98c43812d3a62b8a37e"
+          "sha256": "74793b992fd2b870329ae4e091ec9bab31dad4c2ad3b95717c7b138a03a82091"
         },
         {
           "path": "patches/n64-modern-runtime/0019-open-streams-from-narrow-strings.patch",
@@ -84,31 +84,31 @@
         },
         {
           "path": "patches/n64-modern-runtime/0020-platform-seam-for-synchronisation-primitives.patch",
-          "sha256": "3498dfdad98ea93894a7d010772f3fdf7a8e7ec41617df2065b638d4b39fdd84"
+          "sha256": "3b2f43e56423ff1821bd49f468b69501b3e99217f70336a6d2fb0f463d5f9657"
         },
         {
           "path": "patches/n64-modern-runtime/0021-route-threads-through-the-sync-seam.patch",
-          "sha256": "2240df0e07e06056e196cadea357ed241baef9056fcf9f4475460158bb8433a8"
+          "sha256": "005f6c350ed2d2d01fde534cbf8f2853d2bea4dd3bfbe5f49b5cccd2ab3260e2"
         },
         {
           "path": "patches/n64-modern-runtime/0022-trace-sp-and-dp-edges.patch",
-          "sha256": "d737f49844330f0fa944135a038a6be739456604e9f82fb743eca918dc174b51"
+          "sha256": "0c68306b0edbdf63ad097e4e3114db1dfcd43b5bd279e191a9cd292d8d81b748"
         },
         {
           "path": "patches/n64-modern-runtime/0023-count-guest-queue-deposits.patch",
-          "sha256": "f90f0905cf3ac9aab7dbc08ce169b0ebf0a799fb868d3b661a0bb5b31021811c"
+          "sha256": "00a8f511cb7a6dd7769ae78d8773772e53db5802e60dd658e906d7d45d5dc0b6"
         },
         {
           "path": "patches/n64-modern-runtime/0024-priority-reserved-slots-and-source.patch",
-          "sha256": "caac7892a576a61fc23f0ed4664452d543d145f14d7c08f8a0e5a2257201d220"
+          "sha256": "dbf3c6945fc85f7a8a13079894d980c77fd870474ac8a8460a1600ceaf7ae5f6"
         },
         {
           "path": "patches/n64-modern-runtime/0025-publish-dp-edge-before-rendering.patch",
-          "sha256": "8d5ec7d8bb00bf7ed7a9184e5bd565576c26b0cc22ed220894c31b08d1a2f5a1"
+          "sha256": "56eea92b90b18d5b4c214a9714fc4b3eee0e63d6eb8b18bf77a00e99559c2503"
         },
         {
           "path": "patches/n64-modern-runtime/0026-commit-the-log-from-the-queue-trace.patch",
-          "sha256": "75c93a928b683d495fcc3677dc39f0dfd937e353c13bfea1414bf05502938c2b"
+          "sha256": "dd6f64ba022f485eab1eaf7b5b8e4ac077d9a525a57e45d56e2bd8fd13d82d3b"
         }
       ]
     },

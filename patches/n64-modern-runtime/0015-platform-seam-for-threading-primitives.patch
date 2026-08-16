@@ -94,11 +94,11 @@ index 0000000..3c3e9c4
 +// above and takes the platform seam instead. Its subset checker reads text
 +// rather than preprocessor state, so the exemption is stated per line.
 +//
-+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +#include <thread>
-+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +#include <mutex>
-+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +#include <condition_variable>
 +
 +namespace ultramodern {

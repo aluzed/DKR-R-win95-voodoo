@@ -71,12 +71,12 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +++ b/ultramodern/src/events.cpp
 @@ -268,6 +268,13 @@
  //
- // La trace s'arrete d'elle-meme apres quelques centaines de lignes : la machine
- // cible ecrit sur une disquette emulee.
-+// Definie par le jeu (game_main.cpp) : vide le journal ET met a jour l'entree de
-+// repertoire, faute de quoi un programme fige laisse un fichier de zero octet.
-+// Declaree faible pour que les binaires d'epreuve, qui lient ultramodern sans le
-+// jeu, se lient quand meme.
+ // The trace stops on its own after a few hundred lines: the target machine writes
+ // to an emulated floppy.
++// Defined by the game (game_main.cpp): flushes the log AND updates the directory
++// entry, failing which a frozen program leaves a zero-byte file. Declared weak so
++// that the trial binaries, which link ultramodern without the game, still link.
++//
 +extern "C" void dkr_diag_commit(void) __attribute__((weak));
 +static void diag_commit() { if (dkr_diag_commit) { dkr_diag_commit(); } }
 +
@@ -87,50 +87,50 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
                   g_trace_dp.load());
  }
  
-+// Combien de temps dure reellement un rendu de liste d'affichage ?
++// How long does rendering a display list really take?
 +//
-+// C'est la mesure qui a corrige le diagnostic plutot que de le confirmer.
++// This is the measurement that corrected the diagnosis rather than confirming it.
 +//
-+// L'hypothese etait qu'un rendu logiciel Glide depasse les 167 ms que valent
-+// onze retraces a 60 Hz, et fait donc ceder le chien de garde de DKR. Mesure :
-+// **pire cas 60 ms sur plus de deux mille images, zero depassement**.
++// The hypothesis was that a software Glide rendering exceeds the 167 ms that
++// eleven retraces at 60 Hz amount to, and therefore makes DKR's watchdog give
++// way. Measured: **worst case 60 ms over more than two thousand frames, zero
++// overruns**.
 +//
-+// Avec la reserve qui compte, et qui a failli manquer : cette construction
-+// emploie le **rendu nul**. Les 60 ms sont le seul parcours de la liste
-+// d'affichage, sans rasterisation. La mesure refute donc l'hypothese *pour ce
-+// binaire*, pas pour un rendu Glide reel -- lequel coutera bien davantage, et
-+// fera revenir la question du budget. Ce qui plaide pour publier le bord tot :
-+// ce n'est pas un palliatif mais la seule structure qui tienne quand le rendu
-+// s'alourdira.
++// With the reservation that counts, and that nearly went missing: this build uses
++// the **null renderer**. The 60 ms are the display list's traversal alone, with no
++// rasterisation. The measurement therefore refutes the hypothesis *for this
++// binary*, not for a real Glide rendering -- which will cost considerably more,
++// and will bring the budget question back. Which argues for publishing the edge
++// early: it is not a palliative but the only structure that holds when the
++// rendering gets heavier.
 +//
-+// Ce que la mesure etablit malgre tout : 60 ms de simple parcours produisent
-+// deja six retraces par liste. Le seuil de onze n'est pas loin, sans qu'une
-+// seule ligne n'ait ete rasterisee.
++// What the measurement does establish: 60 ms of mere traversal already produce six
++// retraces per list. The threshold of eleven is not far, without a single line
++// having been rasterised.
 +//
-+// Ce que le retard coute n'est pas du temps mais des **retraces traites entre
-+// temps** : gCurRDPTaskCounter est remis a zero par __scExec au demarrage d'une
-+// tache, puis incremente une fois par __scHandleRetrace. On garde la mesure
-+// parce qu'elle continue de surveiller le pire cas, pas parce qu'elle valide
-+// quoi que ce soit.
-+static std::atomic<unsigned> g_dl_pire_ms{0};
-+static std::atomic<unsigned> g_dl_hors_budget{0};
++// What the delay costs is not time but **retraces handled in the meantime**:
++// gCurRDPTaskCounter is reset to zero by __scExec when a task starts, then
++// incremented once per __scHandleRetrace. The measurement is kept because it goes
++// on watching the worst case, not because it validates anything.
++static std::atomic<unsigned> g_dl_worst_ms{0};
++static std::atomic<unsigned> g_dl_over_budget{0};
 +static std::atomic<unsigned> g_dl_total{0};
-+static void trace_dl_duration(std::chrono::high_resolution_clock::time_point debut,
-+                              std::chrono::high_resolution_clock::time_point fin) {
++static void trace_dl_duration(std::chrono::high_resolution_clock::time_point start,
++                              std::chrono::high_resolution_clock::time_point end) {
 +    const unsigned ms = static_cast<unsigned>(
-+        std::chrono::duration_cast<std::chrono::milliseconds>(fin - debut).count());
++        std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 +    const unsigned n = g_dl_total.fetch_add(1) + 1;
-+    unsigned pire = g_dl_pire_ms.load();
-+    while (ms > pire && !g_dl_pire_ms.compare_exchange_weak(pire, ms)) {}
-+    // 167 ms = onze retraces a 60 Hz, le seuil exact du chien de garde.
-+    if (ms > 167u) { g_dl_hors_budget.fetch_add(1); }
++    unsigned worst = g_dl_worst_ms.load();
++    while (ms > worst && !g_dl_worst_ms.compare_exchange_weak(worst, ms)) {}
++    // 167 ms = eleven retraces at 60 Hz, the watchdog's exact threshold.
++    if (ms > 167u) { g_dl_over_budget.fetch_add(1); }
 +    if (!trace_sp_enabled()) { return; }
 +    if (n % 60u != 0u) { return; }
-+    std::fprintf(stderr, "[trace][dl] rendus=%u pire=%u ms hors-budget(>167ms)=%u\n",
-+                 n, g_dl_pire_ms.load(), g_dl_hors_budget.load());
-+    // Forcer le journal sur le disque. Sans cela, un blocage laisse un fichier
-+    // de zero octet quoi qu'on ait ecrit, et l'on ne peut pas distinguer
-+    // « le programme s'est arrete tot » de « le programme tourne encore ».
++    std::fprintf(stderr, "[trace][dl] rendered=%u worst=%u ms over-budget(>167ms)=%u\n",
++                 n, g_dl_worst_ms.load(), g_dl_over_budget.load());
++    // Force the log onto the disk. Without this, a hang leaves a zero-byte file
++    // whatever was written, and one cannot tell "the program stopped early" from
++    // "the program is still running".
 +    diag_commit();
 +}
 +

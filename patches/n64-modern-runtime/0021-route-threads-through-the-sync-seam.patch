@@ -66,19 +66,19 @@ found.
      using lock_guard = LIBRECOMP_PLATFORM_SYNC_NS::lock_guard<M>;
 @@ -54,10 +66,18 @@
  //
- // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+ // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
  #include <mutex>
-+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +#include <thread>
  
  namespace recomp::sync {
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::lock_guard;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::mutex;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::thread;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::unique_lock;
  }
  
@@ -249,17 +249,17 @@ found.
  #include <condition_variable>
  
  namespace ultramodern {
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::thread;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    namespace platform_thread = std::this_thread;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::mutex;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::condition_variable;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::lock_guard;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::unique_lock;
  }
  

@@ -48,17 +48,17 @@ diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
          return;
      }
 -    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], {}});
-+    // **La source doit voyager avec le message.**
++    // **The source must travel with the message.**
 +    //
-+    // Sans elle, tout ce qui passe par ici porte la valeur par defaut, et deux
-+    // politiques ecrites juste au-dessus se trompent de cible : la priorite
-+    // accordee aux bords SP et DP ne promeut que SP — le seul a passer par la
-+    // variante attendue — et la reservation de places destinee aux retraces peut
-+    // ecarter un bord DP, qui lui ressemble alors comme un jumeau.
++    // Without it, everything that passes through here carries the default value,
++    // and two policies written just above miss their target: the priority given
++    // to the SP and DP edges promotes only SP - the only one to go through the
++    // expected variant - and the slot reservation meant for the retraces can
++    // discard a DP edge, which then looks like its twin.
 +    //
-+    // Le defaut ne s'est pas vu dans les comptes : rien n'etait refuse, donc
-+    // rien ne manquait. Il s'est vu parce qu'une sonde conditionnee sur la
-+    // source n'a jamais tire, alors que 544 messages DP etaient deposes.
++    // The defect did not show in the counts: nothing was refused, so nothing
++    // seemed to be missing. It showed because a probe conditioned on the source
++    // never fired, while 544 DP messages were being deposited.
 +    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], {}, src});
  }
  
@@ -67,34 +67,34 @@ diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
                  continue;
              }
          }
-+        // **Lire l'etat du jeu au moment du depot, pas apres.**
++        // **Read the game's state at deposit time, not afterwards.**
 +        //
-+        // Le plantage restant trouve `curRDPTask` nul dans `__scHandleRDP`. Deux
-+        // causes subsistent et ne se distinguent que la : soit nous emettons un
-+        // bord DP pour une tache que le jeu n'a pas enregistree comme ayant
-+        // besoin du RDP — il serait alors deja nul quand nous deposons — soit le
-+        // jeu l'efface entre notre depot et son traitement.
++        // The remaining crash finds `curRDPTask` null in `__scHandleRDP`. Two
++        // causes remain and can only be told apart there: either we emit a DP
++        // edge for a task the game has not registered as needing the RDP - it
++        // would then already be null when we deposit - or the game clears it
++        // between our deposit and its handling.
 +        //
-+        // L'adresse est celle de `gMainSched` dans DKR, relevee dans la carte
-+        // des symboles du decomp. La coder en dur ne serait pas acceptable
-+        // ailleurs ; ici c'est un diagnostic derriere une variable
-+        // d'environnement, et la seule facon de poser la question.
++        // The address is that of `gMainSched` in DKR, taken from the decomp's
++        // symbol map. Hard-coding it would not be acceptable elsewhere; here it
++        // is a diagnostic behind an environment variable, and the only way to
++        // ask the question.
 +        if (to_send.source == ultramodern::EventMessageSource::Dp &&
 +            std::getenv("DKR_TRACE_SP") != nullptr) {
-+            static unsigned nuls = 0, poses = 0, montres = 0;
-+            /* La RDRAM invitee est stockee en octets inverses cote hote : on
-+               lit donc le mot a l'envers pour retrouver la valeur du jeu. */
++            static unsigned nulls = 0, set = 0, shown = 0;
++            /* The guest RDRAM is stored byte-swapped on the host side: we read
++               the word backwards to recover the game's value. */
 +            const uint8_t* o = rdram + (0x801214D8u - 0x80000000u);
 +            const uint32_t cur = (uint32_t)o[3] | ((uint32_t)o[2] << 8) |
 +                                 ((uint32_t)o[1] << 16) | ((uint32_t)o[0] << 24);
-+            if (cur == 0u) { nuls++; } else { poses++; }
-+            if (++montres <= 6u || (nuls + poses) % 100u == 0u) {
++            if (cur == 0u) { nulls++; } else { set++; }
++            if (++shown <= 6u || (nulls + set) % 100u == 0u) {
 +                std::fprintf(stderr,
-+                             "[trace][dp] curRDPTask au depot = 0x%08X"
-+                             "  (nuls=%u poses=%u)\n",
-+                             (unsigned)cur, nuls, poses);
++                             "[trace][dp] curRDPTask at deposit = 0x%08X"
++                             "  (nulls=%u set=%u)\n",
++                             (unsigned)cur, nulls, set);
 +            }
 +        }
          const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
-         // **Compter les depots, pas les demandes.**
+         // **Count the deposits, not the requests.**
          //

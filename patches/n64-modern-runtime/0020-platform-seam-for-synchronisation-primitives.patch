@@ -60,11 +60,11 @@ error handling are worse than no seam at all.
  
 @@ -54,6 +60,38 @@
      using std::filesystem::exists;
-     // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
+     // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
      using std::filesystem::remove;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::filesystem::is_directory;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::filesystem::is_regular_file;
 +
 +    // absolute throws without an error_code; the Windows 95 side cannot. Both
@@ -72,21 +72,21 @@ error handling are worse than no seam at all.
 +    // error handling are worse than no seam at all.
 +    inline std::filesystem::path absolute(const std::filesystem::path& p) {
 +        std::error_code ec;
-+        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +        const std::filesystem::path a = std::filesystem::absolute(p, ec);
 +        return ec ? p : a;
 +    }
 +
 +    inline std::filesystem::path absolute(const std::filesystem::path& p,
 +                                          std::error_code& ec) {
-+        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +        return std::filesystem::absolute(p, ec);
 +    }
 +
 +    inline std::vector<std::filesystem::path>
 +    list_directory(const std::filesystem::path& dir, std::error_code& ec) {
 +        std::vector<std::filesystem::path> out;
-+        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +        for (const auto& entry : std::filesystem::directory_iterator(
 +                 dir, std::filesystem::directory_options::skip_permission_denied,
 +                 ec)) {
@@ -674,7 +674,7 @@ new file mode 100644
 +// above. Its subset checker reads text rather than preprocessor state, so the
 +// exemption is stated per line.
 +//
-+// DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +#include <mutex>
 +
 +namespace recomp::sync {

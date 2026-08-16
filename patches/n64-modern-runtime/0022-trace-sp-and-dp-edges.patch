@@ -24,18 +24,18 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
      }
  }
  
-+// --- Trace des bords SP et DP, activee par DKR_TRACE_SP ------------------------
++// --- Trace of the SP and DP edges, enabled by DKR_TRACE_SP ---------------------
 +//
-+// DKR planifie sa tache suivante sur le bord SP, ce qui rend l'ordre des
-+// interruptions observable depuis le jeu. Un plantage sur Windows 95 montre
-+// `sc->curRSPTask` nul dans `__scHandleRSP` : le jeu recoit une fin de tache RSP
-+// alors qu'il n'en a pas en cours.
++// DKR schedules its next task on the SP edge, which makes the interrupt order
++// observable from the game. A crash on Windows 95 shows `sc->curRSPTask` null in
++// `__scHandleRSP`: the game receives an RSP task completion while it has no task
++// in progress.
 +//
-+// Raisonner sur cette sequence sans la voir revient a deviner, et ce portage
-+// porte deja six correctifs sur l'ordre d'achevement SP et DP.
++// Reasoning about this sequence without seeing it amounts to guessing, and this
++// port already carries six patches on the SP and DP completion order.
 +//
-+// La trace s'arrete d'elle-meme apres quelques centaines de lignes : la machine
-+// cible ecrit sur une disquette emulee.
++// The trace stops on its own after a few hundred lines: the target machine writes
++// to an emulated floppy.
 +static std::atomic<unsigned> g_trace_submits{0};
 +static std::atomic<unsigned> g_trace_sp{0};
 +static std::atomic<unsigned> g_trace_dp{0};
@@ -43,12 +43,12 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
 +    static const bool on = (std::getenv("DKR_TRACE_SP") != nullptr);
 +    return on;
 +}
-+static void trace_sp(const char* quoi, unsigned type) {
++static void trace_sp(const char* what, unsigned type) {
 +    if (!trace_sp_enabled()) { return; }
 +    const unsigned n = g_trace_submits.load() + g_trace_sp.load() + g_trace_dp.load();
 +    if (n > 400u) { return; }
-+    std::fprintf(stderr, "[trace][sp] %-8s type=%u  soumis=%u sp=%u dp=%u\n",
-+                 quoi, type, g_trace_submits.load(), g_trace_sp.load(),
++    std::fprintf(stderr, "[trace][sp] %-8s type=%u  submitted=%u sp=%u dp=%u\n",
++                 what, type, g_trace_submits.load(), g_trace_sp.load(),
 +                 g_trace_dp.load());
 +}
 +
@@ -72,7 +72,7 @@ diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
  void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
      OSTask* task = TO_PTR(OSTask, task_);
 +    g_trace_submits.fetch_add(1);
-+    trace_sp("soumis", task->t.type);
++    trace_sp("submit", task->t.type);
  
      // Send gfx tasks to the graphics action queue
      if (task->t.type == M_GFXTASK) {

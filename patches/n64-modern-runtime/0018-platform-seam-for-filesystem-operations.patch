@@ -96,18 +96,18 @@ index 0000000..4e550ff
 +    // macros above. Its subset checker reads text rather than preprocessor
 +    // state, so the exemption is stated per line.
 +    //
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::filesystem::create_directories;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::filesystem::exists;
-+    // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +    using std::filesystem::remove;
 +
 +    // copy_options is not part of the seam: overwrite_existing is the only
 +    // form librecomp uses, so it is named rather than parameterised.
 +    inline bool copy_file_overwrite(const std::filesystem::path& from,
 +                                    const std::filesystem::path& to) {
-+        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +        return std::filesystem::copy_file(
 +            from, to, std::filesystem::copy_options::overwrite_existing);
 +    }
@@ -115,7 +115,7 @@ index 0000000..4e550ff
 +    inline bool copy_file_overwrite(const std::filesystem::path& from,
 +                                    const std::filesystem::path& to,
 +                                    std::error_code& ec) {
-+        // DKR-WIN95-ALLOW: branche des cibles modernes, jamais compilee sur Windows 95
++        // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 +        return std::filesystem::copy_file(
 +            from, to, std::filesystem::copy_options::overwrite_existing, ec);
 +    }

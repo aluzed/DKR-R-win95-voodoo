@@ -29,23 +29,23 @@ diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
  #include "ultramodern/ultra64.h"
  #include "ultramodern/ultramodern.hpp"
  
-+// Definie par le jeu (game_main.cpp) : vide le journal ET met a jour l'entree de
-+// repertoire. Declaree faible pour que les binaires d'epreuve, qui lient
-+// ultramodern sans le jeu, se lient quand meme.
++// Defined by the game (game_main.cpp): flushes the log AND updates the directory
++// entry. Declared weak so that the trial binaries, which link ultramodern without
++// the game, still link.
 +extern "C" void dkr_diag_commit(void) __attribute__((weak));
 +
  struct MessageDeliveryState {
      ultramodern::mutex mutex;
      ultramodern::condition_variable condition;
 @@ -336,6 +341,12 @@
-                                  "[trace][mq] total msg=0x%08X deposes=%u refuses=%u remis=%u\n",
-                                  vus[m][0], tot[m][0], tot[m][1], tot[m][2]);
+                                  "[trace][mq] total msg=0x%08X deposited=%u refused=%u requeued=%u\n",
+                                  seen[m][0], tot[m][0], tot[m][1], tot[m][2]);
                  }
-+                // Forcer le journal sur le disque : Windows 95 ne met la taille
-+                // a jour qu'a la fermeture, donc un programme fige laisse un
-+                // fichier de zero octet quoi qu'il ait ecrit. Sans cet appel,
-+                // « le programme s'est arrete tot » et « le programme tourne
-+                // encore » donnent la meme observation.
++                // Force the log onto the disk: Windows 95 only updates the size
++                // at close time, so a frozen program leaves a zero-byte file
++                // whatever it wrote. Without this call, "the program stopped
++                // early" and "the program is still running" give the same
++                // observation.
 +                if (dkr_diag_commit) { dkr_diag_commit(); }
              }
          }
