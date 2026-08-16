@@ -1,139 +1,129 @@
-# E02-S02 — Reposer l'ordonnanceur `ultramodern` sur la couche Win95
+# E02-S02 — Resting the `ultramodern` scheduler on the Win95 layer
 
 | | |
 |---|---|
-| **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | L |
-| **Dépend de** | E02-S01, E01-S02 |
-| **Bloque** | E02-S06, E03-S02 |
+| **Epic** | E02 — Windows 95 system substrate |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | L |
+| **Depends on** | E02-S01, E01-S02 |
+| **Blocks** | E02-S06, E03-S02 |
 
-## Contexte
+## Context
 
-`ultramodern` implémente le modèle d'exécution de la N64 : fils du jeu à priorité
-stricte, files de messages, événements matériels, et la synchronisation entre le
-fil de jeu et le fil graphique. C'est du code que le projet a tout intérêt à
-garder — il est éprouvé, et le réécrire reviendrait à refaire le travail
-d'`ultramodern` sans son historique de correctifs.
+`ultramodern` implements the N64's execution model: game threads at strict
+priorities, message queues, hardware events, and the synchronisation between the game
+thread and the graphics thread. It is code the project has every interest in keeping
+— it is battle-tested, and rewriting it would amount to redoing `ultramodern`'s work
+without its history of fixes.
 
-Le dépôt a déjà treize patchs `n64-modern-runtime` en place, dont plusieurs
-touchent précisément l'ordonnancement et la remise des tâches graphiques
+The repository already has thirteen `n64-modern-runtime` patches in place, several of
+which touch precisely the scheduling and the handing over of graphics tasks
 (`0005-stop-scheduler-cascade-during-quit`,
 `0010-yield-between-sp-and-dp-completion`,
-`0013-use-reliable-external-message-fifo`). Le précédent est donc établi : ces
-composants se patchent, ils ne se réécrivent pas.
+`0013-use-reliable-external-message-fifo`). The precedent is therefore established:
+those components get patched, they do not get rewritten.
 
-Ce ticket substitue la couche de E02-S01 aux primitives standard, sans toucher à
-la logique d'ordonnancement.
+This ticket substitutes E02-S01's layer for the standard primitives, without touching
+the scheduling logic.
 
-## Objectif
+## Objective
 
-Faire fonctionner l'ordonnanceur `ultramodern` sur la couche Win95, avec un
-comportement identique à celui de l'hôte moderne.
+To make the `ultramodern` scheduler work on the Win95 layer, with behaviour identical
+to the modern host's.
 
-## Périmètre
+## Scope
 
-**Dans :** les patchs `ultramodern` de substitution de primitives, et leur
-validation.
+**In:** the `ultramodern` patches substituting the primitives, and their validation.
 
-**Hors :** toute modification du comportement d'ordonnancement. Une différence
-observée est un défaut de portage, pas une amélioration.
+**Out:** any change to the scheduling behaviour. An observed difference is a porting
+defect, not an improvement.
 
-## Travail
+## Work
 
-1. Relever dans `ultramodern` chaque point d'usage des primitives standard :
-   création de fil, verrou, attente conditionnelle, sommeil, données locales au
-   fil.
-2. Introduire une indirection compilée conditionnellement : sur cible moderne,
-   les primitives standard ; sur cible Win95, la couche de E02-S01. Cette
-   indirection doit être un patch propre, susceptible d'être proposé à l'amont —
-   une réécriture invasive est ingérable dans la durée.
-3. Traiter le cas du sommeil et des délais. `ultramodern` s'appuie sur des
-   attentes temporisées à granularité fine ; sous Windows 95, la granularité par
-   défaut de l'ordonnanceur est grossière et se règle par `timeBeginPeriod` de
-   `winmm`. Mesurer la granularité réellement atteinte plutôt que la supposer.
-4. Traiter l'arrêt. Plusieurs patchs existants portent sur la terminaison propre
+1. Record in `ultramodern` every use of the standard primitives: thread creation,
+   lock, conditional wait, sleep, thread-local data.
+2. Introduce a conditionally compiled seam: on modern targets, the standard
+   primitives; on the Win95 target, E02-S01's layer. That seam must be a clean patch,
+   fit to be proposed upstream — an invasive rewrite is unmanageable in the long run.
+3. Deal with sleeping and timeouts. `ultramodern` relies on fine-grained timed waits;
+   under Windows 95, the scheduler's default granularity is coarse and is set through
+   `winmm`'s `timeBeginPeriod`. Measure the granularity actually reached rather than
+   assuming it.
+4. Deal with shutdown. Several existing patches bear on clean termination
    (`0004-wake-game-thread-on-runtime-quit`,
-   `0005-stop-scheduler-cascade-during-quit`) : vérifier qu'ils restent corrects
-   avec la nouvelle couche, en particulier si l'attente conditionnelle n'offre
-   pas la même garantie de réveil.
-5. Faire de même pour `librecomp`, dont les fils d'entrées-sorties et d'événements
-   utilisent les mêmes primitives.
-6. Valider par exécution : lancer le jeu avec le renderer de diagnostic
-   (`null_renderer.cpp`) sous Windows 95 émulé, et vérifier qu'il atteint le même
-   point que sur l'hôte moderne — mêmes fils créés, mêmes tâches graphiques
-   soumises, même cadence.
-7. Comparer une trace d'ordonnancement entre les deux cibles : ordre de création
-   des fils, ordre de remise des messages, ordre des commutations. C'est cette
-   comparaison, et non l'absence de plantage, qui prouve l'équivalence.
+   `0005-stop-scheduler-cascade-during-quit`): check that they stay correct with the
+   new layer, in particular if the conditional wait does not offer the same wake-up
+   guarantee.
+5. Do the same for `librecomp`, whose I/O and event threads use the same primitives.
+6. Validate by execution: run the game with the diagnostic renderer
+   (`null_renderer.cpp`) under emulated Windows 95, and check that it reaches the
+   same point as on the modern host — the same threads created, the same graphics
+   tasks submitted, the same frame rate.
+7. Compare a scheduling trace between the two targets: the order in which threads are
+   created, the order in which messages are handed over, the order of the switches.
+   It is that comparison, and not the absence of a crash, that proves the equivalence.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [~] Chaque usage de primitive standard dans `ultramodern` et `librecomp` passe
-      par l'indirection. **`ultramodern` : fait** (5 primitives, 7 fichiers).
-      `librecomp` : non, il est bloqué par ailleurs.
-- [x] La substitution est un patch sous `patches/n64-modern-runtime/`, référencé
-      dans `patches/manifest.json` — 0015, avec son empreinte.
-- [x] Les cibles modernes compilent et se comportent à l'identique avec ce patch
-      appliqué — 15 unités de traduction compilées sur l'hôte Linux 64 bits avant
-      et après ; sans les deux macros, le patch se réduit à des
-      `using std::...`.
-- [ ] La granularité temporelle réellement atteinte sous Windows 95 est mesurée.
-- [ ] Le jeu démarre sous Windows 95 émulé avec le renderer de diagnostic et
-      atteint le même point que sur l'hôte moderne.
-- [ ] Les traces d'ordonnancement des deux cibles sont comparées et concordent.
-- [ ] Les chemins d'arrêt sont revérifiés à la lumière de la nouvelle sémantique
-      de réveil.
+- [~] Every use of a standard primitive in `ultramodern` and `librecomp` goes
+      through the seam. **`ultramodern`: done** (5 primitives, 7 files).
+      `librecomp`: no, it is blocked elsewhere.
+- [x] The substitution is a patch under `patches/n64-modern-runtime/`, referenced in
+      `patches/manifest.json` — 0015, with its digest.
+- [x] The modern targets compile and behave identically with that patch applied — 15
+      translation units compiled on the 64-bit Linux host before and after; without
+      the two macros, the patch reduces to `using std::...`.
+- [ ] The time granularity actually reached under Windows 95 is measured.
+- [ ] The game starts under emulated Windows 95 with the diagnostic renderer and
+      reaches the same point as on the modern host.
+- [ ] The two targets' scheduling traces are compared and agree.
+- [ ] The shutdown paths are rechecked in the light of the new wake-up semantics.
 
-## État au 2026-08-13 — la substitution est faite, l'exécution reste bloquée
+## State as of 2026-08-13 — the substitution is done, execution stays blocked
 
-Le patch **0015**, `platform-seam-for-threading-primitives`, route les cinq
-primitives d'`ultramodern` — `thread`, `mutex`, `condition_variable`,
-`lock_guard`, `unique_lock` — par un point d'indirection que la cible remplit
-avec la couche de E02-S01. Aucune logique d'ordonnancement n'est touchée : le
-patch ne fait que renommer des types.
+Patch **0015**, `platform-seam-for-threading-primitives`, routes `ultramodern`'s five
+primitives — `thread`, `mutex`, `condition_variable`, `lock_guard`, `unique_lock` —
+through a seam that the target fills with E02-S01's layer. No scheduling logic is
+touched: the patch does nothing but rename types.
 
-Ce qui est acquis, et vérifié :
+What is gained, and verified:
 
 | | |
 |---|---|
-| `ultramodern` compile pour Windows 95 | **15 fichiers sur 15** |
-| Les cibles modernes compilent à l'identique | 15 sur 15, branche `std::` inchangée |
-| Inclusions interdites | **9 → 1**, la dernière étant `<filesystem>` (E02-S05) |
-| Le pont C++ sur la machine | 22 contrôles, 0 échec |
-| `ultramodern` dans le build de la cible | bibliothèque `win95ultramodern` |
+| `ultramodern` compiles for Windows 95 | **15 files out of 15** |
+| The modern targets compile identically | 15 out of 15, the `std::` branch unchanged |
+| Forbidden includes | **9 → 1**, the last being `<filesystem>` (E02-S05) |
+| The C++ bridge on the machine | 22 checks, 0 failures |
+| `ultramodern` in the target's build | the `win95ultramodern` library |
 
-Deux découvertes ont réduit le travail annoncé :
+Two discoveries reduced the announced work:
 
-- **`thread_local` fonctionne sous Windows 95.** Le répertoire TLS du PE y est
-  bien traité, contrairement à ce qui se dit souvent. Mesuré sur la machine par
-  `tools/win95/witnesses/tls_probe.cpp` : deux fils, valeurs isolées. Les trois
-  `thread_local` de `threads.cpp` n'ont donc rien demandé.
-- **Le point 3 du travail est sans objet.** `timer.cpp` a déjà une branche
-  `#ifdef _WIN32` qui appelle `Sleep` directement ; `std::this_thread` n'est
-  jamais atteint sur cette cible, et la question de `timeBeginPeriod` appartient
-  à E02-S03, qui traite la cadence.
+- **`thread_local` works under Windows 95.** The PE's TLS directory is duly handled
+  there, contrary to what is often said. Measured on the machine by
+  `tools/win95/witnesses/tls_probe.cpp`: two threads, isolated values. The three
+  `thread_local`s in `threads.cpp` therefore asked for nothing.
+- **The work's point 3 is moot.** `timer.cpp` already has an `#ifdef _WIN32` branch
+  that calls `Sleep` directly; `std::this_thread` is never reached on this target,
+  and the `timeBeginPeriod` question belongs to E02-S03, which deals with pacing.
 
-**Ce qui reste bloqué, et par quoi.** Les points 5 à 7 — `librecomp`, lancer le
-jeu, comparer les traces d'ordonnancement — supposent que le jeu se lie pour
-cette cible. Il ne le peut pas : `librecomp` porte encore `<filesystem>`
-(E02-S05) et six erreurs de compilation, le code recompilé attend
-[E01-S05](../E01-build/E01-S05-compiling-the-recompiled-code.md), et SDL2 attend
-[E07-S03](../E07-scope/E07-S03-sdl2-decoupling.md). Ce ticket ne peut pas se
-fermer avant eux.
+**What stays blocked, and by what.** Points 5 to 7 — `librecomp`, running the game,
+comparing the scheduling traces — presuppose that the game links for this target. It
+cannot: `librecomp` still carries `<filesystem>` (E02-S05) and six compilation
+errors, the recompiled code awaits
+[E01-S05](../E01-build/E01-S05-compiling-the-recompiled-code.md), and SDL2 awaits
+[E07-S03](../E07-scope/E07-S03-sdl2-decoupling.md). This ticket cannot close before
+them.
 
-## Risques
+## Risks
 
-Une divergence subtile d'ordonnancement — un message remis dans un ordre
-différent, une commutation qui n'arrive pas au même moment — peut ne rien casser
-visiblement et corrompre le déterminisme du jeu. La comparaison de traces de
-l'étape 7 est le seul moyen de l'attraper avant qu'elle ne devienne un bug de
-gameplay difficile à cerner.
+A subtle scheduling divergence — a message handed over in a different order, a switch
+that does not happen at the same moment — may break nothing visibly and corrupt the
+game's determinism. Step 7's trace comparison is the only way to catch it before it
+becomes a gameplay bug that is hard to pin down.
 
-## Références
+## References
 
-- `patches/n64-modern-runtime/` — treize patchs, dont plusieurs sur
-  l'ordonnancement
+- `patches/n64-modern-runtime/` — thirteen patches, several of them on scheduling
 - `runtime-recomp/src/game/null_renderer.cpp`
-- E02-S01 — couche de fils et synchronisation
+- E02-S01 — threading and synchronisation layer

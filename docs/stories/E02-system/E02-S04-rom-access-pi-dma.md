@@ -1,93 +1,87 @@
-# E02-S04 — Accès à la ROM et DMA du bus périphérique
+# E02-S04 — ROM access and peripheral-bus DMA
 
 | | |
 |---|---|
-| **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E00-S06, E02-S01 |
-| **Bloque** | E02-S06 |
+| **Epic** | E02 — Windows 95 system substrate |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E00-S06, E02-S01 |
+| **Blocks** | E02-S06 |
 
-## Contexte
+## Context
 
-Le jeu lit ses données par DMA depuis la cartouche. `librecomp` traduit ces
-transferts en accès à l'image de la ROM, qu'il charge vraisemblablement
-entièrement en mémoire — 12 Mo pour DKR, ce qui est indolore sur une machine
-moderne et représente près de 20 % du budget d'une machine à 64 Mo.
+The game reads its data by DMA from the cartridge. `librecomp` translates those
+transfers into accesses to the ROM image, which it presumably loads entirely into
+memory — 12 MB for DKR, which is painless on a modern machine and represents nearly
+20 % of a 64 MB machine's budget.
 
-Deux autres points changent de nature sur la cible :
+Two other points change in nature on the target:
 
-- **La validation de la ROM.** Le calcul du SHA-1 des 12 Mo, instantané
-  aujourd'hui, prend un temps notable sur un Pentium II. À mesurer, et à rendre
-  visible à l'utilisateur si nécessaire.
-- **La provenance.** Le lanceur SDL actuel présente un sélecteur de fichier
-  graphique ; il disparaît avec SDL2 (E06-S06).
+- **ROM validation.** Computing the SHA-1 of 12 MB, instantaneous today, takes a
+  noticeable time on a Pentium II. To be measured, and made visible to the user if
+  necessary.
+- **Provenance.** The current SDL launcher presents a graphical file selector; it
+  disappears with SDL2 (E06-S06).
 
-Le portage natif voisin a rencontré exactement ce problème et l'a résolu par un
-espace d'adressage ROM au-dessus de fichiers, lu par positionnement et lecture
-plutôt que chargé en mémoire — approche directement transposable.
+The neighbouring native port met exactly this problem and solved it with a ROM
+address space over files, read by seek and read rather than loaded into memory — an
+approach directly transposable.
 
-## Objectif
+## Objective
 
-Rendre l'accès à la ROM conforme au budget mémoire de E00-S06, sans changer la
-sémantique des transferts vue par le jeu.
+To make ROM access conform to E00-S06's memory budget, without changing the
+transfers' semantics as the game sees them.
 
-## Périmètre
+## Scope
 
-**Dans :** le chargement de la ROM, sa validation, et le chemin de DMA.
+**In:** loading the ROM, validating it, and the DMA path.
 
-**Hors :** la sélection du fichier par l'utilisateur (E06-S06) et les sauvegardes
-(E02-S05).
+**Out:** the user's file selection (E06-S06) and the saves (E02-S05).
 
-## Travail
+## Work
 
-1. Relever comment `librecomp` charge la ROM et sert les transferts DMA, et
-   mesurer l'empreinte mémoire réelle.
-2. Appliquer la décision de E00-S06 : image complète en mémoire, ou lecture par
-   morceaux. Si c'est la lecture par morceaux, implémenter un cache de blocs
-   dimensionné sur les motifs d'accès observés — la taille du cache se choisit
-   sur une mesure, pas sur une intuition.
-3. Mesurer le coût des transferts. Le jeu charge des données pendant les
-   transitions d'écran ; un accès disque de 1998 est lent, et un chargement de
-   niveau qui prend dix secondes est une régression visible même si le rendu est
-   parfait.
-4. Mesurer le temps de validation SHA-1 sur la cible. S'il dépasse une poignée de
-   secondes, prévoir un indicateur de progression, ou une mise en cache du
-   résultat indexée par chemin, taille et date — jamais un contournement de la
-   validation elle-même.
-5. Traiter l'ordre des octets. La ROM peut être fournie en `.z64`, `.n64` ou
-   `.v64` ; la normalisation existe déjà dans le runtime (le README mentionne un
-   SHA-1 « après normalisation de l'ordre des octets ») — vérifier qu'elle ne
-   suppose pas de disposer de l'image entière en mémoire.
-6. Traiter les chemins de fichiers Windows 9x : noms courts, chemins en page de
-   code, absence d'API Unicode fonctionnelle (E01-S03).
-7. Vérifier que le comportement de complétion de DMA — le message posté au fil
-   demandeur — reste identique à celui de l'hôte moderne.
+1. Record how `librecomp` loads the ROM and serves the DMA transfers, and measure the
+   real memory footprint.
+2. Apply E00-S06's decision: a complete image in memory, or reading piece by piece.
+   If it is reading piece by piece, implement a block cache sized on the observed
+   access patterns — the cache's size is chosen on a measurement, not on an intuition.
+3. Measure the transfers' cost. The game loads data during screen transitions; a 1998
+   disk access is slow, and a level load that takes ten seconds is a visible
+   regression even if the rendering is perfect.
+4. Measure the SHA-1 validation time on the target. If it exceeds a handful of
+   seconds, provide a progress indicator, or a cached result keyed by path, size and
+   date — never a bypass of the validation itself.
+5. Deal with byte order. The ROM may be supplied as `.z64`, `.n64` or `.v64`; the
+   normalisation already exists in the runtime (the README mentions a SHA-1 "after
+   byte-order normalisation") — check that it does not assume the whole image is in
+   memory.
+6. Deal with Windows 9x file paths: short names, code-page paths, the absence of a
+   working Unicode API (E01-S03).
+7. Check that the DMA completion behaviour — the message posted to the requesting
+   thread — stays identical to the modern host's.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] L'empreinte mémoire de la ROM respecte le budget de E00-S06.
-- [ ] Le jeu charge et démarre depuis une ROM valide sous Windows 95 émulé.
-- [ ] Le temps de chargement d'un niveau est mesuré et comparé à celui de l'hôte
-      moderne.
-- [ ] La durée de validation SHA-1 est mesurée ; si elle est perceptible, elle est
-      accompagnée d'un retour utilisateur.
-- [ ] Les trois formats de ROM sont acceptés sans charger l'image entière si la
-      lecture par morceaux est retenue.
-- [ ] Les chemins Windows 9x sont gérés, y compris avec des noms courts.
-- [ ] La sémantique de complétion de DMA est inchangée.
+- [ ] The ROM's memory footprint respects E00-S06's budget.
+- [ ] The game loads and starts from a valid ROM under emulated Windows 95.
+- [ ] A level's load time is measured and compared against the modern host's.
+- [ ] The SHA-1 validation's duration is measured; if it is perceptible, it is
+      accompanied by user feedback.
+- [ ] The three ROM formats are accepted without loading the whole image if reading
+      piece by piece is retained.
+- [ ] Windows 9x paths are handled, including with short names.
+- [ ] The DMA completion semantics are unchanged.
 
-## Risques
+## Risks
 
-La lecture par morceaux introduit une latence là où il n'y en avait pas. Si un
-transfert est servi pendant une image de jeu plutôt que pendant un écran de
-chargement, il produit un à-coup. Repérer les transferts en cours de partie avant
-de choisir la stratégie, pas après.
+Reading piece by piece introduces latency where there was none. If a transfer is
+served during a game frame rather than during a loading screen, it produces a
+stutter. Spot the mid-game transfers before choosing the strategy, not afterwards.
 
-## Références
+## References
 
 - `docs/ROM_SETUP.md`
-- `README.md` — SHA-1 attendu après normalisation
+- `README.md` — the SHA-1 expected after normalisation
 - `../../Diddy-Kong-Racing/docs/stories/E02-assets/E02-S04-chargeur-assets-fichier.md`
-  — même problème, déjà traité côté portage natif
+  — the same problem, already dealt with on the native port's side

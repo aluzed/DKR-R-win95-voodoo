@@ -1,198 +1,191 @@
-# E02-S01 — Couche de fils d'exécution et de synchronisation Win95
+# E02-S01 — Win95 threading and synchronisation layer
 
 | | |
 |---|---|
-| **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | REVIEW |
-| **Priorité** | P0 |
-| **Estimation** | ~~L~~ **M** |
-| **Dépend de** | E01-S02, E01-S03 |
-| **Bloque** | E02-S02, E02-S03, E06-S03 |
+| **Epic** | E02 — Windows 95 system substrate |
+| **Status** | REVIEW |
+| **Priority** | P0 |
+| **Estimate** | ~~L~~ **M** |
+| **Depends on** | E01-S02, E01-S03 |
+| **Blocks** | E02-S02, E02-S03, E06-S03 |
 
-## État au 2026-08-12 — périmètre réduit par la mesure
+## State as of 2026-08-12 — scope reduced by measurement
 
-[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) a
-chiffré ce ticket, et il est plus petit que prévu :
+[E00-S01](../E00-scoping/E00-S01-inventory-of-incompatible-dependencies.md) put a
+number on this ticket, and it is smaller than expected:
 
-- **`ultramodern` n'a que 6 fichiers concernés**, 12 `std::thread` et 5
-  `std::mutex` au total. Il se patche ; il ne se réécrit pas.
-- Le manque tient en **six fonctions** : `TryEnterCriticalSection`, `GetThreadId`
-  et les quatre variables de condition de Vista.
-- **Choisir le modèle de threads `posix` (winpthreads)** plutôt que `win32` :
-  même nombre de bloquants, mais superficiels — `IsDebuggerPresent` renvoie faux,
-  `SetProcessAffinityMask` ne fait rien, `GetTickCount64` s'enveloppe autour de
-  `GetTickCount`, les gestionnaires vectorisés se rabattent sur
-  `SetUnhandledExceptionFilter`, qui existe. Reproduire les variables de
-  condition de Vista est nettement plus délicat.
-- La livraison visée est une **petite bibliothèque de compatibilité** placée
-  avant `libkernel32.a` dans l'ordre de résolution du lieur, pas une couche
-  d'abstraction dans `ultramodern`.
-- `std::atomic` est acquis : vérifié à l'exécution sur le Pentium II émulé.
+- **`ultramodern` has only 6 files affected**, 12 `std::thread` and 5 `std::mutex`
+  in all. It gets patched; it does not get rewritten.
+- The gap comes down to **six functions**: `TryEnterCriticalSection`, `GetThreadId`
+  and Vista's four condition variables.
+- **Choose the `posix` (winpthreads) threading model** rather than `win32`: the same
+  number of blockers, but superficial ones — `IsDebuggerPresent` returns false,
+  `SetProcessAffinityMask` does nothing, `GetTickCount64` wraps around
+  `GetTickCount`, the vectored handlers fall back on
+  `SetUnhandledExceptionFilter`, which exists. Reproducing Vista's condition
+  variables is markedly more delicate.
+- The intended delivery is a **small compatibility library** placed before
+  `libkernel32.a` in the linker's resolution order, not an abstraction layer inside
+  `ultramodern`.
+- `std::atomic` is a given: verified at run time on the emulated Pentium II.
 
-Détail et chiffres : [`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
+Detail and figures:
+[`docs/research/win95-blockers.md`](../../research/win95-blockers.md).
 
-## Contexte
+## Context
 
-`ultramodern` reproduit l'ordonnanceur de la N64 : plusieurs fils du jeu à
-priorités strictes, plus les fils d'infrastructure du runtime. Il s'appuie sur la
-bibliothèque standard C++ moderne — `std::thread`, `std::mutex`,
-`std::condition_variable`, et vraisemblablement des primitives C++20.
+`ultramodern` reproduces the N64's scheduler: several game threads at strict
+priorities, plus the runtime's infrastructure threads. It relies on the modern C++
+standard library — `std::thread`, `std::mutex`, `std::condition_variable`, and
+presumably some C++20 primitives.
 
-Sous Windows 95, deux étages posent problème :
+Under Windows 95, two levels pose a problem:
 
-- l'implémentation de ces primitives par la bibliothèque standard peut appeler des
-  API absentes du système (E00-S01 les a listées) ;
-- Windows 95 ne connaît pas les variables de condition, qui datent de Vista, ni
-  `TryEnterCriticalSection`, ni `SignalObjectAndWait`.
+- the standard library's implementation of those primitives may call APIs absent
+  from the system (E00-S01 listed them);
+- Windows 95 knows neither condition variables, which date from Vista, nor
+  `TryEnterCriticalSection`, nor `SignalObjectAndWait`.
 
-Un point souvent oublié joue en notre faveur : la machine cible est
-**monoprocesseur**. Il n'y a pas de parallélisme réel, seulement de
-l'entrelacement. Les courses restent possibles — la préemption est réelle — mais
-tout un pan de complexité liée aux modèles mémoire faibles disparaît.
+A point often forgotten works in our favour: the target machine is
+**single-processor**. There is no real parallelism, only interleaving. Races remain
+possible — preemption is real — but a whole swathe of complexity tied to weak memory
+models disappears.
 
-## Objectif
+## Objective
 
-Livrer `platform/win95/threading.{h,cpp}` : une interface minimale de fils et de
-synchronisation, bâtie uniquement sur des API présentes dans Windows 95, sur
-laquelle `ultramodern` sera reposé en E02-S02.
+To deliver `platform/win95/threading.{h,cpp}`: a minimal thread and synchronisation
+interface, built solely on APIs present in Windows 95, on which `ultramodern` will
+be rested in E02-S02.
 
-## Périmètre
+## Scope
 
-**Dans :** fils, exclusion mutuelle, attente conditionnelle, événements, variables
-locales au fil, et leur validation.
+**In:** threads, mutual exclusion, conditional waiting, events, thread-local
+variables, and their validation.
 
-**Hors :** l'ordonnanceur N64 lui-même (E02-S02) et les patchs `ultramodern`.
+**Out:** the N64 scheduler itself (E02-S02) and the `ultramodern` patches.
 
-## Travail
+## Work
 
-1. Définir l'interface à partir de ce dont `ultramodern` a réellement besoin —
-   relevé dans son code, pas déduit d'un modèle générique. Le surdimensionnement
-   coûte ici directement en travail de portage.
-2. Implémenter les fils sur `CreateThread` : création, terminaison, jonction,
-   priorité. Faire correspondre les priorités N64 aux classes de priorité de
-   thread Win32, et écrire la table de correspondance : la N64 a plus de niveaux
-   utiles que Win32 n'en expose, la correspondance est donc lossy et doit être
-   choisie explicitement.
-3. Implémenter l'exclusion mutuelle sur `CRITICAL_SECTION`. Vérifier le
-   comportement de la réentrance sous Windows 95 : les sections critiques Win32
-   sont récursives, ce que `std::mutex` n'est pas — un code qui s'appuyait sur
-   l'interblocage d'un `std::mutex` non récursif pour révéler un défaut ne le
-   révélera plus.
-4. Implémenter l'attente conditionnelle. Sans variable de condition native, le
-   schéma est un événement à réinitialisation manuelle par attendeur, plus un
-   compteur protégé. Écrire explicitement quelle garantie de réveil est offerte —
-   un attendeur, tous, ordre respecté ou non — et la faire correspondre à ce
-   qu'`ultramodern` suppose.
-5. Implémenter les variables locales au fil sur `TlsAlloc`. Windows 95 limite
-   sévèrement le nombre d'emplacements : compter ceux qui sont réellement utilisés
-   et n'en allouer qu'un, indexant une structure, si le compte est serré.
-6. Écrire les tests : création et jonction, exclusion sous contention, réveil
-   conditionnel sans réveil perdu, respect de l'ordre de priorité. Ces tests
-   doivent tourner sur l'hôte moderne **et** sur la cible ; un test de
-   synchronisation qui ne tourne que sur l'hôte ne prouve rien de la cible.
-7. Passer les tests sous stress : boucle longue sous charge, dans la machine de
-   test, pour faire sortir les réveils perdus. Une exécution de dix secondes ne
-   trouve pas ce genre de défaut.
+1. Define the interface from what `ultramodern` really needs — recorded in its code,
+   not deduced from a generic model. Over-sizing here costs directly in porting work.
+2. Implement threads on `CreateThread`: creation, termination, joining, priority.
+   Map the N64 priorities to Win32's thread priority classes, and write the mapping
+   table: the N64 has more useful levels than Win32 exposes, so the mapping is lossy
+   and must be chosen explicitly.
+3. Implement mutual exclusion on `CRITICAL_SECTION`. Check reentrancy's behaviour
+   under Windows 95: Win32's critical sections are recursive, which `std::mutex` is
+   not — code that relied on a non-recursive `std::mutex` deadlocking to reveal a
+   defect will no longer reveal it.
+4. Implement conditional waiting. Without a native condition variable, the scheme is
+   a manual-reset event per waiter, plus a protected counter. Write explicitly which
+   wake-up guarantee is offered — one waiter, all of them, order respected or not —
+   and match it to what `ultramodern` assumes.
+5. Implement thread-local variables on `TlsAlloc`. Windows 95 severely limits the
+   number of slots: count those really used and allocate only one, indexing a
+   structure, if the count is tight.
+6. Write the tests: creation and joining, exclusion under contention, conditional
+   wake-up with no lost wake-up, respect for the priority order. Those tests must run
+   on the modern host **and** on the target; a synchronisation test that runs only on
+   the host proves nothing about the target.
+7. Run the tests under stress: a long loop under load, in the test machine, to flush
+   out lost wake-ups. A ten-second run does not find that kind of defect.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] `platform/win95/threading.{h,cpp}` n'importe aucune API absente de
-      Windows 95 — vérifié par le garde-fou de E01-S04, désormais doublé d'un
-      contrôle des exports **vides** (voir ci-dessous).
-- [x] L'interface couvre les besoins relevés dans `ultramodern`, sans surplus.
-      *Rouvert puis refermé le 2026-08-13* : le relevé refait sur l'arbre patché
-      a révélé qu'il manquait la variable de condition et `unique_lock` ; les
-      deux sont livrés.
-- [x] La correspondance des priorités N64 → Win32 est écrite et justifiée. Le
-      résultat est qu'**elle n'existe pas** : l'ordre N64 est tenu par la file
-      logicielle d'`ultramodern`, pas par le système hôte. Ce qui est écrit, et
-      testé, est la table `ThreadPriority` → `THREAD_PRIORITY_*`.
-- [x] La sémantique de réveil de l'attente conditionnelle est documentée et
-      correspond à ce qu'`ultramodern` suppose. *Rouvert puis refermé le
-      2026-08-13* : `dkr_condvar` est livrée, et l'absence de réveil perdu est
-      établie **par construction** — l'inscription précède le relâchement du
-      verrou de l'appelant — parce qu'elle ne l'est pas de façon fiable par le
-      test, ce qui est écrit noir sur blanc.
-- [x] La différence de réentrance entre `CRITICAL_SECTION` et `std::mutex` est
-      documentée, et son effet évalué : `dkr_mutex` rétablit la non-réentrance
-      et la **signale** au lieu de s'interbloquer.
-- [x] Les tests passent sur l'hôte moderne et sous Windows 95 émulé — même
-      source, 48 contrôles sur la cible, 0 échec.
-- [x] Une exécution de stress d'au moins dix minutes passe sans réveil perdu ni
-      interblocage — **600 s sur la cible, 8 437 tours**, soit 8,4 millions de
-      réveils de sémaphore et 337 millions de verrouillages sous contention.
-      La machine est restée utilisable tout du long.
+- [x] `platform/win95/threading.{h,cpp}` imports no API absent from Windows 95 —
+      verified by E01-S04's guard rail, now doubled by a check on **empty** exports
+      (see below).
+- [x] The interface covers the needs recorded in `ultramodern`, without surplus.
+      *Reopened then closed on 2026-08-13*: the survey redone on the patched tree
+      revealed that the condition variable and `unique_lock` were missing; both are
+      delivered.
+- [x] The N64 → Win32 priority mapping is written and justified. The result is that
+      **it does not exist**: the N64 order is kept by `ultramodern`'s software
+      queue, not by the host system. What is written, and tested, is the
+      `ThreadPriority` → `THREAD_PRIORITY_*` table.
+- [x] The conditional wait's wake-up semantics are documented and match what
+      `ultramodern` assumes. *Reopened then closed on 2026-08-13*: `dkr_condvar` is
+      delivered, and the absence of lost wake-ups is established **by construction**
+      — the registration precedes the release of the caller's lock — because it is
+      not reliably established by the test, which is written in black and white.
+- [x] The reentrancy difference between `CRITICAL_SECTION` and `std::mutex` is
+      documented, and its effect assessed: `dkr_mutex` restores non-reentrancy and
+      **reports** it instead of deadlocking.
+- [x] The tests pass on the modern host and under emulated Windows 95 — the same
+      source, 48 checks on the target, 0 failures.
+- [x] A stress run of at least ten minutes passes with no lost wake-up and no
+      deadlock — **600 s on the target, 8,437 rounds**, that is 8.4 million semaphore
+      wake-ups and 337 million locks taken under contention. The machine stayed usable
+      throughout.
 
-## Résultat
+## Result
 
-Livré : `platform/win95/threading.{h,cpp}`, `platform/win95/tests/test_threading.cpp`
-(hôte **et** `THREADS.EXE`), `tools/win95/find_stubs.py`, et le contrôle des
-exports vides dans `tools/win95/check_imports.py`.
+Delivered: `platform/win95/threading.{h,cpp}`,
+`platform/win95/tests/test_threading.cpp` (host **and** `THREADS.EXE`),
+`tools/win95/find_stubs.py`, and the empty-export check in
+`tools/win95/check_imports.py`.
 
-Documentation : [`docs/WIN95-THREADING.md`](../../WIN95-THREADING.md).
+Documentation: [`docs/WIN95-THREADING.md`](../../WIN95-THREADING.md).
 
-### Ce que la mesure a changé au ticket
+### What measurement changed in the ticket
 
-Trois hypothèses du ticket sont tombées, et un bloquant qu'il n'avait pas vu est
-apparu :
+Three of the ticket's hypotheses fell, and a blocker it had not seen appeared:
 
-1. ~~**Aucune variable de condition dans `ultramodern`.**~~ **Corrigé le
-   2026-08-13 : c'était faux.** Le relevé portait sur le worktree de la
-   dépendance tel qu'il se trouvait — seul le patch 0014 appliqué — et les
-   treize autres ne pouvaient pas l'être, `scripts/apply-dependency-patches.sh`
-   contrôlant la propreté de l'arbre à l'intérieur de sa boucle. Le patch
-   **0013 du dépôt** introduit dans `mesgqueue.cpp` deux
-   `std::condition_variable`, avec `notify_one`, `notify_all`,
-   `wait(lock, prédicat)` et `wait_for` — la surface complète. `ultramodern`
-   amont, lui, n'en utilise bien aucune. **Le morceau délicat reste donc à
-   faire**, et le critère d'acceptation correspondant est rouvert.
+1. ~~**No condition variable in `ultramodern`.**~~ **Corrected on 2026-08-13: that
+   was false.** The survey covered the dependency's worktree as it stood — only patch
+   0014 applied — and the other thirteen could not be, since
+   `scripts/apply-dependency-patches.sh` checked the tree's cleanliness inside its
+   loop. **The repository's patch 0013** introduces into `mesgqueue.cpp` two
+   `std::condition_variable`s, with `notify_one`, `notify_all`,
+   `wait(lock, predicate)` and `wait_for` — the complete surface. Upstream
+   `ultramodern` does indeed use none. **The delicate part therefore remains to be
+   done**, and the corresponding acceptance criterion is reopened.
 
-2. **La correspondance de priorités N64 → Win32 n'a pas lieu d'être.**
-   `thread_queue_insert` tient l'ordre en logiciel et un seul fil de jeu court à
-   la fois : le système hôte n'arbitre jamais entre deux fils de jeu.
+2. **The N64 → Win32 priority mapping has no reason to exist.**
+   `thread_queue_insert` keeps the order in software and a single game thread runs at
+   a time: the host system never arbitrates between two game threads.
 
-3. **`CreateSemaphoreW` est un bouchon.** Exportée par Windows 95, elle rend 0 et
-   pose `ERROR_CALL_NOT_IMPLEMENTED`. `moodycamel::LightweightSemaphore`
-   l'appelle, et c'est le primitif de blocage de *tout* le planificateur. Côté
-   attente le blocage disparaît — les fils de jeu courent alors tous ensemble ;
-   côté signal `ReleaseSemaphore(NULL)` boucle sans fin et **fige la machine**.
-   Le pont de `compat.c` la fournit désormais.
+3. **`CreateSemaphoreW` is a stub.** Exported by Windows 95, it returns 0 and sets
+   `ERROR_CALL_NOT_IMPLEMENTED`. `moodycamel::LightweightSemaphore` calls it, and it
+   is the blocking primitive of *all* of the scheduler. On the waiting side the
+   blocking disappears — the game threads then all run together; on the signalling
+   side `ReleaseSemaphore(NULL)` loops forever and **freezes the machine**.
+   `compat.c`'s bridge now supplies it.
 
-4. **`std::thread::join()` ne fonctionne pas sous Windows 95.** `pthread_join`
-   valide son descripteur par `GetHandleInformation`, autre bouchon ; l'échec
-   remonte en `std::system_error`. `dkr_thread_join` passe par
+4. **`std::thread::join()` does not work under Windows 95.** `pthread_join`
+   validates its handle through `GetHandleInformation`, another stub; the failure
+   travels up as a `std::system_error`. `dkr_thread_join` goes through
    `WaitForSingleObject`.
 
-Un cinquième point est apparu à la relecture, et il vient de cette couche et non
-de Windows 95 : la première version fondait le descripteur de fil et son paquet
-de démarrage en une seule allocation, ce qui fait de `dkr_thread_release` une
-**utilisation après libération** — le fil créé lit `fn` avant d'avoir couru, et
-sur un monoprocesseur il n'a en général pas encore couru du tout. Aucune épreuve
-ne détachait de fil, donc rien ne l'attrapait. L'épreuve nº 3 le fait désormais,
-et `ultramodern/src/timer.cpp` emprunte ce chemin pour de bon.
+A fifth point appeared on rereading, and it comes from this layer and not from
+Windows 95: the first version merged the thread descriptor and its start packet into
+a single allocation, which makes `dkr_thread_release` a **use after free** — the
+created thread reads `fn` before having run, and on a single processor it has
+generally not run at all. No trial detached a thread, so nothing caught it. Trial
+no. 3 now does, and `ultramodern/src/timer.cpp` takes that path for real.
 
-Les points 3 et 4 étaient invisibles au garde-fou des imports, qui ne vérifiait
-que la *présence* du symbole. Il vérifie désormais aussi qu'il n'est pas vide :
-`find_stubs.py` reconnaît le motif au désassemblage et relève **179 bouchons dans
-KERNEL32, 176 dans ADVAPI32, 162 dans USER32, 62 dans GDI32**.
+Points 3 and 4 were invisible to the import guard rail, which checked only the
+symbol's *presence*. It now also checks that it is not empty: `find_stubs.py`
+recognises the pattern in the disassembly and records **179 stubs in KERNEL32, 176 in
+ADVAPI32, 162 in USER32, 62 in GDI32**.
 
-### Ce qui reste pour E02-S02
+### What is left for E02-S02
 
-`ultramodern` n'est pas encore reposé sur cette couche — c'est le ticket suivant,
-et le périmètre est celui que ce ticket avait exclu. Les 12 `std::thread`, 3
-`std::mutex` et 3 `thread_local` recensés y attendent, ainsi que la question de
-`BlockingConcurrentQueue`, que le pont `CreateSemaphoreW` rend fonctionnelle sans
-la patcher.
+`ultramodern` is not yet rested on this layer — that is the next ticket, and its
+scope is the one this ticket excluded. The 12 `std::thread`, 3 `std::mutex` and 3
+`thread_local` recorded there await it, as does the question of
+`BlockingConcurrentQueue`, which the `CreateSemaphoreW` bridge makes functional
+without patching it.
 
-## Risques
+## Risks
 
-Les défauts de synchronisation sont rares, non déterministes, et se manifestent
-sous forme de gel aléatoire en cours de partie. Ils sont particulièrement coûteux
-ici, parce que le cycle de diagnostic passe par une machine émulée sans outillage
-moderne. D'où l'insistance sur les tests de stress plutôt que sur la relecture.
+Synchronisation defects are rare, non-deterministic, and manifest as random freezes
+mid-game. They are particularly expensive here, because the diagnosis cycle goes
+through an emulated machine without modern tooling. Hence the insistence on stress
+tests rather than on code review.
 
-## Références
+## References
 
-- `docs/ARCHITECTURE.md` — `ultramodern` fournit l'ordonnancement
-- E00-S01 — API de synchronisation manquantes
-- E01-S03 — couche de compatibilité
+- `docs/ARCHITECTURE.md` — `ultramodern` supplies the scheduling
+- E00-S01 — missing synchronisation APIs
+- E01-S03 — the compatibility layer

@@ -1,139 +1,136 @@
-# E02-S03 — Horloge, minuteries et base de temps
+# E02-S03 — Clock, timers and time base
 
 | | |
 |---|---|
-| **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | IN_PROGRESS |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E02-S01 |
-| **Bloque** | E02-S05, E06-S04, E08-S01 |
+| **Epic** | E02 — Windows 95 system substrate |
+| **Status** | IN_PROGRESS |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E02-S01 |
+| **Blocks** | E02-S05, E06-S04, E08-S01 |
 
-## Contexte
+## Context
 
-DKR mesure le temps par le compteur de cycles du VR4300, à 46,875 MHz — la moitié
-de la fréquence du processeur. `ultramodern` traduit ce compteur vers une horloge
-hôte, et toute la simulation en dépend : cadence des images, chronométrage des
-courses, temporisation de l'audio.
+DKR measures time by the VR4300's cycle counter, at 46.875 MHz — half the
+processor's frequency. `ultramodern` translates that counter to a host clock, and the
+whole simulation depends on it: frame pacing, race timing, audio timing.
 
-Sous Windows 95, les sources de temps disponibles sont inégales :
+Under Windows 95, the time sources available are unequal:
 
-| Source | Résolution | Remarque |
+| Source | Resolution | Remark |
 |---|---|---|
-| `GetTickCount` | ~55 ms par défaut | trop grossière, et déborde après 49,7 jours |
-| `timeGetTime` (`winmm`) | 1 ms avec `timeBeginPeriod` | correcte, coût système à mesurer |
-| `QueryPerformanceCounter` | dépend du matériel | présente dès Windows 95, à valider sur la cible |
-| `RDTSC` | cycle | Pentium et suivants ; fréquence à calibrer, et sensible aux modes d'économie d'énergie |
+| `GetTickCount` | ~55 ms by default | too coarse, and overflows after 49.7 days |
+| `timeGetTime` (`winmm`) | 1 ms with `timeBeginPeriod` | correct, system cost to be measured |
+| `QueryPerformanceCounter` | depends on the hardware | present from Windows 95 onwards, to be validated on the target |
+| `RDTSC` | one cycle | Pentium and later; frequency to be calibrated, and sensitive to power-saving modes |
 
-`QueryPerformanceCounter` est le bon candidat par défaut, mais son comportement
-exact sur du matériel de 1998 se vérifie plutôt qu'il ne se suppose — la
-fréquence retournée par `QueryPerformanceFrequency` varie selon le chipset.
+`QueryPerformanceCounter` is the right default candidate, but its exact behaviour on
+1998 hardware is checked rather than assumed — the frequency
+`QueryPerformanceFrequency` returns varies with the chipset.
 
-## Objectif
+## Objective
 
-Livrer une base de temps monotone, de résolution suffisante pour un chronométrage
-à 30 images par seconde, et la brancher sur le compteur de cycles émulé
-d'`ultramodern`.
+To deliver a monotonic time base, of sufficient resolution for timing at 30 frames
+per second, and to wire it onto `ultramodern`'s emulated cycle counter.
 
-## Périmètre
+## Scope
 
-**Dans :** la source de temps, sa calibration, sa validation, et les minuteries.
+**In:** the time source, its calibration, its validation, and the timers.
 
-**Hors :** la synchronisation d'affichage (E06-S04) et le rythme audio (E06-S03),
-qui consomment cette base sans la définir.
+**Out:** display synchronisation (E06-S04) and audio pacing (E06-S03), which consume
+this base without defining it.
 
-## Travail
+## Work
 
-1. Écrire `platform/win95/clock.{h,cpp}` avec sélection de la source au lancement :
-   `QueryPerformanceCounter` si elle est disponible et cohérente, repli sur
-   `timeGetTime` avec `timeBeginPeriod(1)`.
-2. Valider la source retenue au démarrage : monotonie stricte, résolution
-   effective mesurée, absence de saut. Une source incohérente doit être écartée au
-   profit du repli plutôt que provoquer un comportement erratique en jeu.
-3. Traiter le débordement pour toute source 32 bits, par accumulation en 64 bits.
-   Le test doit simuler le passage à zéro — c'est le genre de défaut qui ne se
-   rencontre jamais en développement et toujours chez un joueur.
-4. Brancher le compteur de cycles du VR4300 sur cette base. Vérifier que le
-   rapport est exact : le compteur avance à 46,875 MHz, indépendamment de la
-   fréquence de l'hôte.
-5. Implémenter les minuteries dont `ultramodern` a besoin (l'équivalent de
-   `osSetTimer` et de la file de minuteries), sur la couche d'attente de E02-S01.
-6. Mesurer le coût d'un appel à la source retenue. Il est consulté plusieurs fois
-   par image ; sur un Pentium II, un appel système coûteux répété devient un poste
-   de budget à part entière. Consigner le chiffre pour E08-S01.
-7. Vérifier que `timeBeginPeriod(1)`, s'il est utilisé, est bien relâché à
-   l'arrêt : sous Windows 9x, un réglage laissé en place dégrade tout le système
-   jusqu'au redémarrage.
+1. Write `platform/win95/clock.{h,cpp}` with the source selected at launch:
+   `QueryPerformanceCounter` if it is available and consistent, falling back on
+   `timeGetTime` with `timeBeginPeriod(1)`.
+2. Validate the retained source at startup: strict monotonicity, effective resolution
+   measured, absence of jumps. An inconsistent source must be set aside in favour of
+   the fallback rather than causing erratic behaviour in game.
+3. Handle overflow for any 32-bit source, by accumulating in 64 bits. The test must
+   simulate the return to zero — it is the kind of defect never met in development and
+   always at a player's.
+4. Wire the VR4300's cycle counter onto this base. Check that the ratio is exact: the
+   counter advances at 46.875 MHz, independently of the host's frequency.
+5. Implement the timers `ultramodern` needs (the equivalent of `osSetTimer` and the
+   timer queue), on E02-S01's waiting layer.
+6. Measure the cost of a call to the retained source. It is consulted several times
+   per frame; on a Pentium II, an expensive repeated system call becomes a budget item
+   in its own right. Record the figure for E08-S01.
+7. Check that `timeBeginPeriod(1)`, if it is used, is duly released at shutdown:
+   under Windows 9x, a setting left in place degrades the whole system until the next
+   reboot.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [x] `platform/win95/clock.{h,cpp}` sélectionne et valide sa source au lancement —
-      une source qui recule, même d'un pas, est écartée au profit du repli.
-- [x] La résolution effective est mesurée sous Windows 95 émulé et consignée.
-- [x] Le débordement 32 bits est traité et couvert par un test qui simule le
-      passage à zéro — par `dkr_tick64_step`, reprise de E01-S03 plutôt que
-      recopiée.
-- [x] Le compteur de cycles émulé avance à 46,875 MHz, vérifié sur une durée
-      longue plutôt que sur un instant — **300 s sur la cible, −0,0000 %**.
-- [ ] Les minuteries d'`ultramodern` fonctionnent, avec leur précision mesurée.
-      Bloqué : elles ne s'exercent qu'en faisant tourner le jeu.
-- [x] Le coût d'un appel est mesuré et consigné, avec la réserve que
-      l'émulation n'est pas temporelle et que E09-S04 doit le confirmer.
-- [x] `timeBeginPeriod` est relâché à l'arrêt, y compris sur un arrêt anormal.
-      Un registre de nettoyages (`dkr_win95_at_abnormal_exit`) est appelé par le
-      filtre d'exceptions de E01-S03 **et** par la faute fatale des fils. Le
-      registre existe plutôt qu'un appel direct pour ne pas inverser les
-      dépendances : `startup.c` est la couche du bas et ne peut pas connaître
-      l'horloge sans que tout témoin traîne `winmm`.
+- [x] `platform/win95/clock.{h,cpp}` selects and validates its source at launch — a
+      source that steps backwards, even by one tick, is set aside in favour of the
+      fallback.
+- [x] The effective resolution is measured under emulated Windows 95 and recorded.
+- [x] The 32-bit overflow is handled and covered by a test that simulates the return
+      to zero — through `dkr_tick64_step`, reused from E01-S03 rather than copied.
+- [x] The emulated cycle counter advances at 46.875 MHz, verified over a long
+      duration rather than at an instant — **300 s on the target, −0.0000 %**.
+- [ ] `ultramodern`'s timers work, with their precision measured. Blocked: they are
+      only exercised by running the game.
+- [x] The cost of a call is measured and recorded, with the reservation that the
+      emulation is not temporal and that E09-S04 must confirm it.
+- [x] `timeBeginPeriod` is released at shutdown, including on an abnormal stop. A
+      registry of cleanups (`dkr_win95_at_abnormal_exit`) is called by E01-S03's
+      exception filter **and** by the threads' fatal fault. The registry exists rather
+      than a direct call so as not to invert the dependencies: `startup.c` is the
+      bottom layer and cannot know about the clock without every witness dragging
+      `winmm` along.
 
-## État au 2026-08-13 — la base est livrée et mesurée
+## State as of 2026-08-13 — the base is delivered and measured
 
-`platform/win95/clock.{h,cpp}`, avec sa suite `test_clock.cpp` (hôte **et**
-`CLOCKT.EXE`). Relevé complet : [`docs/research/win95-clock.md`](../../research/win95-clock.md).
+`platform/win95/clock.{h,cpp}`, with its `test_clock.cpp` suite (host **and**
+`CLOCKT.EXE`). Full report:
+[`docs/research/win95-clock.md`](../../research/win95-clock.md).
 
-Le tableau des sources du ticket a été remplacé par des mesures, et **deux de ses
-suppositions étaient fausses** :
+The ticket's table of sources has been replaced by measurements, and **two of its
+assumptions were false**:
 
-| Source | Supposé | Mesuré |
+| Source | Assumed | Measured |
 |---|---|---|
-| `GetTickCount` | ~55 ms | **9 ms**, et cent fois moins chère que les autres |
-| `timeGetTime` | 1 ms *avec* `timeBeginPeriod` | 1 ms **sans** — le réglage ne change rien ici |
-| `QueryPerformanceCounter` | « dépend du matériel » | 1 193 180 Hz, soit le **PIT 8254** ; 4,19 µs |
+| `GetTickCount` | ~55 ms | **9 ms**, and a hundred times cheaper than the others |
+| `timeGetTime` | 1 ms *with* `timeBeginPeriod` | 1 ms **without** — the setting changes nothing here |
+| `QueryPerformanceCounter` | "depends on the hardware" | 1,193,180 Hz, that is the **8254 PIT**; 4.19 µs |
 
-La fréquence dit d'où vient le compteur, et il en découle un fait qu'il vaut
-mieux connaître avant qu'après : **les 32 bits de poids faible du PIT rebouclent
-en exactement 60 minutes**.
+The frequency says where the counter comes from, and from it follows a fact better
+known before than after: **the PIT's low 32 bits wrap in exactly 60 minutes**.
 
-Résultats sur la cible :
+Results on the target:
 
 | | |
 |---|---|
-| Source retenue | `QueryPerformanceCounter`, 1 193 180 Hz |
-| Monotonie | 200 000 lectures, **0 recul** |
-| Dérive du compteur VR4300 sur **300 s** | **−0,0000 %** (536 cycles sur 14,06 milliards) |
-| Suite | 20 contrôles, 0 échec |
+| Source retained | `QueryPerformanceCounter`, 1,193,180 Hz |
+| Monotonicity | 200,000 reads, **0 steps backwards** |
+| VR4300 counter drift over **300 s** | **−0.0000 %** (536 cycles out of 14.06 billion) |
+| Suite | 20 checks, 0 failures |
 
-### Un défaut trouvé en chemin, et qui justifie le point 4
+### A defect found along the way, which justifies point 4
 
-`ultramodern` dérive `osGetCount` de `std::chrono::high_resolution_clock`. Mesuré
-sur la cible : `is_steady=false`, et c'est un alias de `system_clock`. **Toute la
-mesure du temps de DKR repose donc sur l'horloge murale**, qui recule quand
-l'utilisateur change l'heure ou quand Windows applique l'heure d'hiver.
+`ultramodern` derives `osGetCount` from `std::chrono::high_resolution_clock`.
+Measured on the target: `is_steady=false`, and it is an alias of `system_clock`.
+**All of DKR's timekeeping therefore rests on the wall clock**, which steps backwards
+when the user changes the time or when Windows applies winter time.
 
-Brancher `osGetCount` sur cette base est donc justifié par une mesure, et non par
-un souci de propreté. Ce branchement n'est **pas** encore fait : c'est un
-changement de comportement de l'ordonnanceur qu'on ne peut pas exercer tant que
-le jeu ne se lie pas (E01-S05, E02-S05, E07-S03).
+Wiring `osGetCount` onto this base is therefore justified by a measurement, and not by
+a concern for tidiness. That wiring is **not** done yet: it is a change of scheduler
+behaviour which cannot be exercised as long as the game does not link (E01-S05,
+E02-S05, E07-S03).
 
-## Risques
+## Risks
 
-Une base de temps qui dérive lentement ne casse rien de visible et fausse tous les
-chronométrages de course. Le contrôle de l'étape 4 doit donc porter sur une durée
-longue — plusieurs minutes — et non sur un instantané.
+A time base that drifts slowly breaks nothing visible and falsifies every race
+timing. Step 4's check must therefore bear on a long duration — several minutes — and
+not on a snapshot.
 
-## Références
+## References
 
-- E02-S01 — couche d'attente
-- E01-S03 — contournement de `GetTickCount64`
-- `runtime-recomp/src/game/vi_presentation_policy.hpp` — politique de présentation
-  actuelle, consommatrice de cette base
+- E02-S01 — the waiting layer
+- E01-S03 — the `GetTickCount64` workaround
+- `runtime-recomp/src/game/vi_presentation_policy.hpp` — the current presentation
+  policy, a consumer of this base

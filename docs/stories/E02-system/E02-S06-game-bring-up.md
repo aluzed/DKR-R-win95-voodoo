@@ -1,89 +1,87 @@
-# E02-S06 — Amorçage : du point d'entrée Win32 au premier appel du jeu
+# E02-S06 — Bring-up: from the Win32 entry point to the game's first call
 
 | | |
 |---|---|
-| **Épic** | E02 — Substrat système Windows 95 |
-| **Statut** | TODO |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E01-S05, E02-S02, E02-S04 |
-| **Bloque** | E04-S08, E09-S02 |
+| **Epic** | E02 — Windows 95 system substrate |
+| **Status** | TODO |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E01-S05, E02-S02, E02-S04 |
+| **Blocks** | E04-S08, E09-S02 |
 
-## Contexte
+## Context
 
-C'est le jalon qui prouve que E01 et E02 tiennent debout : le code recompilé du
-jeu s'exécute réellement sous Windows 95. Sans rendu, sans audio, sans entrées —
-mais il s'exécute, et il soumet des tâches graphiques.
+This is the milestone that proves E01 and E02 stand up: the game's recompiled code
+really runs under Windows 95. Without rendering, without audio, without inputs — but
+it runs, and it submits graphics tasks.
 
-`game_main.cpp` (22 Ko) et `game_registration.cpp` orchestrent aujourd'hui cet
-amorçage autour de SDL2 : création de la fenêtre, sélection de ROM par le
-lanceur, initialisation du renderer, puis remise du contrôle à `librecomp`. Il
-faut le même enchaînement, sans SDL2 et sans RT64.
+`game_main.cpp` (22 KB) and `game_registration.cpp` orchestrate that bring-up today
+around SDL2: creating the window, selecting the ROM through the launcher,
+initialising the renderer, then handing control over to `librecomp`. The same
+sequence is needed, without SDL2 and without RT64.
 
-Le renderer de diagnostic (`null_renderer.cpp`) est exactement l'outil de ce
-jalon : il implémente `RendererContext`, compte les display lists et les
-présentations, et n'affiche rien. Il permet de valider tout le chemin CPU avant
-d'écrire une seule ligne de Glide.
+The diagnostic renderer (`null_renderer.cpp`) is exactly this milestone's tool: it
+implements `RendererContext`, counts the display lists and the presentations, and
+displays nothing. It allows the whole CPU path to be validated before a single line
+of Glide is written.
 
-## Objectif
+## Objective
 
-Faire démarrer le jeu recompilé sous Windows 95 jusqu'à la soumission régulière
-de tâches graphiques, avec le renderer de diagnostic.
+To make the recompiled game start under Windows 95 up to the regular submission of
+graphics tasks, with the diagnostic renderer.
 
-## Périmètre
+## Scope
 
-**Dans :** l'amorçage, l'enregistrement du jeu, le branchement du renderer de
-diagnostic, le journal de démarrage.
+**In:** the bring-up, the game's registration, the wiring of the diagnostic renderer,
+the startup log.
 
-**Hors :** fenêtre (E06-S01), entrées (E06-S02), audio (E06-S03), rendu (E04, E05).
+**Out:** window (E06-S01), inputs (E06-S02), audio (E06-S03), rendering (E04, E05).
 
-## Travail
+## Work
 
-1. Écrire `platform/win95/main.cpp` : point d'entrée, initialisation de la couche
-   de compatibilité (E01-S03), de l'horloge (E02-S03), du journal.
-2. Reprendre de `game_main.cpp` la séquence d'enregistrement du jeu auprès de
-   `librecomp` et de démarrage, en retirant SDL2. Découper plutôt que dupliquer :
-   la logique d'enregistrement doit rester partagée avec la cible moderne, sans
-   quoi les deux dérivent.
-3. Résoudre la ROM sans lanceur : argument de ligne de commande, ou chemin lu dans
-   la configuration, ou fichier de nom convenu dans le dossier de l'application.
-   E06-S06 traitera l'ergonomie ; ici, le plus simple suffit.
-4. Instancier `DiagnosticRenderer` comme contexte de rendu. Vérifier qu'il ne
-   dépend ni de SDL2 ni de RT64 — son en-tête n'inclut qu'`ultramodern`, ce qui
-   est de bon augure, mais son fichier source est à vérifier.
-5. Faire tourner la boucle. Le compteur de display lists de `DiagnosticRenderer`
-   doit progresser régulièrement : c'est le signe que le fil de jeu vit, que
-   l'ordonnanceur commute, et que le jeu produit des images.
-6. Écrire un journal de démarrage détaillé dans un fichier : chaque étape franchie,
-   chaque fil créé, chaque tâche soumise. C'est le seul outil de diagnostic
-   disponible sur la machine cible.
-7. Mesurer, avec les compteurs de `DiagnosticRenderer`, la cadence de soumission
-   des tâches graphiques, et la comparer à l'attendu de 30 par seconde. C'est la
-   première mesure de performance réelle du projet sur la cible, et elle confronte
-   directement l'extrapolation de E00-S03 aux faits.
+1. Write `platform/win95/main.cpp`: entry point, initialisation of the compatibility
+   layer (E01-S03), of the clock (E02-S03), of the log.
+2. Take from `game_main.cpp` the sequence that registers the game with `librecomp`
+   and starts it, removing SDL2. Split rather than duplicate: the registration logic
+   must stay shared with the modern target, failing which the two drift.
+3. Resolve the ROM without a launcher: a command-line argument, or a path read from
+   the configuration, or a file of agreed name in the application's folder. E06-S06
+   will deal with the ergonomics; here, the simplest thing suffices.
+4. Instantiate `DiagnosticRenderer` as the rendering context. Check that it depends
+   neither on SDL2 nor on RT64 — its header includes only `ultramodern`, which bodes
+   well, but its source file is to be checked.
+5. Run the loop. `DiagnosticRenderer`'s display-list counter must advance steadily:
+   that is the sign that the game thread is alive, that the scheduler switches, and
+   that the game produces frames.
+6. Write a detailed startup log to a file: each step passed, each thread created,
+   each task submitted. It is the only diagnostic tool available on the target
+   machine.
+7. Measure, with `DiagnosticRenderer`'s counters, the rate at which graphics tasks
+   are submitted, and compare it against the expected 30 per second. It is the
+   project's first real performance measurement on the target, and it confronts
+   E00-S03's extrapolation directly with the facts.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le jeu recompilé démarre sous Windows 95 émulé.
-- [ ] Le compteur de display lists de `DiagnosticRenderer` progresse régulièrement.
-- [ ] La cadence de soumission est mesurée et comparée à la prévision de E00-S03.
-- [ ] Le journal de démarrage trace chaque étape et est lisible depuis la machine
-      cible.
-- [ ] Aucune dépendance à SDL2, ImGui ou RT64 dans le binaire produit — vérifié
-      par la table d'imports (E01-S04).
-- [ ] La logique d'enregistrement du jeu reste partagée avec la cible moderne.
-- [ ] Le jeu atteint au moins l'écran-titre du point de vue du CPU, c'est-à-dire
-      soumet les tâches graphiques correspondantes.
+- [ ] The recompiled game starts under emulated Windows 95.
+- [ ] `DiagnosticRenderer`'s display-list counter advances steadily.
+- [ ] The submission rate is measured and compared against E00-S03's forecast.
+- [ ] The startup log traces every step and is readable from the target machine.
+- [ ] No dependency on SDL2, ImGui or RT64 in the binary produced — verified by the
+      import table (E01-S04).
+- [ ] The game's registration logic stays shared with the modern target.
+- [ ] The game reaches at least the title screen from the CPU's point of view, that
+      is, submits the corresponding graphics tasks.
 
-## Risques
+## Risks
 
-L'écart entre la cadence mesurée ici et la prévision de E00-S03 est l'information
-la plus importante du projet à ce stade. S'il est mauvais, il vaut mieux le
-découvrir maintenant, avant les deux épics les plus lourds (E04 et E05), et
-rouvrir l'ADR de plancher matériel.
+The gap between the rate measured here and E00-S03's forecast is the project's most
+important piece of information at this stage. If it is bad, it is better discovered
+now, before the two heaviest epics (E04 and E05), and the hardware-floor ADR
+reopened.
 
-## Références
+## References
 
 - `runtime-recomp/src/game/game_main.cpp`, `game_registration.cpp`
 - `runtime-recomp/src/game/null_renderer.{hpp,cpp}`
-- `docs/ARCHITECTURE.md` — chemin d'exécution complet
+- `docs/ARCHITECTURE.md` — the complete execution path
