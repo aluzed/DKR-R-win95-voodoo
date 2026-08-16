@@ -75,6 +75,8 @@ private:
     unsigned long total_tex_chargees_ = 0;
     unsigned long total_tex_reutilisees_ = 0;
     unsigned long total_tex_refusees_ = 0;
+    unsigned long total_tex_remplies_ = 0;
+    unsigned long total_tex_proportions_ = 0;
     unsigned long total_tex_inconnues_ = 0;
     unsigned long total_tex_hors_ = 0;
     unsigned long total_approches_ = 0;

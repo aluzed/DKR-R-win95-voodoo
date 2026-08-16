@@ -174,6 +174,28 @@ typedef struct {
     unsigned char      live;
 } glide_texture;
 
+/* --- Pourquoi un chargement echoue ------------------------------------------
+ *
+ * `gl_texture_upload` rend zero pour quatre raisons distinctes, et l'appelant ne
+ * voit que le zero. Mesure sur la machine : 25 896 chargements pour 21 211
+ * refus, un sur deux — sans que rien ne dise lequel des quatre. On a corrige la
+ * saturation d'emplacements en la supposant coupable, et le chiffre n'a pas
+ * bouge d'une unite. Separer les causes coute quatre entiers. */
+enum {
+    GL_TEX_ECHEC_PROPORTIONS = 0,  /* dimensions refusees par la carte */
+    GL_TEX_ECHEC_TAILLE,           /* grTexCalcMemRequired rend zero */
+    GL_TEX_ECHEC_EMPLACEMENT,      /* table de descripteurs pleine */
+    GL_TEX_ECHEC_MEMOIRE,          /* allocateur de TMU sature */
+    GL_TEX_ECHEC_NB
+};
+static unsigned long g_tex_echecs[GL_TEX_ECHEC_NB];
+
+unsigned long dkr_glide_backend_upload_failure(int kind)
+{
+    if (kind < 0 || kind >= GL_TEX_ECHEC_NB) { return 0; }
+    return g_tex_echecs[kind];
+}
+
 #define GLIDE_MAX_TEXTURES 512
 static glide_texture g_tex[GLIDE_MAX_TEXTURES];
 static dkr_tmu       g_tmu[2];
@@ -614,6 +636,7 @@ static dkr_texture_handle gl_texture_upload(void *self,
         return 0;
     }
     if (!lod_and_aspect(desc->width, desc->height, &lod, &aspect)) {
+        g_tex_echecs[GL_TEX_ECHEC_PROPORTIONS]++;
         return 0;
     }
 
@@ -631,13 +654,13 @@ static dkr_texture_handle gl_texture_upload(void *self,
        pas une erreur mais un decor portant le motif d'un autre, a un endroit qui
        depend de l'ordre de chargement. */
     bytes = gs.tex_required(GR_MIPMAPLEVELMASK_BOTH, &info);
-    if (bytes == 0u) { return 0; }
+    if (bytes == 0u) { g_tex_echecs[GL_TEX_ECHEC_TAILLE]++; return 0; }
 
     for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
         if (g_tex[i].live && g_tex[i].key == desc->key) { slot = i; break; }
         if (!g_tex[i].live && slot < 0) { slot = i; }
     }
-    if (slot < 0) { return 0; }
+    if (slot < 0) { g_tex_echecs[GL_TEX_ECHEC_EMPLACEMENT]++; return 0; }
 
     /* **On passe par l'allocateur meme quand la texture est deja connue.**
      *
@@ -661,6 +684,7 @@ static dkr_texture_handle gl_texture_upload(void *self,
         address = dkr_tmu_acquire(&g_tmu[cible], desc->key, &info, bytes);
     }
     if (address == DKR_TMU_NONE) {
+        g_tex_echecs[GL_TEX_ECHEC_MEMOIRE]++;
         g_tex[slot].live = 0;
         return 0;
     }

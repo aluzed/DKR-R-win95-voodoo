@@ -526,6 +526,36 @@ static void appliquer_etat(dkr_f3d_context *c)
  * ne suffirait pas : DKR réemploie ses tampons, et deux textures différentes
  * peuvent partager une adresse d'une image à l'autre. Une clé trop courte ne
  * plante pas — elle affiche l'ancienne texture, ce qui se remarque tard. */
+/* --- Ce que la Voodoo accepte, et ce que la N64 envoie ---------------------- *
+ *
+ * Le RDP échantillonne n'importe quelles dimensions ; la Voodoo exige des
+ * **puissances de deux**, un côté d'au plus 256, et un rapport d'au plus 8:1.
+ *
+ * Mesuré sur la machine, une fois les quatre causes de refus séparées :
+ *
+ *     refus-detail: proportions=21084 taille=0 emplacements=0 memoire-tmu=0
+ *
+ * **Tous** les refus venaient de là, et aucun de la mémoire — ce qui a invalidé
+ * la correction précédente, faite en supposant la saturation coupable. Séparer
+ * les causes a coûté quatre entiers ; les confondre avait coûté un correctif.
+ *
+ * On remplit donc jusqu'à la puissance de deux supérieure et l'on retient le
+ * rapport, dont les coordonnées de texture ont besoin : la texture réelle
+ * n'occupe plus que le coin supérieur gauche.
+ *
+ * **Ce que le remplissage abîme, et qu'il vaut mieux dire** : une texture
+ * répétée montrera son remplissage aux jointures, puisque l'enveloppement se
+ * fait sur la taille remplie et non sur la taille réelle. DKR emploie
+ * l'enveloppement dix-huit fois contre le bornage quatre fois, donc la question
+ * se posera. La réponse propre est de répéter le motif dans le remplissage
+ * plutôt que de le laisser vide ; c'est ce qui est fait ici. */
+static int puissance_de_deux(int n)
+{
+    int p = 1;
+    while (p < n && p < 256) { p <<= 1; }
+    return p;
+}
+
 static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     const unsigned int lrs = (w1 >> 12) & 0xFFFu;
@@ -556,6 +586,27 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         return;
     }
 
+    {
+        const int pl = puissance_de_deux(largeur);
+        const int ph = puissance_de_deux(hauteur);
+        /* Le rapport d'au plus 8:1 de la carte. On ne peut pas remplir pour le
+           satisfaire — cela reviendrait à multiplier la mémoire par huit — donc
+           on refuse, et on le compte plutôt que de le taire. */
+        const int grand = (pl > ph) ? pl : ph;
+        const int petit = (pl > ph) ? ph : pl;
+        if (grand > 256 || (petit > 0 && grand / petit > 8)) {
+            c->render_state.texture = 0;
+            c->texture_cle = 0;
+            c->state.textures_hors_proportions++;
+            c->etat_sale = 1;
+            return;
+        }
+        c->tex_largeur = largeur;
+        c->tex_hauteur = hauteur;
+        c->tex_largeur_remplie = pl;
+        c->tex_hauteur_remplie = ph;
+    }
+
     if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
                              c->timg_address,
                              (dkr_n64_format)c->timg_format,
@@ -570,16 +621,34 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         return;
     }
 
+    /* Le remplissage, en place et de bas en haut pour ne pas écraser ce qu'on
+       recopie. Le motif est **répété** plutôt que laissé vide : c'est ce qui
+       rend le remplissage invisible quand la texture est enveloppée, et cela ne
+       coûte rien de plus qu'un remplissage nul. */
+    if (c->tex_largeur_remplie != largeur || c->tex_hauteur_remplie != hauteur) {
+        int y, x;
+        for (y = c->tex_hauteur_remplie - 1; y >= 0; y--) {
+            const int sy = y % hauteur;
+            for (x = c->tex_largeur_remplie - 1; x >= 0; x--) {
+                const int sx = x % largeur;
+                c->texels[(size_t)y * (size_t)c->tex_largeur_remplie + (size_t)x] =
+                    c->texels[(size_t)sy * (size_t)largeur + (size_t)sx];
+            }
+        }
+        c->state.textures_remplies++;
+    }
+
     if (c->backend && c->backend->texture_upload) {
         dkr_texture_desc d;
         dkr_texture_handle h;
         memset(&d, 0, sizeof(d));
         d.key = cle;
         d.format = DKR_TEXFMT_RGBA5551;
-        d.width = largeur;
-        d.height = hauteur;
+        d.width = c->tex_largeur_remplie;
+        d.height = c->tex_hauteur_remplie;
         d.pixels = c->texels;
-        d.size_bytes = (size_t)largeur * (size_t)hauteur * 2u;
+        d.size_bytes = (size_t)c->tex_largeur_remplie *
+                       (size_t)c->tex_hauteur_remplie * 2u;
         h = c->backend->texture_upload(c->backend->self, &d);
         if (h != 0) {
             c->render_state.texture = h;

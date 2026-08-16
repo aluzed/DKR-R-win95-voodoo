@@ -128,6 +128,12 @@ typedef struct {
     unsigned long     textures_chargees;    /* remises au backend */
     unsigned long     textures_reutilisees; /* servies par le cache */
     unsigned long     textures_refusees;    /* memoire de texture pleine */
+    /* Remplies jusqu'a la puissance de deux superieure, ce que la Voodoo exige
+       et que la N64 n'impose pas. */
+    unsigned long     textures_remplies;
+    /* Refusees pour un rapport au-dela de 8:1, que le remplissage ne peut pas
+       corriger sans multiplier la memoire par huit. */
+    unsigned long     textures_hors_proportions;
 
     /* Combien de fois chaque opcode a été vu.
      *
@@ -194,6 +200,11 @@ typedef struct {
        plutot qu'alloues par texture — un Pentium II n'a pas les moyens d'un
        malloc par changement de texture, et il y en a des milliers par seconde. */
     unsigned short       texels[256 * 256];
+    /* Les dimensions reelles et celles apres remplissage. Leur rapport sert aux
+       coordonnees de texture : la texture reelle n'occupe que le coin superieur
+       gauche de ce qu'on charge. */
+    int                  tex_largeur, tex_hauteur;
+    int                  tex_largeur_remplie, tex_hauteur_remplie;
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne

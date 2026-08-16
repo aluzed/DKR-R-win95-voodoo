@@ -320,6 +320,11 @@ void dkr_render_backend_software(dkr_render_backend *out);
 #if defined(DKR_TARGET_WIN95)
 void dkr_render_backend_glide(dkr_render_backend *out);
 unsigned long dkr_glide_backend_triangle_count(void);
+/* Pourquoi un chargement de texture a echoue : 0 proportions refusees par la
+   carte, 1 taille nulle, 2 table de descripteurs pleine, 3 memoire de TMU
+   saturee. Quatre causes derriere un seul zero rendu ; les confondre fait
+   corriger la mauvaise. */
+unsigned long dkr_glide_backend_upload_failure(int kind);
 /* L'etat de l'allocateur de TMU, pour l'affichage de diagnostic de E08-S01.
    Rend NULL si la TMU demandee n'existe pas. */
 struct dkr_tmu;

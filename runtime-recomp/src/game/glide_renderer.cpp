@@ -164,6 +164,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_chargees_ += context_.state.textures_chargees;
     total_tex_reutilisees_ += context_.state.textures_reutilisees;
     total_tex_refusees_ += context_.state.textures_refusees;
+    total_tex_remplies_ += context_.state.textures_remplies;
+    total_tex_proportions_ += context_.state.textures_hors_proportions;
     total_tex_inconnues_ += context_.state.textures.non_prises_en_charge;
     total_tex_hors_ += context_.state.textures.hors_rdram;
     total_etats_ += context_.state.etats_appliques;
@@ -271,6 +273,17 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "refusees-tmu=%lu format-inconnu=%lu hors-rdram=%lu\n",
                      total_tex_chargees_, total_tex_reutilisees_,
                      total_tex_refusees_, total_tex_inconnues_, total_tex_hors_);
+        std::fprintf(stderr,
+                     "[gfx]   refus-detail: proportions=%lu taille=%lu "
+                     "emplacements=%lu memoire-tmu=%lu\n",
+                     dkr_glide_backend_upload_failure(0),
+                     dkr_glide_backend_upload_failure(1),
+                     dkr_glide_backend_upload_failure(2),
+                     dkr_glide_backend_upload_failure(3));
+        std::fprintf(stderr,
+                     "[gfx]   remplies-en-puissance-de-2=%lu "
+                     "refusees-proportions=%lu\n",
+                     total_tex_remplies_, total_tex_proportions_);
     }
 #else
     (void)task;
