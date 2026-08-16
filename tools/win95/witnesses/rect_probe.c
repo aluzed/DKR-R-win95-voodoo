@@ -1,24 +1,24 @@
-/* E05-S07 — les rectangles 2D, au pixel près.
+/* E05-S07 - 2D rectangles, to the pixel.
  *
- * Le ticket est explicite sur la méthode : le décalage de demi-texel « se
- * détermine par l'expérience — dessiner une grille de un pixel sur un fond
- * contrasté et vérifier son alignement — pas par le raisonnement ».
+ * The ticket is explicit about the method: the half-texel offset "is determined
+ * by experiment - draw a one-pixel grid on a contrasting background and check its
+ * alignment - not by reasoning".
  *
- * Il a raison, et pour une raison qui dépasse Glide : le décalage dépend de la
- * convention d'échantillonnage de la carte, du centre de pixel qu'elle suppose,
- * et de l'arrondi de son interpolateur. Aucune de ces trois choses n'est
- * documentée sur cette machine, et leur composition ne se déduit pas.
+ * It is right, and for a reason that goes beyond Glide: the offset depends on the
+ * card's sampling convention, on the pixel centre it assumes, and on its
+ * interpolator's rounding. None of those three things is documented on this
+ * machine, and their composition cannot be deduced.
  *
- * ## Pourquoi une grille d'un pixel
+ * ## Why a one-pixel grid
  *
- * Une texture à traits d'un pixel est l'épreuve la plus sévère qui existe pour
- * l'alignement : au moindre décalage, un trait tombe entre deux pixels et
- * disparaît ou se dédouble. Une texture à motifs larges pardonnerait un demi-
- * texel sans le montrer, et c'est précisément ce qu'il ne faut pas.
+ * A texture with one-pixel lines is the severest trial there is for alignment: at
+ * the slightest offset, a line falls between two pixels and disappears or
+ * doubles. A texture with wide patterns would forgive a half-texel without
+ * showing it, and that is precisely what must not happen.
  *
- * L'interface est aussi ce que le joueur regarde le plus longtemps. Un décalage
- * d'un demi-texel est le genre de défaut qu'on cesse de voir après quelques
- * heures et qui saute aux yeux de toute personne découvrant le portage.
+ * The interface is also what the player looks at longest. A half-texel offset is
+ * the kind of defect one stops seeing after a few hours and which leaps out at
+ * anyone discovering the port.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -44,35 +44,35 @@ static void say(const char *fmt, ...)
 
 static void check(const char *what, int ok)
 {
-    say("  %s %s\n", ok ? "ok   " : "ECHEC", what);
+    say("  %s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) { g_fails++; }
 }
 
 #define TW 64
 #define TH 64
-static unsigned short g_grille[TW * TH];
+static unsigned short g_grid[TW * TH];
 static unsigned g_px[640 * 480];
 
-/* Une grille : un trait blanc d'un texel toutes les quatre colonnes et lignes,
-   sur fond noir. Contrastée au maximum, et d'un texel de large. */
-static void build_grille(void)
+/* A grid: a one-texel white line every four columns and rows, on a black
+   background. Maximally contrasted, and one texel wide. */
+static void build_grid(void)
 {
     int x, y;
     for (y = 0; y < TH; y++) {
         for (x = 0; x < TW; x++) {
-            const int trait = (x % 4 == 0) || (y % 4 == 0);
-            g_grille[y * TW + x] = (unsigned short)(0x8000u | (trait ? 0x7FFFu : 0u));
+            const int line = (x % 4 == 0) || (y % 4 == 0);
+            g_grid[y * TW + x] = (unsigned short)(0x8000u | (line ? 0x7FFFu : 0u));
         }
     }
 }
 
-/* Un rectangle en coordonnées écran, sans transformation — c'est ce que le RDP
- * fait de ses commandes de rectangle, et y faire passer le pipeline de
- * transformation introduirait une conversion inutile et une occasion d'erreur.
+/* A rectangle in screen coordinates, without transformation - that is what the
+ * RDP does with its rectangle commands, and putting them through the transform
+ * pipeline would introduce a needless conversion and an opportunity for error.
  *
- * `decalage` est le demi-texel à l'essai, en texels de la texture. */
+ * `offset` is the half-texel under trial, in texels of the texture. */
 static void rect(dkr_render_backend *bk, float x0, float y0, float x1, float y1,
-                 float s0, float t0, float s1, float t1, float decalage,
+                 float s0, float t0, float s1, float t1, float offset,
                  unsigned argb)
 {
     dkr_render_vertex v[6];
@@ -89,38 +89,37 @@ static void rect(dkr_render_backend *bk, float x0, float y0, float x1, float y1,
         v[i].b = (float)(argb & 0xFF);
         v[i].a = (float)((argb >> 24) & 0xFF);
         v[i].oow = 1.0f;
-        /* L'échelle de 256 texels est celle de Glide, mesurée en E05-S02. */
-        v[i].tmu[0][DKR_TMU_SOW] = (ss[i] + decalage) * (256.0f / (float)TW);
-        v[i].tmu[0][DKR_TMU_TOW] = (ts[i] + decalage) * (256.0f / (float)TH);
+        /* The 256-texel scale is Glide's, measured in E05-S02. */
+        v[i].tmu[0][DKR_TMU_SOW] = (ss[i] + offset) * (256.0f / (float)TW);
+        v[i].tmu[0][DKR_TMU_TOW] = (ts[i] + offset) * (256.0f / (float)TH);
         v[i].tmu[0][DKR_TMU_OOW] = 1.0f;
     }
     bk->draw_triangles(bk->self, v, 2);
 }
 
-static unsigned lire(int x, int y, int w)
+static unsigned read_px(int x, int y, int w)
 {
     return g_px[(size_t)y * (size_t)w + (size_t)x] & 0x00FFFFFFu;
 }
 
-/* Combien de colonnes tombent **la ou elles doivent**.
+/* How many columns fall **where they should**.
  *
- * La premiere version comptait les colonnes « franches », c'est-a-dire ni
- * grises ni intermediaires. Elle rendait 64 sur 64 pour *tous* les decalages, et
- * ne discriminait rien : en echantillonnage au point il n'y a jamais de valeur
- * intermediaire, seulement des traits deplaces. Une metrique qui ne peut pas
- * echouer ne mesure pas.
+ * The first version counted the "clean" columns, that is, neither grey nor
+ * intermediate. It returned 64 out of 64 for *every* offset, and discriminated
+ * nothing: under point sampling there is never an intermediate value, only
+ * displaced lines. A metric that cannot fail does not measure.
  *
- * On compare donc a la grille attendue : a l'echelle un, le texel `x` doit
- * tomber sur le pixel `x`, donc un trait blanc toutes les quatre colonnes en
- * partant de zero. Le bon decalage est celui qui met les traits en face. */
-static int colonnes_conformes(int x0, int largeur, int y, int w)
+ * So we compare against the expected grid: at scale one, texel `x` must fall on
+ * pixel `x`, hence a white line every four columns starting from zero. The right
+ * offset is the one that puts the lines opposite. */
+static int columns_matching(int x0, int width, int y, int w)
 {
     int x, n = 0;
-    for (x = x0; x < x0 + largeur; x++) {
-        const unsigned r = (lire(x, y, w) >> 16) & 0xFF;
-        const int attendu_blanc = ((x - x0) % 4) == 0;
-        const int est_blanc = r > 128u;
-        if (est_blanc == attendu_blanc) { n++; }
+    for (x = x0; x < x0 + width; x++) {
+        const unsigned r = (read_px(x, y, w) >> 16) & 0xFF;
+        const int expect_white = ((x - x0) % 4) == 0;
+        const int is_white = r > 128u;
+        if (is_white == expect_white) { n++; }
     }
     return n;
 }
@@ -133,34 +132,34 @@ int main(void)
     dkr_texture_handle h;
     const int W = 640, H = 480;
     int rw = 0, rh = 0, i;
-    float meilleur = 0.0f;
-    int meilleur_score = -1;
+    float best = 0.0f;
+    int best_score = -1;
 
     g_out = fopen("D:\\RECT.TXT", "w");
-    say("rectangles 2D : demi-texel, jointures, ciseaux\n\n");
+    say("2D rectangles: half-texel, seams, scissor\n\n");
 
-    build_grille();
+    build_grid();
     dkr_render_backend_glide(&bk);
-    if (!bk.open(bk.self, W, H)) { say("ECHEC ouverture\n"); return 1; }
+    if (!bk.open(bk.self, W, H)) { say("FAILED to open\n"); return 1; }
 
     memset(&d, 0, sizeof(d));
     d.key = 0x9999ull; d.format = DKR_TEXFMT_RGBA5551;
     d.width = TW; d.height = TH;
-    d.pixels = g_grille; d.size_bytes = sizeof(g_grille);
+    d.pixels = g_grid; d.size_bytes = sizeof(g_grid);
     bk.begin_frame(bk.self, 0x000000);
     h = bk.texture_upload(bk.self, &d);
-    check("la grille se charge", h != 0);
+    check("the grid uploads", h != 0);
 
     memset(&st, 0, sizeof(st));
     st.combine = DKR_COMBINE_TEXTURE;
     st.blend   = DKR_BLEND_OPAQUE;
     st.depth   = DKR_DEPTH_DISABLED;
     st.cull    = DKR_CULL_NONE;
-    st.filter  = DKR_FILTER_POINT;     /* point : le bilineaire flouterait la mesure */
+    st.filter  = DKR_FILTER_POINT;     /* point: bilinear would blur the measurement */
     st.wrap_s  = st.wrap_t = DKR_WRAP_CLAMP;
     st.texture = h;
 
-    /* Deux images de mise en route — la lecon de E05-S05. */
+    /* Two warm-up frames - E05-S05's lesson. */
     for (i = 0; i < 2; i++) {
         bk.begin_frame(bk.self, 0x000000);
         bk.set_state(bk.self, &st);
@@ -168,46 +167,46 @@ int main(void)
         bk.present(bk.self);
     }
 
-    /* --- Le demi-texel, cherche plutot que raisonne -------------------------- *
+    /* --- The half-texel, searched for rather than reasoned about ------------- *
      *
-     * La grille est dessinee a l'echelle un — 64 texels sur 64 pixels — a
-     * plusieurs decalages. Le bon est celui qui rend le plus de colonnes
-     * franches : ni grises, ni manquantes. */
-    say("\n-- le decalage de demi-texel --\n");
-    say("  grille de 64 texels sur 64 pixels, un trait tous les quatre\n");
-    say("%-10s %s\n", "decalage", "colonnes en face sur 64");
+     * The grid is drawn at scale one - 64 texels over 64 pixels - at several
+     * offsets. The right one is the one that lands the most columns where they
+     * belong. */
+    say("\n-- the half-texel offset --\n");
+    say("  grid of 64 texels over 64 pixels, one line every four\n");
+    say("%-10s %s\n", "offset", "columns in place out of 64");
     {
-        static const float ESSAIS[] = { -0.5f, -0.25f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+        static const float TRIALS[] = { -0.5f, -0.25f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
         for (i = 0; i < 7; i++) {
             int n;
             bk.begin_frame(bk.self, 0x000000);
             bk.set_state(bk.self, &st);
-            rect(&bk, 0, 0, 64, 64, 0, 0, (float)TW, (float)TH, ESSAIS[i],
+            rect(&bk, 0, 0, 64, 64, 0, 0, (float)TW, (float)TH, TRIALS[i],
                  0xFFFFFFFFu);
             bk.present(bk.self);
             if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) <= 0) { continue; }
-            n = colonnes_conformes(0, 64, 34, rw);
-            say("%-10.2f %d\n", (double)ESSAIS[i], n);
-            if (n > meilleur_score) { meilleur_score = n; meilleur = ESSAIS[i]; }
+            n = columns_matching(0, 64, 34, rw);
+            say("%-10.2f %d\n", (double)TRIALS[i], n);
+            if (n > best_score) { best_score = n; best = TRIALS[i]; }
         }
-        say("\n  meilleur decalage : %.2f texel (%d colonnes en face sur 64)\n",
-            (double)meilleur, meilleur_score);
-        check("un decalage met toutes les colonnes en face",
-              meilleur_score == 64);
+        say("\n  best offset: %.2f texel (%d columns in place out of 64)\n",
+            (double)best, best_score);
+        check("one offset puts every column in place",
+              best_score == 64);
     }
 
-    /* --- Les jointures ------------------------------------------------------- *
+    /* --- The seams ----------------------------------------------------------- *
      *
-     * Quatre rectangles adjacents, de couleurs differentes, posés bord a bord.
-     * Une regle de remplissage fausse laisse une ligne de fond entre eux, ou les
-     * fait se recouvrir. Les fonds composes de tuiles sont ou cela se voit le
-     * plus, et l'interface du jeu en est faite. */
-    say("\n-- les jointures entre rectangles adjacents --\n");
+     * Four adjacent rectangles, of different colours, laid edge to edge. A wrong
+     * fill rule leaves a line of background between them, or makes them overlap.
+     * Tiled backgrounds are where this shows most, and the game's interface is
+     * made of them. */
+    say("\n-- the seams between adjacent rectangles --\n");
     {
-        static const unsigned COULEURS[4] = {
+        static const unsigned COLOURS[4] = {
             0xFFFF0000u, 0xFF00FF00u, 0xFF0000FFu, 0xFFFFFF00u
         };
-        int noirs = 0, x;
+        int blacks = 0, x;
         st.combine = DKR_COMBINE_SHADE;
         st.texture = 0;
         bk.begin_frame(bk.self, 0x000000);
@@ -215,43 +214,43 @@ int main(void)
         for (i = 0; i < 4; i++) {
             rect(&bk, (float)(100 + i * 50), 100.0f,
                       (float)(100 + (i + 1) * 50), 200.0f,
-                 0, 0, 0, 0, 0.0f, COULEURS[i]);
+                 0, 0, 0, 0, 0.0f, COLOURS[i]);
         }
         bk.present(bk.self);
         if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) > 0) {
             for (x = 100; x < 300; x++) {
-                if (lire(x, 150, rw) == 0u) { noirs++; }
+                if (read_px(x, 150, rw) == 0u) { blacks++; }
             }
-            say("  pixels de fond sur la ligne des quatre rectangles : %d sur 200\n",
-                noirs);
-            check("aucune jointure entre rectangles adjacents", noirs == 0);
-            /* Et le controle negatif : les quatre couleurs doivent bien etre
-               presentes, sans quoi un seul rectangle couvrant tout passerait. */
-            check("et les quatre rectangles sont bien distincts",
-                  lire(120, 150, rw) != lire(170, 150, rw) &&
-                  lire(170, 150, rw) != lire(220, 150, rw) &&
-                  lire(220, 150, rw) != lire(270, 150, rw));
+            say("  background pixels on the line of four rectangles: %d out of 200\n",
+                blacks);
+            check("no seam between adjacent rectangles", blacks == 0);
+            /* And the negative control: the four colours must really be present,
+               without which a single rectangle covering everything would pass. */
+            check("and the four rectangles are indeed distinct",
+                  read_px(120, 150, rw) != read_px(170, 150, rw) &&
+                  read_px(170, 150, rw) != read_px(220, 150, rw) &&
+                  read_px(220, 150, rw) != read_px(270, 150, rw));
         }
     }
 
-    /* --- Le HUD en ecran partage --------------------------------------------- *
+    /* --- The HUD in split screen --------------------------------------------- *
      *
-     * Les rectangles d'interface sont contraints par la fenetre de ciseaux de
-     * E04-S05. On verifie qu'un rectangle plein ecran, restreint au quadrant
-     * d'un joueur, y reste. */
-    say("\n-- le HUD en ecran partage --\n");
+     * The interface rectangles are constrained by E04-S05's scissor window. We
+     * check that a full-screen rectangle, restricted to one player's quadrant,
+     * stays inside it. */
+    say("\n-- the HUD in split screen --\n");
     {
-        static const struct { int joueurs, joueur; const char *nom; } CAS[] = {
-            { 2, 0, "2 joueurs, haut" },
-            { 2, 1, "2 joueurs, bas" },
-            { 4, 0, "4 joueurs, haut-gauche" },
-            { 4, 3, "4 joueurs, bas-droit" },
+        static const struct { int players, player; const char *name; } CASES[] = {
+            { 2, 0, "2 players, top" },
+            { 2, 1, "2 players, bottom" },
+            { 4, 0, "4 players, top-left" },
+            { 4, 3, "4 players, bottom-right" },
         };
         for (i = 0; i < 4; i++) {
             dkr_scissor sc;
-            long peints = 0;
-            int j, attendu;
-            if (!dkr_scissor_for_player(CAS[i].joueurs, CAS[i].joueur, W, H, &sc)) {
+            long painted = 0;
+            int j, expected;
+            if (!dkr_scissor_for_player(CASES[i].players, CASES[i].player, W, H, &sc)) {
                 continue;
             }
             bk.begin_frame(bk.self, 0x000000);
@@ -262,16 +261,17 @@ int main(void)
             bk.set_scissor(bk.self, 0, 0, W, H);
             if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) <= 0) { continue; }
             for (j = 0; j < rw * rh; j++) {
-                if ((g_px[j] & 0x00FFFFFFu) != 0u) { peints++; }
+                if ((g_px[j] & 0x00FFFFFFu) != 0u) { painted++; }
             }
-            attendu = (sc.x1 - sc.x0) * (sc.y1 - sc.y0);
-            say("  %-24s peints %6ld, attendu %6d\n", CAS[i].nom, peints, attendu);
-            check(CAS[i].nom, peints == attendu);
+            expected = (sc.x1 - sc.x0) * (sc.y1 - sc.y0);
+            say("  %-24s painted %6ld, expected %6d\n",
+                CASES[i].name, painted, expected);
+            check(CASES[i].name, painted == expected);
         }
     }
 
     bk.close(bk.self);
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
