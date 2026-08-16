@@ -503,7 +503,9 @@ dkr_win95_verify(DKRWin95Transform)
 # une plage invalide produit une erreur circonscrite plutôt que d'adresser la
 # mémoire de l'hôte. Elle protège contre une ROM modifiée comme contre un bug du
 # portage — la seconde étant la plus probable.
-add_library(win95f3ddkr STATIC "${DKRPORT_ROOT}/platform/render/f3ddkr.c")
+add_library(win95f3ddkr STATIC
+    "${DKRPORT_ROOT}/platform/render/f3ddkr.c"
+    "${DKRPORT_ROOT}/platform/render/texture.c")
 # La chaîne : le décodeur émet désormais, donc il dépend du découpage, qui dépend
 # lui-même de la transformation.
 #  : le decodeur traduit desormais l'etat RDP et le remet au
@@ -882,6 +884,8 @@ add_test(NAME DKRWin95Render
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" render)
 add_test(NAME DKRWin95RdpState
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" rdp)
+add_test(NAME DKRWin95Texture
+         COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" texture)
 add_test(NAME DKRWin95F3DDKR
          COMMAND "${DKR_WIN95_PLATFORM}/tests/run-tests.sh" f3ddkr)
 add_test(NAME DKRWin95Transform

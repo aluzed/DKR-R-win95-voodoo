@@ -2,6 +2,7 @@
  * `docs/research/f3ddkr-commands.md`, le contrat dans `f3ddkr.h`. */
 #include "f3ddkr.h"
 #include "rdp_state.h"
+#include "texture.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -28,6 +29,8 @@
 #define OP_SETCOMBINE     0xFC
 #define MOVEMEM_VIEWPORT  0x80
 #define VIEWPORT_BYTES    16u
+#define OP_SETTILE        0xF5
+#define OP_SETTILESIZE    0xF2
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -497,6 +500,107 @@ static void appliquer_etat(dkr_f3d_context *c)
 }
 
 
+
+/* --- Les textures ---------------------------------------------------------- *
+ *
+ * Trois commandes portent l'information, et **aucune ne suffit seule** :
+ *
+ *     SETTIMG      (0xFD)  format, taille, adresse en RDRAM
+ *     SETTILE      (0xF5)  format et taille de la tuile, enveloppement
+ *     SETTILESIZE  (0xF2)  les dimensions, en virgule fixe 10.2
+ *
+ * Relevé sur la machine, la séquence de DKR :
+ *
+ *     0xFD100000 w1=0x00252D60   RGBA, 16 bits, adresse 0x252D60
+ *     0xF5100000 w1=0x07080200   tuile 7
+ *     0xF3000000 w1=0x077FF100   LoadBlock
+ *     0xF5101000 w1=0x00080200   tuile 0
+ *     0xF2000000 w1=0x0007C0FC   lrs=124, lrt=252 -> 32x64 texels
+ *
+ * On charge à `SETTILESIZE` parce que c'est la dernière des trois : avant elle
+ * les dimensions sont inconnues, et charger sur `SETTIMG` donnerait une texture
+ * de taille inventée. L'ordre est celui du microcode, pas une convention qu'on
+ * choisit.
+ *
+ * La clé de cache réunit adresse, format, taille et dimensions. L'adresse seule
+ * ne suffirait pas : DKR réemploie ses tampons, et deux textures différentes
+ * peuvent partager une adresse d'une image à l'autre. Une clé trop courte ne
+ * plante pas — elle affiche l'ancienne texture, ce qui se remarque tard. */
+static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
+{
+    const unsigned int lrs = (w1 >> 12) & 0xFFFu;
+    const unsigned int lrt = w1 & 0xFFFu;
+    const unsigned int uls = (w0 >> 12) & 0xFFFu;
+    const unsigned int ult = w0 & 0xFFFu;
+    /* 10.2 en virgule fixe, et les deux coins sont **inclus** — comme pour le
+       rectangle plein, et pour la même raison de convention du RDP. */
+    const int largeur = (int)((lrs >> 2) - (uls >> 2)) + 1;
+    const int hauteur = (int)((lrt >> 2) - (ult >> 2)) + 1;
+    unsigned long long cle;
+
+    if (largeur <= 0 || hauteur <= 0) {
+        return;
+    }
+
+    cle = ((unsigned long long)c->timg_address << 24)
+        ^ ((unsigned long long)c->timg_format << 20)
+        ^ ((unsigned long long)c->timg_size   << 18)
+        ^ ((unsigned long long)largeur << 9)
+        ^ (unsigned long long)hauteur;
+
+    if (cle == c->texture_cle && c->render_state.texture != 0) {
+        /* Déjà chargée et encore liée : rien à faire. Sans ce test on
+           reconvertirait la même texture des milliers de fois par image, et sur
+           un Pentium II cela seul suffirait à rendre le portage injouable. */
+        c->state.textures_reutilisees++;
+        return;
+    }
+
+    if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
+                             c->timg_address,
+                             (dkr_n64_format)c->timg_format,
+                             (dkr_n64_size)c->timg_size,
+                             largeur, hauteur, c->texels, &c->state.textures)) {
+        /* Refusée : on **délie** plutôt que de dessiner avec la précédente. Une
+           texture périmée sur une surface est plus déroutante qu'une surface
+           sans texture, parce qu'elle passe pour du rendu. */
+        c->render_state.texture = 0;
+        c->texture_cle = 0;
+        c->etat_sale = 1;
+        return;
+    }
+
+    if (c->backend && c->backend->texture_upload) {
+        dkr_texture_desc d;
+        dkr_texture_handle h;
+        memset(&d, 0, sizeof(d));
+        d.key = cle;
+        d.format = DKR_TEXFMT_RGBA5551;
+        d.width = largeur;
+        d.height = hauteur;
+        d.pixels = c->texels;
+        d.size_bytes = (size_t)largeur * (size_t)hauteur * 2u;
+        h = c->backend->texture_upload(c->backend->self, &d);
+        if (h != 0) {
+            c->render_state.texture = h;
+            c->texture_cle = cle;
+            c->etat_sale = 1;
+            c->state.textures_chargees++;
+        } else {
+            /* Mémoire de texture pleine. C'est E05-S02 qui l'administre ; ici on
+               se contente de ne pas dessiner avec une poignée invalide. */
+            c->render_state.texture = 0;
+            c->texture_cle = 0;
+            c->state.textures_refusees++;
+        }
+    }
+
+    trace(c, "SetTileSize %dx%d %s a 0x%06X", largeur, hauteur,
+          dkr_texture_format_name((dkr_n64_format)c->timg_format,
+                                  (dkr_n64_size)c->timg_size),
+          c->timg_address);
+}
+
 /* --- La fenêtre d'affichage, celle du jeu et non celle qu'on suppose -------- *
  *
  * Jusqu'ici la fenêtre venait du défaut de `dkr_transform_init` — 640x480,
@@ -825,6 +929,20 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                   c->state.color_image_width, w1 & RDRAM_MASK);
             break;
 
+        case OP_SETTEXIMAGE:
+            c->timg_format  = (w0 >> 21) & 0x07u;
+            c->timg_size    = (w0 >> 19) & 0x03u;
+            c->timg_address = w1 & RDRAM_MASK;
+            trace(c, "SetTextureImage %s a 0x%06X",
+                  dkr_texture_format_name((dkr_n64_format)c->timg_format,
+                                          (dkr_n64_size)c->timg_size),
+                  c->timg_address);
+            break;
+
+        case OP_SETTILESIZE:
+            cmd_set_tile_size(c, w0, w1);
+            break;
+
         case OP_MOVEMEM: {
             const unsigned int index = (w0 >> 16) & 0xFFu;
             const unsigned int taille = w0 & 0xFFFFu;
@@ -840,11 +958,12 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         }
 
         case OP_LOADBLOCK:
-        case OP_SETTEXIMAGE:
-            /* Decodees comme commandes, mais leur effet appartient aux etages
-               suivants — textures (E04-S07) et etat RDP (E04-S06). Les compter
-               ici etablit deja que la sequence est juste. */
-            trace(c, "opcode 0x%02X w0=0x%08X w1=0x%08X", opcode, w0, w1);
+            /* `LOADBLOCK` copie la texture de la RDRAM vers la memoire de
+               texture du RDP. Ce portage lit directement en RDRAM — le raccourci
+               assume et documente en tete de `texture.h` — donc la copie n'a
+               rien a faire ici. La commande reste decodee pour que la sequence
+               apparaisse dans la trace. */
+            trace(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
             break;
 
         default: {

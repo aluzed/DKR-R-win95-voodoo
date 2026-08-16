@@ -72,6 +72,11 @@ private:
     unsigned long total_etats_ = 0;
     // Zéro ici signifierait qu'on dessine encore à une échelle inventée.
     unsigned long total_viewports_ = 0;
+    unsigned long total_tex_chargees_ = 0;
+    unsigned long total_tex_reutilisees_ = 0;
+    unsigned long total_tex_refusees_ = 0;
+    unsigned long total_tex_inconnues_ = 0;
+    unsigned long total_tex_hors_ = 0;
     unsigned long total_approches_ = 0;
     unsigned long total_fill_hors_cycle_ = 0;
     // Par catégorie, parce que le total ne dit pas quoi corriger : une adresse

@@ -27,8 +27,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner]" >&2; exit 2 ;;
+  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
+  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -213,13 +213,23 @@ fi
 #
 # Par injection de listes volontairement corrompues. C'est ce qui rend la suite
 # possible sans ROM : une liste corrompue s'ecrit, une vraie se capture.
+if [[ "$suite" == "all" || "$suite" == "texture" ]]; then
+  command -v "$CC" >/dev/null \
+    || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
+  R="$HERE/../../render"
+  "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
+        -o "$tmp/test_texture" "$R/tests/test_texture.c" "$R/texture.c"
+  echo
+  ( cd "$tmp" && "$tmp/test_texture" )
+fi
+
 if [[ "$suite" == "all" || "$suite" == "f3ddkr" ]]; then
   command -v "$CC" >/dev/null \
     || { echo "erreur: aucun compilateur C hote ($CC)" >&2; exit 2; }
   R="$HERE/../../render"
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
         -o "$tmp/test_f3ddkr" "$R/tests/test_f3ddkr.c" "$R/f3ddkr.c" \
-        "$R/clip.c" "$R/transform.c" "$R/rdp_state.c" "$R/combiner.c"
+        "$R/clip.c" "$R/transform.c" "$R/rdp_state.c" "$R/combiner.c" "$R/texture.c"
   echo
   ( cd "$tmp" && "$tmp/test_f3ddkr" )
 fi
@@ -267,7 +277,7 @@ if [[ "$suite" == "all" || "$suite" == "pipeline" ]]; then
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
         -o "$tmp/test_pipeline" "$R/tests/test_pipeline.c" "$R/f3ddkr.c" \
         "$R/clip.c" "$R/transform.c" "$R/software.c" "$R/rdp_state.c" \
-        "$R/combiner.c"
+        "$R/combiner.c" "$R/texture.c"
   echo
   ( cd "$tmp" && "$tmp/test_pipeline" )
 fi

@@ -35,6 +35,7 @@
 #include "backend.h"
 #include "clip.h"
 #include "rdp_state.h"
+#include "texture.h"
 #include "transform.h"
 
 #ifdef __cplusplus
@@ -122,6 +123,12 @@ typedef struct {
        encore avec le défaut, donc à une échelle inventée. */
     unsigned long viewports;
 
+    /* --- Les textures ------------------------------------------------------- */
+    dkr_texture_stats textures;          /* converties, refusees, hors bornes */
+    unsigned long     textures_chargees;    /* remises au backend */
+    unsigned long     textures_reutilisees; /* servies par le cache */
+    unsigned long     textures_refusees;    /* memoire de texture pleine */
+
     /* Combien de fois chaque opcode a été vu.
      *
      * Mille octets pour répondre à une question qu'aucun raisonnement ne tranche :
@@ -175,6 +182,18 @@ typedef struct {
        courante ne marcherait plus dès qu'il la remplace. */
     unsigned int         screen_width;
     unsigned int         screen_height;
+
+    /* L'image de texture courante, telle que `SETTIMG` la decrit. Elle ne suffit
+       pas a charger : les dimensions viennent de `SETTILESIZE`, plus tard. */
+    unsigned int         timg_address;
+    unsigned int         timg_format;
+    unsigned int         timg_size;
+    /* La texture actuellement liee, par sa cle. Zero signifie aucune. */
+    unsigned long long   texture_cle;
+    /* Le tampon de conversion. 256x256 en 5551 : 128 Kio, portes par le contexte
+       plutot qu'alloues par texture — un Pentium II n'a pas les moyens d'un
+       malloc par changement de texture, et il y en a des milliers par seconde. */
+    unsigned short       texels[256 * 256];
 
     /* Mode trace. Sans cet outil, tout diagnostic graphique sur la machine
        cible se fait à l'aveugle — l'écran appartient à la carte 3dfx et l'on ne

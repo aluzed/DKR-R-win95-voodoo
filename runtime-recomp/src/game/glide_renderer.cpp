@@ -161,6 +161,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     for (int i = 0; i < 256; i++) { opcodes_[i] += context_.state.opcodes[i]; }
     total_rects_ += context_.state.rects;
     total_viewports_ += context_.state.viewports;
+    total_tex_chargees_ += context_.state.textures_chargees;
+    total_tex_reutilisees_ += context_.state.textures_reutilisees;
+    total_tex_refusees_ += context_.state.textures_refusees;
+    total_tex_inconnues_ += context_.state.textures.non_prises_en_charge;
+    total_tex_hors_ += context_.state.textures.hors_rdram;
     total_etats_ += context_.state.etats_appliques;
     total_approches_ += context_.state.etats_approches;
     total_fill_hors_cycle_ += context_.state.fill_hors_cycle;
@@ -256,6 +261,16 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      total_etats_, total_approches_, total_fill_hors_cycle_,
                      static_cast<unsigned>(context_.state.cycle_courant),
                      total_viewports_);
+        // Les textures. `chargees` contre `reutilisees` dit si le cache tient —
+        // sans lui on reconvertirait la meme texture des milliers de fois par
+        // image, ce qui suffirait a rendre le portage injouable. `inconnues`
+        // compte les formats indexes, refuses faute de palette : ils sortent en
+        // surfaces sans texture plutot qu'en couleurs arbitraires.
+        std::fprintf(stderr,
+                     "[gfx]   textures: chargees=%lu reutilisees=%lu "
+                     "refusees-tmu=%lu format-inconnu=%lu hors-rdram=%lu\n",
+                     total_tex_chargees_, total_tex_reutilisees_,
+                     total_tex_refusees_, total_tex_inconnues_, total_tex_hors_);
     }
 #else
     (void)task;
