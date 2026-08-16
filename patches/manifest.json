@@ -104,7 +104,7 @@
         },
         {
           "path": "patches/n64-modern-runtime/0025-publish-dp-edge-before-rendering.patch",
-          "sha256": "56eea92b90b18d5b4c214a9714fc4b3eee0e63d6eb8b18bf77a00e99559c2503"
+          "sha256": "1ab193ff1b3bf0dfcd1363ff68641968c183d88fba8cde4522f9d2a06966f916"
         },
         {
           "path": "patches/n64-modern-runtime/0026-commit-the-log-from-the-queue-trace.patch",

@@ -25,8 +25,8 @@ __scHandleRDP, reads curRDPTask == 0 and dereferences null.
 
 That is exactly the state the probe captured at the instant of reception:
 
-    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NUL
-    visee=0x80125FB0 state=0x00000001 flags=0x00000023
+    msg=668 curRSP=0x00000000 curRDP=0x00000000 <== NULL
+    targeted=0x80125FB0 state=0x00000001 flags=0x00000023
 
 curRDPTask null while the targeted task still carries NEEDS_RDP (state = 1).
 Only two paths null curRDPTask, and __scHandleRDP clears NEEDS_RDP when it does.
