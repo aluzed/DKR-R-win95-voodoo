@@ -1,25 +1,24 @@
-/* E05-S05 — trancher entre tampon en Z et tampon en W, par la mesure.
+/* E05-S05 - deciding between the Z buffer and the W buffer, by measurement.
  *
- * Le ticket nomme le risque : « le combat de profondeur en 16 bits ne se
- * manifeste pas sur une scène de test : il se manifeste au loin, sur une piste
- * longue, en mouvement. Il faut le chercher activement, dans les conditions où
- * il apparaît, plutôt que d'attendre qu'il se signale. »
+ * The ticket names the risk: "16-bit depth fighting does not show on a test
+ * scene: it shows far away, on a long track, in motion. It must be sought
+ * actively, under the conditions where it appears, rather than waited for."
  *
- * Ce témoin le cherche activement. La scène n'est pas une scène de test au sens
- * habituel — elle est construite pour être **le pire cas** : deux surfaces
- * quasi coplanaires, très loin, séparées de deux pour mille. C'est exactement la
- * configuration d'une piste de course vue de loin, et c'est là que seize bits de
- * profondeur cèdent.
+ * This witness seeks it actively. The scene is not a test scene in the usual
+ * sense - it is built to be **the worst case**: two nearly coplanar surfaces,
+ * very far away, two parts per thousand apart. That is exactly the configuration
+ * of a race track seen from afar, and that is where sixteen bits of depth give
+ * way.
  *
- * ## Ce qui rend la comparaison honnête
+ * ## What makes the comparison honest
  *
- * Les deux tampons ne lisent pas le même champ du sommet : le mode W consomme
- * `oow`, le mode Z consomme `ooz` sur [0, 65535]. Remplir les deux depuis la
- * même distance, avec une projection perspective réaliste, est la seule façon de
- * comparer les tampons plutôt que deux conventions différentes.
+ * The two buffers do not read the same vertex field: W mode consumes `oow`, Z
+ * mode consumes `ooz` over [0, 65535]. Filling both from the same distance, with
+ * a realistic perspective projection, is the only way to compare the buffers
+ * rather than two different conventions.
  *
- * La distance proche et la distance lointaine sont choisies pour ressembler à
- * une piste : 10 unités devant, 20000 au fond.
+ * The near and far distances are chosen to resemble a track: 10 units in front,
+ * 20000 at the back.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -44,31 +43,31 @@ static void say(const char *fmt, ...)
 
 static void check(const char *what, int ok)
 {
-    say("  %s %s\n", ok ? "ok   " : "ECHEC", what);
+    say("  %s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) { g_fails++; }
 }
 
-#define PROCHE  10.0f
-#define LOINTAIN 20000.0f
+#define NEAR_PLANE  10.0f
+#define FAR_PLANE   20000.0f
 
 static unsigned g_px[640 * 480];
 
-/* La profondeur normalisée d'une distance, par une projection perspective
-   classique. C'est ce que E04-S03 produit, et l'accord entre les deux est un
-   critère à part entière : un désaccord donne un tri globalement faux. */
-static float profondeur_ndc(float w)
+/* The normalised depth of a distance, by a classic perspective projection. This
+   is what E04-S03 produces, and the agreement between the two is a criterion in
+   its own right: a disagreement gives a globally wrong sort. */
+static float depth_ndc(float w)
 {
-    return (LOINTAIN / (LOINTAIN - PROCHE)) * (1.0f - PROCHE / w);
+    return (FAR_PLANE / (FAR_PLANE - NEAR_PLANE)) * (1.0f - NEAR_PLANE / w);
 }
 
 static void quad(dkr_render_backend *bk, float w, float r, float g, float b,
-                 int largeur, int hauteur)
+                 int width, int height)
 {
     dkr_render_vertex v[6];
-    const float xs[6] = { 0, (float)largeur, (float)largeur,
-                          0, (float)largeur, 0 };
-    const float ys[6] = { 0, 0, (float)hauteur, 0, (float)hauteur, (float)hauteur };
-    const float z = profondeur_ndc(w);
+    const float xs[6] = { 0, (float)width, (float)width,
+                          0, (float)width, 0 };
+    const float ys[6] = { 0, 0, (float)height, 0, (float)height, (float)height };
+    const float z = depth_ndc(w);
     int i;
     memset(v, 0, sizeof(v));
     for (i = 0; i < 6; i++) {
@@ -76,20 +75,20 @@ static void quad(dkr_render_backend *bk, float w, float r, float g, float b,
         v[i].r = r; v[i].g = g; v[i].b = b; v[i].a = 255.0f;
         v[i].oow = 1.0f / w;
         v[i].z   = z;
-        /* Le mode Z lit `ooz` sur [0, 65535], le mode W lit `oow`. Remplir les
-           deux depuis la même distance est ce qui rend la comparaison honnête. */
+        /* Z mode reads `ooz` over [0, 65535], W mode reads `oow`. Filling both
+           from the same distance is what makes the comparison honest. */
         v[i].ooz = z * 65535.0f;
     }
     bk->draw_triangles(bk->self, v, 2);
 }
 
-/* Compte les pixels où le lointain a gagné alors qu'il ne devait pas — le
-   combat de profondeur, mesuré plutôt que regardé. */
-static int perdus(int got, unsigned attendu)
+/* Counts the pixels where the far surface won when it should not have - depth
+   fighting, measured rather than looked at. */
+static int lost(int got, unsigned expected)
 {
     int i, n = 0;
     for (i = 0; i < got; i++) {
-        if ((g_px[i] & 0x00FFFFFFu) != attendu) { n++; }
+        if ((g_px[i] & 0x00FFFFFFu) != expected) { n++; }
     }
     return n;
 }
@@ -103,11 +102,12 @@ int main(void)
     int fight_w = -1, fight_z = -1;
 
     g_out = fopen("D:\\DEPTH.TXT", "w");
-    say("tampon en Z ou en W : la mesure, sur le pire cas\n\n");
-    say("  plan proche %.0f, plan lointain %.0f\n", (double)PROCHE, (double)LOINTAIN);
+    say("Z buffer or W buffer: the measurement, on the worst case\n\n");
+    say("  near plane %.0f, far plane %.0f\n",
+        (double)NEAR_PLANE, (double)FAR_PLANE);
 
     dkr_render_backend_glide(&bk);
-    if (!bk.open(bk.self, W, H)) { say("ECHEC ouverture\n"); return 1; }
+    if (!bk.open(bk.self, W, H)) { say("FAILED to open\n"); return 1; }
 
     memset(&st, 0, sizeof(st));
     st.combine = DKR_COMBINE_SHADE;
@@ -115,38 +115,38 @@ int main(void)
     st.depth   = DKR_DEPTH_TEST_AND_WRITE;
     st.cull    = DKR_CULL_NONE;
 
-    /* --- Le pire cas : deux surfaces quasi coplanaires, tres loin ------------ *
+    /* --- The worst case: two nearly coplanar surfaces, very far away --------- *
      *
-     * 5000 et 5010 : deux pour mille d'ecart, a un quart de la distance
-     * maximale. Une piste de course presente en permanence ce genre de couple —
-     * la route et son marquage, un pont et son ombre. */
+     * 5000 and 5010: two parts per thousand apart, at a quarter of the maximum
+     * distance. A race track shows this kind of pair permanently - the road and
+     * its markings, a bridge and its shadow. */
     {
-        static const struct { float loin, pres; const char *nom; } CAS[] = {
-            { 5010.0f, 5000.0f, "2 pour mille a 5000" },
-            { 15030.0f, 15000.0f, "2 pour mille a 15000" },
-            /* Un cas volontairement au-dela de ce que seize bits peuvent tenir :
-               si aucun des deux tampons ne le resout, c'est que la limite est
-               atteinte et non que l'un est meilleur. Une comparaison sans point
-               de saturation ne dit pas ou est le mur. */
-            { 15003.0f, 15000.0f, "0,2 pour mille a 15000" },
+        static const struct { float far_w, near_w; const char *name; } CASES[] = {
+            { 5010.0f, 5000.0f, "2 per thousand at 5000" },
+            { 15030.0f, 15000.0f, "2 per thousand at 15000" },
+            /* A case deliberately beyond what sixteen bits can hold: if neither
+               buffer resolves it, the limit has been reached and not that one is
+               better. A comparison with no saturation point does not say where the
+               wall is. */
+            { 15003.0f, 15000.0f, "0.2 per thousand at 15000" },
         };
         int c;
 
-        /* **Deux images de mise en route, jetees.**
+        /* **Two warm-up frames, thrown away.**
          *
-         * La premiere mesure de ce temoin donnait un resultat impossible : le
-         * tampon en W echouait a 5000 et reussissait a 10000 et 15000, alors que
-         * la precision se degrade avec la distance et ne s'ameliore jamais.
-         * L'anomalie ne frappait que le tout premier cas mesure, ce qui designe
-         * l'etat de la carte a l'ouverture plutot que la profondeur.
+         * This witness's first measurement gave an impossible result: the W buffer
+         * failed at 5000 and succeeded at 10000 and 15000, whereas precision
+         * degrades with distance and never improves. The anomaly struck only the
+         * very first case measured, which points at the card's state on opening
+         * rather than at depth.
          *
-         * Mesurer la premiere image apres l'ouverture d'un contexte, c'est
-         * mesurer une machine qui n'a pas fini de s'installer. */
-        say("\n-- tampon en W --\n");
+         * Measuring the first frame after opening a context is measuring a machine
+         * that has not finished settling in. */
+        say("\n-- W buffer --\n");
         dkr_glide_backend_depth_mode(1);       /* 1 = W */
         {
-            int mise_en_route;
-            for (mise_en_route = 0; mise_en_route < 2; mise_en_route++) {
+            int warmup;
+            for (warmup = 0; warmup < 2; warmup++) {
                 bk.begin_frame(bk.self, 0x000000);
                 bk.set_state(bk.self, &st);
                 quad(&bk, 5010.0f, 255.0f, 0.0f, 0.0f, W, H);
@@ -157,23 +157,23 @@ int main(void)
         for (c = 0; c < 3; c++) {
             bk.begin_frame(bk.self, 0x000000);
             bk.set_state(bk.self, &st);
-            quad(&bk, CAS[c].loin, 255.0f, 0.0f, 0.0f, W, H);   /* rouge, loin */
-            quad(&bk, CAS[c].pres, 0.0f, 255.0f, 0.0f, W, H);   /* vert, pres */
+            quad(&bk, CASES[c].far_w, 255.0f, 0.0f, 0.0f, W, H);  /* red, far */
+            quad(&bk, CASES[c].near_w, 0.0f, 255.0f, 0.0f, W, H);  /* green, near */
             bk.present(bk.self);
             got = dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh);
             {
-                const int n = perdus(got, 0x00FF00u);
-                say("  %-22s : %6d pixels en combat sur %d (%d pour mille)\n",
-                    CAS[c].nom, n, got, got ? (1000 * n / got) : 0);
+                const int n = lost(got, 0x00FF00u);
+                say("  %-26s: %6d fighting pixels out of %d (%d per thousand)\n",
+                    CASES[c].name, n, got, got ? (1000 * n / got) : 0);
                 if (c == 0) { fight_w = n; }
             }
         }
 
-        say("\n-- tampon en Z --\n");
+        say("\n-- Z buffer --\n");
         dkr_glide_backend_depth_mode(0);       /* 0 = Z */
         {
-            int mise_en_route;
-            for (mise_en_route = 0; mise_en_route < 2; mise_en_route++) {
+            int warmup;
+            for (warmup = 0; warmup < 2; warmup++) {
                 bk.begin_frame(bk.self, 0x000000);
                 bk.set_state(bk.self, &st);
                 quad(&bk, 5010.0f, 255.0f, 0.0f, 0.0f, W, H);
@@ -184,37 +184,37 @@ int main(void)
         for (c = 0; c < 3; c++) {
             bk.begin_frame(bk.self, 0x000000);
             bk.set_state(bk.self, &st);
-            quad(&bk, CAS[c].loin, 255.0f, 0.0f, 0.0f, W, H);
-            quad(&bk, CAS[c].pres, 0.0f, 255.0f, 0.0f, W, H);
+            quad(&bk, CASES[c].far_w, 255.0f, 0.0f, 0.0f, W, H);
+            quad(&bk, CASES[c].near_w, 0.0f, 255.0f, 0.0f, W, H);
             bk.present(bk.self);
             got = dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh);
             {
-                const int n = perdus(got, 0x00FF00u);
-                say("  %-22s : %6d pixels en combat sur %d (%d pour mille)\n",
-                    CAS[c].nom, n, got, got ? (1000 * n / got) : 0);
+                const int n = lost(got, 0x00FF00u);
+                say("  %-26s: %6d fighting pixels out of %d (%d per thousand)\n",
+                    CASES[c].name, n, got, got ? (1000 * n / got) : 0);
                 if (c == 0) { fight_z = n; }
             }
         }
 
-        say("\n  verdict : %s\n",
-            (fight_w < fight_z) ? "le tampon en W separe mieux au loin" :
-            (fight_z < fight_w) ? "le tampon en Z separe mieux au loin" :
-                                  "les deux se valent sur ce cas");
-        /* Le controle n'est pas « W gagne » — ce serait presumer du resultat.
-           C'est que l'un des deux resolve reellement le cas le plus proche, sans
-           quoi seize bits ne suffiraient a rien et il faudrait revoir la plage
-           de profondeur plutot que le choix de tampon. */
-        check("au moins un des deux tampons resout le cas a 5000",
+        say("\n  verdict: %s\n",
+            (fight_w < fight_z) ? "the W buffer separates better at distance" :
+            (fight_z < fight_w) ? "the Z buffer separates better at distance" :
+                                  "the two are equal on this case");
+        /* The check is not "W wins" - that would presume the result. It is that
+           one of the two really resolves the closest case, without which sixteen
+           bits would be good for nothing and the depth range would have to be
+           reconsidered rather than the buffer choice. */
+        check("at least one of the two buffers resolves the case at 5000",
               (fight_w >= 0 && fight_w * 100 < 307200) ||
               (fight_z >= 0 && fight_z * 100 < 307200));
     }
 
-    /* --- L'accord avec E04-S03 ---------------------------------------------- *
+    /* --- Agreement with E04-S03 ---------------------------------------------- *
      *
-     * La plage de profondeur doit coincider avec ce que la chaine produit. Un
-     * desaccord ne se voit pas sur une surface isolee : il donne un tri
-     * globalement faux, donc un decor qui passe devant un autre — tres visible,
-     * et attribue au decodeur plutot qu'a la plage. */
+     * The depth range must coincide with what the chain produces. A disagreement
+     * does not show on an isolated surface: it gives a globally wrong sort, hence
+     * one piece of scenery passing in front of another - very visible, and blamed
+     * on the decoder rather than on the range. */
     dkr_glide_backend_depth_mode(1);
     {
         bk.begin_frame(bk.self, 0x000000);
@@ -223,15 +223,15 @@ int main(void)
         quad(&bk, 20.0f,     0.0f, 0.0f, 255.0f, W, H);
         bk.present(bk.self);
         got = dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh);
-        say("\n-- accord de la plage avec E04-S03 --\n");
-        say("  profondeur normalisee : a 20 = %.5f, a 15000 = %.5f\n",
-            (double)profondeur_ndc(20.0f), (double)profondeur_ndc(15000.0f));
-        check("sur toute la plage, le proche masque le lointain",
-              perdus(got, 0x0000FFu) * 100 < got);
+        say("\n-- agreement of the range with E04-S03 --\n");
+        say("  normalised depth: at 20 = %.5f, at 15000 = %.5f\n",
+            (double)depth_ndc(20.0f), (double)depth_ndc(15000.0f));
+        check("over the whole range, the near hides the far",
+              lost(got, 0x0000FFu) * 100 < got);
     }
 
     bk.close(bk.self);
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
