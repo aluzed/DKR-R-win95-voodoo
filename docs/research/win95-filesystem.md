@@ -27,10 +27,10 @@ faire :
 Le détail des dix-sept :
 
 ```
-BOUCHON  CreateFileW  DeleteFileW  GetDiskFreeSpaceExW  GetFileAttributesW
+STUB     CreateFileW  DeleteFileW  GetDiskFreeSpaceExW  GetFileAttributesW
          GetFullPathNameW  GetTempPathW  GetVolumeInformationW  LoadLibraryW
          MoveFileExW  RemoveDirectoryW
-ABSENT   CreateHardLinkW  FindFirstVolumeW  FindNextVolumeW  FindVolumeClose
+MISSING  CreateHardLinkW  FindFirstVolumeW  FindNextVolumeW  FindVolumeClose
          GetFileSizeEx  MSVCRT:_fstat64  MSVCRT:_wstat64
 ```
 

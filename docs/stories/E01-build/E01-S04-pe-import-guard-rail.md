@@ -35,7 +35,7 @@ cette information — elle est perdue au lien. `--objects` la reconstitue en
 relisant les objets avec `nm`. Sur l'épreuve :
 
 ```
-ABSENT  KERNEL32.DLL:InitializeConditionVariable  <- import_canary.c.obj
+MISSING KERNEL32.DLL:InitializeConditionVariable  <- import_canary.c.obj
 ```
 
 **Le contrôle est éprouvé par injection, à deux niveaux**, comme celui du jeu
