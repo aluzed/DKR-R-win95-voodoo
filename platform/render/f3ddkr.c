@@ -39,6 +39,43 @@
    l'éclairer — et coûte cher sur une machine de 1998. */
 #define MAX_LOGGED_REJECTS   64
 
+/* --- Les commandes reconnues dont l'effet n'est pas encore branché ---------- *
+ *
+ * Le décodeur n'implémentait que sept opcodes et **arrêtait la liste** sur tout
+ * le reste. C'était le bon choix tant qu'il ne lisait que des display lists
+ * fabriquées : après un opcode vraiment inconnu le flux est désynchronisé, et
+ * poursuivre inventerait des commandes.
+ *
+ * Face aux listes du jeu, ce choix rendait le décodeur inutile : mesuré sur la
+ * machine, **600 listes, 3580 commandes, zéro triangle** — chacune s'arrêtait
+ * sur son premier `0xE9` ou `0xB6`, c'est-à-dire une synchronisation RDP et un
+ * effacement de mode géométrique. La géométrie était toujours *après*.
+ *
+ * Les deux familles ci-dessous sont celles du microcode F3D et du RDP, toutes en
+ * commandes de huit octets, donc toutes enjambables sans ambiguïté :
+ *
+ *     0xB0..0xBF   immédiates F3D — RDPHALF, TRI2, modes géométriques, autres
+ *                  modes, texture, POPMTX, CULLDL
+ *     0xE4..0xFF   RDP — synchronisations, ciseaux, tuiles, couleurs, combineur
+ *
+ * La borne basse était d'abord posée à 0xB6, par lecture de la table des
+ * opcodes plutôt que par mesure. La machine a répondu `0xB4` — `G_RDPHALF_1` —
+ * une fois par liste, six cents fois. La famille commence bien à 0xB0, et
+ * l'écart tenait à ce que la table consultée ne listait que la partie du jeu de
+ * commandes qui a un effet géométrique.
+ *
+ * Les énumérer plutôt que de tout accepter garde la détection de
+ * désynchronisation : un opcode hors de ces plages arrête toujours la liste.
+ * C'est la propriété qu'on aurait perdue en remplaçant simplement le rejet par
+ * un `break`, et elle vaut d'être gardée — c'est elle qui a permis de voir que
+ * la disposition mémoire était juste, puisque *aucun* rejet d'adresse n'est
+ * apparu. */
+static int opcode_effet_differe(unsigned int opcode)
+{
+    return (opcode >= 0xB0u && opcode <= 0xBFu) ||
+           (opcode >= 0xE4u && opcode <= 0xFFu);
+}
+
 const char *dkr_f3d_reject_text(dkr_f3d_reject r)
 {
     switch (r) {
@@ -390,6 +427,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         address += 8u;
         executed++;
         c->state.commands++;
+        c->state.opcodes[opcode]++;
 
         switch (opcode) {
         case OP_DMAOFFSETS: cmd_dma_offsets(c, w0, w1); break;
@@ -488,10 +526,22 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         default: {
             char d[48];
+            if (opcode_effet_differe(opcode)) {
+                /* Reconnue, enjambee. Comptee a part de `commands` : ce chiffre
+                   dit **quelle part de l'image on ignore encore**, et c'est la
+                   mesure qui manquerait le plus quand le decor sortira faux. */
+                c->state.deferred++;
+                if (c->state.deferred <= MAX_LOGGED_REJECTS) {
+                    trace(c, "differe 0x%02X w0=0x%08X w1=0x%08X", opcode, w0, w1);
+                }
+                break;
+            }
             sprintf(d, "0x%02X a 0x%06X", opcode, address - 8u);
             reject(c, DKR_F3D_REJECT_OPCODE, d);
-            /* On s'arrete : apres un opcode inconnu, le flux est probablement
-               desynchronise et poursuivre inventerait des commandes. */
+            /* On s'arrete : apres un opcode vraiment inconnu, le flux est
+               probablement desynchronise et poursuivre inventerait des
+               commandes. La detection subsiste precisement parce que les
+               familles connues sont enumerees plutot que tout accepte. */
             running = 0;
             break;
         }

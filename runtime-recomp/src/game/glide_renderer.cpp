@@ -25,6 +25,42 @@ constexpr unsigned kSnapshotBytes = 0x800000u;
 // que ce portage ouvre pour l'instant.
 constexpr int kWidth = 640;
 constexpr int kHeight = 480;
+
+// La trace du décodeur, bornée.
+//
+// Sans elle on lit « un rejet par liste » et l'on ne sait pas lequel : le
+// compteur dit qu'il y a un problème, la trace dit lequel. Elle est bornée
+// parce que le journal part sur une disquette émulée, et parce que les
+// premières occurrences suffisent — un rejet qui se répète six cents fois se
+// diagnostique sur la première.
+// **Deux budgets, pas un.**
+//
+// Un budget unique a déjà coûté un aller-retour : les commandes différées, bien
+// plus nombreuses, l'épuisaient avant qu'un seul rejet n'ait été écrit. Le
+// journal montrait alors « 589 rejets d'opcode » sans dire lequel — le compteur
+// disait qu'il y avait un problème, et la trace, censée dire lequel, avait été
+// dépensée sur du bruit.
+//
+// Le rejet est ce qu'on cherche ; le reste est du contexte. Ils ne peuvent pas
+// puiser au même seau.
+unsigned g_trace_rejets = 24;
+unsigned g_trace_contexte = 24;
+
+bool commence_par(const char* ligne, const char* prefixe) {
+    while (*prefixe != '\0') {
+        if (*ligne != *prefixe) { return false; }
+        ligne++;
+        prefixe++;
+    }
+    return true;
+}
+
+void trace_decodeur(void*, const char* ligne) {
+    unsigned* seau = commence_par(ligne, "REJET") ? &g_trace_rejets : &g_trace_contexte;
+    if (*seau == 0) { return; }
+    (*seau)--;
+    std::fprintf(stderr, "[gfx][f3d] %s\n", ligne);
+}
 #endif
 
 } // namespace
@@ -85,6 +121,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // La disposition de librecomp, entrelacée par XOR-3. Sans ce drapeau le
     // décodeur lirait des opcodes plausibles à des adresses absurdes.
     context_.rdram_native = 1;
+    context_.trace = trace_decodeur;
     dkr_transform_set_viewport(&context_.transform,
                                static_cast<float>(width_) * 0.5F,
                                -static_cast<float>(height_) * 0.5F,
@@ -97,6 +134,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 
     backend_.present(backend_.self);
 
+    for (int i = 0; i < DKR_F3D_REJECT_COUNT_MAX; i++) {
+        rejects_by_kind_[i] += context_.state.rejects[i];
+    }
+    for (int i = 0; i < 256; i++) { opcodes_[i] += context_.state.opcodes[i]; }
+    total_deferred_ += context_.state.deferred;
     total_commands_ += context_.state.commands;
     total_triangles_ += context_.state.triangles;
     total_emitted_ += context_.state.emitted;
@@ -119,6 +161,45 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "[gfx] liste=%llu cmd=%lu tri=%lu emis=%lu rejets=%lu\n",
                      static_cast<unsigned long long>(index), total_commands_,
                      total_triangles_, total_emitted_, total_rejects_);
+        // Le total de rejets ne dit pas quoi corriger : une adresse hors RDRAM
+        // accuse l'adressage, un opcode inconnu accuse le décodage, un index de
+        // sommet accuse une commande manquée en amont. Les compter séparément
+        // est ce qui transforme « ça rejette » en une piste.
+        std::fprintf(stderr,
+                     "[gfx]   differees=%lu | adresse=%lu nombre=%lu index=%lu "
+                     "profondeur=%lu opcode=%lu\n",
+                     total_deferred_,
+                     rejects_by_kind_[DKR_F3D_REJECT_ADDRESS],
+                     rejects_by_kind_[DKR_F3D_REJECT_COUNT],
+                     rejects_by_kind_[DKR_F3D_REJECT_INDEX],
+                     rejects_by_kind_[DKR_F3D_REJECT_DEPTH],
+                     rejects_by_kind_[DKR_F3D_REJECT_OPCODE]);
+        // Les huit opcodes les plus fréquents, par ordre décroissant. Huit
+        // suffisent : la distribution est très inégale, et ce qu'on cherche est
+        // ce qui domine l'image, pas la queue.
+        {
+            char ligne[160];
+            int pris[8] = {0};
+            int n = 0;
+            std::size_t ecrit = 0;
+            ligne[0] = '\0';
+            for (n = 0; n < 8; n++) {
+                int meilleur = -1;
+                for (int op = 0; op < 256; op++) {
+                    bool deja = false;
+                    for (int k = 0; k < n; k++) { deja = deja || (pris[k] == op); }
+                    if (deja || opcodes_[op] == 0) { continue; }
+                    if (meilleur < 0 || opcodes_[op] > opcodes_[meilleur]) { meilleur = op; }
+                }
+                if (meilleur < 0) { break; }
+                pris[n] = meilleur;
+                ecrit += static_cast<std::size_t>(std::snprintf(
+                    ligne + ecrit, sizeof(ligne) - ecrit, " %02X:%lu",
+                    static_cast<unsigned>(meilleur), opcodes_[meilleur]));
+                if (ecrit >= sizeof(ligne) - 12) { break; }
+            }
+            std::fprintf(stderr, "[gfx]   opcodes%s\n", ligne);
+        }
     }
 #else
     (void)task;

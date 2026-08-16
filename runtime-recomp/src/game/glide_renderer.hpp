@@ -62,6 +62,18 @@ private:
     unsigned long total_triangles_ = 0;
     unsigned long total_emitted_ = 0;
     unsigned long total_rejects_ = 0;
+    // Commandes reconnues dont l'effet n'est pas encore branché : la part de
+    // l'image que ce portage ignore encore, et donc ce qui reste à faire.
+    unsigned long total_deferred_ = 0;
+    // Par catégorie, parce que le total ne dit pas quoi corriger : une adresse
+    // hors RDRAM accuse l'adressage, un opcode inconnu accuse le décodage, un
+    // index de sommet accuse une commande manquée en amont.
+    unsigned long rejects_by_kind_[DKR_F3D_REJECT_COUNT_MAX] = {0};
+    // De quoi une image de DKR est faite, opcode par opcode. C'est ce qui dit
+    // quoi implémenter ensuite, plutôt qu'une table du microcode : celle-ci
+    // décrit ce que le microcode peut émettre, l'histogramme ce que ce jeu
+    // émet vraiment.
+    unsigned long opcodes_[256] = {0};
 #endif
 };
 

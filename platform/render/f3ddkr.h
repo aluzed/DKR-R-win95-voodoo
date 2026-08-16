@@ -87,6 +87,23 @@ typedef struct {
     unsigned long culled;
     unsigned long clipped_away;
     unsigned long clip_split;      /* triangles devenus deux */
+
+    /* Commandes reconnues mais dont l'effet n'est pas encore branché — modes
+       géométriques, état RDP, textures. Comptées à part de `commands` parce que
+       ce chiffre répond à une question différente : non pas « la séquence est-
+       elle juste » mais **quelle part de l'image est encore ignorée**. C'est la
+       mesure qui manquera le plus quand le décor sortira faux plutôt
+       qu'absent. */
+    unsigned long deferred;
+
+    /* Combien de fois chaque opcode a été vu.
+     *
+     * Mille octets pour répondre à une question qu'aucun raisonnement ne tranche :
+     * **de quoi une image de DKR est-elle faite ?** Sans cela on décide quoi
+     * implémenter d'après une table d'opcodes, c'est-à-dire d'après ce que le
+     * microcode *peut* émettre plutôt que ce que ce jeu *émet*. Les deux ont déjà
+     * divergé une fois cette session, sur la borne basse de la famille F3D. */
+    unsigned long opcodes[256];
 } dkr_f3d_state;
 
 /* --- Le contexte ----------------------------------------------------------- */
