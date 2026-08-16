@@ -1,29 +1,28 @@
-/* E05-S03 — l'écart de chaque configuration, mesuré sur la carte.
+/* E05-S03 - each configuration's deviation, measured on the card.
  *
- * Le ticket met en garde : « la tentation sera de traiter les 33 configurations
- * une par une jusqu'à ce que ça ressemble, sans mesure. L'écart visuel se cumule
- * alors silencieusement, et le rendu final est diffusément faux sans qu'aucune
- * erreur ne soit imputable. » Ce témoin est la réponse à cette mise en garde.
+ * The ticket warns: "the temptation will be to handle the 33 configurations one
+ * by one until it looks about right, without measuring. The visual deviation then
+ * accumulates silently, and the final rendering is diffusely wrong without any
+ * error being attributable." This witness is the answer to that warning.
  *
- * ## L'oracle est la formule, pas un second programme
+ * ## The oracle is the formula, not a second program
  *
- * Le ticket prévoit de comparer au rastériseur de référence. On compare ici
- * directement à `(a - b) * c + d`, évaluée par `dkr_combiner_eval_all`. Ce n'est
- * pas un raccourci mais un renforcement : comparer deux programmes ne fait que
- * déplacer la question de savoir lequel a raison, alors qu'une formule courte
- * sur des entrées constantes a une réponse que l'on peut poser à la main.
+ * The ticket plans to compare against the reference rasteriser. Here we compare
+ * directly against `(a - b) * c + d`, evaluated by `dkr_combiner_eval_all`. That
+ * is not a shortcut but a strengthening: comparing two programs only moves the
+ * question of which one is right, whereas a short formula on constant inputs has
+ * an answer one can work out by hand.
  *
- * Le rastériseur reste l'oracle pour la géométrie et l'interpolation, où il n'y
- * a pas de forme close. Ici il n'y en a pas besoin.
+ * The rasteriser remains the oracle for geometry and interpolation, where there
+ * is no closed form. Here there is no need for it.
  *
- * ## Pourquoi des couleurs constantes partout
+ * ## Why constant colours everywhere
  *
- * La scène est faite pour qu'**aucune interpolation n'intervienne** : un
- * quadrilatère plein écran, tous les sommets de la même couleur, une texture à
- * quatre aplats. Chaque pixel lu a donc une valeur analytique exacte, et l'écart
- * mesuré ne peut venir que du combineur. Mélanger l'interpolation à cette mesure
- * rendrait tout écart inattribuable — précisément ce contre quoi le ticket met
- * en garde.
+ * The scene is made so that **no interpolation intervenes**: a full-screen quad,
+ * every vertex the same colour, a flat texture. Every pixel read therefore has an
+ * exact analytical value, and the measured deviation can only come from the
+ * combiner. Mixing interpolation into this measurement would make any deviation
+ * unattributable - precisely what the ticket warns against.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -47,12 +46,11 @@ static void say(const char *fmt, ...)
     if (g_out) { fputs(line, g_out); fflush(g_out); }
 }
 
-/* --- Les entrées, toutes constantes et choisies pour être distinctes -------- *
+/* --- The inputs, all constant and chosen to be distinct ---------------------- *
  *
- * Des valeurs proches se confondraient sous la quantification 565 ; des valeurs
- * extrêmes (0 et 255) masqueraient les erreurs d'échelle, un facteur faux ne se
- * voyant pas quand il multiplie zéro. On prend donc des valeurs moyennes et
- * bien séparées. */
+ * Close values would merge under 565 quantisation; extreme values (0 and 255)
+ * would hide scale errors, a wrong factor not showing when it multiplies zero. So
+ * we take middling, well-separated values. */
 #define TW 64
 #define TH 64
 static unsigned short g_texture[TW * TH];
@@ -60,13 +58,13 @@ static unsigned short g_texture[TW * TH];
 static const float TEXEL[4]  = { 200.0f, 100.0f,  50.0f, 128.0f };
 static const float SHADE[4]  = { 128.0f, 192.0f,  64.0f, 255.0f };
 static const float PRIM[4]   = { 255.0f,  32.0f,  96.0f, 200.0f };
-static const float ENVI[4]   = {  16.0f, 224.0f, 160.0f,  64.0f };
+static const float ENV[4]    = {  16.0f, 224.0f, 160.0f,  64.0f };
 
 static void build_texture(void)
 {
-    /* Un aplat unique : la mesure porte sur le combineur, pas sur
-       l'échantillonnage. Le témoin de texture (E05-S02) a déjà établi que la
-       lecture est correcte. */
+    /* A single flat colour: the measurement bears on the combiner, not on
+       sampling. The texture witness (E05-S02) has already established that the
+       read is correct. */
     const unsigned short c = (unsigned short)
         (0x8000u | (((unsigned)TEXEL[0] >> 3) << 10) |
                    (((unsigned)TEXEL[1] >> 3) <<  5) |
@@ -75,17 +73,17 @@ static void build_texture(void)
     for (i = 0; i < TW * TH; i++) { g_texture[i] = c; }
 }
 
-/* La texture est en 1555 : le texel que la carte lit n'est pas exactement celui
-   qu'on a voulu écrire. L'oracle doit voir **ce que la carte voit**, sans quoi
-   l'on mesurerait la quantification de la texture et non le combineur. */
-static void texel_quantifie(float out[4])
+/* The texture is in 1555: the texel the card reads is not exactly the one we
+   meant to write. The oracle must see **what the card sees**, without which we
+   would measure the texture's quantisation and not the combiner. */
+static void quantised_texel(float out[4])
 {
     int i;
     for (i = 0; i < 3; i++) {
         const unsigned q = ((unsigned)TEXEL[i]) >> 3;
         out[i] = (float)((q << 3) | (q >> 2));
     }
-    out[3] = 255.0f;   /* un bit d'alpha, mis a un */
+    out[3] = 255.0f;   /* one alpha bit, set to one */
 }
 
 static void draw_quad(dkr_render_backend *bk, int w, int h)
@@ -119,14 +117,14 @@ static unsigned pack(const float c[4])
     return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
-/* Le combineur de Glide multiplie en 0..255 et **tronque**.
+/* Glide's combiner multiplies in 0..255 and **truncates**.
  *
- * Mesure : une constante de 32 ressort a 28, une de 96 a 90. Le facteur vaut
- * 255/256 et la troncature coute un pas de quantification. Ce n'est pas une
- * erreur de traduction, c'est le materiel ; ne pas le modeliser ferait porter a
- * chaque configuration un ecart systematique de huit a neuf unites, qui
- * masquerait les vrais ecarts en les noyant dans un bruit de fond. */
-static unsigned tronque_glide(unsigned c)
+ * Measured: a constant of 32 comes back as 28, one of 96 as 90. The factor is
+ * 255/256 and the truncation costs one quantisation step. This is not a
+ * translation error, it is the hardware; not modelling it would make every
+ * configuration carry a systematic deviation of eight or nine units, which would
+ * mask the real deviations by drowning them in a background noise. */
+static unsigned glide_truncate(unsigned c)
 {
     unsigned out = 0;
     int i;
@@ -137,8 +135,8 @@ static unsigned tronque_glide(unsigned c)
     return out;
 }
 
-/* Quantifie comme le tampon d'image de la carte, pour ne pas compter la
-   conversion 565 comme un écart du combineur. */
+/* Quantises like the card's frame buffer, so as not to count the 565 conversion
+   as a deviation of the combiner. */
 static unsigned q565(unsigned c)
 {
     const unsigned r = ((c >> 16) & 0xFF) >> 3;
@@ -149,15 +147,15 @@ static unsigned q565(unsigned c)
             ((b << 3) | (b >> 2));
 }
 
-static int ecart(unsigned a, unsigned b)
+static int deviation(unsigned a, unsigned b)
 {
-    int pire = 0, i;
+    int worst = 0, i;
     for (i = 0; i < 3; i++) {
         int d = (int)((a >> (i * 8)) & 0xFF) - (int)((b >> (i * 8)) & 0xFF);
         if (d < 0) { d = -d; }
-        if (d > pire) { pire = d; }
+        if (d > worst) { worst = d; }
     }
-    return pire;
+    return worst;
 }
 
 int main(void)
@@ -167,16 +165,16 @@ int main(void)
     dkr_texture_handle handle;
     const int W = 640, H = 480;
     int i, n, rw = 0, rh = 0;
-    int pire_exacte = 0;
-    const char *pire_nom = "(aucune)";
+    int worst_exact = 0;
+    const char *worst_name = "(none)";
 
     g_out = fopen("D:\\COMBINER.TXT", "w");
-    say("ecart de chaque configuration de combineur, mesure sur la carte\n\n");
+    say("deviation of each combiner configuration, measured on the card\n\n");
 
     build_texture();
     dkr_render_backend_glide(&bk);
     if (!bk.open(bk.self, W, H)) {
-        say("ECHEC : la carte ne s'ouvre pas\n");
+        say("FAILED: the card will not open\n");
         if (g_out) { fclose(g_out); }
         return 1;
     }
@@ -189,7 +187,7 @@ int main(void)
     desc.pixels = g_texture; desc.size_bytes = sizeof(g_texture);
     handle = bk.texture_upload(bk.self, &desc);
     if (!handle) {
-        say("ECHEC : la texture ne se charge pas\n");
+        say("FAILED: the texture will not upload\n");
         bk.close(bk.self);
         if (g_out) { fclose(g_out); }
         return 1;
@@ -208,80 +206,80 @@ int main(void)
     }
 
     n = dkr_cc_table_count();
-    say("%-34s %-12s %6s %6s %s\n",
-        "configuration", "categorie", "attendu", "obtenu", "ecart");
+    say("%-34s %-12s %8s %8s %s\n",
+        "configuration", "category", "expected", "got", "deviation");
 
     for (i = 0; i < n; i++) {
         const dkr_cc_entry *e = dkr_cc_table_at(i);
         dkr_combiner_inputs in;
         dkr_combiner comb;
-        float attendu[4];
-        unsigned constante, ca, cb;
+        float expected[4];
+        unsigned constant, ca, cb;
         int d;
 
         memset(&in, 0, sizeof(in));
-        texel_quantifie(in.texel0);
+        quantised_texel(in.texel0);
         memcpy(in.texel1,      TEXEL, sizeof(in.texel1));
         memcpy(in.primitive,   PRIM,  sizeof(in.primitive));
         memcpy(in.shade,       SHADE, sizeof(in.shade));
-        memcpy(in.environment, ENVI,  sizeof(in.environment));
+        memcpy(in.environment, ENV,   sizeof(in.environment));
 
         memset(&comb, 0, sizeof(comb));
         comb.rgb[0]   = e->rgb[0];   comb.rgb[1]   = e->rgb[1];
         comb.alpha[0] = e->alpha[0]; comb.alpha[1] = e->alpha[1];
-        dkr_combiner_eval_all(&comb, e->cycle, &in, attendu);
+        dkr_combiner_eval_all(&comb, e->cycle, &in, expected);
 
-        /* Le registre constant reçoit ce que la table a décidé. C'est là que se
-           lit le mur : une configuration marquée `LES_DEUX` ne peut pas être
-           servie, et son écart le dira. */
-        constante = (e->constant == DKR_CONST_PRIMITIVE) ? pack(PRIM)
-                  : (e->constant == DKR_CONST_ENVIRONMENT) ? pack(ENVI)
-                  : 0xFFFFFFFFu;
+        /* The constant register receives what the table decided. That is where the
+           wall shows: a configuration marked `BOTH` cannot be served, and its
+           deviation will say so. */
+        constant = (e->constant == DKR_CONST_PRIMITIVE) ? pack(PRIM)
+                 : (e->constant == DKR_CONST_ENVIRONMENT) ? pack(ENV)
+                 : 0xFFFFFFFFu;
 
         dkr_glide_backend_bind(handle);
-        dkr_glide_backend_set_recipe(&e->setup, constante);
+        dkr_glide_backend_set_recipe(&e->setup, constant);
 
         bk.begin_frame(bk.self, 0x000000);
         dkr_glide_backend_bind(handle);
-        dkr_glide_backend_set_recipe(&e->setup, constante);
+        dkr_glide_backend_set_recipe(&e->setup, constant);
         draw_quad(&bk, W, H);
         bk.present(bk.self);
 
         if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) <= 0) {
-            say("  %-32s relecture impossible\n", e->name);
+            say("  %-32s cannot be read back\n", e->name);
             continue;
         }
-        ca = q565(tronque_glide(pack(attendu) & 0x00FFFFFFu));
+        ca = q565(glide_truncate(pack(expected) & 0x00FFFFFFu));
         cb = g_pixels[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)] & 0x00FFFFFFu;
-        d  = ecart(ca, cb);
+        d  = deviation(ca, cb);
 
-        say("%-34s %-12s %06X %06X %5d %s\n",
+        say("%-34s %-12s   %06X   %06X %5d %s\n",
             e->name, dkr_cc_category_text(e->category), ca, cb, d,
-            (e->category == DKR_CC_EXACT && d > 8) ? "<-- EXACTE MAIS FAUSSE" : "");
+            (e->category == DKR_CC_EXACT && d > 8) ? "<-- EXACT BUT WRONG" : "");
 
-        /* **Le contrôle qui compte.** Une configuration déclarée exacte doit
-           l'être : au-delà de la quantification, elle a été mal classée, et la
-           table ment. Les catégories `multipasse` et `approchee` annoncent au
-           contraire un écart — le mesurer est leur raison d'être, et il est
-           rapporté sans être compté en échec. */
-        if (e->category == DKR_CC_EXACT && d > pire_exacte) {
-            pire_exacte = d;
-            pire_nom = e->name;
+        /* **The check that counts.** A configuration declared exact must be so:
+           beyond the quantisation, it has been misclassified and the table lies.
+           The `multipass` and `approximate` categories announce a deviation on the
+           contrary - measuring it is their reason for being, and it is reported
+           without being counted as a failure. */
+        if (e->category == DKR_CC_EXACT && d > worst_exact) {
+            worst_exact = d;
+            worst_name = e->name;
         }
     }
 
-    say("\n  pire ecart parmi les configurations declarees exactes : %d (%s)\n",
-        pire_exacte, pire_nom);
-    if (pire_exacte > 8) {
-        say("  ECHEC : une configuration declaree exacte ne l'est pas\n");
+    say("\n  worst deviation among the configurations declared exact: %d (%s)\n",
+        worst_exact, worst_name);
+    if (worst_exact > 8) {
+        say("  FAILED: a configuration declared exact is not\n");
         g_fails++;
     } else {
-        say("  ok : toutes les configurations exactes le sont, "
-            "a la quantification pres\n");
+        say("  ok: every exact configuration is exact, "
+            "to within the quantisation\n");
     }
 
     bk.close(bk.self);
-    say("\n%d echec(s)\n", g_fails);
+    say("\n%d failure(s)\n", g_fails);
     if (g_out) { fclose(g_out); }
     return g_fails != 0;
 }
