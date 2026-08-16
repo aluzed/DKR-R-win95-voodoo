@@ -1,116 +1,114 @@
-# L'oracle confronté au matériel
+# The oracle confronted with the hardware
 
-Mesuré le 14 août 2026 sur la machine d'épreuve, par
+Measured on 14 August 2026 on the test machine, by
 `platform/render/tests/test_compare.c` (`COMPARE.EXE`).
 
-## Ce que la confrontation a établi
+## What the confrontation established
 
-La même scène synthétique traverse deux fois la chaîne complète — décodeur,
-transformation, découpage, backend — d'abord vers le rastériseur de référence,
-puis vers la Voodoo 2, dont le tampon d'image est relu.
+The same synthetic scene passes twice through the complete chain — decoder,
+transformation, clipping, backend — first towards the reference rasteriser, then
+towards the Voodoo 2, whose frame buffer is read back.
 
-    triangles emis : logiciel 4, carte 4
-    surface peinte : logiciel 94848, carte 94848 (0% d'ecart)
-    pixels franchement differents : 0 sur 307200
-    pire ecart par canal sur toute l'image : 9
+    triangles emitted: software 4, card 4
+    painted area: software 94848, card 94848 (0% deviation)
+    plainly differing pixels: 0 out of 307200
+    worst per-channel deviation over the whole image: 9
 
-Le pire écart vaut **9 sur 255** : un pas de quantification du rouge (8) plus un
-du vert (4), arrondis différemment. 77,45 % des pixels sont strictement
-identiques. Il ne subsiste aucune divergence de géométrie, de profondeur ni de
-couleur.
+The worst deviation is **9 out of 255**: one quantisation step of red (8) plus one
+of green (4), rounded differently. 77.45 % of the pixels are strictly identical.
+No divergence of geometry, of depth or of colour remains.
 
-Ce n'est pas une preuve que le rendu est *juste* — il faudra le jeu pour cela.
-C'est une preuve que deux implémentations indépendantes de la même
-spécification tombent d'accord, ce qui est la seule vérification disponible sans
-ROM, et celle qui attrape la classe d'erreurs la plus coûteuse : celles où chaque
-étage se déclare satisfait en produisant autre chose que ce qu'il annonce.
+That is not proof that the rendering is *right* — the game will be needed for
+that. It is proof that two independent implementations of the same specification
+agree, which is the only verification available without a ROM, and the one that
+catches the costliest class of errors: those where every stage declares itself
+satisfied while producing something other than what it announces.
 
-## Le point n'était pas acquis : la première mesure divergeait sur 24 % de l'image
+## The point was not settled: the first measurement diverged over 24 % of the image
 
-Trois défauts ont été trouvés, tous **dans l'oracle**, aucun dans la carte. C'est
-le sens de l'exercice : le rastériseur de référence est le composant que
-personne ne peut vérifier autrement.
+Three defects were found, all **in the oracle**, none in the card. That is the
+point of the exercise: the reference rasteriser is the component nobody can check
+any other way.
 
-### 1. La couleur était interpolée avec correction perspective
+### 1. The colour was interpolated with perspective correction
 
-Le rastériseur divisait `r`, `g`, `b`, `a` par `w` comme il le fait — à juste
-titre — pour `s` et `t`. Ni Glide 2 ni le RDP ne corrigent la couleur :
-`GrVertex.r/g/b/a` sont itérés en espace écran.
+The rasteriser divided `r`, `g`, `b`, `a` by `w` as it does — rightly — for `s`
+and `t`. Neither Glide 2 nor the RDP corrects the colour: `GrVertex.r/g/b/a` are
+iterated in screen space.
 
-Sur une surface ordinaire, les deux interpolations diffèrent de quelques unités
-et l'erreur reste invisible. Elle a explosé sur le premier triangle **découpé au
-plan proche** : le sommet créé y porte un `1/w` énorme qui, pondéré, impose sa
-couleur à tout le polygone. L'oracle affichait un aplat magenta là où la carte
-produisait un dégradé vert — sur un tiers de l'image.
+On an ordinary surface, the two interpolations differ by a few units and the error
+stays invisible. It exploded on the first triangle **clipped at the near plane**:
+the vertex created there carries an enormous `1/w` which, once weighted, imposes
+its colour on the whole polygon. The oracle displayed a flat magenta where the card
+produced a green gradient — over a third of the image.
 
-Un oracle dont la cible est Glide doit itérer comme Glide, faute de quoi il
-accuse le matériel d'un écart dont il est lui-même l'auteur.
+An oracle whose target is Glide must iterate as Glide does, failing which it
+accuses the hardware of a deviation it is itself the author of.
 
-### 2. La profondeur était triée sur `z`, borné au sommet
+### 2. The depth was sorted on `z`, clamped at the vertex
 
-Un tampon en z est légitime, et c'était le premier choix. `dkr_clip_project`
-borne `z` à [0,1] — il le faut, un sommet créé par le découpage sort avec une
-profondeur de l'ordre de −200000.
+A z buffer is legitimate, and it was the first choice. `dkr_clip_project` clamps
+`z` to [0,1] — it must, a vertex created by the clipping comes out with a depth on
+the order of −200000.
 
-Mais **borner au sommet déforme le gradient sur toute la primitive** : les deux
-extrémités ne sont plus à la même échelle, et l'interpolation ment partout entre
-elles. Le défaut reste invisible sur une surface entière et n'apparaît qu'à
-l'endroit où une primitive découpée en croise une autre — ici un coin de 3 500
-pixels, où l'oracle et la carte désignaient chacun une surface différente comme
-étant devant.
+But **clamping at the vertex distorts the gradient over the whole primitive**: the
+two ends are no longer at the same scale, and the interpolation lies everywhere
+between them. The defect stays invisible over a whole surface and only appears
+where a clipped primitive crosses another — here a corner of 3,500 pixels, where
+the oracle and the card each named a different surface as being in front.
 
-`oow` n'a pas ce problème : il vaut `1/w`, il est affine en espace écran, il n'a
-jamais besoin d'être borné, et c'est exactement ce que la Voodoo range dans son
-tampon. Le rastériseur trie donc désormais sur `−1/w`.
+`oow` does not have that problem: it is `1/w`, it is affine in screen space, it
+never needs clamping, and it is exactly what the Voodoo stores in its buffer. The
+rasteriser therefore now sorts on `−1/w`.
 
-`dkr_render_vertex.z` reste rempli : le RDP, lui, trie bien en z, et le jour où
-l'on voudra confronter le portage à l'original plutôt qu'au matériel, c'est cette
-valeur qu'il faudra.
+`dkr_render_vertex.z` stays filled in: the RDP does sort in z, and the day one
+wants to confront the port with the original rather than with the hardware, that
+is the value that will be needed.
 
-### 3. La scène ne testait pas la profondeur qu'elle prétendait tester
+### 3. The scene was not testing the depth it claimed to test
 
-Avec `z_clip = 0,5 z` et `w = z`, le rapport `z/w` vaut 0,5 pour *tout* sommet :
-le quadrilatère et le triangle découpé se retrouvaient exactement à la même
-profondeur. Leur recouvrement produisait un conflit de tri, auquel le rastériseur
-répondait par un pointillé et la carte par un bord net — deux réponses également
-arbitraires à une question mal posée. La comparaison mesurait cette ambiguïté
-plutôt que le rendu.
+With `z_clip = 0.5 z` and `w = z`, the ratio `z/w` is 0.5 for *every* vertex: the
+quad and the clipped triangle ended up at exactly the same depth. Their overlap
+produced a sorting conflict, to which the rasteriser answered with a dither
+pattern and the card with a clean edge — two equally arbitrary answers to a badly
+put question. The comparison was measuring that ambiguity rather than the
+rendering.
 
-Un terme constant sur z rend `z/w = 0,5 − 20/z`, qui varie avec la distance.
+A constant term on z makes `z/w = 0.5 − 20/z`, which varies with distance.
 
-## Deux épreuves ont dû être corrigées, et c'est normal
+## Two trials had to be corrected, and that is normal
 
-Changer la sémantique de profondeur a fait échouer deux vérifications qui
-passaient. Aucune des deux n'était une régression :
+Changing the depth semantics made two checks that were passing fail. Neither was a
+regression:
 
-- la suite du rastériseur posait `oow = 1` partout et rangeait la profondeur dans
-  `z` seul. Les fixtures renseignent désormais les deux de façon cohérente ;
-- l'épreuve de chaîne cherchait du rouge **au centre de l'écran**. Elle y en
-  trouvait tant que la couleur était corrigée en perspective ; le centre est
-  maintenant occupé par le polygone découpé, vert et cyan. Elle échantillonne
-  désormais le quadrilatère là où il est seul, et vérifie en outre que deux
-  points distincts diffèrent — sans quoi un aplat passerait pour un dégradé.
+- the rasteriser's suite set `oow = 1` everywhere and stored the depth in `z`
+  alone. The fixtures now fill both consistently;
+- the chain trial looked for red **at the centre of the screen**. It found some
+  there as long as the colour was perspective-corrected; the centre is now occupied
+  by the clipped polygon, green and cyan. It now samples the quad where it stands
+  alone, and further verifies that two distinct points differ — without which a
+  flat colour would pass for a gradient.
 
-Le second cas mérite d'être retenu : **où l'on échantillonne compte autant que ce
-qu'on y cherche**, et un contrôle qui vise une surface doit la viser là où rien
-d'autre ne la recouvre.
+The second case is worth remembering: **where one samples counts as much as what
+one looks for there**, and a check aimed at a surface must aim at it where nothing
+else covers it.
 
-## Le seuil a été resserré après coup
+## The threshold was tightened afterwards
 
-La première version tolérait 24 par canal. C'était le bon choix pour défricher :
-assez large pour ne pas être noyé par la quantification, assez serré pour voir
-une divergence de tri.
+The first version tolerated 24 per channel. That was the right choice for clearing
+the ground: wide enough not to be drowned by the quantisation, tight enough to see
+a sorting divergence.
 
-Une fois les trois défauts corrigés, ce seuil ne peut plus rien attraper — il
-passerait sur n'importe quelle régression inférieure à un dixième de l'échelle.
-Il est donc doublé d'un contrôle à 16, deux pas de quantification : au-dessus du
-bruit mesuré (9) et très en dessous de tout écart qui aurait un sens visuel.
+Once the three defects were fixed, that threshold can catch nothing more — it
+would pass any regression smaller than a tenth of the scale. It is therefore
+doubled by a check at 16, two quantisation steps: above the measured noise (9) and
+well below any deviation that would have visual meaning.
 
-Un seuil qu'on ne resserre pas après avoir mesuré le bruit réel finit par
-n'affirmer que sa propre indulgence.
+A threshold one does not tighten after measuring the real noise ends up asserting
+nothing but its own indulgence.
 
-## Ce qui n'est pas encore comparé
+## What is not compared yet
 
-Les textures — l'allocateur de TMU est E05-S02 et la traduction du combineur
-E05-S03. La comparaison porte aujourd'hui sur la géométrie, la couleur itérée et
-la profondeur, c'est-à-dire sur tout ce que les deux backends savent faire.
+Textures — the TMU allocator is E05-S02 and the combiner translation E05-S03. The
+comparison today bears on geometry, iterated colour and depth, that is on
+everything both backends know how to do.
