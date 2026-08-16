@@ -1,16 +1,15 @@
-/* E02-S03 — epreuve de la base de temps.
+/* E02-S03 - the time-base test.
  *
- * Comme les autres suites de `platform/win95`, une seule source pour les deux
- * cibles : sur l'hote elle s'appuie sur le vehicule POSIX, sur la machine elle
- * devient CLOCKT.EXE.
+ * Like the other suites in `platform/win95`, one source for both targets: on the
+ * host it rests on the POSIX vehicle, on the machine it becomes CLOCKT.EXE.
  *
  *   platform/win95/tests/run-tests.sh clock
- *   d:\clockt.exe                        sur la cible
- *   d:\clockt.exe --long 300             derive mesuree sur cinq minutes
+ *   d:\clockt.exe                        on the target
+ *   d:\clockt.exe --long 300             drift measured over five minutes
  *
- * Le gros du fichier porte sur la conversion vers le compteur du VR4300, parce
- * que c'est la que se cache le defaut redoute par le ticket : une base qui
- * derive lentement ne casse rien de visible et fausse tous les chronometrages.
+ * The bulk of the file bears on the conversion to the VR4300 counter, because
+ * that is where the defect the ticket feared hides: a base that drifts slowly
+ * breaks nothing visible and falsifies every timing.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -49,7 +48,7 @@ static void expect(const char *what, unsigned long long got, unsigned long long 
     if (got == want) {
         emit("  ok    %-50s %llu\n", what, got);
     } else {
-        emit("  ECHEC %-50s attendu %llu, obtenu %llu\n", what, want, got);
+        emit("  FAIL  %-50s expected %llu, got %llu\n", what, want, got);
         failures++;
     }
 }
@@ -57,63 +56,63 @@ static void expect(const char *what, unsigned long long got, unsigned long long 
 static void expect_true(const char *what, int cond)
 {
     checks++;
-    emit("  %s %s\n", cond ? "ok   " : "ECHEC", what);
+    emit("  %s %s\n", cond ? "ok   " : "FAIL ", what);
     if (!cond) { failures++; }
 }
 
 /* ========================================================================== *
- * 1. La conversion vers le compteur du VR4300 — fonction pure
+ * 1. The conversion to the VR4300 counter - a pure function
  * ========================================================================== *
  *
- * Ce qui est etabli : le rapport est exact, et il le reste sur des durees ou
- * l'ecriture naive aurait deborde depuis longtemps.
+ * What is established: the ratio is exact, and stays so over durations where the
+ * naive form would have overflowed long ago.
  *
- * Le compteur avance a 46 875 000 Hz quelle que soit la frequence de l'hote.
- * C'est ce rapport, et non la valeur instantanee, qui doit etre juste.
+ * The counter advances at 46,875,000 Hz whatever the host's frequency. It is
+ * that ratio, and not the instantaneous value, that must be right.
  */
 static void test_vr4300_conversion(void)
 {
-    const unsigned long long pit = 1193180ULL;   /* la frequence mesuree */
+    const unsigned long long pit = 1193180ULL;   /* the measured frequency */
 
-    emit("Conversion vers le compteur du VR4300 (fonction pure)\n");
+    emit("Conversion to the VR4300 counter (pure function)\n");
 
-    expect("zero reste zero", dkr_clock_ticks_to_vr4300(0, pit), 0);
+    expect("zero stays zero", dkr_clock_ticks_to_vr4300(0, pit), 0);
 
-    /* Une seconde de PIT doit donner une seconde de VR4300. */
-    expect("1 s de PIT -> 46 875 000",
+    /* One second of PIT must give one second of VR4300. */
+    expect("1 s of PIT -> 46,875,000",
            dkr_clock_ticks_to_vr4300(pit, pit), 46875000ULL);
 
-    /* Dix minutes — la duree de l'epreuve d'endurance de E02-S01. */
-    expect("600 s -> 28 125 000 000",
+    /* Ten minutes - the duration of E02-S01's endurance test. */
+    expect("600 s -> 28,125,000,000",
            dkr_clock_ticks_to_vr4300(pit * 600ULL, pit), 46875000ULL * 600ULL);
 
-    /* Une frequence hote differente ne doit rien changer au resultat. */
-    expect("frequence hote de 1 GHz, 1 s",
+    /* A different host frequency must change nothing in the result. */
+    expect("host frequency of 1 GHz, 1 s",
            dkr_clock_ticks_to_vr4300(1000000000ULL, 1000000000ULL), 46875000ULL);
-    expect("frequence hote de 3,579545 MHz, 1 s",
+    expect("host frequency of 3.579545 MHz, 1 s",
            dkr_clock_ticks_to_vr4300(3579545ULL, 3579545ULL), 46875000ULL);
 
-    /* **Le cas que l'ecriture naive rate.** `ticks * 46875000` deborde au-dela
-       d'environ 46 heures ; on demande ici 100 heures. */
+    /* **The case the naive form misses.** `ticks * 46875000` overflows beyond
+       about 46 hours; here we ask for 100 hours. */
     {
         unsigned long long hours100 = pit * 3600ULL * 100ULL;
-        expect("100 heures, sans debordement",
+        expect("100 hours, no overflow",
                dkr_clock_ticks_to_vr4300(hours100, pit), 46875000ULL * 3600ULL * 100ULL);
     }
 
-    /* Et un an, pour que la marge soit dite plutot que supposee. */
+    /* And a year, so that the margin is stated rather than assumed. */
     {
         unsigned long long year = pit * 3600ULL * 24ULL * 365ULL;
-        expect("un an, sans debordement",
+        expect("one year, no overflow",
                dkr_clock_ticks_to_vr4300(year, pit),
                46875000ULL * 3600ULL * 24ULL * 365ULL);
     }
 
-    /* Une frequence nulle ne doit pas diviser par zero. */
-    expect("frequence nulle rendue sans exploser",
+    /* A zero frequency must not divide by zero. */
+    expect("zero frequency returns without exploding",
            dkr_clock_ticks_to_vr4300(1234, 0), 0);
 
-    /* Monotonie de la conversion : un pas de plus ne peut pas donner moins. */
+    /* Monotonicity of the conversion: one more tick cannot give less. */
     {
         int ok = 1;
         unsigned long long previous = 0;
@@ -122,75 +121,74 @@ static void test_vr4300_conversion(void)
             if (v < previous) { ok = 0; break; }
             previous = v;
         }
-        expect_true("la conversion est monotone", ok);
+        expect_true("the conversion is monotonic", ok);
     }
 }
 
 /* ========================================================================== *
- * 2. Le rebouclage du repli 32 bits — simule, pas attendu
+ * 2. The 32-bit fallback's wraparound - simulated, not waited for
  * ========================================================================== *
  *
- * Ce qui est etabli : le repli `timeGetTime` survit a son passage a zero, qui
- * survient apres 49,7 jours. C'est le genre de defaut qu'on ne rencontre jamais
- * en developpement et toujours chez un joueur — d'ou la simulation.
+ * What is established: the `timeGetTime` fallback survives its return to zero,
+ * which happens after 49.7 days. It is the kind of defect one never meets in
+ * development and always meets at a player's machine - hence the simulation.
  *
- * La logique est celle de `dkr_tick64_step`, deja couverte par E01-S03 ; ce qui
- * est verifie ici, c'est qu'elle tient bien sur les valeurs d'une horloge a la
- * milliseconde et que la duree ecoulee reste juste **a travers** le passage.
+ * The logic is `dkr_tick64_step`'s, already covered by E01-S03; what is checked
+ * here is that it holds on the values of a millisecond clock and that the
+ * elapsed duration stays right **across** the wrap.
  */
 static void test_wraparound(void)
 {
     dkr_tick64_state st = { 0, 0 };
-    const unsigned long before = 0xFFFFFF00UL;   /* 256 ms avant le passage */
+    const unsigned long before = 0xFFFFFF00UL;   /* 256 ms before the wrap */
 
-    emit("Rebouclage du repli 32 bits (simule)\n");
+    emit("32-bit fallback wraparound (simulated)\n");
 
-    expect("depart", dkr_tick64_step(&st, before), (unsigned long long)before);
+    expect("start", dkr_tick64_step(&st, before), (unsigned long long)before);
 
-    /* Juste avant. */
-    expect("255 ms plus tard, avant le passage",
+    /* Just before. */
+    expect("255 ms later, before the wrap",
            dkr_tick64_step(&st, 0xFFFFFFFFUL), 0xFFFFFFFFULL);
 
-    /* Et le passage lui-meme : la valeur 32 bits recule, la 64 bits avance. */
-    expect("1 ms plus tard, apres le passage",
+    /* And the wrap itself: the 32-bit value steps back, the 64-bit one goes on. */
+    expect("1 ms later, after the wrap",
            dkr_tick64_step(&st, 0x00000000UL), 0x100000000ULL);
-    expect("puis 1000 ms",
+    expect("then 1000 ms",
            dkr_tick64_step(&st, 1000UL), 0x100000000ULL + 1000ULL);
 
-    /* La duree ecoulee de part et d'autre du passage doit etre juste : c'est
-       la propriete qui compte pour un chronometre de course. */
+    /* The duration elapsed either side of the wrap must be right: that is the
+       property that counts for a race timer. */
     {
         unsigned long long start = (unsigned long long)before;
         unsigned long long end   = 0x100000000ULL + 1000ULL;
-        expect("duree juste a travers le passage", end - start, 256ULL + 1000ULL);
+        expect("duration right across the wrap", end - start, 256ULL + 1000ULL);
     }
 
-    /* Un second passage, pour verifier que l'accumulation ne se contente pas
-       d'un seul. */
+    /* A second wrap, to check that the accumulation is not content with one. */
     {
         dkr_tick64_state s2 = { 0, 0 };
         dkr_tick64_step(&s2, 0xFFFFFFFFUL);
         dkr_tick64_step(&s2, 0x00000000UL);
         dkr_tick64_step(&s2, 0xFFFFFFFFUL);
-        expect("deux passages", dkr_tick64_step(&s2, 0x00000000UL), 0x200000000ULL);
+        expect("two wraps", dkr_tick64_step(&s2, 0x00000000UL), 0x200000000ULL);
     }
 }
 
 /* ========================================================================== *
- * 3. La source retenue au lancement
+ * 3. The source chosen at startup
  * ========================================================================== */
 static void test_source_selection(void)
 {
-    emit("Selection de la source\n");
+    emit("Source selection\n");
 
-    expect_true("l'horloge demarre", dkr_clock_init() != 0);
-    expect_true("une source est retenue",
+    expect_true("the clock starts", dkr_clock_init() != 0);
+    expect_true("a source is chosen",
                 dkr_clock_source_in_use() != DKR_CLOCK_SOURCE_NONE);
-    expect_true("sa frequence est non nulle", dkr_clock_frequency() > 0);
-    emit("  source : %s a %llu Hz\n",
+    expect_true("its frequency is non-zero", dkr_clock_frequency() > 0);
+    emit("  source: %s at %llu Hz\n",
          dkr_clock_source_name(), dkr_clock_frequency());
 
-    /* Deux appels successifs ne doivent jamais reculer. */
+    /* Two successive calls must never step back. */
     {
         int ok = 1;
         unsigned long long previous = dkr_clock_now();
@@ -199,29 +197,28 @@ static void test_source_selection(void)
             if (now < previous) { ok = 0; break; }
             previous = now;
         }
-        expect_true("200 000 lectures sans un seul recul", ok);
+        expect_true("200,000 readings without a single backstep", ok);
     }
 }
 
 /* ========================================================================== *
- * 4. Le rapport tient sur une duree, pas sur un instant
+ * 4. The ratio holds over a duration, not over an instant
  * ========================================================================== *
  *
- * Ce qui est etabli : le compteur du VR4300 avance bien a 46,875 MHz par
- * rapport au temps mur. Le ticket insiste, a raison, pour que ce controle porte
- * sur une duree : une derive lente est invisible sur un instantane.
+ * What is established: the VR4300 counter does advance at 46.875 MHz relative to
+ * wall time. The ticket rightly insists that this check bear on a duration: a
+ * slow drift is invisible in a snapshot.
  *
- * La tolerance est large a dessein. La machine est emulee, et l'ordonnanceur de
- * Windows 95 n'est pas temps reel ; ce que cette epreuve attrape, c'est une
- * erreur de rapport — un facteur deux, une division inversee — et non une
- * imprecision de quelques pour cent.
+ * The tolerance is deliberately wide. The machine is emulated, and Windows 95's
+ * scheduler is not real time; what this test catches is a ratio error - a factor
+ * of two, an inverted division - and not an imprecision of a few per cent.
  */
 static void test_ratio_over_time(unsigned long seconds)
 {
     unsigned long long c0, c1, us0, us1;
     double expected, measured, error_pct;
 
-    emit("Rapport du compteur VR4300 sur %lu s\n", seconds);
+    emit("VR4300 counter ratio over %lu s\n", seconds);
 
     us0 = dkr_clock_now_us();
     c0  = dkr_clock_vr4300_count();
@@ -238,14 +235,14 @@ static void test_ratio_over_time(unsigned long seconds)
     c1  = dkr_clock_vr4300_count();
     us1 = dkr_clock_now_us();
 
-    expected  = (double)(us1 - us0) * 46.875;      /* us * 46,875 cycles/us */
+    expected  = (double)(us1 - us0) * 46.875;      /* us * 46.875 cycles/us */
     measured  = (double)(c1 - c0);
     error_pct = expected > 0 ? (measured - expected) * 100.0 / expected : 100.0;
 
-    emit("  ecoule : %llu us, compteur : %llu cycles\n", us1 - us0, c1 - c0);
-    emit("  attendu : %.0f cycles, ecart : %+.4f %%\n", expected, error_pct);
+    emit("  elapsed: %llu us, counter: %llu cycles\n", us1 - us0, c1 - c0);
+    emit("  expected: %.0f cycles, gap: %+.4f %%\n", expected, error_pct);
 
-    expect_true("le rapport tient a 1 % pres",
+    expect_true("the ratio holds to within 1 %",
                 error_pct > -1.0 && error_pct < 1.0);
 }
 
@@ -263,7 +260,7 @@ int main(int argc, char **argv)
     }
 
 #if defined(_WIN32)
-    if (dkr_win95_startup("Epreuve de l'horloge") != DKR_WIN95_STARTUP_OK) {
+    if (dkr_win95_startup("Clock test") != DKR_WIN95_STARTUP_OK) {
         return 2;
     }
     report_file = fopen(long_seconds > 0 ? "D:\\CLOCKLNG.LOG" : "D:\\CLOCKT.LOG", "w");
@@ -274,7 +271,7 @@ int main(int argc, char **argv)
     test_source_selection();
     test_ratio_over_time(long_seconds > 0 ? long_seconds : 3);
 
-    emit("\n%d controles, %d echec(s)\n", checks, failures);
+    emit("\n%d checks, %d failure(s)\n", checks, failures);
     rc = failures != 0;
 
     dkr_clock_shutdown();

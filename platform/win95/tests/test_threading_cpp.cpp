@@ -33,7 +33,7 @@ static void expect(const char *what, long long got, long long want)
     if (got == want) {
         printf("  ok    %-52s %lld\n", what, got);
     } else {
-        printf("  ECHEC %-52s attendu %lld, obtenu %lld\n", what, want, got);
+        printf("  FAIL  %-52s attendu %lld, obtenu %lld\n", what, want, got);
         failures++;
     }
     fflush(stdout);
@@ -42,7 +42,7 @@ static void expect(const char *what, long long got, long long want)
 static void expect_true(const char *what, int cond)
 {
     checks++;
-    printf("  %s %s\n", cond ? "ok   " : "ECHEC", what);
+    printf("  %s %s\n", cond ? "ok   " : "FAIL ", what);
     if (!cond) { failures++; }
     fflush(stdout);
 }

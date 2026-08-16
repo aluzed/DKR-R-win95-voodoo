@@ -1,19 +1,17 @@
-/* E02-S05 — les signatures employees par les sources du jeu.
+/* E02-S05 - the signatures the game's sources use.
  *
- * Quatre fichiers du jeu — `runtime_ui`, `runtime_texture_packs`,
- * `runtime_crt_overlay`, `runtime_rice_texture_import` — ne se compilent que
- * lorsque RT64 est present. Il ne l'est pas dans ce depot, et Windows 95 ne les
- * construit de toute facon jamais : RT64 exige D3D12, Vulkan ou Metal.
+ * Four of the game's files - `runtime_ui`, `runtime_texture_packs`,
+ * `runtime_crt_overlay`, `runtime_rice_texture_import` - only compile when RT64
+ * is present. It is not present in this repository, and Windows 95 never builds
+ * them anyway: RT64 requires D3D12, Vulkan or Metal.
  *
- * Leurs appels au point d'indirection ne peuvent donc pas etre eprouves par une
- * compilation de ces fichiers. Ce qui *peut* l'etre, et qui porte le risque
- * reel, c'est que le point d'indirection offre exactement les formes qu'ils
- * emploient : les surcharges a `error_code` surtout, dont l'absence ne se voit
- * qu'a la compilation.
+ * Their calls into the indirection point therefore cannot be tested by compiling
+ * those files. What *can* be tested, and what carries the real risk, is that the
+ * indirection point offers exactly the forms they use: the `error_code`
+ * overloads above all, whose absence only shows at compile time.
  *
- * Chaque appel ci-dessous est repris du code, avec les memes types d'arguments.
- * Rien n'est execute : c'est la compilation qui est le controle, et elle a lieu
- * pour les deux branches.
+ * Every call below is taken from the code, with the same argument types. Nothing
+ * is executed: compilation is the check, and it happens for both branches.
  */
 #include "fileio.hpp"
 
@@ -22,7 +20,7 @@
 #include <system_error>
 #include <vector>
 
-/* Jamais appelee : seule sa compilation compte. */
+/* Never called: only its compilation counts. */
 void dkr_fileio_signatures_used_by_the_game(void)
 {
     const std::filesystem::path p{"a"}, q{"b"};
@@ -55,7 +53,7 @@ void dkr_fileio_signatures_used_by_the_game(void)
     /* --- runtime_crt_overlay.cpp ------------------------------------------ */
     (void)dkr::fs::weakly_canonical(p).u8string();
 
-    /* --- save_manager.cpp, virtual_pak.cpp (deja compiles pour la cible) --- */
+    /* --- save_manager.cpp, virtual_pak.cpp (already compiled for the target) - */
     (void)dkr::fs::copy_file_overwrite(p, q, ec);
     (void)dkr::fs::create_directories(p);
     (void)dkr::fs::remove_all(p);

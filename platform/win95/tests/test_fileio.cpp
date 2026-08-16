@@ -1,16 +1,16 @@
-/* E02-S05 — epreuve de l'ecriture durable.
+/* E02-S05 - the durable-write test.
  *
- * Ce qui est teste ici n'est pas « le fichier s'ecrit » — cela, un appel a
- * `fopen` le fait — mais **ce qui reste sur le disque quand l'ecriture est
- * interrompue**. C'est la seule propriete qui compte : sur une machine de 1998
- * sans onduleur, la coupure pendant une ecriture arrivera.
+ * What is tested here is not "the file gets written" - a call to `fopen` does
+ * that - but **what is left on the disk when the write is interrupted**. That is
+ * the only property that counts: on a 1998 machine with no UPS, a power cut
+ * during a write will happen.
  *
- * Les interruptions sont donc simulees en fabriquant a la main les etats
- * intermediaires que la sequence traverse, puis en verifiant ce que la
- * relecture en tire. Attendre une vraie coupure de courant n'est pas un
- * protocole, pas plus qu'attendre 49,7 jours pour le rebouclage de E01-S03.
+ * The interruptions are therefore simulated by building by hand the intermediate
+ * states the sequence passes through, then checking what read-back makes of
+ * them. Waiting for a real power cut is not a protocol, any more than waiting
+ * 49.7 days for E01-S03's wraparound.
  *
- * Une seule source pour les deux cibles, comme les autres suites.
+ * One source for both targets, like the other suites.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -50,7 +50,7 @@ static void expect_str(const char *what, const char *got, const char *want)
     if (strcmp(got, want) == 0) {
         emit("  ok    %-48s \"%s\"\n", what, got);
     } else {
-        emit("  ECHEC %-48s attendu \"%s\", obtenu \"%s\"\n", what, want, got);
+        emit("  FAIL  %-48s expected \"%s\", got \"%s\"\n", what, want, got);
         failures++;
     }
 }
@@ -61,7 +61,7 @@ static void expect_int(const char *what, long got, long want)
     if (got == want) {
         emit("  ok    %-48s %ld\n", what, got);
     } else {
-        emit("  ECHEC %-48s attendu %ld, obtenu %ld\n", what, want, got);
+        emit("  FAIL  %-48s expected %ld, got %ld\n", what, want, got);
         failures++;
     }
 }
@@ -69,14 +69,14 @@ static void expect_int(const char *what, long got, long want)
 static void expect_true(const char *what, int cond)
 {
     checks++;
-    emit("  %s %s\n", cond ? "ok   " : "ECHEC", what);
+    emit("  %s %s\n", cond ? "ok   " : "FAIL ", what);
     if (!cond) { failures++; }
 }
 
-/* --- Terrain d'essai ------------------------------------------------------- *
+/* --- Testing ground -------------------------------------------------------- *
  *
- * Sur la cible, D: est le disque de transfert, en FAT16 — c'est-a-dire le
- * systeme de fichiers qui nous interesse. Sur l'hote, le repertoire courant.
+ * On the target, D: is the transfer disk, in FAT16 - that is, the file system we
+ * care about. On the host, the current directory.
  */
 #if defined(_WIN32)
 #define BASE "D:\\FIOT.DAT"
@@ -106,7 +106,7 @@ static int exists(const char *path)
     return 0;
 }
 
-/* Relit par la couche, et rend le contenu dans `out`. */
+/* Reads back through the layer, and returns the content in `out`. */
 static dkr_file_result reread(char *out, size_t out_size, int *from_backup)
 {
     size_t got = 0;
@@ -117,195 +117,195 @@ static dkr_file_result reread(char *out, size_t out_size, int *from_backup)
 }
 
 /* ========================================================================== *
- * 1. Le cas nominal
+ * 1. The nominal case
  * ========================================================================== */
 static void test_nominal(void)
 {
     char buf[128];
     int  from_backup = 0;
 
-    emit("Ecriture et relecture\n");
+    emit("Write and read back\n");
     clean();
 
-    expect_int("premiere ecriture",
-               dkr_file_write_durable(BASE, "course-1", 8), DKR_FILE_OK);
-    expect_int("relecture", reread(buf, sizeof(buf), &from_backup), DKR_FILE_OK);
-    expect_str("contenu", buf, "course-1");
-    expect_int("elle ne vient pas de la copie de secours", from_backup, 0);
+    expect_int("first write",
+               dkr_file_write_durable(BASE, "race-001", 8), DKR_FILE_OK);
+    expect_int("read back", reread(buf, sizeof(buf), &from_backup), DKR_FILE_OK);
+    expect_str("content", buf, "race-001");
+    expect_int("it does not come from the backup copy", from_backup, 0);
 
-    /* La seconde ecriture doit produire la copie de secours. */
-    expect_int("seconde ecriture",
-               dkr_file_write_durable(BASE, "course-2", 8), DKR_FILE_OK);
-    expect_int("relecture", reread(buf, sizeof(buf), &from_backup), DKR_FILE_OK);
-    expect_str("contenu a jour", buf, "course-2");
-    expect_true("la copie de secours existe", exists(BAKF));
-    expect_true("le fichier temporaire a disparu", !exists(TMPF));
+    /* The second write must produce the backup copy. */
+    expect_int("second write",
+               dkr_file_write_durable(BASE, "race-002", 8), DKR_FILE_OK);
+    expect_int("read back", reread(buf, sizeof(buf), &from_backup), DKR_FILE_OK);
+    expect_str("content up to date", buf, "race-002");
+    expect_true("the backup copy exists", exists(BAKF));
+    expect_true("the temporary file is gone", !exists(TMPF));
 
-    /* Et elle contient bien la version precedente. */
+    /* And it does hold the previous version. */
     {
         char bak[128]; size_t n = 0;
         FILE *f = fopen(BAKF, "rb");
         if (f) { n = fread(bak, 1, sizeof(bak) - 1, f); fclose(f); }
         bak[n] = '\0';
-        expect_str("la copie de secours porte la version precedente",
-                   bak, "course-1");
+        expect_str("the backup copy carries the previous version",
+                   bak, "race-001");
     }
 }
 
 /* ========================================================================== *
- * 2. Coupure entre le renommage de l'ancienne et celui de la nouvelle
+ * 2. A cut between renaming the old one and renaming the new one
  * ========================================================================== *
  *
- * C'est **la** fenetre de la sequence, celle que Windows 95 impose faute de
- * remplacement atomique. On fabrique l'etat exact qu'elle laisse : pas de
- * fichier final, la precedente en `.BAK`, la nouvelle complete en `.TMP`.
+ * This is **the** window of the sequence, the one Windows 95 imposes for want of
+ * atomic replacement. We build the exact state it leaves: no final file, the
+ * previous one in `.BAK`, the new complete one in `.TMP`.
  *
- * Ce qui est etabli : la relecture rend la **precedente**, et non la nouvelle.
- * C'est un choix, et il est delibere — rien ne prouve que le `.TMP` soit
- * complet, et le format de DKR-R ne porte pas de somme de controle. Perdre la
- * derniere course est desagreable ; charger une sauvegarde tronquee se
- * decouvrirait bien plus tard et bien plus mal.
+ * What is established: read-back returns the **previous** one, not the new one.
+ * That is a choice, and a deliberate one - nothing proves the `.TMP` is
+ * complete, and DKR-R's format carries no checksum. Losing the last race is
+ * annoying; loading a truncated save would be discovered much later and much
+ * worse.
  */
 static void test_interrupted_between_renames(void)
 {
     char buf[128];
     int  from_backup = -1;
 
-    emit("Coupure entre les deux renommages\n");
+    emit("Cut between the two renames\n");
     clean();
 
-    put(BAKF, "course-1");          /* la precedente, connue bonne */
-    put(TMPF, "course-2");          /* la nouvelle, complete mais non prouvee */
-    /* et pas de BASE : c'est tout le probleme */
+    put(BAKF, "race-001");          /* the previous one, known good */
+    put(TMPF, "race-002");          /* the new one, complete but unproven */
+    /* and no BASE: that is the whole problem */
 
-    expect_int("la relecture reussit", reread(buf, sizeof(buf), &from_backup),
+    expect_int("read-back succeeds", reread(buf, sizeof(buf), &from_backup),
                DKR_FILE_OK);
-    expect_str("elle rend la precedente, pas la nouvelle", buf, "course-1");
-    expect_int("et le dit a l'appelant", from_backup, 1);
+    expect_str("it returns the previous one, not the new one", buf, "race-001");
+    expect_int("and says so to the caller", from_backup, 1);
 }
 
 /* ========================================================================== *
- * 3. Coupure pendant l'ecriture du temporaire
+ * 3. A cut while writing the temporary file
  * ========================================================================== *
  *
- * Etat : le fichier final est intact, un `.TMP` tronque traine. La relecture ne
- * doit pas s'en apercevoir — le `.TMP` n'a aucun droit sur la sauvegarde.
+ * State: the final file is intact, a truncated `.TMP` is lying around. Read-back
+ * must not notice it - the `.TMP` has no claim on the save.
  */
 static void test_interrupted_during_temp(void)
 {
     char buf[128];
     int  from_backup = -1;
 
-    emit("Coupure pendant l'ecriture du temporaire\n");
+    emit("Cut while writing the temporary file\n");
     clean();
 
-    put(BASE, "course-1");
-    put(TMPF, "cour");              /* tronque */
+    put(BASE, "race-001");
+    put(TMPF, "race");              /* truncated */
 
-    expect_int("la relecture reussit", reread(buf, sizeof(buf), &from_backup),
+    expect_int("read-back succeeds", reread(buf, sizeof(buf), &from_backup),
                DKR_FILE_OK);
-    expect_str("le fichier final l'emporte", buf, "course-1");
-    expect_int("la copie de secours n'a pas servi", from_backup, 0);
+    expect_str("the final file wins", buf, "race-001");
+    expect_int("the backup copy was not used", from_backup, 0);
 
-    /* Et une ecriture suivante doit se remettre d'aplomb. */
-    expect_int("l'ecriture suivante reussit",
-               dkr_file_write_durable(BASE, "course-2", 8), DKR_FILE_OK);
-    expect_int("relecture", reread(buf, sizeof(buf), &from_backup), DKR_FILE_OK);
-    expect_str("contenu a jour", buf, "course-2");
+    /* And a following write must put things right again. */
+    expect_int("the following write succeeds",
+               dkr_file_write_durable(BASE, "race-002", 8), DKR_FILE_OK);
+    expect_int("read back", reread(buf, sizeof(buf), &from_backup), DKR_FILE_OK);
+    expect_str("content up to date", buf, "race-002");
 }
 
 /* ========================================================================== *
- * 4. Rien du tout, et erreurs distinguees
+ * 4. Nothing at all, and errors told apart
  * ========================================================================== */
 static void test_absent_and_errors(void)
 {
     char buf[128];
 
-    emit("Absence et erreurs\n");
+    emit("Absence and errors\n");
     clean();
 
-    expect_int("un fichier absent se dit absent",
+    expect_int("an absent file reports itself absent",
                reread(buf, sizeof(buf), NULL), DKR_FILE_ERR_NOT_FOUND);
 
-    /* Les codes doivent etre distincts : « disque plein » et « support
-       protege » n'appellent pas le meme geste chez le joueur. */
-    expect_true("les codes d'erreur sont distincts",
+    /* The codes must be distinct: "disk full" and "write-protected medium" do
+       not call for the same action from the player. */
+    expect_true("the error codes are distinct",
                 DKR_FILE_ERR_NO_SPACE != DKR_FILE_ERR_ACCESS &&
                 DKR_FILE_ERR_ACCESS   != DKR_FILE_ERR_NOT_READY);
-    expect_true("chacun porte un texte",
+    expect_true("each carries a text",
                 strlen(dkr_file_result_text(DKR_FILE_ERR_NO_SPACE)) > 0 &&
                 strlen(dkr_file_result_text(DKR_FILE_ERR_NOT_READY)) > 0);
 }
 
 /* ========================================================================== *
- * 5. Noms 8.3 — la fonction repond, elle ne corrige pas
+ * 5. 8.3 names - the function answers, it does not correct
  * ========================================================================== */
 static void test_8dot3(void)
 {
-    emit("Reconnaissance des noms 8.3\n");
+    emit("Recognising 8.3 names\n");
 
-    expect_true("SAUVE.DAT",      dkr_file_name_is_8dot3("SAUVE.DAT"));
-    expect_true("HUITCARS.DAT",   dkr_file_name_is_8dot3("HUITCARS.DAT"));
-    expect_true("sans extension",  dkr_file_name_is_8dot3("SAUVE"));
-    expect_true("extension courte", dkr_file_name_is_8dot3("SAUVE.D"));
+    expect_true("SAVE.DAT",         dkr_file_name_is_8dot3("SAVE.DAT"));
+    expect_true("EIGHTCHR.DAT",     dkr_file_name_is_8dot3("EIGHTCHR.DAT"));
+    expect_true("no extension",     dkr_file_name_is_8dot3("SAVE"));
+    expect_true("short extension",  dkr_file_name_is_8dot3("SAVE.D"));
 
-    expect_true("neuf caracteres refuses",
-                !dkr_file_name_is_8dot3("NEUFCARSX.DAT"));
-    expect_true("extension de quatre refusee",
-                !dkr_file_name_is_8dot3("SAUVE.DKRS"));
-    expect_true("deux points refuses",
-                !dkr_file_name_is_8dot3("SAUVE.DAT.BAK"));
-    expect_true("espace refuse",
-                !dkr_file_name_is_8dot3("MA SAUVE.DAT"));
-    expect_true("caractere interdit refuse",
-                !dkr_file_name_is_8dot3("SAUVE?.DAT"));
-    expect_true("nom vide refuse", !dkr_file_name_is_8dot3(""));
+    expect_true("nine characters refused",
+                !dkr_file_name_is_8dot3("NINECHARS.DAT"));
+    expect_true("four-letter extension refused",
+                !dkr_file_name_is_8dot3("SAVE.DKRS"));
+    expect_true("two dots refused",
+                !dkr_file_name_is_8dot3("SAVE.DAT.BAK"));
+    expect_true("space refused",
+                !dkr_file_name_is_8dot3("MY SAVE.DAT"));
+    expect_true("forbidden character refused",
+                !dkr_file_name_is_8dot3("SAVE?.DAT"));
+    expect_true("empty name refused", !dkr_file_name_is_8dot3(""));
 
-    /* Les noms que la couche fabrique doivent eux-memes tenir : c'est ce qui
-       permet de rester utilisable sur un volume sans noms longs. */
-    expect_true("FIOT.DAT, FIOT.TMP et FIOT.BAK tiennent",
+    /* The names the layer builds must themselves fit: that is what keeps it
+       usable on a volume without long names. */
+    expect_true("FIOT.DAT, FIOT.TMP and FIOT.BAK fit",
                 dkr_file_name_is_8dot3("FIOT.DAT") &&
                 dkr_file_name_is_8dot3("FIOT.TMP") &&
                 dkr_file_name_is_8dot3("FIOT.BAK"));
 }
 
 /* ========================================================================== *
- * 6. Emplacement et assemblage de chemins
+ * 6. Location and path joining
  * ========================================================================== */
 static void test_paths(void)
 {
     char dir[300], joined[300];
 
-    emit("Emplacement et chemins\n");
+    emit("Location and paths\n");
 
-    expect_int("le repertoire de l'application se trouve",
+    expect_int("the application's directory is found",
                dkr_file_app_directory(dir, sizeof(dir)), DKR_FILE_OK);
-    expect_true("il n'est pas vide", strlen(dir) > 0);
-    emit("  repertoire : %s\n", dir);
+    expect_true("it is not empty", strlen(dir) > 0);
+    emit("  directory: %s\n", dir);
 
-    expect_int("assemblage", dkr_file_join(joined, sizeof(joined), dir, "SAUVE.DAT"),
+    expect_int("join", dkr_file_join(joined, sizeof(joined), dir, "SAVE.DAT"),
                DKR_FILE_OK);
-    emit("  chemin     : %s\n", joined);
-    expect_true("le nom assemble se termine bien",
-                strstr(joined, "SAUVE.DAT") != NULL);
+    emit("  path     : %s\n", joined);
+    expect_true("the joined name ends properly",
+                strstr(joined, "SAVE.DAT") != NULL);
 
-    /* Un separateur en trop dans le repertoire ne doit pas en produire deux. */
+    /* One separator too many in the directory must not produce two. */
 #if defined(_WIN32)
-    expect_int("repertoire avec separateur final",
-               dkr_file_join(joined, sizeof(joined), "D:\\JEU\\", "S.DAT"), DKR_FILE_OK);
-    expect_str("un seul separateur", joined, "D:\\JEU\\S.DAT");
+    expect_int("directory with a trailing separator",
+               dkr_file_join(joined, sizeof(joined), "D:\\GAME\\", "S.DAT"), DKR_FILE_OK);
+    expect_str("a single separator", joined, "D:\\GAME\\S.DAT");
 #else
-    expect_int("repertoire avec separateur final",
-               dkr_file_join(joined, sizeof(joined), "/jeu/", "S.DAT"), DKR_FILE_OK);
-    expect_str("un seul separateur", joined, "/jeu/S.DAT");
+    expect_int("directory with a trailing separator",
+               dkr_file_join(joined, sizeof(joined), "/game/", "S.DAT"), DKR_FILE_OK);
+    expect_str("a single separator", joined, "/game/S.DAT");
 #endif
 
-    /* Un tampon trop court se refuse plutot que de tronquer en silence. */
+    /* A buffer that is too short refuses rather than truncating in silence. */
     {
         char small[8];
-        expect_int("tampon trop court refuse",
-                   dkr_file_join(small, sizeof(small), "D:\\UN\\REPERTOIRE\\LONG",
-                                 "SAUVE.DAT"), DKR_FILE_ERR_PATH);
+        expect_int("buffer too short refused",
+                   dkr_file_join(small, sizeof(small), "D:\\A\\LONG\\DIRECTORY",
+                                 "SAVE.DAT"), DKR_FILE_ERR_PATH);
     }
 }
 
@@ -316,7 +316,7 @@ int main(void)
     int rc;
 
 #if defined(_WIN32)
-    if (dkr_win95_startup("Epreuve fichiers") != DKR_WIN95_STARTUP_OK) {
+    if (dkr_win95_startup("File I/O test") != DKR_WIN95_STARTUP_OK) {
         return 2;
     }
     report_file = fopen("D:\\FILEIOT.LOG", "w");
@@ -330,7 +330,7 @@ int main(void)
     test_paths();
     clean();
 
-    emit("\n%d controles, %d echec(s)\n", checks, failures);
+    emit("\n%d checks, %d failure(s)\n", checks, failures);
     rc = failures != 0;
     if (report_file) { fclose(report_file); report_file = NULL; }
     return rc;

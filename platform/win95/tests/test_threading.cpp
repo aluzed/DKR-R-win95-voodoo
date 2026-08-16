@@ -75,7 +75,7 @@ static void expect(const char *what, long long got, long long want)
     if (got == want) {
         emit("  ok    %-52s %lld\n", what, got);
     } else {
-        emit("  ECHEC %-52s attendu %lld, obtenu %lld\n", what, want, got);
+        emit("  FAIL  %-52s attendu %lld, obtenu %lld\n", what, want, got);
         failures++;
     }
 }
@@ -86,7 +86,7 @@ static void expect_true(const char *what, int condition)
     if (condition) {
         emit("  ok    %s\n", what);
     } else {
-        emit("  ECHEC %s\n", what);
+        emit("  FAIL  %s\n", what);
         failures++;
     }
 }
@@ -697,20 +697,20 @@ static int stress(unsigned long seconds)
 
     for (;;) {
         if (run_pingpong(500) != 0) {
-            emit("  ECHEC aller-retour rompu au tour %ld\n", iterations);
+            emit("  FAIL  aller-retour rompu au tour %ld\n", iterations);
             return 1;
         }
 
         contention_counter = 0;
         if (!dkr_mutex_init(&contention_mutex)) {
-            emit("  ECHEC initialisation du verrou\n");
+            emit("  FAIL  initialisation du verrou\n");
             return 1;
         }
         {
             dkr_thread *a = dkr_thread_start(contention_body, 0, 0);
             dkr_thread *b = dkr_thread_start(contention_body, 0, 0);
             if (!a || !b) {
-                emit("  ECHEC creation de fil\n");
+                emit("  FAIL  creation de fil\n");
                 return 1;
             }
             dkr_thread_join(a);
@@ -718,7 +718,7 @@ static int stress(unsigned long seconds)
         }
         dkr_mutex_destroy(&contention_mutex);
         if (contention_counter != 2 * CONTENTION_ROUNDS) {
-            emit("  ECHEC increment perdu au tour %ld : %ld\n",
+            emit("  FAIL  increment perdu au tour %ld : %ld\n",
                    iterations, contention_counter);
             return 1;
         }
