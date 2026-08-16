@@ -1,20 +1,20 @@
-/* E05-S01 — le témoin de la couche d'amorçage Glide.
+/* E05-S01 - the witness for the Glide bring-up layer.
  *
- * Il exerce `platform/render/glide.c` dans l'ordre où le moteur l'emploiera :
- * détecter, ouvrir, boucler, dessiner, fermer. Ce qu'il établit est que la
- * couche marche sur la machine, pas seulement qu'elle compile.
+ * It exercises `platform/render/glide.c` in the order the engine will use it:
+ * detect, open, loop, draw, close. What it establishes is that the layer works on
+ * the machine, not merely that it compiles.
  *
- * Deux choses le distinguent de la démonstration de E09-S01, qui dessinait déjà
- * un triangle :
+ * Two things set it apart from E09-S01's demonstration, which already drew a
+ * triangle:
  *
- *   - il passe par la **couche réutilisable** et non par des appels directs, de
- *     sorte que ce qui est prouvé est ce que le moteur utilisera ;
- *   - il mesure la **cadence** sur cent images, ce qui donne le premier chiffre
- *     d'échange de tampons du projet.
+ *   - it goes through the **reusable layer** rather than through direct calls, so
+ *     that what is proved is what the engine will use;
+ *   - it measures the **frame rate** over a hundred frames, which gives the
+ *     project's first buffer-swap figure.
  *
- * Le compte rendu part dans `D:\GLIDEBK.TXT`, lisible depuis l'hôte : sur une
- * Voodoo passthrough l'écran appartient à la carte pendant tout le rendu, et une
- * capture d'écran de l'émulateur ne montrerait pas la sortie 3dfx.
+ * The report goes to `D:\GLIDEBK.TXT`, readable from the host: on a passthrough
+ * Voodoo the screen belongs to the card throughout the rendering, and an emulator
+ * screenshot would not show the 3dfx output.
  */
 #include "render/glide.h"
 #include "win95/clock.h"
@@ -43,18 +43,17 @@ static void say(const char *fmt, ...)
 
 int main(int argc, char **argv)
 {
-    /* Mode « plantage » : ouvrir le contexte puis mourir pour de bon.
+    /* "Crash" mode: open the context then die for real.
      *
-     * C'est l'epreuve de l'etape 7 de E05-S01, et la plus utile en pratique.
-     * Sur une Voodoo passthrough, l'ecran appartient a la carte tant que le
-     * contexte est ouvert : un plantage sans restitution laisse un ecran noir
-     * que seul un redemarrage recupere. Pendant toute la mise au point de E05,
-     * ou l'on plante souvent, c'est la difference entre dix secondes et deux
-     * minutes par erreur.
+     * This is E05-S01's step 7 trial, and the most useful in practice. On a
+     * passthrough Voodoo, the screen belongs to the card as long as the context is
+     * open: a crash without restoration leaves a black screen that only a reboot
+     * recovers. Throughout E05's development, where one crashes often, this is the
+     * difference between ten seconds and two minutes per mistake.
      *
-     * La chaine eprouvee est complete : `dkr_win95_startup` pose le filtre
-     * d'exception, `dkr_glide_open` inscrit la restitution au registre, et le
-     * filtre l'execute avant d'afficher quoi que ce soit. */
+     * The chain under trial is complete: `dkr_win95_startup` installs the
+     * exception filter, `dkr_glide_open` registers the restoration, and the filter
+     * runs it before displaying anything at all. */
     const int crash_mode = (argc >= 2 && argv[1][0] == 'c');
 
     dkr_glide_hardware hw;
@@ -65,52 +64,53 @@ int main(int argc, char **argv)
     g_log = fopen("D:\\GLIDEBK.TXT", "w");
     dkr_win95_startup("GLIDEBK");
 
-    /* --- Détection --------------------------------------------------------- */
+    /* --- Detection --------------------------------------------------------- */
     r = dkr_glide_detect(&hw);
     say("detection          : %s\n", dkr_glide_result_text(r));
     if (r != DKR_GLIDE_OK) {
-        /* Ce n'est pas un echec du temoin : sur une machine sans carte 3dfx,
-           c'est le comportement voulu, et le message doit etre lisible. */
-        say("verdict            : pas de materiel 3dfx, message clair rendu\n");
+        /* This is not a failure of the witness: on a machine without a 3dfx board
+           it is the intended behaviour, and the message must be legible. */
+        say("verdict            : no 3dfx hardware, clear message returned\n");
         if (g_log) fclose(g_log);
         return 0;
     }
-    say("version Glide      : 0x%03X\n", hw.glide_version);
-    say("cartes             : %d\n", hw.board_count);
-    say("TMU                : %d\n", hw.tmu_count);
-    say("memoire image      : %u Ko\n", hw.fb_memory_kb);
+    say("Glide version      : 0x%03X\n", hw.glide_version);
+    say("boards             : %d\n", hw.board_count);
+    say("TMUs               : %d\n", hw.tmu_count);
+    say("frame buffer       : %u KB\n", hw.fb_memory_kb);
     for (i = 0; i < hw.tmu_count && i < 3; i++) {
-        say("  TMU %d memoire    : %u Ko\n", i, hw.tmu_memory_kb[i]);
+        say("  TMU %d memory     : %u KB\n", i, hw.tmu_memory_kb[i]);
     }
     say("SLI                : %d\n", hw.sli);
 
-    /* Ce que l'ADR 0002 exige, verifie a l'execution plutot que suppose. */
-    say("deux TMU exigees   : %s\n", hw.tmu_count >= 2 ? "OUI" : "NON — repli multipasse (E05-S04)");
+    /* What ADR 0002 requires, checked at run time rather than assumed. */
+    say("two TMUs required  : %s\n",
+        hw.tmu_count >= 2 ? "YES" : "NO - multipass fallback (E05-S04)");
 
-    /* --- Ouverture --------------------------------------------------------- */
+    /* --- Opening ----------------------------------------------------------- */
     r = dkr_glide_open(DKR_GLIDE_RES_640x480, &ctx);
-    say("ouverture 640x480  : %s\n", dkr_glide_result_text(r));
+    say("opening 640x480    : %s\n", dkr_glide_result_text(r));
     if (r != DKR_GLIDE_OK) {
         if (g_log) fclose(g_log);
         return 1;
     }
-    say("resolution obtenue : %dx%d, %d tampons, profondeur %s\n",
-        ctx.width, ctx.height, ctx.buffers, ctx.depth_buffer ? "oui" : "non");
+    say("resolution obtained: %dx%d, %d buffers, depth %s\n",
+        ctx.width, ctx.height, ctx.buffers, ctx.depth_buffer ? "yes" : "no");
 
     if (crash_mode) {
         volatile int *nowhere = (volatile int *)0;
-        say("mode plantage      : dereferencement nul, contexte ouvert\n");
+        say("crash mode         : null dereference, context open\n");
         dkr_glide_clear(0x00FF00);
         dkr_glide_swap();
-        *nowhere = 1;                 /* le filtre doit rendre l'affichage */
-        say("JAMAIS ATTEINT\n");
+        *nowhere = 1;                 /* the filter must restore the display */
+        say("NEVER REACHED\n");
         return 9;
     }
     if (ctx.resolution != DKR_GLIDE_RES_640x480) {
-        say("  (repli applique — la resolution demandee ne tenait pas)\n");
+        say("  (fallback applied - the requested resolution did not fit)\n");
     }
 
-    /* --- Cycle d'image ----------------------------------------------------- */
+    /* --- Frame cycle ------------------------------------------------------- */
     {
         unsigned long long start, elapsed_us;
         const int frames = 100;
@@ -119,69 +119,68 @@ int main(int argc, char **argv)
         start = dkr_clock_now_us();
 
         for (i = 0; i < frames; i++) {
-            /* Un dégradé lent, pour que l'écran montre que ça tourne. */
+            /* A slow gradient, so that the screen shows that it is running. */
             dkr_glide_clear((unsigned)((i * 2) & 0xFF));
             dkr_glide_draw_test_triangle();
             dkr_glide_swap();
         }
         elapsed_us = dkr_clock_now_us() - start;
-        say("%d images en       : %lu ms\n", frames,
+        say("%d frames in        : %lu ms\n", frames,
             (unsigned long)(elapsed_us / 1000u));
         if (elapsed_us > 0) {
-            say("cadence            : %lu images/s\n",
+            say("frame rate         : %lu frames/s\n",
                 (unsigned long)((unsigned long long)frames * 1000000u / elapsed_us));
         }
     }
 
-    /* --- Relire ce que la carte a dessine ----------------------------------- *
+    /* --- Reading back what the card drew ------------------------------------- *
      *
-     * C'est la premiere fois que ce projet **voit** sa sortie 3dfx. Tout ce qui
-     * precede reposait sur l'absence de plantage : sur une Voodoo passthrough,
-     * l'ecran appartient a la carte et aucune capture de l'emulateur ne le
-     * montre. */
+     * This is the first time this project **sees** its 3dfx output. Everything
+     * before rested on the absence of a crash: on a passthrough Voodoo, the screen
+     * belongs to the card and no capture of the emulator shows it. */
     {
         static unsigned pixels[640 * 480];
         int rw = 0, rh = 0;
         int got;
 
-        /* **Une derniere image sur fond noir**, pour que « peint » veuille dire
-           quelque chose. La boucle de cadence effacait sur un degrade : tout
-           l'ecran s'y trouvait peint, et compter les pixels non noirs n'aurait
-           rien prouve. */
+        /* **One last frame on a black background**, so that "painted" means
+           something. The frame-rate loop cleared to a gradient: the whole screen
+           was painted there, and counting the non-black pixels would have proved
+           nothing. */
         dkr_glide_clear(0x000000);
         dkr_glide_draw_test_triangle();
         dkr_glide_swap();
 
         got = dkr_glide_read_framebuffer(pixels, 640 * 480, &rw, &rh);
         if (got <= 0) {
-            say("relecture         : indisponible (grLfbLock absent ou refuse)\n");
+            say("read back         : unavailable (grLfbLock absent or refused)\n");
         } else {
             int x, y, painted = 0, background = 0;
-            say("relecture         : %d pixels, %dx%d\n", got, rw, rh);
-            /* On vient de dessiner le triangle sur fond noir puis d'echanger :
-               le tampon avant porte donc l'image. Compter ce qui est peint dit
-               si le triangle existe vraiment. */
+            say("read back         : %d pixels, %dx%d\n", got, rw, rh);
+            /* We have just drawn the triangle on a black background and swapped:
+               the front buffer therefore carries the image. Counting what is
+               painted says whether the triangle really exists. */
             for (y = 0; y < rh; y++) {
                 for (x = 0; x < rw; x++) {
                     const unsigned c = pixels[(size_t)y * (size_t)rw + (size_t)x];
                     if ((c & 0x00FFFFFFu) == 0u) { background++; } else { painted++; }
                 }
             }
-            say("  pixels peints   : %d\n", painted);
-            say("  pixels de fond  : %d\n", background);
-            /* Le triangle couvre environ la moitie de l'ecran ; on verifie
-               large, l'enjeu etant de distinguer « quelque chose » de « rien ». */
+            say("  pixels painted  : %d\n", painted);
+            say("  background      : %d\n", background);
+            /* The triangle covers about half the screen; we check generously, the
+               point being to tell "something" from "nothing". */
             say("  verdict         : %s\n",
-                (painted > rw * rh / 20) ? "LE TRIANGLE EST BIEN DESSINE"
-                                         : "rien de visible");
+                (painted > rw * rh / 20) ? "THE TRIANGLE IS INDEED DRAWN"
+                                         : "nothing visible");
             {
-                /* Un echantillon au centre, ecrit en clair : c'est la preuve la
-                   plus directe qu'on puisse ramener d'une carte dont personne ne
-                   voit l'ecran. */
+                /* A sample at the centre, written out in plain text: it is the most
+                   direct proof one can bring back from a card whose screen nobody
+                   sees. */
                 const unsigned c = pixels[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
-                say("  centre de l'ecran : 0x%06X\n", c & 0x00FFFFFFu);
+                say("  centre of screen: 0x%06X\n", c & 0x00FFFFFFu);
             }
-            /* Et l'image entiere, pour qu'on puisse enfin la regarder. */
+            /* And the whole image, so that it can finally be looked at. */
             {
                 FILE *bmp = fopen("D:\\GLIDEBK.BMP", "wb");
                 if (bmp) {
@@ -199,7 +198,7 @@ int main(int argc, char **argv)
                     head[26] = 1; head[28] = 24;
                     *(unsigned *)&head[34] = data;
                     fwrite(head, 1, sizeof(head), bmp);
-                    /* BMP range ses lignes du bas vers le haut. */
+                    /* BMP stores its rows from the bottom upwards. */
                     for (y = rh - 1; y >= 0; y--) {
                         for (x = 0; x < rw; x++) {
                             const unsigned c = pixels[(size_t)y * (size_t)rw + (size_t)x];
@@ -212,20 +211,20 @@ int main(int argc, char **argv)
                         for (i = 0; i < pad; i++) { fputc(0, bmp); }
                     }
                     fclose(bmp);
-                    say("  image ecrite    : D:\\GLIDEBK.BMP\n");
+                    say("  image written   : D:\\GLIDEBK.BMP\n");
                 }
             }
         }
     }
 
-    /* --- Fermeture --------------------------------------------------------- */
+    /* --- Closing ----------------------------------------------------------- */
     dkr_glide_shutdown();
-    say("fermeture          : affichage restitue\n");
-    /* Idempotence : le filtre d'exception peut l'appeler apres coup. */
+    say("close              : display restored\n");
+    /* Idempotence: the exception filter may call it afterwards. */
     dkr_glide_shutdown();
-    say("seconde fermeture  : sans effet, comme attendu\n");
+    say("second close       : no effect, as expected\n");
 
-    say("verdict            : la couche d'amorcage Glide fonctionne\n");
+    say("verdict            : the Glide bring-up layer works\n");
     if (g_log) fclose(g_log);
     return 0;
 }
