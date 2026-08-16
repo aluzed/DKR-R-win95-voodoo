@@ -1,87 +1,83 @@
-# E06-S04 — Cadence d'affichage et synchronisation
+# E06-S04 — Display pacing and synchronisation
 
 | | |
 |---|---|
-| **Épic** | E06 — Plateforme Windows 95 |
-| **Statut** | TODO |
-| **Priorité** | P1 |
-| **Estimation** | M |
-| **Dépend de** | E02-S03, E05-S01 |
-| **Bloque** | E08-S01 |
+| **Epic** | E06 — Windows 95 platform |
+| **Status** | TODO |
+| **Priority** | P1 |
+| **Estimate** | M |
+| **Depends on** | E02-S03, E05-S01 |
+| **Blocks** | E08-S01 |
 
-## Contexte
+## Context
 
-DKR tourne à 30 images par seconde sur la N64, cadence à laquelle sa simulation
-est calibrée. `vi_presentation_policy.hpp` implémente aujourd'hui cette politique
-de présentation, et le mode Moderne y ajoute une interpolation vers des taux de
-rafraîchissement élevés — fonctionnalité qui disparaît avec le profil « Accurate »
-seul (E07-S01).
+DKR runs at 30 frames per second on the N64, the rate at which its simulation is
+calibrated. `vi_presentation_policy.hpp` implements that presentation policy today, and
+the Modern mode adds an interpolation towards high refresh rates — a feature that
+disappears with the "Accurate" profile alone (E07-S01).
 
-Ce qui reste est plus simple mais pas trivial : présenter une image toutes les
-33,3 ms, sur une carte 3dfx dont l'échange de tampons se synchronise sur le
-balayage du moniteur.
+What remains is simpler but not trivial: presenting a frame every 33.3 ms, on a 3dfx
+card whose buffer swap synchronises on the monitor's scan.
 
-Le nœud est là. Un moniteur de 1998 en 640 × 480 balaie typiquement à 60, 72 ou
-85 Hz. À 60 Hz, une image de jeu occupe exactement deux balayages — cas idéal. À
-72 ou 85 Hz, le rapport n'est plus entier, et la présentation synchronisée
-produira une saccade régulière. Et si le jeu rate son échéance, l'échange
-synchronisé attend le balayage suivant, ce qui fait perdre une image entière : à
-30 images par seconde, en perdre une se voit beaucoup.
+That is where the knot is. A 1998 monitor at 640 × 480 typically scans at 60, 72 or
+85 Hz. At 60 Hz, a game frame occupies exactly two scans — the ideal case. At 72 or
+85 Hz, the ratio is no longer whole, and synchronised presentation will produce a
+regular stutter. And if the game misses its deadline, the synchronised swap waits for
+the next scan, which loses a whole frame: at 30 frames per second, losing one shows a
+great deal.
 
-## Objectif
+## Objective
 
-Présenter le jeu à sa cadence d'origine, régulièrement, sur les modes d'affichage
-disponibles sur la cible.
+To present the game at its original rate, regularly, on the display modes available on
+the target.
 
-## Périmètre
+## Scope
 
-**Dans :** la cadence de présentation, la synchronisation, la mesure de régularité.
+**In:** the presentation rate, synchronisation, measuring regularity.
 
-**Hors :** l'interpolation vers des taux élevés, supprimée avec le mode Moderne.
+**Out:** interpolation towards high rates, removed along with the Modern mode.
 
-## Travail
+## Work
 
-1. Relever les fréquences de rafraîchissement réellement disponibles à la
-   résolution retenue, sur la cible.
-2. Trancher entre échange synchronisé et échange immédiat. Le synchronisé évite le
-   déchirement ; l'immédiat évite de perdre une image entière quand l'échéance est
-   ratée. Sur une machine au budget serré, le second peut être le meilleur choix —
-   à décider sur mesure, et à rendre configurable (E06-S05).
-3. Traiter les fréquences non multiples de 30 Hz : présenter au balayage le plus
-   proche, en mesurant la saccade induite. Documenter le mode d'affichage
-   recommandé.
-4. Implémenter la régulation de cadence sur l'horloge de E02-S03, en découplant la
-   cadence de simulation de la cadence de présentation. La simulation doit avancer
-   à 30 Hz quoi qu'il arrive, sans quoi le jeu tourne au ralenti ou en accéléré.
-5. Traiter le cas du budget dépassé : quand une image prend plus de 33,3 ms, décider
-   entre sauter une présentation et laisser la simulation prendre du retard. Le
-   comportement de la console est la référence.
-6. Mesurer la régularité : distribution des temps entre présentations, pas
-   seulement la moyenne. Une moyenne de 30 images par seconde avec une distribution
-   irrégulière donne un jeu qui se sent mauvais malgré un chiffre correct.
-7. Vérifier la cohérence avec la synchronisation audio (E06-S03) : les deux
-   horloges doivent rester d'accord sur la durée.
+1. Survey the refresh rates really available at the retained resolution, on the target.
+2. Settle between a synchronised swap and an immediate swap. The synchronised one
+   avoids tearing; the immediate one avoids losing a whole frame when the deadline is
+   missed. On a machine with a tight budget, the second may be the better choice — to
+   be decided on measurement, and to be made configurable (E06-S05).
+3. Deal with rates that are not multiples of 30 Hz: present at the nearest scan,
+   measuring the stutter induced. Document the recommended display mode.
+4. Implement rate regulation on E02-S03's clock, decoupling the simulation rate from
+   the presentation rate. The simulation must advance at 30 Hz whatever happens, failing
+   which the game runs in slow motion or fast forward.
+5. Deal with the case of an exceeded budget: when a frame takes more than 33.3 ms,
+   decide between skipping a presentation and letting the simulation fall behind. The
+   console's behaviour is the reference.
+6. Measure the regularity: the distribution of the times between presentations, not
+   only the mean. A mean of 30 frames per second with an irregular distribution gives a
+   game that feels bad despite a correct figure.
+7. Check the consistency with the audio synchronisation (E06-S03): the two clocks must
+   stay in agreement over time.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Les fréquences disponibles à la résolution retenue sont relevées.
-- [ ] Le choix synchronisé / immédiat est justifié par une mesure, et configurable.
-- [ ] La cadence de simulation reste à 30 Hz indépendamment de la présentation.
-- [ ] Le comportement en cas de dépassement de budget est décidé et documenté.
-- [ ] La régularité est mesurée en distribution, pas en moyenne.
-- [ ] Le mode d'affichage recommandé est documenté.
-- [ ] Aucune dérive entre horloge audio et horloge vidéo sur vingt minutes.
+- [ ] The rates available at the retained resolution are surveyed.
+- [ ] The synchronised / immediate choice is justified by a measurement, and
+      configurable.
+- [ ] The simulation rate stays at 30 Hz independently of the presentation.
+- [ ] The behaviour on a budget overrun is decided and documented.
+- [ ] The regularity is measured as a distribution, not as a mean.
+- [ ] The recommended display mode is documented.
+- [ ] No drift between the audio clock and the video clock over twenty minutes.
 
-## Risques
+## Risks
 
-Une cadence irrégulière est perçue comme une mauvaise performance même quand le
-nombre moyen d'images par seconde est correct. C'est particulièrement vrai à
-30 Hz, où chaque image compte double. La mesure en distribution de l'étape 6 est
-ce qui permet de distinguer « lent » de « irrégulier » — deux problèmes dont les
-remèdes n'ont rien à voir.
+An irregular rate is perceived as poor performance even when the mean number of frames
+per second is correct. That is particularly true at 30 Hz, where every frame counts
+double. Step 6's distribution measurement is what allows "slow" to be distinguished
+from "irregular" — two problems whose remedies have nothing in common.
 
-## Références
+## References
 
 - `runtime-recomp/src/game/vi_presentation_policy.hpp`
-- `runtime-recomp/src/game/interpolation_state_policy.hpp` — supprimé avec E07-S01
-- E02-S03 — base de temps
+- `runtime-recomp/src/game/interpolation_state_policy.hpp` — removed with E07-S01
+- E02-S03 — time base

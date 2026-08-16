@@ -1,93 +1,89 @@
-# E06-S02 — Entrées : clavier et manette
+# E06-S02 — Inputs: keyboard and gamepad
 
 | | |
 |---|---|
-| **Épic** | E06 — Plateforme Windows 95 |
-| **Statut** | TODO |
-| **Priorité** | P0 |
-| **Estimation** | M |
-| **Dépend de** | E06-S01 |
-| **Bloque** | E09-S04 |
+| **Epic** | E06 — Windows 95 platform |
+| **Status** | TODO |
+| **Priority** | P0 |
+| **Estimate** | M |
+| **Depends on** | E06-S01 |
+| **Blocks** | E09-S04 |
 
-## Contexte
+## Context
 
-`runtime_input.cpp` (25 Ko) gère aujourd'hui clavier, manettes et gyroscope via
-SDL2, avec remappage complet. La logique de correspondance vers la manette N64 est
-du code du projet, portable, et elle doit être conservée ; c'est la couche
-d'acquisition qui change.
+`runtime_input.cpp` (25 KB) handles keyboard, gamepads and gyroscope today through
+SDL2, with complete remapping. The mapping logic towards the N64 controller is the
+project's own code, portable, and it must be kept; it is the acquisition layer that
+changes.
 
-Sous Windows 95, deux voies :
+Under Windows 95, two routes:
 
-- **DirectInput**, à partir de DirectX 3, qui gère les manettes et les joysticks
-  de façon uniforme ;
-- **l'API joystick de `winmm`** (`joyGetPosEx`), plus ancienne, plus simple,
-  disponible partout, mais limitée en nombre d'axes et de boutons.
+- **DirectInput**, from DirectX 3 onwards, which handles gamepads and joysticks
+  uniformly;
+- **`winmm`'s joystick API** (`joyGetPosEx`), older, simpler, available everywhere, but
+  limited in the number of axes and buttons.
 
-DirectInput est la bonne voie, avec `winmm` en repli si le pilote de la manette
-n'expose pas DirectInput.
+DirectInput is the right route, with `winmm` as a fallback if the gamepad's driver does
+not expose DirectInput.
 
-Deux différences d'époque à intégrer : les manettes de 1998 sont analogiques mais
-souvent mal calibrées, et le panneau de configuration de Windows expose une
-calibration système dont il faut tenir compte. Et il n'y a pas de vibration —
-DKR n'utilise pas le Rumble Pak, donc c'est sans conséquence, mais à vérifier.
+Two differences of the period to take in: the gamepads of 1998 are analogue but often
+badly calibrated, and Windows's control panel exposes a system calibration that has to
+be taken into account. And there is no vibration — DKR does not use the Rumble Pak, so
+that is of no consequence, but it should be checked.
 
-## Objectif
+## Objective
 
-Livrer l'acquisition des entrées sous Windows 95, branchée sur la logique de
-correspondance existante.
+To deliver input acquisition under Windows 95, wired onto the existing mapping logic.
 
-## Périmètre
+## Scope
 
-**Dans :** acquisition clavier et manette, calibration, remappage, correspondance
-vers la manette N64.
+**In:** keyboard and gamepad acquisition, calibration, remapping, mapping to the N64
+controller.
 
-**Hors :** le gyroscope, qui n'a pas de sens sur cette cible et disparaît avec
+**Out:** the gyroscope, which makes no sense on this target and disappears with
 E07-S02.
 
-## Travail
+## Work
 
-1. Isoler dans `runtime_input.cpp` ce qui relève de SDL2 et ce qui relève de la
-   logique de correspondance. Cette dernière est conservée telle quelle : elle est
-   testée et elle n'a aucune raison de changer.
-2. Implémenter l'acquisition clavier. En plein écran accéléré, décider entre les
-   messages de fenêtre et l'acquisition directe DirectInput : la seconde évite la
-   répétition automatique et la latence de la file de messages, ce qui compte pour
-   un jeu de course.
-3. Implémenter l'acquisition manette par DirectInput, avec repli sur `joyGetPosEx`.
-4. Traiter la calibration et la zone morte. Les manettes analogiques de l'époque
-   dérivent ; une zone morte configurable est nécessaire, pas optionnelle.
-5. Traiter la correspondance des axes vers le stick analogique de la N64, en
-   respectant la plage et la forme de réponse attendues par le jeu. Une plage mal
-   calibrée rend la conduite imprécise sans qu'aucune erreur ne soit visible.
-6. Traiter le multijoueur : jusqu'à quatre manettes, la N64 en acceptant quatre.
-   Vérifier ce que le matériel de l'époque permet réellement — deux ports de jeu
-   sont plus courants que quatre.
-7. Conserver le remappage, avec sa persistance dans le fichier de configuration
-   (E06-S05) plutôt que dans l'interface ImGui supprimée.
-8. Mesurer la latence d'entrée et la comparer à celle de la cible moderne. Sur un
-   jeu de course, la latence est une caractéristique de jouabilité, pas un détail.
+1. Isolate in `runtime_input.cpp` what belongs to SDL2 and what belongs to the mapping
+   logic. The latter is kept as it is: it is tested and it has no reason to change.
+2. Implement keyboard acquisition. In accelerated full screen, decide between window
+   messages and direct DirectInput acquisition: the second avoids auto-repeat and the
+   message queue's latency, which counts in a racing game.
+3. Implement gamepad acquisition through DirectInput, with a fallback on
+   `joyGetPosEx`.
+4. Deal with calibration and the dead zone. The analogue gamepads of the period drift;
+   a configurable dead zone is necessary, not optional.
+5. Deal with mapping the axes to the N64's analogue stick, respecting the range and
+   response shape the game expects. A badly calibrated range makes the driving
+   imprecise without any error being visible.
+6. Deal with multiplayer: up to four gamepads, the N64 accepting four. Check what the
+   hardware of the period really allows — two game ports are more common than four.
+7. Keep the remapping, with its persistence in the configuration file (E06-S05) rather
+   than in the removed ImGui interface.
+8. Measure the input latency and compare it against the modern target's. In a racing
+   game, latency is a characteristic of playability, not a detail.
 
-## Critères d'acceptation
+## Acceptance criteria
 
-- [ ] Le clavier fonctionne en plein écran, sans latence de file de messages.
-- [ ] Une manette DirectInput fonctionne, avec repli `winmm` vérifié.
-- [ ] La zone morte et la calibration sont configurables.
-- [ ] La correspondance vers le stick N64 respecte plage et forme de réponse,
-      vérifiée par comparaison à la cible moderne.
-- [ ] Le nombre de manettes réellement supporté est déterminé et documenté.
-- [ ] Le remappage est conservé et persistant.
-- [ ] La latence d'entrée est mesurée et comparée à la référence.
-- [ ] La logique de correspondance existante est réutilisée, non réécrite.
+- [ ] The keyboard works in full screen, with no message-queue latency.
+- [ ] A DirectInput gamepad works, with the `winmm` fallback verified.
+- [ ] The dead zone and the calibration are configurable.
+- [ ] The mapping to the N64 stick respects range and response shape, verified by
+      comparison against the modern target.
+- [ ] The number of gamepads really supported is determined and documented.
+- [ ] The remapping is kept and persistent.
+- [ ] The input latency is measured and compared against the reference.
+- [ ] The existing mapping logic is reused, not rewritten.
 
-## Risques
+## Risks
 
-Une correspondance d'axe imprécise ne se voit pas : elle se ressent, sous forme
-d'une conduite qui « ne répond pas pareil ». C'est un défaut difficile à
-diagnostiquer après coup, d'où la comparaison objective de l'étape 8 plutôt qu'une
-appréciation au jeu.
+An imprecise axis mapping does not show: it is felt, as driving that "does not respond
+the same". It is a defect hard to diagnose after the fact, hence step 8's objective
+comparison rather than an appreciation while playing.
 
-## Références
+## References
 
-- `runtime-recomp/src/game/runtime_input.{hpp,cpp}` — 25 Ko, logique à conserver
-- `runtime-recomp/src/game/motion_steering_policy.hpp` — gyroscope, hors périmètre
-- E06-S05 — persistance de la configuration
+- `runtime-recomp/src/game/runtime_input.{hpp,cpp}` — 25 KB, logic to be kept
+- `runtime-recomp/src/game/motion_steering_policy.hpp` — gyroscope, out of scope
+- E06-S05 — configuration persistence
