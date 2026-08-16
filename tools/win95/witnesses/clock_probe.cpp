@@ -121,7 +121,7 @@ static double cost_ns(void (*fn)(void), int calls)
     start = timeGetTime();
     for (i = 0; i < calls; i++) { fn(); }
     elapsed = timeGetTime() - start;
-    return (elapsed * 1000000.0) / (double)calls;   /* ms -> ns par appel */
+    return (elapsed * 1000000.0) / (double)calls;   /* ms -> ns per call */
 }
 
 static void call_gettickcount(void) { volatile DWORD v = GetTickCount(); (void)v; }

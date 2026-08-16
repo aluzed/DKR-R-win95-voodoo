@@ -64,6 +64,6 @@ int main(void) {
         if (ul1!=ul2||uh1!=uh2) { if (++fails < 5) printf("DMULTU alea %llx*%llx\n",(unsigned long long)a,(unsigned long long)b); }
         if (sl1!=sl2||sh1!=sh2) { if (++fails < 5) printf("DMULT alea %llx*%llx\n",(unsigned long long)a,(unsigned long long)b); }
     }
-    printf("comparaisons: %ld, echecs: %ld -> %s\n", n, fails, fails ? "ECHEC" : "IDENTIQUE AU BIT PRES");
+    printf("comparisons: %ld, failures: %ld -> %s\n", n, fails, fails ? "FAILED" : "BIT-FOR-BIT IDENTICAL");
     return fails != 0;
 }
