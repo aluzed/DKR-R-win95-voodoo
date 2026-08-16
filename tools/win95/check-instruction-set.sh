@@ -1,26 +1,24 @@
 #!/usr/bin/env bash
-# E01-S01 — verifie qu'un binaire n'utilise aucune instruction posterieure au
-# Pentium II.
+# E01-S01 - checks that a binary uses no instruction later than the Pentium II.
 #
 #   tools/win95/check-instruction-set.sh build/.../DKR-R.EXE
-#   tools/win95/check-instruction-set.sh --self-test     (verifie le verificateur)
+#   tools/win95/check-instruction-set.sh --self-test     (checks the checker)
 #
-# Pourquoi ce controle est indispensable : un compilateur moderne en 32 bits
-# emet du SSE2 par defaut pour l'arithmetique flottante. L'echec ne se voit pas
-# a la compilation — il se voit au lancement, par une exception d'instruction
-# invalide, eventuellement des mois plus tard dans une fonction rarement
-# atteinte.
+# Why this check is indispensable: a modern 32-bit compiler emits SSE2 by
+# default for floating-point arithmetic. The failure does not show at compile
+# time - it shows at launch, as an invalid-instruction exception, possibly months
+# later inside a rarely reached function.
 #
-# Le controle porte sur le **binaire lie**, pas sur les objets du projet : le
-# SSE viendrait du code de demarrage du CRT ou de la bibliotheque standard, que
-# `-mno-sse` sur nos sources ne couvre pas.
+# The check bears on the **linked binary**, not on the project's objects: the SSE
+# would come from the CRT's startup code or from the standard library, which
+# `-mno-sse` on our sources does not cover.
 #
-# Ce que le Pentium II sait faire, et qui est donc autorise :
-#   386/486 de base, x87, CMOV (Pentium Pro), MMX, FXSAVE, RDTSC, CPUID,
-#   CMPXCHG8B, et le prefixe LOCK.
+# What the Pentium II can do, and what is therefore allowed:
+#   base 386/486, x87, CMOV (Pentium Pro), MMX, FXSAVE, RDTSC, CPUID,
+#   CMPXCHG8B, and the LOCK prefix.
 #
-# Ce qui est refuse : SSE et au-dela, 3DNow!, et les instructions de barriere
-# memoire introduites avec le Pentium III.
+# What is refused: SSE and beyond, 3DNow!, and the memory-barrier instructions
+# introduced with the Pentium III.
 set -euo pipefail
 
 PREFIX="${DKR_WIN95_PREFIX:-$HOME/.local/dkr-win95}"
@@ -31,44 +29,43 @@ if [[ -z "$OBJDUMP" ]]; then
     command -v "$c" >/dev/null && { OBJDUMP="$c"; break; }
   done
 fi
-[[ -n "$OBJDUMP" ]] || { echo "erreur: objdump introuvable" >&2; exit 2; }
+[[ -n "$OBJDUMP" ]] || { echo "error: objdump not found" >&2; exit 2; }
 
-# Presque toutes les instructions SSE et au-dela nomment un registre XMM, YMM ou
-# ZMM : c'est le signal le plus sur, et il ne depend pas d'une liste de
-# mnemoniques a tenir a jour.
+# Almost every SSE-and-beyond instruction names an XMM, YMM or ZMM register:
+# that is the surest signal, and it does not depend on a list of mnemonics that
+# has to be kept up to date.
 RX_REG='%?[xyz]mm[0-9]'
 
-# Celles qui n'en nomment pas doivent etre listees. Barrieres et prefetch sont
-# arrivees avec le Pentium III ; la famille pf* est 3DNow! (AMD K6-2).
+# The ones that name none have to be listed. Barriers and prefetch arrived with
+# the Pentium III; the pf* family is 3DNow! (AMD K6-2).
 RX_MNEMO='\b(sfence|lfence|mfence|clflush|movnti|prefetchnta|prefetcht[012]|prefetchw|femms|pfadd|pfsub|pfmul|pfrcp|pfrsqrt|pfmax|pfmin|pfcmp[a-z]*|pi2fd|pf2id|pswapd|cmpxchg16b|xgetbv|vzeroupper)\b'
 
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 bad()  { printf '\033[1;31m   %s\033[0m\n' "$*"; }
 good() { printf '\033[1;32m   %s\033[0m\n' "$*"; }
 
-scan() { # $1 = binaire ; renvoie 1 si une instruction interdite est trouvee
+scan() { # $1 = binary; returns 1 if a forbidden instruction is found
   local bin="$1" dis hits
   dis="$("$OBJDUMP" -d "$bin" 2>/dev/null || true)"
   if [[ -z "$dis" ]]; then
-    bad "$bin : desassemblage impossible"; return 1
+    bad "$bin: cannot disassemble"; return 1
   fi
-  # Ne garder que les lignes d'instruction : « adresse: octets  mnemonique »,
-  # **et seulement celles qui sont vraiment du code**.
+  # Keep only the instruction lines - "address: bytes  mnemonic" - **and only
+  # those that are really code**.
   #
-  # Le lieur place les tables d'exceptions — `.gcc_except_table`, `.eh_frame` —
-  # a l'interieur de `.text`, et `objdump -d` les desassemble comme le reste.
-  # Des octets de donnees s'y decodent alors en instructions : un binaire qui
-  # emploie `std::filesystem::path` produisait ainsi « movaps %xmm0,(%eax) » et
-  # « movnti », deux instructions posterieures au Pentium II, dans de la donnee
-  # que le processeur n'execute jamais.
+  # The linker places the exception tables - `.gcc_except_table`, `.eh_frame` -
+  # inside `.text`, and `objdump -d` disassembles them like the rest. Data bytes
+  # then decode as instructions: a binary using `std::filesystem::path` produced
+  # "movaps %xmm0,(%eax)" and "movnti" that way, two post-Pentium II
+  # instructions, inside data the processor never executes.
   #
-  # Le faux positif n'est pas benin : il fait echouer un build correct, et la
-  # reaction naturelle devant un garde-fou qui crie a tort est de le desactiver.
-  # On suit donc le symbole courant et on ignore les regions de donnees.
+  # The false positive is not harmless: it fails a correct build, and the natural
+  # reaction to a guard rail that cries wolf is to disable it. So we track the
+  # current symbol and skip the data regions.
   hits="$(awk -v rx_reg="$RX_REG" -v rx_mnemo="$RX_MNEMO" '
     /^[0-9a-fA-F]+ <.*>:/ {
       sym = $2
-      # Les regions de donnees que le lieur loge dans .text.
+      # The data regions the linker lodges inside .text.
       skip = (sym ~ /gcc_except_table|eh_frame|\.rdata|\.data|jcr|CRT\$/) ? 1 : 0
       next
     }
@@ -79,19 +76,18 @@ scan() { # $1 = binaire ; renvoie 1 si une instruction interdite est trouvee
   ' <<< "$dis" || true)"
   if [[ -n "$hits" ]]; then
     local n; n=$(wc -l <<< "$hits")
-    bad "$(basename "$bin") : $n instruction(s) hors Pentium II"
+    bad "$(basename "$bin"): $n instruction(s) outside the Pentium II set"
     head -8 <<< "$hits" | sed -E 's/^[[:space:]]*/      /'
-    [[ $n -gt 8 ]] && printf '      ... et %d autres\n' "$((n - 8))"
+    [[ $n -gt 8 ]] && printf '      ... and %d more\n' "$((n - 8))"
     return 1
   fi
-  good "$(basename "$bin") : aucune instruction hors Pentium II"
+  good "$(basename "$bin"): no instruction outside the Pentium II set"
   return 0
 }
 
 self_test() {
-  # Critere d'acceptation : le verificateur doit echouer sur du SSE injecte
-  # volontairement. Sans cette epreuve, un verificateur casse passerait pour un
-  # verificateur satisfait.
+  # Acceptance criterion: the checker must fail on deliberately injected SSE.
+  # Without this test, a broken checker would pass for a satisfied one.
   local tmp cc
   tmp="$(mktemp -d)"; trap 'rm -rf -- "$tmp"' RETURN
   cc="$(command -v i686-w64-mingw32-gcc-posix || command -v i686-w64-mingw32-gcc || command -v gcc)"
@@ -105,18 +101,18 @@ EOF
 float g(float *p) { __m128 v = _mm_loadu_ps(p); v = _mm_add_ps(v, v); return _mm_cvtss_f32(v); }
 int main(void) { float p[4] = {1,2,3,4}; return (int)g(p); }
 EOF
-  say "temoin propre : x87 seulement"
+  say "clean witness: x87 only"
   "$cc" -O2 -march=pentium2 -mfpmath=387 -mno-sse -c -o "$tmp/clean.o" "$tmp/clean.c" 2>/dev/null
-  scan "$tmp/clean.o" || { bad "le temoin propre est refuse — le verificateur est trop strict"; return 1; }
+  scan "$tmp/clean.o" || { bad "the clean witness is refused - the checker is too strict"; return 1; }
 
-  say "temoin sale : SSE injecte volontairement"
+  say "dirty witness: deliberately injected SSE"
   "$cc" -O2 -msse -c -o "$tmp/dirty.o" "$tmp/dirty.c" 2>/dev/null
   if scan "$tmp/dirty.o" >/dev/null 2>&1; then
-    bad "le temoin sale est accepte — le verificateur ne detecte rien"
+    bad "the dirty witness is accepted - the checker detects nothing"
     return 1
   fi
-  good "temoin sale correctement refuse"
-  say "le verificateur fonctionne"
+  good "dirty witness correctly refused"
+  say "the checker works"
   return 0
 }
 
@@ -127,7 +123,7 @@ fi
 
 status=0
 for bin in "$@"; do
-  [[ -f "$bin" ]] || { bad "introuvable : $bin"; status=1; continue; }
+  [[ -f "$bin" ]] || { bad "not found: $bin"; status=1; continue; }
   scan "$bin" || status=1
 done
 exit $status

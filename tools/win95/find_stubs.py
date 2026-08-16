@@ -1,46 +1,46 @@
 #!/usr/bin/env python3
-"""E02-S01 — recense les exports de Windows 95 qui ne font rien.
+"""E02-S01 - surveys the Windows 95 exports that do nothing.
 
     tools/win95/find_stubs.py KERNEL32.DLL USER32.DLL ...
-    tools/win95/find_stubs.py --write KERNEL32.DLL      # met a jour exports/stubs/
+    tools/win95/find_stubs.py --write KERNEL32.DLL      # updates exports/stubs/
 
-Une API absente de la table d'exports est un probleme *bruyant* : Windows 95
-refuse de charger le programme et nomme le symbole. C'est ce que verifie
-`check_imports.py`.
+An API absent from the export table is a *loud* problem: Windows 95 refuses to
+load the program and names the symbol. That is what `check_imports.py` checks.
 
-Une API **exportee mais vide** est un probleme silencieux, et donc pire. Le lien
-reussit, le chargement reussit, le controle d'imports est satisfait — et la
-fonction ne fait rien. C'est ainsi que `CreateSemaphoreW` a failli emporter tout
-le planificateur d'`ultramodern` : `moodycamel::LightweightSemaphore` l'appelle,
-recoit un descripteur nul, et ni son attente ni son signal ne fonctionnent
-ensuite. Voir docs/research/win95-blockers.md.
+An API that is **exported but empty** is a silent problem, and therefore worse.
+The link succeeds, the load succeeds, the import check is satisfied - and the
+function does nothing. That is how `CreateSemaphoreW` nearly carried off the
+whole of `ultramodern`'s scheduler: `moodycamel::LightweightSemaphore` calls it,
+receives a null handle, and neither its wait nor its signal works afterwards. See
+docs/research/win95-blockers.md.
 
-## Comment un bouchon se reconnait
+## How a stub is recognised
 
-Les entrees vides de Windows 95 partagent une forme fixe, qu'on peut donc
-reconnaitre mecaniquement plutot que de les deviner :
+Windows 95's empty entries share a fixed shape, which can therefore be
+recognised mechanically rather than guessed at:
 
-    33 c0              xor  eax,eax     ; valeur de retour = 0 (echec)
-    b1 XX              mov  cl,index    ; numero du bouchon
-    e9 XX XX XX XX     jmp  queue       ; queue commune
+    33 c0              xor  eax,eax     ; return value = 0 (failure)
+    b1 XX              mov  cl,index    ; stub number
+    e9 XX XX XX XX     jmp  tail        ; common tail
 
-et la queue commune pose `ERROR_CALL_NOT_IMPLEMENTED` (120) par `SetLastError`.
+and the common tail sets `ERROR_CALL_NOT_IMPLEMENTED` (120) through
+`SetLastError`.
 
-Le motif est reconnu ici sur les neuf premiers octets du code de chaque export
-nomme. Mais « le motif ressemble a un bouchon » ne serait qu'une impression, et
-un faux positif ferait echouer le build de tout le monde : le releve est donc
-**verifie**, pas seulement reconnu.
+The pattern is recognised here over the first nine bytes of each named export's
+code. But "the pattern looks like a stub" would only be an impression, and a
+false positive would break everybody's build: the survey is therefore
+**verified**, not merely recognised.
 
-La verification est la convergence des sauts. Les bouchons d'une meme DLL
-sautent tous a une unique queue commune — 179 vers `0x1319` pour KERNEL32, 162
-vers `0x62c6` pour USER32, 62 vers `0x98ea` pour GDI32, 176 vers `0x1356` pour
-ADVAPI32. Une seule adresse par DLL, sans exception. L'outil l'exige et refuse
-d'ecrire un releve qui ne la presenterait pas.
+The verification is the convergence of the jumps. The stubs of one DLL all jump
+to a single common tail - 179 to `0x1319` for KERNEL32, 162 to `0x62c6` for
+USER32, 62 to `0x98ea` for GDI32, 176 to `0x1356` for ADVAPI32. One address per
+DLL, without exception. The tool requires it and refuses to write a survey that
+does not show it.
 
-Preuve supplementaire quand on en veut une : plusieurs bouchons **partagent la
-meme adresse d'entree**. `LoadLibraryExW` et `MoveFileExW` sont a la meme,
-`CreateEventW` et `CreateSemaphoreW` aussi. Deux fonctions au comportement
-radicalement different ne partagent du code que lorsqu'aucune des deux n'en a.
+Further proof when one wants it: several stubs **share the same entry address**.
+`LoadLibraryExW` and `MoveFileExW` are at the same one, `CreateEventW` and
+`CreateSemaphoreW` too. Two functions with radically different behaviour only
+share code when neither has any.
 """
 import argparse
 import pathlib
@@ -56,12 +56,12 @@ RED, GREEN, YELLOW, OFF = "\033[1;31m", "\033[1;32m", "\033[1;33m", "\033[0m"
 
 
 def find_stubs(path):
-    """Rend ([(nom, rva, cible)], nombre d'exports nommes).
+    """Returns ([(name, rva, target)], number of named exports).
 
-    `cible` est l'adresse ou saute le bouchon. Elle est relevee et non ignoree :
-    c'est elle qui transforme « le motif ressemble a un bouchon » en « les N
-    bouchons de cette DLL sautent tous au meme endroit », c'est-a-dire en une
-    verification plutot qu'en une ressemblance. Voir `main`.
+    `target` is the address the stub jumps to. It is recorded and not discarded:
+    it is what turns "the pattern looks like a stub" into "the N stubs of this
+    DLL all jump to the same place", that is, into a verification rather than a
+    resemblance. See `main`.
     """
     pe = PE(str(path))
     data, ddir = pe.d, pe.ddir
@@ -79,9 +79,9 @@ def find_stubs(path):
         name = pe.cstr(pe.off(struct.unpack_from("<I", data, off_n + 4 * i)[0]))
         ordinal = struct.unpack_from("<H", data, off_o + 2 * i)[0]
         if ordinal >= n_functions:
-            # Table tronquee ou illisible : le dire, plutot que lire a cote.
-            print(f"  {YELLOW}ignore{OFF} {name} : ordinal {ordinal} hors des "
-                  f"{n_functions} entrees")
+            # Truncated or unreadable table: say so, rather than read past it.
+            print(f"  {YELLOW}skipped{OFF} {name}: ordinal {ordinal} outside the "
+                  f"{n_functions} entries")
             continue
         func_rva = struct.unpack_from("<I", data, off_f + 4 * ordinal)[0]
         off = pe.off(func_rva)
@@ -99,9 +99,9 @@ def find_stubs(path):
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("dlls", nargs="+", help="DLL extraites de la machine cible")
+    ap.add_argument("dlls", nargs="+", help="DLLs extracted from the target machine")
     ap.add_argument("--write", action="store_true",
-                    help=f"ecrit le releve dans {STUBS_DIR}")
+                    help=f"writes the survey into {STUBS_DIR}")
     args = ap.parse_args(argv)
 
     status = 0
@@ -112,38 +112,37 @@ def main(argv):
 
         share = (100.0 * len(stubs) / total) if total else 0.0
         colour = RED if share > 50 else (YELLOW if stubs else GREEN)
-        print(f"{colour}{stem}{OFF} : {len(stubs)} bouchons sur {total} "
-              f"exports nommes ({share:.0f} %)")
+        print(f"{colour}{stem}{OFF}: {len(stubs)} stubs out of {total} "
+              f"named exports ({share:.0f} %)")
 
-        # La convergence des sauts est ce qui rend le releve digne de confiance.
-        # Un `BOUCHON` fait echouer le build (check_imports.py) : un seul faux
-        # positif bloquerait tout le monde. Sur les DLL de la machine de test,
-        # les bouchons d'une meme DLL sautent **tous** a une unique adresse —
-        # 179 vers 0x1319 pour KERNEL32, 162 vers 0x62c6 pour USER32. Exiger
-        # cette convergence transforme l'argument « aucun faux positif
-        # plausible » en propriete verifiee.
+        # The convergence of the jumps is what makes the survey trustworthy. A
+        # `STUB` fails the build (check_imports.py): a single false positive
+        # would block everybody. On the test machine's DLLs, the stubs of one DLL
+        # **all** jump to a single address - 179 to 0x1319 for KERNEL32, 162 to
+        # 0x62c6 for USER32. Requiring that convergence turns the argument "no
+        # plausible false positive" into a verified property.
         targets = sorted({t for _, _, t in stubs})
         if len(targets) > 1:
             status = 1
-            print(f"  {RED}REFUSE{OFF} : {len(targets)} cibles de saut "
-                  f"distinctes ({', '.join(hex(t) for t in targets)})")
-            print(f"          Le motif ne designe donc plus une queue unique, "
-                  f"et le releve n'est plus sur.")
-            print(f"          Ne rien ecrire : verifier au desassemblage avant "
-                  f"de faire confiance a cette liste.")
+            print(f"  {RED}REFUSED{OFF}: {len(targets)} distinct jump targets "
+                  f"({', '.join(hex(t) for t in targets)})")
+            print(f"          The pattern therefore no longer designates a "
+                  f"single tail, and the survey is no longer safe.")
+            print(f"          Write nothing: check the disassembly before "
+                  f"trusting this list.")
             continue
         if targets:
-            print(f"  queue commune : {hex(targets[0])}")
+            print(f"  common tail: {hex(targets[0])}")
 
         if args.write:
             STUBS_DIR.mkdir(parents=True, exist_ok=True)
             target = STUBS_DIR / f"{stem}.txt"
             if stubs:
                 target.write_text("".join(f"{n}\n" for n, _, _ in sorted(stubs)))
-                print(f"  ecrit {target}")
+                print(f"  wrote {target}")
             elif target.exists():
                 target.unlink()
-                print(f"  supprime {target} (aucun bouchon)")
+                print(f"  removed {target} (no stub)")
     return status
 
 
