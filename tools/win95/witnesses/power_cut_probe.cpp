@@ -1,28 +1,28 @@
-/* E02-S05 — la coupure de courant, provoquee plutot que simulee.
+/* E02-S05 - the power cut, caused rather than simulated.
  *
- * Ce que la sequence d'ecriture durable promet n'est pas « on ne perd jamais la
- * derniere ecriture » mais **« on ne perd jamais une sauvegarde valide »**. La
- * fenetre est assumee : entre le renommage de SAUVE.DAT vers SAUVE.BAK et celui
- * de SAUVE.TMP vers SAUVE.DAT, le fichier final n'existe pas.
+ * What the durable-write sequence promises is not "the last write is never lost"
+ * but **"a valid save is never lost"**. The window is accepted: between the rename
+ * of SAVE.DAT to SAVE.BAK and that of SAVE.TMP to SAVE.DAT, the final file does
+ * not exist.
  *
- * Jusqu'ici la promesse etait raisonnee et eprouvee par simulation. Sur une
- * machine emulee, la vraie coupure est a portee : `kill -9` sur l'emulateur
- * emporte le cache disque de l'invite comme le ferait une prise arrachee.
+ * Until now the promise was reasoned about and tried by simulation. On an emulated
+ * machine, the real cut is within reach: `kill -9` on the emulator carries off the
+ * guest's disk cache exactly as a pulled plug would.
  *
- * Deux modes :
+ * Two modes:
  *
- *   ecrire    boucle sans fin, chaque tour ecrivant une sauvegarde numerotee
- *   verifier  relit apres redemarrage et dit ce qui a survecu
+ *   write    an endless loop, each round writing a numbered save
+ *   verify   reads back after a reboot and says what survived
  *
- * Le contenu porte un numero de tour et une somme de controle, de sorte que
- * « complet » se distingue de « tronque ». Sans cela on ne saurait pas si le
- * fichier retrouve est utilisable ou seulement present — et c'est toute la
- * difference que la sequence pretend garantir.
+ * The content carries a round number and a checksum, so that "complete" is told
+ * apart from "truncated". Without that we would not know whether the file found is
+ * usable or merely present - and that is the whole difference the sequence claims
+ * to guarantee.
  *
- * Une reserve sur la severite : `kill -9` emporte aussi ce que l'emulateur
- * gardait dans le cache de l'hote, que le materiel reel aurait deja ecrit. Le
- * protocole est donc **au moins aussi dur** qu'une coupure veritable, jamais
- * plus doux. C'est le bon sens de l'erreur.
+ * One reservation about the severity: `kill -9` also carries off what the emulator
+ * held in the host's cache, which real hardware would already have written. The
+ * protocol is therefore **at least as harsh** as a genuine cut, never gentler.
+ * That is the right direction for the error to lie in.
  */
 #include "fileio.h"
 
@@ -31,8 +31,8 @@
 
 #define PAYLOAD 512
 
-/* Somme de controle simple ; il ne s'agit pas de resister a une falsification
-   mais de distinguer un fichier complet d'un fichier tronque. */
+/* A simple checksum; the point is not to resist forgery but to tell a complete
+   file from a truncated one. */
 static unsigned long checksum(const unsigned char *p, size_t n)
 {
     unsigned long sum = 0;
@@ -47,8 +47,8 @@ static void fill(unsigned char *buf, unsigned long round)
 {
     size_t i;
     memset(buf, 0, PAYLOAD);
-    /* Le numero de tour en tete, en octets explicites : la sonde doit se relire
-       elle-meme sans dependre du boutisme du compilateur. */
+    /* The round number first, in explicit bytes: the probe must read itself back
+       without depending on the compiler's endianness. */
     buf[0] = (unsigned char)(round & 0xFF);
     buf[1] = (unsigned char)((round >> 8) & 0xFF);
     buf[2] = (unsigned char)((round >> 16) & 0xFF);
@@ -84,16 +84,16 @@ static int payload_is_intact(const unsigned char *buf, size_t n,
 
 int main(int argc, char **argv)
 {
-    const char *mode = (argc >= 2) ? argv[1] : "ecrire";
-    const char *path = (argc >= 3) ? argv[2] : "D:\\COUPURE.DAT";
+    const char *mode = (argc >= 2) ? argv[1] : "write";
+    const char *path = (argc >= 3) ? argv[2] : "D:\\PWRCUT.DAT";
     unsigned char buf[PAYLOAD];
 
-    if (strcmp(mode, "verifier") == 0) {
+    if (strcmp(mode, "verify") == 0) {
         size_t          got = 0;
         int             from_backup = 0;
         unsigned long   round = 0;
         dkr_file_result r;
-        FILE           *log = fopen("D:\\COUPURE.TXT", "w");
+        FILE           *log = fopen("D:\\PWRCUT.TXT", "w");
 
         r = dkr_file_read_durable(path, buf, sizeof(buf), &got, &from_backup);
 
@@ -101,19 +101,19 @@ int main(int argc, char **argv)
             const int intact = (r == DKR_FILE_OK) &&
                                payload_is_intact(buf, got, &round);
             const char *verdict =
-                (r != DKR_FILE_OK) ? "AUCUNE sauvegarde relisible"
-                : intact ? (from_backup ? "sauvegarde valide, depuis la copie de secours"
-                                        : "sauvegarde valide, fichier principal")
-                         : "fichier present mais TRONQUE";
-            printf("  code de lecture    : %d (%s)\n", (int)r, dkr_file_result_text(r));
-            printf("  octets relus       : %u\n", (unsigned)got);
-            printf("  numero de tour     : %lu\n", round);
+                (r != DKR_FILE_OK) ? "NO readable save"
+                : intact ? (from_backup ? "valid save, from the backup copy"
+                                        : "valid save, main file")
+                         : "file present but TRUNCATED";
+            printf("  read code          : %d (%s)\n", (int)r, dkr_file_result_text(r));
+            printf("  bytes read back    : %u\n", (unsigned)got);
+            printf("  round number       : %lu\n", round);
             printf("  verdict            : %s\n", verdict);
             if (log) {
-                fprintf(log, "  code de lecture    : %d (%s)\n",
+                fprintf(log, "  read code          : %d (%s)\n",
                         (int)r, dkr_file_result_text(r));
-                fprintf(log, "  octets relus       : %u\n", (unsigned)got);
-                fprintf(log, "  numero de tour     : %lu\n", round);
+                fprintf(log, "  bytes read back    : %u\n", (unsigned)got);
+                fprintf(log, "  round number       : %lu\n", round);
                 fprintf(log, "  verdict            : %s\n", verdict);
                 fclose(log);
             }
@@ -121,19 +121,19 @@ int main(int argc, char **argv)
         }
     }
 
-    /* Mode ecriture : sans fin, jusqu'a ce que la machine s'arrete. */
+    /* Write mode: endless, until the machine stops. */
     {
         unsigned long round = 0;
-        printf("Ecriture en boucle dans %s — couper la machine quand on veut.\n", path);
+        printf("Writing in a loop to %s - cut the machine whenever you like.\n", path);
         for (;;) {
             fill(buf, round);
             if (dkr_file_write_durable(path, buf, sizeof(buf)) != DKR_FILE_OK) {
-                printf("  echec au tour %lu\n", round);
+                printf("  failed at round %lu\n", round);
                 return 2;
             }
             round++;
             if ((round % 25) == 0) {
-                printf("  %lu tours\n", round);
+                printf("  %lu rounds\n", round);
                 fflush(stdout);
             }
         }

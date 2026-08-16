@@ -89,7 +89,7 @@ conservant les formats de fichiers compatibles avec ceux de DKR-R.
       est désormais provoquée plutôt que simulée** : `kill -9` sur l'émulateur,
       après plus de 350 tours d'écriture.
 
-      ScanDisk n'a trouvé qu'un fichier endommagé — `COUPURE.TMP`, celui que la
+      ScanDisk n'a trouvé qu'un fichier endommagé — `PWRCUT.TMP`, celui que la
       séquence sacrifie — et la sauvegarde du tour 370 a été relue intacte après
       redémarrage, sans même recourir à la copie de secours.
 

@@ -166,12 +166,12 @@ Windows a détecté l'arrêt incorrect et lancé ScanDisk, qui a trouvé **un se
 fichier endommagé** :
 
 ```text
-Le fichier D:\COUPURE.TMP est endommagé. Bien que le début du fichier soit
+Le fichier D:\PWRCUT.TMP est endommagé. Bien que le début du fichier soit
 probablement correct, le fichier est endommagé plus loin.
 ```
 
-C'est exactement le fichier que la séquence sacrifie. `COUPURE.DAT` et
-`COUPURE.BAK` étaient intacts.
+C'est exactement le fichier que la séquence sacrifie. `PWRCUT.DAT` et
+`PWRCUT.BAK` étaient intacts.
 
 ### Le verdict après redémarrage
 
