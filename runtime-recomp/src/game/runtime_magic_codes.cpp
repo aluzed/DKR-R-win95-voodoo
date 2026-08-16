@@ -71,7 +71,7 @@ bool PersistOneShotQueue(std::uint32_t mask, std::string& error) {
     }
     const auto temporary = g_one_shot_path.string() + ".tmp";
     {
-        // DKR-WIN95-ALLOW: `temporary` est deja une std::string — la ligne au-dessus la fabrique par .string() + ".tmp" — et non un path : l'ouverture est donc bien etroite. Le controle lit du texte et ne peut pas le savoir.
+        // DKR-WIN95-ALLOW: `temporary` is already a std::string - the line above builds it with .string() + ".tmp" - and not a path, so the open really is the narrow one. The checker reads text and cannot know that.
         std::ofstream output(temporary, std::ios::trunc);
         output << mask << '\n';
         output.flush();

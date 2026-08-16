@@ -161,21 +161,21 @@ using ImageValidator = bool (*)(const std::filesystem::path&,
 bool ReplaceFileAtomic(const std::filesystem::path& temporary,
                        const std::filesystem::path& destination,
                        std::error_code& error) {
-// Windows 95 est ecarte du chemin MoveFileEx, et le nom de cette fonction
-// devient alors une promesse qu'elle ne tient pas : **il n'y a pas de
-// remplacement atomique sur cette cible**.
+// Windows 95 is kept off the MoveFileEx path, and this function's name then
+// becomes a promise it does not keep: **there is no atomic replacement on this
+// target**.
 //
-// MoveFileExA comme MoveFileExW y sont exportees, avec du vrai code, et
-// refusent : ERROR_CALL_NOT_IMPLEMENTED. C'est la troisieme categorie d'API
-// indisponible, celle qu'aucune analyse de la table d'imports ne revele —
-// mesuree par E02-S05, et retrouvee ici sur la machine, la suite mourant sur
-// « Cette fonction n'est valide qu'en mode Win32 ».
+// MoveFileExA and MoveFileExW are both exported there, with real code, and
+// refuse: ERROR_CALL_NOT_IMPLEMENTED. That is the third category of unavailable
+// API, the one no analysis of the import table reveals - measured by E02-S05, and
+// met again here on the machine, the suite dying on "This function is only valid
+// in Win32 mode".
 //
-// Le repli passe par le point d'indirection, dont `rename` efface la cible
-// puis renomme. La fenetre que cela ouvre est assumee et decrite dans
-// platform/win95/fileio.h : ce qui est garanti n'est pas « on ne perd jamais
-// la derniere ecriture » mais « on ne perd jamais une sauvegarde valide » —
-// et c'est pour cela que l'appelant a deja pris une copie de secours.
+// The fallback goes through the seam, whose `rename` deletes the target and then
+// renames. The window that opens is accepted and described in
+// platform/win95/fileio.h: what is guaranteed is not "the last write is never
+// lost" but "a valid save is never lost" - and that is why the caller has already
+// taken a backup copy.
 #if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
     if (MoveFileExW(temporary.c_str(), destination.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {

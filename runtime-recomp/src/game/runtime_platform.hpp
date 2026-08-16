@@ -11,23 +11,23 @@ namespace dkr::runtime::platform {
 bool initialise();
 void shutdown();
 
-// Taille de la fenetre de jeu, en pixels.
+// The size of the game window, in pixels.
 //
-// Declaree **hors** du garde RT64, contrairement a `sdl_window()` juste en
-// dessous, et c'est tout l'objet de cette fonction. Deux endroits n'avaient
-// besoin que de cette taille — `runtime_enhancements.cpp` pour le rapport
-// d'aspect du tronc de vision, `runtime_stubs.cpp` pour la meme chose — et
-// l'obtenaient en recuperant le `SDL_Window*` pour appeler `SDL_GetWindowSize`.
-// Cela faisait dependre de SDL2 du code qui n'a que faire de SDL2 : la logique
-// qui suit ne travaille que sur un rapport largeur/hauteur.
+// Declared **outside** the RT64 guard, unlike `sdl_window()` just below, and that
+// is this function's whole purpose. Two places needed only that size -
+// `runtime_enhancements.cpp` for the view frustum's aspect ratio,
+// `runtime_stubs.cpp` for the same thing - and obtained it by fetching the
+// `SDL_Window*` in order to call `SDL_GetWindowSize`. That made code with no
+// business with SDL2 depend on SDL2: the logic that follows works on nothing but
+// a width/height ratio.
 //
-// C'est la separation que demande E07-S03 : obtenir la taille est **de la
-// plate-forme**, tout ce qui s'en deduit est **de la logique**, et seule la
-// premiere se dedouble par cible.
+// This is the separation E07-S03 asks for: obtaining the size is **the
+// platform's**, everything deduced from it is **the logic's**, and only the first
+// is duplicated per target.
 //
-// Rend false si la fenetre n'existe pas encore ou si la cible n'en a pas ;
-// `width` et `height` sont alors laisses intacts. Un appelant qui recoit false
-// doit renoncer, pas supposer une taille.
+// Returns false if the window does not exist yet or if the target has none;
+// `width` and `height` are then left untouched. A caller receiving false must give
+// up, not assume a size.
 bool window_size(int& width, int& height);
 
 #if DKR_RUNTIME_HAS_RT64

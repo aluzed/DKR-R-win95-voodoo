@@ -101,7 +101,7 @@ void SaveSettingsLocked() {
     std::error_code error;
     dkr::fs::create_directories(g_settings_path.parent_path(), error);
     const auto temporary = g_settings_path.string() + ".tmp";
-    // DKR-WIN95-ALLOW: `temporary` est deja une std::string — la ligne au-dessus la fabrique par .string() + ".tmp" — et non un path : l'ouverture est donc bien etroite. Le controle lit du texte et ne peut pas le savoir.
+    // DKR-WIN95-ALLOW: `temporary` is already a std::string - the line above builds it with .string() + ".tmp" - and not a path, so the open really is the narrow one. The checker reads text and cannot know that.
     std::ofstream output(temporary, std::ios::trunc);
     if (!output) {
         g_status = "Texture-pack preferences could not be saved.";
@@ -345,14 +345,14 @@ bool RemoveManagedPath(const std::filesystem::path& path,
         error_text = "DKR-R refused to delete a path outside its managed texture-pack folder.";
         return false;
     }
-    /* Ecrit en operations sur le chemin plutot que sur un `file_status`.
-       Reproduire `file_status` pour Windows 95 aurait demande un type, ses
-       accesseurs et ses categories, la ou deux appels disent la meme chose.
+    /* Written as operations on the path rather than on a `file_status`.
+       Reproducing `file_status` for Windows 95 would have demanded a type, its
+       accessors and its categories, where two calls say the same thing.
 
-       L'ordre est conserve, et il compte : un lien symbolique casse n'« existe »
-       pas, et c'est pour cela que le refus est controle avant la presence. Sur
-       Windows 95 la question ne se pose pas — il n'y a pas de liens symboliques
-       — mais le code est le meme pour toutes les cibles. */
+       The order is preserved, and it matters: a broken symbolic link does not
+       "exist", and that is why the refusal is checked before the presence. On
+       Windows 95 the question does not arise - there are no symbolic links - but
+       the code is the same for every target. */
     std::error_code error;
     const bool present = dkr::fs::exists(path, error);
     if (error && error != std::errc::no_such_file_or_directory) {

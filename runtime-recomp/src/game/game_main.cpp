@@ -21,9 +21,9 @@
 #include <cstdlib>
 #if defined(DKR_TARGET_WIN95)
 #include "win95/startup.h"
-// `_commit` et `_fileno` : forcer le cache d'écriture différée de Windows 95 et
-// la mise à jour de l'entrée de répertoire, sans quoi le journal d'un programme
-// figé reste à zéro octet. Voir dkr_diag_commit plus bas.
+// `_commit` and `_fileno`: force Windows 95's write-behind cache and the update
+// of the directory entry, without which a frozen program's log stays at zero
+// bytes. See dkr_diag_commit below.
 #include <io.h>
 #endif
 #include <cstdio>
@@ -114,17 +114,17 @@ std::string GetThreadName(const OSThread* thread) {
     return "DKR-" + std::to_string(thread->id);
 }
 
-// Ce filtre repose sur DbgHelp — SymInitialize, StackWalk64, SymFromAddr — pour
-// remonter une pile symbolisee. Windows 95 ne l'a pas : sa `imagehlp.dll` porte
-// une API bien anterieure, sans aucune de ces fonctions, et l'edition de liens
-// echoue avant meme qu'il soit question de l'executer.
+// This filter rests on DbgHelp - SymInitialize, StackWalk64, SymFromAddr - to
+// walk a symbolised stack. Windows 95 does not have it: its `imagehlp.dll` carries
+// a far earlier API, without any of those functions, and the link fails before
+// running it is even a question.
 //
-// La cible n'en est pas privee pour autant. `platform/win95/startup.c` installe
-// deja son propre filtre, qui execute le registre de nettoyage avant d'afficher
-// quoi que ce soit — c'est lui qui remet le mode video et libere le materiel
-// Voodoo, ce qui compte davantage sur cette machine qu'une pile d'appels. Sans
-// cette garde, l'installation ci-dessous l'ecraserait : `SetUnhandledExceptionFilter`
-// ne garde que le dernier appelant.
+// The target is not deprived for all that. `platform/win95/startup.c` already
+// installs its own filter, which runs the cleanup registry before displaying
+// anything at all - it is what restores the video mode and releases the Voodoo
+// hardware, which counts for more on this machine than a call stack. Without this
+// guard, the installation below would overwrite it:
+// `SetUnhandledExceptionFilter` keeps only the last caller.
 #if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
 LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
     if (g_crash_filter_active.test_and_set()) {
@@ -184,9 +184,9 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
                  static_cast<unsigned long long>(exception->ContextRecord->R15),
                  static_cast<unsigned long long>(exception->ContextRecord->Rip));
 #else
-    // Le meme releve pour un x86 32 bits. Les registres n'ont pas les memes
-    // noms dans CONTEXT — Eax et non Rax — et il y en a huit au lieu de seize.
-    // Ce n'est pas une degradation : ce sont les registres que la machine a.
+    // The same report for a 32-bit x86. The registers do not have the same names
+    // in CONTEXT - Eax and not Rax - and there are eight instead of sixteen. This
+    // is not a degradation: these are the registers the machine has.
     std::fprintf(stderr,
                  "[boot][crash] registers eax=0x%08lX ebx=0x%08lX "
                  "ecx=0x%08lX edx=0x%08lX\n",
@@ -227,9 +227,9 @@ LONG WINAPI RuntimeCrashFilter(EXCEPTION_POINTERS* exception) {
     symbol->MaxNameLen = MAX_SYM_NAME;
 
     for (unsigned index = 0; index < 32; ++index) {
-        // Le type de machine doit suivre l'architecture, sinon StackWalk64
-        // interprete le cadre avec les mauvaises largeurs et remonte une pile
-        // de valeurs fantaisistes — ce qui est pire que pas de pile du tout.
+        // The machine type must follow the architecture, otherwise StackWalk64
+        // reads the frame with the wrong widths and walks a stack of fanciful
+        // values - which is worse than no stack at all.
 #if defined(_M_AMD64) || defined(__x86_64__)
         constexpr DWORD kMachineType = IMAGE_FILE_MACHINE_AMD64;
 #else
@@ -268,13 +268,13 @@ bool RelaunchApplication(int argc, char** argv) {
 #ifdef _WIN32
     (void)argc;
     (void)argv;
-    // La famille large est un bouchon sous Windows 9x : `CreateProcessW` y rend 0
-    // sans rien faire, et le redemarrage rapide echouerait en silence — le pire
-    // des cas, puisque le programme se charge et parait fonctionner.
+    // The wide family is a stub under Windows 9x: `CreateProcessW` returns 0
+    // there without doing anything, and the quick restart would fail in silence -
+    // the worst case, since the program loads and appears to work.
     //
-    // La forme etroite fait la meme chose partout ailleurs, donc elle est
-    // employee partout : deux chemins dont un seul est eprouve valent moins
-    // qu'un chemin unique.
+    // The narrow form does the same thing everywhere else, so it is used
+    // everywhere: two paths of which only one is exercised are worth less than a
+    // single path.
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
@@ -306,51 +306,49 @@ bool RelaunchApplication(int argc, char** argv) {
 }
 
 #if defined(DKR_TARGET_WIN95)
-// **Rediriger stderr vers un fichier, sur cette cible uniquement.**
+// **Redirect stderr to a file, on this target only.**
 //
-// Tout le journal du runtime passe par stderr — y compris le gestionnaire
-// [boot][crash], qui imprime code d'exception, adresse, base de module et RVA.
-// Or COMMAND.COM de Windows 95 **ne sait pas rediriger stderr** : il n'a pas de
-// syntaxe `2>&1`. Sans ce point de sortie, le seul moyen de lire un plantage sur
-// la machine cible est de photographier une fenêtre de console et d'en
-// transcrire le contenu à la main.
+// The whole runtime log goes through stderr - including the [boot][crash]
+// handler, which prints exception code, address, module base and RVA. But Windows
+// 95's COMMAND.COM **cannot redirect stderr**: it has no `2>&1` syntax. Without
+// this outlet, the only way to read a crash on the target machine is to photograph
+// a console window and transcribe its contents by hand.
 //
-// **L'appel est dans `DkrMain` et non dans `main`**, parce que le point d'entrée
-// sous Windows est `WinMain` : une première version l'avait posé dans la branche
-// `#else`, où il n'a jamais été compilé. Le symptôme était muet — le programme
-// tournait, le fichier n'apparaissait pas, et rien ne disait pourquoi.
+// **The call is in `DkrMain` and not in `main`**, because the entry point under
+// Windows is `WinMain`: a first version had placed it in the `#else` branch, where
+// it was never compiled. The symptom was mute - the program ran, the file did not
+// appear, and nothing said why.
 //
-// `DKR_LOG` permet d'en changer l'emplacement ; par défaut le fichier atterrit
-// dans le répertoire courant.
+// `DKR_LOG` allows its location to be changed; by default the file lands in the
+// current directory.
 static void RedirectDiagnosticsToFile() {
     const char* path = std::getenv("DKR_LOG");
     if (path == nullptr || path[0] == '\0') {
         path = "DKRR.LOG";
     }
     if (std::freopen(path, "w", stderr) != nullptr) {
-        // Sans mise en mémoire tampon : un plantage ne laisse pas le temps de
-        // vider un tampon, et c'est justement le message qui compte le plus.
+        // Unbuffered: a crash leaves no time to flush a buffer, and it is
+        // precisely that message which matters most.
         std::setvbuf(stderr, nullptr, _IONBF, 0);
     }
 }
 
-// **Rendre le journal lisible d'un programme qui ne se termine pas.**
+// **Making the log readable for a program that does not terminate.**
 //
-// `_IONBF` suffit pour un plantage, parce que le filtre d'exceptions ferme le
-// flux avant d'écrire. Il ne suffit pas pour un **blocage** : Windows 95 ne met
-// à jour la taille dans le répertoire qu'à la fermeture du fichier, et le cache
-// à écriture différée retient les secteurs. Un programme figé laisse donc un
-// journal de zéro octet, quoi qu'il ait écrit.
+// `_IONBF` suffices for a crash, because the exception filter closes the stream
+// before writing. It does not suffice for a **hang**: Windows 95 only updates the
+// size in the directory when the file is closed, and the write-behind cache holds
+// the sectors. A frozen program therefore leaves a zero-byte log, whatever it
+// wrote.
 //
-// Le symptôme est cruel : on lit « zéro octet » et on conclut que le programme
-// n'a rien produit, donc qu'il s'est arrêté tôt — alors qu'il a peut-être écrit
-// des dizaines de milliers de lignes. Deux diagnostics opposés derrière la même
-// observation.
+// The symptom is cruel: one reads "zero bytes" and concludes the program produced
+// nothing, hence that it stopped early - when it may have written tens of
+// thousands of lines. Two opposite diagnoses behind the same observation.
 //
-// `_commit` appelle `FlushFileBuffers`, présente dans Windows 95, qui force le
-// cache **et** la mise à jour de l'entrée de répertoire. Appelée de loin en
-// loin, elle rend le journal lisible pendant que le programme tourne encore —
-// et c'est la seule façon d'observer un blocage de l'extérieur.
+// `_commit` calls `FlushFileBuffers`, present in Windows 95, which forces the
+// cache **and** the update of the directory entry. Called now and then, it makes
+// the log readable while the program is still running - and that is the only way
+// to observe a hang from the outside.
 extern "C" void dkr_diag_commit(void) {
     std::fflush(stderr);
     {
@@ -364,24 +362,24 @@ extern "C" void dkr_diag_commit(void) { std::fflush(stderr); }
 
 namespace dkr::runtime {
 
-// Le choix du rendu, par `DKR_RENDERER`.
+// The renderer choice, through `DKR_RENDERER`.
 //
-// La valeur par défaut est Glide : c'est la cible du portage, et un réglage
-// qu'il faut penser à poser pour obtenir le comportement normal finit toujours
-// par manquer quelque part.
+// The default value is Glide: it is the port's target, and a setting one must
+// remember to set in order to get the normal behaviour always ends up missing
+// somewhere.
 //
-// `DKR_RENDERER=null` garde le rendu de diagnostic, qui compte les display
-// lists sans les lire. Ce n'est pas un vestige : c'est la seule configuration
-// qui démarre quand la carte est en cause, et donc la seule façon de séparer un
-// défaut du portage d'un défaut du rendu. Elle a servi à établir que le jeu
-// atteignait 9822 listes d'affichage alors qu'aucun pixel n'était encore écrit.
+// `DKR_RENDERER=null` keeps the diagnostic renderer, which counts display lists
+// without reading them. It is not a leftover: it is the only configuration that
+// starts when the card is at fault, and therefore the only way to separate a
+// defect of the port from a defect of the rendering. It served to establish that
+// the game reached 9822 display lists while not a pixel had yet been written.
 std::unique_ptr<ultramodern::renderer::RendererContext> SelectRenderContext(
     std::uint8_t* rdram,
     ultramodern::renderer::WindowHandle window_handle,
     bool developer_mode) {
-    const char* choix = std::getenv("DKR_RENDERER");
-    if (choix != nullptr && std::string_view{choix} == "null") {
-        std::fprintf(stderr, "[boot][gfx] rendu de diagnostic (DKR_RENDERER=null)\n");
+    const char* choice = std::getenv("DKR_RENDERER");
+    if (choice != nullptr && std::string_view{choice} == "null") {
+        std::fprintf(stderr, "[boot][gfx] diagnostic renderer (DKR_RENDERER=null)\n");
         return CreateDiagnosticRenderer(rdram, window_handle, developer_mode);
     }
     return CreateGlideRenderer(rdram, window_handle, developer_mode);
@@ -392,21 +390,21 @@ std::unique_ptr<ultramodern::renderer::RendererContext> SelectRenderContext(
 int DkrMain(int argc, char** argv) {
 #if defined(DKR_TARGET_WIN95)
     RedirectDiagnosticsToFile();
-    // **Installer la couche de démarrage, qui porte le filtre d'exceptions.**
+    // **Install the startup layer, which carries the exception filter.**
     //
-    // Le commentaire de `RuntimeCrashFilter`, plus haut, désactive le filtre du
-    // runtime sur cette cible en expliquant que `platform/win95/startup.c`
-    // « installe déjà son propre filtre ». C'était vrai du témoin de plate-forme
-    // et faux du jeu : `dkr_win95_startup` n'était appelé que par `witness.c`.
+    // `RuntimeCrashFilter`'s comment above disables the runtime's filter on this
+    // target, explaining that `platform/win95/startup.c` "already installs its own
+    // filter". That was true of the platform witness and false of the game:
+    // `dkr_win95_startup` was only called by `witness.c`.
     //
-    // Le jeu tournait donc **sans aucun filtre d'exception**. Le symptôme observé
-    // sur la machine : une boîte « opération non conforme » de Windows, aucune
-    // trace dans le journal, et le mode vidéo non restitué — ce dernier point
-    // étant le plus grave, la carte Voodoo gardant l'écran par relais analogique.
+    // The game therefore ran **with no exception filter at all**. The symptom
+    // observed on the machine: a Windows "illegal operation" box, no trace in the
+    // log, and the video mode not restored - that last point being the most
+    // serious, the Voodoo card holding the screen through its analogue relay.
     {
         const int rc = dkr_win95_startup("DKR-R");
         if (rc != DKR_WIN95_STARTUP_OK) {
-            std::fprintf(stderr, "[boot][win95] demarrage refuse : %d\n", rc);
+            std::fprintf(stderr, "[boot][win95] startup refused: %d\n", rc);
             return 5;
         }
     }
@@ -414,8 +412,8 @@ int DkrMain(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
 #if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
-    // Sur Windows 95, c'est le filtre de la couche plate-forme qui reste en
-    // place : il execute le registre de nettoyage, que celui-ci n'a pas.
+    // On Windows 95 it is the platform layer's filter that stays in place: it
+    // runs the cleanup registry, which this one does not have.
     SetUnhandledExceptionFilter(RuntimeCrashFilter);
 #endif
 

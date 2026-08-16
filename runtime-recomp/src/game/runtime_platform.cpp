@@ -329,9 +329,9 @@ void* dkr::runtime::platform::sdl_window() {
 }
 #endif  // DKR_RUNTIME_HAS_RT64
 
-// La seule implementation de `window_size`, des deux cotes du garde. Ce qui
-// change d'une cible a l'autre est d'ou vient la taille ; ce qu'on en fait ne
-// change pas, et reste donc ailleurs.
+// The only implementation of `window_size`, on both sides of the guard. What
+// changes from one target to another is where the size comes from; what is done
+// with it does not change, and therefore stays elsewhere.
 bool dkr::runtime::platform::window_size(int& width, int& height) {
 #if DKR_RUNTIME_HAS_RT64
     auto* window = static_cast<SDL_Window*>(g_window);
@@ -348,10 +348,10 @@ bool dkr::runtime::platform::window_size(int& width, int& height) {
     height = h;
     return true;
 #else
-    // La cible Windows 95 n'a pas encore de fenetre : E06-S01 la lui donnera,
-    // et c'est ici qu'elle se branchera. Renvoyer false plutot qu'une taille
-    // inventee — un appelant qui recoit false renonce, la ou une taille fausse
-    // lui ferait calculer un rapport d'aspect faux sans qu'il s'en apercoive.
+    // The Windows 95 target has no window yet: E06-S01 will give it one, and this
+    // is where it will be wired in. Return false rather than an invented size - a
+    // caller receiving false gives up, where a wrong size would have it compute a
+    // wrong aspect ratio without noticing.
     (void)width;
     (void)height;
     return false;

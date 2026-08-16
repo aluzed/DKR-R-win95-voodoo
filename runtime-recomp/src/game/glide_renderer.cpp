@@ -106,16 +106,16 @@ dkr::runtime::GlideRenderer::GlideRenderer() {
         opened_ = true;
         width_ = kWidth;
         height_ = kHeight;
-        std::fprintf(stderr, "[boot][gfx] Glide ouvert en %dx%d\n", width_, height_);
+        std::fprintf(stderr, "[boot][gfx] Glide opened at %dx%d\n", width_, height_);
     } else {
-        // **Ne pas faire échouer le démarrage pour autant.**
+        // **Do not fail the startup for that, though.**
         //
-        // `valid()` rendant faux arrête le fil graphique, et avec lui le jeu.
-        // Or une Voodoo absente ou occupée est exactement la situation où l'on
-        // veut encore pouvoir lire un journal de démarrage. Le contexte reste
-        // donc valide et ne dessine rien, ce qui est le comportement de
-        // `DiagnosticRenderer` — une dégradation, pas une panne.
-        std::fprintf(stderr, "[boot][gfx] Glide indisponible : rendu desactive\n");
+        // `valid()` returning false stops the graphics thread, and the game with
+        // it. But an absent or busy Voodoo is exactly the situation where one
+        // still wants to be able to read a boot log. The context therefore stays
+        // valid and draws nothing, which is `DiagnosticRenderer`'s behaviour - a
+        // degradation, not a breakdown.
+        std::fprintf(stderr, "[boot][gfx] Glide unavailable: rendering disabled\n");
     }
 #endif
 }
@@ -245,7 +245,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // addressing, hence at the memory layout.
     if (index <= 3 || index % 60 == 0) {
         std::fprintf(stderr,
-                     "[gfx] liste=%llu cmd=%lu tri=%lu emis=%lu rejets=%lu\n",
+                     "[gfx] list=%llu cmd=%lu tri=%lu emitted=%lu rejects=%lu\n",
                      static_cast<unsigned long long>(index), total_commands_,
                      total_triangles_, total_emitted_, total_rejects_);
         // The reject total does not say what to fix: an address outside RDRAM
@@ -253,8 +253,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // a command missed upstream. Counting them apart is what turns "it
         // rejects" into a lead.
         std::fprintf(stderr,
-                     "[gfx]   differees=%lu | adresse=%lu nombre=%lu index=%lu "
-                     "profondeur=%lu opcode=%lu\n",
+                     "[gfx]   deferred=%lu | address=%lu count=%lu index=%lu "
+                     "depth=%lu opcode=%lu\n",
                      total_deferred_,
                      rejects_by_kind_[DKR_F3D_REJECT_ADDRESS],
                      rejects_by_kind_[DKR_F3D_REJECT_COUNT],
@@ -265,27 +265,27 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // distribution is very uneven, and what we are after is what dominates
         // the frame, not the tail.
         {
-            char ligne[160];
-            int pris[8] = {0};
+            char line[160];
+            int taken[8] = {0};
             int n = 0;
-            std::size_t ecrit = 0;
-            ligne[0] = '\0';
+            std::size_t written = 0;
+            line[0] = '\0';
             for (n = 0; n < 8; n++) {
-                int meilleur = -1;
+                int best = -1;
                 for (int op = 0; op < 256; op++) {
-                    bool deja = false;
-                    for (int k = 0; k < n; k++) { deja = deja || (pris[k] == op); }
-                    if (deja || opcodes_[op] == 0) { continue; }
-                    if (meilleur < 0 || opcodes_[op] > opcodes_[meilleur]) { meilleur = op; }
+                    bool already = false;
+                    for (int k = 0; k < n; k++) { already = already || (taken[k] == op); }
+                    if (already || opcodes_[op] == 0) { continue; }
+                    if (best < 0 || opcodes_[op] > opcodes_[best]) { best = op; }
                 }
-                if (meilleur < 0) { break; }
-                pris[n] = meilleur;
-                ecrit += static_cast<std::size_t>(std::snprintf(
-                    ligne + ecrit, sizeof(ligne) - ecrit, " %02X:%lu",
-                    static_cast<unsigned>(meilleur), opcodes_[meilleur]));
-                if (ecrit >= sizeof(ligne) - 12) { break; }
+                if (best < 0) { break; }
+                taken[n] = best;
+                written += static_cast<std::size_t>(std::snprintf(
+                    line + written, sizeof(line) - written, " %02X:%lu",
+                    static_cast<unsigned>(best), opcodes_[best]));
+                if (written >= sizeof(line) - 12) { break; }
             }
-            std::fprintf(stderr, "[gfx]   opcodes%s\n", ligne);
+            std::fprintf(stderr, "[gfx]   opcodes%s\n", line);
         }
         // The drawing commands, named and looked for explicitly.
         //
@@ -299,59 +299,59 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // Rectangles without triangles would name the 2D path as the only work
         // left.
         std::fprintf(stderr,
-                     "[gfx]   dessin: sommets=%lu triangles=%lu texrect=%lu "
-                     "texrectflip=%lu fillrect=%lu | remis=%lu couleur=0x%06X "
-                     "tampon=%u\n",
+                     "[gfx]   draw: vertices=%lu triangles=%lu texrect=%lu "
+                     "texrectflip=%lu fillrect=%lu | handed-over=%lu colour=0x%06X "
+                     "buffer=%u\n",
                      opcodes_[0x04], opcodes_[0x05], opcodes_[0xE4],
                      opcodes_[0xE5], opcodes_[0xF6], total_rects_,
                      context_.state.fill_color_argb,
                      context_.state.color_image_width);
-        // L'etat RDP. `approches` est le chiffre a surveiller : une traduction
-        // approximative qui ne s'annonce pas produit une image plausible et
-        // fausse, ce qui est pire qu'un echec franc. `hors-cycle` est un
-        // controle qui se declenche tout seul — le RDP ne remplit qu'en mode
-        // FILL, donc toute autre valeur accuse le decodage du mot de mode.
+        // The RDP state. `approximate` is the number to watch: an approximate
+        // translation that does not announce itself produces a plausible, wrong
+        // image, which is worse than a clean failure. `wrong-cycle` is a check
+        // that fires on its own - the RDP only fills in FILL mode, so any other
+        // value accuses the decoding of the mode word.
         std::fprintf(stderr,
-                     "[gfx]   etat: appliques=%lu approches=%lu "
-                     "remplissages-hors-cycle=%lu cycle=%u fenetres=%lu\n",
+                     "[gfx]   state: applied=%lu approximate=%lu "
+                     "fills-wrong-cycle=%lu cycle=%u viewports=%lu\n",
                      total_states_, total_approximate_, total_fill_wrong_cycle_,
                      static_cast<unsigned>(context_.state.current_cycle),
                      total_viewports_);
-        // Les textures. `chargees` contre `reutilisees` dit si le cache tient —
-        // sans lui on reconvertirait la meme texture des milliers de fois par
-        // image, ce qui suffirait a rendre le portage injouable. `inconnues`
-        // compte les formats indexes, refuses faute de palette : ils sortent en
-        // surfaces sans texture plutot qu'en couleurs arbitraires.
+        // The textures. `uploaded` against `reused` says whether the cache holds -
+        // without it we would reconvert the same texture thousands of times per
+        // frame, which alone would make the port unplayable. `unknown-format`
+        // counts the indexed formats, refused for want of a palette: they come out
+        // as untextured surfaces rather than in arbitrary colours.
         std::fprintf(stderr,
-                     "[gfx]   textures: chargees=%lu reutilisees=%lu "
-                     "refusees-tmu=%lu format-inconnu=%lu hors-rdram=%lu\n",
+                     "[gfx]   textures: uploaded=%lu reused=%lu "
+                     "refused-tmu=%lu unknown-format=%lu outside-rdram=%lu\n",
                      total_tex_loaded_, total_tex_reused_,
                      total_tex_refused_, total_tex_unsupported_, total_tex_out_of_rdram_);
         std::fprintf(stderr,
-                     "[gfx]   refus-detail: proportions=%lu taille=%lu "
-                     "emplacements=%lu memoire-tmu=%lu\n",
+                     "[gfx]   refusal-detail: aspect=%lu size=%lu "
+                     "slots=%lu tmu-memory=%lu\n",
                      dkr_glide_backend_upload_failure(0),
                      dkr_glide_backend_upload_failure(1),
                      dkr_glide_backend_upload_failure(2),
                      dkr_glide_backend_upload_failure(3));
         std::fprintf(stderr,
-                     "[gfx]   remplies-en-puissance-de-2=%lu "
-                     "refusees-proportions=%lu\n",
+                     "[gfx]   padded-to-power-of-2=%lu "
+                     "refused-aspect=%lu\n",
                      total_tex_padded_, total_tex_aspect_);
-        // Les coordonnées normalisées. Un voisinage de [0,1] confirme le format
-        // 10.5 et la largeur employée ; des milliers le réfutent.
+        // The normalised coordinates. A neighbourhood of [0,1] confirms the 10.5
+        // format and the width in use; thousands refute it.
         std::fprintf(stderr,
-                     "[gfx]   emis: avec-texture=%lu | shade=%lu texel=%lu "
+                     "[gfx]   emitted: textured=%lu | shade=%lu texel=%lu "
                      "texel*shade=%lu texel*shade+a=%lu\n",
                      total_emitted_textured_, emitted_per_combine_[0],
                      emitted_per_combine_[1], emitted_per_combine_[2],
                      emitted_per_combine_[3]);
         std::fprintf(stderr,
-                     "[gfx]   aires: <1px=%lu <100px=%lu <10000px=%lu "
+                     "[gfx]   areas: <1px=%lu <100px=%lu <10000px=%lu "
                      ">=10000px=%lu\n",
                      area_[0], area_[1], area_[2], area_[3]);
         std::fprintf(stderr,
-                     "[gfx]   profondeur: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
+                     "[gfx]   depth: mode0=%lu mode1=%lu mode2=%lu mode3=%lu\n",
                      depth_[0], depth_[1], depth_[2],
                      depth_[3]);
         {
@@ -366,13 +366,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 }
             }
             std::fprintf(stderr,
-                         "[gfx]   melange:%s | test-alpha=%lu ref-max=%u\n",
+                         "[gfx]   blend:%s | alpha-test=%lu ref-max=%u\n",
                          l2, total_alpha_test_, context_.state.alpha_ref_max);
         }
         if (context_.state.oow_max > context_.state.oow_min) {
             total_tex_black_ += context_.state.textures_black;
             total_tex_with_content_ += context_.state.textures_with_content;
-            std::fprintf(stderr, "[gfx]   texels: noires=%lu avec-contenu=%lu\n",
+            std::fprintf(stderr, "[gfx]   texels: black=%lu with-content=%lu\n",
                          total_tex_black_, total_tex_with_content_);
             std::fprintf(stderr, "[gfx]   shade-max=%d alpha-max=%d\n",
                          static_cast<int>(context_.state.shade_max),
@@ -382,22 +382,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                          static_cast<int>(context_.state.oow_max * 1000000.0F));
         }
         {
-            char ligne[128];
-            std::size_t ecrit = 0;
+            char line[128];
+            std::size_t written = 0;
             unsigned i;
-            ligne[0] = '\0';
-            for (i = 0; i < context_.state.unknown_keys_n && ecrit < 100; i++) {
-                ecrit += static_cast<std::size_t>(std::snprintf(
-                    ligne + ecrit, sizeof(ligne) - ecrit, " %08X",
+            line[0] = '\0';
+            for (i = 0; i < context_.state.unknown_keys_n && written < 100; i++) {
+                written += static_cast<std::size_t>(std::snprintf(
+                    line + written, sizeof(line) - written, " %08X",
                     static_cast<unsigned>(context_.state.unknown_keys[i])));
             }
             std::fprintf(stderr,
-                         "[gfx]   combineurs: repertories=%lu inconnus=%lu%s%s\n",
+                         "[gfx]   combiners: catalogued=%lu unknown=%lu%s%s\n",
                          total_combiners_known_, total_combiners_unknown_,
-                         (ligne[0] != '\0') ? " cles:" : "", ligne);
-            // La composition, sous la forme (a,b,c,d) que `gDPSetCombineLERP`
-            // prend — c'est celle des macros G_CC_*, donc celle qui permet de
-            // nommer la configuration et de l'ajouter à la table.
+                         (line[0] != '\0') ? " keys:" : "", line);
+            // The composition, in the (a,b,c,d) form `gDPSetCombineLERP` takes -
+            // that is the G_CC_* macros' form, hence the one that allows the
+            // configuration to be named and added to the table.
             for (i = 0; i < context_.state.unknown_keys_n; i++) {
                 const dkr_combiner& k = context_.state.unknown_combiners[i];
                 std::fprintf(stderr,
@@ -412,17 +412,17 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                              k.alpha[1].a, k.alpha[1].b, k.alpha[1].c, k.alpha[1].d);
             }
         }
-        // L'état du jeu, lu chez lui. C'est la seule mesure de cette série qui
-        // ne parle pas du rendu.
+        // The game's state, read where it lives. It is the only measurement in
+        // this series that does not speak of the rendering.
         {
             const int mode = read_word(rdram_snapshot, kAddrGameMode);
-            static const char* noms[] = { "INGAME", "MENU", "UNUSED2",
-                                          "UNUSED3", "UNUSED4", "LOCKUP" };
-            const char* nom = (mode == -1) ? "INTRO"
-                            : (mode >= 0 && mode <= 5) ? noms[mode] : "?";
+            static const char* names[] = { "INGAME", "MENU", "UNUSED2",
+                                           "UNUSED3", "UNUSED4", "LOCKUP" };
+            const char* name = (mode == -1) ? "INTRO"
+                             : (mode >= 0 && mode <= 5) ? names[mode] : "?";
             std::fprintf(stderr,
-                         "[jeu] gGameMode=%d (%s) chargement=%d niveau=0x%08X\n",
-                         mode, nom, read_word(rdram_snapshot, kAddrLevelLoadTimer),
+                         "[game] gGameMode=%d (%s) loading=%d level=0x%08X\n",
+                         mode, name, read_word(rdram_snapshot, kAddrLevelLoadTimer),
                          static_cast<unsigned>(
                              read_word(rdram_snapshot, kAddrLevelHeader)));
         }
@@ -444,9 +444,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 void dkr::runtime::GlideRenderer::update_screen() {
     const auto index = ++present_count_;
     if (index == 1) {
-        // Le premier rafraîchissement n'est mis en file qu'une fois que le fil
-        // VI d'ultramodern a installé son mode factice. Démarrer DKR ici évite
-        // que le fil de jeu ne coure après cette mise en place.
+        // The first refresh is only queued once ultramodern's VI thread has
+        // installed its dummy mode. Starting DKR here keeps the game thread from
+        // racing that setup.
         std::fprintf(stderr, "[boot] VI initialized; starting recompiled DKR entrypoint\n");
         recomp::start_game(kGameId);
     }
@@ -461,10 +461,10 @@ void dkr::runtime::GlideRenderer::shutdown() {
     if (opened_ && backend_.close != nullptr) {
         backend_.close(backend_.self);
         opened_ = false;
-        // La carte garde l'écran par relais analogique : ne pas refermer le
-        // contexte laisse le moniteur sur la sortie 3dfx, écran noir, sans
-        // qu'aucun message d'erreur ne soit visible.
-        std::fprintf(stderr, "[gfx] Glide referme\n");
+        // The card holds the screen through an analogue relay: not closing the
+        // context leaves the monitor on the 3dfx output, black screen, with no
+        // error message visible at all.
+        std::fprintf(stderr, "[gfx] Glide closed\n");
     }
 #endif
 }

@@ -25,13 +25,13 @@
 
 namespace {
 
-// Ces deux-la sont **portables** et vivaient pourtant derriere le garde RT64,
-// alors que la logique qui les emploie — `dkr_title_intro_audio_tail`, plus bas —
-// n'en depend pas. Une cible sans RT64 ne compilait donc pas ce fichier, pour
-// une raison qui n'avait rien a voir avec le rendu.
+// These two are **portable** and yet lived behind the RT64 guard, while the logic
+// that uses them - `dkr_title_intro_audio_tail`, below - does not depend on it. A
+// target without RT64 therefore did not compile this file, for a reason that had
+// nothing to do with rendering.
 //
-// C'est le mauvais decoupage que E07-S03 cherche precisement a defaire :
-// separer ce qui depend de la plate-forme de ce qui n'en depend pas, plutot que
+// This is exactly the wrong split E07-S03 sets out to undo: separating what
+// depends on the platform from what does not, rather than
 // de laisser la frontiere passer la ou l'historique l'a mise.
 gpr RdramAddress(std::uint32_t address) {
     return static_cast<gpr>(static_cast<std::int32_t>(address));
