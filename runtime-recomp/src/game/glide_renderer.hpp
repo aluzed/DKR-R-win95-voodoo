@@ -41,6 +41,13 @@ private:
     std::atomic<std::uint64_t> present_count_{0};
 
 #if defined(DKR_TARGET_WIN95)
+    // Brings one frame back from the card as a 24-bit BMP. See the call site:
+    // a passthrough Voodoo appears in no emulator capture, so this is the only
+    // way to look at what the port actually draws.
+    void dump_frame(const char* path);
+#endif
+
+#if defined(DKR_TARGET_WIN95)
     dkr_render_backend backend_{};
     dkr_f3d_context context_{};
     bool opened_ = false;

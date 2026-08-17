@@ -4,8 +4,17 @@
 
 #include "librecomp/game.hpp"
 
+#if defined(DKR_TARGET_WIN95)
+// For the frame dump: the read-back lives in the Glide layer, not in the
+// backend interface, because it is a property of the card and not of the
+// abstraction the decoder drives.
+#include "render/glide.h"
+#endif
+
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 
 namespace {
@@ -120,6 +129,79 @@ dkr::runtime::GlideRenderer::GlideRenderer() {
 #endif
 }
 
+#if defined(DKR_TARGET_WIN95)
+void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
+    // 640x480x4 is 1.2 MiB, and this machine has 64. A static buffer rather than
+    // a stack one: the graphics thread's stack is nothing like that size.
+    static std::uint32_t pixels[640 * 480];
+    int w = 0;
+    int h = 0;
+    const int got = dkr_glide_read_backbuffer(pixels,
+                                              static_cast<int>(std::size(pixels)),
+                                              &w, &h);
+    if (got <= 0 || w <= 0 || h <= 0) {
+        std::fprintf(stderr, "[gfx] frame dump: read-back refused\n");
+        return;
+    }
+
+    std::FILE* out = std::fopen(path, "wb");
+    if (out == nullptr) {
+        std::fprintf(stderr, "[gfx] frame dump: cannot open %s\n", path);
+        return;
+    }
+
+    // Rows are padded to four bytes, and stored bottom-up: that is the BMP
+    // format, not a choice. Getting either wrong gives a skewed image that reads
+    // like a rendering defect.
+    const int stride = w * 3;
+    const int pad = (4 - (stride % 4)) % 4;
+    const std::uint32_t size =
+        static_cast<std::uint32_t>(54 + (stride + pad) * h);
+    unsigned char head[54] = {0};
+    head[0] = 'B'; head[1] = 'M';
+    head[2] = static_cast<unsigned char>(size);
+    head[3] = static_cast<unsigned char>(size >> 8);
+    head[4] = static_cast<unsigned char>(size >> 16);
+    head[5] = static_cast<unsigned char>(size >> 24);
+    head[10] = 54;
+    head[14] = 40;
+    head[18] = static_cast<unsigned char>(w);
+    head[19] = static_cast<unsigned char>(w >> 8);
+    head[22] = static_cast<unsigned char>(h);
+    head[23] = static_cast<unsigned char>(h >> 8);
+    head[26] = 1;
+    head[28] = 24;
+    std::fwrite(head, 1, sizeof(head), out);
+
+    // While we have every pixel in hand, count the distinct colours and the
+    // share that is not the clear colour. **A file one cannot see from here is
+    // not a measurement**: the log line is what makes this readable without
+    // fetching the image, and it is what says "black" or "not black" in one
+    // number rather than in an opinion.
+    unsigned long non_background = 0;
+    const std::uint32_t background = pixels[0] & 0x00FFFFFFu;
+    for (int y = h - 1; y >= 0; y--) {
+        const std::uint32_t* row = pixels + static_cast<std::size_t>(y) * w;
+        for (int x = 0; x < w; x++) {
+            const std::uint32_t p = row[x];
+            unsigned char bgr[3] = {
+                static_cast<unsigned char>(p),
+                static_cast<unsigned char>(p >> 8),
+                static_cast<unsigned char>(p >> 16)};
+            std::fwrite(bgr, 1, 3, out);
+            if ((p & 0x00FFFFFFu) != background) { non_background++; }
+        }
+        for (int i = 0; i < pad; i++) { std::fputc(0, out); }
+    }
+    std::fclose(out);
+
+    std::fprintf(stderr,
+                 "[gfx] frame dump: %s %dx%d corner=%06lX differing=%lu/%ld\n",
+                 path, w, h, static_cast<unsigned long>(background),
+                 non_background, static_cast<long>(w) * h);
+}
+#endif
+
 bool dkr::runtime::GlideRenderer::valid() {
     return true;
 }
@@ -187,6 +269,40 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // The address is guest-virtual (0x80xxxxxx); the snapshot is indexed
     // physically.
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
+
+    // **One frame brought back, before it is presented.**
+    //
+    // A passthrough Voodoo drives the monitor through an analogue relay, so its
+    // output appears in no capture the emulator can take. Every measurement of
+    // this port's rendering has therefore been a counter -- triangles emitted,
+    // combiners catalogued -- and counters say what was sent, never what came
+    // out. `DKR_DUMP_FRAME=<n>` writes display list `n` to `D:\FRAME.BMP`.
+    //
+    // Read from the **back** buffer, before the swap: that is where this list
+    // was just rasterised, and no flip timing enters into it. Reading the front
+    // buffer after presenting returns whatever the retrace-scheduled swap has
+    // got round to, which on 17 August 2026 cost a run and a wrong conclusion.
+    //
+    // It is E09-S02's missing half as much as a diagnostic: comparing the card's
+    // output against the reference rasteriser needs the card's output in a file.
+    //
+    // **At or after, once** -- not on equality. The first version tested
+    // `index == dump_at` with 600 asked for, and the run reached list 480: no
+    // file, no log line, nothing to distinguish "the dump failed" from "the dump
+    // never came up". A trigger that depends on reaching an exact count one
+    // cannot predict is a trigger that fails silently.
+    {
+        static const char* const dump_env = std::getenv("DKR_DUMP_FRAME");
+        static const unsigned long dump_at =
+            dump_env ? std::strtoul(dump_env, nullptr, 10) : 0UL;
+        static bool dumped = false;
+        if (dump_at != 0UL && !dumped && index >= dump_at) {
+            dumped = true;
+            std::fprintf(stderr, "[gfx] frame dump: list %llu\n",
+                         static_cast<unsigned long long>(index));
+            dump_frame("D:\\FRAME.BMP");
+        }
+    }
 
     backend_.present(backend_.self);
 
