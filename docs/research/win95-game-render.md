@@ -444,25 +444,46 @@ Its practical weight is small — one frame in thousands, invisible in play — 
 it has already cost one wrong conclusion and would cost more, since every
 witness in this repository measures by drawing a scene and reading it back.
 
-**No combiner configuration is recognised.** 32,411 applications, five distinct
-keys, zero found in the table. The cause is named and not yet fixed: the table is
-written in the *semantic* encoding and the decoder produces the *raw* encoding.
+**No combiner configuration was recognised — fixed 17 August 2026.** 32,411
+applications, five distinct keys, zero found in the table.
+
+Both sides were in fact in the *raw* encoding; they simply used different
+representatives of the same value. The RGB mux fields are wider than the list of
+inputs they select — in a 4-bit `a` or `b` every value from 8 to 15 means zero,
+in the 5-bit `c` every value from 16 to 31 does:
 
 ```
-the game produces  rgb0=(1,15,4,7)
-the table encodes  G_CC_MODULATEIA as {1,0,4,0}
+the table writes   G_CC_MODULATEIA_PRIM as {1, 8,3,7}
+the machine reads                          {1,15,3,7}
 ```
 
-These are the same inputs. In the RDP's combiner, `15` in position `b` and `7` in
-position `d` **are** the zero of those positions — the encoding `rdp_state.h`
-warns about in its opening lines, "the same number does not designate the same
-thing depending on the position". What is missing is a normalisation before the
-key is computed, not table entries. `dkr_rdp_combiner_key` masks each field and
-packs it as it is.
+The same combiner, and the key called them different. `dkr_rdp_combiner_key`
+masked each field and packed it as it stood.
 
-The approximate fallback — texture modulated by the vertex colour — is what has
-been drawing all along, which is why the shading is right and the exact match was
-never missed.
+Measured both ways on the two configurations recorded from the machine:
+
+| | resolve |
+|---|---|
+| without the normalisation | **0 of 2** |
+| with it | **2 of 2**, by name — `G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2` and `G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2` |
+
+The normalisation lives in the key, not in the decoder: the decoded structure
+keeps what the game sent, which is what a trace should show, and only the
+comparison needs the equivalence class. `dkr_combiner_eval` was checked rather
+than assumed — `rgb_a` and `rgb_b` fall through to zero across the whole
+out-of-range span, so evaluation is unaffected either way.
+
+**The collision test had to change with it**, and that is the part worth
+remembering. It asserted that two configurations with different bytes must have
+different keys. Normalisation makes that premise false — two spellings of the
+same combiner now share a key, correctly — so a `memcmp` would have reported the
+fix as a regression. It now asks `dkr_combiner_eval` whether the two compute
+different things: an arbiter that is not circular, normalisation being what is
+under test.
+
+Until this, the approximate fallback — texture modulated by the vertex colour —
+was drawing every surface in the game, which is why the shading looked right and
+the missing exact match was never felt.
 
 **The render exceeds DKR's watchdog.** With a real Glide rendering,
 `worst=270 ms, over-budget(>167ms)=1` in 660 lists. When the measurement was made
