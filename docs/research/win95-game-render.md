@@ -513,6 +513,52 @@ Whether that is also what flattens the image is **not** established, and is not
 claimed here. `texel*shade+a` on a texture with content should show the texture,
 approximation or not.
 
+### The bisection: the texel is a constant
+
+`DKR_FORCE_COMBINE=shade|texel|texel_shade|texel_shade_a` forces every draw to
+one mode. Three points, and they are unambiguous:
+
+| combine | distinct colours | frame |
+|---|---:|---|
+| normal, `texel*shade+a` | 6 | dark grey `#393839`, faint banding (list 400) |
+| `shade` | 1 | `#000000` (list 400) |
+| `texel` | 3 | flat mint `#84FFCE` (list 200) |
+
+**The texture path writes pixels, and it writes one colour.** Every sample
+across the whole screen returns the same texel. That is the defect to chase, and
+it is concrete: not the geometry, not the transform, not the depth test, and not
+the combiner's choice — the sampling itself.
+
+Two reservations, both mine to state rather than to leave implicit:
+
+- **The `shade` frame does not prove nothing was drawn.** It proves the result
+  equals the clear colour, which is black. Geometry drawn in black over black is
+  indistinguishable from geometry not drawn. Since the same geometry visibly
+  rasterises under `texel`, the likelier reading is that the vertex colour is
+  near zero at this point in the frame — and `shade-max=255` does not contradict
+  that, being a maximum over the whole run rather than a current value. My first
+  wording, "with the vertex colour alone nothing is written at all", claimed more
+  than the measurement supports.
+- **The three frames are not all from the same list**, 400 for two of them and
+  200 for the third, because the run that would have dumped at 400 was slowed by
+  an instrument. A flat colour at either list is still flat, so the conclusion
+  holds; an exact comparison of hues would not.
+
+### Three instruments, three anomalies that were not the port's
+
+Worth listing together, because they are the same error wearing different hats,
+and because this repository already documents two of the three patterns in its
+own comments:
+
+| instrument | symptom | cause |
+|---|---|---|
+| pixel count | "97 % painted" on a flat grey | counted against an assumed background |
+| the log | zero bytes | `DKR_TRACE_SP` dropped, and it is what drives `dkr_diag_commit` |
+| the forced-mode announcement | no frame at all | printed per display list, slowing the game tenfold so the dump never came up |
+
+The last is the one to remember: a diagnostic whose only visible symptom was a
+missing file, and whose real effect was to change the thing it measured.
+
 **No combiner configuration was recognised — fixed 17 August 2026.** 32,411
 applications, five distinct keys, zero found in the table.
 
