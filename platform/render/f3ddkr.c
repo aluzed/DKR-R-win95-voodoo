@@ -679,8 +679,9 @@ static void apply_state(dkr_f3d_context *c)
        separates sorting from drawing; this separates the texel from the shade.
        Both are kept: on a target where a run costs four minutes, a switch that
        answers in one race is worth more than the line it occupies. */
-    if (c->force_shade) {
-        c->render_state.combine = DKR_COMBINE_SHADE;
+    if (c->force_combine) {
+        c->render_state.combine =
+            (dkr_combine_mode)(c->force_combine - 1u);
     }
     /* --- The texture handle does not survive the translation ---------------- *
      *

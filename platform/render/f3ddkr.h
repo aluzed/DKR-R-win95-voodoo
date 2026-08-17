@@ -231,13 +231,20 @@ typedef struct {
     /* Forces depth off, to isolate sorting from a rendering defect. Set by the
        caller; zero by default. */
     unsigned char        no_depth;
-    /* Forces the combiner to vertex colour alone, to separate "the texture is
-       what we see" from "the geometry is what we see". The frame brought back on
-       17 August 2026 is a uniform grey over a **black** clear, so a quarter of a
-       million triangles are painting and all coming out one colour; this says in
-       one run whether that colour comes from the texel or from the shade. Set by
-       the caller; zero by default. */
-    unsigned char        force_shade;
+    /* Forces every draw to one combine mode, to bisect what the image owes to
+       what. The frame brought back on 17 August 2026 is a uniform grey over a
+       **black** clear, so a quarter of a million triangles are painting and all
+       coming out one colour; forcing the mode says in one run per notch which
+       input carries it.
+     *
+       Already measured: `DKR_COMBINE_SHADE` gives a frame of a single colour,
+       `#000000`, the clear -- with the vertex colour alone nothing is written at
+       all.
+     *
+       `force_combine` is the mode plus one, so that zero keeps meaning "do not
+       force" and `DKR_COMBINE_SHADE`, which is zero, stays reachable. A boolean
+       per mode was the first shape and it does not scale past two. */
+    unsigned char        force_combine;
 
     /* The resolution the backend actually opened. The decoder needs it to carry
        the game's buffer to the screen, and deducing it from the current viewport

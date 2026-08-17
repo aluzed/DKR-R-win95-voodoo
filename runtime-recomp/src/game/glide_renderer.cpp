@@ -261,9 +261,31 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     {
         static const bool no_depth = (std::getenv("DKR_NO_DEPTH") != nullptr);
         context_.no_depth = no_depth ? 1 : 0;
-        // `DKR_FORCE_SHADE=1` draws with the vertex colour alone.
-        static const bool force_shade = (std::getenv("DKR_FORCE_SHADE") != nullptr);
-        context_.force_shade = force_shade ? 1 : 0;
+        // `DKR_FORCE_COMBINE=shade|texel|texel_shade|texel_shade_a` forces every
+        // draw to one combine mode. Named rather than numbered: a run costs four
+        // minutes, and `DKR_FORCE_COMBINE=2` in a batch file three weeks from now
+        // says nothing about what was measured.
+        static const unsigned char forced = [] () -> unsigned char {
+            const char* v = std::getenv("DKR_FORCE_COMBINE");
+            if (v == nullptr) { return 0; }
+            if (std::strcmp(v, "shade") == 0) { return DKR_COMBINE_SHADE + 1; }
+            if (std::strcmp(v, "texel") == 0) { return DKR_COMBINE_TEXTURE + 1; }
+            if (std::strcmp(v, "texel_shade") == 0) {
+                return DKR_COMBINE_TEXTURE_SHADE + 1;
+            }
+            if (std::strcmp(v, "texel_shade_a") == 0) {
+                return DKR_COMBINE_TEXTURE_SHADE_ALPHA + 1;
+            }
+            std::fprintf(stderr,
+                         "[boot][gfx] DKR_FORCE_COMBINE=%s unrecognised, ignored\n",
+                         v);
+            return 0;
+        } ();
+        context_.force_combine = forced;
+        if (forced != 0) {
+            std::fprintf(stderr, "[boot][gfx] combine forced to mode %u\n",
+                         static_cast<unsigned>(forced - 1u));
+        }
     }
     // The resolution actually opened: the decoder needs it to carry the game's
     // buffer (320 wide) onto the screen, for the 2D rectangles as well as for
