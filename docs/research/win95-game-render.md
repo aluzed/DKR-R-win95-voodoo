@@ -444,6 +444,75 @@ Its practical weight is small — one frame in thousands, invisible in play — 
 it has already cost one wrong conclusion and would cost more, since every
 witness in this repository measures by drawing a scene and reading it back.
 
+## Seeing the screen at last — 17 August 2026
+
+Every measurement above is a counter, and counters say what was sent, never what
+came out. A passthrough Voodoo drives the monitor through an analogue relay, so
+its output appears in no capture the emulator can take: until now **nobody had
+seen what this port draws**.
+
+`DKR_DUMP_FRAME=<n>` writes display list *n* to `D:\FRAME.BMP`, read from the
+back buffer before the swap. At list 400, with the game at its menu:
+
+```
+[gfx] frame dump: D:\FRAME.BMP 640x480 corner=313429 differing=299239/307200
+```
+
+**The screen is not black.** It is uniform: six distinct colours, all within a
+few units of `#393839`, a dark grey-green, with faint horizontal banding across
+the top 40%.
+
+### The metric was wrong, and it is the trap this file already records
+
+`differing=299239/307200` reads as "97 % of the screen is painted". It is not:
+almost every pixel differs from the corner by one or two units in a single
+channel. Counting pixels that differ from an assumed background is precisely
+what `state_probe.c`'s own comment warns against — "a saturated count does not
+mean everything is painted" — and it was reproduced here the same day, in a
+metric written after that comment.
+
+The honest measure for "is there an image" is the **distinct-colour count**: six.
+
+### What the counters say at the same moment
+
+All of them healthy, which is the point:
+
+```
+textures: uploaded=39423 reused=872 refused-tmu=0 unknown-format=0
+emitted:  textured=269302 | shade=3177 texel=21123 texel*shade+a=245494
+texels:   black=0 with-content=685      shade-max=255 alpha-max=255
+depth:    mode0=11173 mode1=101964 mode2=156657
+blend:    0:156657 1:104366 2:8771
+```
+
+Textures reach the TMU without a single refusal, a quarter of a million triangles
+go out with a texture bound, the textures have content, the vertex colour is at
+full brightness. And the result is one flat colour.
+
+### The catalogue is found and not used
+
+One line settles where to look next:
+
+```
+state:     applied=26698 approximate=26270
+combiners: catalogued=26270 unknown=428
+```
+
+`approximate` and `catalogued` are **the same number**. Every configuration the
+catalogue now identifies is still being translated approximately, because
+`dkr_rdp_to_render_state` never calls `dkr_cc_lookup` — it does its own coarse
+reasoning and picks one of four `DKR_COMBINE_*` modes. The 29 entries each carry
+a `dkr_cc_setup`, the actual Glide combine settings, and nothing reads it.
+
+So the work of E05-S03 stands as follows: the mapping exists, it is correct, it
+is now looked up correctly — and the card is still programmed from a four-way
+approximation. Carrying `dkr_cc_setup` through the backend interface is what
+remains.
+
+Whether that is also what flattens the image is **not** established, and is not
+claimed here. `texel*shade+a` on a texture with content should show the texture,
+approximation or not.
+
 **No combiner configuration was recognised — fixed 17 August 2026.** 32,411
 applications, five distinct keys, zero found in the table.
 
