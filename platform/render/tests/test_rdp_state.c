@@ -257,25 +257,47 @@ int main(void)
         check("two-cycle mode: likewise", exact == 0);
     }
 
-    /* --- The safety net ---------------------------------------------------- */
+    /* --- The safety net ------------------------------------------------------ *
+     *
+     * The catalogue is `CC_TABLE`, generated from the game's source; the
+     * eight-entry hand-written one this section used to exercise is gone,
+     * having been transcribed in a shorthand where `0` meant zero. `test_combiner`
+     * covers the table's own properties; what belongs here is that a decoded
+     * combiner reaches it, since that is the join the machine found broken. */
     {
         dkr_combiner c;
         memset(&c, 0, sizeof(c));
         /* A configuration nobody has catalogued. */
         c.rgb[0].a = 13; c.rgb[0].b = 11; c.rgb[0].c = 29; c.rgb[0].d = 6;
-        check("an unknown configuration is not named",
-              dkr_rdp_combiner_name(dkr_rdp_combiner_key(&c, DKR_CYCLE_1)) == NULL);
-        check("the inventory catalogues a few configurations",
-              dkr_rdp_known_count() > 0);
+        check("an unknown configuration is not catalogued",
+              dkr_cc_lookup(dkr_rdp_combiner_key(&c, DKR_CYCLE_1)) == 0);
+
+        /* **The join, in the direction the game exercises it.** A combiner is
+           decoded from the words the game sends, and its key must find the entry.
+           Recorded on the machine on 16 August 2026 and reported unknown by a
+           counter asking the wrong table:
+             13FFF041  rgb0=(1,15,4,7) a0=(7,7,7,1) rgb1=(5,0,12,0) a1=(0,7,3,7)
+           Written here as the composition rather than as the key, so that this
+           still checks something if the key's layout ever changes. */
+        memset(&c, 0, sizeof(c));
+        c.rgb[0].a = 1;   c.rgb[0].b = 15;  c.rgb[0].c = 4;   c.rgb[0].d = 7;
+        c.alpha[0].a = 7; c.alpha[0].b = 7; c.alpha[0].c = 7; c.alpha[0].d = 1;
+        c.rgb[1].a = 5;   c.rgb[1].b = 0;   c.rgb[1].c = 12;  c.rgb[1].d = 0;
+        c.alpha[1].a = 0; c.alpha[1].b = 7; c.alpha[1].c = 3; c.alpha[1].d = 7;
+        check("a configuration recorded from the game finds its entry",
+              dkr_cc_lookup(dkr_rdp_combiner_key(&c, DKR_CYCLE_2)) != 0);
+
+        /* Every entry of the catalogue must be found again by its own key.
+           Otherwise the table could be full and the lookup still useless -
+           which is exactly the state the machine was in. */
         {
-            unsigned long long key = 0;
-            const char *name = NULL;
-            int texels = -1;
-            check("and it can be walked",
-                  dkr_rdp_known_at(0, &key, &name, &texels) && name != NULL &&
-                  texels >= 0);
-            check("every catalogued entry is found again by its key",
-                  dkr_rdp_combiner_name(key) != NULL);
+            int n = dkr_cc_table_count(), q, found = 0;
+            for (q = 0; q < n; q++) {
+                const dkr_cc_entry *e = dkr_cc_table_at(q);
+                if (e && dkr_cc_lookup(dkr_cc_entry_key(e)) != 0) { found++; }
+            }
+            sprintf(label, "all %d catalogued entries are found by their key", n);
+            check(label, n > 0 && found == n);
         }
     }
 

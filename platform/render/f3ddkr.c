@@ -2,6 +2,7 @@
  * `docs/research/f3ddkr-commands.md`, the contract in `f3ddkr.h`. */
 #include "f3ddkr.h"
 #include "rdp_state.h"
+#include "combiner.h"
 #include "texture.h"
 
 #include <stdarg.h>
@@ -620,13 +621,24 @@ static void apply_state(dkr_f3d_context *c)
      * single level."
      *
      * The neighbouring port's inventory counts 33 configurations. The key
-     * identifies them exactly; `dkr_rdp_combiner_name` returns NULL for the
-     * others. So we count, and we keep the first unknown keys — a count alone
-     * would say some are missing, not which, and that is the difference between
-     * a figure and a lead. */
+     * identifies them exactly; `dkr_cc_lookup` returns NULL for the others. So
+     * we count, and we keep the first unknown keys — a count alone would say
+     * some are missing, not which, and that is the difference between a figure
+     * and a lead.
+     *
+     * **It is `dkr_cc_lookup` and not `dkr_rdp_combiner_name`**, and that
+     * distinction was worth a run on the machine to find. There used to be two
+     * catalogues: `CC_TABLE`, generated from the game's own static tables, and
+     * an eight-entry `KNOWN` written by hand. This counter asked the hand-written
+     * one, which was transcribed in a shorthand where `0` meant zero — whereas
+     * the RDP spells zero `8` in a 4-bit `b`, `16` in a 5-bit `c` and `7` in a
+     * 3-bit `d`. Every entry of it was therefore unmatchable, and the counter
+     * read `catalogued=0` over 24,286 applications while claiming to be a safety
+     * net. A hand transcription that goes wrong in silence is exactly what
+     * generating the table was meant to avoid. */
     {
         const unsigned long long key = dkr_rdp_combiner_key(&rdp.combiner, rdp.cycle);
-        if (dkr_rdp_combiner_name(key) != 0) {
+        if (dkr_cc_lookup(key) != 0) {
             c->state.combiners_known++;
         } else {
             unsigned i;

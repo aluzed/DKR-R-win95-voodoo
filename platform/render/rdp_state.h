@@ -130,19 +130,19 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
 unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
                                         dkr_cycle_type cycle);
 
-/* Returns the configuration's name if it is catalogued, `NULL` otherwise.
+/* **The catalogue lives in `combiner.h`**, and is queried through
+ * `dkr_cc_lookup`.
  *
- * This is the safety net from step 6 of the ticket: a case that is not
- * catalogued must **announce itself** rather than render wrongly in silence. A
- * missed configuration is invisible at decode time — it shows up on screen, as a
- * surface in an unexpected colour, possibly in a single level. */
-const char *dkr_rdp_combiner_name(unsigned long long key);
-
-/* Number of catalogued configurations, and access by index — so that an
-   inventory can be written without duplicating the table. */
-int  dkr_rdp_known_count(void);
-int  dkr_rdp_known_at(int index, unsigned long long *key, const char **name,
-                      int *texel_count);
+ * The safety net from step 6 of the ticket is unchanged — a case that is not
+ * catalogued must announce itself rather than render wrongly in silence, a
+ * missed configuration being invisible at decode time and visible on screen —
+ * but it is `CC_TABLE` that answers, generated from the game's source by
+ * `tools/win95/gen_combiner_table.py`.
+ *
+ * `dkr_rdp_combiner_name`, `dkr_rdp_known_count` and `dkr_rdp_known_at` are
+ * gone with the hand-written eight-entry table they served. It was transcribed
+ * in a shorthand where `0` meant zero, which is not how the RDP spells it, so
+ * none of its entries could ever match; see the note in `rdp_state.c`. */
 
 /* --- Translation to the abstract state ------------------------------------- *
  *

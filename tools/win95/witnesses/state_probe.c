@@ -68,10 +68,11 @@
  * before presenting: it is black on pass 1 as well.
  *
  * What remains to be found is why the first draw produces nothing. The next cut
- * is one variable wide: run the repeat once with a texture bound and once
- * without. If the untextured first draw paints, the texture upload that precedes
- * it is implicated; if it does not, the cause is in the context or the first
- * frame itself.
+ * is one variable wide, and it needs two runs because a cold start only happens
+ * once: `TEST.EXE` draws the first triangle textured, `TEST.EXE notex` draws it
+ * with no texture bound and the shade-only combiner. If the untextured first
+ * draw paints, the texture upload that precedes it is implicated; if it does
+ * not, the cause is in the context or in the first frame itself.
  */
 #include "render/glide.h"
 #include "render/backend.h"
@@ -85,18 +86,23 @@
 static FILE *g_out;
 static int   g_fails;
 
-/* **`fflush` is not enough on this target, and a hang proves it.**
+/* **`fflush` is not enough on this target, and an interrupted run proves it.**
  *
  * `fflush` hands the bytes to the OS; Windows 95's write-behind cache keeps
  * them, and the directory entry -- size *and* first cluster -- is only written at
- * close. A program that hangs therefore leaves a file of zero bytes with no
- * cluster allocated at all: not a truncated trace, no trace whatever.
+ * close. A run that does not reach `fclose` therefore leaves a file of zero bytes
+ * with no cluster allocated at all: not a truncated trace, no trace whatever.
  *
- * Measured on 17 August 2026: this probe hung inside the back-buffer read and
- * its log came back empty, start cluster zero, after every line had been
- * `fflush`ed. `_commit` calls `FlushFileBuffers`, which forces both. It costs a
- * disk write per line, which for a witness that prints a few dozen lines is
- * nothing next to being able to see where it stopped.
+ * Measured on 17 August 2026: this probe's log came back empty, start cluster
+ * zero, after every line had been `fflush`ed, because the machine was stopped
+ * while it was still running. I first read that empty file as a hang inside the
+ * back-buffer read -- it was not, and the next run showed the read returning its
+ * 307,200 pixels. An absence of output says nothing about the thing being
+ * measured, only about the measuring.
+ *
+ * `_commit` calls `FlushFileBuffers`, which forces the data and the directory
+ * entry both. It costs a disk write per line, which for a witness printing a few
+ * dozen lines is nothing next to being able to see where it stopped.
  *
  * The same reasoning, and the same call, as `dkr_diag_commit` in the game. */
 static void say(const char *fmt, ...)
@@ -177,8 +183,15 @@ static unsigned sample(int x, int y, int w)
     return g_px[(size_t)y * (size_t)w + (size_t)x] & 0x00FFFFFFu;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    /* **The cold start happens once per run**, so the two halves of the
+       first-draw question need two runs. `TEST.EXE notex` makes the very first
+       draw an untextured one; without the argument it is textured, as the game's
+       is. If the untextured first draw paints and the textured one does not, the
+       texture upload that precedes it is implicated; if neither paints, the
+       cause is in the context or in the first frame itself. */
+    const int cold_no_texture = (argc > 1 && strcmp(argv[1], "notex") == 0);
     dkr_render_backend bk;
     dkr_render_state   st;
     dkr_texture_desc   d;
@@ -268,18 +281,19 @@ int main(void)
         const int REPEATS = 4;
         int painted_at = -1, i2, n_painted = 0, read_ok2 = 0;
 
-        say("\nthe game's state, drawn %d times in a row, from a cold start\n",
-            REPEATS);
+        say("\nthe game's state, drawn %d times in a row, from a cold start%s\n",
+            REPEATS, cold_no_texture ? " (no texture bound)" : "");
 
         for (i2 = 0; i2 < REPEATS; i2++) {
             memset(&st, 0, sizeof(st));
-            st.combine = DKR_COMBINE_TEXTURE_SHADE_ALPHA;
+            st.combine = cold_no_texture ? DKR_COMBINE_SHADE
+                                         : DKR_COMBINE_TEXTURE_SHADE_ALPHA;
             st.blend   = DKR_BLEND_OPAQUE;
             st.depth   = DKR_DEPTH_TEST_AND_WRITE;
             st.cull    = DKR_CULL_NONE;
             st.filter  = DKR_FILTER_BILINEAR;
             st.wrap_s  = st.wrap_t = DKR_WRAP_REPEAT;
-            st.texture = h;
+            st.texture = cold_no_texture ? 0 : h;
 
             bk.begin_frame(bk.self, BACKGROUND);
             bk.set_state(bk.self, &st);

@@ -498,7 +498,11 @@ add_library(win95f3ddkr STATIC
 # The chain: the decoder now emits, so it depends on clipping, which itself
 # depends on the transformation. The decoder also now translates the RDP state and
 # hands it to the backend, so the dependency is real and no longer optional.
-target_link_libraries(win95f3ddkr PUBLIC win95clip win95rdpstate)
+# `win95combiner` too: the decoder's safety net queries `CC_TABLE` through
+# `dkr_cc_lookup`. It used to query an eight-entry hand-written table in
+# rdp_state.c, which was transcribed in a shorthand where 0 meant zero and could
+# therefore never match - `catalogued=0` on the machine over 24286 applications.
+target_link_libraries(win95f3ddkr PUBLIC win95clip win95rdpstate win95combiner)
 
 # The suite injects **deliberately corrupted** display lists. That is what makes
 # it possible without a ROM: a corrupted list is written, a real one is captured.
