@@ -282,7 +282,15 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             return 0;
         } ();
         context_.force_combine = forced;
-        if (forced != 0) {
+        // **Once, not per list.** The first version announced the forced mode
+        // from inside this block, which runs for every display list: on a target
+        // whose stderr is unbuffered and committed to disk per line, that is one
+        // floppy write per frame. The run managed 39 lists where its neighbours
+        // reached 400 -- a diagnostic that slowed by ten times the thing it was
+        // measuring, and produced no frame because the dump never came up.
+        static bool announced = false;
+        if (forced != 0 && !announced) {
+            announced = true;
             std::fprintf(stderr, "[boot][gfx] combine forced to mode %u\n",
                          static_cast<unsigned>(forced - 1u));
         }
