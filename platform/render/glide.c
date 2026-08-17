@@ -53,6 +53,7 @@ typedef void   (WINAPI *pfn_grDrawTriangle)(const void *, const void *, const vo
 typedef void   (WINAPI *pfn_grGlideGetVersion)(char *);
 typedef FxBool (WINAPI *pfn_grLfbLock)(FxU32, FxU32, FxU32, FxU32, FxU32, void *);
 typedef FxBool (WINAPI *pfn_grLfbUnlock)(FxU32, FxU32);
+typedef void   (WINAPI *pfn_grSstIdle)(void);
 
 /* Glide 2.x's `GrLfbInfo_t`. The `size` field must be filled in before the call:
    Glide uses it to know which version of the structure it is being handed, and
@@ -83,6 +84,7 @@ static struct {
     pfn_grGlideGetVersion  version;
     pfn_grLfbLock          lfb_lock;
     pfn_grLfbUnlock        lfb_unlock;
+    pfn_grSstIdle          idle;
 
     int  initialised;   /* grGlideInit called */
     int  context_open;  /* grSstWinOpen succeeded */
@@ -195,6 +197,10 @@ dkr_glide_result dkr_glide_detect(dkr_glide_hardware *out)
        the list of mandatory symbols. */
     g.lfb_lock   = (pfn_grLfbLock)   sym("_grLfbLock@24");
     g.lfb_unlock = (pfn_grLfbUnlock) sym("_grLfbUnlock@8");
+    /* Needed before any read-back: see `dkr_glide_read_framebuffer`. Optional,
+       like the lfb pair — a Glide without it still renders, it just cannot be
+       measured reliably. */
+    g.idle       = (pfn_grSstIdle)   sym("_grSstIdle@0");
 
     if (!g.init || !g.shutdown || !g.query || !g.select || !g.win_open ||
         !g.win_close || !g.clear || !g.swap || !g.triangle) {
@@ -367,8 +373,8 @@ void dkr_glide_draw_test_triangle(void)
     g.triangle(&a, &b, &c);
 }
 
-int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
-                               int *width, int *height)
+static int read_buffer(unsigned which, unsigned *out, int max_pixels,
+                       int *width, int *height)
 {
     GrLfbInfo_t info;
     int x, y, w, h, count = 0;
@@ -381,12 +387,35 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
     if (width)  { *width  = w; }
     if (height) { *height = h; }
 
+    /* **Wait for the drawing engine before reading it.**
+     *
+     * Glide is asynchronous: `grDrawTriangle` returns long before the hardware
+     * has finished, so a read that does not wait can catch a half-drawn frame.
+     * `grSstIdle` drains the FIFO, whichever buffer we go on to read.
+     *
+     * What it is **not** is the answer to the read lagging a frame behind, and
+     * that deserves recording because two plausible stories were tested here and
+     * both proved false. `dkr_glide_swap` calls `grBufferSwap(1)`, scheduling the
+     * flip for the next vertical retrace; a front-buffer read that follows a
+     * present too closely ought therefore to return the previous frame, and the
+     * symptom fitted -- the first draw of a run reading as unpainted.
+     *
+     * Measured on 17 August 2026 by `TEST.EXE`. Adding `grSstIdle` changed
+     * nothing, the symbol resolving. Reading the back buffer *before* presenting
+     * changed nothing either: back and front agree on all four passes, black then
+     * painted three times. **The first draw genuinely does not rasterise**, and
+     * no read-back timing is involved.
+     *
+     * The idle stays, because waiting for the engine before reading it is right
+     * on its own terms. It is simply not a fix for anything that was wrong. */
+    if (g.idle) { g.idle(); }
+
     memset(&info, 0, sizeof(info));
     /* Fill in `size` before the call: Glide uses it to recognise the version of
        the structure, and leaving it at zero makes the lock fail with no further
        explanation. */
     info.size = (int)sizeof(info);
-    if (!g.lfb_lock(GR_LFB_READ_ONLY, GR_BUFFER_FRONTBUFFER,
+    if (!g.lfb_lock(GR_LFB_READ_ONLY, which,
                     GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, 0, &info) ||
         !info.lfbPtr) {
         return 0;
@@ -410,8 +439,20 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
                             ((b << 3) | (b >> 2));
         }
     }
-    g.lfb_unlock(GR_LFB_READ_ONLY, GR_BUFFER_FRONTBUFFER);
+    g.lfb_unlock(GR_LFB_READ_ONLY, which);
     return count;
+}
+
+int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
+                               int *width, int *height)
+{
+    return read_buffer(GR_BUFFER_FRONTBUFFER, out, max_pixels, width, height);
+}
+
+int dkr_glide_read_backbuffer(unsigned *out, int max_pixels,
+                              int *width, int *height)
+{
+    return read_buffer(GR_BUFFER_BACKBUFFER, out, max_pixels, width, height);
 }
 
 /* --- Hooks for the backend layer --------------------------------------------- */

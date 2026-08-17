@@ -130,6 +130,30 @@ void dkr_glide_shutdown(void);
 int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
                                int *width, int *height);
 
+/* The same read, from the **back** buffer, to be called *before* presenting.
+ *
+ * It exists to remove a doubt, and the measurement it made possible is worth
+ * recording because it came out the other way.
+ *
+ * `dkr_glide_read_framebuffer` reads the front buffer after `dkr_glide_swap`,
+ * which asks for a swap synchronised with the vertical retrace -- a flip that is
+ * scheduled rather than immediate. It is entirely reasonable to suspect such a
+ * read of returning the previous frame, and that suspicion explained a symptom
+ * exactly: the first draw of a run reading as unpainted.
+ *
+ * **It was wrong.** Measured on 17 August 2026 by `TEST.EXE`: the same state
+ * drawn four times, each read from the back buffer *before* presenting and from
+ * the front buffer after, gives the two columns in agreement on all four passes
+ * -- black, painted, painted, painted, on both. There is no lag to correct. The
+ * first draw genuinely does not rasterise.
+ *
+ * So this entry point is not a fix for anything; it is the control that ruled the
+ * timing out. Keep preferring it for measurement all the same -- it answers "what
+ * did the card draw" without depending on when the flip happens -- and keep the
+ * front-buffer read for "what is the player being shown". */
+int dkr_glide_read_backbuffer(unsigned *out, int max_pixels,
+                              int *width, int *height);
+
 /* --- What the backend layer needs ------------------------------------------- *
  *
  * `glide_backend.c` programs the state registers — blending, depth, scissor, fog
