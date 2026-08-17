@@ -447,8 +447,16 @@ witness in this repository measures by drawing a scene and reading it back.
 **No combiner configuration was recognised — fixed 17 August 2026.** 32,411
 applications, five distinct keys, zero found in the table.
 
-Both sides were in fact in the *raw* encoding; they simply used different
-representatives of the same value. The RGB mux fields are wider than the list of
+There were two faults here, one behind the other, and the first diagnosis in this
+report named neither correctly. It said "the table is written in the semantic
+encoding and the decoder produces the raw encoding"; that was true of the
+*hand-written* table and false of the generated one, and the correction that
+followed — "both are raw" — was true of the generated table and false of the one
+the game actually consulted. The accurate statement is below, in two parts.
+
+**First fault: the key did not normalise.** For the generated table, both sides
+were in the *raw* encoding; they simply used different representatives of the
+same value. The RGB mux fields are wider than the list of
 inputs they select — in a 4-bit `a` or `b` every value from 8 to 15 means zero,
 in the 5-bit `c` every value from 16 to 31 does:
 
@@ -466,6 +474,46 @@ Measured both ways on the two configurations recorded from the machine:
 |---|---|
 | without the normalisation | **0 of 2** |
 | with it | **2 of 2**, by name — `G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2` and `G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2` |
+
+### Second fault: the game still said `catalogued=0`
+
+That fix landed and changed nothing in the running game. The keys, however,
+moved — `13FFFE41` became `13FFF041`, which is the normalisation working. **A
+correct key that finds nothing means the lookup is asking something else**, and
+it was. There were two catalogues:
+
+| | entries | encoding | consulted by |
+|---|---:|---|---|
+| `CC_TABLE`, in `combiner_table.h` | 29 | raw, generated from the game's source | nobody |
+| `KNOWN`, in `rdp_state.c` | 8 | hand-written shorthand where `0` means zero | the decoder's safety net |
+
+`KNOWN` wrote `G_CC_MODULATEIA` as `{1,0,4,0}`. A literal `0` in `b` or `d` means
+`COMBINED`, not zero. Every one of its entries therefore described a different
+combiner from the one it was named after, and none could match a decoded
+configuration — a safety net that could only ever report failure, which is worse
+than no net at all. It is exactly the failure mode `test_rdp_state`'s own header
+warns about: "a transcription goes wrong silently, and the test would then share
+the error of the code it checks."
+
+It was removed rather than repaired, and the decoder now calls `dkr_cc_lookup`.
+Measured on the machine, same ROM, same three-minute window:
+
+| | catalogued | unknown |
+|---|---:|---:|
+| before | **0** | 24,286 |
+| after | **20,986** | 424 |
+
+Two keys remain, both in one-cycle mode, and both decode cleanly:
+
+```
+09FF9108  rgb (0,0,0,SHADE)   alpha (0,0,0,SHADE_A)   = G_CC_SHADE
+0EF93108  rgb (0,0,0,TEXEL0)  alpha TEXEL0_A * PRIM_A
+```
+
+They are absent because the inventory the generator reads covers what the game
+declares in its *static tables*, and these two do not appear there. They are left
+to the fallback and recorded here rather than hand-added to a generated table —
+which is the mistake this whole section is about.
 
 The normalisation lives in the key, not in the decoder: the decoded structure
 keeps what the game sent, which is what a trace should show, and only the
