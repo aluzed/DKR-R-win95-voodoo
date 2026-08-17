@@ -84,10 +84,25 @@ exhaustively and verifiably.
 - [x] The render and texture modes are decoded — cycle, filtering, LOD, detail,
       perspective, alpha comparison, Z source, depth test and write. The blender stays
       raw: it belongs to E05-S05.
-- [~] Any uncatalogued configuration is logged at run time. The mechanism exists —
-      `dkr_rdp_combiner_name` returns `NULL` for the unknown — but **the table is
-      primed with only eight entries**, and nothing logs yet, for want of a working
-      decoder (E04-S02).
+- [x] Any uncatalogued configuration is logged at run time — and it took two
+      faults to get there, both found on 17 August 2026 by running the game.
+      The key did not normalise the RDP's several spellings of zero, and the
+      counter was asking an eight-entry table hand-written in a shorthand where
+      `0` meant zero, which could never match anything. That table is gone; the
+      lookup goes to `CC_TABLE`, generated from the game's source.
+
+      Measured on the machine, same ROM, same window:
+
+      | | catalogued | unknown |
+      |---|---:|---:|
+      | before | **0** | 24,286 |
+      | after | **20,986** | 424 |
+
+      The two keys that remain are logged with their composition, which is what
+      makes them addable: `09FF9108` is `G_CC_SHADE`, `0EF93108` is `TEXEL0`
+      with `TEXEL0_A * PRIM_A` alpha. Neither appears in the game's static
+      tables, hence neither is in the generated inventory.
+      See [`docs/research/win95-game-render.md`](../../research/win95-game-render.md).
 - [ ] A complete playthrough is replayed under instrumentation — **blocked** by
       E02-S06, which requires the ROM.
 - [~] `docs/research/rdp-state-inventory.md` exists and records what is established.
