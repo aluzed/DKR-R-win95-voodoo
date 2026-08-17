@@ -675,6 +675,13 @@ static void apply_state(dkr_f3d_context *c)
     if (c->no_depth) {
         c->render_state.depth = DKR_DEPTH_DISABLED;
     }
+    /* The same reasoning one step further along the pipeline. `no_depth`
+       separates sorting from drawing; this separates the texel from the shade.
+       Both are kept: on a target where a run costs four minutes, a switch that
+       answers in one race is worth more than the line it occupies. */
+    if (c->force_shade) {
+        c->render_state.combine = DKR_COMBINE_SHADE;
+    }
     /* --- The texture handle does not survive the translation ---------------- *
      *
      * `dkr_rdp_to_render_state` fills **the whole** block from the RDP state,

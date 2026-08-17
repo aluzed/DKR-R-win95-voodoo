@@ -173,22 +173,42 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
     head[28] = 24;
     std::fwrite(head, 1, sizeof(head), out);
 
-    // While we have every pixel in hand, count the distinct colours and the
-    // share that is not the clear colour. **A file one cannot see from here is
-    // not a measurement**: the log line is what makes this readable without
-    // fetching the image, and it is what says "black" or "not black" in one
-    // number rather than in an opinion.
+    // While every pixel is in hand, measure whether there is an image at all.
+    //
+    // **The count of pixels differing from the corner is not that measure**, and
+    // the first version of this dump used it. It reported 299239 of 307200 --
+    // "97 % painted" -- on a frame that is six shades of the same grey, because
+    // nearly every pixel differs from the corner by one unit in one channel.
+    // That is the saturated count `state_probe.c` warns about in its own
+    // comments, reproduced here the same day.
+    //
+    // The honest measure is **how many distinct colours** the frame holds. Six
+    // says "uniform" whatever the differing count claims; a real image runs to
+    // hundreds. Counted over the card's own 565 space, one bit per possible
+    // value: 8 KiB of bitmap, and no allocation on the graphics thread.
+    static unsigned char seen[65536 / 8];
+    std::memset(seen, 0, sizeof(seen));
+    unsigned long distinct = 0;
     unsigned long non_background = 0;
     const std::uint32_t background = pixels[0] & 0x00FFFFFFu;
     for (int y = h - 1; y >= 0; y--) {
         const std::uint32_t* row = pixels + static_cast<std::size_t>(y) * w;
         for (int x = 0; x < w; x++) {
             const std::uint32_t p = row[x];
+            const unsigned r = (p >> 16) & 0xFFu;
+            const unsigned g = (p >> 8) & 0xFFu;
+            const unsigned b = p & 0xFFu;
+            const unsigned key =
+                ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
             unsigned char bgr[3] = {
-                static_cast<unsigned char>(p),
-                static_cast<unsigned char>(p >> 8),
-                static_cast<unsigned char>(p >> 16)};
+                static_cast<unsigned char>(b),
+                static_cast<unsigned char>(g),
+                static_cast<unsigned char>(r)};
             std::fwrite(bgr, 1, 3, out);
+            if ((seen[key >> 3] & (1u << (key & 7u))) == 0) {
+                seen[key >> 3] |= static_cast<unsigned char>(1u << (key & 7u));
+                distinct++;
+            }
             if ((p & 0x00FFFFFFu) != background) { non_background++; }
         }
         for (int i = 0; i < pad; i++) { std::fputc(0, out); }
@@ -196,9 +216,10 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
     std::fclose(out);
 
     std::fprintf(stderr,
-                 "[gfx] frame dump: %s %dx%d corner=%06lX differing=%lu/%ld\n",
+                 "[gfx] frame dump: %s %dx%d corner=%06lX distinct=%lu "
+                 "differing=%lu/%ld\n",
                  path, w, h, static_cast<unsigned long>(background),
-                 non_background, static_cast<long>(w) * h);
+                 distinct, non_background, static_cast<long>(w) * h);
 }
 #endif
 
@@ -240,6 +261,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     {
         static const bool no_depth = (std::getenv("DKR_NO_DEPTH") != nullptr);
         context_.no_depth = no_depth ? 1 : 0;
+        // `DKR_FORCE_SHADE=1` draws with the vertex colour alone.
+        static const bool force_shade = (std::getenv("DKR_FORCE_SHADE") != nullptr);
+        context_.force_shade = force_shade ? 1 : 0;
     }
     // The resolution actually opened: the decoder needs it to carry the game's
     // buffer (320 wide) onto the screen, for the 2D rectangles as well as for

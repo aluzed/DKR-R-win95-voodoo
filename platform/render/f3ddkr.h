@@ -231,6 +231,13 @@ typedef struct {
     /* Forces depth off, to isolate sorting from a rendering defect. Set by the
        caller; zero by default. */
     unsigned char        no_depth;
+    /* Forces the combiner to vertex colour alone, to separate "the texture is
+       what we see" from "the geometry is what we see". The frame brought back on
+       17 August 2026 is a uniform grey over a **black** clear, so a quarter of a
+       million triangles are painting and all coming out one colour; this says in
+       one run whether that colour comes from the texel or from the shade. Set by
+       the caller; zero by default. */
+    unsigned char        force_shade;
 
     /* The resolution the backend actually opened. The decoder needs it to carry
        the game's buffer to the screen, and deducing it from the current viewport
