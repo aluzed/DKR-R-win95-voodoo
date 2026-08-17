@@ -333,8 +333,10 @@ degrading from closest-to-the-game down to the simplest draw.
 | vertex colour only | in=0xFFFFFF out=0x000042 | painted |
 
 The first case does not paint; the second, which differs from it only by the
-depth test, paints. **The depth test erases the triangle**, on an otherwise
-identical state.
+depth test, paints. The conclusion drawn at the time — *the depth test erases the
+triangle* — **is wrong**, and the section after next says why: the bisection
+draws each state once, so it cannot tell a property of the state from a property
+of the position, and here it is the position that matters.
 
 That also corrects an earlier assertion of mine. I had written "depth is out of
 the question", resting on a run of the game with `DKR_NO_DEPTH=1` that stayed
@@ -350,33 +352,97 @@ does not mean "everything is painted"**: it means the reference colour is wrong,
 the card not reading back in the assumed format. Two sampled points, read and
 printed, cannot saturate.
 
-## What remains open, and the hole in the bisection
+## The depth conclusion was wrong — measured 17 August 2026
 
-**The bisection does not separate two candidate causes.** Case 1 is depth ON with
-`oow = 0.001`; case 2 is depth OFF with `oow = 0.001`; case 3 is depth OFF with
-`oow = 1.0`. Depth and `oow` are never varied independently *with the test
-enabled*. So the report above supports "the depth test erases the triangle" and
-does **not** distinguish:
+The bisection above never varied depth and `oow` independently *with the test
+enabled*: case 1 is depth on at `oow = 0.001`, case 2 depth off at the same
+`oow`, case 3 depth off at `oow = 1`. It could therefore not tell a property of
+the state from a property of the position, and it reported the wrong one.
 
-- **a misconfigured depth test** — wrong direction, wrong mask, wrong clear —
-  which would erase at every distance; from
-- **far vertices saturating against the clear value** — `oow = 0.001` is `w =
-  1000`, near the far end of the measured range `oow ∈ [0.000096, 1.0]`. The
-  backend uses a W buffer with `GR_CMP_LESS` and `grBufferClear` clears to
-  `GR_WDEPTHVALUE_FARTHEST`. If a large `w` encodes to that same maximum, `LESS`
-  rejects it, and everything far away disappears while near geometry still
-  paints.
+Two additional passes were added to `TEST.EXE` and answer it outright.
 
-The second is the exact mirror of a trap this repository has already documented
-at the other end: `apply_depth`'s comment records that `GR_CMP_GREATER` on a W
-buffer gives an entirely black screen, because nothing can exceed the cleared
-maximum. The same reasoning, applied to saturation rather than to direction,
-predicts this symptom.
+**The sweep** holds the depth test enabled and moves `oow` alone across the
+range the game produces:
 
-The measurement that separates them is one more row in the same probe: the depth
-test enabled, `oow` swept across the range the game actually produces. If the
-near values paint and the far ones do not, it is saturation. If none paints, the
-test itself is misconfigured.
+```
+oow            w        sampled colours
+2.000000       0        in=0xFFFFFF out=0x000042 <-- painted
+1.000000       1        in=0xFFFFFF out=0x000042 <-- painted
+...
+0.001000       1000     in=0xFFFFFF out=0x000042 <-- painted
+0.000100       10000    in=0xFFFFFF out=0x000042 <-- painted
+0.000096       10417    in=0xFFFFFF out=0x000042 <-- painted
+```
+
+All eleven rows paint. That rules out both depth explanations at once — a
+misconfigured test would erase at every distance, and saturation against the
+cleared `GR_WDEPTHVALUE_FARTHEST` would erase the far rows only. And the row at
+`oow = 0.001` is **byte for byte the state of case 1**, which does not paint.
+
+**The repeat** draws that state four times in a row, from a cold start, reading
+the back buffer before presenting and the front buffer after:
+
+```
+pass 1: back in=0x000042 out=0x000042             front in=0x000042 out=0x000042
+pass 2: back in=0xFFFFFF out=0x000042 <-- painted front in=0xFFFFFF out=0x000042 <-- painted
+pass 3: back in=0xFFFFFF out=0x000042 <-- painted front in=0xFFFFFF out=0x000042 <-- painted
+pass 4: back in=0xFFFFFF out=0x000042 <-- painted front in=0xFFFFFF out=0x000042 <-- painted
+```
+
+**The first draw of a run does not rasterise, whatever its state.** Depth was
+merely the state that happened to be attached to it. With the repeat placed ahead
+of the bisection, case 1 paints where it used to stay black — the same code, the
+same state, a different position.
+
+### Three explanations tested and refuted
+
+Naming them matters, because each was plausible enough to have been committed as
+a fix:
+
+| hypothesis | how it was refuted |
+|---|---|
+| the depth test is misconfigured | the sweep paints at every distance |
+| far `w` saturates against the cleared FARTHEST | `w = 10417` paints |
+| the read-back lags the retrace-scheduled swap | the back buffer, read *before* presenting, is black on pass 1 too |
+
+The third was the strongest of the three: `dkr_glide_swap` calls
+`grBufferSwap(1)`, which schedules the flip for the next vertical retrace, so a
+front-buffer read that follows a present too closely really can return the
+previous frame. `grSstIdle` was added before the lock and changed nothing — with
+the probe printing `grSstIdle resolves: yes`, because "the fix did nothing" and
+"the fix was never connected" look identical in a log and are not the same
+statement. `dkr_glide_read_backbuffer` then settled it: back and front agree on
+all four passes.
+
+That function stays, though it fixed nothing. It is the control that ruled the
+timing out, and reading what the card drew without depending on when the flip
+happens is the right call for a measurement.
+
+### Two traps of the environment, met again
+
+**A zero-byte log after every line was flushed.** `fflush` hands the bytes to
+the OS; Windows 95 commits the directory entry — size *and* first cluster — only
+at close. A run that does not reach `fclose` therefore leaves no trace at all,
+not a truncated one: the recovered directory entry read `start_cluster=0
+size=0`. `say()` now calls `_commit` per line, exactly as `dkr_diag_commit`
+already does in the game.
+
+**And I read that empty log as a hang in the back-buffer lock.** It was not: the
+wait heuristic driving the machine fired early and the run was stopped mid-flight.
+The lock reads its 307,200 pixels. An absence of output was taken for evidence
+about the thing being measured, which is the same error this report already
+records three times over.
+
+### What remains
+
+Why the first draw produces nothing. The next cut is one variable wide: the same
+repeat, once with a texture bound and once without. If the untextured first draw
+paints, the texture upload that precedes it is implicated; if it does not, the
+cause is in the context or in the first frame itself.
+
+Its practical weight is small — one frame in thousands, invisible in play — but
+it has already cost one wrong conclusion and would cost more, since every
+witness in this repository measures by drawing a scene and reading it back.
 
 **No combiner configuration is recognised.** 32,411 applications, five distinct
 keys, zero found in the table. The cause is named and not yet fixed: the table is
