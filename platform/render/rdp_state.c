@@ -137,6 +137,36 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
  * not being evaluated in the first case. Conflating them would give a mapping
  * table that renders the wrong image without ever complaining.
  */
+/* **Zero has more than one spelling, and the key has to know it.**
+ *
+ * The RGB mux fields are wider than the list of inputs they select. In a 4-bit
+ * `a` or `b` field every value from 8 to 15 means zero; in the 5-bit `c` field
+ * every value from 16 to 31 does. The hardware treats them alike, so two words
+ * differing only there describe **the same combiner** — and an unnormalised key
+ * calls them different.
+ *
+ * That is not hypothetical. The table generated from the game's own static
+ * tables writes `G_CC_MODULATEIA_PRIM` as `{1,8,3,7}`; the machine, decoding
+ * what DKR actually sends, produces `{1,15,3,7}`. Same configuration, and the
+ * lookup missed it — measured on 16 August 2026, 32,411 state applications, five
+ * distinct keys, **not one of them found in the table**. Every surface in the
+ * game was therefore drawn by the approximate fallback rather than by its exact
+ * Glide setup.
+ *
+ * The 3-bit fields need nothing: there, only 7 means zero, and it is already the
+ * single spelling. Normalising them anyway would be harmless and would suggest a
+ * problem that does not exist.
+ *
+ * This is done in the key rather than in `dkr_rdp_decode_combine` on purpose.
+ * The decoded structure keeps what the game sent, which is what a trace should
+ * show; only the comparison needs the equivalence class. `dkr_combiner_eval`
+ * reads the raw values and already treats the whole out-of-range span as zero,
+ * so it is unaffected either way. */
+static unsigned char zero_class(unsigned char v, unsigned char first_zero)
+{
+    return v >= first_zero ? first_zero : v;
+}
+
 unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
                                         dkr_cycle_type cycle)
 {
@@ -144,9 +174,9 @@ unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
     if (!c) {
         return 0;
     }
-    k |= (unsigned long long)(c->rgb[0].a   & 0x0Fu) << 0;
-    k |= (unsigned long long)(c->rgb[0].c   & 0x1Fu) << 4;
-    k |= (unsigned long long)(c->rgb[0].b   & 0x0Fu) << 9;
+    k |= (unsigned long long)(zero_class(c->rgb[0].a,  8) & 0x0Fu) << 0;
+    k |= (unsigned long long)(zero_class(c->rgb[0].c, 16) & 0x1Fu) << 4;
+    k |= (unsigned long long)(zero_class(c->rgb[0].b,  8) & 0x0Fu) << 9;
     k |= (unsigned long long)(c->rgb[0].d   & 0x07u) << 13;
     k |= (unsigned long long)(c->alpha[0].a & 0x07u) << 16;
     k |= (unsigned long long)(c->alpha[0].b & 0x07u) << 19;
@@ -154,9 +184,9 @@ unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
     k |= (unsigned long long)(c->alpha[0].d & 0x07u) << 25;
     k |= (unsigned long long)((unsigned)cycle & 0x03u) << 28;
 
-    k |= (unsigned long long)(c->rgb[1].a   & 0x0Fu) << 32;
-    k |= (unsigned long long)(c->rgb[1].c   & 0x1Fu) << 36;
-    k |= (unsigned long long)(c->rgb[1].b   & 0x0Fu) << 41;
+    k |= (unsigned long long)(zero_class(c->rgb[1].a,  8) & 0x0Fu) << 32;
+    k |= (unsigned long long)(zero_class(c->rgb[1].c, 16) & 0x1Fu) << 36;
+    k |= (unsigned long long)(zero_class(c->rgb[1].b,  8) & 0x0Fu) << 41;
     k |= (unsigned long long)(c->rgb[1].d   & 0x07u) << 45;
     k |= (unsigned long long)(c->alpha[1].a & 0x07u) << 48;
     k |= (unsigned long long)(c->alpha[1].b & 0x07u) << 51;

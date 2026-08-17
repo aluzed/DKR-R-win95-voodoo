@@ -203,8 +203,12 @@ if [[ "$suite" == "all" || "$suite" == "rdp" ]]; then
   command -v "$CC" >/dev/null \
     || { echo "error: no host C compiler ($CC)" >&2; exit 2; }
   R="$HERE/../../render"
+  # `combiner.c` as well: the collision check needs an arbiter for "do these two
+  # configurations compute different things", and deciding that from the
+  # normalised fields would be circular - normalisation is what is under test.
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" -I"$R/tests" \
-        -o "$tmp/test_rdp_state" "$R/tests/test_rdp_state.c" "$R/rdp_state.c"
+        -o "$tmp/test_rdp_state" "$R/tests/test_rdp_state.c" "$R/rdp_state.c" \
+        "$R/combiner.c"
   echo
   ( cd "$tmp" && "$tmp/test_rdp_state" )
 fi

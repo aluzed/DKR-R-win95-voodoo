@@ -11,6 +11,7 @@
  * knows.
  */
 #include "render/rdp_state.h"
+#include "render/combiner.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -86,9 +87,75 @@ int main(void)
               dkr_rdp_combiner_key(&a, DKR_CYCLE_2));
     }
 
+    /* --- Zero has more than one spelling ------------------------------------ *
+     *
+     * The RGB mux fields are wider than the inputs they select: in a 4-bit `a`
+     * or `b` every value from 8 to 15 means zero, in the 5-bit `c` every value
+     * from 16 to 31 does. Two words differing only there are the **same**
+     * combiner, and the key has to say so.
+     *
+     * This is the defect that made the whole lookup useless: the table
+     * generated from the game's static tables writes `G_CC_MODULATEIA_PRIM` as
+     * `{1,8,3,7}`, and the machine, decoding what DKR sends, produced
+     * `{1,15,3,7}`. 32,411 state applications, five distinct keys, not one
+     * found -- so every surface was drawn by the approximate fallback.
+     *
+     * The check is written in both directions on purpose. Only asserting that
+     * the spellings agree would also pass on a key that returned a constant. */
+    {
+        dkr_combiner canonical, spelled, different;
+        unsigned char s;
+
+        memset(&canonical, 0, sizeof(canonical));
+        canonical.rgb[0].a = 1;  canonical.rgb[0].b = 8;
+        canonical.rgb[0].c = 3;  canonical.rgb[0].d = 7;
+        canonical.alpha[0].a = 1; canonical.alpha[0].b = 7;
+        canonical.alpha[0].c = 3; canonical.alpha[0].d = 7;
+
+        for (s = 8; s <= 15; s++) {
+            spelled = canonical;
+            spelled.rgb[0].b = s;
+            if (dkr_rdp_combiner_key(&spelled, DKR_CYCLE_1) !=
+                dkr_rdp_combiner_key(&canonical, DKR_CYCLE_1)) {
+                sprintf(label, "b=%u spells the same zero as b=8", s);
+                check(label, 0);
+                break;
+            }
+        }
+        if (s > 15) {
+            check("every 4-bit spelling of zero gives the same key", 1);
+        }
+
+        for (s = 16; s <= 31; s++) {
+            spelled = canonical;
+            spelled.rgb[0].c = s;
+            if (dkr_rdp_combiner_key(&spelled, DKR_CYCLE_1) ==
+                dkr_rdp_combiner_key(&canonical, DKR_CYCLE_1)) {
+                break;      /* c=3 is not zero, so these must differ */
+            }
+        }
+        check("a 5-bit zero is not confused with a non-zero c", s > 31);
+
+        /* The negative control: normalisation must not flatten everything. An
+           input that really differs still has to give a different key. */
+        different = canonical;
+        different.rgb[0].b = 4;            /* SHADE, not zero */
+        check("a real change of input still changes the key",
+              dkr_rdp_combiner_key(&different, DKR_CYCLE_1) !=
+              dkr_rdp_combiner_key(&canonical, DKR_CYCLE_1));
+    }
+
     /* Every key must be pairwise distinct: a collision would match one
        configuration to another's Glide setup, and the image would be wrong with
-       nothing reporting it. */
+       nothing reporting it.
+     *
+     * **The comparison is between equivalence classes, not between structures.**
+     * Since the key normalises the spellings of zero, two configurations
+     * differing only there are the same combiner and *must* share a key -- a
+     * `memcmp` would call that a collision and fail on a correct
+     * implementation. So the pair is skipped when the two are equivalent, which
+     * is exactly what `dkr_rdp_combiner_key` itself decides. Writing this with
+     * `memcmp` was right before normalisation and became wrong with it. */
     {
         int collisions = 0, j;
         for (i = 0; i < count; i++) {
@@ -96,15 +163,37 @@ int main(void)
             dkr_rdp_decode_combine(COMBINER_VECTORS[i].w0, COMBINER_VECTORS[i].w1, &ci);
             for (j = i + 1; j < count; j++) {
                 dkr_combiner cj;
+                unsigned long long ki, kj;
                 dkr_rdp_decode_combine(COMBINER_VECTORS[j].w0, COMBINER_VECTORS[j].w1, &cj);
-                if (memcmp(&ci, &cj, sizeof(ci)) != 0 &&
-                    dkr_rdp_combiner_key(&ci, DKR_CYCLE_1) ==
-                    dkr_rdp_combiner_key(&cj, DKR_CYCLE_1)) {
-                    collisions++;
+                ki = dkr_rdp_combiner_key(&ci, DKR_CYCLE_1);
+                kj = dkr_rdp_combiner_key(&cj, DKR_CYCLE_1);
+                /* Equal keys are a collision only if the two really compute
+                   different things. `dkr_combiner_eval` is the arbiter: it is
+                   what the image depends on. */
+                if (ki == kj) {
+                    /* Each source gets a distinct value, so that two combiners
+                       reading different things cannot agree by accident. All
+                       equal would make every configuration look identical and
+                       the check would pass vacuously. */
+                    dkr_combiner_inputs in;
+                    float oi[4], oj[4];
+                    int q;
+                    memset(&in, 0, sizeof(in));
+                    for (q = 0; q < 4; q++) {
+                        in.texel0[q]      = 10.0f;
+                        in.texel1[q]      = 30.0f;
+                        in.primitive[q]   = 70.0f;
+                        in.shade[q]       = 130.0f;
+                        in.environment[q] = 190.0f;
+                        in.combined[q]    = 250.0f;
+                    }
+                    dkr_combiner_eval(&ci, 0, &in, oi);
+                    dkr_combiner_eval(&cj, 0, &in, oj);
+                    if (memcmp(oi, oj, sizeof(oi)) != 0) { collisions++; }
                 }
             }
         }
-        check("no key collision between distinct configurations",
+        check("no key collision between configurations that compute differently",
               collisions == 0);
     }
 

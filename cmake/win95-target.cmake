@@ -529,7 +529,12 @@ add_executable(DKRWin95RdpState
     "${DKRPORT_ROOT}/platform/render/tests/test_rdp_state.c")
 target_include_directories(DKRWin95RdpState PRIVATE
     "${DKRPORT_ROOT}/platform" "${DKRPORT_ROOT}/platform/render/tests")
-target_link_libraries(DKRWin95RdpState PRIVATE win95rdpstate)
+# `win95combiner` as well, and the reason is worth a line: the collision check
+# needs an arbiter for "do these two configurations compute different things".
+# Deciding that from the normalised fields would be circular, normalisation being
+# what is under test. `dkr_combiner_eval` is not: it is what the image depends on.
+# The library is declared further down; CMake resolves the reference either way.
+target_link_libraries(DKRWin95RdpState PRIVATE win95rdpstate win95combiner)
 set_target_properties(DKRWin95RdpState PROPERTIES
     OUTPUT_NAME "RDPSTATE"
     SUFFIX ".EXE"
