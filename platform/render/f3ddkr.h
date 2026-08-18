@@ -184,6 +184,10 @@ typedef struct {
        and beyond, so a short would wrap and read as healthy. */
     /* The normalised device coordinates, before any clipping. On-screen
        geometry belongs in [-1, 1]; this is what the guard band was hiding. */
+    /* Vertices landing inside a generous [-1.5, 1.5] box against those outside.
+       The extremes alone cannot separate "all the geometry is oversized" from
+       "a few vertices are wild", and those are different defects. */
+    unsigned long      ndc_inside, ndc_outside;
     float              ndc_x_min, ndc_x_max;
     float              ndc_y_min, ndc_y_max;
     long               proj_x_min, proj_x_max;

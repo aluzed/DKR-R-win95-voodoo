@@ -265,12 +265,58 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                      width_, height_);
         // Before the guard band touches it. On-screen geometry belongs in
         // [-1, 1]; the figure above is the clamp, this one is the geometry.
-        std::fprintf(stderr,
-                     "[gfx] frame dump: ndc x=[%.2f..%.2f] y=[%.2f..%.2f]\n",
-                     static_cast<double>(context_.state.ndc_x_min),
-                     static_cast<double>(context_.state.ndc_x_max),
-                     static_cast<double>(context_.state.ndc_y_min),
-                     static_cast<double>(context_.state.ndc_y_max));
+        //
+        // **Integers scaled by a thousand, not `%f`.** The first version used
+        // `%.2f` and printed **nothing at all** on this target -- the call is
+        // reached, the format string is in the binary, and no line appears.
+        // `%f` is unusable here. The `coords:` line above already scales to
+        // thousandths for the same reason; that workaround was in the code and
+        // not in any comment, so it had to be rediscovered by losing a run.
+        //
+        // The clamp guards against the seed value: with no triangle processed
+        // the extremes still hold +/-1e30, and casting that to int is undefined
+        // as well as unreadable.
+        {
+            const float lo = -1.0e6F;
+            const float hi = 1.0e6F;
+            float xn = context_.state.ndc_x_min;
+            float xx = context_.state.ndc_x_max;
+            float yn = context_.state.ndc_y_min;
+            float yx = context_.state.ndc_y_max;
+            if (xn < lo) { xn = lo; } if (xn > hi) { xn = hi; }
+            if (xx < lo) { xx = lo; } if (xx > hi) { xx = hi; }
+            if (yn < lo) { yn = lo; } if (yn > hi) { yn = hi; }
+            if (yx < lo) { yx = lo; } if (yx > hi) { yx = hi; }
+            // **The matrix itself, once.** ndc = x/w, and a uniform scale error
+            // in the matrix cancels in that division - so the fault is
+            // necessarily non-uniform, and sixteen numbers say which row. The
+            // alternative is another run per hypothesis about a matrix nobody
+            // has looked at.
+            {
+                const dkr_matrix* mv = dkr_transform_mvp(&context_.transform);
+                int r;
+                if (mv != nullptr) {
+                    for (r = 0; r < 4; r++) {
+                        std::fprintf(stderr,
+                                     "[gfx] frame dump: mvp[%d] "
+                                     "%d %d %d %d /1000\n", r,
+                                     static_cast<int>(mv->m[r][0] * 1000.0F),
+                                     static_cast<int>(mv->m[r][1] * 1000.0F),
+                                     static_cast<int>(mv->m[r][2] * 1000.0F),
+                                     static_cast<int>(mv->m[r][3] * 1000.0F));
+                    }
+                }
+            }
+            std::fprintf(stderr,
+                         "[gfx] frame dump: ndc inside=%lu outside=%lu\n",
+                         context_.state.ndc_inside, context_.state.ndc_outside);
+            std::fprintf(stderr,
+                         "[gfx] frame dump: ndc x=[%d..%d]/1000 y=[%d..%d]/1000\n",
+                         static_cast<int>(xn * 1000.0F),
+                         static_cast<int>(xx * 1000.0F),
+                         static_cast<int>(yn * 1000.0F),
+                         static_cast<int>(yx * 1000.0F));
+        }
     }
 }
 #endif

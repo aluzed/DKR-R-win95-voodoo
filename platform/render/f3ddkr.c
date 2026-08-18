@@ -445,6 +445,20 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     if (ndx > c->state.ndc_x_max) { c->state.ndc_x_max = ndx; }
                     if (ndy < c->state.ndc_y_min) { c->state.ndc_y_min = ndy; }
                     if (ndy > c->state.ndc_y_max) { c->state.ndc_y_max = ndy; }
+                    /* **Extremes are not a distribution**, and the matrices say
+                       why that matters here: both the 2D menu matrix and the 3D
+                       one are plausible, and working the second through with
+                       sensible world coordinates gives ndc = -0.96. So the
+                       geometry is not uniformly oversized -- a handful of wild
+                       vertices would dominate the extremes just as well, and the
+                       two call for opposite work. Counting them apart is the
+                       whole question. */
+                    if (ndx >= -1.5f && ndx <= 1.5f &&
+                        ndy >= -1.5f && ndy <= 1.5f) {
+                        c->state.ndc_inside++;
+                    } else {
+                        c->state.ndc_outside++;
+                    }
                 }
             }
         }
