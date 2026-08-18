@@ -524,10 +524,13 @@ one mode. Three points, and they are unambiguous:
 | `shade` | 1 | `#000000` (list 400) |
 | `texel` | 3 | flat mint `#84FFCE` (list 200) |
 
-**The texture path writes pixels, and it writes one colour.** Every sample
-across the whole screen returns the same texel. That is the defect to chase, and
-it is concrete: not the geometry, not the transform, not the depth test, and not
-the combiner's choice — the sampling itself.
+**The texture path writes pixels, and it writes one colour.** ~~Every sample
+across the whole screen returns the same texel. That is the defect to chase.~~
+
+> **Withdrawn on 18 August 2026, and the conclusion was wrong.** The screen is
+> one triangle. See "The flat frame had no defect behind it" below. What the
+> three points above establish is that the *visible* colour comes from the texel
+> and not from the shade — which is true, and much weaker than what was written.
 
 Two reservations, both mine to state rather than to leave implicit:
 
@@ -679,3 +682,72 @@ error.
 - [`win95-glide-states.md`](win95-glide-states.md) — the W buffer's comparison
   direction
 - E04-S06 RDP state · E04-S07 textures · E05-S02 TMU · E05-S03 combiner
+
+## The flat frame had no defect behind it — 18 August 2026
+
+The conclusion above, "every sample returns the same texel", is **wrong**, and
+the measurement that overturns it is one number:
+
+```
+[gfx] frame dump: areas <1px=17 <100=97 <10k=7 >=10k=16
+[gfx] frame dump: largest triangle=734776 px of 307200
+```
+
+**A single triangle covers two and a half times the screen.** Whatever texture it
+wears is what the whole frame shows. A flat image is exactly what one expects,
+and nothing about texture sampling follows from it.
+
+### How the mistake was made, and how it held for a day
+
+The bisection was sound and its three points still hold: forcing the combiner to
+the vertex colour gives the clear colour, forcing it to the texel gives a
+coloured frame. What that establishes is that **the visible colour comes from the
+texel rather than from the shade** — true, and far weaker than "every sample
+returns the same texel".
+
+The step from one to the other assumed the screen showed many surfaces. Nobody
+had counted. The question "is this a scene or one quad?" was never asked, because
+every instrument in place answered "what is drawn", and none answered "how much
+of the screen does one triangle own".
+
+What kept it alive is that each new measurement kept confirming health elsewhere
+— `skipped-dead=0`, `changed=3424`, 82 % of triangles spanning texture space —
+and every confirmation read as "the defect is further in" rather than as "there
+may be no defect".
+
+### Three aggregates, three wrong turns
+
+The pattern is consistent enough to be a habit rather than three accidents. Every
+counter here that summarised before it was read cost a wrong turn:
+
+| aggregate | what it hid |
+|---|---|
+| pixels differing from the corner | "97 % painted" on a six-shade frame |
+| run-wide `s_min`/`s_max` | wide extremes are compatible with every triangle sampling one point |
+| the `>=10k` area bucket | ten thousand pixels and 734,776 share a bin |
+
+Each was replaced by something that cannot saturate: a distinct-colour count, a
+per-triangle test, an actual maximum.
+
+### What is actually established
+
+- The chain draws, on the card, with textures resident and bound, and the visible
+  colour comes from the texel.
+- At display list 200 the screen is one enormous triangle. **Whether that is
+  right is not known**: a background quad extending past the viewport is normal
+  and gets scissored, and E04-S05's guard band bounds coordinates at four
+  half-screens, so 734,776 pixels is not by itself absurd.
+- Nothing is established about texture sampling, in either direction.
+
+### What to measure next, and it is not a texture question
+
+Dump several lists in one run rather than one. If every list is dominated by a
+single huge triangle, the question becomes why the game is drawing that and not
+its menu — and that is geometry, not sampling. If later lists show many
+comparable surfaces coming out in three colours, the sampling question returns,
+this time properly founded.
+
+A second, cheaper reading is available from the same runs: the per-list areas
+differed between two runs of the same list — `2/75/12/17` and `17/97/7/16` —
+so list 200 is not identical from one run to the next. That is worth knowing
+before treating any single list as a reference.
