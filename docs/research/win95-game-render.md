@@ -965,3 +965,30 @@ Separating a deliberate overlap from an accidental one is not possible from
 inside the renderer — both produce rectangles that overlap. It takes a source
 that says what the overlap *should* be. That is what E09-S02's comparison harness
 is for, and this is the first time the project has needed it in earnest.
+
+## The machine was the slowdown, not the 2D path — 18 August 2026
+
+Runs got progressively shorter through the afternoon: 580 display lists, then
+460, 340, 220, and finally **3 in nine minutes**, with the binary barely changed
+between the last two. I attributed it to `G_TEXRECT`, on the reasoning that eight
+thousand rectangles per run had gone from a skipped opcode to two triangles each
+with a texture bind and a state application. That reasoning was plausible and
+wrong.
+
+Restoring the reference image — `Run-Win95-VM.sh --restore`, a snapshot from
+11 August — put the same binary at **list 1080 in seven minutes**, better than
+any run before `G_TEXRECT` existed.
+
+So the collapse was the guest, worn down by some fifteen abrupt stops, several of
+them mid-write, on a machine where `AutoScan=0` means Windows never repairs
+itself. The transfer disk had accumulated 515 lost clusters against 63 that
+morning. The worn image is kept as `win95.img.worn-18aug`: discarding it would
+have made the question unanswerable.
+
+**The measurement to retract**: "TEXRECT costs a factor of three". Nothing is
+known about the 2D path's cost, and E08-S01 still has no figure for it.
+
+That is the sixth instrument failure of the week, and the first where the
+instrument was the machine itself rather than a counter. The pattern holds: every
+one of them reported something plausible, and every one of them was believed
+until a control was run against it.
