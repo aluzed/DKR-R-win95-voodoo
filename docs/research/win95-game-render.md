@@ -829,3 +829,66 @@ small. The candidates, in the order they can be separated:
 
 The measurement that separates them is the range of `w` itself, alongside the
 matrix as loaded — printed once per list, not per vertex.
+
+## The 2D content is decoded and skipped — 18 August 2026
+
+`G_TEXRECT`, opcode **`0xE4`**, is the RDP command that draws a textured
+rectangle: on DKR that is the menus, the HUD, the text, the icons, the balloons —
+every 2D element the player looks at. `G_TEXRECTFLIP` is `0xE5`.
+
+Both fall inside the `0xE4..0xFF` range that `opcode_effect_deferred()`
+recognises and **skips**. They are counted in the opcode histogram and never
+handed to the backend:
+
+```
+draw: vertices=81678 triangles=81068 texrect=8758 texrectflip=0 fillrect=1667
+      | handed-over=1667
+```
+
+Eight thousand seven hundred and fifty-eight textured rectangles decoded, and
+`handed-over` counts only the filled ones. The whole 2D path is missing.
+
+That is why the frames are a flat colour or black. What renders is the 3D
+background — a full-screen quad, correctly clipped, wearing a near-uniform
+texture — and nothing else. It is not a sampling defect, not a projection
+defect, and not a combiner defect. **It is an absence.**
+
+### How it hid for two days
+
+The range was enumerated by its bounds, and the comment that documents it lists
+the family as "RDP — synchronisations, scissor, tiles, colours, combiner". It
+never mentions that the range **begins** with the two drawing commands. Skipping
+was the right decision for the synchronisations and the state writes that make up
+the rest of it, and the two exceptions sat at the very start where the prose
+stopped looking.
+
+Nothing in the counters contradicted it either, because `texrect` was counted
+from the raw opcode histogram — a number that rises whether or not the command
+does anything. `fillrect` sits beside it with a `handed-over` count; `texrect`
+has none, so "decoded" and "drawn" were never separated for it.
+
+### What this closes
+
+Everything measured over the two previous days is consistent with a correct
+renderer missing its 2D path:
+
+- textures resident, bound and downloaded, with coordinates spanning texture
+  space — the 3D background needs them and uses them properly;
+- both matrices plausible, the menu's orthographic and the scene's a genuine MVP;
+- triangles reaching the guard band, which is a full-screen background quad
+  clipped exactly as designed — a triangle spanning the band has area
+  (2560 × 1920)/2 = 2,457,600, the figure measured on four lists out of six;
+- the flat colour: one background quad and nothing over it;
+- the black frames: lists that carry only 2D content, all of it skipped.
+
+### What remains
+
+Implementing `G_TEXRECT` is E05-S07's remaining scope — the ticket already has
+the filled rectangle, the half-texel offset and the fill rule measured, and
+names the textured rectangle as the piece the game's text depends on. The command
+carries its coordinates across the following `RDPHALF` words, which the decoder
+also currently skips, so the two go together.
+
+The counter to add alongside it is the one whose absence hid this: a
+`handed-over` figure for textured rectangles, so that "decoded" and "drawn"
+cannot be read as the same number again.
