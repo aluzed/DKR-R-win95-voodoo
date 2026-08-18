@@ -159,6 +159,32 @@ def report(fs):
     return cross
 
 
+def repair_fats(path, fs):
+    """Copy the first FAT over the others.
+
+    Only ever called when the first FAT walks cleanly: it is then the consistent
+    copy, and the others are stale. That is the shape divergence takes here --
+    mtools updates the primary and a write interrupted, or forced through with
+    `MTOOLS_SKIP_CHECK`, leaves the secondary behind. Measured on 18 August 2026:
+    ten bytes apart, clusters 12296 to 12300, where the first said "freed" and
+    the second still held the chain.
+
+    It is a repair and not a formality, so it says what it changed.
+    """
+    with open(path, "r+b") as f:
+        f.seek(fs.fat_off)
+        primary = f.read(fs.spf * fs.bps)
+        changed = 0
+        for i in range(1, fs.nfat):
+            off = fs.fat_off + i * fs.spf * fs.bps
+            f.seek(off)
+            if f.read(fs.spf * fs.bps) != primary:
+                f.seek(off)
+                f.write(primary)
+                changed += 1
+    return changed
+
+
 def clear_dirty(path, fs):
     """Set bit 15 of entry 1 back, in every copy of the FAT."""
     with open(path, "r+b") as f:
@@ -267,11 +293,19 @@ def main():
     if not fs.is_dirty():
         print("  nothing to do: the volume is already flagged clean")
         return 0
-    if cross or not fs.fats_agree():
-        print("  REFUSED: this volume is corrupt, not merely dirty.\n"
-              "  Clearing the flag would assert a soundness the walk denies.\n"
-              "  Restore the image instead.", file=sys.stderr)
+    if cross:
+        print("  REFUSED: clusters are claimed by two files at once.\n"
+              "  One already holds the other's data, and no flag clearing\n"
+              "  repairs that. Restore the image instead.", file=sys.stderr)
         return 1
+    if not fs.fats_agree():
+        # The walk above used the first FAT and found it sound, so the others
+        # are the stale ones. Saying so and repairing beats refusing: a refusal
+        # here sends the reader looking for corruption that the walk has just
+        # ruled out.
+        n = repair_fats(a.image, fs)
+        print("  repaired: the first FAT copied over %d stale one(s)" % n)
+        fs = Fat16(open(a.image, "rb").read(), a.offset)
     clear_dirty(a.image, fs)
     print("  cleared: the volume is flagged clean")
     return 0
