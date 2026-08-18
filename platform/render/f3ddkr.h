@@ -192,6 +192,20 @@ typedef struct {
        days -- `texrect` came from the raw opcode histogram, which rises whether
        or not the command draws anything, and `fillrect` had a `handed-over`
        beside it while this had none. */
+    /* The first few rectangles, verbatim. The glyphs overlap on screen and the
+       two candidate causes are a pixel apart: `lrx` inclusive, as `cmd_fill_rect`
+       takes it, or exclusive. Adjacent letters abutting with no gap says the
+       `+1` is one too many; a gap says it is right and the fault is elsewhere.
+       Six is enough to see two neighbours and cheap enough to print. */
+    short              rect_sample[6][4];
+    unsigned long      rect_sample_n;
+    /* The render state the first textured rectangle was drawn with: combine,
+       blend, alpha test, alpha reference. The game's own glyph rectangles
+       overlap by two or three pixels - measured - so the padding around each
+       letter must be masked by transparency. If these say opaque with no alpha
+       test, the boxes paint over each other and that is the crowding on screen. */
+    unsigned char      rect_state[4];
+    unsigned char      rect_state_seen;
     unsigned long      texrects_seen;
     unsigned long      texrects_drawn;
     unsigned long      texrects_no_texture;

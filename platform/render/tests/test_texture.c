@@ -96,6 +96,14 @@ int main(void)
           ((g_out[0] >> 6) & 0x1Fu) == 0x1Fu &&
           ((g_out[0] >> 1) & 0x1Fu) == 0x1Fu);
     check("I8: 0 gives black", (g_out[1] & 0xFFFEu) == 0u);
+    /* **And transparent, which is the point.** The RDP expands an `I` texel as
+       R = G = B = A = I, so intensity zero is a transparent texel and not a
+       black one. Alpha was written as a constant 1 here, which made the padding
+       around every glyph opaque: the letters then painted boxes over each
+       other's edges. The game's own rectangles overlap by two or three pixels -
+       measured - because it expects that padding to disappear. */
+    check("I8: 0 is transparent, 255 is opaque",
+          (g_out[1] & 1u) == 0u && (g_out[0] & 1u) == 1u);
 
     /* --- IA16: alpha becomes a threshold ------------------------------------- *
      *

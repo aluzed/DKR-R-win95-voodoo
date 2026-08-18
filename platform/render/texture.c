@@ -123,7 +123,22 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
 
     if (format == DKR_N64_FMT_I && size == DKR_N64_SIZ_8) {
         for (i = 0; i < n; i++) {
-            out[i] = grey_to_5551(read8(rdram, native, address + i), 1u);
+            /* **The intensity is the alpha.** The RDP expands an `I` texel as
+               `R = G = B = A = I`, which is what makes fonts work: the padding
+               around a glyph is intensity zero, hence transparent, and the
+               proportional advance overlaps the neighbouring rectangle by two or
+               three pixels on purpose -- measured on the machine, rect0 8..24
+               followed by rect1 22..41.
+             *
+               Forcing alpha to one made that padding opaque, so every letter
+               painted a box over the previous one's right edge. The text was
+               legible and crowded, which reads as a positioning defect and is
+               not one: `G_TEXRECT` was handing over exactly the coordinates the
+               game asked for. */
+            {
+                const unsigned int it = read8(rdram, native, address + i);
+                out[i] = grey_to_5551(it, it >= 128u);
+            }
         }
         if (stats) { stats->converted++; }
         return 1;
@@ -134,7 +149,7 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
             const unsigned char o = read8(rdram, native, address + i / 2u);
             const unsigned int  q = (i & 1u) ? (o & 0x0Fu) : (unsigned int)(o >> 4);
             /* 4 bits to 8 by replication: 15 must give 255, not 240. */
-            out[i] = grey_to_5551((q << 4) | q, 1u);
+            out[i] = grey_to_5551((q << 4) | q, q >= 8u);
         }
         if (stats) { stats->converted++; }
         return 1;

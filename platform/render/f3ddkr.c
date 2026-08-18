@@ -1137,6 +1137,13 @@ static void cmd_texrect(dkr_f3d_context *c, unsigned int w0, unsigned int w1,
     c->texrect_ulx = (int)((w1 >> 14) & 0x3FFu);
     c->texrect_uly = (int)((w1 >>  2) & 0x3FFu);
     c->texrect_flip = (unsigned char)(flip ? 1 : 0);
+    if (c->state.rect_sample_n < 6u) {
+        const unsigned long k = c->state.rect_sample_n++;
+        c->state.rect_sample[k][0] = (short)c->texrect_ulx;
+        c->state.rect_sample[k][1] = (short)c->texrect_uly;
+        c->state.rect_sample[k][2] = (short)c->texrect_lrx;
+        c->state.rect_sample[k][3] = (short)c->texrect_lry;
+    }
     c->texrect_pending = 2u;
     c->texrect_s = c->texrect_t = 0.0f;
     c->texrect_dsdx = c->texrect_dtdy = 0.0f;
@@ -1219,6 +1226,13 @@ static void texrect_emit(dkr_f3d_context *c)
     }
 
     apply_state(c);
+    if (!c->state.rect_state_seen) {
+        c->state.rect_state_seen = 1;
+        c->state.rect_state[0] = (unsigned char)c->render_state.combine;
+        c->state.rect_state[1] = (unsigned char)c->render_state.blend;
+        c->state.rect_state[2] = (unsigned char)c->render_state.alpha_test;
+        c->state.rect_state[3] = (unsigned char)c->render_state.alpha_reference;
+    }
     c->backend->draw_triangles(c->backend->self, v, 2);
     c->state.texrects_drawn++;
     trace(c, "TexRect %d,%d..%d,%d s=%d t=%d /1000",
