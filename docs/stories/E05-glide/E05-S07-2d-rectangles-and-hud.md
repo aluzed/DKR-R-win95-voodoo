@@ -71,9 +71,23 @@ To render all the game's 2D elements correctly, to the pixel.
 - [x] Four rectangles edge to edge: 0 background pixels out of 200. With a negative
       control checking that the four colours are distinct, without which a single
       rectangle covering everything would pass.
-- [ ] The game's text — **blocked by the ROM**. It is the most demanding trial of
-      positioning, and the one-texel grid is only a substitute for it.
-- [ ] Five reference screens — **blocked by the ROM**.
+- [~] The game's text renders and is legible: `DRUMSTICK` from the character
+      select, in `BigFont`, on 18 August 2026. It took implementing `G_TEXRECT`
+      and `G_TEXRECTFLIP` — opcodes `0xE4` and `0xE5`, which the decoder had been
+      skipping along with the whole `0xE4..0xFF` family, so DKR's entire 2D layer
+      was decoded and dropped: 8,758 rectangles per run against a `handed-over`
+      count that only ever tracked the filled ones.
+
+      It is indeed the most demanding trial of positioning, and it caught what
+      the one-texel grid could not: **`lrx` is exclusive for `G_TEXRECT`**, where
+      `G_FILLRECT` includes it. Copying the fill rule made every glyph a texel
+      too wide.
+
+      Still open: a run confirming the corrected widths on screen.
+- [ ] Five reference screens — the ROM is present (see
+      `docs/research/win95-rom-available.md`); what is missing is the comparison
+      harness, E09-S02.
+
 - [x] Exact to the pixel in the four cases measured: 153,600 painted for 153,600
       expected with two players, 76,800 for 76,800 with four.
 - [x] Surveyed — **and it revealed an error in the decoder**. `w1` is an RDRAM
@@ -81,6 +95,20 @@ To render all the game's 2D elements correctly, to the pixel.
       Our decoder read it as two 16-bit `s` and `t` offsets. The error would have
       displaced patterns rather than made them disappear, and we would have looked on
       the texture-decoding side.
+
+> **The reference settled the width, and nothing inside the port could have.**
+> Four internal measurements each answered "correct" — the rectangle
+> coordinates, the blend state, the intensity alpha, the sampled texture span —
+> and they were correct. `BigFont`'s extracted metadata gives the advance and the
+> texture width per character; against the rectangles measured on the machine,
+> five advances out of five match `char-width`, and five widths out of five match
+> `tex-size.width` **only if `lrx` is exclusive**.
+>
+> DKR overlaps its glyph boxes by design, the advance being exactly two less than
+> the texture width for every letter, so an extra pixel hides inside an overlap
+> already there. Telling a deliberate overlap from an accidental one is not
+> possible from inside the renderer. That is what E09-S02 exists for, and this is
+> the first time the project has needed it in earnest.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
