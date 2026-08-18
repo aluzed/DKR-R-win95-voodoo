@@ -379,16 +379,40 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // file, no log line, nothing to distinguish "the dump failed" from "the dump
     // never came up". A trigger that depends on reaching an exact count one
     // cannot predict is a trigger that fails silently.
+    //
+    // **Several lists, not one.** A single dump cannot tell "the game draws one
+    // huge quad at this instant" from "the game draws one huge quad, full stop",
+    // and that distinction is now the whole question: at list 200 the largest
+    // triangle covered 734,776 pixels of a 307,200-pixel screen. `DKR_DUMP_EVERY`
+    // repeats the dump, up to six files, so one run answers it.
     {
         static const char* const dump_env = std::getenv("DKR_DUMP_FRAME");
+        static const char* const every_env = std::getenv("DKR_DUMP_EVERY");
         static const unsigned long dump_at =
             dump_env ? std::strtoul(dump_env, nullptr, 10) : 0UL;
-        static bool dumped = false;
-        if (dump_at != 0UL && !dumped && index >= dump_at) {
-            dumped = true;
-            std::fprintf(stderr, "[gfx] frame dump: list %llu\n",
-                         static_cast<unsigned long long>(index));
-            dump_frame("D:\\FRAME.BMP");
+        static const unsigned long dump_every =
+            every_env ? std::strtoul(every_env, nullptr, 10) : 0UL;
+        static const int kMaxDumps = 6;
+        static int dumps_done = 0;
+        static unsigned long next_dump = 0UL;
+
+        if (dump_at != 0UL && dumps_done < kMaxDumps) {
+            if (next_dump == 0UL) { next_dump = dump_at; }
+            if (index >= next_dump) {
+                char path[24];
+                std::sprintf(path, "D:\\FRAME%d.BMP", dumps_done);
+                std::fprintf(stderr, "[gfx] frame dump %d: list %llu\n",
+                             dumps_done,
+                             static_cast<unsigned long long>(index));
+                dump_frame(path);
+                dumps_done++;
+                // A zero interval keeps the old single-shot behaviour rather
+                // than dumping every list from here on, which would fill the
+                // disk and slow the run - the mistake the per-list fprintf
+                // already made once.
+                next_dump = (dump_every != 0UL) ? index + dump_every : 0UL;
+                if (next_dump == 0UL) { dumps_done = kMaxDumps; }
+            }
         }
     }
 
