@@ -751,3 +751,81 @@ A second, cheaper reading is available from the same runs: the per-list areas
 differed between two runs of the same list — `2/75/12/17` and `17/97/7/16` —
 so list 200 is not identical from one run to the next. That is worth knowing
 before treating any single list as a reference.
+
+## The geometry is projected hundreds of times too large — 18 August 2026
+
+The normalised device coordinates, taken before any clipping, over six lists of
+one run:
+
+| list | ndc x | ndc y |
+|---|---|---|
+| 100 | −30.6 … 209.4 | −20.9 … 175.0 |
+| 220 | −189 … 192 | −40 … 448 |
+| 340 | −1773.8 … 319.4 | −136.9 … 464 |
+| 460 | −81.6 … 283.8 | −64.5 … 340.8 |
+| 580 | −461.5 … 117 | −20 … 551 |
+| 700 | −14.5 … 777.5 | −31.5 … 389.2 |
+
+**On-screen geometry belongs in [−1, 1].** This is two to three orders of
+magnitude out, and the factor varies from list to list rather than being a
+constant scale.
+
+That single fact accounts for everything the last two days measured:
+
+- the guard band saturating on every list, at exactly ±2 screens;
+- a largest triangle of 2,457,600 px, exactly eight screens, which is half the
+  clamp box — a triangle spanning it corner to corner;
+- the flat frames: one triangle covering the screen, so the image is whatever
+  texture it happens to wear;
+- the black frames: geometry projected so far out that nothing lands inside the
+  scissor.
+
+And it **exonerates the texture path completely**. Textures are resident, bound,
+downloaded, with correct coordinates spanning texture space on 82 % of triangles.
+Nothing was ever wrong there.
+
+### Why this took so long to see
+
+Every instrument between the projection and the screen bounds what passes
+through it, so each one reported its own limit rather than the quantity asked
+for. Four in a row:
+
+| instrument | reported | actually meant |
+|---|---|---|
+| pixels differing from the corner | 97 % painted | six shades of one grey |
+| run-wide `s_min`/`s_max` | a healthy spread | compatible with one point per triangle |
+| the `>=10k` area bucket | 17 large triangles | 10,000 px and 734,776 share a bin |
+| projected x,y extremes | −960…1600 on every list | the guard band's own boundary |
+
+The last is the sharpest lesson: **six independent lists agreeing to the pixel is
+not a measurement, it is a constant.** `clip.h` documents that exact range in
+prose — "At 4, a 640-pixel screen tolerates coordinates from −960 to 1600" — and
+I read the number back out of my own log without recognising it.
+
+The rule that would have caught all four: before reading a figure, ask what it
+would print if the thing were broken in the most obvious way. A saturated count,
+a clamped range and a bucket at its ceiling all print "fine".
+
+### One more, in the instrument rather than the pipeline
+
+The first version of this measurement used `%.2f` and printed **nothing at all**
+— the call is reached, the format string is in the binary, no line appears. `%f`
+is unusable on this target. The `coords:` line has always scaled to thousandths
+for that reason; the workaround was in the code and in no comment, so it cost a
+run to rediscover.
+
+### What to look at next
+
+`ndc = x / w`, so either the transformed x is far too large or w is far too
+small. The candidates, in the order they can be separated:
+
+1. the model-view-projection matrix the transform receives — E04-S03 verified the
+   16.16 fixed-point conversion against hand-computed values, but not the
+   composition that feeds it;
+2. `MOVEWORD` index `0x0A`, which F3DDKR uses to hand over an MVP directly, and
+   which the decoder may or may not be honouring;
+3. the vertex scale, if object coordinates are being read at the wrong fixed-point
+   exponent.
+
+The measurement that separates them is the range of `w` itself, alongside the
+matrix as loaded — printed once per list, not per vertex.
