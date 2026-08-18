@@ -253,6 +253,16 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
         std::fprintf(stderr,
                      "[gfx] frame dump: largest triangle=%lu px of %d\n",
                      context_.state.area_max, width_ * height_);
+        // Where the geometry actually lands. 2457600 px is exactly eight
+        // screens, which is the guard band's clamp at +/-2048 - so the areas
+        // alone cannot say whether a quad merely overhangs the viewport or the
+        // projection scale is wrong. These extremes can.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: projected x=[%ld..%ld] y=[%ld..%ld] "
+                     "screen=%dx%d\n",
+                     context_.state.proj_x_min, context_.state.proj_x_max,
+                     context_.state.proj_y_min, context_.state.proj_y_max,
+                     width_, height_);
     }
 }
 #endif

@@ -499,6 +499,17 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 if (area > c->state.area_max) {
                     c->state.area_max = (unsigned long)area;
                 }
+                {
+                    int q;
+                    for (q = 0; q < 3; q++) {
+                        const long px = (long)v[q].x;
+                        const long py = (long)v[q].y;
+                        if (px < c->state.proj_x_min) { c->state.proj_x_min = px; }
+                        if (px > c->state.proj_x_max) { c->state.proj_x_max = px; }
+                        if (py < c->state.proj_y_min) { c->state.proj_y_min = py; }
+                        if (py > c->state.proj_y_max) { c->state.proj_y_max = py; }
+                    }
+                }
             }
             /* **The depth mode at draw time.**
              *
@@ -1382,6 +1393,13 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
        like a transformation defect rather than an absence. */
     ctx->tex_scale_s = 1.0f / 32.0f;
     ctx->tex_scale_t = 1.0f / 32.0f;
+    /* Seeded so that the first vertex replaces them. Zero would be a value the
+       geometry legitimately holds, and the extremes would then never report a
+       range that stays on one side of the origin. */
+    ctx->state.proj_x_min = 1000000L;
+    ctx->state.proj_y_min = 1000000L;
+    ctx->state.proj_x_max = -1000000L;
+    ctx->state.proj_y_max = -1000000L;
     ctx->state.s_min = 1.0e30f;
     ctx->state.t_min = 1.0e30f;
     ctx->state.s_max = -1.0e30f;

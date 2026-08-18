@@ -176,6 +176,14 @@ typedef struct {
        from a healthy spread. See the note at the counting site. */
     /* The largest emitted triangle, in pixels. The top area bucket spans from
        ten thousand to the whole screen; those are different findings. */
+    /* Extremes of the **projected** screen coordinates, in pixels, over the
+       list. The area buckets say a triangle is huge; these say by how much and
+       in which direction, which is what separates "a background quad extends
+       past the viewport", which is normal, from "the projection scale is
+       wrong", which is not. Stored as longs: the values reach the guard band
+       and beyond, so a short would wrap and read as healthy. */
+    long               proj_x_min, proj_x_max;
+    long               proj_y_min, proj_y_max;
     unsigned long      area_max;
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
