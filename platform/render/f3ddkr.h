@@ -171,6 +171,11 @@ typedef struct {
        missing case is invisible at decode time, it shows on screen as an
        unexpected colour, possibly in a single level. We keep the keys rather
        than merely their count — a count says some are missing, not which. */
+    /* Triangles whose three corners carry the **same** s,t: they sample one
+       texel whatever the texture, which a run-wide extreme cannot distinguish
+       from a healthy spread. See the note at the counting site. */
+    unsigned long      tri_st_degenerate;
+    unsigned long      tri_st_varying;
     unsigned long      combiners_known;
     unsigned long      combiners_unknown;
     unsigned long long unknown_keys[8];

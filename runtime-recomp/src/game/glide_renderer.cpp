@@ -220,6 +220,28 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                  "differing=%lu/%ld\n",
                  path, w, h, static_cast<unsigned long>(background),
                  distinct, non_background, static_cast<long>(w) * h);
+
+    // What the TMU was pointed at while that frame was drawn. Printed here
+    // rather than in the periodic report because it is this frame the image
+    // belongs to, and the two have to be read together.
+    {
+        unsigned long binds = 0;
+        unsigned long dead = 0;
+        unsigned long changed = 0;
+        dkr_glide_backend_bind_stats(&binds, &dead, &changed);
+        std::fprintf(stderr,
+                     "[gfx] frame dump: binds=%lu skipped-dead=%lu changed=%lu\n",
+                     binds, dead, changed);
+    }
+    {
+        // Whether each triangle spans texture space at all. The run-wide s/t
+        // extremes cannot answer this: they are wide even when every triangle
+        // samples a single point.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: st-degenerate=%lu st-varying=%lu\n",
+                     context_.state.tri_st_degenerate,
+                     context_.state.tri_st_varying);
+    }
 }
 #endif
 

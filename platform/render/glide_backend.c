@@ -221,6 +221,23 @@ static struct {
     dkr_render_state current;
     int              has_state;
     unsigned long    triangles;
+    /* --- What the TMU is actually pointed at ------------------------------- *
+     *
+     * The frame brought back on 17 August 2026 is a flat colour under
+     * `DKR_FORCE_COMBINE=texel`: every sample over the whole screen returns the
+     * same texel. Reading the code got as far as "the handle is right and the
+     * download succeeds", and no further, so these count what `bind_texture`
+     * really does.
+     *
+     * `binds_dead` is the one worth having. `bind_texture` returns **silently**
+     * when the slot is no longer live, and the TMU then keeps sampling wherever
+     * it last pointed - one texture for everything, which is exactly the
+     * symptom. A silent early return without a counter is the pattern this
+     * repository keeps having to rediscover. */
+    unsigned long    binds;
+    unsigned long    binds_dead;
+    unsigned long    binds_changed;
+    unsigned int     last_bound_address;
 } b;
 
 /* --- Translations ----------------------------------------------------------- *
@@ -775,7 +792,12 @@ static void bind_texture(dkr_texture_handle handle)
     glide_texture *tx;
     if (handle == 0 || handle > GLIDE_MAX_TEXTURES || !gs.tex_source) { return; }
     tx = &g_tex[handle - 1];
-    if (!tx->live) { return; }
+    if (!tx->live) { b.binds_dead++; return; }
+    b.binds++;
+    if (tx->address != b.last_bound_address) {
+        b.binds_changed++;
+        b.last_bound_address = tx->address;
+    }
     /* Bind on the unit where the texture resides, and not on TMU 0 by default:
        binding a TMU 1 address on TMU 0 causes no error, TMU 0 simply sampling
        whatever sits at that address in its own memory. The scenery would then
@@ -805,6 +827,15 @@ void dkr_render_backend_glide(dkr_render_backend *out)
 unsigned long dkr_glide_backend_triangle_count(void)
 {
     return b.triangles;
+}
+
+void dkr_glide_backend_bind_stats(unsigned long *binds,
+                                  unsigned long *dead,
+                                  unsigned long *changed)
+{
+    if (binds)   { *binds   = b.binds; }
+    if (dead)    { *dead    = b.binds_dead; }
+    if (changed) { *changed = b.binds_changed; }
 }
 
 /* Applies a setup from the E05-S03 table, as it is.

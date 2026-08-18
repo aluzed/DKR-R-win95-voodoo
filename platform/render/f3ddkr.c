@@ -404,6 +404,25 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             continue;
         }
 
+        /* --- Is the triangle degenerate in texture space? -------------------- *
+         *
+         * `s_min`/`s_max` above are extremes over the **whole run**: they can be
+         * wide while every individual triangle samples a single point, and the
+         * two look identical in a log. The frame brought back on 17 August 2026
+         * is one colour under `DKR_FORCE_COMBINE=texel`, with thousands of
+         * distinct textures bound and none skipped, so "every triangle samples
+         * one texel of its own texture" is exactly the reading those extremes
+         * cannot rule out.
+         *
+         * Counted per triangle, before clipping introduces interpolated corners
+         * of its own. */
+        if (tri[0].s == tri[1].s && tri[1].s == tri[2].s &&
+            tri[0].t == tri[1].t && tri[1].t == tri[2].t) {
+            c->state.tri_st_degenerate++;
+        } else {
+            c->state.tri_st_varying++;
+        }
+
         pieces = dkr_clip_near(tri, clipped);
         if (pieces == 0) {
             c->state.clipped_away++;

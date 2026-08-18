@@ -318,6 +318,21 @@ void dkr_render_backend_software(dkr_render_backend *out);
 #if defined(DKR_TARGET_WIN95)
 void dkr_render_backend_glide(dkr_render_backend *out);
 unsigned long dkr_glide_backend_triangle_count(void);
+
+/* What `bind_texture` really did: binds performed, binds **skipped because the
+ * slot was no longer live**, and binds that actually moved the TMU's address.
+ *
+ * The middle figure is the point. A skipped bind leaves the TMU sampling
+ * wherever it last pointed, so every draw after it wears one texture -- the
+ * exact symptom of the flat frame measured on 17 August 2026, where forcing the
+ * combiner to the texel alone gave three shades of one colour over the whole
+ * screen. It used to be a silent early return.
+ *
+ * `changed` separates the two readings that remain: "one texture is bound over
+ * and over" from "many are bound and the sampling is wrong regardless". */
+void dkr_glide_backend_bind_stats(unsigned long *binds,
+                                  unsigned long *dead,
+                                  unsigned long *changed);
 /* Why a texture upload failed: 0 aspect ratio refused by the card, 1 zero size,
    2 descriptor table full, 3 TMU memory exhausted. Four causes behind a single
    returned zero; conflating them makes one fix the wrong thing. */
