@@ -174,6 +174,9 @@ typedef struct {
     /* Triangles whose three corners carry the **same** s,t: they sample one
        texel whatever the texture, which a run-wide extreme cannot distinguish
        from a healthy spread. See the note at the counting site. */
+    /* The largest emitted triangle, in pixels. The top area bucket spans from
+       ten thousand to the whole screen; those are different findings. */
+    unsigned long      area_max;
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;

@@ -241,6 +241,18 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                      "[gfx] frame dump: st-degenerate=%lu st-varying=%lu\n",
                      context_.state.tri_st_degenerate,
                      context_.state.tri_st_varying);
+        // **The alternative I had not excluded.** A single large triangle drawn
+        // last, wearing a near-uniform texture, produces exactly this frame and
+        // is no defect at all. The area histogram for *this* list says whether
+        // the screen is one quad or a scene: these are per-list counters, unlike
+        // the run-wide ones in the periodic report.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: areas <1px=%lu <100=%lu <10k=%lu >=10k=%lu\n",
+                     context_.state.area[0], context_.state.area[1],
+                     context_.state.area[2], context_.state.area[3]);
+        std::fprintf(stderr,
+                     "[gfx] frame dump: largest triangle=%lu px of %d\n",
+                     context_.state.area_max, width_ * height_);
     }
 }
 #endif

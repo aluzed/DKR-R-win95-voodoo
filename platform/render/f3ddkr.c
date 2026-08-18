@@ -487,6 +487,18 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 else if (area < 100.0f)  { c->state.area[1]++; }
                 else if (area < 10000.0f){ c->state.area[2]++; }
                 else                     { c->state.area[3]++; }
+                /* **The largest, kept as a number rather than a bucket.**
+                 *
+                 * The top bucket runs from ten thousand pixels to the whole
+                 * screen, and those two answer opposite questions: seventeen
+                 * modest quads tiling the view mean a scene that renders flat,
+                 * one quad of 307,200 pixels means a screen legitimately showing
+                 * a single surface. The histogram cannot separate them, and that
+                 * is the third aggregate today to hide the thing it was built to
+                 * show. */
+                if (area > c->state.area_max) {
+                    c->state.area_max = (unsigned long)area;
+                }
             }
             /* **The depth mode at draw time.**
              *
