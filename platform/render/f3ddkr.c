@@ -33,6 +33,8 @@
 #define OP_SETTILE        0xF5
 #define OP_SETTILESIZE    0xF2
 #define OP_RDPSETOTHERMODE 0xEF
+#define OP_TEXRECT         0xE4
+#define OP_TEXRECTFLIP     0xE5
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -1087,6 +1089,173 @@ static unsigned int colour_from_5551(unsigned int pixel)
     return (r8 << 16) | (g8 << 8) | b8;
 }
 
+/* --- Textured rectangles ---------------------------------------------------- *
+ *
+ * `G_TEXRECT` (0xE4) and `G_TEXRECTFLIP` (0xE5) draw DKR's entire 2D layer: the
+ * menus, the HUD, the text, the icons. Both sat inside the `0xE4..0xFF` range
+ * that `opcode_effect_deferred` skips, and the comment describing that family --
+ * "synchronisations, scissor, tiles, colours, combiner" -- never noticed that the
+ * range *begins* with the two drawing commands. Eight thousand of them were
+ * decoded and dropped per run, which is why the frames showed a background quad
+ * and nothing over it.
+ *
+ * ## The encoding, read rather than recited
+ *
+ * From `gsSPTextureRectangle` in the decompilation's `gbi.h`:
+ *
+ *     w0   opcode<<24 | xh<<12 | yh        lower-right, 10.2 fixed point
+ *     w1   tile<<24   | xl<<12 | yl        upper-left,  10.2
+ *     then G_RDPHALF_1   s<<16 | t         10.5
+ *     then G_RDPHALF_2   dsdx<<16 | dtdy   5.10
+ *
+ * **`w0` carries the lower-right corner and `w1` the upper-left**, which is the
+ * reverse of the reading order and the trap this command is known for. It is
+ * also why `cmd_fill_rect` above takes them the same way round.
+ *
+ * ## Why the halves are captured by position
+ *
+ * `gbi.h` computes `G_RDPHALF_1` as `G_IMMFIRST - 12` with `G_IMMFIRST = -65`,
+ * that is **0xB3**; this file's own comment on the deferred range claims the
+ * machine answered **0xB4**. They cannot both be right, and nothing in either
+ * source settles it.
+ *
+ * The macro emits the two halves immediately after the opcode, by construction,
+ * so their *position* is reliable where their numbering is disputed. The decoder
+ * therefore takes the next two commands whatever they are, and **records the
+ * opcodes it saw** so the log answers the question instead of the code assuming
+ * it. If the recorded pair is not what either source predicts, that is a finding
+ * rather than a silent misparse.
+ */
+static void cmd_texrect(dkr_f3d_context *c, unsigned int w0, unsigned int w1,
+                        int flip)
+{
+    c->state.texrects_seen++;
+    /* 10.2 fixed point, fraction dropped: the rectangle lands on whole pixels.
+       w0 is the lower-right, w1 the upper-left -- not the other way about. */
+    c->texrect_lrx = (int)((w0 >> 14) & 0x3FFu);
+    c->texrect_lry = (int)((w0 >>  2) & 0x3FFu);
+    c->texrect_ulx = (int)((w1 >> 14) & 0x3FFu);
+    c->texrect_uly = (int)((w1 >>  2) & 0x3FFu);
+    c->texrect_flip = (unsigned char)(flip ? 1 : 0);
+    c->texrect_pending = 2u;
+    c->texrect_s = c->texrect_t = 0.0f;
+    c->texrect_dsdx = c->texrect_dtdy = 0.0f;
+}
+
+/* Emits the rectangle as two triangles: Glide has no rectangle primitive, and
+   `backend.h` says so -- the filled rectangle is the one case it lists as "TO
+   EMULATE". Screen coordinates go straight through, with no transformation:
+   these are 2D commands and the matrix has no business in them. */
+static void texrect_emit(dkr_f3d_context *c)
+{
+    dkr_render_vertex v[6];
+    const float scale = screen_scale(c);
+    float x0, y0, x1, y1;
+    float s0, t0;
+    int i;
+
+    if (!c->backend || !c->backend->draw_triangles) { return; }
+
+    /* No texture bound: the rectangle would take whatever the TMU last pointed
+       at, which is a piece of scenery wearing another's pattern. Counted and
+       dropped rather than drawn wrongly. */
+    if (c->render_state.texture == 0) {
+        c->state.texrects_no_texture++;
+        return;
+    }
+
+    x0 = (float)c->texrect_ulx * scale;
+    y0 = (float)c->texrect_uly * scale;
+    /* +1 on each far edge: the RDP includes its lower-right corner, the backend
+       excludes it. The same convention `cmd_fill_rect` documents, and forgetting
+       it costs one pixel on the right and bottom of every sprite -- which on a
+       tiled interface shows up as seams. */
+    x1 = (float)(c->texrect_lrx + 1) * scale;
+    y1 = (float)(c->texrect_lry + 1) * scale;
+
+    /* `s` and `t` are 10.5, `dsdx` and `dtdy` are 5.10 **per RDP pixel**: the
+       derivative is defined against the buffer the game drew into, not against
+       the window we scale it up to. So the corner offsets below are taken in RDP
+       pixels and only the positions are scaled. */
+    s0 = c->texrect_s;
+    t0 = c->texrect_t;
+
+    memset(v, 0, sizeof(v));
+    memset(v, 0, sizeof(v));
+    for (i = 0; i < 6; i++) {
+        v[i].r = v[i].g = v[i].b = v[i].a = 255.0f;
+        /* A 2D rectangle has no depth and no perspective: w of one, so that the
+           depth test lets it through and the texture is not divided by anything.
+           Zero here would collapse the texture coordinates onto a point. */
+        v[i].oow = 1.0f;
+        v[i].z = 0.0f;
+        v[i].ooz = 0.0f;
+        v[i].tmu[0][DKR_TMU_OOW] = 1.0f;
+    }
+    /* Two triangles sharing the diagonal: (ul, ur, ll) and (ur, lr, ll).
+     *
+     * The texture coordinate of a corner follows from its offset **in RDP
+     * pixels** from the upper-left. `G_TEXRECTFLIP` transposes the two axes --
+     * `s` then advances down the rectangle and `t` across it -- which is a
+     * per-corner choice and not a different rectangle, so it belongs here rather
+     * than in a second code path. */
+    {
+        const float dxs[6] = { 0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f };
+        const float dys[6] = { 0.0f, 0.0f, 1.0f,  0.0f, 1.0f, 1.0f };
+        const float span_x = (float)(c->texrect_lrx + 1 - c->texrect_ulx);
+        const float span_y = (float)(c->texrect_lry + 1 - c->texrect_uly);
+        for (i = 0; i < 6; i++) {
+            const float ox = dxs[i] * span_x;
+            const float oy = dys[i] * span_y;
+            const float su = c->texrect_flip ? oy : ox;
+            const float tu = c->texrect_flip ? ox : oy;
+            const float sc = s0 + c->texrect_dsdx * su;
+            const float tc = t0 + c->texrect_dtdy * tu;
+            v[i].x = x0 + dxs[i] * (x1 - x0);
+            v[i].y = y0 + dys[i] * (y1 - y0);
+            v[i].tmu[0][DKR_TMU_SOW] = sc * c->tex_scale_s * DKR_TEXCOORD_SCALE;
+            v[i].tmu[0][DKR_TMU_TOW] = tc * c->tex_scale_t * DKR_TEXCOORD_SCALE;
+        }
+    }
+
+    apply_state(c);
+    c->backend->draw_triangles(c->backend->self, v, 2);
+    c->state.texrects_drawn++;
+    trace(c, "TexRect %d,%d..%d,%d s=%d t=%d /1000",
+          c->texrect_ulx, c->texrect_uly, c->texrect_lrx, c->texrect_lry,
+          (int)(s0 * 1000.0f), (int)(t0 * 1000.0f));
+}
+
+/* One of the two half-words that follow a `G_TEXRECT`. Taken by position, with
+   the opcode recorded -- see the note above `cmd_texrect`. */
+static void cmd_texrect_half(dkr_f3d_context *c, unsigned int opcode,
+                             unsigned int w1)
+{
+    const unsigned int which = 2u - c->texrect_pending;   /* 0 then 1 */
+    if (which < 2u) { c->state.texrect_half_opcode[which] = (unsigned char)opcode; }
+    if (c->texrect_pending == 2u) {
+        /* **Kept in raw 10.5, not converted to texels here.**
+         *
+         * `tex_scale_s` is `1 / (32 * padded_width)`: it already carries the
+         * division by thirty-two, because the triangle path feeds it the raw
+         * value the microcode wrote. Converting here as well divided by 32
+         * twice, which shrank every sprite's texture coordinates to a
+         * thirty-second of their span -- the rectangles then drew in a single
+         * flat colour, the one texel they all landed on. Measured on the machine
+         * as soon as the rectangles first appeared. */
+        c->texrect_s = (float)(short)((w1 >> 16) & 0xFFFFu);
+        c->texrect_t = (float)(short)(w1 & 0xFFFFu);
+    } else {
+        /* `dsdx` and `dtdy` are 5.10 **texels per screen pixel**; the corner
+           offsets they multiply are in raw 10.5 units, so the step has to be in
+           those units too: texels/px * 32 = value / 1024 * 32 = value / 32. */
+        c->texrect_dsdx = (float)(short)((w1 >> 16) & 0xFFFFu) / 32.0f;
+        c->texrect_dtdy = (float)(short)(w1 & 0xFFFFu) / 32.0f;
+    }
+    c->texrect_pending--;
+    if (c->texrect_pending == 0u) { texrect_emit(c); }
+}
+
 static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     /* 10.2 fixed point: two fraction bits, which we drop. The RDP fills by
@@ -1193,7 +1362,21 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
            afterwards would count it again on return. */
         if (remaining != NO_COUNT && remaining > 0u) { remaining--; }
 
+        /* **The two half-words are taken by position, before anything else.**
+           A `G_TEXRECT` owes two of them, and they follow it immediately by
+           construction of the macro. Intercepting here rather than adding cases
+           to the switch is what makes the decoder independent of *which* opcode
+           carries them - a point on which `gbi.h` and this file's own comment
+           disagree. */
+        if (c->texrect_pending != 0u &&
+            opcode != OP_TEXRECT && opcode != OP_TEXRECTFLIP) {
+            cmd_texrect_half(c, opcode, w1);
+            continue;
+        }
+
         switch (opcode) {
+        case OP_TEXRECT:    cmd_texrect(c, w0, w1, 0);  break;
+        case OP_TEXRECTFLIP: cmd_texrect(c, w0, w1, 1); break;
         case OP_DMAOFFSETS: cmd_dma_offsets(c, w0, w1); break;
         case OP_MATRIX:     cmd_matrix(c, w0, w1);      break;
         case OP_VERTEX:     cmd_vertex(c, w0, w1);      break;

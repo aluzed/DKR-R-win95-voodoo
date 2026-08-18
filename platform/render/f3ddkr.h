@@ -187,6 +187,20 @@ typedef struct {
     /* Vertices landing inside a generous [-1.5, 1.5] box against those outside.
        The extremes alone cannot separate "all the geometry is oversized" from
        "a few vertices are wild", and those are different defects. */
+    /* Textured rectangles: decoded, and handed to the backend. Two numbers,
+       because their being one was what hid `G_TEXRECT` being skipped for two
+       days -- `texrect` came from the raw opcode histogram, which rises whether
+       or not the command draws anything, and `fillrect` had a `handed-over`
+       beside it while this had none. */
+    unsigned long      texrects_seen;
+    unsigned long      texrects_drawn;
+    unsigned long      texrects_no_texture;
+    /* Which opcode actually carried the two half-words. `gbi.h` computes
+       `G_RDPHALF_1 = 0xB3` from `G_IMMFIRST - 12`; this decoder's own comment
+       claims the machine answered `0xB4`. They cannot both be right, so the
+       halves are captured by position -- the microcode emits them adjacently by
+       construction -- and the opcodes seen are recorded rather than assumed. */
+    unsigned char      texrect_half_opcode[2];
     unsigned long      ndc_inside, ndc_outside;
     float              ndc_x_min, ndc_x_max;
     float              ndc_y_min, ndc_y_max;
@@ -269,6 +283,20 @@ typedef struct {
        force" and `DKR_COMBINE_SHADE`, which is zero, stays reachable. A boolean
        per mode was the first shape and it does not scale past two. */
     unsigned char        force_combine;
+
+    /* --- A textured rectangle in flight ------------------------------------ *
+     *
+     * `G_TEXRECT` carries its texture coordinates in the two commands that
+     * follow it, so the rectangle cannot be drawn when its opcode arrives. It
+     * waits here until both halves have been seen. `pending` counts how many
+     * halves are still owed: 2 after the opcode, 0 when the rectangle is
+     * complete and drawn. */
+    unsigned int         texrect_pending;
+    int                  texrect_ulx, texrect_uly;
+    int                  texrect_lrx, texrect_lry;
+    unsigned char        texrect_flip;
+    float                texrect_s, texrect_t;
+    float                texrect_dsdx, texrect_dtdy;
 
     /* The resolution the backend actually opened. The decoder needs it to carry
        the game's buffer to the screen, and deducing it from the current viewport

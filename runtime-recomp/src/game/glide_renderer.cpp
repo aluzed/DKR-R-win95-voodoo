@@ -310,6 +310,20 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
             std::fprintf(stderr,
                          "[gfx] frame dump: ndc inside=%lu outside=%lu\n",
                          context_.state.ndc_inside, context_.state.ndc_outside);
+            // Decoded against drawn, which is the pair whose absence hid
+            // G_TEXRECT being skipped: the histogram count rises whether or not
+            // the command does anything. The half-word opcodes are reported
+            // because gbi.h and this decoder disagreed on which they are, and
+            // the halves are taken by position precisely so the log can settle
+            // it rather than the code assume it.
+            std::fprintf(stderr,
+                         "[gfx] frame dump: texrect seen=%lu drawn=%lu "
+                         "no-texture=%lu halves=%02X,%02X\n",
+                         context_.state.texrects_seen,
+                         context_.state.texrects_drawn,
+                         context_.state.texrects_no_texture,
+                         context_.state.texrect_half_opcode[0],
+                         context_.state.texrect_half_opcode[1]);
             std::fprintf(stderr,
                          "[gfx] frame dump: ndc x=[%d..%d]/1000 y=[%d..%d]/1000\n",
                          static_cast<int>(xn * 1000.0F),
