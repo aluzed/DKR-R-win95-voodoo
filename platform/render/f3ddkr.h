@@ -182,6 +182,10 @@ typedef struct {
        past the viewport", which is normal, from "the projection scale is
        wrong", which is not. Stored as longs: the values reach the guard band
        and beyond, so a short would wrap and read as healthy. */
+    /* The normalised device coordinates, before any clipping. On-screen
+       geometry belongs in [-1, 1]; this is what the guard band was hiding. */
+    float              ndc_x_min, ndc_x_max;
+    float              ndc_y_min, ndc_y_max;
     long               proj_x_min, proj_x_max;
     long               proj_y_min, proj_y_max;
     unsigned long      area_max;

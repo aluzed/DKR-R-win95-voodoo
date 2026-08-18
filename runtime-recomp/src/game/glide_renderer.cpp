@@ -263,6 +263,14 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                      context_.state.proj_x_min, context_.state.proj_x_max,
                      context_.state.proj_y_min, context_.state.proj_y_max,
                      width_, height_);
+        // Before the guard band touches it. On-screen geometry belongs in
+        // [-1, 1]; the figure above is the clamp, this one is the geometry.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: ndc x=[%.2f..%.2f] y=[%.2f..%.2f]\n",
+                     static_cast<double>(context_.state.ndc_x_min),
+                     static_cast<double>(context_.state.ndc_x_max),
+                     static_cast<double>(context_.state.ndc_y_min),
+                     static_cast<double>(context_.state.ndc_y_max));
     }
 }
 #endif

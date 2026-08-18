@@ -423,6 +423,32 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             c->state.tri_st_varying++;
         }
 
+        /* --- How oversized is the geometry, before anything clips it? -------- *
+         *
+         * The projected extremes measured per list came back **identical on
+         * every list**, x=[-960..1600] y=[-720..1200], which is exactly what
+         * `clip.h` documents as the guard band at four half-screens. They were
+         * reporting the clamp: clipped vertices land on the boundary, so the
+         * counter saw the boundary and not the geometry.
+         *
+         * The normalised device coordinate says it before any clipping touches
+         * it. A correct projection puts on-screen geometry in [-1, 1]; a
+         * projection wrong by a factor k saturates at roughly +/-k. That is the
+         * number the guard band was hiding. */
+        {
+            int q;
+            for (q = 0; q < 3; q++) {
+                if (tri[q].w > 1.0e-4f) {
+                    const float ndx = tri[q].x / tri[q].w;
+                    const float ndy = tri[q].y / tri[q].w;
+                    if (ndx < c->state.ndc_x_min) { c->state.ndc_x_min = ndx; }
+                    if (ndx > c->state.ndc_x_max) { c->state.ndc_x_max = ndx; }
+                    if (ndy < c->state.ndc_y_min) { c->state.ndc_y_min = ndy; }
+                    if (ndy > c->state.ndc_y_max) { c->state.ndc_y_max = ndy; }
+                }
+            }
+        }
+
         pieces = dkr_clip_near(tri, clipped);
         if (pieces == 0) {
             c->state.clipped_away++;
@@ -1396,6 +1422,10 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
     /* Seeded so that the first vertex replaces them. Zero would be a value the
        geometry legitimately holds, and the extremes would then never report a
        range that stays on one side of the origin. */
+    ctx->state.ndc_x_min = 1.0e30f;
+    ctx->state.ndc_y_min = 1.0e30f;
+    ctx->state.ndc_x_max = -1.0e30f;
+    ctx->state.ndc_y_max = -1.0e30f;
     ctx->state.proj_x_min = 1000000L;
     ctx->state.proj_y_min = 1000000L;
     ctx->state.proj_x_max = -1000000L;
