@@ -206,6 +206,16 @@ typedef struct {
        test, the boxes paint over each other and that is the crowding on screen. */
     unsigned char      rect_state[4];
     unsigned char      rect_state_seen;
+    /* The texture the first textured rectangle sampled, and the span it asked
+       for. Three hypotheses about the crowded glyphs have each cost a run -- the
+       lower-right +1, the blend state, the intensity alpha -- and none of them
+       began by asking which conversion path these textures even take. Format,
+       real and padded size, and the s range together say whether a glyph
+       samples its own cell or overruns into the next. */
+    unsigned int       rect_tex_format;
+    short              rect_tex_w, rect_tex_h;
+    short              rect_tex_pw, rect_tex_ph;
+    int                rect_s0_1000, rect_s1_1000;
     unsigned long      texrects_seen;
     unsigned long      texrects_drawn;
     unsigned long      texrects_no_texture;

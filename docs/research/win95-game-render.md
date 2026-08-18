@@ -892,3 +892,76 @@ also currently skips, so the two go together.
 The counter to add alongside it is the one whose absence hid this: a
 `handed-over` figure for textured rectangles, so that "decoded" and "drawn"
 cannot be read as the same number again.
+
+## `G_TEXRECT`, and what a reference capture settled — 18 August 2026
+
+Implementing the command took an afternoon. Establishing that one line of it was
+wrong took a reference, and nothing inside the port could have done it.
+
+### The command
+
+```
+w0   opcode<<24 | xh<<12 | yh      lower-right, 10.2
+w1   tile<<24   | xl<<12 | yl      upper-left,  10.2
+then RDPHALF_1   s<<16 | t         10.5
+then RDPHALF_2   dsdx<<16 | dtdy   5.10
+```
+
+Read from `gsSPTextureRectangle` in the decompilation's `gbi.h`, not recited.
+`w0` carries the **lower-right** corner and `w1` the upper-left, which is the
+reverse of reading order.
+
+**The half-words are captured by position.** `gbi.h` computes
+`G_RDPHALF_1 = G_IMMFIRST - 12 = 0xB3`; this decoder's own comment claimed the
+machine answered `0xB4`. The macro emits them adjacently by construction, so
+position is reliable where numbering is disputed — and the log settles it:
+`halves=B3,B2`. `gbi.h` was right. The code would have worked either way, and
+the measurement came free.
+
+### Four hypotheses about the crowded glyphs, and how each died
+
+The text appeared immediately and legibly, and immediately looked crowded. Four
+candidates, each costing a run:
+
+| candidate | verdict |
+|---|---|
+| the `+1` on the lower-right corner | *apparently* refuted: the game's own rectangles already overlap by 2–3 px |
+| the blend state | measured correct: `blend=1` is `BLEND_ALPHA`, `combine=1` takes the texel's alpha |
+| intensity textures forcing alpha opaque | real defect, fixed, **changed nothing here** — the glyphs are not I4/I8 |
+| the texture span overrunning into an atlas | refuted: each glyph is its own 20×28 texture, `s` sampled within [1, 19] |
+
+Every internal measurement answered "correct", because from the inside
+everything *was* correct.
+
+### The reference
+
+The neighbouring native port extracts the vanilla assets from the ROM, fonts
+included. `BigFont`'s glyphs are 28 tall — the height measured on the machine —
+and its metadata gives, per character, the advance and the texture width:
+
+| letter | `char-width` | `tex width` | rect measured | advance | width if `lrx` exclusive |
+|---|---:|---:|---|---:|---:|
+| D | 15 | 17 | 89..106 | **15** | **17** |
+| R | 17 | 19 | 104..123 | **17** | **19** |
+| U | 16 | 18 | 121..139 | **16** | **18** |
+| M | 24 | 26 | 137..163 | **24** | **26** |
+| S | 14 | 16 | 161..177 | **14** | **16** |
+
+Five advances out of five match `char-width`. Five widths out of five match
+`tex-size.width` — **only if `lrx` is exclusive**.
+
+So `G_TEXRECT` does not share `G_FILLRECT`'s convention, and the `+1` copied
+from it made every glyph one texel too wide, two screen pixels once scaled.
+
+### Why the first refutation was wrong
+
+The rectangle coordinates showed the game's glyphs overlapping by two or three
+pixels, and I read that as clearing the `+1`. The observation was true and the
+inference was not: DKR overlaps its glyph boxes **by design**, the advance being
+exactly two less than the texture width for every letter. An extra pixel hides
+inside an overlap that is already there.
+
+Separating a deliberate overlap from an accidental one is not possible from
+inside the renderer — both produce rectangles that overlap. It takes a source
+that says what the overlap *should* be. That is what E09-S02's comparison harness
+is for, and this is the first time the project has needed it in earnest.

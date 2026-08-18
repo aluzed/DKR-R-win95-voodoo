@@ -325,6 +325,26 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                          context_.state.texrect_half_opcode[0],
                          context_.state.texrect_half_opcode[1]);
             std::fprintf(stderr,
+                         "[gfx] frame dump: rect tex fmt=%u %dx%d padded %dx%d "
+                         "s=[%d..%d]/1000 texels\n",
+                         context_.state.rect_tex_format,
+                         context_.state.rect_tex_w, context_.state.rect_tex_h,
+                         context_.state.rect_tex_pw, context_.state.rect_tex_ph,
+                         context_.state.rect_s0_1000, context_.state.rect_s1_1000);
+            std::fprintf(stderr,
+                         "[gfx] frame dump: rect state combine=%u blend=%u "
+                         "alpha-test=%u ref=%u\n",
+                         context_.state.rect_state[0], context_.state.rect_state[1],
+                         context_.state.rect_state[2], context_.state.rect_state[3]);
+            for (unsigned long q = 0; q < context_.state.rect_sample_n; q++) {
+                std::fprintf(stderr,
+                             "[gfx] frame dump: rect%lu %d,%d..%d,%d\n", q,
+                             context_.state.rect_sample[q][0],
+                             context_.state.rect_sample[q][1],
+                             context_.state.rect_sample[q][2],
+                             context_.state.rect_sample[q][3]);
+            }
+            std::fprintf(stderr,
                          "[gfx] frame dump: ndc x=[%d..%d]/1000 y=[%d..%d]/1000\n",
                          static_cast<int>(xn * 1000.0F),
                          static_cast<int>(xx * 1000.0F),

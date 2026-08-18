@@ -1173,12 +1173,31 @@ static void texrect_emit(dkr_f3d_context *c)
 
     x0 = (float)c->texrect_ulx * scale;
     y0 = (float)c->texrect_uly * scale;
-    /* +1 on each far edge: the RDP includes its lower-right corner, the backend
-       excludes it. The same convention `cmd_fill_rect` documents, and forgetting
-       it costs one pixel on the right and bottom of every sprite -- which on a
-       tiled interface shows up as seams. */
-    x1 = (float)(c->texrect_lrx + 1) * scale;
-    y1 = (float)(c->texrect_lry + 1) * scale;
+    /* **`lrx` is exclusive here, unlike `G_FILLRECT`.**
+     *
+     * This first carried `+1` on each far edge, copied from `cmd_fill_rect`,
+     * which documents the RDP including its lower-right corner. The two commands
+     * do not agree, and the game's own coordinates could not show it: DKR's
+     * glyph rectangles overlap by two pixels *by design*, so an extra pixel
+     * hides inside an overlap that is already there.
+     *
+     * The decompilation's extracted `BigFont` metadata settles it. Its glyphs
+     * are 28 tall, the height measured on the machine, and for every letter the
+     * advance is exactly two less than the texture width:
+     *
+     *     letter   char-width   tex width   rect measured   exclusive width
+     *     D            15          17        89..106             17
+     *     R            17          19       104..123             19
+     *     U            16          18       121..139             18
+     *     M            24          26       137..163             26
+     *     S            14          16       161..177             16
+     *
+     * Five advances out of five match `char-width`, and five widths out of five
+     * match `tex-size.width` **only if `lrx` is exclusive**. With the `+1` each
+     * glyph was one texel too wide, two screen pixels once scaled, and the
+     * letters crowded each other. */
+    x1 = (float)c->texrect_lrx * scale;
+    y1 = (float)c->texrect_lry * scale;
 
     /* `s` and `t` are 10.5, `dsdx` and `dtdy` are 5.10 **per RDP pixel**: the
        derivative is defined against the buffer the game drew into, not against
@@ -1209,8 +1228,10 @@ static void texrect_emit(dkr_f3d_context *c)
     {
         const float dxs[6] = { 0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f };
         const float dys[6] = { 0.0f, 0.0f, 1.0f,  0.0f, 1.0f, 1.0f };
-        const float span_x = (float)(c->texrect_lrx + 1 - c->texrect_ulx);
-        const float span_y = (float)(c->texrect_lry + 1 - c->texrect_uly);
+        /* Exclusive, as above: the span is the width in pixels, and sampling
+           one texel more stretched every glyph past its own cell. */
+        const float span_x = (float)(c->texrect_lrx - c->texrect_ulx);
+        const float span_y = (float)(c->texrect_lry - c->texrect_uly);
         for (i = 0; i < 6; i++) {
             const float ox = dxs[i] * span_x;
             const float oy = dys[i] * span_y;
@@ -1227,7 +1248,19 @@ static void texrect_emit(dkr_f3d_context *c)
 
     apply_state(c);
     if (!c->state.rect_state_seen) {
+        const float span_x0 = (float)(c->texrect_lrx - c->texrect_ulx);
         c->state.rect_state_seen = 1;
+        c->state.rect_tex_format = c->timg_format;
+        c->state.rect_tex_w  = (short)c->tex_width;
+        c->state.rect_tex_h  = (short)c->tex_height;
+        c->state.rect_tex_pw = (short)c->tex_padded_width;
+        c->state.rect_tex_ph = (short)c->tex_padded_height;
+        /* In texels, so it can be read against the width above: the raw 10.5
+           value divided by 32. If the far edge lands past the real width, the
+           glyph is sampling into whatever follows it in the atlas. */
+        c->state.rect_s0_1000 = (int)(c->texrect_s / 32.0f * 1000.0f);
+        c->state.rect_s1_1000 =
+            (int)((c->texrect_s + c->texrect_dsdx * span_x0) / 32.0f * 1000.0f);
         c->state.rect_state[0] = (unsigned char)c->render_state.combine;
         c->state.rect_state[1] = (unsigned char)c->render_state.blend;
         c->state.rect_state[2] = (unsigned char)c->render_state.alpha_test;
