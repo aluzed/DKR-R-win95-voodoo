@@ -196,8 +196,10 @@ typedef struct {
        two candidate causes are a pixel apart: `lrx` inclusive, as `cmd_fill_rect`
        takes it, or exclusive. Adjacent letters abutting with no gap says the
        `+1` is one too many; a gap says it is right and the fault is elsewhere.
-       Six is enough to see two neighbours and cheap enough to print. */
-    short              rect_sample[6][4];
+       Sixteen: six showed the letters of KRUNCH matching BigFont exactly, and
+       the doubling therefore lies beyond them - thirty rectangles for a
+       six-letter name. */
+    short              rect_sample[16][4];
     unsigned long      rect_sample_n;
     /* The render state the first textured rectangle was drawn with: combine,
        blend, alpha test, alpha reference. The game's own glyph rectangles

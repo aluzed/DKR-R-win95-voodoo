@@ -992,3 +992,61 @@ That is the sixth instrument failure of the week, and the first where the
 instrument was the machine itself rather than a counter. The pattern holds: every
 one of them reported something plausible, and every one of them was believed
 until a control was run against it.
+
+## The doubled glyphs: the same rectangle, drawn five times — 19 August 2026
+
+Capturing sixteen rectangles instead of six answered it in one line each:
+
+```
+rect0-5    111, 129, 146, 162, 179, 193
+rect6-11   111, 129, 146, 162, 179, 193
+rect12-15  111, 129, 146, 162
+```
+
+**Exactly the same coordinates, repeated.** No offset, so it is not a drop
+shadow — the six glyphs of the name are drawn three to five times in the same
+place. `texrect seen=30` for a six-letter name is five passes.
+
+That is normal on the N64: DKR composes its text in several passes — outline,
+fill, gradient — each pass changing the **primitive colour** that the combiner
+mixes with the texel. Five identical passes stack into one thick smear; five
+differently-coloured passes make a styled letter.
+
+### And the primitive colour is not decoded
+
+`G_SETPRIMCOLOR` is `0xFA`, `G_SETENVCOLOR` is `0xFB`. Both sit in the
+`0xE4..0xFF` range that `opcode_effect_deferred` skips — the same range that hid
+`G_TEXRECT`, and whose comment still describes the family as
+"synchronisations, scissor, tiles, colours, combiner" without noting which of
+those actually affect what is drawn.
+
+So every pass reaches the card with the same state, `combine=1`
+(`DKR_COMBINE_TEXTURE`, the texel alone, vertex and primitive colour ignored),
+and draws the identical thing. The passes cannot differ because the value that
+would differentiate them is never read.
+
+### The audit this calls for
+
+Of the RDP commands the game actually emits, these are still decoded and skipped
+while affecting the image:
+
+| opcode | command | effect |
+|---|---|---|
+| `0xFA` | `G_SETPRIMCOLOR` | the per-pass colour of text and many surfaces |
+| `0xFB` | `G_SETENVCOLOR` | the second constant the combiner mixes |
+| `0xED` | `G_SETSCISSOR` | clipping rectangle, needed for split screen |
+| `0xF8` | `G_SETFOGCOLOR` | fog colour, E05-S06 |
+| `0xF9` | `G_SETBLENDCOLOR` | blend constant |
+
+Enumerating a range by its bounds was right for the synchronisations that make up
+most of it, and wrong twice now for the drawing commands that sit inside it. The
+lesson is not "check `0xE4`" but that a range skipped wholesale needs its
+members listed once, against what each one does.
+
+### This is the same gap E05-S03 already has
+
+`approximate` equals `catalogued` because `dkr_rdp_to_render_state` never calls
+`dkr_cc_lookup`: the 29 catalogued entries each carry a `dkr_cc_setup`, the real
+Glide settings, and nothing reads it. Decoding the primitive colour without
+carrying the exact combiner setup would give the passes a colour they still
+could not use. The two go together, and they are E05-S03's remaining scope.

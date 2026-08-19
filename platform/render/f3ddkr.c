@@ -1137,7 +1137,7 @@ static void cmd_texrect(dkr_f3d_context *c, unsigned int w0, unsigned int w1,
     c->texrect_ulx = (int)((w1 >> 14) & 0x3FFu);
     c->texrect_uly = (int)((w1 >>  2) & 0x3FFu);
     c->texrect_flip = (unsigned char)(flip ? 1 : 0);
-    if (c->state.rect_sample_n < 6u) {
+    if (c->state.rect_sample_n < 16u) {
         const unsigned long k = c->state.rect_sample_n++;
         c->state.rect_sample[k][0] = (short)c->texrect_ulx;
         c->state.rect_sample[k][1] = (short)c->texrect_uly;
