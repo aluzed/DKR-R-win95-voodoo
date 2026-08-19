@@ -290,6 +290,12 @@ typedef struct {
        the decoder's working memory, not a measurement. */
     unsigned int         mode_h;
     unsigned int         mode_l;
+    /* `G_SETPRIMCOLOR` and `G_SETENVCOLOR`, 0xAARRGGBB. Held here rather than in
+       the RDP state because they are set by their own commands and must survive
+       every state translation, exactly like the texture handle. */
+    unsigned int         prim_color;
+    unsigned int         env_color;
+    unsigned char        prim_lod_min, prim_lod_frac;
     dkr_combiner         combiner;
     unsigned char        state_dirty;
     /* Forces depth off, to isolate sorting from a rendering defect. Set by the

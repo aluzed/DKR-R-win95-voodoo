@@ -247,6 +247,38 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
     uses_shade  = stage_reads(&rdp->combiner.rgb[0], DKR_CC_SHADE) ||
                   stage_reads(&rdp->combiner.rgb[1], DKR_CC_SHADE);
 
+    /* --- Which constant register, if any, feeds this combiner --------------- *
+     *
+     * `PRIMITIVE` and `ENVIRONMENT` are the RDP's two constant colour registers,
+     * and a configuration that reads one of them differs from the same
+     * configuration reading the other **only by that value**. DKR's text is
+     * exactly that: the same glyph drawn three to five times at identical
+     * coordinates, each pass a different primitive colour.
+     *
+     * Primitive wins when both are read. That is a choice, not a rule -- the
+     * interface carries one constant and the RDP has two -- and it is the right
+     * way round for this game: of the catalogued configurations, those naming a
+     * constant name `PRIMITIVE` more often, and the text passes are among them.
+     * A configuration reading both is already flagged approximate below. */
+    {
+        const int uses_prim =
+            stage_reads(&rdp->combiner.rgb[0], DKR_CC_PRIMITIVE) ||
+            stage_reads(&rdp->combiner.rgb[1], DKR_CC_PRIMITIVE);
+        const int uses_env =
+            stage_reads(&rdp->combiner.rgb[0], DKR_CC_ENVIRONMENT) ||
+            stage_reads(&rdp->combiner.rgb[1], DKR_CC_ENVIRONMENT);
+        if (uses_prim) {
+            out->constant_color = rdp->prim_color;
+        } else if (uses_env) {
+            out->constant_color = rdp->env_color;
+        }
+        if (uses_prim && uses_env) {
+            /* Two constants, one register on our side. Announced rather than
+               silently halved. */
+            faithful = 0;
+        }
+    }
+
     if (uses_texel0 && uses_shade) {
         /* Does alpha come from the texel or from shading? The distinction
            decides the transparency of cut-outs, and getting it wrong gives hard
@@ -257,7 +289,11 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
         out->combine = alpha_from_texel ? DKR_COMBINE_TEXTURE_SHADE_ALPHA
                                         : DKR_COMBINE_TEXTURE_SHADE;
     } else if (uses_texel0) {
-        out->combine = DKR_COMBINE_TEXTURE;
+        /* Texel with a constant is a different image from the texel alone, and
+           it is the case DKR's multi-pass text lands in. Distinguishing them is
+           what lets one pass differ from the next. */
+        out->combine = (out->constant_color != 0u) ? DKR_COMBINE_TEXTURE_CONSTANT
+                                                   : DKR_COMBINE_TEXTURE;
     } else {
         out->combine = DKR_COMBINE_SHADE;
     }

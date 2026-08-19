@@ -95,6 +95,21 @@ typedef struct {
     unsigned char   texture_persp;   /* G_TP_PERSP */
     unsigned char   texture_detail;  /* G_TD_* */
 
+    /* --- The two constant colour registers ---------------------------------- *
+     *
+     * `G_SETPRIMCOLOR` and `G_SETENVCOLOR`, as 0xAARRGGBB. They are what makes
+     * DKR's text legible: the game draws the same glyph rectangle three to five
+     * times at **exactly** the same coordinates -- measured on 19 August 2026,
+     * rect0-5 and rect6-11 identical to the pixel -- and each pass differs only
+     * by the constant the combiner mixes with the texel. Without them every pass
+     * draws the same thing and the letters stack into a smear.
+     *
+     * `prim_lod_frac` comes along because `G_SETPRIMCOLOR` carries it in `w0`;
+     * nothing reads it yet, and decoding it costs one shift. */
+    unsigned int    prim_color;
+    unsigned int    env_color;
+    unsigned char   prim_lod_min, prim_lod_frac;
+
     /* Render modes, from `G_SETOTHERMODE_L`. */
     unsigned char   alpha_compare;   /* G_AC_*: 0 none, 1 threshold, 2 dither */
     unsigned char   z_source;        /* G_ZS_* */

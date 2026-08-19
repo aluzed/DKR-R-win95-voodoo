@@ -35,6 +35,8 @@
 #define OP_RDPSETOTHERMODE 0xEF
 #define OP_TEXRECT         0xE4
 #define OP_TEXRECTFLIP     0xE5
+#define OP_SETPRIMCOLOR    0xFA
+#define OP_SETENVCOLOR     0xFB
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
@@ -691,6 +693,12 @@ static void apply_state(dkr_f3d_context *c)
     memset(&rdp, 0, sizeof(rdp));
     dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &rdp);
     rdp.combiner = c->combiner;
+    /* The registers live in the decoder, like the texture handle: they are set
+       by their own commands and survive across state translations. */
+    rdp.prim_color = c->prim_color;
+    rdp.env_color = c->env_color;
+    rdp.prim_lod_min = c->prim_lod_min;
+    rdp.prim_lod_frac = c->prim_lod_frac;
 
     /* The decoded cycle type checks itself: during a `FILLRECT` it must be
        `FILL`. A misplaced shift would put it elsewhere, and this counter would
@@ -1422,6 +1430,32 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         }
 
         switch (opcode) {
+        /* --- The two constant colour registers ------------------------------ *
+         *
+         * From `gsDPSetPrimColor` and `gsDPSetEnvColor` in the decompilation's
+         * `gbi.h`: both carry `r<<24 | g<<16 | b<<8 | a` in `w1`, and
+         * `G_SETPRIMCOLOR` additionally carries the LOD minimum and fraction in
+         * `w0`.
+         *
+         * They were skipped along with the rest of `0xE4..0xFF`, which is how
+         * DKR's text came out as a smear: the game draws each glyph rectangle
+         * three to five times at exactly the same coordinates, and the only
+         * thing that distinguishes one pass from the next is the constant the
+         * combiner mixes with the texel. Five identical passes stack; five
+         * coloured ones make a letter. */
+        case OP_SETPRIMCOLOR:
+            c->prim_color = w1;
+            c->prim_lod_min = (unsigned char)((w0 >> 8) & 0xFFu);
+            c->prim_lod_frac = (unsigned char)(w0 & 0xFFu);
+            c->state_dirty = 1;
+            trace(c, "SetPrimColor 0x%08X lod=%u/%u", w1,
+                  c->prim_lod_min, c->prim_lod_frac);
+            break;
+        case OP_SETENVCOLOR:
+            c->env_color = w1;
+            c->state_dirty = 1;
+            trace(c, "SetEnvColor 0x%08X", w1);
+            break;
         case OP_TEXRECT:    cmd_texrect(c, w0, w1, 0);  break;
         case OP_TEXRECTFLIP: cmd_texrect(c, w0, w1, 1); break;
         case OP_DMAOFFSETS: cmd_dma_offsets(c, w0, w1); break;

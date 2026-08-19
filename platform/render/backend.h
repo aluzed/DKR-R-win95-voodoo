@@ -143,6 +143,7 @@ typedef enum {
     DKR_COMBINE_TEXTURE,          /* texel alone */
     DKR_COMBINE_TEXTURE_SHADE,    /* texel modulated by the vertex colour */
     DKR_COMBINE_TEXTURE_SHADE_ALPHA, /* likewise, texel alpha kept */
+    DKR_COMBINE_TEXTURE_CONSTANT, /* texel modulated by `constant_color` */
     DKR_COMBINE_COUNT
 } dkr_combine_mode;
 
@@ -180,6 +181,10 @@ typedef unsigned int dkr_texture_handle;
 
 typedef struct {
     dkr_combine_mode   combine;
+    /* The constant colour the combiner mixes, 0xAARRGGBB, when `combine` names a
+       mode that uses one. **NATIVE** — `grConstantColorValue`. It is what tells
+       one pass of DKR's multi-pass text from the next; see `rdp_state.h`. */
+    unsigned int       constant_color;
     dkr_blend_mode     blend;
     dkr_depth_mode     depth;
     dkr_cull_mode      cull;

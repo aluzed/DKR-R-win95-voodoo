@@ -248,7 +248,8 @@ static struct {
 
 static void bind_texture(dkr_texture_handle handle);
 
-static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
+static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
+                          unsigned int constant)
 {
     if (!gs.color_combine || !gs.alpha_combine) { return; }
 
@@ -260,6 +261,7 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
      * searches the wrong side for a long while. A frankly untextured render is
      * easier to diagnose. */
     if (handle == 0 || m == DKR_COMBINE_SHADE) {
+        (void)constant;
         gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
         gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
@@ -278,6 +280,32 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle)
     }
 
     switch (m) {
+    case DKR_COMBINE_TEXTURE_CONSTANT:
+        /* **Texel modulated by the constant register**, which is what carries
+           DKR's multi-pass text: the same glyph drawn several times at identical
+           coordinates, each pass differing only by `G_SETPRIMCOLOR`. Without it
+           the passes are indistinguishable and the letters stack into a smear.
+         *
+           **The two orders differ, and I asserted they did not.** The RDP writes
+           `0xRRGGBBAA` in `w1`; `grConstantColorValue` takes `0xAARRGGBB` on a
+           context opened as `GR_COLORFORMAT_ARGB`. Passing one for the other
+           shifts every channel by a byte, which on the machine turned the whole
+           screen's blue to zero -- the background went from 0x7BDFF7 to 0x7BDF00
+           and the distinct-colour count fell from 926 to 227.
+         *
+           The first version of this comment claimed no repacking was needed. It
+           was written from memory and not measured, which is the same mistake
+           this file keeps recording elsewhere. */
+        if (gs.constant_color) {
+            const unsigned int argb = ((constant & 0xFFu) << 24) |
+                                      ((constant >> 8) & 0x00FFFFFFu);
+            gs.constant_color(argb);
+        }
+        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        break;
     case DKR_COMBINE_TEXTURE:
         /* The texel alone: the vertex colour plays no part. */
         gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
@@ -563,7 +591,7 @@ static void gl_set_state(void *self, const dkr_render_state *state)
     b.current   = *state;
     b.has_state = 1;
 
-    apply_combine(state->combine, state->texture);
+    apply_combine(state->combine, state->texture, state->constant_color);
     apply_texture_modes(state);
     apply_blend(state->blend);
     apply_depth(state->depth);
