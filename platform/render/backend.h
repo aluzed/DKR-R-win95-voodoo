@@ -115,7 +115,19 @@ typedef struct {
  *
  * The trap this closes: the two backends were not speaking the same language —
  * the rasteriser sampled in [0,1], the card in 256 — and the E09-S02 comparison
- * did not notice, for want of a texture in the scene. */
+ * did not notice, for want of a texture in the scene.
+ *
+ * **256 spans the larger side, not each side.** Glide addresses a texture by its
+ * LOD — the larger dimension — and an aspect ratio; the smaller side therefore
+ * spans only 256/ratio. On a 16x64 texture, `s` runs 0..64 and `t` runs 0..256.
+ *
+ * The probe above could not see this: a 64x64 checkerboard has ratio 1, where
+ * "divide by the larger side" and "divide by its own side" are the same
+ * division. Its answer is right and incomplete, which is the more dangerous of
+ * the two. What made the omission visible is the game itself — the menu's
+ * glyphs, a 16x64 atlas, drew four copies of every letter across each rectangle
+ * on 20 August 2026. **The repeat count equalled the aspect ratio**, and that is
+ * what named the cause. */
 #define DKR_TEXCOORD_SCALE 256.0f
 
 /* --- The render state ------------------------------------------------------ *

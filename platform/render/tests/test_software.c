@@ -55,6 +55,30 @@ static void check_near(const char *what, double got, double want, double tol)
    merely visible. */
 static unsigned char g_ramp[256];
 
+/* A 16x64 texture — the shape of DKR's menu glyph atlas — whose intensity
+   depends on the column alone. Reading a pixel back names the column that was
+   sampled, which is what the aspect-ratio check needs. */
+static unsigned char g_tall[16 * 64];
+
+static dkr_texture_handle upload_tall(dkr_render_backend *b)
+{
+    dkr_texture_desc d;
+    int x, y;
+    for (y = 0; y < 64; y++) {
+        for (x = 0; x < 16; x++) {
+            g_tall[y * 16 + x] = (unsigned char)(x * 16 + 8);
+        }
+    }
+    memset(&d, 0, sizeof(d));
+    d.key        = 0x5678ull;
+    d.format     = DKR_TEXFMT_INTENSITY8;
+    d.width      = 16;
+    d.height     = 64;
+    d.pixels     = g_tall;
+    d.size_bytes = sizeof(g_tall);
+    return b->texture_upload(b->self, &d);
+}
+
 static dkr_texture_handle upload_ramp(dkr_render_backend *b)
 {
     dkr_texture_desc d;
@@ -314,6 +338,63 @@ int main(void)
     b.fill_rect(b.self, 10, 10, 30, 30, 0x00FF00);
     check("the rectangle is filled",            (pixel_at(20, 20) & 0x0000FF00u) != 0);
     check("and the right bound is exclusive",   (pixel_at(30, 20) & 0x00FFFFFFu) == 0);
+
+    /* --- A non-square texture ------------------------------------------------ *
+     *
+     * **Glide's 256 spans the larger side, not each side.** A 16x64 texture is
+     * addressed with `s` in 0..64 and `t` in 0..256; dividing each axis by its
+     * own dimension sends 0..256 down both and the narrow axis repeats four
+     * times — once per unit of aspect ratio.
+     *
+     * That is not a hypothetical: DKR's menu glyphs come out of a 16x64 atlas,
+     * and on 20 August 2026 every letter was drawn four times across its own
+     * rectangle. Nothing in this suite could have caught it, because every
+     * texture it used was square or a single row, where the two divisors agree.
+     *
+     * `DKR_WRAP_REPEAT` on purpose: it reproduces the real symptom. Under
+     * `CLAMP` the same error saturates against the last column instead, which is
+     * a different picture and a weaker check. */
+    {
+        const dkr_texture_handle tall = upload_tall(&b);
+        check("the 16x64 texture uploads", tall != 0);
+        st.combine = DKR_COMBINE_TEXTURE;
+        st.texture = tall;
+        st.filter  = DKR_FILTER_POINT;
+        st.wrap_s  = DKR_WRAP_REPEAT;
+        st.wrap_t  = DKR_WRAP_REPEAT;
+        b.begin_frame(b.self, 0x000000);
+        b.set_state(b.self, &st);
+        memset(v, 0, sizeof(v));
+        /* A 64-pixel-wide quad covering the texture's sixteen columns exactly
+           once: four screen pixels per texel. `s` therefore runs from 0 to 64 on
+           the wire — sixteen texels out of a larger side of sixty-four. */
+        v[0].x =  0.0f; v[0].y =  0.0f;
+        v[1].x = 64.0f; v[1].y =  0.0f;
+        v[2].x =  0.0f; v[2].y = 40.0f;
+        v[3].x = 64.0f; v[3].y =  0.0f;
+        v[4].x = 64.0f; v[4].y = 40.0f;
+        v[5].x =  0.0f; v[5].y = 40.0f;
+        { int k; for (k = 0; k < 6; k++) {
+            const float u = (v[k].x / 64.0f) * 16.0f;   /* in texels */
+            v[k].oow = 1.0f; v[k].a = 255.0f;
+            v[k].tmu[0][DKR_TMU_OOW] = 1.0f;
+            v[k].tmu[0][DKR_TMU_SOW] = (u / 64.0f) * DKR_TEXCOORD_SCALE;
+            v[k].tmu[0][DKR_TMU_TOW] = 0.0f;
+        } }
+        b.draw_triangles(b.self, v, 2);
+        /* Screen pixel 34 sits in texel 8, whose intensity is 8*16+8 = 136.
+           Divided per-axis it would land in texel 2, intensity 40. */
+        check_near("a 16x64 texture is addressed over its larger side",
+                   (double)(pixel_at(34, 20) & 0xFFu), 136.0, 8.0);
+        /* And the far end reaches the last column rather than coming back
+           round: texel 15, intensity 248. */
+        check_near("and the narrow axis does not repeat",
+                   (double)(pixel_at(62, 20) & 0xFFu), 248.0, 8.0);
+        st.texture = 0;
+        st.combine = DKR_COMBINE_SHADE;
+        st.wrap_s  = DKR_WRAP_CLAMP;
+        st.wrap_t  = DKR_WRAP_CLAMP;
+    }
 
     /* --- File output ---------------------------------------------------------- */
     {

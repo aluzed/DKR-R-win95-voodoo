@@ -167,6 +167,19 @@ static void combine(const dkr_render_state *st, unsigned texel,
         *r = tr * sr / 255.0f; *g = tg * sg / 255.0f; *b = tb * sb / 255.0f;
         *a = ta * sa / 255.0f;
         break;
+    case DKR_COMBINE_TEXTURE_CONSTANT: {
+        /* `constant_color` is 0xAARRGGBB, as the Glide backend hands it to
+           `grConstantColorValue`. Falling through to the default here would have
+           dropped the texel entirely and painted the vertex colour — the oracle
+           would then have disagreed with the card on every one of DKR's text
+           passes, and it is the oracle E09-S02 believes. */
+        const float cr = (float)((st->constant_color >> 16) & 0xFF);
+        const float cg = (float)((st->constant_color >>  8) & 0xFF);
+        const float cb = (float)( st->constant_color        & 0xFF);
+        *r = tr * cr / 255.0f; *g = tg * cg / 255.0f; *b = tb * cb / 255.0f;
+        *a = ta;
+        break;
+    }
     case DKR_COMBINE_SHADE:
     default:
         *r = sr; *g = sg; *b = sb; *a = sa;
@@ -253,12 +266,23 @@ static void raster_triangle(const dkr_render_vertex *v0,
 {
     const dkr_render_state *st = &g_sw.state;
     const sw_texture *tex = NULL;
+    /* Back from Glide's texel space to [0,1] on each axis. The two factors
+       differ for a non-square texture: Glide's 0..256 spans the **larger** side,
+       and the smaller one only 256/ratio, so the smaller axis has to be stretched
+       back by the ratio here. See `DKR_TEXCOORD_SCALE` in `backend.h`. */
+    float unscale_s = 1.0f / DKR_TEXCOORD_SCALE;
+    float unscale_t = unscale_s;
     float area;
     int x, y, x0, y0, x1, y1;
 
     if (st->texture != 0 && st->texture <= MAX_TEXTURES &&
         g_sw.textures[st->texture - 1].used) {
         tex = &g_sw.textures[st->texture - 1];
+        if (tex->width > 0 && tex->height > 0) {
+            const int big = (tex->width > tex->height) ? tex->width : tex->height;
+            unscale_s = (float)big / ((float)tex->width  * DKR_TEXCOORD_SCALE);
+            unscale_t = (float)big / ((float)tex->height * DKR_TEXCOORD_SCALE);
+        }
     }
 
     area = edge(v0, v1, v2->x, v2->y);
@@ -357,11 +381,12 @@ static void raster_triangle(const dkr_render_vertex *v0,
                 /* Back to normalised coordinates. The vertices carry Glide's
                    256-texel space — the card imposes the contract, and the
                    oracle adapts, because it has no speed constraint. See
-                   `DKR_TEXCOORD_SCALE`. */
+                   `DKR_TEXCOORD_SCALE`, and `unscale_s`/`unscale_t` above for
+                   the non-square case. */
                 s = (w0 * v0->tmu[0][DKR_TMU_SOW] + w1 * v1->tmu[0][DKR_TMU_SOW] +
-                     w2 * v2->tmu[0][DKR_TMU_SOW]) * w * (1.0f / DKR_TEXCOORD_SCALE);
+                     w2 * v2->tmu[0][DKR_TMU_SOW]) * w * unscale_s;
                 t = (w0 * v0->tmu[0][DKR_TMU_TOW] + w1 * v1->tmu[0][DKR_TMU_TOW] +
-                     w2 * v2->tmu[0][DKR_TMU_TOW]) * w * (1.0f / DKR_TEXCOORD_SCALE);
+                     w2 * v2->tmu[0][DKR_TMU_TOW]) * w * unscale_t;
                 texel = sample_texture(tex, s, t, st);
             }
 
@@ -384,7 +409,7 @@ static void raster_triangle(const dkr_render_vertex *v0,
     }
 }
 
-/* --- L'interface ----------------------------------------------------------- */
+/* --- The interface ----------------------------------------------------------- */
 
 static int sw_open(void *self, int width, int height)
 {

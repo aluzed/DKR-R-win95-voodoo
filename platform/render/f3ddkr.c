@@ -979,11 +979,37 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         h = c->backend->texture_upload(c->backend->self, &d);
         if (h != 0) {
             c->bound_texture = h;
-            /* 1/32 for the microcode's 10.5, 1/width to get into [0,1]. Both
-               in a single multiplication per vertex: transformation is already
-               the port's heaviest stage. */
-            c->tex_scale_s = 1.0f / (32.0f * (float)c->tex_padded_width);
-            c->tex_scale_t = 1.0f / (32.0f * (float)c->tex_padded_height);
+            /* 1/32 for the microcode's 10.5, then into Glide's texel space.
+               Both in a single multiplication per vertex: transformation is
+               already the port's heaviest stage.
+             *
+             * **Both axes are divided by the same number: the larger side.**
+             *
+             * Glide does not know a texture's two dimensions, it knows its LOD
+             * -- the larger side -- and an aspect ratio (see `lod_and_aspect`).
+             * Its coordinate space follows: 0..256 spans the larger side, and
+             * the smaller side spans only 256/ratio. Dividing each axis by its
+             * own dimension sends 0..256 down both, which addresses the smaller
+             * axis `ratio` times too far, and the texture repeats that many
+             * times along it.
+             *
+             * Measured on the machine on 20 August 2026: the menu's glyphs come
+             * from a 16x64 texture -- ratio 1:4 -- and each letter was drawn
+             * four times over, smeared across its own rectangle. The repeat
+             * count equalling the aspect ratio is what identified the cause.
+             *
+             * `glide_texture_probe.c` could not have caught this: it measured
+             * the scale on a **64x64** checkerboard, where the two divisors are
+             * equal and the question does not arise. Its conclusion -- that the
+             * space is 256 wide -- stands; it is only silent about non-square
+             * textures. */
+            {
+                const unsigned int big =
+                    (c->tex_padded_width > c->tex_padded_height)
+                        ? c->tex_padded_width : c->tex_padded_height;
+                c->tex_scale_s = 1.0f / (32.0f * (float)big);
+                c->tex_scale_t = c->tex_scale_s;
+            }
             c->render_state.texture = h;
             c->texture_key = key;
             c->state_dirty = 1;

@@ -1050,3 +1050,63 @@ members listed once, against what each one does.
 Glide settings, and nothing reads it. Decoding the primitive colour without
 carrying the exact combiner setup would give the passes a colour they still
 could not use. The two go together, and they are E05-S03's remaining scope.
+
+## The narrow axis repeated: Glide addresses over the larger side — 20 August 2026
+
+With `G_SETPRIMCOLOR` and `G_SETENVCOLOR` reaching the card, and the dump
+anchored on `gGameMode` so the same screen comes back on every run, the menu was
+finally comparable to itself. The letters were legible — and each one was drawn
+**four times across its own rectangle**, a horizontal smear inside a box that
+held a single glyph.
+
+The frame's own report named the cause without a further measurement:
+
+```
+[gfx] frame dump: rect tex fmt=0 16x64 padded 16x64 s=[0..16000]/1000 texels
+[gfx] frame dump: rect0 85,88..101,152
+[gfx] frame dump: rect1 100,88..116,152
+```
+
+Sixteen texels sampled across a sixteen-pixel rectangle, out of a texture sixteen
+wide. Everything the port could check said "correct", and the screen showed four
+copies. **The repeat count, four, is the texture's aspect ratio, 64/16.** That is
+what identified it: a defect whose magnitude equals a ratio is a scaling error on
+the axis that ratio describes.
+
+### What Glide's coordinate space actually is
+
+Glide does not know a texture's two dimensions. It knows its LOD — the larger
+side — and an aspect ratio, which is exactly what `lod_and_aspect` computes
+before every download. Its coordinate space follows: **0..256 spans the larger
+side, and the smaller side spans only 256/ratio.** On a 16x64 texture, `s` runs
+0..64 while `t` runs 0..256.
+
+The port divided each axis by its own dimension, sending 0..256 down both. The
+narrow axis was addressed four times too far, and under `GR_TEXTURECLAMP_WRAP`
+that is four repeats.
+
+```c
+/* before */                              /* after */
+tex_scale_s = 1/(32 * padded_width);      big = max(padded_width, padded_height);
+tex_scale_t = 1/(32 * padded_height);     tex_scale_s = tex_scale_t = 1/(32 * big);
+```
+
+### Why nothing caught it for four months
+
+`glide_texture_probe.c` measured this space on the machine, and its conclusion —
+256, not 64, 128 or 512 — is right. It measured it on a **64x64 checkerboard**,
+where "divide by the larger side" and "divide by its own side" are the same
+division. The probe could not distinguish the two hypotheses because its subject
+made them identical.
+
+The host suite had the same blind spot for the same reason: every texture it used
+was square, or a single 256x1 row whose `t` was zero everywhere. `test_software.c`
+now carries a 16x64 case, with a negative control confirming it reports 40 and 56
+instead of 136 and 248 under the old rule.
+
+> **An answer that is right and incomplete is worse than one that is wrong.**
+> A wrong answer gets contradicted by the next measurement. This one was correct,
+> was documented with its evidence, and was quietly silent about the case that
+> mattered — so it was cited three times as settled. What was missing from the
+> probe was not rigour but a second subject: the same question asked of a
+> non-square texture would have answered it in the same run.

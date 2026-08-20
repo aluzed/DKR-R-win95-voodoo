@@ -71,7 +71,7 @@ To render all the game's 2D elements correctly, to the pixel.
 - [x] Four rectangles edge to edge: 0 background pixels out of 200. With a negative
       control checking that the four colours are distinct, without which a single
       rectangle covering everything would pass.
-- [~] The game's text renders and is legible: `DRUMSTICK` from the character
+- [x] The game's text renders and is legible: `DRUMSTICK` from the character
       select, in `BigFont`, on 18 August 2026. It took implementing `G_TEXRECT`
       and `G_TEXRECTFLIP` — opcodes `0xE4` and `0xE5`, which the decoder had been
       skipping along with the whole `0xE4..0xFF` family, so DKR's entire 2D layer
@@ -83,7 +83,18 @@ To render all the game's 2D elements correctly, to the pixel.
       `G_FILLRECT` includes it. Copying the fill rule made every glyph a texel
       too wide.
 
-      Still open: a run confirming the corrected widths on screen.
+      Confirmed on screen on 20 August 2026: the **DIDDY KONG RACING** title
+      logo, legible, its letters in red on a yellow outline and `RACING` in
+      white, at 1,857 distinct colours. Two more defects stood between the
+      rectangles and that image, and neither was a positioning error:
+
+      - the constant colour registers were never decoded, so DKR's three-to-five
+        text passes all reached the card identical and stacked (`G_SETPRIMCOLOR`,
+        `G_SETENVCOLOR`);
+      - **Glide addresses a texture over its larger side**, and the port divided
+        each axis by its own dimension, so the 16x64 glyph atlas repeated four
+        times across every rectangle — once per unit of aspect ratio. See
+        `docs/research/win95-game-render.md`.
 - [ ] Five reference screens — the ROM is present (see
       `docs/research/win95-rom-available.md`); what is missing is the comparison
       harness, E09-S02.
