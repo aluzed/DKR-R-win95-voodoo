@@ -483,19 +483,56 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // and that distinction is now the whole question: at list 200 the largest
     // triangle covered 734,776 pixels of a 307,200-pixel screen. `DKR_DUMP_EVERY`
     // repeats the dump, up to six files, so one run answers it.
+    //
+    // **The list number is not a stable landmark, `gGameMode` is.**
+    //
+    // Dumping at list 420 gives a different screen every run: how far the game
+    // has got by its four-hundred-and-twentieth display list depends on load
+    // times, on how long a cutscene took, on the machine's mood. Two runs of the
+    // same build produced a menu one time and a black transition the next, which
+    // makes a before-and-after comparison worthless -- and that is exactly what
+    // was being attempted on the doubled glyphs.
+    //
+    // `DKR_DUMP_MODE=<n>` anchors on the game's own state variable instead:
+    // -1 INTRO, 0 INGAME, 1 MENU, 5 LOCKUP. The counting starts when the mode is
+    // first reached, so list 20 after entering the menu is list 20 after entering
+    // the menu in every run. `DKR_DUMP_FRAME` keeps its old meaning when no mode
+    // is given, since some questions really are about a list number.
+    //
+    // It is also what E09-S02's corpus needs: captures that can be replayed and
+    // compared require a reproducible moment, not a reproducible counter.
     {
         static const char* const dump_env = std::getenv("DKR_DUMP_FRAME");
         static const char* const every_env = std::getenv("DKR_DUMP_EVERY");
+        static const char* const mode_env = std::getenv("DKR_DUMP_MODE");
         static const unsigned long dump_at =
             dump_env ? std::strtoul(dump_env, nullptr, 10) : 0UL;
         static const unsigned long dump_every =
             every_env ? std::strtoul(every_env, nullptr, 10) : 0UL;
+        static const bool have_mode = (mode_env != nullptr);
+        static const int wanted_mode =
+            mode_env ? static_cast<int>(std::strtol(mode_env, nullptr, 10)) : 0;
         static const int kMaxDumps = 6;
         static int dumps_done = 0;
         static unsigned long next_dump = 0UL;
+        static unsigned long mode_anchor = 0UL;   // list at which the mode arrived
 
-        if (dump_at != 0UL && dumps_done < kMaxDumps) {
-            if (next_dump == 0UL) { next_dump = dump_at; }
+        if (have_mode && mode_anchor == 0UL) {
+            const int mode = read_word(rdram_snapshot, kAddrGameMode);
+            if (mode == wanted_mode) {
+                mode_anchor = index;
+                std::fprintf(stderr,
+                             "[gfx] frame dump: gGameMode=%d reached at list %llu\n",
+                             mode, static_cast<unsigned long long>(index));
+            }
+        }
+        // Without a mode the anchor is the start of the run, which reproduces
+        // the old behaviour exactly.
+        const bool armed = have_mode ? (mode_anchor != 0UL) : true;
+        const unsigned long base = have_mode ? mode_anchor : 0UL;
+
+        if (armed && dump_at != 0UL && dumps_done < kMaxDumps) {
+            if (next_dump == 0UL) { next_dump = base + dump_at; }
             if (index >= next_dump) {
                 char path[24];
                 std::sprintf(path, "D:\\FRAME%d.BMP", dumps_done);
