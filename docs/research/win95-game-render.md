@@ -1264,3 +1264,99 @@ graphics line, and one crashed outright on an invalid read of guest address
 `0x024C0010`, far outside the eight megabytes of RDRAM. It is not the renderer —
 it happens before the first display list — and it doubles the cost of every
 measurement. It is not diagnosed.
+
+## What ends every 3D list: a fade rectangle, and a depth clear — 21 August 2026
+
+Following one pixel rather than the frame is what broke it open. The centre-pixel
+stack, printed in submission order with the fills folded into it, reads:
+
+```
+centre0 FILL after tri=0   area=307200 rgb=FFFFF7
+centre1 FILL after tri=0   area=307200 rgb=000000
+centre2 FILL after tri=0   area=200960 rgb=000000
+centre3 tri=172 area=2054   rgb=FFFFFF combine=3 blend=0 depth=2 tex=1
+centre4 tri=178 area=1928   rgb=FFFFFF combine=3 blend=0 depth=2 tex=1
+centre5 tri=227 area=245909 rgb=FFFFFF combine=3 blend=0 depth=2 tex=1
+centre6 tri=241 area=36     rgb=FFFFFF combine=3 blend=1 depth=1 tex=1
+centre7 FILL after tri=246 area=309444 rgb=000000
+```
+
+**A full-screen fill after the last triangle.** Every aggregate the decoder
+carries had counted it with the three at the start, where it reads as a
+background; in sequence it reads as an erasure. Tracing list 59 in full then gave
+the two commands behind it, and both were being executed as something they are
+not.
+
+### The first fill is a depth-buffer clear, painted white
+
+```
+SetColorImage width=320
+SetFillColor raw=0xFFFCFFFC -> 0xFFFFF7
+FillRect 0,0..640,480 colour=0xFFFFF7
+```
+
+`0xFFFCFFFC` is two halves of the depth far value, not a colour. This is the N64
+idiom for clearing z — point the colour image at the depth buffer, fill it, point
+it back — and drawn on the visible frame it is a full-screen white flash.
+
+The address was there all along and `RDRAM_MASK` destroyed it: DKR's colour image
+is `0x01000000` and its depth image `0x02000000`, so masking to twenty-four bits
+made both read `0x000000` and every fill look like a frame clear. Kept raw, and
+with `G_SETZIMG` (`0xFE`) decoded rather than deferred, the comparison is exact.
+
+### The last is a screen fade, and it is not a fill at all
+
+`src/fade_transition.c` in the decompilation:
+
+```c
+gSPDisplayList(dTransitionFadeSettings);        // G_CYC_1CYCLE, G_RM_CLD_SURF
+gDPSetPrimColor(0, 0, r, g, b, gCurFadeAlpha);
+gDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+gDPFillRectangle(0, 0, width, height);
+```
+
+A `G_FILLRECT` **in one-cycle mode**: its colour is the primitive colour, its
+alpha is the fade's alpha, and it goes through the blender. The port painted it
+with the fill-colour register and opaque — a black sheet over the finished frame.
+
+`fills_wrong_cycle` had been counting these for days, 353 a run, and the figure
+was read as an alarm about the mode word. It was a census of a second kind of
+rectangle nobody had looked for.
+
+Drawn through the combiner instead, the measured frames go from **4 distinct
+colours to 226**, and the trailing rectangle's own numbers say what it is:
+
+```
+fill2 0,0..642,482 rgb=00000000 target=blend after-tri=245
+```
+
+Primitive colour `0x00000000` — black, **alpha zero**. A fade that is not fading,
+and it should be invisible.
+
+### What this did not fix
+
+The frames are still mostly black: 1,494 non-black pixels in a 103x74 patch. The
+alpha-zero rectangle is still covering, so the blender is not doing with it what
+`G_RM_CLD_SURF` asks. That is E05-S05's ground and it is the next thing to
+measure.
+
+> **Two ordering mistakes, one of them mine.** The first: reading a sequence off
+> a set of totals. The second, an hour later: `blend_rect_emit` set `texture` and
+> `combine` and *then* called `apply_state`, which fills the whole block from the
+> RDP state — the comment saying exactly that sits thirty lines above, and was
+> written after the same mistake was made on the texture handle. The fade went
+> out unchanged and the run was wasted.
+
+### `G_SETSCISSOR` is decoded and switched off
+
+`0xED` is the fourth drawing command that the `0xE4..0xFF` range has hidden.
+Measured in list 59, `(0,40)..(319,196)` — DKR's letterbox window — and
+`(0,0)..(319,239)`.
+
+Honouring it took the six frames from 226 distinct colours to **one**, pure
+black. Two causes are plausible and neither is measured: `screen_scale` returns 1
+until `SETCOLORIMAGE` has been seen, so the first window of a list can be laid
+down at half size, and nothing resets the card's clip window between lists. So
+the command is decoded and counted, and the effect is behind `DKR_SCISSOR=1`.
+Leaving a change in the default build that is known to make the image worse would
+be trading a measurement for a feature.

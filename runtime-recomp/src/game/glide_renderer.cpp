@@ -288,6 +288,15 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                 // Oldest of the retained ones first, so the list reads in the
                 // order the card received them.
                 const unsigned long s = (hits - shown + k) % 16u;
+                if (context_.state.center_state[s][0] == 0xFFu) {
+                    std::fprintf(stderr,
+                                 "[gfx] frame dump: centre%lu FILL after tri=%lu "
+                                 "area=%lu rgb=%06X\n",
+                                 k, context_.state.center_ordinal[s],
+                                 context_.state.center_area[s],
+                                 context_.state.center_rgb[s]);
+                    continue;
+                }
                 std::fprintf(stderr,
                              "[gfx] frame dump: centre%lu tri=%lu area=%lu "
                              "rgb=%06X combine=%u blend=%u depth=%u tex=%u\n",
@@ -300,6 +309,33 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                              static_cast<unsigned>(context_.state.center_state[s][3]));
             }
         }
+        // **Flat is not black.** The run-wide `texels: black=0 with-content=329`
+        // was read as "the textures carry an image", and it says no such thing:
+        // a texture uniformly dark grey is not black. Since 413 triangles a list
+        // do vary their s and t and the screen still shows one colour, the
+        // texture being sampled is the first thing to rule out.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: textures uniform=%lu varied=%lu\n",
+                     context_.state.textures_uniform,
+                     context_.state.textures_varied);
+        if (context_.state.uniform_sample_texel != 0u) {
+            std::fprintf(stderr,
+                         "[gfx] frame dump: uniform sample texel=%04X %dx%d fmt=%u\n",
+                         context_.state.uniform_sample_texel & 0xFFFFu,
+                         context_.state.uniform_sample_w,
+                         context_.state.uniform_sample_h,
+                         context_.state.uniform_sample_format);
+        }
+        std::fprintf(stderr,
+                     "[gfx] frame dump: st inside=%lu outside=%lu\n",
+                     context_.state.st_inside, context_.state.st_outside);
+        std::fprintf(stderr,
+                     "[gfx] frame dump: colour-image=0x%08X depth-image=0x%08X "
+                     "fills-to-depth=%lu blend-rects=%lu\n",
+                     context_.state.color_image_address,
+                     context_.state.depth_image_address,
+                     context_.state.fills_to_depth,
+                     context_.state.blend_rects);
         std::fprintf(stderr, "[gfx] frame dump: fills=%lu\n",
                      context_.state.fill_sample_n);
         {
@@ -308,13 +344,16 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                 context_.state.fill_sample_n < 8u ? context_.state.fill_sample_n : 8u;
             for (q = 0; q < shown; q++) {
                 std::fprintf(stderr,
-                             "[gfx] frame dump: fill%lu %d,%d..%d,%d rgb=%06X\n",
+                             "[gfx] frame dump: fill%lu %d,%d..%d,%d rgb=%06X "
+                             "target=0x%08X after-tri=%lu\n",
                              q,
                              context_.state.fill_sample[q][0],
                              context_.state.fill_sample[q][1],
                              context_.state.fill_sample[q][2],
                              context_.state.fill_sample[q][3],
-                             context_.state.fill_sample_color[q]);
+                             context_.state.fill_sample_color[q],
+                             context_.state.fill_sample_target[q],
+                             context_.state.fill_sample_after[q]);
             }
         }
         // Where the geometry actually lands. 2457600 px is exactly eight
@@ -478,6 +517,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             return 0;
         } ();
         context_.force_combine = forced;
+        // `DKR_SCISSOR=1` lets `G_SETSCISSOR` reach the card. Off by default:
+        // the command is decoded and counted regardless, and switching it on
+        // costs 230 distinct colours in the measured frames for a reason not yet
+        // named. See `cmd` for `OP_SETSCISSOR` in `f3ddkr.c`.
+        static const bool scissor = (std::getenv("DKR_SCISSOR") != nullptr);
+        context_.scissor_enabled = scissor ? 1 : 0;
         // **Once, not per list.** The first version announced the forced mode
         // from inside this block, which runs for every display list: on a target
         // whose stderr is unbuffered and committed to disk per line, that is one
@@ -506,9 +551,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // The 300th is not an arbitrary choice: that is where the rate settles, so
     // it is the first list describing the state the game stays in. Dumping the
     // first would give the initialisation sequence instead.
-    if (index == 300) {
-        g_trace_context = 400;
-        std::fprintf(stderr, "[gfx] --- list 300, full contents ---\n");
+    //
+    // `DKR_TRACE_LIST=<n>` overrides it. The list worth reading is no longer a
+    // fixed one: the dump is anchored on `gGameMode`, so the interesting lists
+    // are the first few after the menu, and 300 is far past them. It is asked
+    // for by number rather than guessed at, because the question a full trace
+    // answers -- what the list actually contains, in order -- is the one no
+    // counter has been able to answer about the trailing full-buffer fill.
+    {
+        static const long traced = [] () -> long {
+            const char* v = std::getenv("DKR_TRACE_LIST");
+            return v == nullptr ? 300L : std::strtol(v, nullptr, 10);
+        } ();
+        if (static_cast<long>(index) == traced) {
+            g_trace_context = 900;
+            std::fprintf(stderr, "[gfx] --- list %ld, full contents ---\n", traced);
+        }
     }
     dkr_transform_set_viewport(&context_.transform,
                                static_cast<float>(width_) * 0.5F,

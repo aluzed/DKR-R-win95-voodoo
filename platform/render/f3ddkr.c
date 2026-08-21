@@ -25,6 +25,8 @@
 #define OP_SETFILLCOLOR  0xF7
 #define OP_SETTEXIMAGE   0xFD
 #define OP_SETCOLORIMAGE 0xFF
+#define OP_SETDEPTHIMAGE 0xFE
+#define OP_SETSCISSOR    0xED
 #define OP_SETOTHERMODE_L 0xB9
 #define OP_SETOTHERMODE_H 0xBA
 #define OP_SETCOMBINE     0xFC
@@ -451,6 +453,24 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 if (tri[corner].s > c->state.s_max) { c->state.s_max = tri[corner].s; }
                 if (tri[corner].t < c->state.t_min) { c->state.t_min = tri[corner].t; }
                 if (tri[corner].t > c->state.t_max) { c->state.t_max = tri[corner].t; }
+                /* --- And the distribution, which the extremes cannot give ----- *
+                 *
+                 * `s = [-23 .. 14]` was read as "the scale is wrong". Two
+                 * corners out of forty thousand produce that range just as well
+                 * as all of them do, and the two call for opposite work: a
+                 * systematic factor, or a handful of triangles that legitimately
+                 * run off their tile.
+                 *
+                 * It matters here because the whole texture-clamping reading
+                 * rests on it — under clamping, coordinates far outside [0,1]
+                 * all sample the same edge texel, and that is a flat screen. */
+                {
+                    const float s = tri[corner].s, t = tri[corner].t;
+                    const int in = (s >= -0.01f && s <= 1.01f &&
+                                    t >= -0.01f && t <= 1.01f);
+                    if (in) { c->state.st_inside++; }
+                    else    { c->state.st_outside++; }
+                }
             }
         }
         if (emitted_here < 0) {
@@ -1055,11 +1075,41 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         unsigned int i, n = (unsigned int)c->tex_padded_width *
                             (unsigned int)c->tex_padded_height;
         unsigned int seen = 0;
+        /* --- Flat is not black, and the counter above could not tell them apart -
+         *
+         * `textures_black` asks one question: is every texel zero? A texture that
+         * is uniformly dark grey answers no, and is filed under "with content" —
+         * which is how 329 textures with content coexist with a screen showing a
+         * single colour. Four hundred and thirteen triangles a list vary their
+         * s and t, so they do sample across their texture; if the texture is
+         * uniform, that changes nothing on screen.
+         *
+         * The min and max cost nothing here: the loop already walks every texel
+         * for the black test, and one comparison each turns "not black" into
+         * "actually carries an image". */
+        unsigned short lo = 0xFFFFu, hi = 0u;
         for (i = 0; i < n; i++) {
-            if ((c->texels[i] & 0xFFFEu) != 0u) { seen++; }
+            const unsigned short t = c->texels[i];
+            if ((t & 0xFFFEu) != 0u) { seen++; }
+            if (t < lo) { lo = t; }
+            if (t > hi) { hi = t; }
         }
         if (seen == 0u) { c->state.textures_black++; }
         else            { c->state.textures_with_content++; }
+        if (n == 0u) {
+            /* No texels at all: neither uniform nor varied, and counting it as
+               either would flatter whichever total it joined. */
+        } else if (lo == hi) {
+            c->state.textures_uniform++;
+            if (c->state.uniform_sample_texel == 0u) {
+                c->state.uniform_sample_texel = (unsigned int)lo | 0x10000u;
+                c->state.uniform_sample_w = (short)c->tex_padded_width;
+                c->state.uniform_sample_h = (short)c->tex_padded_height;
+                c->state.uniform_sample_format = c->timg_format;
+            }
+        } else {
+            c->state.textures_varied++;
+        }
     }
 
     if (c->backend && c->backend->texture_upload) {
@@ -1434,6 +1484,76 @@ static void cmd_texrect_half(dkr_f3d_context *c, unsigned int opcode,
     if (c->texrect_pending == 0u) { texrect_emit(c); }
 }
 
+/* A rectangle drawn through the combiner rather than filled: two triangles in
+   screen coordinates carrying the primitive colour, with the decoded blend and
+   alpha state applied. See the note in `cmd_fill_rect`. */
+static void blend_rect_emit(dkr_f3d_context *c, int x0, int y0, int x1, int y1)
+{
+    dkr_render_vertex v[6];
+    const float dxs[6] = { 0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f };
+    const float dys[6] = { 0.0f, 0.0f, 1.0f,  0.0f, 1.0f, 1.0f };
+    const float r = (float)((c->prim_color >> 24) & 0xFFu);
+    const float g = (float)((c->prim_color >> 16) & 0xFFu);
+    const float b = (float)((c->prim_color >>  8) & 0xFFu);
+    const float a = (float)( c->prim_color        & 0xFFu);
+    const dkr_texture_handle saved_texture = c->render_state.texture;
+    const dkr_combine_mode saved_combine = c->render_state.combine;
+    int i;
+
+    memset(v, 0, sizeof(v));
+    for (i = 0; i < 6; i++) {
+        v[i].x = (float)x0 + dxs[i] * (float)(x1 - x0);
+        v[i].y = (float)y0 + dys[i] * (float)(y1 - y0);
+        v[i].r = r; v[i].g = g; v[i].b = b; v[i].a = a;
+        /* Frontmost and depthless, like a 2D rectangle: a fade takes no part in
+           sorting, and giving it a depth would let the scene it covers win. */
+        v[i].oow = 1.0f;
+        v[i].z = 0.0f;
+        v[i].ooz = 0.0f;
+        v[i].tmu[0][DKR_TMU_OOW] = 1.0f;
+    }
+
+    /* The combiner the game set is `G_CC_PRIMITIVE`: the output is the constant
+       alone, which on this side is the vertex colour laid down above. Texturing
+       is turned off for the same reason -- whatever the TMU last pointed at has
+       no part in it. Both are restored, because this rectangle is an interlude
+       in the list and not a new state. */
+    /* **The order matters, and getting it wrong costs a run.** `apply_state`
+       calls `dkr_rdp_to_render_state`, which fills the *whole* block from the
+       RDP state -- the note above the texture handle, thirty lines up, says so.
+       Setting the two fields first and applying afterwards therefore threw them
+       away, and the fade went out textured and opaque exactly as before. So the
+       state is brought up to date first, then overridden, then pushed. */
+    c->state_dirty = 1;
+    apply_state(c);
+    c->render_state.texture = 0;
+    c->render_state.combine = DKR_COMBINE_SHADE;
+    if (c->backend->set_state) {
+        c->backend->set_state(c->backend->self, &c->render_state);
+    }
+    c->backend->draw_triangles(c->backend->self, v, 2);
+    c->render_state.texture = saved_texture;
+    c->render_state.combine = saved_combine;
+    c->state_dirty = 1;
+
+    /* Into the same eight slots as the fills, marked by a target of all ones.
+       They are rectangles too, and what one wants to read is the sequence of
+       rectangles over the frame, not two lists to reconcile by eye. */
+    if (c->state.fill_sample_n < 8u) {
+        const unsigned long k = c->state.fill_sample_n;
+        c->state.fill_sample[k][0] = (short)x0;
+        c->state.fill_sample[k][1] = (short)y0;
+        c->state.fill_sample[k][2] = (short)x1;
+        c->state.fill_sample[k][3] = (short)y1;
+        c->state.fill_sample_color[k] = c->prim_color;
+        c->state.fill_sample_target[k] = 0xFFFFFFFFu;
+        c->state.fill_sample_after[k] = c->state.emitted;
+    }
+    c->state.fill_sample_n++;
+    c->state.blend_rects++;
+    trace(c, "BlendRect %d,%d..%d,%d rgba=0x%08X", x0, y0, x1, y1, c->prim_color);
+}
+
 static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     /* 10.2 fixed point: two fraction bits, which we drop. The RDP fills by
@@ -1471,17 +1591,89 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     x1 = (int)((float)(lrx + 1) * scale_x);
     y1 = (int)((float)(lry + 1) * scale_y);
 
-    /* A check that costs nothing and fires on its own: the RDP only fills in
-       `FILL` mode. A misplaced shift in the mode-word write would show up here,
-       in figures, rather than on screen as a surface in an unexpected colour. */
+    /* --- Outside FILL mode this is not a fill ------------------------------- *
+     *
+     * The check below has been counting for days -- 353 rectangles a run in the
+     * wrong cycle -- and the count was read as an alarm about the mode word.
+     * It is not. **DKR draws its screen fades with `G_FILLRECT` in 1-cycle
+     * mode**, and `src/fade_transition.c` in the decompilation says so outright:
+     *
+     *     gSPDisplayList(dTransitionFadeSettings);   // G_CYC_1CYCLE,
+     *                                                // G_RM_CLD_SURF
+     *     gDPSetPrimColor(0, 0, r, g, b, gCurFadeAlpha);
+     *     gDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+     *     gDPFillRectangle(0, 0, width, height);
+     *
+     * So the rectangle's colour is the **primitive colour**, its alpha is the
+     * fade's alpha, and it goes through the blender. Painted instead with the
+     * fill-colour register and opaque, it is a full-screen black sheet over the
+     * finished frame -- which is exactly what ends every 3D list, and why those
+     * frames come back one colour with two hundred and fifty triangles drawn
+     * underneath.
+     *
+     * The counter stays: it is no longer an alarm, it is the census of how many
+     * rectangles take the other path. */
     {
         dkr_rdp_state check;
         memset(&check, 0, sizeof(check));
         dkr_rdp_decode_othermode(c->mode_h, c->mode_l, &check);
-        if (check.cycle != DKR_CYCLE_FILL) { c->state.fills_wrong_cycle++; }
+        if (check.cycle != DKR_CYCLE_FILL) {
+            c->state.fills_wrong_cycle++;
+            if (c->backend->draw_triangles) {
+                blend_rect_emit(c, x0, y0, x1, y1);
+                return;
+            }
+        }
+    }
+    /* --- A fill aimed at the depth buffer is not an image --------------------
+     *
+     * Measured in list 59 on 21 August 2026:
+     *
+     *     SetColorImage width=320
+     *     SetFillColor raw=0xFFFCFFFC -> 0xFFFFF7
+     *     FillRect 0,0..640,480 colour=0xFFFFF7
+     *
+     * `0xFFFCFFFC` is two halves of the depth far value, not a colour. That is
+     * the N64 idiom for clearing z: point the colour image at the depth buffer,
+     * fill it, point it back. Drawn on the visible frame it is a full-screen
+     * white flash, and it was the first of the four fills every 3D list makes.
+     *
+     * The comparison is on the **raw** addresses. Both buffers have the same low
+     * twenty-four bits, so a masked comparison says they are the same buffer and
+     * skips everything -- which is why the guard also requires a depth image to
+     * have been named at all. */
+    if (c->state.depth_image_address != 0u &&
+        c->state.color_image_address == c->state.depth_image_address) {
+        c->state.fills_to_depth++;
+        trace(c, "FillRect skipped: aimed at the depth buffer 0x%08X",
+              c->state.depth_image_address);
+        return;
     }
     c->backend->fill_rect(c->backend->self, x0, y0, x1, y1,
                           c->state.fill_color_argb);
+    /* --- And into the centre pixel's stack, in the same order ---------------- *
+     *
+     * The stack held only triangles, so it could say which triangle covered the
+     * centre and not whether a full-screen fill came before or after them. Those
+     * two answers are opposite: a fill that comes first is a background, a fill
+     * that comes last erases the frame. Recorded with `combine = 0xFF` as the
+     * marker, since no combiner mode reaches that value. */
+    {
+        const int cx = (int)(c->screen_width / 2u);
+        const int cy = (int)(c->screen_height / 2u);
+        if (cx >= x0 && cx < x1 && cy >= y0 && cy < y1) {
+            const unsigned long s = c->state.center_hits % 16u;
+            c->state.center_state[s][0] = 0xFFu;
+            c->state.center_state[s][1] = 0u;
+            c->state.center_state[s][2] = 0u;
+            c->state.center_state[s][3] = 0u;
+            c->state.center_rgb[s] = c->state.fill_color_argb & 0xFFFFFFu;
+            c->state.center_area[s] =
+                (unsigned long)((x1 - x0) * (y1 - y0));
+            c->state.center_ordinal[s] = c->state.emitted;
+            c->state.center_hits++;
+        }
+    }
     /* Verbatim, the first eight of the frame. `rects` alone counts a one-pixel
        fill and a full-screen one the same, and a full-screen one is one of the
        two things that can paint the flat frames. */
@@ -1492,6 +1684,8 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         c->state.fill_sample[i][2] = (short)x1;
         c->state.fill_sample[i][3] = (short)y1;
         c->state.fill_sample_color[i] = c->state.fill_color_argb;
+        c->state.fill_sample_target[i] = c->state.color_image_address;
+        c->state.fill_sample_after[i] = c->state.emitted;
     }
     c->state.fill_sample_n++;
     c->state.rects++;
@@ -1743,8 +1937,78 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                rectangles' scale comes from, rather than from an assumption about
                the N64's 320 pixels. */
             c->state.color_image_width = (w0 & 0xFFFu) + 1u;
-            trace(c, "SetColorImage width=%u address=0x%06X",
-                  c->state.color_image_width, w1 & RDRAM_MASK);
+            /* **And the address, which was decoded for the trace and thrown
+               away.** The RDP draws into whatever buffer this names, and DKR
+               names more than one: the frame buffer, and the depth buffer it
+               clears with a full-screen fill. Without the address every fill
+               lands on the visible frame, which is how a list ends with a
+               642x482 black rectangle over everything it has just drawn. */
+            /* **Kept unmasked.** `RDRAM_MASK` is what destroyed the
+               distinction: DKR's frame buffer and depth buffer differ in the
+               top byte and share their low twenty-four bits, so masking made
+               both read 0x000000 and every fill look like a frame clear. */
+            c->state.color_image_address = w1;
+            trace(c, "SetColorImage width=%u address=0x%08X",
+                  c->state.color_image_width, c->state.color_image_address);
+            break;
+
+        case OP_SETSCISSOR: {
+            /* --- `G_SETSCISSOR`, deferred since the first day ---------------- *
+             *
+             * From `gsDPSetScissor` in the decompilation's `gbi.h`: the corners
+             * are 12.2 fixed point, `ulx`/`uly` in `w0` and `lrx`/`lry` in `w1`,
+             * with the interlace mode in `w1`'s top nibble.
+             *
+             * It was filed under "synchronisations, scissor, tiles, colours,
+             * combiner" and skipped with the rest of `0xE4..0xFF`, which is the
+             * fourth drawing command that range has hidden. Measured in list 59:
+             *
+             *     0xED0000A0 / 0x004FC310  ->  (0,40)..(319,196)
+             *     0xED000000 / 0x004FC3BC  ->  (0,0)..(319,239)
+             *
+             * The first is DKR's letterbox window, and everything drawn under it
+             * -- including the guard-band-sized background quads -- was spilling
+             * over the full screen for want of it. The buffer-to-screen factor
+             * is the same one the rectangles use, so the interface and the
+             * geometry cannot end up clipped at two different scales. */
+            const int ulx = (int)((w0 >> 14) & 0x3FFu);
+            const int uly = (int)((w0 >>  2) & 0x3FFu);
+            const int lrx = (int)((w1 >> 14) & 0x3FFu);
+            const int lry = (int)((w1 >>  2) & 0x3FFu);
+            const float scale = screen_scale(c);
+            c->state.scissors++;
+            /* **Decoded always, applied only on request.** Honouring it turned
+               the six measured frames from 230 distinct colours to one, pure
+               black -- a clear regression, and the cause is not yet named:
+               `screen_scale` returns 1 until `SETCOLORIMAGE` has been seen, so
+               the first window of a list can be laid down at half size, and
+               nothing resets the card's clip window between lists. Both are real
+               and neither is measured.
+             *
+               So the decode stands and the effect is behind `DKR_SCISSOR=1`,
+               rather than leaving a change in the build that is known to make
+               the image worse. */
+            if (c->scissor_enabled &&
+                c->backend && c->backend->set_scissor && lrx > ulx && lry > uly) {
+                c->backend->set_scissor(c->backend->self,
+                                        (int)((float)ulx * scale),
+                                        (int)((float)uly * scale),
+                                        (int)((float)lrx * scale),
+                                        (int)((float)lry * scale));
+            }
+            trace(c, "SetScissor %d,%d..%d,%d", ulx, uly, lrx, lry);
+            break;
+        }
+
+        case OP_SETDEPTHIMAGE:
+            /* `G_SETZIMG`. Deferred until now, and it is not a rendering mode:
+               it names the buffer the RDP tests depth against, and DKR clears
+               that buffer with an ordinary `G_FILLRECT` after pointing the
+               colour image at it. Without this address there is nothing to
+               recognise that fill by, and it paints the screen -- white, since
+               the fill colour is then 0xFFFCFFFC, the depth far value. */
+            c->state.depth_image_address = w1;
+            trace(c, "SetDepthImage address=0x%08X", w1);
             break;
 
         case OP_SETTEXIMAGE:

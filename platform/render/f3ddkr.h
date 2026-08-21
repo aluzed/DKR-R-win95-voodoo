@@ -105,6 +105,18 @@ typedef struct {
     unsigned int  fill_color_raw;     /* the SETFILLCOLOR word, as it is */
     unsigned int  fill_color_argb;    /* and its conversion, for the backend */
     unsigned int  color_image_width;  /* the buffer's width, read and not assumed */
+    /* And which buffer. DKR points the RDP at more than one, and a fill aimed
+       at the depth buffer painted the visible frame for want of this. Both are
+       kept **unmasked**: the two buffers share their low twenty-four bits, so
+       masking to RDRAM makes them indistinguishable. */
+    unsigned int  color_image_address;
+    unsigned int  depth_image_address;   /* G_SETZIMG, 0xFE */
+    unsigned long fills_to_depth;        /* skipped, and counted rather than mute */
+    /* Rectangles that went out through the combiner because the cycle was not
+       FILL -- DKR's screen fades. Counted apart from `rects`: they are drawn by
+       a different path and a single total would hide which one is at work. */
+    unsigned long blend_rects;
+    unsigned long scissors;              /* G_SETSCISSOR, now honoured */
     unsigned long rects;              /* rectangles actually handed to the backend */
 
     /* --- The RDP state, and what it costs in fidelity ----------------------- */
@@ -138,6 +150,10 @@ typedef struct {
        measurement exists to be able to contradict the 10.5 format
        interpretation, not to confirm it. */
     float             s_min, s_max, t_min, t_max;
+    /* Corners whose s and t both land inside [0,1], against those that do not.
+       The extremes above give a range and not a distribution, and the two
+       readings call for opposite work. */
+    unsigned long     st_inside, st_outside;
     /* Triangles emitted, broken down by combiner mode and by whether a texture
        was bound. "Emitted" on its own conflates three distinct causes of a white
        surface; these two counters separate two of them. */
@@ -167,6 +183,18 @@ typedef struct {
     /* Textures entirely black after conversion, against those that carry
        something. The texel is the last combiner input we had not looked at. */
     unsigned long     textures_black, textures_with_content;
+    /* Textures whose every texel is the same value, against those that carry an
+       image. `textures_black` only ever asked whether everything was zero, so a
+       uniformly dark grey texture counted as content — which is exactly the
+       state the flat 3D frames are in. The first uniform one is kept whole:
+       its texel, its padded size and its format say whether the colour on
+       screen is that texel and where the conversion lost the image. The texel
+       carries bit 16 as a "recorded" marker, so that a legitimate value of zero
+       is not mistaken for an empty slot. */
+    unsigned long     textures_uniform, textures_varied;
+    unsigned int      uniform_sample_texel;
+    short             uniform_sample_w, uniform_sample_h;
+    unsigned int      uniform_sample_format;
     /* The combiner configurations, catalogued or not. `rdp_state.h` insists: a
        missing case is invisible at decode time, it shows on screen as an
        unexpected colour, possibly in a single level. We keep the keys rather
@@ -245,6 +273,8 @@ typedef struct {
      * Guessing costs ten minutes a run; these two arrays cost sixty bytes. */
     short              fill_sample[8][4];      /* x0,y0,x1,y1 in screen pixels */
     unsigned int       fill_sample_color[8];
+    unsigned int       fill_sample_target[8];   /* the colour image it went to */
+    unsigned long      fill_sample_after[8];    /* triangles emitted before it */
     unsigned long      fill_sample_n;
     /* The vertices of the largest triangle handed over, with the colour of its
        first vertex and the state it went out under. `area_max` says how big the
@@ -359,6 +389,9 @@ typedef struct {
        force" and `DKR_COMBINE_SHADE`, which is zero, stays reachable. A boolean
        per mode was the first shape and it does not scale past two. */
     unsigned char        force_combine;
+    /* `DKR_SCISSOR=1`. The command is decoded and counted either way; this says
+       whether the clip window reaches the card. See the note in `f3ddkr.c`. */
+    unsigned char        scissor_enabled;
 
     /* --- A textured rectangle in flight ------------------------------------ *
      *
