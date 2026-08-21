@@ -1136,3 +1136,65 @@ It is not the cause of the flat 3D frames — that is a separate measurement in
 progress — and it was deliberately not fixed in the same build. The dump is
 anchored on `gGameMode` so that two runs give the same screen; a run that both
 adds an instrument and changes the image gives back a comparison worth nothing.
+
+## The flat 3D frames: every triangle at the same depth — 20 August 2026
+
+The 3D lists come back as one colour over the whole screen. Two candidates could
+do that, and both were recorded verbatim in the same run rather than tested one
+per run:
+
+```
+[gfx] frame dump: fills=4
+[gfx] frame dump: fill0 0,0..640,480 rgb=FFFFF7
+[gfx] frame dump: fill1 0,0..640,480 rgb=000000
+[gfx] frame dump: fill2 0,80..640,394 rgb=000000
+[gfx] frame dump: fill3 0,0..642,482 rgb=000000
+[gfx] frame dump: big-tri (-959,114) (509,-723) (-959,-723) rgb=FFFFFF combine=3 blend=0 depth=2
+```
+
+**The fills are eliminated.** All four are full-screen and all four are black or
+white, and the screen is 0x393831, 0x635D10, 0x7BFBC6 depending on the list —
+never either. The largest triangle is eliminated too: at frame 1 it spans
+(-959,114) to (509,-723), which touches only the top-left of the viewport.
+
+So neither. What remains is the matrix, which the same dump prints:
+
+```
+mvp[0] 1000 0    0     0
+mvp[1] 0    1199 0     0
+mvp[2] 0    0    0     0
+mvp[3] 0    0    0     160000   /1000
+```
+
+Row 2 is entirely zero and row 3 carries only `w`. **Every vertex therefore comes
+out with z = 0 and w = 160**: a 320-wide orthographic projection, which is a
+perfectly ordinary thing for DKR to send, and which gives every triangle in the
+list the same depth.
+
+The backend then does exactly what it is told. It is in W-buffer mode with
+`GR_CMP_LESS` — the direction settled by read-back on 14 August — and 79 % of
+emitted triangles ask for `DKR_DEPTH_TEST_AND_WRITE`:
+
+```
+[gfx]   depth: mode0=2779 mode1=14803 mode2=67973 mode3=0
+```
+
+With a strict `LESS` and one single depth value, **the first triangle written to
+a pixel wins and every later one is rejected**. The screen shows the first large
+quad of the list, flat, and the several hundred triangles behind it are
+correctly transformed, correctly textured, and thrown away by a comparison that
+can never succeed.
+
+That also explains why the title screen at list 29 is right: its matrix is a real
+perspective one — `mvp[2] = (-0.001, 0, -1.001, -1)` — so its `w` varies.
+
+The counter-check is one run and no code: `DKR_NO_DEPTH=1` already exists as a
+diagnostic switch. What it cannot say is what the *fix* is — the N64 sorts these
+surfaces by submission order, with the RDP's z-compare off, and that is what the
+render mode carries. Reading the render mode is E05-S05's business.
+
+> **Three instruments, and the one that answered was the matrix.** The area
+> histogram, the fill count and the projected extremes had all been consulted
+> across three sessions and each returned a figure that was true and unhelpful.
+> What settled it was printing sixteen numbers that nobody had looked at, next to
+> the image they produced.
