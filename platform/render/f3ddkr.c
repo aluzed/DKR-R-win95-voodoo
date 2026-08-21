@@ -627,6 +627,56 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     c->state.big_tri_state[2] =
                         (unsigned char)c->render_state.depth;
                 }
+                /* --- How much of it is actually inside the viewport ---------- *
+                 *
+                 * `area` above is the whole triangle, guard band included. A
+                 * triangle running from -959 to 509 counts six hundred thousand
+                 * pixels and puts twenty-nine thousand on screen, so reading
+                 * "seventeen triangles over ten thousand pixels" as "the card
+                 * should be painting a great deal" is reading the guard band.
+                 *
+                 * The bounding box clipped to the viewport is an over-estimate
+                 * of the on-screen part and a very cheap one, and an
+                 * over-estimate is exactly what is wanted here: if even *it*
+                 * comes to a few thousand pixels, the geometry really is that
+                 * small and the card is dropping nothing. The question is a
+                 * factor of a hundred, not a few hundred pixels -- which is the
+                 * only kind of difference these runs can carry, the animation
+                 * moving between them. */
+                {
+                    float bx0 = v[0].x, bx1 = v[0].x;
+                    float by0 = v[0].y, by1 = v[0].y;
+                    int q;
+                    for (q = 1; q < 3; q++) {
+                        if (v[q].x < bx0) { bx0 = v[q].x; }
+                        if (v[q].x > bx1) { bx1 = v[q].x; }
+                        if (v[q].y < by0) { by0 = v[q].y; }
+                        if (v[q].y > by1) { by1 = v[q].y; }
+                    }
+                    if (bx0 < 0.0f) { bx0 = 0.0f; }
+                    if (by0 < 0.0f) { by0 = 0.0f; }
+                    if (bx1 > (float)c->screen_width)  { bx1 = (float)c->screen_width; }
+                    if (by1 > (float)c->screen_height) { by1 = (float)c->screen_height; }
+                    if (bx1 > bx0 && by1 > by0) {
+                        /* **Bounded by the true area, not half the box.**
+                         *
+                         * The first version summed half the clipped bounding box
+                         * and reported 451,267 pixels handed over against 2,768
+                         * painted -- a factor of 163 read as "the card is
+                         * dropping the geometry". A long thin triangle has a
+                         * bounding box a hundred times its area, so on a scene
+                         * made of slivers that sum measures nothing but the
+                         * spread of the vertices. The same over-estimate trap as
+                         * the guard-band areas, one instrument later.
+                         *
+                         * The on-screen part cannot exceed either the whole
+                         * triangle or the clipped box, so the smaller of the two
+                         * is an over-estimate that is actually worth reading. */
+                        const float box = (bx1 - bx0) * (by1 - by0) * 0.5f;
+                        c->state.on_screen_area +=
+                            (unsigned long)(area < box ? area : box);
+                    }
+                }
                 /* --- On screen, or merely inside the guard band? ------------ *
                  *
                  * `proj_x_min/max` are extremes over the frame and land on the

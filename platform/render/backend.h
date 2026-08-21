@@ -347,6 +347,7 @@ unsigned long dkr_glide_backend_triangle_count(void);
  *
  * `changed` separates the two readings that remain: "one texture is bound over
  * and over" from "many are bound and the sampling is wrong regardless". */
+int dkr_glide_backend_can_draw(void);
 void dkr_glide_backend_bind_stats(unsigned long *binds,
                                   unsigned long *dead,
                                   unsigned long *changed);

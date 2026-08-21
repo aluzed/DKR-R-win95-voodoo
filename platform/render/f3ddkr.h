@@ -306,6 +306,10 @@ typedef struct {
        whose does not. The projected extremes clamp to the guard band and the
        area counts guard-band pixels, so neither can say where the geometry is. */
     unsigned long      tri_on_screen, tri_off_screen;
+    /* The sum, over the list, of each emitted triangle's bounding box clipped to
+       the viewport, halved. An over-estimate of the surface handed to the card,
+       and the figure to read against the pixels that come back. */
+    unsigned long      on_screen_area;
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;

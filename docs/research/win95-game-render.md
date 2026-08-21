@@ -1412,3 +1412,46 @@ failed a check about attribute interpolation, which has nothing to do with where
 the plane sits. It is now written against `DKR_CLIP_GUARD`. A test that breaks
 when the thing it is not testing changes is a test that gets edited under
 pressure.
+
+## The chain is intact end to end, and the large triangles still do not paint
+
+`submitted=243` — the Glide backend's own count of calls to `grDrawTriangle`,
+which had existed since E05-S01 and had never been printed. It matches the
+decoder's `emitted`. So there is no gap between "the decoder emitted it" and
+"the card was asked to draw it": the last unmeasured link in the chain is
+measured, and it is sound.
+
+Against that, `area-in-viewport=429,306` and 2,857 pixels painted.
+
+That figure took two attempts to make honest, and both failures were the same
+mistake in different clothes:
+
+1. the area histogram counts the **whole** triangle, guard band included — a
+   triangle from -959 to 509 counts 600,000 pixels and puts 29,000 on screen;
+2. the first replacement summed the bounding box clipped to the viewport, which
+   for a long thin triangle is a hundred times its area.
+
+Bounded by the smaller of the true area and the clipped box, the sum barely
+moved — 428,513 against 451,267 — so the geometry is not slivers. It is large
+and it is on screen.
+
+### What the histogram says about which triangles fail
+
+```
+areas <1px=9 <100=162 <10k=58 >=10k=17
+```
+
+The 162 small ones make the object that appears; the 17 large ones dominate the
+sum and paint nothing. Every candidate has been eliminated by a switch that costs
+a run and no code — the texture and combiner (`DKR_FORCE_COMBINE=shade`), the
+depth test (`DKR_NO_DEPTH=1`, which paints *less*), the colour reaching the card
+(`DKR_PAINT_WHITE=1`), the guard band (`DKR_CLIP_GUARD` at 1.05, which moves the
+big bucket from 17 triangles to 6 and the painted count not at all), and culling,
+which the backend disables on the card outright.
+
+The sharpest remaining fact, and it is reproducible: **`DKR_FLATTEN_W=1` paints
+nothing at all** — not even the object, which every other configuration draws.
+Giving a triangle the `oow`, `z` and `ooz` a textured rectangle carries, on a
+card that draws those rectangles happily in the same run, empties the frame.
+Whatever is refusing the large triangles is reached by that switch too, and it is
+the thread to pull next.

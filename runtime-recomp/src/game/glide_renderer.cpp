@@ -230,8 +230,11 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
         unsigned long changed = 0;
         dkr_glide_backend_bind_stats(&binds, &dead, &changed);
         std::fprintf(stderr,
-                     "[gfx] frame dump: binds=%lu skipped-dead=%lu changed=%lu\n",
-                     binds, dead, changed);
+                     "[gfx] frame dump: binds=%lu skipped-dead=%lu changed=%lu "
+                     "submitted=%lu can-draw=%d\n",
+                     binds, dead, changed,
+                     dkr_glide_backend_triangle_count(),
+                     dkr_glide_backend_can_draw());
     }
     {
         // Whether each triangle spans texture space at all. The run-wide s/t
@@ -284,8 +287,10 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
             const unsigned long shown = hits < 16u ? hits : 16u;
             unsigned long k;
             std::fprintf(stderr,
-                     "[gfx] frame dump: triangles on-screen=%lu off-screen=%lu\n",
-                     context_.state.tri_on_screen, context_.state.tri_off_screen);
+                     "[gfx] frame dump: triangles on-screen=%lu off-screen=%lu "
+                     "area-in-viewport=%lu\n",
+                     context_.state.tri_on_screen, context_.state.tri_off_screen,
+                     context_.state.on_screen_area);
         std::fprintf(stderr, "[gfx] frame dump: centre hits=%lu\n", hits);
             for (k = 0; k < shown; k++) {
                 // Oldest of the retained ones first, so the list reads in the

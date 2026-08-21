@@ -888,6 +888,14 @@ void dkr_glide_backend_bind_stats(unsigned long *binds,
     if (changed) { *changed = b.binds_changed; }
 }
 
+/* Whether the entry points the drawing path needs are resolved at all. The
+   triangle count above has existed all along and was never read; this says
+   whether a zero would mean "nothing drawn" or "nothing could be drawn". */
+int dkr_glide_backend_can_draw(void)
+{
+    return gs.color_combine != 0 && gs.alpha_combine != 0;
+}
+
 /* Applies a setup from the E05-S03 table, as it is.
  *
  * A direct entry point, used by the measurement harness and meant for the
