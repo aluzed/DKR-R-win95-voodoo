@@ -1229,3 +1229,38 @@ sixteen triangles that covered it, in the order the card received them.
 > The switch cost nothing — it had been in the code since 16 August — and it
 > refuted in one run a conclusion that read as settled. It is worth noticing
 > which of the two took less effort.
+
+## The reference machine ran ScanDisk at every boot — 20 August 2026
+
+Restoring the reference to rule the guest out, as on 18 August, made things
+worse: the game reached the menu, then produced eight SP tasks in seventeen
+minutes and no display list at all. The obvious reading — "the restore did not
+help, so the guest is not the problem" — is wrong twice over.
+
+The reference snapshot dates from 11 August. It is therefore **older than
+`AutoScan=0`**, the MSDOS.SYS setting added on 15 August, and its C: volume was
+frozen with the **dirty flag set**. So every boot from it runs a full ScanDisk
+over a gigabyte, which then keeps running while the game starts.
+
+```
+  volume       : FAT16, 65501 clusters of 16 KB
+  clean flag   : DIRTY
+```
+
+Clearing the flag and setting `AutoScan=0` — at constant file size, nine
+characters taken back from the padding block MSDOS.SYS needs to stay above 1024
+bytes — put the same binary at the menu in **a hundred seconds**. The repaired
+image is now the reference, `--snapshot` having been run over it.
+
+> The restore was the right move and it was the wrong instrument, because the
+> thing being restored carried a defect that the working image had been fixed of.
+> **A reference is only a control if it is at least as healthy as the subject.**
+> This one was five days behind on a setting whose whole purpose is to stop the
+> machine wasting its boots.
+
+There remains an intermittent stall that this does not explain: roughly one run
+in two ends after eight SP tasks with `Glide opened at 640x480` as the only
+graphics line, and one crashed outright on an invalid read of guest address
+`0x024C0010`, far outside the eight megabytes of RDRAM. It is not the renderer —
+it happens before the first display list — and it doubles the cost of every
+measurement. It is not diagnosed.
