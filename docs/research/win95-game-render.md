@@ -1198,3 +1198,34 @@ render mode carries. Reading the render mode is E05-S05's business.
 > across three sessions and each returned a figure that was true and unhelpful.
 > What settled it was printing sixteen numbers that nobody had looked at, next to
 > the image they produced.
+
+### The counter-check refused it — same day
+
+`DKR_NO_DEPTH=1`, same build, same `gGameMode` anchor, so the same six screens:
+
+| list | with the depth test | without it |
+|---|---|---|
+| 59  | grey `393831`, 288,000 px differing | black, **144** px differing |
+| 89  | grey `393831`, 288,000 | black, 59 |
+| 119 | olive `635D10`, 211,200 | yellow `F7F300`, 268,800 |
+| 149 | mint `7BFBC6`, 288,000 | black, **0** |
+| 179 | mint `7BFBC6`, 288,000 | black, 0 |
+
+Removing the test does not reveal a scene. It reveals **less**: two of the six
+frames come back a uniform black, and frame 59 keeps a single 30x34 patch of grey
+pixels near the middle and nothing else.
+
+So the reading above is half right and its conclusion is wrong. Every triangle
+does land at the same depth — row 2 of the matrix is zero and `w` is a constant
+160, both measured — but that is not what stands between the geometry and the
+screen. With the test on, the first triangle to reach a pixel keeps it; with the
+test off, the last one does. **Both of those are a single flat quad**, which
+means the scene is being painted over, not hidden behind a comparison.
+
+That is an order, and every instrument in this report summarises over the frame.
+Hence the next one: follow one pixel rather than the frame, and print the last
+sixteen triangles that covered it, in the order the card received them.
+
+> The switch cost nothing — it had been in the code since 16 August — and it
+> refuted in one run a conclusion that read as settled. It is worth noticing
+> which of the two took less effort.
