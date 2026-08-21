@@ -252,6 +252,26 @@ typedef struct {
     short              big_tri[3][2];
     unsigned int       big_tri_color;
     unsigned char      big_tri_state[3];       /* combine, blend, depth */
+    /* --- The paint stack of one pixel --------------------------------------- *
+     *
+     * Every aggregate so far -- areas, fills, the largest triangle, the matrix --
+     * answered truthfully and left the question open, because each summarises
+     * over the frame and the frame's problem is an **order**. Turning the depth
+     * test off made the screen black rather than legible: so the scene is not
+     * hidden behind a comparison, it is painted over by whatever comes last.
+     *
+     * So one pixel is followed instead of the frame. Every triangle covering the
+     * centre of the screen is recorded in submission order -- its ordinal, its
+     * area, its state and its vertex colour -- and the last sixteen are printed.
+     * That is the stack of paint on that pixel, and it names what erases the
+     * scene rather than describing what the result looks like.
+     *
+     * Three cross products per triangle, against two hundred triangles a list. */
+    unsigned char      center_state[16][4];    /* combine, blend, depth, textured */
+    unsigned int       center_rgb[16];
+    unsigned long      center_area[16];
+    unsigned long      center_ordinal[16];
+    unsigned long      center_hits;
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;

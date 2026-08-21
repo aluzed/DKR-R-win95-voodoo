@@ -558,6 +558,39 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     c->state.big_tri_state[2] =
                         (unsigned char)c->render_state.depth;
                 }
+                /* Does this triangle cover the centre of the screen? The three
+                   edge functions carry the same sign for an interior point,
+                   whichever way round the triangle is wound. */
+                {
+                    const float cx = (float)c->screen_width  * 0.5f;
+                    const float cy = (float)c->screen_height * 0.5f;
+                    const float e0 = (v[1].x - v[0].x) * (cy - v[0].y) -
+                                     (v[1].y - v[0].y) * (cx - v[0].x);
+                    const float e1 = (v[2].x - v[1].x) * (cy - v[1].y) -
+                                     (v[2].y - v[1].y) * (cx - v[1].x);
+                    const float e2 = (v[0].x - v[2].x) * (cy - v[2].y) -
+                                     (v[0].y - v[2].y) * (cx - v[2].x);
+                    const int all_neg = (e0 <= 0.0f && e1 <= 0.0f && e2 <= 0.0f);
+                    const int all_pos = (e0 >= 0.0f && e1 >= 0.0f && e2 >= 0.0f);
+                    if (all_neg || all_pos) {
+                        const unsigned long s = c->state.center_hits % 16u;
+                        c->state.center_state[s][0] =
+                            (unsigned char)c->render_state.combine;
+                        c->state.center_state[s][1] =
+                            (unsigned char)c->render_state.blend;
+                        c->state.center_state[s][2] =
+                            (unsigned char)c->render_state.depth;
+                        c->state.center_state[s][3] =
+                            (unsigned char)(c->render_state.texture != 0);
+                        c->state.center_rgb[s] =
+                            ((unsigned int)v[0].r << 16) |
+                            ((unsigned int)v[0].g <<  8) |
+                            ((unsigned int)v[0].b);
+                        c->state.center_area[s] = (unsigned long)area;
+                        c->state.center_ordinal[s] = c->state.emitted;
+                        c->state.center_hits++;
+                    }
+                }
                 {
                     int q;
                     for (q = 0; q < 3; q++) {

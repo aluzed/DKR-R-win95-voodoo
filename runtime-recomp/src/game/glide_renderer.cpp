@@ -272,6 +272,34 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                      static_cast<unsigned>(context_.state.big_tri_state[0]),
                      static_cast<unsigned>(context_.state.big_tri_state[1]),
                      static_cast<unsigned>(context_.state.big_tri_state[2]));
+        // **The paint stack of the centre pixel, in submission order.**
+        //
+        // Everything else here summarises over the frame, and the frame's
+        // problem is an order: with the depth test off the screen went black
+        // rather than legible, so the scene is painted over rather than hidden
+        // behind a comparison. The last sixteen triangles covering (w/2, h/2)
+        // say what covers it and what state each went out under.
+        {
+            const unsigned long hits = context_.state.center_hits;
+            const unsigned long shown = hits < 16u ? hits : 16u;
+            unsigned long k;
+            std::fprintf(stderr, "[gfx] frame dump: centre hits=%lu\n", hits);
+            for (k = 0; k < shown; k++) {
+                // Oldest of the retained ones first, so the list reads in the
+                // order the card received them.
+                const unsigned long s = (hits - shown + k) % 16u;
+                std::fprintf(stderr,
+                             "[gfx] frame dump: centre%lu tri=%lu area=%lu "
+                             "rgb=%06X combine=%u blend=%u depth=%u tex=%u\n",
+                             k, context_.state.center_ordinal[s],
+                             context_.state.center_area[s],
+                             context_.state.center_rgb[s],
+                             static_cast<unsigned>(context_.state.center_state[s][0]),
+                             static_cast<unsigned>(context_.state.center_state[s][1]),
+                             static_cast<unsigned>(context_.state.center_state[s][2]),
+                             static_cast<unsigned>(context_.state.center_state[s][3]));
+            }
+        }
         std::fprintf(stderr, "[gfx] frame dump: fills=%lu\n",
                      context_.state.fill_sample_n);
         {
