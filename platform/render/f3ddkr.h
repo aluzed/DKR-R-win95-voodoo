@@ -322,6 +322,11 @@ typedef struct {
     dkr_transform        transform;
     dkr_clip_vertex      cache[32];
     unsigned char        cache_valid[32];
+    /* Where an appended vertex batch starts. `gSPVertexDKR` carries an append
+       flag, not a destination: a flag-0 load writes at the beginning of the
+       array and stores its count, a flag-1 load writes after it. This is that
+       stored count. */
+    unsigned int         vertex_base;
     dkr_render_state     render_state;
 
     /* The RDP's other-mode word, accumulated through partial writes, and the

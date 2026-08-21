@@ -124,12 +124,58 @@ int main(void)
      * destination and the count — is the one that gets forgotten, and it is the
      * one that allows writing past the cache. */
     reset(&c, 1);
-    /* 32 vertices at index 16: the batch overflows by 16. */
-    a = put_cmd(0, 0x04F82000u | (16u << 9), 0x00000000u);
+    /* 16 vertices with the append flag clear, which sets the base to 16, then 32
+       appended after them: the batch overflows by 16.
+     *
+       **The parameter byte carries an append flag, not an index.** This test used
+       to build the destination as `16 << 9`, a field that lies inside the length
+       and that the decoder had been reading as the destination -- so the test
+       agreed with the decoder and both were wrong. See `cmd_vertex`. */
+    a = put_cmd(0, 0x04000000u | (15u << 19), 0x00000000u);   /* 16, append=0 */
+    a = put_cmd(a, 0x04000000u | (31u << 19) | (1u << 16), 0x00000000u);
     (void)put_cmd(a, 0xB8000000u, 0u);
     dkr_f3d_run(&c, 0);
     check("a vertex batch that overflows the cache is rejected",
-          c.state.rejects[DKR_F3D_REJECT_COUNT] == 1 && c.state.vertices == 0);
+          c.state.rejects[DKR_F3D_REJECT_COUNT] == 1 && c.state.vertices == 16);
+    check("and the append flag placed the first batch at the beginning",
+          c.vertex_base == 16u && c.cache_valid[0] && !c.cache_valid[16]);
+
+    /* --- Billboarding: the sprite is placed by the anchor ------------------- *
+     *
+     * `include/f3ddkr.h` in the decompilation: while `gDkrEnableBillboard` is in
+     * force, a vertex's coordinates are added to those of **vertex 0**, after the
+     * matrix and before the perspective divide. Vertex 0 carries the object's
+     * real position under the camera; the billboard vertices are in sprite space.
+     *
+     * The decoder recorded the flag and applied nothing, so every sprite in the
+     * game landed where raw sprite coordinates fall. Nothing in this suite asked,
+     * which is why it went four months unseen. */
+    reset(&c, 1);
+    put16(0x200, 100); put16(0x202, 200); put16(0x204, 300);   /* the anchor */
+    put16(0x20A, 10);  put16(0x20C, 20);  put16(0x20E, 30);    /* the sprite */
+    a = put_cmd(0, 0xBF000000u, 0x00000200u);                  /* vertex base */
+    a = put_cmd(a, 0x04000000u, 0x00000000u);                  /* 1, append=0 */
+    a = put_cmd(a, 0xBC000002u, 0x00000001u);                  /* billboard on */
+    a = put_cmd(a, 0x04000000u | (1u << 16), 0x0000000Au);     /* 1, append=1 */
+    (void)put_cmd(a, 0xB8000000u, 0u);
+    dkr_f3d_run(&c, 0);
+    check("the anchor lands at the beginning of the array",
+          c.cache_valid[0] && c.cache[0].x == 100.0f && c.cache[0].y == 200.0f);
+    check("and the billboard vertex is added to it",
+          c.cache_valid[1] && c.cache[1].x == 110.0f &&
+          c.cache[1].y == 220.0f && c.cache[1].z == 330.0f);
+    /* The negative control: without the flag, no addition. Without it the check
+       above would pass on a decoder that adds the anchor to everything. */
+    reset(&c, 1);
+    put16(0x200, 100); put16(0x202, 200); put16(0x204, 300);
+    put16(0x20A, 10);  put16(0x20C, 20);  put16(0x20E, 30);
+    a = put_cmd(0, 0xBF000000u, 0x00000200u);
+    a = put_cmd(a, 0x04000000u, 0x00000000u);
+    a = put_cmd(a, 0x04000000u | (1u << 16), 0x0000000Au);
+    (void)put_cmd(a, 0xB8000000u, 0u);
+    dkr_f3d_run(&c, 0);
+    check("with billboarding off the sprite keeps its own coordinates",
+          c.cache_valid[1] && c.cache[1].x == 10.0f && c.cache[1].y == 20.0f);
 
     /* A source outside RDRAM. */
     reset(&c, 1);
@@ -257,8 +303,12 @@ int main(void)
     reset(&c, 1);
     {
         unsigned int i, at = 0;
+        at = put_cmd(at, 0x04000000u | (15u << 19), 0u);      /* base = 16 */
         for (i = 0; i < 200u; i++) {
-            at = put_cmd(at, 0x04F82000u | (16u << 9), 0u);   /* always rejected */
+            /* 32 vertices appended after a base that no flag-0 load ever set
+               would fit; what is always rejected is a count of 32 appended at
+               16, so the base is established once before the loop. */
+            at = put_cmd(at, 0x04000000u | (31u << 19) | (1u << 16), 0u);
         }
         put_cmd(at, 0xB8000000u, 0u);
         dkr_f3d_run(&c, 0);

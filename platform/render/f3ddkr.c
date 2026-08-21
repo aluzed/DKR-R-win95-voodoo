@@ -262,8 +262,29 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 
 static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
+    /* --- What the parameter byte actually carries ---------------------------- *
+     *
+     * `gSPVertexDKR` in the decompilation's `include/f3ddkr.h`:
+     *
+     *     gDma1p(pkt, G_VTX, v, (((n)*8 + (n)) << 1) + 8,
+     *            ((n)-1)<<3 | ((u32)(v) & 6) | (v0))
+     *
+     * and `gDma1p` places that fourth argument at bits 16..23 and the length at
+     * bits 0..15. So the byte holds `n-1` at bits 3..7, two bits of the source
+     * address at 1..2, and **`v0` at bit 0 — an append flag, not an index**.
+     *
+     * This read the destination as `(w0 >> 9) & 0x1F`, which lands inside the
+     * *length* field, `18n + 8`. For every batch DKR sends that field's bits 9
+     * to 13 are zero, so every load went to index 0 — including the appended
+     * ones, which overwrote the batch they were meant to follow. The billboard
+     * anchor was destroyed by the very sprite that depends on it.
+     *
+     * The header states the rule: flag 0 writes at the beginning of the RSP's
+     * array and **stores the count**; flag 1 appends after those. Hence a base
+     * updated only by a flag-0 load. */
     const unsigned int count       = ((w0 >> 19) & 0x1Fu) + 1u;
-    const unsigned int destination = (w0 >> 9) & 0x1Fu;
+    const unsigned int append      = (w0 >> 16) & 1u;
+    const unsigned int destination = append ? c->vertex_base : 0u;
     const unsigned int source      = (c->state.vertex_offset + w1) & RDRAM_MASK;
     unsigned int i;
 
@@ -301,10 +322,38 @@ static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
            they will be laid down at the triangle. */
         dkr_transform_to_clip(&c->transform, &sv, 0.0f, 0.0f,
                               &c->cache[destination + i]);
+        /* --- Billboarding ---------------------------------------------------- *
+         *
+         * From the same header: while `gDkrEnableBillboard` is in force, a
+         * vertex's coordinates are **added to those of vertex 0** of the RSP's
+         * array, "after MVP matrix transformation but before perspective
+         * division". Vertex 0 is the anchor, carrying the object's real position
+         * under the camera; the billboard vertices are in sprite space -- for a
+         * 32x64 sprite, (0,0,0), (32,0,0), (32,64,0), (0,64,0) -- transformed by
+         * a matrix that has neither camera nor projection in it.
+         *
+         * The addition is what places the sprite. Without it, every billboard in
+         * the game lands wherever raw sprite coordinates fall, which is near the
+         * clip-space origin: the sprites are drawn, they are simply all in the
+         * same wrong place. It was decoded into `state.billboard` and read by
+         * nobody. */
+        if (c->state.billboard && c->cache_valid[0] &&
+            destination + i != 0u) {
+            c->cache[destination + i].x += c->cache[0].x;
+            c->cache[destination + i].y += c->cache[0].y;
+            c->cache[destination + i].z += c->cache[0].z;
+            c->cache[destination + i].w += c->cache[0].w;
+        }
         c->cache_valid[destination + i] = 1;
     }
+    /* Only a flag-0 load moves the base: a flag-1 batch appends after the last
+       flag-0 one, and a second appended batch takes the same place. That is what
+       the billboard sequence needs -- one anchor, then one sprite after another
+       at the same index. */
+    if (!append) { c->vertex_base = count; }
     c->state.vertices += count;
-    trace(c, "Vertex %u vertices to %u from 0x%06X", count, destination, source);
+    trace(c, "Vertex %u vertices to %u (append=%u) from 0x%06X",
+          count, destination, append, source);
 }
 
 static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
