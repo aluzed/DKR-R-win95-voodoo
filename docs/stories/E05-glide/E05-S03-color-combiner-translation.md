@@ -91,7 +91,8 @@ deviation.
       `PASS2` is the identity, `(COMBINED,0,X,0)` is a scaling that composes — which
       avoids declaring every second cycle multipass and doubling the fill on the most
       common surfaces.
-- [ ] The multipass fill cost is measured — **blocked by the ROM**. The multipass
+- [ ] The multipass fill cost is measured — not yet done. It needs a race, not the
+      menu, and the port does not render one legibly yet. The multipass
       share is, on the other hand, bounded and watched: a check fails if it exceeds
       half the table's entries, because it is fill that limits a Voodoo 2 at 640×480.
 - [~] `docs/research/combiner-mapping.md` documents category, setting and

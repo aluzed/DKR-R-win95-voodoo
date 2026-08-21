@@ -81,7 +81,8 @@ reference.
       78 translucent modes for 74 fog modes.
       A consequence for E05-S03: the way out consisting of carrying the second
       constant colour in the vertex alpha conflicts with fog. It is not general.
-- [ ] Comparison with a camera moving away — **blocked by the ROM**. The ticket is
+- [ ] Comparison with a camera moving away — not yet done. It needs a race, not the
+      menu, and the port does not render one legibly yet. The ticket is
       right to insist: a wrong curve does not show on a still image. The gradient
       measured here is a transition in space, not in time.
 - [~] Measured, but the measurement does not settle it: 1538 ms against 1662 ms over a
