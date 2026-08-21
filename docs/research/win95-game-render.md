@@ -1455,3 +1455,52 @@ Giving a triangle the `oow`, `z` and `ooz` a textured rectangle carries, on a
 card that draws those rectangles happily in the same run, empties the frame.
 Whatever is refusing the large triangles is reached by that switch too, and it is
 the thread to pull next.
+
+## The canary, and what it narrowed the black frames to — 21 August 2026
+
+Two hard-coded triangles drawn into the game's own frame, immediately before the
+read-back, identical except for `oow` — 1 for one, 0.00625 for the other, the
+value the menu's orthographic lists give every vertex.
+
+**Both painted 4,950 pixels**, exactly the right-angled triangle they describe.
+So in the state that list leaves the card in, the card draws, and `oow` has
+nothing to do with it. That is the ground truth no counter could supply, and it
+cost one run.
+
+The canary and the game's geometry differ in two things: the vertices, and the
+state block pushed before them. `DKR_FORCE_STATE=1` gives the game's triangles
+the canary's block — a `memset` with shade, opaque, no depth, no cull — and the
+screen comes back **entirely white**. So it is the state, not the vertices.
+
+### It is not depth, and the obvious repair is not the repair
+
+`DKR_FORCE_STATE=2` keeps the depth mode the game asked for and pushes everything
+else plain: **113,485 to 147,572 pixels painted**, a third to a half of the
+screen, against 1,700. Depth is innocent.
+
+Per frame — and per frame matters; a run-wide census mixing the title screen's
+rectangles in with the menu's geometry is what let three candidates be argued
+away on figures that did not describe the frame in hand:
+
+```
+emitted combine=235/0/0/0/0 blend=218/17/0 depth=0/17/218 alpha-test=0 ref=0
+```
+
+All shade, 218 of 235 opaque, alpha test off. Each of combine, blend, depth, fog
+(`fogged=12` of 254) and the vertex colour has now been eliminated by a switch.
+
+The obvious reading of `DKR_FORCE_STATE` — "the state is not pushed often enough
+and `state_dirty` is missing changes" — was tried: hand the block to the backend
+on every triangle and let its `memcmp` dedupe. **1,413 pixels.** No change. So
+what `DKR_FORCE_STATE` does is not push more often; it pushes a block that
+*differs*, so `gl_set_state` reprograms the card in full rather than
+short-circuiting.
+
+That leaves a narrow and precise question, which is where this stands: **which
+register does a full reprogramming set that a short-circuited one leaves
+hostile?** Every field of the block has been eliminated as a *value*; what has
+not been eliminated is the act of writing them.
+
+> Three instruments were built today that each answered "not this", and that is
+> their worth. The canary is the one to keep: it is the only measurement in this
+> file that asks the card a question whose right answer is known in advance.
