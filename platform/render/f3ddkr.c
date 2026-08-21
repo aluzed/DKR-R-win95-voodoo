@@ -541,7 +541,22 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                  * is the third aggregate today to hide the thing it was built to
                  * show. */
                 if (area > c->state.area_max) {
+                    int q;
                     c->state.area_max = (unsigned long)area;
+                    for (q = 0; q < 3; q++) {
+                        c->state.big_tri[q][0] = (short)v[q].x;
+                        c->state.big_tri[q][1] = (short)v[q].y;
+                    }
+                    c->state.big_tri_color =
+                        ((unsigned int)v[0].r << 16) |
+                        ((unsigned int)v[0].g <<  8) |
+                        ((unsigned int)v[0].b);
+                    c->state.big_tri_state[0] =
+                        (unsigned char)c->render_state.combine;
+                    c->state.big_tri_state[1] =
+                        (unsigned char)c->render_state.blend;
+                    c->state.big_tri_state[2] =
+                        (unsigned char)c->render_state.depth;
                 }
                 {
                     int q;
@@ -1385,6 +1400,18 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
     c->backend->fill_rect(c->backend->self, x0, y0, x1, y1,
                           c->state.fill_color_argb);
+    /* Verbatim, the first eight of the frame. `rects` alone counts a one-pixel
+       fill and a full-screen one the same, and a full-screen one is one of the
+       two things that can paint the flat frames. */
+    if (c->state.fill_sample_n < 8u) {
+        const unsigned long i = c->state.fill_sample_n;
+        c->state.fill_sample[i][0] = (short)x0;
+        c->state.fill_sample[i][1] = (short)y0;
+        c->state.fill_sample[i][2] = (short)x1;
+        c->state.fill_sample[i][3] = (short)y1;
+        c->state.fill_sample_color[i] = c->state.fill_color_argb;
+    }
+    c->state.fill_sample_n++;
     c->state.rects++;
     trace(c, "FillRect %d,%d..%d,%d colour=0x%06X",
           x0, y0, x1, y1, c->state.fill_color_argb);

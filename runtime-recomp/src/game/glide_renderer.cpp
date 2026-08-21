@@ -253,6 +253,42 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
         std::fprintf(stderr,
                      "[gfx] frame dump: largest triangle=%lu px of %d\n",
                      context_.state.area_max, width_ * height_);
+        // **Which of the two painted the flat frame.**
+        //
+        // The 3D lists come back as a single colour over the whole screen. A
+        // full-screen `G_FILLRECT` and one very large triangle both produce
+        // that, and every counter this state carries adds them to different
+        // totals without saying which one is on top. So both are reported
+        // verbatim: the fills with their rectangles and colours, the largest
+        // triangle with its corners, its vertex colour and the state it went
+        // out under. One run separates them; guessing costs a run each.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: big-tri (%d,%d) (%d,%d) (%d,%d) "
+                     "rgb=%06X combine=%u blend=%u depth=%u\n",
+                     context_.state.big_tri[0][0], context_.state.big_tri[0][1],
+                     context_.state.big_tri[1][0], context_.state.big_tri[1][1],
+                     context_.state.big_tri[2][0], context_.state.big_tri[2][1],
+                     context_.state.big_tri_color,
+                     static_cast<unsigned>(context_.state.big_tri_state[0]),
+                     static_cast<unsigned>(context_.state.big_tri_state[1]),
+                     static_cast<unsigned>(context_.state.big_tri_state[2]));
+        std::fprintf(stderr, "[gfx] frame dump: fills=%lu\n",
+                     context_.state.fill_sample_n);
+        {
+            unsigned long q;
+            const unsigned long shown =
+                context_.state.fill_sample_n < 8u ? context_.state.fill_sample_n : 8u;
+            for (q = 0; q < shown; q++) {
+                std::fprintf(stderr,
+                             "[gfx] frame dump: fill%lu %d,%d..%d,%d rgb=%06X\n",
+                             q,
+                             context_.state.fill_sample[q][0],
+                             context_.state.fill_sample[q][1],
+                             context_.state.fill_sample[q][2],
+                             context_.state.fill_sample[q][3],
+                             context_.state.fill_sample_color[q]);
+            }
+        }
         // Where the geometry actually lands. 2457600 px is exactly eight
         // screens, which is the guard band's clamp at +/-2048 - so the areas
         // alone cannot say whether a quad merely overhangs the viewport or the

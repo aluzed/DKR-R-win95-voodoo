@@ -233,6 +233,25 @@ typedef struct {
     long               proj_x_min, proj_x_max;
     long               proj_y_min, proj_y_max;
     unsigned long      area_max;
+    /* --- Who painted the flat frame ----------------------------------------- *
+     *
+     * The 3D frames come back as one colour over the whole screen -- four
+     * distinct values, and they are the Voodoo's 4x4 dither of a single grey,
+     * not four bands. Two candidates can do that, and every aggregate the state
+     * already carries counts both the same way: a full-screen `G_FILLRECT`, or
+     * one triangle large enough to cover everything drawn before it.
+     *
+     * So each is recorded verbatim, once per frame, and one run separates them.
+     * Guessing costs ten minutes a run; these two arrays cost sixty bytes. */
+    short              fill_sample[8][4];      /* x0,y0,x1,y1 in screen pixels */
+    unsigned int       fill_sample_color[8];
+    unsigned long      fill_sample_n;
+    /* The vertices of the largest triangle handed over, with the colour of its
+       first vertex and the state it went out under. `area_max` says how big the
+       worst one is; this says where it is and what it looks like. */
+    short              big_tri[3][2];
+    unsigned int       big_tri_color;
+    unsigned char      big_tri_state[3];       /* combine, blend, depth */
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;

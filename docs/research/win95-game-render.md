@@ -1037,6 +1037,7 @@ while affecting the image:
 | `0xED` | `G_SETSCISSOR` | clipping rectangle, needed for split screen |
 | `0xF8` | `G_SETFOGCOLOR` | fog colour, E05-S06 |
 | `0xF9` | `G_SETBLENDCOLOR` | blend constant |
+| `0xF5` | `G_SETTILE` | **the clamp/mirror/wrap modes**, format, mask and shift |
 
 Enumerating a range by its bounds was right for the synchronisations that make up
 most of it, and wrong twice now for the drawing commands that sit inside it. The
@@ -1110,3 +1111,28 @@ instead of 136 and 248 under the old rule.
 > mattered — so it was cited three times as settled. What was missing from the
 > probe was not rigour but a second subject: the same question asked of a
 > non-square texture would have answered it in the same run.
+
+## `G_SETTILE` is deferred too, and it carries the wrap modes — 20 August 2026
+
+The run's own trace names it:
+
+```
+[gfx][f3d] deferred 0xF5 w0=0xF5102000 w1=0x00080200
+[gfx][f3d] deferred 0xF5 w0=0xF5100000 w1=0x07080200
+```
+
+`0xF5` is `G_SETTILE`. Decoding the second word by hand: the first has tile 0 —
+`G_TX_RENDERTILE` — with `cms = 2` and `cmt = 2`, which is `G_TX_CLAMP` on both
+axes; the second has tile 7, `G_TX_LOADTILE`, the descriptor used to bring the
+texture into TMEM rather than to sample it.
+
+**The game asks for clamping, and the port never hears it.** Nothing sets
+`wrap_s` or `wrap_t` from the display list, so every texture is sampled under
+whatever the render state was initialised with. That is the fourth drawing
+command found inside the range enumerated by its bounds, and it belongs in the
+audit table above rather than in a fifth rediscovery.
+
+It is not the cause of the flat 3D frames — that is a separate measurement in
+progress — and it was deliberately not fixed in the same build. The dump is
+anchored on `gGameMode` so that two runs give the same screen; a run that both
+adds an instrument and changes the image gives back a comparison worth nothing.
