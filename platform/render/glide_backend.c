@@ -247,6 +247,7 @@ static struct {
  * translation rather than to "the state". */
 
 static void bind_texture(dkr_texture_handle handle);
+static void gl_invalidate(void *self);
 
 static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
                           unsigned int constant)
@@ -889,6 +890,7 @@ void dkr_render_backend_glide(dkr_render_backend *out)
     out->present         = gl_present;
     out->set_state       = gl_set_state;
     out->set_scissor     = gl_set_scissor;
+    out->invalidate      = gl_invalidate;
     out->draw_triangles  = gl_draw_triangles;
     out->fill_rect       = gl_fill_rect;
     out->texture_upload  = gl_texture_upload;
@@ -907,6 +909,21 @@ void dkr_glide_backend_bind_stats(unsigned long *binds,
     if (binds)   { *binds   = b.binds; }
     if (dead)    { *dead    = b.binds_dead; }
     if (changed) { *changed = b.binds_changed; }
+}
+
+/* Forget what the card is believed to hold, without changing what it is asked
+   to hold.
+ *
+ * The whole remaining question in one call. `DKR_FORCE_STATE` pushes a block
+ * that *differs*, so `gl_set_state` reprograms in full instead of
+ * short-circuiting, and the painted surface goes from 1,700 pixels to 120,000 --
+ * but that changes the values too, so it cannot say which of the two matters.
+ * Invalidating the cache and pushing **the same block** separates them: same
+ * values, full reprogramming. */
+static void gl_invalidate(void *self)
+{
+    (void)self;
+    b.has_state = 0;
 }
 
 /* Whether the entry points the drawing path needs are resolved at all. The

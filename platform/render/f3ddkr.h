@@ -411,11 +411,16 @@ typedef struct {
     /* `DKR_PAINT_WHITE=1`. Every emitted vertex opaque white, so that "does not
        rasterise" and "rasterises black on black" stop looking alike. */
     unsigned char        paint_white;
-    /* `DKR_NO_FOG=1`. Fog off for every emitted triangle. */
-    unsigned char        no_fog;
+    /* `DKR_FOG=1`. Fog is **off by default**: Glide takes its factor from the
+       vertex alpha, which in this port carries opacity and not a fog
+       coefficient, and the fog colour is never decoded. See `apply_state`. */
+    unsigned char        fog_enabled_override;
     /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
        state block, to tell a bad state from bad vertices. */
     unsigned char        force_state;
+    /* `DKR_NEUTRAL=<mask>`: which fields of the render state to neutralise
+       before each triangle. See the note at the emission in `f3ddkr.c`. */
+    unsigned char        neutral_mask;
 
     /* --- A textured rectangle in flight ------------------------------------ *
      *

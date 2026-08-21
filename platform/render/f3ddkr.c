@@ -595,7 +595,6 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * `fog_enabled` is zero. That is why it paints and the game's
              * geometry does not. */
             if (c->render_state.fog_enabled) { c->state.emitted_fogged++; }
-            if (c->no_fog) { c->render_state.fog_enabled = 0; }
             /* **The size of the triangles on screen.**
              *
              * 490 triangles per frame are emitted, and the screen shows only
@@ -873,7 +872,44 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * paint, a field of the state is at fault and can be bisected; if
              * they still do not, it is the vertices, and every field of those has
              * now been forced in turn. */
-            if (c->force_state && c->backend && c->backend->set_state) {
+            /* `DKR_FORCE_STATE=3`: the card's cache forgotten and **the same
+               block** pushed again. Same values, full reprogramming -- which is
+               the one thing `=1` and `=2` could not separate, both of them
+               changing the values as well. */
+            /* --- `DKR_NEUTRAL=<mask>`, the field-by-field bisection ---------- *
+             *
+             * `DKR_FORCE_STATE=1` and `=2` push a plain block and paint 120,000
+             * pixels where the real one paints 1,700; `=3` pushes the real block
+             * with the cache invalidated and paints 1,700, so it is the values
+             * and not the act of writing them. What remains is to find which
+             * value, and a switch per field costs a run each.
+             *
+             * One mask instead: bit 0 clears the texture handle, bit 1 forces
+             * point sampling, bit 2 forces opaque blending, bit 3 turns fog off,
+             * bit 4 clears the constant colour. The full mask should reproduce
+             * the plain block's result, and halving it from there finds the
+             * field in two or three runs rather than five. */
+            if (c->neutral_mask != 0u) {
+                if (c->neutral_mask & 1u) { c->render_state.texture = 0; }
+                if (c->neutral_mask & 2u) {
+                    c->render_state.filter = DKR_FILTER_POINT;
+                }
+                if (c->neutral_mask & 4u) {
+                    c->render_state.blend = DKR_BLEND_OPAQUE;
+                }
+                if (c->neutral_mask & 8u) { c->render_state.fog_enabled = 0; }
+                if (c->neutral_mask & 16u) { c->render_state.constant_color = 0; }
+                if (c->backend && c->backend->set_state) {
+                    c->backend->set_state(c->backend->self, &c->render_state);
+                }
+                c->state_dirty = 1;
+            }
+            if (c->force_state >= 3u && c->backend && c->backend->set_state) {
+                if (c->backend->invalidate) {
+                    c->backend->invalidate(c->backend->self);
+                }
+                c->backend->set_state(c->backend->self, &c->render_state);
+            } else if (c->force_state && c->backend && c->backend->set_state) {
                 dkr_render_state plain;
                 memset(&plain, 0, sizeof(plain));
                 plain.combine = DKR_COMBINE_SHADE;
@@ -1073,6 +1109,36 @@ static void apply_state(dkr_f3d_context *c)
      * is drawn. */
     if (c->no_depth) {
         c->render_state.depth = DKR_DEPTH_DISABLED;
+    }
+    /* --- Fog off, and it is fog that was blanking the 3D layer -------------- *
+     *
+     * Measured on 22 August 2026. Neutralising this one field -- everything else
+     * left exactly as the game asks, textures bound, real combiners -- takes the
+     * menu's 3D lists from 2,800 painted pixels to **306,873**, with 2,355
+     * distinct colours and a blue sky. Every frame of this port's 3D rendering
+     * has been a black screen for that reason and no other.
+     *
+     * Two faults compose, and either alone would do it:
+     *
+     *   - `apply_fog` selects `GR_FOG_WITH_ITERATED_ALPHA`, whose blend factor
+     *     is the **vertex alpha**. On the N64 that is only the fog coefficient
+     *     when the geometry mode has `G_FOG` set and the microcode has
+     *     overwritten the alpha with it. DKR's vertices carry opacity, so an
+     *     opaque surface asks for maximum fog.
+     *   - `G_SETFOGCOLOR` (`0xF8`) is one of the commands still deferred, so the
+     *     colour that maximum fog resolves to is zero. Black.
+     *
+     * Fog therefore stays off until E05-S06 sources the coefficient properly,
+     * and `DKR_FOG=1` puts it back for whoever does that work. Rendering a scene
+     * without its fog is a known, bounded loss; rendering it black is not.
+     *
+     * **And a note on how long this took.** The same switch was written on
+     * 21 August and put in the emission loop, *after* `apply_state` had already
+     * returned -- so it changed the decoder's copy of the block and never
+     * reached the card. It reported "fog is innocent" and was believed for a
+     * day. A switch that cannot act is worse than no switch: it answers. */
+    if (!c->fog_enabled_override) {
+        c->render_state.fog_enabled = 0;
     }
     /* The same reasoning one step further along the pipeline. `no_depth`
        separates sorting from drawing; this separates the texel from the shade.

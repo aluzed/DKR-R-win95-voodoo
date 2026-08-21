@@ -1504,3 +1504,45 @@ not been eliminated is the act of writing them.
 > Three instruments were built today that each answered "not this", and that is
 > their worth. The canary is the one to keep: it is the only measurement in this
 > file that asks the card a question whose right answer is known in advance.
+
+## It was fog — 22 August 2026
+
+`DKR_NEUTRAL=8`. One field of the render state neutralised, everything else left
+exactly as the game asks — textures bound, real combiners, real blending, real
+depth — and the menu's 3D lists go from 2,800 painted pixels to **306,873**, with
+2,355 distinct colours and a blue sky.
+
+Every black 3D frame this port has produced was fog, and nothing else.
+
+Two faults compose, and either alone would do it:
+
+- `apply_fog` selects `GR_FOG_WITH_ITERATED_ALPHA`, whose blend factor is the
+  **vertex alpha**. On the N64 that is the fog coefficient only when the geometry
+  mode carries `G_FOG` and the microcode has overwritten the alpha with it. DKR's
+  vertices carry opacity, so an opaque surface asks for maximum fog.
+- `G_SETFOGCOLOR` (`0xF8`) is one of the commands the `0xE4..0xFF` range still
+  defers, so the colour that maximum fog resolves to is zero. Black.
+
+Fog is therefore off until E05-S06 sources the coefficient properly, behind
+`DKR_FOG=1` for whoever does that work. Rendering a scene without its fog is a
+known, bounded loss; rendering it black is not.
+
+### The switch that could not act
+
+The same measurement was attempted on 21 August. `DKR_NO_FOG=1` was written into
+the **emission loop**, after `apply_state` had already returned — so it cleared
+the flag in the decoder's copy of the block and never pushed it. The card went on
+fogging. It reported *fog is innocent*, and that was believed for a day, through
+five further runs that eliminated depth, the combiner, the guard band, `oow` and
+the vertex colour.
+
+What broke it open was refusing to trust any single switch again: `DKR_NEUTRAL`
+neutralises a field **and pushes the block**, and the full mask reproducing the
+plain block's result — 113,568 pixels — is what proved the mask itself sound
+before any single bit was read.
+
+> **A switch that cannot act is worse than no switch at all, because it answers.**
+> An absent measurement leaves a question open; a broken one closes it wrongly and
+> takes the next five with it. Every diagnostic in this file that modifies state
+> now does so where the state is handed over, and the mask is validated against a
+> known result before its bits are believed.

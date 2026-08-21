@@ -290,6 +290,13 @@ typedef struct dkr_render_backend {
        pixels, bounds included on the left and top, excluded on the right and
        bottom — Glide's convention, kept so that no conversion is needed. */
     void (*set_scissor)(void *self, int x0, int y0, int x1, int y1);
+    /* Forget what the backend believes the card holds, without changing what it
+       is asked to hold. Optional -- a backend that keeps no cache leaves it
+       null. It exists for one measurement: `DKR_FORCE_STATE=3` pushes the same
+       block after invalidating, which is the only way to separate "the values
+       differ" from "the registers were written" now that pushing a *different*
+       block is known to take the painted surface from 1,700 pixels to 120,000. */
+    void (*invalidate)(void *self);
 
     /* Triangles. The vertices are complete and projected; see the remark about
        texture coordinates at the top of the file.

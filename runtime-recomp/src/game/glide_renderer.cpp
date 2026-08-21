@@ -562,19 +562,27 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // "rasterises black on a black clear", which every counter conflates.
         static const bool white = (std::getenv("DKR_PAINT_WHITE") != nullptr);
         context_.paint_white = white ? 1 : 0;
-        // `DKR_NO_FOG=1`: fog off for every emitted triangle. Glide's fog takes
-        // its factor from the vertex alpha and G_SETFOGCOLOR is still deferred,
-        // so fog on means black on black.
-        static const bool nofog = (std::getenv("DKR_NO_FOG") != nullptr);
-        context_.no_fog = nofog ? 1 : 0;
+        // `DKR_FOG=1` puts fog back. It is off by default: Glide takes its
+        // factor from the vertex alpha, which here carries opacity, and
+        // G_SETFOGCOLOR is never decoded -- so fog on paints the 3D layer black.
+        static const bool fog = (std::getenv("DKR_FOG") != nullptr);
+        context_.fog_enabled_override = fog ? 1 : 0;
         // `DKR_FORCE_STATE=1`: every triangle under the canary's state block.
         static const unsigned char fstate = [] () -> unsigned char {
             const char* v = std::getenv("DKR_FORCE_STATE");
             if (v == nullptr) { return 0; }
             const long n = std::strtol(v, nullptr, 10);
-            return static_cast<unsigned char>(n < 1 ? 1 : (n > 2 ? 2 : n));
+            return static_cast<unsigned char>(n < 1 ? 1 : (n > 3 ? 3 : n));
         } ();
         context_.force_state = fstate;
+        // `DKR_NEUTRAL=<mask>`: neutralise fields of the render state one bit at
+        // a time. 1 texture, 2 filter, 4 blend, 8 fog, 16 constant colour.
+        static const unsigned char neutral = [] () -> unsigned char {
+            const char* v = std::getenv("DKR_NEUTRAL");
+            if (v == nullptr) { return 0; }
+            return static_cast<unsigned char>(std::strtol(v, nullptr, 10) & 31);
+        } ();
+        context_.neutral_mask = neutral;
         // **Once, not per list.** The first version announced the forced mode
         // from inside this block, which runs for every display list: on a target
         // whose stderr is unbuffered and committed to disk per line, that is one
