@@ -578,6 +578,24 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             if (c->render_state.texture != 0) {
                 c->state.emitted_textured++;
             }
+            /* --- Fog, counted, and switchable ---------------------------------- *
+             *
+             * `GR_FOG_WITH_ITERATED_ALPHA` takes its blend factor from the
+             * **vertex alpha**, and `G_SETFOGCOLOR` (0xF8) is one of the commands
+             * still deferred -- so the fog colour is whatever the translation
+             * leaves in the field, which is black.
+             *
+             * Fog enabled, factor at maximum, colour black: every pixel comes out
+             * pure black, indistinguishable against a black clear from a triangle
+             * that never rasterised. That is the shape of every measurement made
+             * today, and it explains why forcing the vertices opaque white made
+             * things *worse* rather than better -- alpha 255 is maximum fog.
+             *
+             * The canary escapes it because its state block is memset, so its
+             * `fog_enabled` is zero. That is why it paints and the game's
+             * geometry does not. */
+            if (c->render_state.fog_enabled) { c->state.emitted_fogged++; }
+            if (c->no_fog) { c->render_state.fog_enabled = 0; }
             /* **The size of the triangles on screen.**
              *
              * 490 triangles per frame are emitted, and the screen shows only
@@ -839,6 +857,39 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * rasterises and what is wrong is the colour reaching it; if it does
              * not, the card is refusing the triangles and nothing about the
              * combiner matters yet. */
+            /* --- `DKR_FORCE_STATE=1`, the bisection ---------------------------- *
+             *
+             * The canary -- two hard-coded triangles drawn into the game's own
+             * frame, just before it is read back -- paints 4,950 pixels each,
+             * exactly the right-angled triangle it describes, at both `oow = 1`
+             * and `oow = 0.00625`. So in the state that list leaves it in, the
+             * card draws. What it will not draw is the game's own geometry, and
+             * the two differ in exactly two things: the vertices, and the state
+             * block pushed before them.
+             *
+             * The canary's block is a `memset` -- shade, opaque, no depth, no
+             * cull, no texture, no alpha test, no fog. Giving the game's
+             * triangles the same one splits what is left in half: if they then
+             * paint, a field of the state is at fault and can be bisected; if
+             * they still do not, it is the vertices, and every field of those has
+             * now been forced in turn. */
+            if (c->force_state && c->backend && c->backend->set_state) {
+                dkr_render_state plain;
+                memset(&plain, 0, sizeof(plain));
+                plain.combine = DKR_COMBINE_SHADE;
+                plain.blend   = DKR_BLEND_OPAQUE;
+                /* `DKR_FORCE_STATE=2` keeps the depth mode the game asked for
+                   and pushes everything else plain. One run then separates the
+                   two candidates that survived: the block's *content*, of which
+                   depth is the only field left differing, and the mere fact of
+                   the block being pushed at all. */
+                plain.depth   = (c->force_state >= 2u)
+                                    ? DKR_DEPTH_TEST_AND_WRITE
+                                    : DKR_DEPTH_DISABLED;
+                plain.cull    = DKR_CULL_NONE;
+                c->backend->set_state(c->backend->self, &plain);
+                c->state_dirty = 1;   /* the next real draw lays its own down */
+            }
             if (c->paint_white) {
                 int q;
                 for (q = 0; q < 3; q++) {
@@ -923,6 +974,24 @@ static void apply_state(dkr_f3d_context *c)
     dkr_rdp_state rdp;
     int exact = 1;
 
+    /* --- The flag stays, and here is what was tried ------------------------- *
+     *
+     * `state_dirty` and `gl_set_state`'s `memcmp` guard the same question, and
+     * the second is exact where the first is a hand-maintained list of places
+     * that remember to set a flag. Handing the block over on every triangle and
+     * letting the `memcmp` dedupe looked like the obvious repair, because
+     * `DKR_FORCE_STATE=2` -- which pushes a *plain* block before every triangle
+     * -- takes the painted surface from 1,700 pixels to 120,000.
+     *
+     * It was tried on 21 August 2026 and **changed nothing**: 1,413 pixels. So
+     * the flag is not missing a change, and what `DKR_FORCE_STATE` does is not
+     * "push more often" -- it is "push a block that differs, so that
+     * `gl_set_state` reprograms the card in full". The difference lives in the
+     * block's content, and depth, combine, blend, alpha and fog have each been
+     * eliminated from it by a switch of their own.
+     *
+     * The change is reverted rather than kept: a `memcmp` per triangle on a
+     * Pentium II is a real cost, and it bought nothing measurable. */
     if (!c->state_dirty) {
         return;
     }

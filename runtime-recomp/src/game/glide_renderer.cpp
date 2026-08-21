@@ -288,9 +288,31 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
             unsigned long k;
             std::fprintf(stderr,
                      "[gfx] frame dump: triangles on-screen=%lu off-screen=%lu "
-                     "area-in-viewport=%lu\n",
+                     "area-in-viewport=%lu fogged=%lu\n",
                      context_.state.tri_on_screen, context_.state.tri_off_screen,
-                     context_.state.on_screen_area);
+                     context_.state.on_screen_area,
+                     context_.state.emitted_fogged);
+        // **Per frame, not per run.** Which state the triangles of *this* list
+        // went out under. Arguing about which field kills the geometry from a
+        // run-wide census -- which mixes the title screen's rectangles in with
+        // the menu's geometry -- is how three candidates were argued away on
+        // figures that did not describe the frame in hand.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: emitted combine=%lu/%lu/%lu/%lu/%lu "
+                     "blend=%lu/%lu/%lu depth=%lu/%lu/%lu alpha-test=%lu ref=%u\n",
+                     context_.state.emitted_per_combine[0],
+                     context_.state.emitted_per_combine[1],
+                     context_.state.emitted_per_combine[2],
+                     context_.state.emitted_per_combine[3],
+                     context_.state.emitted_per_combine[4],
+                     context_.state.emitted_per_blend[0],
+                     context_.state.emitted_per_blend[1],
+                     context_.state.emitted_per_blend[2],
+                     context_.state.emitted_per_depth[0],
+                     context_.state.emitted_per_depth[1],
+                     context_.state.emitted_per_depth[2],
+                     context_.state.emitted_alpha_test,
+                     context_.state.alpha_ref_max);
         std::fprintf(stderr, "[gfx] frame dump: centre hits=%lu\n", hits);
             for (k = 0; k < shown; k++) {
                 // Oldest of the retained ones first, so the list reads in the
@@ -540,6 +562,19 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // "rasterises black on a black clear", which every counter conflates.
         static const bool white = (std::getenv("DKR_PAINT_WHITE") != nullptr);
         context_.paint_white = white ? 1 : 0;
+        // `DKR_NO_FOG=1`: fog off for every emitted triangle. Glide's fog takes
+        // its factor from the vertex alpha and G_SETFOGCOLOR is still deferred,
+        // so fog on means black on black.
+        static const bool nofog = (std::getenv("DKR_NO_FOG") != nullptr);
+        context_.no_fog = nofog ? 1 : 0;
+        // `DKR_FORCE_STATE=1`: every triangle under the canary's state block.
+        static const unsigned char fstate = [] () -> unsigned char {
+            const char* v = std::getenv("DKR_FORCE_STATE");
+            if (v == nullptr) { return 0; }
+            const long n = std::strtol(v, nullptr, 10);
+            return static_cast<unsigned char>(n < 1 ? 1 : (n > 2 ? 2 : n));
+        } ();
+        context_.force_state = fstate;
         // **Once, not per list.** The first version announced the forced mode
         // from inside this block, which runs for every display list: on a target
         // whose stderr is unbuffered and committed to disk per line, that is one
@@ -594,6 +629,57 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // The address is guest-virtual (0x80xxxxxx); the snapshot is indexed
     // physically.
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
+
+    // --- The canary -----------------------------------------------------------
+    //
+    // `DKR_CANARY=1` draws two hard-coded triangles into the game's own frame,
+    // just before it is read back: identical in every respect except `oow`, one
+    // at 1 and one at 0.00625, which is what the menu's orthographic lists give
+    // every vertex.
+    //
+    // This is the ground truth no counter can supply. The chain has been
+    // measured end to end -- 243 triangles submitted to `grDrawTriangle` against
+    // 243 emitted -- and 429,306 pixels of on-screen surface come back as 2,857.
+    // Every candidate has been eliminated by a switch. What has never been asked
+    // is whether the card, in the state this list leaves it in, will draw a
+    // triangle that the port knows to be correct.
+    //
+    // If both squares appear, the state is fine and the game's vertices carry
+    // something bad. If neither does, the list leaves the card unable to draw.
+    // If only one does, `oow` is the whole story -- and `DKR_FLATTEN_W=1`,
+    // which sets it to 1 and paints nothing at all, says which way round.
+    {
+        static const bool canary = (std::getenv("DKR_CANARY") != nullptr);
+        if (canary && opened_) {
+            dkr_render_state st;
+            dkr_render_vertex v[6];
+            std::memset(&st, 0, sizeof(st));
+            st.combine = DKR_COMBINE_SHADE;
+            st.blend   = DKR_BLEND_OPAQUE;
+            st.depth   = DKR_DEPTH_DISABLED;
+            st.cull    = DKR_CULL_NONE;
+            std::memset(v, 0, sizeof(v));
+            {
+                const float xs[6] = { 400.0F, 500.0F, 400.0F,
+                                      400.0F, 500.0F, 400.0F };
+                const float ys[6] = { 100.0F, 100.0F, 200.0F,
+                                      250.0F, 250.0F, 350.0F };
+                for (int i = 0; i < 6; i++) {
+                    v[i].x = xs[i];
+                    v[i].y = ys[i];
+                    v[i].r = v[i].g = v[i].b = v[i].a = 255.0F;
+                    v[i].z = 0.0F;
+                    v[i].ooz = 0.0F;
+                    // The upper triangle as a rectangle carries it, the lower as
+                    // the game's geometry does.
+                    v[i].oow = (i < 3) ? 1.0F : 0.00625F;
+                    v[i].tmu[0][DKR_TMU_OOW] = v[i].oow;
+                }
+            }
+            backend_.set_state(backend_.self, &st);
+            backend_.draw_triangles(backend_.self, v, 2);
+        }
+    }
 
     // **One frame brought back, before it is presented.**
     //

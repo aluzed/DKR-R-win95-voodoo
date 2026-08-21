@@ -310,6 +310,10 @@ typedef struct {
        the viewport, halved. An over-estimate of the surface handed to the card,
        and the figure to read against the pixels that come back. */
     unsigned long      on_screen_area;
+    /* Triangles emitted with fog on. Glide takes its fog factor from the vertex
+       alpha and the fog colour was never decoded, so this counter and the black
+       screen are the same fact. */
+    unsigned long      emitted_fogged;
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;
@@ -407,6 +411,11 @@ typedef struct {
     /* `DKR_PAINT_WHITE=1`. Every emitted vertex opaque white, so that "does not
        rasterise" and "rasterises black on black" stop looking alike. */
     unsigned char        paint_white;
+    /* `DKR_NO_FOG=1`. Fog off for every emitted triangle. */
+    unsigned char        no_fog;
+    /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
+       state block, to tell a bad state from bad vertices. */
+    unsigned char        force_state;
 
     /* --- A textured rectangle in flight ------------------------------------ *
      *

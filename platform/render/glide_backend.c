@@ -675,12 +675,33 @@ static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
      * **entirely** black, which is the same defect turned up to the point of
      * being unmistakable: at equal depth a strict `LESS` rejects everything
      * after the first writer, and the first writer is the clear. */
-    if (gs.depth_mode && gs.depth_mask) {
-        gs.depth_mode(GR_DEPTHBUFFER_DISABLE);
-        gs.depth_mask(0);
-        b.has_state = 0;      /* the next set_state must lay the real one down */
+    /* **Through `gl_set_state`, not around it.**
+     *
+     * The first version programmed `grDepthMode` and `grDepthMask` here and set
+     * `b.has_state = 0`. That reaches the card, and it leaves the block the
+     * backend believes is loaded out of step with the one that is -- while the
+     * *decoder* still thinks its own state current, so `apply_state` returns
+     * early and never pushes again.
+     *
+     * The measurement that named it: giving every triangle the same state block
+     * a second time, immediately before drawing it, filled the screen. The block
+     * was not different -- 218 triangles opaque, shade, depth test-and-write,
+     * measured per frame -- it was simply *pushed*. What was wrong was a cache
+     * claiming to describe a card that something else had reprogrammed.
+     *
+     * So the rectangle takes the current block, turns depth off in it, and goes
+     * through the same door as everything else; `b.current` stays truthful, and
+     * the block is put back afterwards. */
+    {
+        const dkr_render_state saved = b.current;
+        const int had = b.has_state;
+        dkr_render_state st = saved;
+        st.depth = DKR_DEPTH_DISABLED;
+        gl_set_state(self, &st);
+        gl_draw_triangles(self, v, 2);
+        if (had) { gl_set_state(self, &saved); }
+        return;
     }
-    gl_draw_triangles(self, v, 2);
 }
 
 /* Translates (width, height) into a (LOD, aspect ratio) pair.
