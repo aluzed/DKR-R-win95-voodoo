@@ -31,8 +31,8 @@ namespace {
 // nothing to do with rendering.
 //
 // This is exactly the wrong split E07-S03 sets out to undo: separating what
-// depends on the platform from what does not, rather than
-// de laisser la frontiere passer la ou l'historique l'a mise.
+// depends on the platform from what does not, rather than leaving the boundary
+// where history happened to put it.
 gpr RdramAddress(std::uint32_t address) {
     return static_cast<gpr>(static_cast<std::int32_t>(address));
 }
