@@ -1546,7 +1546,13 @@ static void blend_rect_emit(dkr_f3d_context *c, int x0, int y0, int x1, int y1)
         c->state.fill_sample[k][2] = (short)x1;
         c->state.fill_sample[k][3] = (short)y1;
         c->state.fill_sample_color[k] = c->prim_color;
-        c->state.fill_sample_target[k] = 0xFFFFFFFFu;
+        /* The marker carries the blend and alpha-test the rectangle went out
+           under. A fade with alpha zero that still covers accuses one of the
+           two, and reading it here costs nothing over reading a bare marker. */
+        c->state.fill_sample_target[k] =
+            0xFFFF0000u |
+            ((unsigned int)c->render_state.blend << 8) |
+            (unsigned int)(c->render_state.alpha_test != 0);
         c->state.fill_sample_after[k] = c->state.emitted;
     }
     c->state.fill_sample_n++;
