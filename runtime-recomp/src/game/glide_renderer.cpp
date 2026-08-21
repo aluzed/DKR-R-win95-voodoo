@@ -283,7 +283,10 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
             const unsigned long hits = context_.state.center_hits;
             const unsigned long shown = hits < 16u ? hits : 16u;
             unsigned long k;
-            std::fprintf(stderr, "[gfx] frame dump: centre hits=%lu\n", hits);
+            std::fprintf(stderr,
+                     "[gfx] frame dump: triangles on-screen=%lu off-screen=%lu\n",
+                     context_.state.tri_on_screen, context_.state.tri_off_screen);
+        std::fprintf(stderr, "[gfx] frame dump: centre hits=%lu\n", hits);
             for (k = 0; k < shown; k++) {
                 // Oldest of the retained ones first, so the list reads in the
                 // order the card received them.
@@ -523,6 +526,15 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // named. See `cmd` for `OP_SETSCISSOR` in `f3ddkr.c`.
         static const bool scissor = (std::getenv("DKR_SCISSOR") != nullptr);
         context_.scissor_enabled = scissor ? 1 : 0;
+        // `DKR_FLATTEN_W=1` makes every triangle carry what a textured rectangle
+        // carries in oow/z/ooz. See the note at the emission in `f3ddkr.c`.
+        static const bool flatten = (std::getenv("DKR_FLATTEN_W") != nullptr);
+        context_.flatten_w = flatten ? 1 : 0;
+        // `DKR_PAINT_WHITE=1`: every emitted vertex opaque white. See the note at
+        // the emission in `f3ddkr.c` -- it separates "does not rasterise" from
+        // "rasterises black on a black clear", which every counter conflates.
+        static const bool white = (std::getenv("DKR_PAINT_WHITE") != nullptr);
+        context_.paint_white = white ? 1 : 0;
         // **Once, not per list.** The first version announced the forced mode
         // from inside this block, which runs for every display list: on a target
         // whose stderr is unbuffered and committed to disk per line, that is one

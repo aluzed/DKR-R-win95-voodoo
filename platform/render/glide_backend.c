@@ -658,6 +658,28 @@ static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
         v[i].z = 0.0f;
         v[i].ooz = 0.0f;
     }
+    /* --- And the depth **state** has to say so too --------------------------- *
+     *
+     * The three fields above were the whole of "depthless", and they are only
+     * half of it: they place the rectangle at the nearest depth, they do not
+     * stop it being written there. With the depth mask open -- which it is for
+     * seventy-nine per cent of what DKR draws -- a full-screen clear stamps the
+     * entire buffer at `w = 1`, and every triangle of the frame that follows is
+     * farther and fails `GR_CMP_LESS`.
+     *
+     * That is the whole of the black 3D frames. Measured on 21 August 2026:
+     * 237 of 254 triangles have their centroid on screen, 17 of them cover more
+     * than ten thousand pixels each, the combiner is forced to shade so no
+     * texture is involved, and 1,687 pixels come back painted. Forcing the
+     * triangles to carry the rectangle's own `oow` of 1 made the frame
+     * **entirely** black, which is the same defect turned up to the point of
+     * being unmistakable: at equal depth a strict `LESS` rejects everything
+     * after the first writer, and the first writer is the clear. */
+    if (gs.depth_mode && gs.depth_mask) {
+        gs.depth_mode(GR_DEPTHBUFFER_DISABLE);
+        gs.depth_mask(0);
+        b.has_state = 0;      /* the next set_state must lay the real one down */
+    }
     gl_draw_triangles(self, v, 2);
 }
 

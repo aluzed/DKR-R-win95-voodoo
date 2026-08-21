@@ -627,6 +627,29 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     c->state.big_tri_state[2] =
                         (unsigned char)c->render_state.depth;
                 }
+                /* --- On screen, or merely inside the guard band? ------------ *
+                 *
+                 * `proj_x_min/max` are extremes over the frame and land on the
+                 * guard band's clamp every time, so they cannot say where the
+                 * geometry *is*. The area above has the same weakness: a triangle
+                 * running from -959 to 509 counts six hundred thousand pixels and
+                 * puts twenty-nine thousand on screen.
+                 *
+                 * The centroid answers directly. Two hundred and fifty triangles
+                 * are handed to the card and seventeen hundred pixels come back,
+                 * with the combiner forced to shade -- so the loss is geometric,
+                 * and this says whether they are off screen or on it and empty. */
+                {
+                    const float mx = (v[0].x + v[1].x + v[2].x) * (1.0f / 3.0f);
+                    const float my = (v[0].y + v[1].y + v[2].y) * (1.0f / 3.0f);
+                    if (mx >= 0.0f && my >= 0.0f &&
+                        mx < (float)c->screen_width &&
+                        my < (float)c->screen_height) {
+                        c->state.tri_on_screen++;
+                    } else {
+                        c->state.tri_off_screen++;
+                    }
+                }
                 /* Does this triangle cover the centre of the screen? The three
                    edge functions carry the same sign for an interior point,
                    whichever way round the triangle is wound. */
@@ -731,6 +754,54 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     if (v[q].g > c->state.shade_max) { c->state.shade_max = v[q].g; }
                     if (v[q].b > c->state.shade_max) { c->state.shade_max = v[q].b; }
                     if (v[q].a > c->state.alpha_max) { c->state.alpha_max = v[q].a; }
+                }
+            }
+            /* --- `DKR_FLATTEN_W=1`, a diagnostic switch ---------------------- *
+             *
+             * Two hundred and thirty-seven triangles out of two hundred and
+             * fifty-four have their centroid on screen, seventeen of them cover
+             * more than ten thousand pixels each, and seventeen hundred pixels
+             * come back painted -- with the combiner forced to shade, so no
+             * texture is involved. The card is being handed on-screen geometry
+             * and is not drawing it.
+             *
+             * The one thing that separates these triangles from the textured
+             * rectangles, which paint 39,008 pixels on the same card in the same
+             * run, is what they carry in `oow`, `z` and `ooz`: a rectangle sets
+             * them to 1, 0, 0 and a triangle carries the projection's values --
+             * `oow` is a constant 0.00625 on the menu's orthographic lists.
+             *
+             * Flattening them makes a triangle carry exactly what a rectangle
+             * carries. If the screen then fills, the fault is in those three
+             * values or in what the card does with them; if it does not, it is
+             * somewhere none of the measurements so far has looked. */
+            /* --- `DKR_PAINT_WHITE=1` ------------------------------------------ *
+             *
+             * The last discriminator, and the one that admits no third reading.
+             * `differing` counts pixels unlike the corner, and the corner is the
+             * black clear -- so a triangle that rasterises perfectly and paints
+             * black is indistinguishable from one that does not rasterise at
+             * all. `shade_max` cannot separate them either: it is a maximum over
+             * the run, which is the extremes-against-distribution trap for the
+             * third time in this file.
+             *
+             * Opaque white on black settles it. If the frame fills, the geometry
+             * rasterises and what is wrong is the colour reaching it; if it does
+             * not, the card is refusing the triangles and nothing about the
+             * combiner matters yet. */
+            if (c->paint_white) {
+                int q;
+                for (q = 0; q < 3; q++) {
+                    v[q].r = v[q].g = v[q].b = v[q].a = 255.0f;
+                }
+            }
+            if (c->flatten_w) {
+                int q;
+                for (q = 0; q < 3; q++) {
+                    v[q].oow = 1.0f;
+                    v[q].z = 0.0f;
+                    v[q].ooz = 0.0f;
+                    v[q].tmu[0][DKR_TMU_OOW] = 1.0f;
                 }
             }
             if (c->backend && c->backend->draw_triangles) {
@@ -1528,6 +1599,10 @@ static void blend_rect_emit(dkr_f3d_context *c, int x0, int y0, int x1, int y1)
     apply_state(c);
     c->render_state.texture = 0;
     c->render_state.combine = DKR_COMBINE_SHADE;
+    /* Depthless in the state as well as in the vertices -- see the note in
+       `gl_fill_rect`. A fade that writes depth stamps the whole screen at the
+       nearest value and every triangle of the next list fails against it. */
+    c->render_state.depth = DKR_DEPTH_DISABLED;
     if (c->backend->set_state) {
         c->backend->set_state(c->backend->self, &c->render_state);
     }

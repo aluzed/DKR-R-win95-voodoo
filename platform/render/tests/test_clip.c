@@ -97,18 +97,27 @@ int main(void)
      * since the clipper also bounds the sides, a vertex created at the near
      * plane has a tiny `w` and gets re-clipped by the guard — which is the
      * intended effect, but makes the interpolation awkward to check by hand.
-     * Here every `w` is 1, so the guard simply falls at `x = 4`. */
+     * Here every `w` is 1, so the guard falls at `x = DKR_CLIP_GUARD`.
+     *
+     * **Written against the constant, not against its value.** This read `x = 4`
+     * in three places, so narrowing the band to measure what Glide actually
+     * accepts -- the question the header above says is still open -- failed a
+     * test of attribute interpolation, which has nothing to do with where the
+     * plane sits. A test that breaks when the thing it is not testing changes
+     * is a test that will be edited under pressure. */
     {
+        const float g = DKR_CLIP_GUARD;
         int n, i, found = 0;
         in[0] = vertex(0.0f, 0.0f, 0.0f, 1.0f, 100.0f, 0.0f, 0.0f);
-        in[1] = vertex(8.0f, 0.0f, 0.0f, 1.0f, 200.0f, 1.0f, 0.5f);  /* past the guard */
+        /* Twice the guard, so the crossing falls exactly halfway. */
+        in[1] = vertex(2.0f * g, 0.0f, 0.0f, 1.0f, 200.0f, 1.0f, 0.5f);
         in[2] = vertex(0.0f, 2.0f, 0.0f, 1.0f, 100.0f, 0.0f, 1.0f);
         n = dkr_clip_near(in, out);
         check("the triangle overrunning the guard is clipped", n >= 1);
         for (i = 0; i < n * 3; i++) {
-            /* The vertex created on edge 0-1: x is 4, that is halfway, so every
-               attribute must be the average of the two. */
-            if (out[i].x > 3.9f && out[i].x < 4.1f && out[i].y < 0.5f) {
+            /* The vertex created on edge 0-1 sits at the guard plane, halfway,
+               so every attribute must be the average of the two. */
+            if (out[i].x > g - 0.1f && out[i].x < g + 0.1f && out[i].y < 0.5f) {
                 found = 1;
                 check_near("the colour is interpolated there", out[i].r, 150.0, 1.0);
                 check_near("the s coordinate too",             out[i].s,   0.5, 0.01);

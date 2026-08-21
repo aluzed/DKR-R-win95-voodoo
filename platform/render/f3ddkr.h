@@ -302,6 +302,10 @@ typedef struct {
     unsigned long      center_area[16];
     unsigned long      center_ordinal[16];
     unsigned long      center_hits;
+    /* Emitted triangles whose centroid lands inside the viewport, against those
+       whose does not. The projected extremes clamp to the guard band and the
+       area counts guard-band pixels, so neither can say where the geometry is. */
+    unsigned long      tri_on_screen, tri_off_screen;
     unsigned long      tri_st_degenerate;
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;
@@ -392,6 +396,13 @@ typedef struct {
     /* `DKR_SCISSOR=1`. The command is decoded and counted either way; this says
        whether the clip window reaches the card. See the note in `f3ddkr.c`. */
     unsigned char        scissor_enabled;
+    /* `DKR_FLATTEN_W=1`. Forces every emitted triangle to carry a rectangle's
+       depth values -- oow 1, z 0, ooz 0 -- which is the one difference between
+       the geometry that does not paint and the rectangles that do. */
+    unsigned char        flatten_w;
+    /* `DKR_PAINT_WHITE=1`. Every emitted vertex opaque white, so that "does not
+       rasterise" and "rasterises black on black" stop looking alike. */
+    unsigned char        paint_white;
 
     /* --- A textured rectangle in flight ------------------------------------ *
      *

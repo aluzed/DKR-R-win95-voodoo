@@ -1360,3 +1360,55 @@ down at half size, and nothing resets the card's clip window between lists. So
 the command is decoded and counted, and the effect is behind `DKR_SCISSOR=1`.
 Leaving a change in the default build that is known to make the image worse would
 be trading a measurement for a feature.
+
+## The geometry rasterises; there is almost none of it — 21 August 2026
+
+With the covering sheet gone, the 3D lists show one small object and black. Four
+hypotheses were put and three refuted, each by a switch that costs a run and no
+code.
+
+| switch | what it tests | frame 59 |
+|---|---|---|
+| — | as built | 1,687 px painted |
+| `DKR_FORCE_COMBINE=shade` | the texture and combiner | 1,788 |
+| `DKR_NO_DEPTH=1` | the depth test | 292 |
+| `DKR_FLATTEN_W=1` | `oow`/`z`/`ooz` | 0 |
+| `DKR_PAINT_WHITE=1` | the colour reaching the card | 2,769 |
+
+**`DKR_PAINT_WHITE` is the one that admits no third reading.** `differing` counts
+pixels unlike the corner and the corner is the black clear, so a triangle that
+rasterises perfectly and paints black looks exactly like one that does not
+rasterise. `shade_max` cannot separate them either — it is a maximum over the
+run, the extremes-against-distribution trap for the third time in this file.
+Opaque white on black settles it, and it painted 2,769 pixels out of 307,200.
+
+Looking at those pixels settles the rest: they form **a coherent object** with a
+clean silhouette, about 148x80, not slivers. So rasterisation is not broken. The
+port draws one model and nothing else.
+
+What is still unexplained, and measured twice: three triangles of areas 622,
+2,978 and 87,607 cover the screen's centre, are handed over opaque white with the
+depth test satisfiable, and **the centre pixel stays black**.
+
+### And a caution about every small number above
+
+Two runs of the same build at the same list gave 2,731 and 292 painted pixels.
+The `gGameMode` anchor fixes the list index after the menu is reached; it does
+not fix the animation, and the machine's speed varies between runs. **Differences
+of a few hundred pixels between runs are not measurements.** Only the large,
+repeated facts survive: the object paints, the big triangles do not, and forcing
+white changes the count by a factor rather than an order of magnitude.
+
+### `DKR_CLIP_GUARD` was tried and put back
+
+Narrowing the band from 4 to 1.05 does what it should — every centroid then lands
+on screen and the over-ten-thousand-pixel bucket falls from 17 triangles to 6 —
+and changes the painted count not at all. The header's open question, what value
+Glide actually accepts, is still open, and 4.0 was chosen for a precision reason
+that still holds. It is back at 4.0.
+
+The clip test had `x = 4` written into it in three places, so narrowing the band
+failed a check about attribute interpolation, which has nothing to do with where
+the plane sits. It is now written against `DKR_CLIP_GUARD`. A test that breaks
+when the thing it is not testing changes is a test that gets edited under
+pressure.
