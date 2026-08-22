@@ -753,8 +753,15 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                    edge functions carry the same sign for an interior point,
                    whichever way round the triangle is wound. */
                 {
-                    const float cx = (float)c->screen_width  * 0.5f;
-                    const float cy = (float)c->screen_height * 0.5f;
+                    /* `DKR_PROBE=x,y` moves the probe. It sat at the centre of
+                       the screen because that is where the interesting thing was
+                       the day it was written; the interesting thing has since
+                       moved, and rebuilding to look at another pixel is a poor
+                       trade for one line. Zero means the centre. */
+                    const float cx = c->probe_x > 0
+                        ? (float)c->probe_x : (float)c->screen_width  * 0.5f;
+                    const float cy = c->probe_y > 0
+                        ? (float)c->probe_y : (float)c->screen_height * 0.5f;
                     const float e0 = (v[1].x - v[0].x) * (cy - v[0].y) -
                                      (v[1].y - v[0].y) * (cx - v[0].x);
                     const float e1 = (v[2].x - v[1].x) * (cy - v[1].y) -
@@ -1481,6 +1488,27 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         }
         if (seen == 0u) { c->state.textures_black++; }
         else            { c->state.textures_with_content++; }
+        /* --- All-black against mostly-black ------------------------------- *
+         *
+         * `textures_black` asks whether *every* texel is zero, and answered 0
+         * over the whole run while the screen showed a third of itself black.
+         * `textures_uniform` closed one half of that gap -- a texture can be
+         * flat without being zero -- and this closes the other: a texture can
+         * carry content in a corner and be black everywhere a surface actually
+         * samples. Three counters for one question, and each was needed because
+         * the previous one answered a narrower one than its name suggested. */
+        {
+            unsigned int dark = 0;
+            for (i = 0; i < n; i++) {
+                /* RGB all zero, alpha ignored: a transparent black and an opaque
+                   black look the same once the blender is opaque, which it is
+                   for 218 of the 235 triangles measured. */
+                if ((c->texels[i] & 0x7FFFu) == 0u) { dark++; }
+            }
+            if (n > 0u && dark * 4u >= n * 3u) {
+                c->state.textures_mostly_black++;
+            }
+        }
         if (n == 0u) {
             /* No texels at all: neither uniform nor varied, and counting it as
                either would flatter whichever total it joined. */
@@ -2054,8 +2082,8 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
      * that comes last erases the frame. Recorded with `combine = 0xFF` as the
      * marker, since no combiner mode reaches that value. */
     {
-        const int cx = (int)(c->screen_width / 2u);
-        const int cy = (int)(c->screen_height / 2u);
+        const int cx = c->probe_x > 0 ? c->probe_x : (int)(c->screen_width / 2u);
+        const int cy = c->probe_y > 0 ? c->probe_y : (int)(c->screen_height / 2u);
         if (cx >= x0 && cx < x1 && cy >= y0 && cy < y1) {
             const unsigned long s = c->state.center_hits % 16u;
             c->state.center_state[s][0] = 0xFFu;

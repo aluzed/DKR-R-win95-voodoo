@@ -857,6 +857,24 @@ static dkr_texture_handle gl_texture_upload(void *self,
 
     g_tex[slot].key     = desc->key;
     g_tex[slot].address = address;
+    /* --- An upload invalidates the binding, and the block cannot say so ------ *
+     *
+     * `gl_set_state` short-circuits when the render-state block is byte for byte
+     * the one the card holds, and the block names a texture by **handle**. The
+     * handle survives a re-upload; the TMU address does not. So a texture
+     * re-uploaded to a different address under the same handle leaves
+     * `grTexSource` pointing at the old one, and the surface samples whatever
+     * has since been written there.
+     *
+     * The port re-uploads almost everything -- 1,067 uploads against 15 reuses
+     * in a run -- so addresses churn constantly while handles repeat, which is
+     * the worst case for this. Invalidating here costs one full state
+     * programming per upload and removes a class of "a piece of scenery wearing
+     * another's pattern" that the descriptor table was already fixed once for.
+     *
+     * Same discipline as `gl_fill_rect`: whatever changes the card behind the
+     * cache's back must tell the cache. */
+    b.has_state = 0;
     g_tex[slot].bytes   = bytes;
     g_tex[slot].info    = info;
     g_tex[slot].info.data = 0;   /* the pixels do not belong to us */

@@ -199,6 +199,7 @@ typedef struct {
     unsigned long     texture_shifts_applied;
     unsigned long     texture_offset_dropped;
     unsigned long     textures_uniform, textures_varied;
+    unsigned long     textures_mostly_black;   /* three quarters of texels RGB=0 */
     unsigned int      uniform_sample_texel;
     short             uniform_sample_w, uniform_sample_h;
     unsigned int      uniform_sample_format;
@@ -443,6 +444,8 @@ typedef struct {
        list which draws before its first triangle command behaves as it did. */
     unsigned char        batch_textured;
     unsigned short       tile_uls, tile_ult;   /* the tile's origin in the image */
+    /* Where the paint stack is followed. Zero is the centre of the screen. */
+    int                  probe_x, probe_y;
     /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
        state block, to tell a bad state from bad vertices. */
     unsigned char        force_state;

@@ -83,6 +83,9 @@ int read_word(const std::uint8_t* rdram, unsigned address) {
 //
 // The reject is what we are after; the rest is context. They cannot draw from
 // the same bucket.
+int g_probe_x = 0;
+int g_probe_y = 0;
+
 unsigned g_trace_rejects = 24;
 unsigned g_trace_context = 24;
 
@@ -364,9 +367,11 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                      context_.state.texture_offset_dropped,
                      context_.state.tiles_decoded);
         std::fprintf(stderr,
-                     "[gfx] frame dump: textures uniform=%lu varied=%lu\n",
+                     "[gfx] frame dump: textures uniform=%lu varied=%lu "
+                     "mostly-black=%lu\n",
                      context_.state.textures_uniform,
-                     context_.state.textures_varied);
+                     context_.state.textures_varied,
+                     context_.state.textures_mostly_black);
         if (context_.state.uniform_sample_texel != 0u) {
             std::fprintf(stderr,
                          "[gfx] frame dump: uniform sample texel=%04X %dx%d fmt=%u\n",
@@ -596,6 +601,21 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         context_.force_state = fstate;
         // `DKR_NEUTRAL=<mask>`: neutralise fields of the render state one bit at
         // a time. 1 texture, 2 filter, 4 blend, 8 fog, 16 constant colour.
+        // `DKR_PROBE=x,y` moves the paint-stack probe off the screen centre.
+        static const bool probe_set = [] () -> bool {
+            const char* v = std::getenv("DKR_PROBE");
+            if (v == nullptr) { return false; }
+            int px = 0, py = 0;
+            if (std::sscanf(v, "%d,%d", &px, &py) == 2) {
+                g_probe_x = px;
+                g_probe_y = py;
+                return true;
+            }
+            return false;
+        } ();
+        (void)probe_set;
+        context_.probe_x = g_probe_x;
+        context_.probe_y = g_probe_y;
         static const unsigned char neutral = [] () -> unsigned char {
             const char* v = std::getenv("DKR_NEUTRAL");
             if (v == nullptr) { return 0; }

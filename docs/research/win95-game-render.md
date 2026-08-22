@@ -1770,3 +1770,35 @@ holds the last texture *converted*, not the one *bound*. A triangle drawing on a
 cache hit leaves an older texture in it, and nothing in the printed line says
 which case one is looking at. It did rule out `uls`/`ult`, and it is flagged in
 place rather than trusted.
+
+## The dark faces: five more eliminations, and no cause — 22 August 2026
+
+A single triangle covers the probe at (560, 240) — `DKR_PROBE=x,y` now moves the
+paint stack off the screen centre, so no ordering and no depth contest can be
+invoked. It is opaque, `combine=3`, its shade is white, and the pixel is black.
+
+Eliminated since, each by a measurement:
+
+- **The catalogue's setups.** `DKR_FORCE_COMBINE=texel` disables the recipe and
+  uses the four-mode shorthand: still black, 110,476 pixels against 116,027.
+- **Mostly-black textures.** `textures_black` asks whether *every* texel is zero
+  and `textures_uniform` whether they are all equal; neither asks whether a
+  texture is black where a surface samples. A third counter says
+  `mostly-black=0` — not one texture in the frame has three quarters of its
+  texels at RGB zero.
+- **A stale texture binding.** The render-state block names a texture by handle,
+  and the handle survives a re-upload while the TMU address does not — so a
+  short-circuited `gl_set_state` could leave `grTexSource` on the old address.
+  With 1,067 uploads against 15 reuses in a run, that is the worst case for it.
+  An upload now invalidates the cache. No change on screen, and the fix is kept:
+  it is the same discipline `gl_fill_rect` was given, and the defect it closes is
+  the one the descriptor table was already repaired for once.
+
+What remains unexplained is exact and small: one opaque triangle, one white
+shade, one texture that is neither black nor uniform, and a black pixel.
+
+> The one reading not yet excluded is that `center_texel0` has been lying the
+> whole time — it reads the decoder's staging buffer, which holds the last
+> texture *converted* rather than the one *bound*, and it is on its word that the
+> sampled texel "is a blue". Until that is read from the bound texture instead,
+> the blue is a claim and not a measurement, and this section rests on it.
