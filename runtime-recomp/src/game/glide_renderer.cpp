@@ -699,8 +699,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // If only one does, `oow` is the whole story -- and `DKR_FLATTEN_W=1`,
     // which sets it to 1 and paints nothing at all, says which way round.
     {
-        static const bool canary = (std::getenv("DKR_CANARY") != nullptr);
-        if (canary && opened_) {
+        static const int canary_mode = [] () -> int {
+            const char* v = std::getenv("DKR_CANARY");
+            if (v == nullptr) { return 0; }
+            const long n = std::strtol(v, nullptr, 10);
+            return static_cast<int>(n < 1 ? 1 : (n > 2 ? 2 : n));
+        } ();
+        if (canary_mode != 0 && opened_) {
             dkr_render_state st;
             dkr_render_vertex v[6];
             std::memset(&st, 0, sizeof(st));
@@ -726,7 +731,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                     v[i].tmu[0][DKR_TMU_OOW] = v[i].oow;
                 }
             }
-            backend_.set_state(backend_.self, &st);
+            // `DKR_CANARY=2` draws without pushing a state at all, inheriting
+            // whatever the list left on the card.
+            //
+            // The two facts to separate: the textured combiner never paints, and
+            // the untextured one paints only if re-pushed before every triangle
+            // -- a factor of forty for writing the same registers again. Both
+            // point at the state the card actually holds between draws, which is
+            // the one thing here that has only ever been inferred from what was
+            // written to it.
+            //
+            // If this canary paints, the state a list leaves behind is drawable
+            // and the decay reading is wrong. If it does not, the list leaves the
+            // card unable to draw, and the next question is at what point.
+            if (canary_mode < 2) {
+                backend_.set_state(backend_.self, &st);
+            }
             backend_.draw_triangles(backend_.self, v, 2);
         }
     }

@@ -1894,3 +1894,45 @@ the catalogue's setups, the wrap modes, the tile origin, `texEnabled`, the
 texture-offset indirection, a stale binding, and the texture's content — the
 triangle at the probe samples a texture of mean luminance 21/31 across its full
 extent, with a white shade and opaque blending, and paints black.
+
+### Correction, same day: that table compared two different quantities
+
+`differing` counts pixels **unlike the corner**, and the corner is not the same
+colour in those runs. Three of the four rows carried `DKR_PAINT_WHITE=1` and one
+did not, so the figures were not measuring the same thing at all — and where the
+frame came back white, `differing` was counting the pixels that had *not* been
+painted.
+
+Read properly, with `distinct=2` in every white-forced run so the arithmetic is
+exact:
+
+| combiner | state pushed | corner | painted |
+|---|---|---|---:|
+| shade, texture bound | when it changes | black | **2,769** |
+| the game's own | before every triangle | black | **2,792** |
+| shade, texture bound | before every triangle | white | **193,919** |
+| plain block (shade, no texture) | before every triangle | white | **193,715** |
+
+The direction survives and the magnitude changes: a factor of seventy, not
+forty. What also changes is the shape of the rule. It is not "the textured
+combiner never paints" — the third row has a texture bound. It is:
+
+> **`DKR_COMBINE_SHADE`, pushed before every triangle, paints. Every other
+> combination does not.**
+
+And the first row of the earlier table should never have been in it: taken from a
+run without `DKR_PAINT_WHITE`, against a sky-coloured corner, its 1,769 was not a
+count of painted pixels in any sense.
+
+### And the canary refutes the decay reading
+
+`DKR_CANARY=2` draws the two probe triangles **without pushing any state**,
+inheriting whatever the list left on the card. Both paint, in pure white:
+6,330 and 8,688 pixels in their boxes. So the state a list leaves behind is
+perfectly drawable, and "the combiner decays between draws" — which the factor of
+seventy seemed to demand — is wrong.
+
+Two measurements that cannot both be accommodated by any story about the card
+losing state. The next step is not another switch; it is to stop reading
+`differing` as a coverage figure, which is the second time in two days that a
+counter has been read as answering a question it was not asked.
