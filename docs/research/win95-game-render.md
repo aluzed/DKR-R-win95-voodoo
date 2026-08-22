@@ -1546,3 +1546,39 @@ before any single bit was read.
 > takes the next five with it. Every diagnostic in this file that modifies state
 > now does so where the state is handed over, and the mask is validated against a
 > known result before its bits are believed.
+
+## E05-S03's catalogue is wired up, and it changes almost nothing — 22 August 2026
+
+`dkr_cc_lookup` was being called to *count* matches and its answer discarded, so
+`approximate` equalled `catalogued` twelve thousand times a run and not one of
+the table's twenty-nine Glide setups was ever applied. The index now travels in
+the render state — an index and not a pointer, the block being compared with
+`memcmp` — and `gl_set_state` applies the setup where there is one.
+
+`catalogued=578 unknown=341` on the menu's 3D lists, so nearly two thirds now go
+through the table. **The picture is unchanged**: 1,641 distinct colours against
+1,790, the same sky, the same shapes.
+
+That is worth stating plainly rather than quietly. The four-mode shorthand was
+already adequate for what these lists draw, and the gap E05-S03 has carried since
+it was written was a real gap in the code and not, here, a defect on screen. It
+will matter where the shorthand is wrong — the table exists for the
+configurations it cannot express — and closing it now means the next wrong colour
+is not attributable to it.
+
+The frame's own accounting is consistent for the first time: 431,928 pixels of
+on-screen surface handed over, 306,895 painted, `fogged=0`.
+
+### What is wrong now, and the next lead
+
+A third of the frame is black, and the sky's clouds are magenta where they should
+be white. `texture.c` produces **RGBA5551 with alpha in bit 0** — "the layout
+E05-S02 measured on the card" — and `gl_texture_upload` declares
+`GR_TEXFMT_ARGB_1555`, which is `a rrrrr ggggg bbbbb`, alpha in bit **15**. On
+paper those disagree by a one-bit rotation.
+
+The measurement may still be right; what makes it worth re-opening is that a
+one-bit rotation is **invisible on a grey**, since `grey_to_5551` writes the same
+five bits into all three channels. If E05-S02's probe used greys or a symmetric
+pattern, it could not have distinguished the two layouts — which is exactly how
+the 64x64 texture probe missed the aspect-ratio rule a week ago.

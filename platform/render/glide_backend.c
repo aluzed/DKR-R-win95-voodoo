@@ -592,7 +592,27 @@ static void gl_set_state(void *self, const dkr_render_state *state)
     b.current   = *state;
     b.has_state = 1;
 
-    apply_combine(state->combine, state->texture, state->constant_color);
+    /* --- The table decides, when it has an entry ---------------------------- *
+     *
+     * `apply_combine`'s four modes are a shorthand over twenty-nine catalogued
+     * configurations, and E05-S03 generated the table precisely so that the
+     * shorthand would stop being the last word. `recipe` is the index the
+     * decoder matched; -1 means the configuration is not in the table, and then
+     * the shorthand is all there is.
+     *
+     * The texture still has to be bound -- the recipe says how to combine a
+     * texel, not where it lives. */
+    if (state->recipe >= 0 && state->recipe < dkr_cc_table_count()) {
+        const dkr_cc_entry *e = dkr_cc_table_at(state->recipe);
+        if (e != 0) {
+            if (e->setup.uses_texture) { bind_texture(state->texture); }
+            dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
+        } else {
+            apply_combine(state->combine, state->texture, state->constant_color);
+        }
+    } else {
+        apply_combine(state->combine, state->texture, state->constant_color);
+    }
     apply_texture_modes(state);
     apply_blend(state->blend);
     apply_depth(state->depth);

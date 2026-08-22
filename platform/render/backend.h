@@ -197,6 +197,19 @@ typedef struct {
        mode that uses one. **NATIVE** — `grConstantColorValue`. It is what tells
        one pass of DKR's multi-pass text from the next; see `rdp_state.h`. */
     unsigned int       constant_color;
+    /* --- Which entry of the E05-S03 catalogue applies, or -1 ----------------- *
+     *
+     * `combine` above is a four-mode shorthand; the generated table covers
+     * twenty-nine configurations and carries, for each, the Glide setup that
+     * renders it. `dkr_cc_lookup` was being called to *count* matches and its
+     * answer thrown away, so `approximate` equalled `catalogued` and the setups
+     * were never applied -- the gap E05-S03 has carried since it was written.
+     *
+     * An **index**, not a pointer: the block is compared with `memcmp`, and a
+     * pointer would make it depend on the pointer width and on where the table
+     * happens to sit. -1 means "not catalogued, use `combine`". */
+    short              recipe;
+    short              recipe_pad;    /* keeps the block free of implicit padding */
     dkr_blend_mode     blend;
     dkr_depth_mode     depth;
     dkr_cull_mode      cull;

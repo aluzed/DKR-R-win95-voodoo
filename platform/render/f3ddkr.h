@@ -415,6 +415,10 @@ typedef struct {
        vertex alpha, which in this port carries opacity and not a fog
        coefficient, and the fog colour is never decoded. See `apply_state`. */
     unsigned char        fog_enabled_override;
+    /* The catalogue entry matching the current combiner, or -1. Kept in the
+       context rather than in the render state's translation, for the same
+       reason as the texture handle: it is a decoder resource. */
+    short                catalogue_index;
     /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
        state block, to tell a bad state from bad vertices. */
     unsigned char        force_state;

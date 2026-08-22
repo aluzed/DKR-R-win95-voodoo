@@ -1073,7 +1073,23 @@ static void apply_state(dkr_f3d_context *c)
      * generating the table was meant to avoid. */
     {
         const unsigned long long key = dkr_rdp_combiner_key(&rdp.combiner, rdp.cycle);
-        if (dkr_cc_lookup(key) != 0) {
+        const dkr_cc_entry *entry = dkr_cc_lookup(key);
+        /* **And the answer is kept this time.** This lookup existed to count
+           matches, and its result was discarded -- so `approximate` equalled
+           `catalogued`, twelve thousand times a run, and every one of the
+           table's Glide setups went unused. The index travels in the render
+           state; the backend applies the setup rather than the four-mode
+           shorthand. */
+        c->catalogue_index = -1;
+        if (entry != 0) {
+            int n = dkr_cc_table_count();
+            int i;
+            for (i = 0; i < n; i++) {
+                if (dkr_cc_table_at(i) == entry) {
+                    c->catalogue_index = (short)i;
+                    break;
+                }
+            }
             c->state.combiners_known++;
         } else {
             unsigned i;
@@ -1165,6 +1181,13 @@ static void apply_state(dkr_f3d_context *c)
      * is a decoder resource, not an RDP mode — and it is laid back down after
      * the translation. */
     c->render_state.texture = c->bound_texture;
+    /* Laid back down after the translation, like the texture handle and for the
+       same reason: `dkr_rdp_to_render_state` fills the whole block from the RDP
+       state, and the RDP state knows nothing of our catalogue. `force_combine`
+       turns it off, because forcing a mode and then applying a table setup that
+       ignores the mode would make the switch lie. */
+    c->render_state.recipe = c->force_combine ? (short)-1 : c->catalogue_index;
+    c->render_state.recipe_pad = 0;
     if (!exact) {
         /* **An approximate translation that does not announce itself is worse
            than a failure**: it produces a plausible, wrong image. The counter is
