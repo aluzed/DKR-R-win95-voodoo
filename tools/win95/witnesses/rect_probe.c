@@ -143,7 +143,7 @@ int main(void)
     if (!bk.open(bk.self, W, H)) { say("FAILED to open\n"); return 1; }
 
     memset(&d, 0, sizeof(d));
-    d.key = 0x9999ull; d.format = DKR_TEXFMT_RGBA5551;
+    d.key = 0x9999ull; d.format = DKR_TEXFMT_ARGB1555;
     d.width = TW; d.height = TH;
     d.pixels = g_grid; d.size_bytes = sizeof(g_grid);
     bk.begin_frame(bk.self, 0x000000);

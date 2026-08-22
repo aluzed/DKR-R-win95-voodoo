@@ -251,7 +251,7 @@ typedef struct {
  * on the other hand, is entirely the backend's job: Glide exposes flat memory
  * and an address, with no allocator. */
 typedef enum {
-    DKR_TEXFMT_RGBA5551 = 0,      /* the Voodoo's natural format */
+    DKR_TEXFMT_ARGB1555 = 0,      /* the Voodoo's natural format */
     DKR_TEXFMT_RGBA8888,          /* to be converted: the Voodoo 2 does not take it */
     DKR_TEXFMT_INTENSITY8,
     DKR_TEXFMT_COUNT

@@ -182,7 +182,7 @@ int main(void)
 
     memset(&desc, 0, sizeof(desc));
     desc.key = 0xC0FFEEull;
-    desc.format = DKR_TEXFMT_RGBA5551;
+    desc.format = DKR_TEXFMT_ARGB1555;
     desc.width = TW; desc.height = TH;
     desc.pixels = g_texture; desc.size_bytes = sizeof(g_texture);
     handle = bk.texture_upload(bk.self, &desc);

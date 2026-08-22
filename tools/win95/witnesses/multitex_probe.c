@@ -126,7 +126,7 @@ static dkr_texture_handle upload(dkr_render_backend *bk, const void *px,
 {
     dkr_texture_desc d;
     memset(&d, 0, sizeof(d));
-    d.key = key; d.format = DKR_TEXFMT_RGBA5551;
+    d.key = key; d.format = DKR_TEXFMT_ARGB1555;
     d.width = TW; d.height = TH;
     d.pixels = px; d.size_bytes = (size_t)(TW * TH * 2);
     d.tmu = tmu;

@@ -1582,3 +1582,58 @@ one-bit rotation is **invisible on a grey**, since `grey_to_5551` writes the sam
 five bits into all three channels. If E05-S02's probe used greys or a symmetric
 pattern, it could not have distinguished the two layouts — which is exactly how
 the 64x64 texture probe missed the aspect-ratio rule a week ago.
+
+## The texel layout was rotated by one bit — 22 August 2026
+
+`texture.c` produced the N64's `rrrrr ggggg bbbbb a`, alpha in bit 0, and called
+it "the layout E05-S02 measured on the card". **E05-S02 measured no such thing.**
+Its probe measured texture *memory sizes* — that ARGB 1555 costs two bytes a
+texel — and the bit order never entered into it. A sentence in a comment turned
+that into a measurement it never was, and `gl_texture_upload` has been declaring
+`GR_TEXFMT_ARGB_1555`, alpha in bit **15**, since the day it was written.
+
+What settles it is an arithmetic identity on a pixel actually observed. The
+menu's sky came back with clouds in magenta, `(140, 8, 239)`, which is
+`(17, 1, 29)` in five bits:
+
+```
+0xC43D read as `a rrrrr ggggg bbbbb`  ->  a=1  r=17  g=1   b=29    the magenta
+0xC43D read as `rrrrr ggggg bbbbb a`  ->  r=24 g=16  b=30  a=1     a pale blue
+```
+
+A pale blue cloud is what the game draws. The card was reading ARGB 1555 and this
+file was writing RGBA 5551.
+
+### Why four months did not catch it
+
+The rotation is nearly invisible on the colours one probes with. Every channel
+keeps its position to within one bit, so pure red, pure green, pure blue, black
+and white all come through recognisably — `0xFFFF` is `0xFFFF` under either
+reading. It shows only on **mixed** colours, and worst where red is bright, red's
+top bit being the one that becomes alpha.
+
+And a grey ramp cannot see it at all, because `grey_to_5551` writes the same five
+bits into all three channels. The test that guarded this path asserted that
+RGBA16 "returns the texels unchanged — it is already 5551", on white, pure red,
+black and pure green: four values chosen so that every one of them survives the
+rotation. It now checks the pale blue that named the defect, whose green channel
+of 16 is precisely what the rotation destroys.
+
+### What it changes
+
+| | before | after |
+|---|---:|---:|
+| Title screen, distinct colours | 1,857 | **2,993** |
+| Menu sky, corner | `2982FF` | `94BAFF` |
+
+The title screen is now the game's own logo: red on gold with the star in the O,
+`RACING` in its blue-green-yellow gradient, the trademark, on black. The purple
+box that had been sitting behind it was the rotation. The menu's sky is a pale
+blue with soft white clouds and no magenta anywhere.
+
+> **Third instance of the same failure in one week**, and the pattern is now hard
+> to miss: the 64x64 checkerboard that could not see an aspect ratio, the grey
+> probe that could not see a bit rotation, the switch that modified a copy and
+> could not act. Each was a measurement whose *subject* made the wrong answer
+> indistinguishable from the right one. The question to ask of an instrument is
+> not "is it correct" but **"what would it print if the thing were broken?"**

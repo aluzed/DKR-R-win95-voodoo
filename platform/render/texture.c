@@ -32,10 +32,48 @@ static unsigned short read16(const unsigned char *rdram, int native, unsigned in
  * *hard* where the game wanted soft, and that shows mostly on shadows and
  * haloes. The threshold sits at midpoint for want of a better choice, and it is
  * flagged here rather than discovered. */
+/* --- The word the card actually reads --------------------------------------- *
+ *
+ * **`a rrrrr ggggg bbbbb`, alpha in bit 15.** That is `GR_TEXFMT_ARGB_1555`,
+ * which is what `gl_texture_upload` has always declared to Glide. This file used
+ * to produce the N64's own `rrrrr ggggg bbbbb a` -- alpha in bit **0** -- and
+ * called it "the layout E05-S02 measured on the card".
+ *
+ * E05-S02 measured no such thing. Its probe measured **texture memory sizes**,
+ * and established that ARGB 1555 costs two bytes a texel; the bit order never
+ * entered into it. A sentence in a comment turned that into a measurement it
+ * never was.
+ *
+ * What settles it is an arithmetic identity on a pixel actually observed. The
+ * menu's sky came back with clouds in magenta, `(140, 8, 239)`, which is
+ * `(17, 1, 29)` in five bits. Read the stored word back the other way:
+ *
+ *     0xC43D as `a rrrrr ggggg bbbbb`  ->  a=1  r=17  g=1   b=29   (the magenta)
+ *     0xC43D as `rrrrr ggggg bbbbb a`  ->  r=24 g=16  b=30  a=1    (a pale blue)
+ *
+ * A pale blue cloud is what the game draws and magenta is what appeared, so the
+ * card is reading ARGB 1555 and this file was writing RGBA 5551.
+ *
+ * **Why it survived so long.** The rotation is nearly invisible on the colours
+ * one probes with. Every channel keeps its position to within one bit, so pure
+ * red, pure green, pure blue, black and white all come through recognisably --
+ * `0xFFFF` is `0xFFFF` under either reading. It shows only on mixed colours, and
+ * worst where red is bright, red's top bit being the one that becomes alpha. A
+ * grey ramp cannot see it at all, because `grey_to_5551` writes the same five
+ * bits into all three channels. */
+static unsigned short pack_argb1555(unsigned int r5, unsigned int g5,
+                                    unsigned int b5, unsigned int a1)
+{
+    return (unsigned short)(((a1 ? 1u : 0u) << 15) |
+                            ((r5 & 0x1Fu) << 10) |
+                            ((g5 & 0x1Fu) <<  5) |
+                             (b5 & 0x1Fu));
+}
+
 static unsigned short grey_to_5551(unsigned int i, unsigned int alpha)
 {
     const unsigned int c = i >> 3;   /* 8 bits down to 5 */
-    return (unsigned short)((c << 11) | (c << 6) | (c << 1) | (alpha ? 1u : 0u));
+    return pack_argb1555(c, c, c, alpha);
 }
 
 unsigned int dkr_texture_bytes(dkr_n64_size size, int width, int height)
@@ -97,11 +135,14 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
     n = (unsigned int)width * (unsigned int)height;
 
     if (format == DKR_N64_FMT_RGBA && size == DKR_N64_SIZ_16) {
-        /* DKR's common case, and the only one that is a copy: the RDP already
-           stores 5551 with alpha in bit 0. Nothing to convert, only to put back
-           into the host's byte order. */
+        /* DKR's common case, and it is **not** a copy. The RDP stores
+           `rrrrr ggggg bbbbb a`; the card reads `a rrrrr ggggg bbbbb`. The two
+           differ by a rotation of one bit, which is why this path was a
+           `read16` and nothing else for four months -- see `pack_argb1555`. */
         for (i = 0; i < n; i++) {
-            out[i] = read16(rdram, native, address + i * 2u);
+            const unsigned int w = read16(rdram, native, address + i * 2u);
+            out[i] = pack_argb1555((w >> 11) & 0x1Fu, (w >> 6) & 0x1Fu,
+                                   (w >> 1) & 0x1Fu, w & 1u);
         }
         if (stats) { stats->converted++; }
         return 1;
@@ -114,8 +155,7 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
             const unsigned int g = read8(rdram, native, a + 1u) >> 3;
             const unsigned int b = read8(rdram, native, a + 2u) >> 3;
             const unsigned int al = read8(rdram, native, a + 3u);
-            out[i] = (unsigned short)((r << 11) | (g << 6) | (b << 1) |
-                                      (al >= 128u ? 1u : 0u));
+            out[i] = pack_argb1555(r, g, b, al >= 128u);
         }
         if (stats) { stats->converted++; }
         return 1;

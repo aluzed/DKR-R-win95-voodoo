@@ -62,9 +62,44 @@ int main(void)
     check("RGBA16 converts",
           dkr_texture_convert(g_ram, RAM, 0, 0x100u, DKR_N64_FMT_RGBA,
                               DKR_N64_SIZ_16, 2, 2, g_out, &st) == 1);
-    check("and returns the texels unchanged -- it is already 5551",
-          g_out[0] == 0xFFFFu && g_out[1] == 0xF801u &&
-          g_out[2] == 0x0001u && g_out[3] == 0x07C1u);
+    /* **Rotated, not copied.** The RDP stores `rrrrr ggggg bbbbb a`; the card
+       reads `a rrrrr ggggg bbbbb`. This check used to assert that the words came
+       through untouched, and it passed for four months on values that survive
+       the rotation -- white is `0xFFFF` under either reading, and pure red and
+       pure green keep their channel to within a bit. The white and the black are
+       kept precisely because they cannot fail; the two below are chosen so that
+       they can. */
+    check("RGBA16 is rotated into the card's ARGB1555",
+          g_out[0] == 0xFFFFu &&                       /* white -> white */
+          g_out[1] == 0xFC00u &&                       /* opaque pure red */
+          g_out[2] == 0x8000u &&                       /* opaque black */
+          g_out[3] == 0x83E0u);                        /* opaque pure green */
+
+    /* The colour that named the defect. `0xC43D` is a pale blue in the game's
+       layout -- r 24, g 16, b 30 -- and the card was showing it as the magenta
+       (17, 1, 29), which is that same word read as ARGB1555. Converted properly
+       it must come back as a pale blue, and a green channel of 16 is what the
+       rotation destroys. */
+    memset(g_ram, 0, sizeof(g_ram));
+    write16(0x100u, 0xC43Du);
+    interleave();
+    check("the pale blue that came out magenta converts",
+          dkr_texture_convert(g_ram, RAM, 0, 0x100u, DKR_N64_FMT_RGBA,
+                              DKR_N64_SIZ_16, 1, 1, g_out, &st) == 1);
+    check("and keeps its green channel",
+          ((g_out[0] >> 10) & 0x1Fu) == 24u &&
+          ((g_out[0] >>  5) & 0x1Fu) == 16u &&
+          ( g_out[0]        & 0x1Fu) == 30u &&
+          ((g_out[0] >> 15) & 1u)    == 1u);
+
+    memset(g_ram, 0, sizeof(g_ram));
+    write16(0x100u, 0xFFFFu);
+    write16(0x102u, 0xF801u);
+    write16(0x104u, 0x0001u);
+    write16(0x106u, 0x07C1u);
+    interleave();
+    (void)dkr_texture_convert(g_ram, RAM, 0, 0x100u, DKR_N64_FMT_RGBA,
+                              DKR_N64_SIZ_16, 2, 2, g_out, &st);
 
     /* The same texture in the game's layout must give exactly the same thing.
        This is the check that catches a conversion which would "work" on the
@@ -103,7 +138,7 @@ int main(void)
        other's edges. The game's own rectangles overlap by two or three pixels -
        measured - because it expects that padding to disappear. */
     check("I8: 0 is transparent, 255 is opaque",
-          (g_out[1] & 1u) == 0u && (g_out[0] & 1u) == 1u);
+          (g_out[1] >> 15) == 0u && (g_out[0] >> 15) == 1u);
 
     /* --- IA16: alpha becomes a threshold ------------------------------------- *
      *
@@ -118,7 +153,7 @@ int main(void)
           dkr_texture_convert(g_ram, RAM, 0, 0x300u, DKR_N64_FMT_IA,
                               DKR_N64_SIZ_16, 2, 1, g_out, &st) == 1);
     check("IA16: zero alpha becomes transparent, full alpha opaque",
-          (g_out[0] & 1u) == 0u && (g_out[1] & 1u) == 1u);
+          (g_out[0] >> 15) == 0u && (g_out[1] >> 15) == 1u);
 
     /* --- What must be refused ------------------------------------------------ *
      *

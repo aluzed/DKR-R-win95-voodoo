@@ -45,15 +45,20 @@ static int imax(int a, int b) { return a > b ? a : b; }
  * that is its business, and the gap between the two is precisely what the
  * comparison must reveal.
  */
-static unsigned texel_from_rgba5551(unsigned short p)
+static unsigned texel_from_argb1555(unsigned short p)
 {
     /* Replicating the high bits is the right extension: 0x1F must give 0xFF and
        not 0xF8, otherwise white is not white and every colour comparison
-       drifts. */
-    const unsigned r = (unsigned)((p >> 11) & 0x1F);
-    const unsigned g = (unsigned)((p >>  6) & 0x1F);
-    const unsigned b = (unsigned)((p >>  1) & 0x1F);
-    const unsigned a = (unsigned)(p & 0x1U) ? 0xFFu : 0x00u;
+       drifts.
+     *
+     * `a rrrrr ggggg bbbbb`, alpha in bit 15 -- the layout the card reads and,
+     * since 22 August 2026, the one `texture.c` writes. The oracle must read
+     * what the card reads or the E09-S02 comparison measures the difference
+     * between two conventions instead of between two rasterisers. */
+    const unsigned r = (unsigned)((p >> 10) & 0x1F);
+    const unsigned g = (unsigned)((p >>  5) & 0x1F);
+    const unsigned b = (unsigned)( p        & 0x1F);
+    const unsigned a = (unsigned)((p >> 15) & 0x1U) ? 0xFFu : 0x00u;
     const unsigned r8 = (r << 3) | (r >> 2);
     const unsigned g8 = (g << 3) | (g >> 2);
     const unsigned b8 = (b << 3) | (b >> 2);
@@ -539,8 +544,8 @@ static dkr_texture_handle sw_texture_upload(void *self, const dkr_texture_desc *
         }
         for (i = 0; i < count; i++) {
             switch (d->format) {
-            case DKR_TEXFMT_RGBA5551:
-                t->texels[i] = texel_from_rgba5551(((const unsigned short *)d->pixels)[i]);
+            case DKR_TEXFMT_ARGB1555:
+                t->texels[i] = texel_from_argb1555(((const unsigned short *)d->pixels)[i]);
                 break;
             case DKR_TEXFMT_INTENSITY8: {
                 const unsigned v = ((const unsigned char *)d->pixels)[i];

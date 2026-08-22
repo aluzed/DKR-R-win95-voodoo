@@ -1396,7 +1396,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         dkr_texture_handle h;
         memset(&d, 0, sizeof(d));
         d.key = key;
-        d.format = DKR_TEXFMT_RGBA5551;
+        d.format = DKR_TEXFMT_ARGB1555;
         d.width = c->tex_padded_width;
         d.height = c->tex_padded_height;
         d.pixels = c->texels;

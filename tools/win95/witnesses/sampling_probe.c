@@ -143,7 +143,7 @@ int main(void)
         build(size);
         memset(&d, 0, sizeof(d));
         d.key = 0x5000ull + (unsigned)size;
-        d.format = DKR_TEXFMT_RGBA5551;
+        d.format = DKR_TEXFMT_ARGB1555;
         d.width = size; d.height = size;
         d.pixels = g_tex;
         d.size_bytes = (size_t)(size * size * 2);

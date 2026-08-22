@@ -221,7 +221,7 @@ int main(int argc, char **argv)
     build_tex();
     memset(&d, 0, sizeof(d));
     d.key = 0x9001ull;
-    d.format = DKR_TEXFMT_RGBA5551;
+    d.format = DKR_TEXFMT_ARGB1555;
     d.width = 32; d.height = 32;
     d.pixels = g_tex;
     d.size_bytes = sizeof(g_tex);
