@@ -191,6 +191,7 @@ typedef struct {
        screen is that texel and where the conversion lost the image. The texel
        carries bit 16 as a "recorded" marker, so that a legitimate value of zero
        is not mistaken for an empty slot. */
+    unsigned long     tiles_decoded;      /* G_SETTILE, render tile only */
     unsigned long     textures_uniform, textures_varied;
     unsigned int      uniform_sample_texel;
     short             uniform_sample_w, uniform_sample_h;
@@ -419,6 +420,12 @@ typedef struct {
        context rather than in the render state's translation, for the same
        reason as the texture handle: it is a decoder resource. */
     short                catalogue_index;
+    /* The render tile's wrap modes, from `G_SETTILE`. Defaults to repeat, which
+       is what the translation used to write unconditionally. */
+    unsigned char        tile_wrap_s, tile_wrap_t;
+    /* `G_SETFOGCOLOR` and `G_SETBLENDCOLOR`, as 0xRRGGBB. Nothing reads the
+       blend colour yet; it is decoded so the audit closes. */
+    unsigned int         fog_color, blend_color;
     /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
        state block, to tell a bad state from bad vertices. */
     unsigned char        force_state;

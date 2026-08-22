@@ -1039,6 +1039,12 @@ while affecting the image:
 | `0xF9` | `G_SETBLENDCOLOR` | blend constant |
 | `0xF5` | `G_SETTILE` | **the clamp/mirror/wrap modes**, format, mask and shift |
 
+**Closed on 22 August 2026.** All five are decoded. `0xFA` and `0xFB` on
+19 August, `0xED`, `0xF5`, `0xF8` and `0xF9` since. The scissor is decoded and
+its effect is behind `DKR_SCISSOR=1` — see below — and nothing reads the blend
+colour yet; the rest reach the card. What the range still defers is
+synchronisation, which is what its comment always claimed the whole of it was.
+
 Enumerating a range by its bounds was right for the synchronisations that make up
 most of it, and wrong twice now for the drawing commands that sit inside it. The
 lesson is not "check `0xE4`" but that a range skipped wholesale needs its
@@ -1637,3 +1643,48 @@ blue with soft white clouds and no magenta anywhere.
 > could not act. Each was a measurement whose *subject* made the wrong answer
 > indistinguishable from the right one. The question to ask of an instrument is
 > not "is it correct" but **"what would it print if the thing were broken?"**
+
+## `G_SETTILE`, and the audit closes — 22 August 2026
+
+The last drawing command the `0xE4..0xFF` range was hiding. `cms` and `cmt` carry
+the wrap modes, and `dkr_rdp_to_render_state` had been writing
+`DKR_WRAP_REPEAT` into both unconditionally because nothing decoded the command —
+while the game asks for `G_TX_CLAMP` on both axes of the render tile:
+
+```
+0xF5102000 w1=0x00080200  ->  tile 0, cms=2, cmt=2
+```
+
+A third of the triangle corners sample outside [0,1] — 432 of 1,269, per frame —
+so this is not a subtlety: repeat sends them to the far side of the texture where
+clamping holds them at the edge.
+
+Honouring it moved the frame by 6,000 black pixels out of 307,200 and did not
+touch the defect it was tried against. It is kept because the decode is right
+against the reference, and because the next wrong texel is no longer attributable
+to a wrap mode nobody had read.
+
+`G_SETFOGCOLOR` and `G_SETBLENDCOLOR` went in with it, two shifts each. The fog
+colour is not used while fog is off — and fog is off because the *coefficient* is
+wrong, not because the colour was missing — but whoever fixes the coefficient
+will now find the colour already there instead of a second fault behind the
+first.
+
+### What is left, and where it points
+
+The large object at the centre of the menu is black under `DKR_FORCE_COMBINE=texel`
+as well as under the real combiner, so it is the texel and not the shade. And yet:
+
+```
+textures: uploaded=1067 reused=15 refused-tmu=0 unknown-format=0 outside-rdram=0
+refusal-detail: aspect=0 size=0 slots=0 tmu-memory=0
+texels: black=0 with-content=34
+```
+
+Every texture uploads, none is refused, none is black. So the object samples a
+black *part* of a texture that has content — which points at **where** we sample
+from, not at what we sampled. DKR's own texture-loading base lives in
+`state.texture_offset`, `texture_shift` and `texture_count`, set by a command
+whose `w1` this decoder once read as two 16-bit s and t offsets before the
+neighbouring port corrected it. That machinery is decoded and, like
+`dkr_cc_lookup` before it, may well not be read by anything.

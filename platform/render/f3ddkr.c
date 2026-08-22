@@ -27,6 +27,9 @@
 #define OP_SETCOLORIMAGE 0xFF
 #define OP_SETDEPTHIMAGE 0xFE
 #define OP_SETSCISSOR    0xED
+#define OP_SETTILE       0xF5
+#define OP_SETFOGCOLOR   0xF8
+#define OP_SETBLENDCOLOR 0xF9
 #define OP_SETOTHERMODE_L 0xB9
 #define OP_SETOTHERMODE_H 0xBA
 #define OP_SETCOMBINE     0xFC
@@ -1188,6 +1191,12 @@ static void apply_state(dkr_f3d_context *c)
        ignores the mode would make the switch lie. */
     c->render_state.recipe = c->force_combine ? (short)-1 : c->catalogue_index;
     c->render_state.recipe_pad = 0;
+    /* Laid back down for the same reason as the texture handle: the wrap modes
+       come from `G_SETTILE`, which is a decoder resource, and
+       `dkr_rdp_to_render_state` fills the whole block from the RDP state. */
+    c->render_state.wrap_s = (dkr_wrap_mode)c->tile_wrap_s;
+    c->render_state.wrap_t = (dkr_wrap_mode)c->tile_wrap_t;
+    c->render_state.fog_color = c->fog_color;
     if (!exact) {
         /* **An approximate translation that does not announce itself is worse
            than a failure**: it produces a plausible, wrong image. The counter is
@@ -2240,6 +2249,72 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             trace(c, "SetColorImage width=%u address=0x%08X",
                   c->state.color_image_width, c->state.color_image_address);
             break;
+
+        case OP_SETFOGCOLOR:
+        case OP_SETBLENDCOLOR:
+            /* `gDPSetFogColor` and `gDPSetBlendColor` both pack
+               `r<<24 | g<<16 | b<<8 | a` into `w1`. They were the last two
+               entries of the deferred-command audit, and decoding them costs a
+               shift each.
+             *
+               The fog colour is not used while fog is off -- and fog is off
+               because the coefficient is wrong, not because the colour was
+               missing. It is decoded now so that whoever fixes the coefficient
+               finds the colour already there, rather than discovering a second
+               fault behind the first. */
+            if (opcode == OP_SETFOGCOLOR) {
+                c->fog_color = ((w1 >> 8) & 0x00FFFFFFu);
+                trace(c, "SetFogColor 0x%08X", w1);
+            } else {
+                c->blend_color = ((w1 >> 8) & 0x00FFFFFFu);
+                trace(c, "SetBlendColor 0x%08X", w1);
+            }
+            c->state_dirty = 1;
+            break;
+
+        case OP_SETTILE: {
+            /* --- `G_SETTILE`, the last drawing command of the range --------- *
+             *
+             * From `gsDPSetTile` in the decompilation's `gbi.h`:
+             *
+             *     w0: fmt<<21 | siz<<19 | line<<9 | tmem
+             *     w1: tile<<24 | palette<<20 | cmt<<18 | maskt<<14
+             *         | shiftt<<10 | cms<<8 | masks<<4 | shifts
+             *
+             * What matters here is `cms` and `cmt`, the wrap modes.
+             * `dkr_rdp_to_render_state` has been writing `DKR_WRAP_REPEAT` into
+             * both, unconditionally, because nothing decoded this command --
+             * while the game asks for `G_TX_CLAMP` on both axes of the render
+             * tile, measured in list 59:
+             *
+             *     0xF5102000 w1=0x00080200  ->  tile 0, cms=2, cmt=2
+             *
+             * A third of the triangle corners sample outside [0,1] -- 432 of
+             * 1,269, counted per frame -- and repeat sends those to the far side
+             * of the texture where clamping would hold them at the edge. That is
+             * a different image, not a subtler one.
+             *
+             * Only the render tile is kept. Tile 7 is `G_TX_LOADTILE`, the
+             * descriptor used to bring a texture into TMEM rather than to sample
+             * it, and taking its modes would be reading the loader's business as
+             * the sampler's. */
+            const unsigned int tile = (w1 >> 24) & 0x07u;
+            if (tile == 0u) {
+                const unsigned int cms = (w1 >> 8) & 0x03u;
+                const unsigned int cmt = (w1 >> 18) & 0x03u;
+                /* `G_TX_WRAP` 0, `G_TX_MIRROR` 1, `G_TX_CLAMP` 2. The Voodoo 2
+                   has no mirroring, so it folds into repeat here and is noted
+                   for E05-S08. */
+                c->tile_wrap_s = (unsigned char)((cms & 2u) ? DKR_WRAP_CLAMP
+                                                            : DKR_WRAP_REPEAT);
+                c->tile_wrap_t = (unsigned char)((cmt & 2u) ? DKR_WRAP_CLAMP
+                                                            : DKR_WRAP_REPEAT);
+                c->state_dirty = 1;
+                c->state.tiles_decoded++;
+            }
+            trace(c, "SetTile tile=%u w0=0x%08X w1=0x%08X", tile, w0, w1);
+            break;
+        }
 
         case OP_SETSCISSOR: {
             /* --- `G_SETSCISSOR`, deferred since the first day ---------------- *
