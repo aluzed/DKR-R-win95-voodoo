@@ -1859,3 +1859,38 @@ The combiner enumeration values were checked against Glide 2.x on this pass and
 are right. What has never been validated is the `grTexCombine` pair used when a
 texture is bound, which the untextured path does not touch — and the untextured
 path is the one that paints.
+
+## Crossing the two switches: a table that constrains the answer — 22 August 2026
+
+Neither switch alone reveals the geometry; together they do. Frame 59, painted
+pixels of 307,200:
+
+| combiner | state pushed | painted |
+|---|---|---:|
+| as the game asks (`combine=3`, textured) | when it changes | **1,769** |
+| as the game asks | before every triangle (`DKR_FORCE_STATE=3`) | **2,792** |
+| forced to shade, untextured | when it changes | **2,800** |
+| forced to shade, untextured | before every triangle | **112,081** |
+
+Two facts, and they are separate:
+
+1. **The textured combiner never paints**, however often it is pushed. Pushing
+   the game's own block before every triangle moves 1,769 to 2,792, which is
+   noise beside 112,081.
+2. **The untextured combiner paints only if it is re-pushed constantly.**
+   Programmed once when the state changes, it gives 2,800; programmed before
+   every triangle, 112,081 — a factor of forty for writing the same registers
+   again.
+
+The second is the stranger of the two, and it is not explained by anything in
+this port's code: between two state changes nothing here touches
+`grColorCombine`. The invalidation added to `gl_texture_upload` cannot be it —
+the decoder already sets `state_dirty` after an upload, so the block is pushed
+there anyway.
+
+What is now excluded, each by its own run: depth, culling, the guard band, `oow`,
+the vertex colour, the fog (which *was* the whole of the earlier black frames),
+the catalogue's setups, the wrap modes, the tile origin, `texEnabled`, the
+texture-offset indirection, a stale binding, and the texture's content — the
+triangle at the probe samples a texture of mean luminance 21/31 across its full
+extent, with a white shade and opaque blending, and paints black.
