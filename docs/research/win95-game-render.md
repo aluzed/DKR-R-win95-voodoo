@@ -1802,3 +1802,60 @@ shade, one texture that is neither black nor uniform, and a black pixel.
 > texture *converted* rather than the one *bound*, and it is on its word that the
 > sampled texel "is a blue". Until that is read from the bound texture instead,
 > the blue is a claim and not a measurement, and this section rests on it.
+
+## The instrument had lost a divide, and two turns rested on it — 22 August 2026
+
+`st=(0,0) (0,0) (0,0)` was not a measurement of the geometry. It was a
+measurement of my arithmetic.
+
+`dkr_clip_project` writes `s * 256 * oow` into `SOW` and `oow` into the TMU's own
+slot; Glide recovers `s` by dividing one by the other. The probe printed
+`SOW * big / 256` and left the division out, so every figure came back **a
+hundred and sixty times too small** — `oow` being a constant 1/160 on the menu's
+orthographic lists — and every texel count under one printed as zero.
+
+With the divide restored, the same triangle reads:
+
+```
+tex 64x32 fmt=0 st=(63,31) (0,31) (64,0) texel0=A65F tile=(0,0)
+                dark=0/2048 mean=21/31
+```
+
+Coordinates spanning the texture exactly, not a single black texel in it, and a
+mean luminance of 21 out of 31 — a bright texture, sampled across its whole
+extent, by a triangle of 210,227 pixels with a white shade and opaque blending.
+The pixel is black.
+
+### What is withdrawn
+
+Everything built on the zeros, across two turns:
+
+- that the faces were **flat by design**, each sampling one texel;
+- that `texEnabled` might be stripping texture coordinates — the flag is decoded
+  now and correct against the reference, and it was never the question;
+- that the N64 would sample one texel too, so the black was the game's own.
+
+None of that was measured. It followed from an instrument that had lost a
+multiplication, and it survived because every consequence of it was consistent
+with every other.
+
+> **Three counters for one question, and each answered a narrower one than its
+> name.** `textures_black` — is *every* texel zero? No. `textures_uniform` — are
+> they all equal? No. `mostly-black` — are three quarters of them zero? No.
+> `dark=0/2048` — is any of them exactly zero? No. And the texture is bright, as
+> a **mean** said in one figure the first time it was asked. A count against a
+> threshold can always answer no; a mean has nothing to tune.
+
+### Where this stands
+
+One triangle, one bright texture sampled over its full extent, white shade,
+opaque blend, no depth contest — and a black pixel. The only thing that has ever
+made this geometry paint is `DKR_FORCE_STATE`, which pushes a block that
+*differs* so the card is reprogrammed in full; pushing the same block after
+invalidating the cache does not. The values in the block matter and every field
+of it has been eliminated individually.
+
+The combiner enumeration values were checked against Glide 2.x on this pass and
+are right. What has never been validated is the `grTexCombine` pair used when a
+texture is bound, which the untextured path does not touch — and the untextured
+path is the one that paints.

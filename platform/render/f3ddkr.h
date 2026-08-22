@@ -315,6 +315,8 @@ typedef struct {
     unsigned char      center_tex_fmt[16];
     short              center_s[16][3], center_t[16][3];
     unsigned short     center_texel0[16];          /* the texel at (0,0) */
+    unsigned int       center_dark[16], center_texels[16];
+    unsigned int       center_mean[16];   /* mean luminance, 0..31 */
     short              center_tile_uls[16], center_tile_ult[16];
     unsigned long      center_hits;
     /* Emitted triangles whose centroid lands inside the viewport, against those
@@ -446,6 +448,9 @@ typedef struct {
     unsigned short       tile_uls, tile_ult;   /* the tile's origin in the image */
     /* Where the paint stack is followed. Zero is the centre of the screen. */
     int                  probe_x, probe_y;
+    /* Texel (0,0) of the texture currently bound, recorded when it is bound. */
+    unsigned short       bound_texel0;
+    unsigned int         bound_dark, bound_texels, bound_mean;
     /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
        state block, to tell a bad state from bad vertices. */
     unsigned char        force_state;

@@ -343,7 +343,7 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                 std::fprintf(stderr,
                              "[gfx] frame dump:   tex %dx%d fmt=%u "
                              "st=(%d,%d) (%d,%d) (%d,%d) texel0=%04X "
-                             "tile=(%d,%d)\n",
+                             "tile=(%d,%d) dark=%lu/%lu mean=%lu/31\n",
                              context_.state.center_tex_w[s],
                              context_.state.center_tex_h[s],
                              static_cast<unsigned>(context_.state.center_tex_fmt[s]),
@@ -352,7 +352,10 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                              context_.state.center_s[s][2], context_.state.center_t[s][2],
                              context_.state.center_texel0[s],
                              context_.state.center_tile_uls[s],
-                             context_.state.center_tile_ult[s]);
+                             context_.state.center_tile_ult[s],
+                             static_cast<unsigned long>(context_.state.center_dark[s]),
+                             static_cast<unsigned long>(context_.state.center_texels[s]),
+                             static_cast<unsigned long>(context_.state.center_mean[s]));
             }
         }
         // **Flat is not black.** The run-wide `texels: black=0 with-content=329`

@@ -804,24 +804,18 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                         c->state.center_tex_h[s] = (short)c->tex_padded_height;
                         c->state.center_tex_fmt[s] =
                             (unsigned char)c->timg_format;
-                        /* The texel those zero coordinates land on --
-                         * **and this reads the staging buffer, not the bound
-                         * texture.** `c->texels` holds whatever was converted
-                         * last; a triangle drawing with a cache hit
-                         * (`textures_reused`) leaves an older texture in it. So
-                         * the value is the right one only when the texture was
-                         * converted for this draw, and there is nothing here
-                         * that says which case one is looking at.
-                         *
-                         * It is left in place because it did rule out `uls`/
-                         * `ult` and did show that these coordinates land on
-                         * real colours, and it is flagged because the next
-                         * person to read `texel0=BEDF` against a black pixel
-                         * deserves to know it may be describing another
-                         * texture. */
-                        c->state.center_texel0[s] =
-                            (c->tex_padded_width > 0 && c->tex_padded_height > 0)
-                                ? c->texels[0] : 0u;
+                        /* The texel those zero coordinates land on, taken
+                         * from `bound_texel0`, which is recorded when the
+                         * texture is bound. It used to read `c->texels[0]` --
+                         * the staging buffer, holding the last texture
+                         * *converted* rather than the one *bound* -- so on any
+                         * draw served from the texture cache it described
+                         * another texture entirely. Three eliminations were
+                         * built on top of its word before that was noticed. */
+                        c->state.center_texel0[s] = c->bound_texel0;
+                        c->state.center_dark[s] = c->bound_dark;
+                        c->state.center_texels[s] = c->bound_texels;
+                        c->state.center_mean[s] = c->bound_mean;
                         c->state.center_tile_uls[s] = (short)c->tile_uls;
                         c->state.center_tile_ult[s] = (short)c->tile_ult;
                         {
@@ -831,12 +825,33 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                                         : c->tex_padded_height);
                             int q2;
                             for (q2 = 0; q2 < 3; q2++) {
-                                c->state.center_s[s][q2] = (short)
-                                    (v[q2].tmu[0][DKR_TMU_SOW] * big /
-                                     DKR_TEXCOORD_SCALE);
-                                c->state.center_t[s][q2] = (short)
-                                    (v[q2].tmu[0][DKR_TMU_TOW] * big /
-                                     DKR_TEXCOORD_SCALE);
+                                /* **Divide by `1/w` as the card does.**
+                                 *
+                                 * The vertex carries `s/w`, not `s`:
+                                 * `dkr_clip_project` writes
+                                 * `s * 256 * oow` into `SOW` and `oow` into the
+                                 * TMU's own slot, and Glide recovers `s` by
+                                 * dividing one by the other. This printed
+                                 * `SOW * big / 256` and left the division out,
+                                 * so every figure came back a hundred and sixty
+                                 * times too small -- `oow` being a constant
+                                 * 1/160 on the menu's orthographic lists -- and
+                                 * every texel count under one printed as zero.
+                                 *
+                                 * "st=(0,0) at all three corners" was that, and
+                                 * two turns of reasoning were built on it: that
+                                 * the faces were flat by design, that
+                                 * `texEnabled` might be dropping texture
+                                 * coordinates, that the N64 sampled one texel
+                                 * too. None of it was measured; all of it came
+                                 * from an instrument that had lost a divide. */
+                                const float w = v[q2].tmu[0][DKR_TMU_OOW];
+                                const float k = (w > 1.0e-6f) ? (big / (w * DKR_TEXCOORD_SCALE))
+                                                              : 0.0f;
+                                c->state.center_s[s][q2] =
+                                    (short)(v[q2].tmu[0][DKR_TMU_SOW] * k);
+                                c->state.center_t[s][q2] =
+                                    (short)(v[q2].tmu[0][DKR_TMU_TOW] * k);
                             }
                         }
                         c->state.center_hits++;
@@ -1572,6 +1587,40 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             }
             c->render_state.texture = h;
             c->texture_key = key;
+            /* The texel the bound texture carries at (0,0), remembered **here**
+               and not read from `c->texels` at draw time. The staging buffer
+               holds whatever was converted last, so reading it later described
+               another texture whenever a draw was served from the cache -- and
+               it is on that reading that "the sampled texel is a blue" rested.
+               Set beside `texture_key`, it follows the binding exactly: a cache
+               hit changes neither. */
+            c->bound_texel0 = c->texels[0];
+            /* And how much of it is dark, exactly, rather than against a
+               threshold. `mostly-black` asked "three quarters or more" and
+               answered no; a texture that is seven tenths black passes that and
+               still paints a black surface wherever the triangle lands on the
+               dark part. A fraction cannot be tuned after the fact. */
+            {
+                unsigned int q, m = (unsigned int)c->tex_padded_width *
+                                    (unsigned int)c->tex_padded_height;
+                unsigned int dark = 0, sum = 0;
+                for (q = 0; q < m; q++) {
+                    const unsigned int t = c->texels[q];
+                    if ((t & 0x7FFFu) == 0u) { dark++; }
+                    /* Mean luminance in 5-bit units, r + g + b over three. **A
+                       count against a threshold was the wrong instrument twice
+                       over**: "all texels zero" answered no, "three quarters
+                       zero" answered no, and "exactly zero" answers no again --
+                       while a texture whose every texel is 1/31 is black on
+                       screen and passes all three. A mean has nothing to tune
+                       and cannot answer a narrower question than it was asked. */
+                    sum += (((t >> 10) & 0x1Fu) + ((t >> 5) & 0x1Fu) +
+                            (t & 0x1Fu)) / 3u;
+                }
+                c->bound_dark = dark;
+                c->bound_texels = m;
+                c->bound_mean = (m > 0u) ? (sum / m) : 0u;
+            }
             c->state_dirty = 1;
             c->state.textures_loaded++;
         } else {
