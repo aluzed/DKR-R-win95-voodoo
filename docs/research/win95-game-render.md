@@ -1728,3 +1728,45 @@ that is Glide's convention. On a 64x32 texture a `t` of 1.0 means sixty-four
 texels, twice the height, so "outside [0,1]" is not the question I meant to ask
 for anything that is not square. The figure is not wrong; it is not measuring
 what its name claims.
+
+## The black object is not one thing, and the framing was wrong — 22 August 2026
+
+Three candidates eliminated and one instrument to distrust.
+
+**`texEnabled` is decoded.** `gSPPolygon` packs it at bit 16 beside the triangle
+count, `TRIN_DISABLE_TEXTURE` against `TRIN_ENABLE_TEXTURE`, and this decoder read
+the count and dropped the flag. An untextured batch carries no texture
+coordinates, so texturing it anyway samples texel (0,0) everywhere. Honouring the
+flag changed nothing on screen: the menu's batches all declare themselves
+textured.
+
+**The tile origin is innocent.** `uls`/`ult` are the tile's upper-left corner
+inside the texture image, and `cmd_set_tile_size` subtracted them to get a size
+and never used them as an origin. Measured: `tile=(0,0)` on every triangle
+covering the centre.
+
+**The coordinates really are zero**, and the reference reads them from the same
+offsets — `s` at 4, 8, 12 and `t` at 6, 10, 14 of the sixteen-byte `Triangle`.
+So the N64 samples one texel for those faces too, and a flat face is what the
+game asks for.
+
+And the pixels are **not uniformly black**. At x = 280 the object is
+`(0, 0, 189)`, a strong blue, which is exactly texel `801C` expanded — so that
+triangle samples correctly and paints correctly. Of 116,027 black pixels, 72,703
+lie to the right of x = 440, which is past the edge of the sky quad: unpainted
+background, not a defect of the object at all. The object itself accounts for
+38,394, in flat faces of which several carry their proper blue, gold and green.
+
+> **"The object is black" was never a measurement.** It was a description of a
+> picture, and it survived four runs because nothing forced it to be either true
+> or false of a specific pixel. The moment one pixel was named, it came apart:
+> the centre is black, x = 280 is blue, and the right-hand third is not the
+> object.
+
+### And the newest instrument is already suspect
+
+`center_texel0` reads `c->texels[0]` — the decoder's **staging buffer**, which
+holds the last texture *converted*, not the one *bound*. A triangle drawing on a
+cache hit leaves an older texture in it, and nothing in the printed line says
+which case one is looking at. It did rule out `uls`/`ult`, and it is flagged in
+place rather than trusted.

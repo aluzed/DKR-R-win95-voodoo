@@ -308,6 +308,13 @@ typedef struct {
     unsigned int       center_rgb[16];
     unsigned long      center_area[16];
     unsigned long      center_ordinal[16];
+    /* What each of those triangles asked its texture for: the texture's padded
+       size and format, and the three corners in texels. */
+    short              center_tex_w[16], center_tex_h[16];
+    unsigned char      center_tex_fmt[16];
+    short              center_s[16][3], center_t[16][3];
+    unsigned short     center_texel0[16];          /* the texel at (0,0) */
+    short              center_tile_uls[16], center_tile_ult[16];
     unsigned long      center_hits;
     /* Emitted triangles whose centroid lands inside the viewport, against those
        whose does not. The projected extremes clamp to the guard band and the
@@ -432,6 +439,10 @@ typedef struct {
     /* `G_SETFOGCOLOR` and `G_SETBLENDCOLOR`, as 0xRRGGBB. Nothing reads the
        blend colour yet; it is decoded so the audit closes. */
     unsigned int         fog_color, blend_color;
+    /* `texEnabled` from the current `gSPPolygon` batch. Starts at 1 so that a
+       list which draws before its first triangle command behaves as it did. */
+    unsigned char        batch_textured;
+    unsigned short       tile_uls, tile_ult;   /* the tile's origin in the image */
     /* `DKR_FORCE_STATE=1`. Every emitted triangle drawn under the canary's own
        state block, to tell a bad state from bad vertices. */
     unsigned char        force_state;

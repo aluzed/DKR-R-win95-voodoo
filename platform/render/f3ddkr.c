@@ -365,7 +365,36 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     const unsigned int count  = ((w0 >> 20) & 0x0Fu) + 1u;
     const unsigned int source = w1 & RDRAM_MASK;
+    /* --- `texEnabled`, bit 16, and it decides whether there is a texture ----- *
+     *
+     * `gSPPolygon` in the decompilation's `include/f3ddkr.h`:
+     *
+     *     w0 = _SHIFTL(((numTris - 1) << 4) | texEnabled, 16, 8)
+     *        | _SHIFTL(G_TRIN, 24, 8) | _SHIFTL(numTris * 16, 0, 16)
+     *
+     * with `TRIN_DISABLE_TEXTURE 0` and `TRIN_ENABLE_TEXTURE 1`. The count sits
+     * at bits 20..23 and the flag at bit 16, and this decoder read the count and
+     * dropped the flag.
+     *
+     * An untextured batch carries no texture coordinates -- its `uv` fields are
+     * zero -- so texturing it anyway samples texel (0,0) for every corner of
+     * every triangle. Measured at the centre of the menu on 22 August 2026:
+     *
+     *     centre1 tri=0   area=428    tex 32x32 st=(0,0) (0,0) (0,0)
+     *     centre4 tri=205 area=573856 tex 64x32 st=(0,0) (0,0) (0,0)
+     *
+     * Texel (0,0) of a DKR texture is generally its transparent corner, which
+     * combined with the shade gives black -- and that is the large black object
+     * that has been sitting in the middle of every menu frame. It is not
+     * missing geometry and not a bad texture: it is geometry that should be
+     * drawn in its vertex colours and was being drawn through a texture. */
+    const unsigned int textured = (w0 >> 16) & 1u;
     unsigned int i;
+
+    if (textured != (unsigned int)c->batch_textured) {
+        c->batch_textured = (unsigned char)textured;
+        c->state_dirty = 1;
+    }
 
     if (count == 0u) {
         reject(c, DKR_F3D_REJECT_COUNT, "zero triangles");
@@ -750,6 +779,59 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                             ((unsigned int)v[0].b);
                         c->state.center_area[s] = (unsigned long)area;
                         c->state.center_ordinal[s] = c->state.emitted;
+                        /* --- And what it samples --------------------------- *
+                         *
+                         * The stack says which triangle covered the pixel and
+                         * under what state; it has never said what texel that
+                         * triangle asked for. The object at the centre of the
+                         * menu is black under `DKR_FORCE_COMBINE=texel`, every
+                         * texture uploads, none is black and none is refused --
+                         * so it samples a black part of a texture that has
+                         * content, and only the coordinates can say where.
+                         *
+                         * Kept in texels rather than normalised, because
+                         * `tex_scale_s` divides by the **larger** side and a
+                         * normalised figure would need the dimensions beside it
+                         * to be read at all. */
+                        c->state.center_tex_w[s] = (short)c->tex_padded_width;
+                        c->state.center_tex_h[s] = (short)c->tex_padded_height;
+                        c->state.center_tex_fmt[s] =
+                            (unsigned char)c->timg_format;
+                        /* The texel those zero coordinates land on --
+                         * **and this reads the staging buffer, not the bound
+                         * texture.** `c->texels` holds whatever was converted
+                         * last; a triangle drawing with a cache hit
+                         * (`textures_reused`) leaves an older texture in it. So
+                         * the value is the right one only when the texture was
+                         * converted for this draw, and there is nothing here
+                         * that says which case one is looking at.
+                         *
+                         * It is left in place because it did rule out `uls`/
+                         * `ult` and did show that these coordinates land on
+                         * real colours, and it is flagged because the next
+                         * person to read `texel0=BEDF` against a black pixel
+                         * deserves to know it may be describing another
+                         * texture. */
+                        c->state.center_texel0[s] =
+                            (c->tex_padded_width > 0 && c->tex_padded_height > 0)
+                                ? c->texels[0] : 0u;
+                        c->state.center_tile_uls[s] = (short)c->tile_uls;
+                        c->state.center_tile_ult[s] = (short)c->tile_ult;
+                        {
+                            const float big =
+                                (float)((c->tex_padded_width > c->tex_padded_height)
+                                        ? c->tex_padded_width
+                                        : c->tex_padded_height);
+                            int q2;
+                            for (q2 = 0; q2 < 3; q2++) {
+                                c->state.center_s[s][q2] = (short)
+                                    (v[q2].tmu[0][DKR_TMU_SOW] * big /
+                                     DKR_TEXCOORD_SCALE);
+                                c->state.center_t[s][q2] = (short)
+                                    (v[q2].tmu[0][DKR_TMU_TOW] * big /
+                                     DKR_TEXCOORD_SCALE);
+                            }
+                        }
                         c->state.center_hits++;
                     }
                 }
@@ -1197,6 +1279,14 @@ static void apply_state(dkr_f3d_context *c)
     c->render_state.wrap_s = (dkr_wrap_mode)c->tile_wrap_s;
     c->render_state.wrap_t = (dkr_wrap_mode)c->tile_wrap_t;
     c->render_state.fog_color = c->fog_color;
+    /* And an untextured batch is untextured whatever the combiner says. Laid
+       down here, after the translation, for the same reason as everything else
+       in this block: `dkr_rdp_to_render_state` fills it whole. */
+    if (!c->batch_textured) {
+        c->render_state.texture = 0;
+        c->render_state.combine = DKR_COMBINE_SHADE;
+        c->render_state.recipe = -1;
+    }
     if (!exact) {
         /* **An approximate translation that does not announce itself is worse
            than a failure**: it produces a plausible, wrong image. The counter is
@@ -1270,6 +1360,13 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
     const unsigned int lrt = w1 & 0xFFFu;
     const unsigned int uls = (w0 >> 12) & 0xFFFu;
     const unsigned int ult = w0 & 0xFFFu;
+    /* Kept, not merely subtracted. `uls` and `ult` are the tile's upper-left
+       corner **inside the texture image**: a non-zero pair means texel (0,0) of
+       the tile is not texel (0,0) of the image, and this decoder converts from
+       the image origin. Recording them is what will say whether that matters
+       here before anything is written to act on it. */
+    c->tile_uls = (unsigned short)(uls >> 2);
+    c->tile_ult = (unsigned short)(ult >> 2);
     /* 10.2 fixed point, and both corners are **inclusive** — as with the filled
        rectangle, and for the same RDP convention reason. */
     const int width  = (int)((lrs >> 2) - (uls >> 2)) + 1;
@@ -2523,6 +2620,7 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
     /* A non-zero scale by default: with no texture bound the coordinates are
        not used, but zero would collapse them all onto a point, which would look
        like a transformation defect rather than an absence. */
+    ctx->batch_textured = 1;
     ctx->tex_scale_s = 1.0f / 32.0f;
     ctx->tex_scale_t = 1.0f / 32.0f;
     /* Seeded so that the first vertex replaces them. Zero would be a value the
