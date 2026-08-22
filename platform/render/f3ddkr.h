@@ -192,6 +192,12 @@ typedef struct {
        carries bit 16 as a "recorded" marker, so that a legitimate value of zero
        is not mistaken for an empty slot. */
     unsigned long     tiles_decoded;      /* G_SETTILE, render tile only */
+    /* The texture-offset indirection: shifts actually applied to an image
+       address, and the times the table was abandoned for a shift that does not
+       land on a block boundary. Both counted, because a base that is decoded and
+       read by nobody is exactly what this replaces. */
+    unsigned long     texture_shifts_applied;
+    unsigned long     texture_offset_dropped;
     unsigned long     textures_uniform, textures_varied;
     unsigned int      uniform_sample_texel;
     short             uniform_sample_w, uniform_sample_h;

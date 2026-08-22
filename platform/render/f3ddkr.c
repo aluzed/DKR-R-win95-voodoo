@@ -2379,10 +2379,57 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->timg_format  = (w0 >> 21) & 0x07u;
             c->timg_size    = (w0 >> 19) & 0x03u;
             c->timg_address = w1 & RDRAM_MASK;
-            trace(c, "SetTextureImage %s at 0x%06X",
+            /* --- DKR's texture-offset indirection --------------------------- *
+             *
+             * `TextureOffset` (`0x02`) sets `texture_offset` to an RDRAM address,
+             * and that address is **a table of sixteen-bit shifts**, indexed by
+             * `texture_count`. Each `SetTextureImage` reads its own entry and adds
+             * it to the image address; each `LoadBlock` advances the index. The
+             * game packs many textures into one region and walks them this way.
+             *
+             * The base was decoded on 18 August -- the neighbouring port having
+             * corrected a reading of `w1` as two sixteen-bit s and t offsets --
+             * and then **read by nobody**: `texture_offset` was assigned, and
+             * `texture_shift` and `texture_count` only ever zeroed. So every
+             * surface drawn after a `TextureOffset` sampled the head of the
+             * region instead of its own texture. That is the third time in a
+             * week a decoded value has turned out to reach no one --
+             * `dkr_cc_lookup`'s answer and `state.billboard` were the others --
+             * and it is worth a habit: **a field that is written and never read
+             * is a defect, whatever the comment above it says.**
+             *
+             * RGBA only, and the base is dropped for any other format: that is
+             * what `f3ddkr_rt64.cpp` does, and this is not the place to improve
+             * on a port that runs. */
+            if (c->state.texture_offset != 0u) {
+                if (c->timg_format == DKR_N64_FMT_RGBA) {
+                    const unsigned int at = c->state.texture_offset +
+                                            c->state.texture_count * 2u;
+                    if (!in_range(c, at, 2u)) {
+                        char d[64];
+                        sprintf(d, "texture-offset table at 0x%06X", at);
+                        reject(c, DKR_F3D_REJECT_ADDRESS, d);
+                        c->state.texture_offset = 0u;
+                        c->state.texture_shift  = 0u;
+                        c->state.texture_count  = 0u;
+                    } else {
+                        c->state.texture_shift =
+                            ((unsigned int)read_u8(c, at) << 8) |
+                             (unsigned int)read_u8(c, at + 1u);
+                        c->timg_address =
+                            (c->timg_address + c->state.texture_shift) & RDRAM_MASK;
+                        c->state.texture_shifts_applied++;
+                    }
+                } else {
+                    c->state.texture_offset = 0u;
+                    c->state.texture_shift  = 0u;
+                    c->state.texture_count  = 0u;
+                }
+            }
+            trace(c, "SetTextureImage %s at 0x%06X (shift %u)",
                   dkr_texture_format_name((dkr_n64_format)c->timg_format,
                                           (dkr_n64_size)c->timg_size),
-                  c->timg_address);
+                  c->timg_address, c->state.texture_shift);
             break;
 
         case OP_SETTILESIZE:
@@ -2409,6 +2456,24 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                owned and documented at the top of `texture.h` — so the copy has
                no business here. The command stays decoded so that the sequence
                appears in the trace. */
+            /* And it advances the texture-offset index -- or gives up on the
+               indirection when the shift does not sit on a block boundary,
+               which is the guard the neighbouring port carries and the only
+               thing that stops a stale table walking off into RDRAM. */
+            if (c->state.texture_offset != 0u) {
+                const unsigned int lrs = (w1 >> 12) & 0xFFFu;
+                const unsigned int block = ((lrs >> 2) + 1u) << 3;
+                if (block == 0u || (c->state.texture_shift % block) != 0u) {
+                    c->timg_address =
+                        (c->timg_address - c->state.texture_shift) & RDRAM_MASK;
+                    c->state.texture_offset = 0u;
+                    c->state.texture_shift  = 0u;
+                    c->state.texture_count  = 0u;
+                    c->state.texture_offset_dropped++;
+                } else {
+                    c->state.texture_count++;
+                }
+            }
             trace(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
             break;
 

@@ -1688,3 +1688,43 @@ from, not at what we sampled. DKR's own texture-loading base lives in
 whose `w1` this decoder once read as two 16-bit s and t offsets before the
 neighbouring port corrected it. That machinery is decoded and, like
 `dkr_cc_lookup` before it, may well not be read by anything.
+
+## The texture-offset indirection, implemented and inert here — 22 August 2026
+
+`TextureOffset` (`0x02`) sets `texture_offset` to an RDRAM address, and that
+address is **a table of sixteen-bit shifts** indexed by `texture_count`. Each
+`SetTextureImage` reads its own entry and adds it to the image address; each
+`LoadBlock` advances the index, or abandons the table when the shift does not
+land on a block boundary. The game packs many textures into one region and walks
+them this way. `f3ddkr_rt64.cpp` carries all of it.
+
+The base was decoded on 18 August and then **read by nobody**: `texture_offset`
+was assigned, `texture_shift` and `texture_count` only ever zeroed. So every
+surface drawn after a `TextureOffset` sampled the head of the region instead of
+its own texture — which is exactly the shape of the defect being chased, a
+texture that uploads, carries content, and comes out black.
+
+It is now implemented, and on the menu's lists it **never fires**:
+
+```
+tex-shifts=0 offset-dropped=0 tiles=35
+```
+
+`texture_offset` is zero throughout, the command not being emitted here. So the
+mechanism is right against the reference and is not this defect. It will matter
+where the game uses it, and the counters will say when.
+
+> **Third value in a week that was decoded and reached no one** — `dkr_cc_lookup`'s
+> answer, `state.billboard`, and now this. That is a habit worth naming: **a field
+> that is written and never read is a defect, whatever the comment above it
+> says.** `grep` for the assignment and then for a use; the second search is the
+> one nobody runs.
+
+### And a counter of my own to distrust
+
+`st inside=837 outside=432` measures whether a corner's `s` and `t` fall in
+[0,1] — but `tex_scale_s` normalises over the texture's **larger** side, since
+that is Glide's convention. On a 64x32 texture a `t` of 1.0 means sixty-four
+texels, twice the height, so "outside [0,1]" is not the question I meant to ask
+for anything that is not square. The figure is not wrong; it is not measuring
+what its name claims.

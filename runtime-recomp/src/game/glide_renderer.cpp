@@ -345,6 +345,12 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
         // do vary their s and t and the screen still shows one colour, the
         // texture being sampled is the first thing to rule out.
         std::fprintf(stderr,
+                     "[gfx] frame dump: tex-shifts=%lu offset-dropped=%lu "
+                     "tiles=%lu\n",
+                     context_.state.texture_shifts_applied,
+                     context_.state.texture_offset_dropped,
+                     context_.state.tiles_decoded);
+        std::fprintf(stderr,
                      "[gfx] frame dump: textures uniform=%lu varied=%lu\n",
                      context_.state.textures_uniform,
                      context_.state.textures_varied);
