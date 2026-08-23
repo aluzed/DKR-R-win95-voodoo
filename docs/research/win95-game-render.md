@@ -1982,3 +1982,38 @@ Two things survive, and they are smaller than the story they were part of.
 > narrower. The habit that catches it is the one this file keeps rediscovering —
 > ask what the number would print if the thing were working perfectly, and check
 > that it differs from what it prints now.
+
+## Which switch was lying, and the rule that follows — 23 August 2026
+
+`DKR_PAINT_WHITE=1` alone, real combiner, frame 59: **painted=191,153**, against
+the baseline's 193,905. Sound. With every vertex forced opaque white and the
+combiner reading `texel x shade`, the output is the texel and the coverage is the
+same — which is exactly what it should be, and it is the first time that switch
+has been checked against a known answer rather than used to produce one.
+
+`DKR_FORCE_COMBINE=shade` added on top: **2,769**. The combiner then reads the
+vertex colour alone, every vertex is white, and the coverage should be unchanged.
+It falls by seventy.
+
+So the broken instrument is `DKR_FORCE_COMBINE=shade`, and it is not a small
+matter: it was used to establish "the loss is geometric, not in the textures",
+and every run that carried it has to be read as suspect. Those conclusions were
+already withdrawn with `differing`; this says they cannot simply be re-derived
+from the same runs either.
+
+### The rule these three days have earned
+
+Every diagnostic switch in this port now has to be **checked against an outcome
+known in advance** before its answer is believed. The canary does that for the
+card — two triangles whose painted area is 4,950 pixels by construction, drawn
+into the game's own frame. `DKR_PAINT_WHITE` has now had the same treatment, by
+running it alone where its expected effect is "no change in coverage".
+
+The switches that have not had it: `DKR_FORCE_COMBINE`, whose shade mode is
+demonstrably wrong; `DKR_FLATTEN_W`; `DKR_NEUTRAL`, whose full mask was checked
+against the plain block but whose individual bits were not; `DKR_FORCE_STATE`;
+`DKR_NO_DEPTH`; `DKR_SCISSOR`.
+
+> An instrument that has never been shown a case whose answer is known is not an
+> instrument. It is a second hypothesis, entangled with the first, and this file
+> now records four occasions where the two were mistaken for one.
