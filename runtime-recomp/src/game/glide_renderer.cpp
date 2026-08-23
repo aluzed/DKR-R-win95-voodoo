@@ -193,6 +193,7 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
     std::memset(seen, 0, sizeof(seen));
     unsigned long distinct = 0;
     unsigned long non_background = 0;
+    unsigned long painted = 0;
     const std::uint32_t background = pixels[0] & 0x00FFFFFFu;
     for (int y = h - 1; y >= 0; y--) {
         const std::uint32_t* row = pixels + static_cast<std::size_t>(y) * w;
@@ -213,6 +214,20 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                 distinct++;
             }
             if ((p & 0x00FFFFFFu) != background) { non_background++; }
+            /* --- And what "painted" actually means ------------------------- *
+             *
+             * `differing` counts pixels unlike the **corner**, which is whatever
+             * happens to be at (0,0) -- black on one run and white on the next.
+             * Read as a coverage figure it inverts whenever the corner does, and
+             * it has now been read that way twice: once across a table where
+             * three rows carried `DKR_PAINT_WHITE` and one did not, and once when
+             * a white frame's 112,081 "painted" pixels were in fact the 112,081
+             * that had *not* been.
+             *
+             * The frame is cleared to black and the game's first fill is black,
+             * so a pixel that is not black is a pixel something drew. That is
+             * the same question whatever the corner turns out to be. */
+            if ((p & 0x00FFFFFFu) != 0u) { painted++; }
         }
         for (int i = 0; i < pad; i++) { std::fputc(0, out); }
     }
@@ -220,9 +235,9 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
 
     std::fprintf(stderr,
                  "[gfx] frame dump: %s %dx%d corner=%06lX distinct=%lu "
-                 "differing=%lu/%ld\n",
+                 "differing=%lu painted=%lu/%ld\n",
                  path, w, h, static_cast<unsigned long>(background),
-                 distinct, non_background, static_cast<long>(w) * h);
+                 distinct, non_background, painted, static_cast<long>(w) * h);
 
     // What the TMU was pointed at while that frame was drawn. Printed here
     // rather than in the periodic report because it is this frame the image

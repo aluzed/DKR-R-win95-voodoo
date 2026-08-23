@@ -1936,3 +1936,49 @@ Two measurements that cannot both be accommodated by any story about the card
 losing state. The next step is not another switch; it is to stop reading
 `differing` as a coverage figure, which is the second time in two days that a
 counter has been read as answering a question it was not asked.
+
+## There was no factor of seventy, and no defect to find — 23 August 2026
+
+A counter that answers the question actually asked: `painted`, the number of
+pixels that are not the clear colour. The frame is cleared to black and the
+game's first fill is black, so a non-black pixel is a pixel something drew,
+whatever the corner turns out to be.
+
+The build with **no switches at all**, frame 59:
+
+```
+corner=94BAFF distinct=597 differing=306135 painted=193905/307200
+```
+
+**193,905 of 307,200 — sixty-three per cent.** That is the same figure the
+`DKR_FORCE_STATE` runs produced (193,919 and 193,715), which I had been reading
+as seventy times better than the baseline. The baseline was never worse. It was
+being measured against a sky-coloured corner while the others were measured
+against white.
+
+So the sequence that began with "429,306 pixels of on-screen surface handed over
+and 2,857 painted" was comparing a bounded area estimate against a corner-relative
+count, and every step after it inherited the error.
+
+### What is left of it
+
+Two things survive, and they are smaller than the story they were part of.
+
+- **The port paints sixty-three per cent of the frame.** The rest is black. Some
+  of it is background past the edge of the sky quad — 72,703 pixels beyond
+  x = 440, measured — and the remainder is geometry whose colour is dark. Whether
+  that is right is a question for E09-S02 and a reference capture, not a
+  rendering failure to hunt.
+- **`DKR_FORCE_COMBINE=shade` with `DKR_PAINT_WHITE` paints 2,769 pixels**, where
+  the same geometry with the real combiner covers 193,905. Every vertex is opaque
+  white and the combiner is the vertex colour alone, so every drawn pixel should
+  be white. That anomaly is real, and it belongs to the diagnostic switches
+  rather than to the game's rendering.
+
+> **Three counters in two days, each read as answering a question it was not
+> asked**: the probe that had lost its perspective divide, `differing` read as
+> coverage, and `textures_black` read as "is it dark". The common shape is a
+> figure whose name describes the intent and whose arithmetic describes something
+> narrower. The habit that catches it is the one this file keeps rediscovering —
+> ask what the number would print if the thing were working perfectly, and check
+> that it differs from what it prints now.
