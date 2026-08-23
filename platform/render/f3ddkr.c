@@ -1270,6 +1270,25 @@ static void apply_state(dkr_f3d_context *c)
     if (c->force_combine) {
         c->render_state.combine =
             (dkr_combine_mode)(c->force_combine - 1u);
+        /* --- And "shade only" has to mean *without a texture* --------------- *
+         *
+         * Checked against a known answer on 23 August 2026, which is what this
+         * switch had never had: forcing the mode the game already uses,
+         * `texel_shade_a`, gives 193,931 painted pixels against the baseline's
+         * 193,905 -- so the mechanism is sound. Forcing `shade` gave 2,769, a
+         * fall of seventy on geometry whose vertices were all opaque white.
+         *
+         * The difference from the canary, which uses the same combiner and
+         * paints its 4,950 pixels exactly, is that the canary's block carries no
+         * texture. `apply_combine` returns early for `DKR_COMBINE_SHADE` without
+         * calling `bind_texture`, so the handle stays in the block, the TMU is
+         * never re-sourced, and the state pushed describes a texture the card is
+         * not looking at.
+         *
+         * Whatever the card then does with it, the switch was asking for
+         * something incoherent: "read the vertex colour alone" and "a texture is
+         * bound" in the same block. It now clears the handle, which is what the
+         * mode means. */
     }
     /* --- The texture handle does not survive the translation ---------------- *
      *
@@ -1287,7 +1306,26 @@ static void apply_state(dkr_f3d_context *c)
      * The handle therefore lives in the context, which is its proper place — it
      * is a decoder resource, not an RDP mode — and it is laid back down after
      * the translation. */
-    c->render_state.texture = c->bound_texture;
+    /* --- A combiner that reads no texel carries no texture ------------------ *
+     *
+     * **Measured, and it is not only the diagnostic switch's business.**
+     * `DKR_FORCE_COMBINE=shade` painted 2,769 pixels where the same geometry
+     * with the game's own mode painted 193,931 -- and the switch's only fault
+     * was leaving the handle in the block. Clearing it restores 193,041.
+     *
+     * `apply_combine` returns early for `DKR_COMBINE_SHADE` without calling
+     * `bind_texture`, so `grTexSource` is never re-issued and keeps pointing at
+     * an address the TMU allocator may since have freed and reassigned. The
+     * likely mechanism is a texture source outside texture memory, which the
+     * pixel pipeline fetches whether or not the combiner reads it -- that part
+     * is not directly measured and is written down as a guess.
+     *
+     * What is measured is the rule, and it applies to the game's own rendering
+     * too: the decoder can select `DKR_COMBINE_SHADE` on its own, and the frame
+     * that made this visible simply had none of them. So the handle is laid down
+     * only for the modes that read a texel. */
+    c->render_state.texture =
+        (c->render_state.combine == DKR_COMBINE_SHADE) ? 0u : c->bound_texture;
     /* Laid back down after the translation, like the texture handle and for the
        same reason: `dkr_rdp_to_render_state` fills the whole block from the RDP
        state, and the RDP state knows nothing of our catalogue. `force_combine`

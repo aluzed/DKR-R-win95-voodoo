@@ -2017,3 +2017,39 @@ against the plain block but whose individual bits were not; `DKR_FORCE_STATE`;
 > An instrument that has never been shown a case whose answer is known is not an
 > instrument. It is a second hypothesis, entangled with the first, and this file
 > now records four occasions where the two were mistaken for one.
+
+## Checking a switch against a known answer, and what it found — 23 August 2026
+
+The rule applied to itself first. Forcing `texel_shade_a` — the mode the game
+already uses on 230 of its 238 triangles — must change nothing, and it does not:
+**193,931 painted against the baseline's 193,905**. So the force *mechanism* is
+sound and only the `shade` *value* collapsed the frame.
+
+The difference from the canary, which uses the same combiner and paints its 4,950
+pixels exactly, is the texture handle. `apply_combine` returns early for
+`DKR_COMBINE_SHADE` without calling `bind_texture`, so `grTexSource` is never
+re-issued and keeps pointing at an address the TMU allocator may since have freed
+and reassigned — while the block still names a texture. The switch was asking for
+something incoherent: *read the vertex colour alone* and *a texture is bound*, in
+the same state.
+
+Clearing the handle restores it: **193,041**, the baseline.
+
+### And this is not only the switch's business
+
+The decoder can select `DKR_COMBINE_SHADE` on its own — `dkr_rdp_to_render_state`
+does exactly that for any combiner that reads no texel. The frame that made this
+visible simply had none: `emitted combine=0/2/0/230/6`, zero in the shade column.
+So the rule is now in the translation rather than in the switch: **the texture
+handle is laid down only for the modes that read a texel.** The baseline is
+unchanged by it — 191,176 against 193,905, inside the run-to-run spread of the
+animation — and a latent way of blanking a surface is gone.
+
+The mechanism behind the card's refusal is a guess and is written down as one: a
+texture source left outside texture memory, which the pixel pipeline fetches
+whether or not the combiner reads it. What is measured is the rule.
+
+> This is the first time in three days that checking an instrument against a
+> known answer produced a **fix to the port** rather than a caveat on a
+> measurement. That is worth noticing: the incoherent state the switch was
+> asking for was one the decoder could ask for too.
