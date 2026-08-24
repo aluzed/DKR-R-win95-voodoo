@@ -2053,3 +2053,106 @@ whether or not the combiner reads it. What is measured is the rule.
 > known answer produced a **fix to the port** rather than a caveat on a
 > measurement. That is worth noticing: the incoherent state the switch was
 > asking for was one the decoder could ask for too.
+
+## The depth buffer was never cleared, and the intro renders — 24 August 2026
+
+The rule earned on 23 August, applied to the two switches it had not yet reached,
+and it answered on the first try.
+
+### First, what the black is not
+
+`DKR_PAINT_WHITE=1` with `DKR_FORCE_COMBINE=shade` — every vertex opaque white,
+the combiner the vertex colour alone, no texture bound — gives a two-colour frame
+that is a **coverage mask**: white where the pipeline wrote a pixel, black where
+it wrote none. Frame 3 of the menu anchor, list 59:
+
+```
+corner=FFFFFF distinct=2 differing=111822 painted=195378/307200
+```
+
+Compared pixel by pixel against the baseline frame of the same list, **104,842 of
+the two frames' black pixels are the same pixels** — the remainder is the
+animation having moved between the runs. So the black set does not depend on the
+colour written; it is the same set whatever is drawn. That rules out the
+textures, the combiner and the vertex colour in one measurement, and it is the
+first thing about these frames that a single run has ever settled.
+
+The paint stack at the centre says the same thing more sharply. Four triangles
+cover it, all opaque, all white, all `depth test-and-write`, the last of them
+570,843 pixels — and the pixel is black. Nothing between the combiner and the
+frame buffer can explain a pixel that five draws leave untouched. Only something
+that was already in the depth buffer can.
+
+### The question with an answer known in advance
+
+`DKR_FLATTEN_W=1` puts every triangle at `oow = 1`, the nearest depth Glide has;
+`DKR_PAINT_WHITE=1` makes them all opaque white. Against a buffer cleared to
+`GR_WDEPTHVALUE_FARTHEST` every one of them passes the test, the first writer
+keeps each pixel, and since the sky quad alone covers the screen — measured:
+`DKR_NO_DEPTH=1` paints 307,200 — the answer is **307,200 painted pixels**. That
+is arithmetic. It is not a hope about what the frame ought to look like.
+
+The six dumped lists came back:
+
+```
+39,008   0   959   0   0   0
+```
+
+Nothing passes, and what does decays to nothing: the first lists stamp the buffer
+at the nearest value and no later triangle can ever be *strictly* nearer.
+
+**The depth buffer is not being cleared.** Every list is tested against the
+depths the previous one left, and 38 % of the frame is geometry that lost to a
+frame that is no longer on screen.
+
+### The mask was half of it
+
+`gl_begin_frame` already opened `grDepthMask` for the duration of the clear —
+that fault was found on 21 August, and the reasoning behind it was right as far
+as it went. What it did not cover is the unit itself: `apply_depth` leaves
+`grDepthBufferMode` at `GR_DEPTHBUFFER_DISABLE` whenever the last thing drawn
+asked for no depth, and the last thing drawn is the fade rectangle, on every
+list. Opening the mode as well as the mask, for the clear alone:
+
+| | before | after |
+|---|---:|---:|
+| `FLATTEN_W` + `PAINT_WHITE`, known answer 307,200 | 0 | **307,200** |
+| baseline, list 49 | 184,048 | **307,200** |
+| baseline, list 59 | 191,176 | **306,445** |
+| baseline, list 69 | 154,413 | **307,199** |
+| baseline, list 79 | 129,863 | **306,775** |
+
+Lists 29 and 39 are unchanged at 28,396 and 0: they are the black transition
+lists, and they were never the question.
+
+**And the frames are the game.** List 59 is the Nintendo 64 logo turning in a
+blue sky with Diddy flying past it on his hovercraft, contrail included — 631
+distinct colours. Further into the run, the character-select screen shows Conker
+on the beach, the palms, the sand and the pyramid.
+
+That the card behaves so is a reading and is written down as one: the disabled
+depth unit has no auxiliary write for `grBufferClear` to perform, whatever the
+mask says. What is measured is that opening the mask alone does not clear and
+that opening the mode as well does, each against the same answer known in
+advance.
+
+### What this withdraws
+
+**"Depth is innocent", 20 August.** `DKR_NO_DEPTH=1` was run that day and
+reported *less* on screen, not more, which read as a refutation. It was one: of a
+frame in which fog was blackening the 3D layer, four days and four fixes ago. Run
+again on this build it gives 307,200 of 307,200 — the sky quad, drawn last,
+covering everything once nothing rejects it. The switch was sound both times; the
+frame it measured was not the same frame.
+
+**"The port paints sixty-three per cent and the rest is a question for a
+reference capture", 23 August.** It was not. The rest was the depth test, and
+72,703 black pixels attributed to "background past the edge of the sky quad" were
+the sky quad itself, rejected.
+
+> **The two readings that cost the most were both of a switch that was working.**
+> `DKR_NO_DEPTH` on 20 August and `DKR_FORCE_STATE=2` on 21 August each said
+> "depth is innocent" about a frame whose black had another cause at the time,
+> and the answer was carried forward after the cause was fixed. A measurement
+> carries the date of the build it was taken on, and the fix that follows it
+> expires it. Nothing in this file said so until now.

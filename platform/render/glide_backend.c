@@ -565,8 +565,38 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
      * We therefore open the mask for the duration of the clear. `has_state` is
      * invalidated so that the next `set_state` lays down the real state rather
      * than believing it already in place — otherwise the block comparison would
-     * skip the tidying up. */
+     * skip the tidying up.
+     *
+     * --- And the mask was only half of it -----------------------------------
+     *
+     * Measured on 24 August 2026, by a question whose answer was known before
+     * the run. `DKR_FLATTEN_W=1` puts every triangle at `oow = 1`, the nearest
+     * depth there is; `DKR_PAINT_WHITE=1` makes every one of them opaque white.
+     * Against a buffer cleared to `GR_WDEPTHVALUE_FARTHEST` every triangle
+     * passes, the first writer keeps each pixel, and the frame the sky quad
+     * alone covers is **307,200 painted pixels**. That is arithmetic, not a
+     * hope.
+     *
+     * The six dumped lists came back 39,008 — 0 — 959 — 0 — 0 — 0. Nothing
+     * passes, and it decays to nothing as the first lists stamp the buffer at
+     * the nearest value and no later triangle can be *strictly* nearer.
+     *
+     * So the clear does not reach the depth buffer. The mask is open; what is
+     * shut is the unit itself — `apply_depth` leaves `grDepthBufferMode` at
+     * `GR_DEPTHBUFFER_DISABLE` whenever the last thing drawn asked for no depth,
+     * which is every list, the fade rectangle being the last thing drawn. A
+     * disabled depth unit has no aux write for `grBufferClear` to perform,
+     * whatever the mask says.
+     *
+     * That the card behaves so is a reading of the measurement and not of any
+     * documentation to hand: what is measured is that opening the mask alone
+     * does not clear, and that opening the mode as well does. The mode is put
+     * back by the same `has_state` invalidation that already served the mask. */
     if (gs.depth_mask) {
+        if (gs.depth_mode) {
+            gs.depth_mode(g_depth_use_w ? GR_DEPTHBUFFER_WBUFFER
+                                        : GR_DEPTHBUFFER_ZBUFFER);
+        }
         gs.depth_mask(1);
         b.has_state = 0;
     }

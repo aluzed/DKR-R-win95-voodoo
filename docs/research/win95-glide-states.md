@@ -102,3 +102,26 @@ before reading.
 The lesson goes beyond Glide: **a counter whose background value is not
 distinguishable from the result measures nothing**, and it is all the more
 dangerous for displaying a success.
+
+## `grBufferClear` needs the depth unit open, not only its mask — 24 August 2026
+
+Two conditions, found four days apart, and the first alone looks like the whole
+of it.
+
+**The mask.** `grBufferClear` takes a depth value, and writes it only where
+`grDepthMask` is open. The state the previous list leaves closes it — the last
+thing DKR draws is a fade rectangle, which asks for no depth. Opening the mask
+for the clear was done on 21 August.
+
+**The mode.** That was not enough, and the measurement that says so had its
+answer worked out in advance: every triangle forced to `oow = 1`, the nearest
+depth there is, and every vertex opaque white, against a buffer cleared to
+`GR_WDEPTHVALUE_FARTHEST`, must paint every pixel any triangle covers —
+**307,200** on this frame. It painted **0**. `apply_depth` had left
+`grDepthBufferMode` at `GR_DEPTHBUFFER_DISABLE`, again because of the fade
+rectangle, and a disabled depth unit performs no auxiliary write for the clear
+whatever the mask says. Opening the mode as well gives 307,200 exactly.
+
+The explanation is a reading of the measurement and not of any documentation to
+hand. What is measured is the pair of figures, and they are what the code rests
+on: see `docs/research/win95-game-render.md` for the frames on either side of it.
