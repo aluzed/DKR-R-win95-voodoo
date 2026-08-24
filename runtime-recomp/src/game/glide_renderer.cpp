@@ -1017,6 +1017,29 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "[gfx]   padded-to-power-of-2=%lu "
                      "refused-aspect=%lu\n",
                      total_tex_padded_, total_tex_aspect_);
+        // Which shapes the 8:1 rule reaches, and what padding them costs. The
+        // rule used to refuse them on a stated cost of "eight times memory",
+        // and a factor is not a quantity.
+        if (context_.state.aspect_padded_n != 0) {
+            char shapes[128];
+            unsigned pos = 0;
+            for (unsigned i = 0; i < context_.state.aspect_padded_n; i++) {
+                const int n = std::snprintf(
+                    shapes + pos, sizeof(shapes) - pos, "%s%ux%u",
+                    (i == 0) ? "" : " ",
+                    static_cast<unsigned>(context_.state.aspect_padded_dims[i][0]),
+                    static_cast<unsigned>(context_.state.aspect_padded_dims[i][1]));
+                if (n <= 0 || pos + static_cast<unsigned>(n) >= sizeof(shapes)) {
+                    break;
+                }
+                pos += static_cast<unsigned>(n);
+            }
+            std::fprintf(stderr,
+                         "[gfx]   aspect-padded shapes: %s | count=%lu "
+                         "texels=%lu\n",
+                         shapes, context_.state.textures_aspect_padded,
+                         context_.state.aspect_padded_texels);
+        }
         // The normalised coordinates. A neighbourhood of [0,1] confirms the 10.5
         // format and the width in use; thousands refute it.
         std::fprintf(stderr,

@@ -142,9 +142,15 @@ typedef struct {
     /* Padded up to the next power of two, which the Voodoo requires and the N64
        does not. */
     unsigned long     textures_padded;
-    /* Refused for a ratio beyond 8:1, which padding cannot fix without
-       multiplying memory by eight. */
+    /* Refused because the largest side is beyond Glide's 256, which no padding
+       reaches. The 8:1 ratio used to be refused here too, on a stated cost of
+       "eight times memory" that turned out to be 80 KiB a list; it is padded
+       now, and counted below rather than lost. */
     unsigned long     textures_bad_aspect;
+    unsigned long     textures_aspect_padded;
+    unsigned short    aspect_padded_dims[8][2];
+    unsigned          aspect_padded_n;
+    unsigned long     aspect_padded_texels;
     /* The extremes of the normalised coordinates. They must stay in the
        neighbourhood of [0,1]; thousands would say the scale is wrong. The
        measurement exists to be able to contradict the 10.5 format

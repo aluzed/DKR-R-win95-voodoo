@@ -2215,3 +2215,69 @@ still unexplained.
 > frame dump for five days, next to an image full of failed cutouts, and it was
 > read as "DKR does not use the alpha test" rather than as "this counter has
 > never once been non-zero". The second reading costs one grep.
+
+## A factor of eight that was eighty kilobytes — 24 August 2026
+
+`cmd_set_tile_size` refused every texture whose padded sides were further apart
+than 8:1, which is Glide's limit, and gave its reason in place: *"we cannot pad
+to satisfy it — that would amount to multiplying memory by eight"*. The surface
+then draws with no texture at all.
+
+The counter beside it read **`refused-aspect=823`** over three hundred lists.
+Eight hundred and twenty-three surfaces a run, silently untextured, to save a
+quantity nobody had written down.
+
+### The shapes, and what they cost
+
+Recorded as they were turned away, on the character-select and Ancient Lake
+lists:
+
+```
+aspect-refused shapes: 192x11 248x11 | texels as-is=20480 padded-to-8to1=40960
+aspect-refused shapes: 128x8         | texels as-is= 2048 padded-to-8to1= 4096
+```
+
+Three shapes, and the whole of the padding is **40,960 texels a list — 80 KiB**
+against the Voodoo 2's two megabytes of texture memory. The largest single
+texture it creates is 256x32, sixteen kilobytes. The factor of eight was real and
+the quantity is four per cent of one TMU.
+
+So they are padded, by the loop that already padded to powers of two, repeating
+the pattern rather than blanking it. **The coordinate scale is untouched**, and
+that is worth stating because it is the one thing that could have gone wrong:
+Glide addresses a texture over its larger side — `1/(32 x big)`, the finding of
+20 August — and only the smaller side grows, so `big` and the divisor are the
+same before and after. A triangle sampling inside the real texture reads exactly
+the texels it read before.
+
+`refused-aspect` is now 0 on every list, and the palm at the top of the
+character-select screen — the one that kept its rectangle when `CVG_X_ALPHA` was
+translated, and which was written down that hour as "a third route" — has its
+background. It was not a third route. It was a texture that never arrived.
+
+> **A cost expressed as a factor is not a cost.** "Eight times the memory" was
+> written once and believed for months, and it took one counter printing three
+> shapes to turn it into a figure that answers itself. The refusal was even
+> honest about being a refusal — it counted itself — and the count was read for
+> weeks as a fact about the game rather than as a bill.
+
+## The white sheets are an alpha with one bit — 24 August 2026
+
+Not fixed here, but named. `DKR_PROBE=250,300` on the character-select screen
+returns the paint stack of the grey sheet lying over the characters:
+
+```
+tri=541 area=16223 rgb=FFFFFF combine=3 blend=1 depth=1 tex=1
+  tex 64x64 fmt=3 st=(-36,40) (40,100) (100,23) dark=2848/4096 mean=7/31
+```
+
+`fmt=3` is IA, alpha-blended, mostly dark, and it comes out as an opaque grey
+slab. Every texture this port uploads is converted to ARGB1555, which has **one
+alpha bit**, and `texture.c` thresholds IA8 and IA16 at the midpoint — a fact its
+own comment states plainly and flags as a known loss. A soft halo with a
+transparency ramp becomes a hard-edged plate.
+
+The Voodoo has `GR_TEXFMT_ALPHA_INTENSITY_88`: eight bits of intensity and eight
+of alpha, sixteen bits a texel — **the same memory as ARGB1555** and exactly the
+N64's IA16 semantics. I and IA at every size fold into it without loss. That is
+the shape of the fix, and it is the next thing here.

@@ -1458,12 +1458,31 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
     {
         const int pl = next_power_of_two(width);
         const int ph = next_power_of_two(height);
-        /* The card's ratio of at most 8:1. We cannot pad to satisfy it — that
-           would amount to multiplying memory by eight — so we refuse, and we
-           count it rather than keep quiet about it. */
-        const int big   = (pl > ph) ? pl : ph;
-        const int small = (pl > ph) ? ph : pl;
-        if (big > 256 || (small > 0 && big / small > 8)) {
+        const int big = (pl > ph) ? pl : ph;
+        int padw = pl, padh = ph;
+        /* --- The 8:1 rule, and the cost it was refused over ------------------ *
+         *
+         * This used to refuse outright: "we cannot pad to satisfy it — that
+         * would amount to multiplying memory by eight". A factor is not a
+         * quantity, and nobody had converted it into one.
+         *
+         * Measured on 24 August 2026 by recording the shapes as they were
+         * turned away. The character-select and Ancient Lake lists refuse
+         * **128x8, 192x11 and 248x11** and nothing else, 823 uploads over three
+         * hundred lists. Padding all of them to 8:1 costs **40,960 texels a
+         * list — 80 KiB** against the Voodoo 2's two megabytes of texture
+         * memory, and the largest single texture it creates is 256x32, that is
+         * 16 KiB.
+         *
+         * So the refusal cost 823 surfaces their texture a run to save four per
+         * cent of one TMU. We pad. The pattern is repeated rather than blanked,
+         * which the loop below already did for the power-of-two padding, and the
+         * coordinate scale is untouched: Glide addresses over the larger side
+         * and only the smaller one grows.
+         *
+         * `big > 256` stays a refusal — that is Glide's largest LOD, and no
+         * padding reaches it. */
+        if (big > 256) {
             c->render_state.texture = 0;
             c->bound_texture = 0;
             c->texture_key = 0;
@@ -1471,10 +1490,31 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             c->state_dirty = 1;
             return;
         }
+        while (padw > 0 && big / padw > 8) { padw <<= 1; }
+        while (padh > 0 && big / padh > 8) { padh <<= 1; }
+        if (padw != pl || padh != ph) {
+            unsigned i;
+            int seen = 0;
+            for (i = 0; i < c->state.aspect_padded_n; i++) {
+                if (c->state.aspect_padded_dims[i][0] == (unsigned short)width &&
+                    c->state.aspect_padded_dims[i][1] == (unsigned short)height) {
+                    seen = 1;
+                    break;
+                }
+            }
+            if (!seen && c->state.aspect_padded_n < 8u) {
+                const unsigned n = c->state.aspect_padded_n;
+                c->state.aspect_padded_dims[n][0] = (unsigned short)width;
+                c->state.aspect_padded_dims[n][1] = (unsigned short)height;
+                c->state.aspect_padded_n++;
+            }
+            c->state.textures_aspect_padded++;
+            c->state.aspect_padded_texels += (unsigned long)(padw * padh);
+        }
         c->tex_width = width;
         c->tex_height = height;
-        c->tex_padded_width = pl;
-        c->tex_padded_height = ph;
+        c->tex_padded_width = padw;
+        c->tex_padded_height = padh;
     }
 
     if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
