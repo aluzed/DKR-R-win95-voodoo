@@ -120,6 +120,16 @@ typedef struct {
     unsigned char   z_test;
     unsigned char   z_write;
     unsigned char   fog;
+    /* The RDP's *other* way of making a texel disappear, and the one a port
+       that only looks at `alpha_compare` never sees. `CVG_X_ALPHA` multiplies
+       the coverage by the alpha, so a texel at alpha zero covers nothing;
+       `ALPHA_CVG_SEL` then feeds that coverage back as the alpha. Together they
+       are the cutout the `G_RM_*TEX_EDGE` modes are made of — foliage, sprites,
+       every billboard with a hole in it — and they are not an alpha test in the
+       RDP's own vocabulary. Decoded here so that the question "does this surface
+       have a cutout" can be asked of a measurement. */
+    unsigned char   cvg_x_alpha;
+    unsigned char   alpha_cvg_sel;
 } dkr_rdp_state;
 
 /* --- Decoding -------------------------------------------------------------- */

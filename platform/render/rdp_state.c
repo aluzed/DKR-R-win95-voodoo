@@ -92,6 +92,12 @@ void dkr_rdp_decode_othermode(unsigned int mode_h, unsigned int mode_l,
        is what carries it. */
     out->z_test  = (unsigned char)((mode_l >> 4) & 1u);
     out->z_write = (unsigned char)((mode_l >> 5) & 1u);
+    /* `CVG_X_ALPHA` at 12 and `ALPHA_CVG_SEL` at 13, of the full word. They are
+       the cutout, and they are not `alpha_compare` — see the note on the fields
+       they fill. Decoded here and counted before they are acted on: whether DKR
+       uses them at all is a question for a frame, not for a reading. */
+    out->cvg_x_alpha   = (unsigned char)((mode_l >> 12) & 1u);
+    out->alpha_cvg_sel = (unsigned char)((mode_l >> 13) & 1u);
     /* --- Fog, read out of the blender -------------------------------------- *
      *
      * It has no bit of its own. It follows from the blender's configuration on
@@ -315,8 +321,34 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
     out->depth  = rdp->z_test ? (rdp->z_write ? DKR_DEPTH_TEST_AND_WRITE
                                               : DKR_DEPTH_TEST_ONLY)
                               : DKR_DEPTH_DISABLED;
-    out->alpha_test      = (unsigned char)(rdp->alpha_compare != 0);
-    out->alpha_reference = 128;      /* the real threshold comes from G_SETPRIMCOLOR */
+    /* --- The cutout the RDP does not call an alpha test --------------------- *
+     *
+     * `alpha_compare` alone was the whole of this line, and it is zero on every
+     * frame this port has measured — including the ones where a palm tree is
+     * drawn inside an opaque grey rectangle, which is a cutout failing if
+     * anything is.
+     *
+     * The RDP has a second mechanism and DKR uses that one. `CVG_X_ALPHA`
+     * multiplies the coverage by the alpha, so a texel at alpha zero covers
+     * nothing and never reaches the frame buffer; the `G_RM_*TEX_EDGE` render
+     * modes are built on it. Measured on the character-select and Ancient Lake
+     * lists, 24 August 2026: `cvg-x-alpha` between 2 and 47 state applications
+     * per frame, `alpha-cvg-sel` between 37 and 108, and `alpha-test` zero
+     * throughout. The port was reading the one bit the game never sets.
+     *
+     * The threshold is 1 rather than 128 because that is what the mechanism
+     * says: coverage times alpha removes only what has *no* alpha. A texture
+     * with one alpha bit — RGBA16, which is what these surfaces carry — is then
+     * translated exactly. Where the alpha has more bits the N64 dithers a
+     * partial coverage and a hard threshold cannot; that is an approximation,
+     * and it is this one rather than a rounder-looking 128 because 128 would
+     * also throw away every half-transparent texel the game did mean to keep.
+     *
+     * `ALPHA_CVG_SEL` is counted but not acted on: on its own it feeds the
+     * coverage back as the alpha, which is antialiasing and not a cutout. */
+    out->alpha_test      = (unsigned char)(rdp->alpha_compare != 0 ||
+                                           rdp->cvg_x_alpha != 0);
+    out->alpha_reference = (unsigned char)((rdp->alpha_compare != 0) ? 128 : 1);
     out->fog_enabled     = rdp->fog;
     /* --- Blending, derived from the blender instead of assumed -------------- *
      *

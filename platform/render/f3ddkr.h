@@ -335,6 +335,13 @@ typedef struct {
     unsigned long      tri_st_varying;
     unsigned long      combiners_known;
     unsigned long      combiners_unknown;
+    /* State applications whose render mode carries the RDP's cutout bits. The
+       character-select screen shows palms and bushes inside opaque black
+       rectangles, and `alpha-test=0` on every frame measured so far — so either
+       DKR asks for its cutout some other way, or it asks for none. These two
+       counters tell those apart before anything is changed. */
+    unsigned long      states_cvg_x_alpha;
+    unsigned long      states_alpha_cvg_sel;
     unsigned long long unknown_keys[8];
     unsigned           unknown_keys_n;
     /* The composition of each unknown configuration, without which the key only

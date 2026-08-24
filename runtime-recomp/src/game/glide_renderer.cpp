@@ -331,6 +331,12 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
                      context_.state.emitted_per_depth[2],
                      context_.state.emitted_alpha_test,
                      context_.state.alpha_ref_max);
+        // The RDP's other way of cutting a texel out, which `alpha-test` above
+        // does not see. Counted before anything acts on it.
+        std::fprintf(stderr,
+                     "[gfx] frame dump: cvg-x-alpha=%lu alpha-cvg-sel=%lu\n",
+                     context_.state.states_cvg_x_alpha,
+                     context_.state.states_alpha_cvg_sel);
         std::fprintf(stderr, "[gfx] frame dump: centre hits=%lu\n", hits);
             for (k = 0; k < shown; k++) {
                 // Oldest of the retained ones first, so the list reads in the

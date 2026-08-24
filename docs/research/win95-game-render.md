@@ -2156,3 +2156,62 @@ the sky quad itself, rejected.
 > and the answer was carried forward after the cause was fixed. A measurement
 > carries the date of the build it was taken on, and the fix that follows it
 > expires it. Nothing in this file said so until now.
+
+## The cutout the port was reading in the wrong bit — 24 August 2026
+
+With the depth buffer cleared, the run gets far enough to show its next defect
+plainly: on the character-select screen and on Ancient Lake, every palm and every
+bush is drawn inside an **opaque grey rectangle**, and the balloons are square.
+
+That is a cutout failing, and the port's own counter said there was no cutout to
+fail: `alpha-test=0` on every frame ever measured here.
+
+### Two mechanisms, and DKR uses the other one
+
+The RDP has two ways of removing a texel. `alpha_compare` — the two bits at the
+bottom of the low other-mode word — is the one this translation read. The other
+is `CVG_X_ALPHA`, at bit 12, which multiplies the coverage by the alpha so that a
+texel at alpha zero covers nothing; `ALPHA_CVG_SEL`, at 13, then feeds that
+coverage back as the alpha. Together they are what the `G_RM_*TEX_EDGE` render
+modes are made of, and they are not called an alpha test anywhere in the RDP's
+vocabulary.
+
+Decoded and counted before anything acted on them, on the six lists from 309 to
+459:
+
+```
+cvg-x-alpha =  47  26  20  29   2  37
+alpha-cvg-sel = 108 75 56 74  37  81
+alpha-test  =   0   0   0   0   0   0
+```
+
+So the bit the port was reading is the one the game never sets, and the bit the
+game sets on twenty to fifty state applications a frame was not decoded at all.
+
+### The translation, and what it is exact about
+
+`CVG_X_ALPHA` becomes an alpha test at reference **1**, not 128. Coverage times
+alpha removes only what has *no* alpha, so on a texture with one alpha bit —
+RGBA16, which is what these surfaces carry — the translation is exact. Where the
+alpha has more bits the N64 dithers a partial coverage and a hard threshold
+cannot; that is an approximation either way, and 1 is the one that throws away
+only what the game meant to throw away. `ALPHA_CVG_SEL` alone is antialiasing
+rather than a cutout, so it is counted and not acted on.
+
+The same lists after: `alpha-test = 94 58 43 70 …`, reference 1. The palms have
+their backgrounds, the balloons are round, and the shoreline foliage is foliage
+instead of a row of grey tiles.
+
+### What is not fixed
+
+One palm at the top of the character-select screen keeps its rectangle, on a
+darker ground — so at least one surface asks for its cutout by some third route,
+and the audit that found this bit has not finished. The white sheets over the
+characters are the doubled-glyph rectangles of 19 August, untouched by this and
+still unexplained.
+
+> **A counter that reads zero is not evidence of absence** unless something has
+> shown it capable of reading anything else. `alpha-test=0` was printed in every
+> frame dump for five days, next to an image full of failed cutouts, and it was
+> read as "DKR does not use the alpha test" rather than as "this counter has
+> never once been non-zero". The second reading costs one grep.

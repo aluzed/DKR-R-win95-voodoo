@@ -1220,6 +1220,9 @@ static void apply_state(dkr_f3d_context *c)
         }
     }
 
+    if (rdp.cvg_x_alpha)   { c->state.states_cvg_x_alpha++; }
+    if (rdp.alpha_cvg_sel) { c->state.states_alpha_cvg_sel++; }
+
     dkr_rdp_to_render_state(&rdp, &c->render_state, &exact);
     /* A diagnostic switch, not a workaround.
      *
