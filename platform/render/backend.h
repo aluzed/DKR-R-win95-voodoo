@@ -197,7 +197,7 @@ typedef struct {
        mode that uses one. **NATIVE** — `grConstantColorValue`. It is what tells
        one pass of DKR's multi-pass text from the next; see `rdp_state.h`. */
     unsigned int       constant_color;
-    /* --- Which entry of the E05-S03 catalogue applies, or -1 ----------------- *
+    /* --- Which entry of the E05-S03 catalogue applies, or none --------------- *
      *
      * `combine` above is a four-mode shorthand; the generated table covers
      * twenty-nine configurations and carries, for each, the Glide setup that
@@ -207,7 +207,17 @@ typedef struct {
      *
      * An **index**, not a pointer: the block is compared with `memcmp`, and a
      * pointer would make it depend on the pointer width and on where the table
-     * happens to sit. -1 means "not catalogued, use `combine`". */
+     * happens to sit.
+     *
+     * **The index is stored plus one, and zero means none.** It used to be
+     * stored as it was, with -1 for "not catalogued", and that made the zeroed
+     * block select entry 0 -- a two-texel configuration this port cannot serve.
+     * Every witness in `tools/win95/witnesses` builds its state with a `memset`,
+     * so every one of them had been running that entry since the recipes were
+     * wired on 22 August 2026; `ai88_probe.c` painted a black frame until the
+     * field was set by hand, which is how it was found. A default that has to be
+     * written down to be safe will be forgotten, so the safe value is now the
+     * one `memset` produces. */
     short              recipe;
     short              recipe_pad;    /* keeps the block free of implicit padding */
     dkr_blend_mode     blend;
@@ -254,6 +264,11 @@ typedef enum {
     DKR_TEXFMT_ARGB1555 = 0,      /* the Voodoo's natural format */
     DKR_TEXFMT_RGBA8888,          /* to be converted: the Voodoo 2 does not take it */
     DKR_TEXFMT_INTENSITY8,
+    /* Eight bits of intensity and eight of alpha, sixteen a texel — the same
+       memory as ARGB1555 and exactly what the N64's `I` and `IA` formats mean.
+       Which byte carries which is measured by `AI88.EXE` rather than assumed:
+       this port has already had one texel layout wrong from memory. */
+    DKR_TEXFMT_ALPHA_INTENSITY88,
     DKR_TEXFMT_COUNT
 } dkr_texture_format;
 

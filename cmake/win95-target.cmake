@@ -709,6 +709,19 @@ set_target_properties(DKRWin95CombinerProbe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95CombinerProbe)
 
+# The AI88 texture format, before anything is written to use it. Two facts about
+# the card that memory must not supply: which byte carries the alpha, and whether
+# the alpha really has eight bits. This port has already had one texel layout
+# wrong from memory for four months.
+add_executable(DKRWin95Ai88
+    "${DKR_WIN95_TOOLS}/witnesses/ai88_probe.c")
+target_link_libraries(DKRWin95Ai88 PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95Ai88 PROPERTIES
+    OUTPUT_NAME "AI88"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Ai88)
+
 # E05-S04 - the chaining of the two TMUs. grTexCombine's values are measured, not
 # assumed: it is the third time in this port that a Glide enumeration written from
 # memory turns out to be wrong.

@@ -103,6 +103,7 @@ typedef int           FxBool;
 #define GR_ASPECT_1x8  6
 #define GR_TEXFMT_ARGB_1555  0x0B
 #define GR_TEXFMT_INTENSITY_8 0x03
+#define GR_TEXFMT_ALPHA_INTENSITY_88 0x0D
 #define GR_MIPMAPLEVELMASK_BOTH  0x03
 #define GR_TMU0  0
 #define GR_TMU1  1
@@ -632,8 +633,8 @@ static void gl_set_state(void *self, const dkr_render_state *state)
      *
      * The texture still has to be bound -- the recipe says how to combine a
      * texel, not where it lives. */
-    if (state->recipe >= 0 && state->recipe < dkr_cc_table_count()) {
-        const dkr_cc_entry *e = dkr_cc_table_at(state->recipe);
+    if (state->recipe > 0 && state->recipe <= dkr_cc_table_count()) {
+        const dkr_cc_entry *e = dkr_cc_table_at(state->recipe - 1);
         if (e != 0) {
             if (e->setup.uses_texture) { bind_texture(state->texture); }
             dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
@@ -810,7 +811,10 @@ static dkr_texture_handle gl_texture_upload(void *self,
     info.largeLod    = lod;        /* no mipmap: E05-S08 */
     info.aspectRatio = aspect;
     info.format      = (desc->format == DKR_TEXFMT_INTENSITY8)
-                       ? GR_TEXFMT_INTENSITY_8 : GR_TEXFMT_ARGB_1555;
+                         ? GR_TEXFMT_INTENSITY_8
+                     : (desc->format == DKR_TEXFMT_ALPHA_INTENSITY88)
+                         ? GR_TEXFMT_ALPHA_INTENSITY_88
+                         : GR_TEXFMT_ARGB_1555;
     info.data        = (void *)desc->pixels;
 
     /* **The size comes from the card, not from a computation.** Measurement

@@ -2281,3 +2281,89 @@ The Voodoo has `GR_TEXFMT_ALPHA_INTENSITY_88`: eight bits of intensity and eight
 of alpha, sixteen bits a texel — **the same memory as ARGB1555** and exactly the
 N64's IA16 semantics. I and IA at every size fold into it without loss. That is
 the shape of the fix, and it is the next thing here.
+
+## The zero of a state block was a valid catalogue index — 25 August 2026
+
+A witness written to ask the card one question answered a different one first.
+
+`AI88.EXE` uploads a texture, draws a full-screen quad and reads the frame back.
+It came back **entirely black** — not the wrong colour, no colour. The state it
+pushed was built the way every witness in `tools/win95/witnesses` builds one:
+
+```c
+memset(&st, 0, sizeof(st));
+st.combine = DKR_COMBINE_TEXTURE;
+```
+
+`recipe` is E05-S03's catalogue index, and its "none" was **-1**. A `memset`
+leaves 0, and 0 is entry 0 of the table: `G_CC_BLENDTEX_PRIM`, a two-texel
+configuration marked `DKR_CC_TWO_TEXELS` and deferred to E05-S04 — a
+configuration this port cannot serve. Setting the field by hand made the same
+quad paint.
+
+Every witness in that directory zeroes its state block and not one of them sets
+`recipe`. So **every witness run since the recipes were wired on 22 August has
+been drawing under catalogue entry 0**, whatever combiner mode it believed it was
+testing. The game itself was never affected: `dkr_rdp_to_render_state`'s caller
+writes the field on every state application.
+
+The index is now stored **plus one, with zero meaning none**, so the value a
+`memset` produces is the safe one. Re-run with nothing set by hand, the witness
+paints. `-1` still reads as "none", so nothing that already passes the field is
+disturbed.
+
+> **A default that has to be written down to be safe will be forgotten.** The
+> comment on the field said "-1 means not catalogued" and was correct and
+> useless: the block is documented as `memcmp`-comparable and zero-initialised
+> everywhere in the tree, and the two facts were never put side by side. This is
+> the same shape as the counters this file keeps catching — a value whose name
+> describes the intent and whose arithmetic describes something else.
+
+## AI88: the card takes it, and its alpha does not arrive — 25 August 2026
+
+The format that was to fix the grey sheets, measured before a line was written to
+use it. Two questions with answers worked out first, and a control that turned
+out to matter more than either.
+
+**Which byte is which.** A uniform texel `0xC030` drawn opaquely returns the
+intensity: 192 if the high byte carries it, 48 if the low one does, and nothing
+in between. It returns **41**, which is 48 through the 565 quantisation and the
+combiner's 255/256 truncation. So the **low byte is the intensity and the high
+byte is the alpha**, which is what the name says — and this port has had a texel
+layout wrong from memory before, so it is worth the quad it cost.
+
+**How many alpha bits.** Four bands of alpha 0, 85, 170, 255 at intensity 255,
+alpha-blended over a pure blue quad. The red channel of the result is the alpha
+and nothing else. Expected 0, 85, 170, 255. Measured:
+
+```
+alpha    expected      red   pixel
+0               0        0   0000FF
+85             85        0   0000FF
+170           170        0   0000FF
+255           255        0   0000FF
+```
+
+Not a threshold — **nothing**. Even the band whose texel is `0xFFFF`, opaque
+white, leaves the blue background untouched. The alpha reaching the blender is
+zero for every AI88 texel.
+
+**The control, which is why this is not a dead end.** That sentence has two
+readings pointing opposite ways: the format is at fault, or this backend's alpha
+path is — and if it is the path, then the game's own hundred and fifty
+alpha-blended triangles a frame are wrong too and AI88 has nothing to do with it.
+The same quad, same blend, same combiner, in ARGB1555 with the alpha bit set:
+
+```
+opaque white 1555 over blue -> FFFFFF
+```
+
+So the alpha path is sound and the AI88 alpha specifically does not arrive. The
+`grTexCombine` pair the backend issues — `DECAL` for both colour and alpha —
+carries a 1555 alpha and not an AI88 one, and that is the next thing to ask the
+card.
+
+> The witness cost four runs and produced no fix. It also stopped a texture
+> format being adopted on the strength of "sixteen bits a texel, same memory,
+> exact semantics" — every word of which is true and none of which would have
+> made the sheets soft. That is what these are for.

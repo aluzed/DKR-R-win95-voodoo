@@ -1334,7 +1334,9 @@ static void apply_state(dkr_f3d_context *c)
        state, and the RDP state knows nothing of our catalogue. `force_combine`
        turns it off, because forcing a mode and then applying a table setup that
        ignores the mode would make the switch lie. */
-    c->render_state.recipe = c->force_combine ? (short)-1 : c->catalogue_index;
+    /* Plus one, zero meaning none -- see the note in `backend.h`. */
+    c->render_state.recipe =
+        c->force_combine ? (short)0 : (short)(c->catalogue_index + 1);
     c->render_state.recipe_pad = 0;
     /* Laid back down for the same reason as the texture handle: the wrap modes
        come from `G_SETTILE`, which is a decoder resource, and
@@ -1348,7 +1350,7 @@ static void apply_state(dkr_f3d_context *c)
     if (!c->batch_textured) {
         c->render_state.texture = 0;
         c->render_state.combine = DKR_COMBINE_SHADE;
-        c->render_state.recipe = -1;
+        c->render_state.recipe = 0;
     }
     if (!exact) {
         /* **An approximate translation that does not announce itself is worse
