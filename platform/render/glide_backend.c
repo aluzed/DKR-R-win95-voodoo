@@ -302,21 +302,19 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
            coordinates, each pass differing only by `G_SETPRIMCOLOR`. Without it
            the passes are indistinguishable and the letters stack into a smear.
          *
-           **The two orders differ, and I asserted they did not.** The RDP writes
-           `0xRRGGBBAA` in `w1`; `grConstantColorValue` takes `0xAARRGGBB` on a
-           context opened as `GR_COLORFORMAT_ARGB`. Passing one for the other
-           shifts every channel by a byte, which on the machine turned the whole
-           screen's blue to zero -- the background went from 0x7BDFF7 to 0x7BDF00
-           and the distinct-colour count fell from 926 to 227.
+           **The repacking used to happen here, and that was the wrong place.**
+           The RDP writes `0xRRGGBBAA`; `grConstantColorValue` takes
+           `0xAARRGGBB`, and passing one for the other shifts every channel by a
+           byte -- measured on the machine, the screen's blue went to zero, the
+           background from 0x7BDFF7 to 0x7BDF00, distinct colours from 926 to
+           227. The shift was correct and local, so `constant_color` went on
+           carrying the RDP word while `backend.h` said it carried ARGB.
          *
-           The first version of this comment claimed no repacking was needed. It
-           was written from memory and not measured, which is the same mistake
-           this file keeps recording elsewhere. */
-        if (gs.constant_color) {
-            const unsigned int argb = ((constant & 0xFFu) << 24) |
-                                      ((constant >> 8) & 0x00FFFFFFu);
-            gs.constant_color(argb);
-        }
+           `dkr_rdp_to_render_state` now repacks at the source, which is what
+           makes that sentence true for **every** consumer -- including the
+           catalogue setups, which read the field as documented and got the RDP
+           word for it. See the note there for what that cost. */
+        if (gs.constant_color) { gs.constant_color(constant); }
         gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
@@ -647,9 +645,35 @@ static void gl_set_state(void *self, const dkr_render_state *state)
      *
      * The texture still has to be bound -- the recipe says how to combine a
      * texel, not where it lives. */
+    /* --- And only when the entry is certified faithful ---------------------- *
+     *
+     * "Exact" and "closer to the game's image than the fallback" are two
+     * different properties, and the table only ever certified the first. A
+     * configuration classified `approximate`, `multipass` or `two texels`
+     * carries a setup the table itself says does not compute it -- a second
+     * fallback, preferred over the announced one on the strength of being in the
+     * table, with nothing measured either way.
+     *
+     * `combiner_probe.c` measures both now, same quad, same inputs, same reading
+     * point, on the card. Out of 29 configurations the announced fallback renders
+     * **seven** closer, and every one of the seven is non-exact; **not one exact
+     * entry is beaten by it** -- their deviations run 0 to 8 against the
+     * fallback's 0 to 156 on the same rows.
+     *
+     * The rule therefore follows the certification and not the table membership:
+     * a setup that reproduces the configuration is applied, one that is only its
+     * best available imitation gives way to the fallback E05-S03 specified.
+     *
+     * What it cost to learn: the one-cycle entries became reachable on 25 August
+     * 2026 and `G_CC_BLENDT_ENV_ALPHA_A_TxP` -- approximate, deviation 148
+     * against the fallback's 66 -- took over surfaces the fallback had been
+     * rendering. Wizpig came out a black silhouette. The six non-exact entries
+     * whose setup happens to measure closer than the fallback lose it here too,
+     * and that is deliberate: their advantage was measured on one synthetic quad
+     * with one set of inputs, which is not a property of the configuration. */
     if (state->recipe > 0 && state->recipe <= dkr_cc_table_count()) {
         const dkr_cc_entry *e = dkr_cc_table_at(state->recipe - 1);
-        if (e != 0) {
+        if (e != 0 && e->category == DKR_CC_EXACT) {
             if (e->setup.uses_texture) { bind_texture(state->texture); }
             dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
         } else {

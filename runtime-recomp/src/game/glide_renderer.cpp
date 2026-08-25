@@ -1,6 +1,7 @@
 #include "glide_renderer.hpp"
 
 #include "game_registration.hpp"
+#include "diagnostic_log.hpp"
 
 #include "librecomp/game.hpp"
 
@@ -1146,6 +1147,16 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                          static_cast<int>(context_.state.t_min * 1000.0F),
                          static_cast<int>(context_.state.t_max * 1000.0F));
         }
+        // **And commit what has just been written.** Everything above reaches
+        // the write-behind cache and nothing reaches the directory entry, which
+        // Windows 95 updates only at close -- so a run stopped from the outside
+        // leaves `DKRR.LOG` at zero bytes and every counter in it unreadable.
+        //
+        // Once per report, that is once per sixty lists, is the right rate: it
+        // is the rate at which there is anything new to read, and a commit per
+        // line would put a `FlushFileBuffers` between two `fprintf`s on a floppy
+        // controller's emulated timing.
+        dkr_diag_commit();
     }
 #else
     (void)task;

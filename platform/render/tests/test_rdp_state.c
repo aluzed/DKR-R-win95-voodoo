@@ -257,6 +257,56 @@ int main(void)
         check("two-cycle mode: likewise", exact == 0);
     }
 
+    /* --- The constant register's packing ------------------------------------- *
+     *
+     * `backend.h` says `constant_color` holds `0xAARRGGBB`; the RDP writes
+     * `0xRRGGBBAA`. The field carried the RDP word and one consumer compensated
+     * for it locally, so the header's sentence was true of that consumer and of
+     * no other. The catalogue's Glide setups were the second consumer, and they
+     * read it as documented.
+     *
+     * The alpha is what makes this visible rather than merely off-colour: under
+     * the wrong packing the constant's alpha is the RDP's **red**, so a pass the
+     * game means to be invisible comes out fully opaque. Measured on 25 August
+     * 2026 -- the character names went from letters to a flat rectangle. */
+    {
+        dkr_rdp_state s;
+        dkr_render_state r;
+        dkr_combiner c;
+        int exact = 0;
+
+        check("the packing is a byte rotation, not a reordering",
+              dkr_rdp_pack_argb(0x11223344u) == 0x44112233u);
+        check("and it leaves a fully opaque white alone",
+              dkr_rdp_pack_argb(0xFFFFFFFFu) == 0xFFFFFFFFu);
+
+        /* A combiner that reads PRIMITIVE, so that the register travels. */
+        memset(&s, 0, sizeof(s));
+        memset(&c, 0, sizeof(c));
+        c.rgb[0].a = DKR_CC_TEXEL0;
+        c.rgb[0].b = 8;                 /* zero */
+        c.rgb[0].c = DKR_CC_PRIMITIVE;
+        c.rgb[0].d = 7;                 /* zero */
+        s.combiner = c;
+        s.cycle = DKR_CYCLE_1;
+
+        s.prim_color = 0x8040200Fu;     /* R=0x80 G=0x40 B=0x20 A=0x0F */
+        dkr_rdp_to_render_state(&s, &r, &exact);
+        check("the primitive register reaches the state as 0xAARRGGBB",
+              r.constant_color == 0x0F804020u);
+
+        /* **The case the image failed on.** A primitive alpha of zero must
+           arrive as an alpha of zero. Under the old packing it arrived as the
+           red channel -- here 0x80 -- and a quad meant to be invisible painted
+           over what it should have let through. */
+        s.prim_color = 0x80402000u;
+        dkr_rdp_to_render_state(&s, &r, &exact);
+        check("a primitive alpha of zero arrives as an alpha of zero",
+              (r.constant_color >> 24) == 0u);
+        check("and the colour is still there under it",
+              (r.constant_color & 0x00FFFFFFu) == 0x00804020u);
+    }
+
     /* --- The safety net ------------------------------------------------------ *
      *
      * The catalogue is `CC_TABLE`, generated from the game's source; the
@@ -298,6 +348,72 @@ int main(void)
             }
             sprintf(label, "all %d catalogued entries are found by their key", n);
             check(label, n > 0 && found == n);
+        }
+
+        /* --- One cycle: the second stage is not part of the configuration ---- *
+         *
+         * `gbi.h` spells a one-cycle mode `gDPSetCombineMode(G_CC_X, G_CC_X)`,
+         * so the word the game sends carries the stage **twice**; the generated
+         * table spells the unused stage `{0,0,16,0}`. Both mean "not used" — the
+         * RDP evaluates a second stage only in two-cycle mode — and the key used
+         * to call them two different combiners.
+         *
+         * These three were reported unknown by the machine on 25 August 2026,
+         * 12,500 applications over 960 lists, and all three are in the
+         * catalogue. Written as compositions, second stage duplicated exactly as
+         * the game sends it. */
+        {
+            static const struct {
+                const char   *name;
+                unsigned char rgb[4];
+                unsigned char alpha[4];
+            } ONE_CYCLE[] = {
+                { "G_CC_MODULATEIA_PRIM",         {  1, 15,  3, 7 }, { 1, 7, 3, 7 } },
+                { "G_CC_BLENDT_ENV_ALPHA_A_TxP",  {  5,  1, 12, 1 }, { 1, 7, 3, 7 } },
+                { "G_CC_PRIMITIVE",               { 15, 15, 31, 3 }, { 7, 7, 7, 3 } }
+            };
+            const int m = (int)(sizeof(ONE_CYCLE) / sizeof(ONE_CYCLE[0]));
+            int q;
+            for (q = 0; q < m; q++) {
+                const dkr_cc_entry *e;
+                memset(&c, 0, sizeof(c));
+                c.rgb[0].a = ONE_CYCLE[q].rgb[0];
+                c.rgb[0].b = ONE_CYCLE[q].rgb[1];
+                c.rgb[0].c = ONE_CYCLE[q].rgb[2];
+                c.rgb[0].d = ONE_CYCLE[q].rgb[3];
+                c.alpha[0].a = ONE_CYCLE[q].alpha[0];
+                c.alpha[0].b = ONE_CYCLE[q].alpha[1];
+                c.alpha[0].c = ONE_CYCLE[q].alpha[2];
+                c.alpha[0].d = ONE_CYCLE[q].alpha[3];
+                c.rgb[1]   = c.rgb[0];        /* the duplication gbi.h writes */
+                c.alpha[1] = c.alpha[0];
+                e = dkr_cc_lookup(dkr_rdp_combiner_key(&c, DKR_CYCLE_1));
+                sprintf(label, "%s, sent duplicated, finds its entry",
+                        ONE_CYCLE[q].name);
+                check(label, e != 0 && e->name != 0 &&
+                             strcmp(e->name, ONE_CYCLE[q].name) == 0);
+            }
+        }
+
+        /* The negative control, and it is the one that matters: the rule must
+           drop the second stage **only** where the hardware does. In two cycles
+           it is evaluated, so changing it must still change the key — otherwise
+           this repair would have traded one silent conflation for another. */
+        {
+            dkr_combiner two, other;
+            memset(&two, 0, sizeof(two));
+            two.rgb[0].a = 1;   two.rgb[0].b = 15;  two.rgb[0].c = 4;   two.rgb[0].d = 7;
+            two.alpha[0].a = 7; two.alpha[0].b = 7; two.alpha[0].c = 7; two.alpha[0].d = 1;
+            two.rgb[1].a = 5;   two.rgb[1].b = 0;   two.rgb[1].c = 12;  two.rgb[1].d = 0;
+            two.alpha[1].a = 0; two.alpha[1].b = 7; two.alpha[1].c = 3; two.alpha[1].d = 7;
+            other = two;
+            other.rgb[1].a = 4;                  /* SHADE instead of ENVIRONMENT */
+            check("in two cycles the second stage still tells combiners apart",
+                  dkr_rdp_combiner_key(&two,   DKR_CYCLE_2) !=
+                  dkr_rdp_combiner_key(&other, DKR_CYCLE_2));
+            check("and in one cycle the very same difference is invisible",
+                  dkr_rdp_combiner_key(&two,   DKR_CYCLE_1) ==
+                  dkr_rdp_combiner_key(&other, DKR_CYCLE_1));
         }
     }
 

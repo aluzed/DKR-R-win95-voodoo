@@ -190,14 +190,46 @@ unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
     k |= (unsigned long long)(c->alpha[0].d & 0x07u) << 25;
     k |= (unsigned long long)((unsigned)cycle & 0x03u) << 28;
 
-    k |= (unsigned long long)(zero_class(c->rgb[1].a,  8) & 0x0Fu) << 32;
-    k |= (unsigned long long)(zero_class(c->rgb[1].c, 16) & 0x1Fu) << 36;
-    k |= (unsigned long long)(zero_class(c->rgb[1].b,  8) & 0x0Fu) << 41;
-    k |= (unsigned long long)(c->rgb[1].d   & 0x07u) << 45;
-    k |= (unsigned long long)(c->alpha[1].a & 0x07u) << 48;
-    k |= (unsigned long long)(c->alpha[1].b & 0x07u) << 51;
-    k |= (unsigned long long)(c->alpha[1].c & 0x07u) << 54;
-    k |= (unsigned long long)(c->alpha[1].d & 0x07u) << 57;
+    /* --- The second stage counts only when a second stage runs -------------- *
+     *
+     * `G_SETCOMBINE` always carries both stages; the RDP evaluates the second
+     * one **only in two-cycle mode**. In one cycle its sixteen fields are
+     * don't-care, exactly as the high spellings of zero are don't-care above,
+     * and for the same reason the key must not read them.
+     *
+     * It is the same defect as the one the paragraph above records, one level
+     * further out, and it survived that repair because both halves of the
+     * comparison were being read from the same kind of source. `gbi.h` writes a
+     * one-cycle mode as `gDPSetCombineMode(G_CC_X, G_CC_X)` -- the stage
+     * **duplicated** -- while the generated table spells the unused stage
+     * `{0,0,16,0}`. Two spellings of "not used", and the key called them two
+     * combiners.
+     *
+     * Measured on the machine on 25 August 2026, over 960 display lists:
+     * `combiners: catalogued=81360 unknown=12500`, and the three unknown keys
+     * were `0EF9F031`, `0EF922C5` and `07FF7108` -- that is
+     * `G_CC_MODULATEIA_PRIM`, `G_CC_BLENDT_ENV_ALPHA_A_TxP` and
+     * `G_CC_PRIMITIVE`, all three already in the catalogue, all three matching
+     * the game's first stage bit for bit. Twelve thousand five hundred surfaces
+     * a run drawn by the approximate fallback with their exact Glide setup
+     * sitting one comparison away.
+     *
+     * `dkr_combiner_eval_all` is the arbiter this agrees with: it too enters the
+     * second stage only under `DKR_CYCLE_2`. A key that reads what the evaluator
+     * ignores describes something the image does not depend on.
+     *
+     * The catalogue is checked against this: its 29 entries stay pairwise
+     * distinct under the rule, so nothing is conflated to win the match. */
+    if (cycle == DKR_CYCLE_2) {
+        k |= (unsigned long long)(zero_class(c->rgb[1].a,  8) & 0x0Fu) << 32;
+        k |= (unsigned long long)(zero_class(c->rgb[1].c, 16) & 0x1Fu) << 36;
+        k |= (unsigned long long)(zero_class(c->rgb[1].b,  8) & 0x0Fu) << 41;
+        k |= (unsigned long long)(c->rgb[1].d   & 0x07u) << 45;
+        k |= (unsigned long long)(c->alpha[1].a & 0x07u) << 48;
+        k |= (unsigned long long)(c->alpha[1].b & 0x07u) << 51;
+        k |= (unsigned long long)(c->alpha[1].c & 0x07u) << 54;
+        k |= (unsigned long long)(c->alpha[1].d & 0x07u) << 57;
+    }
     return k;
 }
 
@@ -228,6 +260,14 @@ unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
  */
 
 /* --- Translation to the abstract state -------------------------------------- */
+
+/* `0xRRGGBBAA`, as the RDP writes a colour register, to `0xAARRGGBB`, as
+   `grConstantColorValue` reads one. See the call site for what the two spellings
+   cost. */
+unsigned int dkr_rdp_pack_argb(unsigned int rgba)
+{
+    return ((rgba & 0xFFu) << 24) | ((rgba >> 8) & 0x00FFFFFFu);
+}
 
 /* Does a stage read a texel, and which one? */
 static int stage_reads(const dkr_cc_stage *s, unsigned char input)
@@ -273,10 +313,36 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
         const int uses_env =
             stage_reads(&rdp->combiner.rgb[0], DKR_CC_ENVIRONMENT) ||
             stage_reads(&rdp->combiner.rgb[1], DKR_CC_ENVIRONMENT);
+        /* --- Repacked here, once, and not at each consumer ------------------ *
+         *
+         * `G_SETPRIMCOLOR` and `G_SETENVCOLOR` carry `0xRRGGBBAA`;
+         * `grConstantColorValue` takes `0xAARRGGBB` on a context opened as
+         * `GR_COLORFORMAT_ARGB`, and `backend.h` says of this very field that it
+         * holds `0xAARRGGBB`. It held the RDP word instead, and the field's own
+         * documentation was the one thing in the chain that was right.
+         *
+         * `apply_combine` compensated for that locally, with a comment recording
+         * how the omission had once turned the screen's blue to zero. The
+         * compensation was correct and it was in the wrong place: when
+         * `gl_set_state` grew a second consumer -- the E05-S03 catalogue's Glide
+         * setups -- that one read the field as documented and got the RDP word.
+         *
+         * The visible cost, measured on 25 August 2026 the moment the one-cycle
+         * entries became reachable: the alpha of the constant is the RDP's **red**
+         * channel under the wrong packing, so a pass the game means to be
+         * invisible -- `G_CC_PRIMITIVE` with a primitive alpha of zero -- came out
+         * fully opaque. DKR draws its character names in several passes at
+         * identical coordinates, and one such pass painted a flat rectangle over
+         * the letters: `TIMBER`, `TIPTUP`, `WIZPIG` all became a yellow box, and
+         * the sky behind the intro went white the same way.
+         *
+         * A field whose two consumers disagree about its packing is a field with
+         * no packing. Repacking at the source is what makes the header's sentence
+         * true instead of aspirational. */
         if (uses_prim) {
-            out->constant_color = rdp->prim_color;
+            out->constant_color = dkr_rdp_pack_argb(rdp->prim_color);
         } else if (uses_env) {
-            out->constant_color = rdp->env_color;
+            out->constant_color = dkr_rdp_pack_argb(rdp->env_color);
         }
         if (uses_prim && uses_env) {
             /* Two constants, one register on our side. Announced rather than

@@ -2499,3 +2499,205 @@ wants the CPU cost of a frame, and this is a part of it that is now a number.
 > anything" was a good story and the wrong one; one run and a counter reading
 > zero replaced it with the mechanism. The temptation was to raise 512 to 2048
 > and move on, which would have worked for a while and taught nothing.
+
+## The second stage of a one-cycle combiner — 25 August 2026
+
+The catalogue matched five sixths of what the game sends and no more. Over 960
+display lists:
+
+```
+combiners: catalogued=81360 unknown=12500 keys: 0EF9F031 0EF922C5 07FF7108
+  0EF9F031 cycle=0 rgb0=(1,15,3,7)  a0=(1,7,3,7)
+  0EF922C5 cycle=0 rgb0=(5,1,12,1)  a0=(1,7,3,7)
+  07FF7108 cycle=0 rgb0=(15,15,31,3) a0=(7,7,7,3)
+```
+
+**Twelve thousand five hundred surfaces a run drawn by the approximate fallback,
+and all three configurations were already in the catalogue.** Decoded by hand
+against `gbi.h`'s mux tables:
+
+| key | composition | is |
+|---|---|---|
+| `0EF9F031` | `TEXEL0 * PRIMITIVE`, alpha `TEXEL0_A * PRIM_A` | `G_CC_MODULATEIA_PRIM` |
+| `0EF922C5` | `(ENV - TEXEL0) * ENV_A + TEXEL0` | `G_CC_BLENDT_ENV_ALPHA_A_TxP` |
+| `07FF7108` | `PRIMITIVE`, flat, no texture | `G_CC_PRIMITIVE` |
+
+Each matches its table entry's first stage bit for bit — the low thirty-two bits
+of the key are *identical*. The lookup failed on the high half.
+
+### Two spellings of "not used"
+
+`dkr_rdp_combiner_key` read both stages of the combiner unconditionally. The RDP
+evaluates the second one **only in two-cycle mode**; in one cycle its sixteen
+fields are don't-care, and the two sides of this comparison filled them
+differently:
+
+- `gbi.h` spells a one-cycle mode `gDPSetCombineMode(G_CC_X, G_CC_X)` — the stage
+  **duplicated** — so the word DKR sends carries it twice.
+- The generated table spells the unused stage `{0,0,16,0}` / `{0,0,7,0}`.
+
+Both mean "not used". The key called them two combiners, and no one-cycle entry
+could ever be reached by a game that duplicates.
+
+This is the same defect as the spellings of zero, found on 16 August, one level
+further out — and it survived that repair because the repair looked *inside* a
+stage and not at whether the stage counts at all.
+
+The rule now: the second stage enters the key only under `DKR_CYCLE_2`, which is
+exactly the condition under which `dkr_combiner_eval_all` enters it. A key that
+reads what the evaluator ignores describes something the image does not depend
+on. Checked against the catalogue: its 29 entries stay pairwise distinct under
+the rule, so nothing is conflated in order to win the match.
+
+```
+before: catalogued=81360  unknown=12500   over 960 lists
+after:  catalogued=113466 unknown=0       over 1080 lists
+```
+
+Zero unknown configurations, over a run that goes further than any before it.
+
+> Both halves of this comparison were generated, and that is what made the defect
+> invisible for so long: a hand-written table would have been suspected on sight,
+> whereas two generators, each internally consistent, disagreeing only on how to
+> spell "this field is ignored", read as one system that must be right.
+
+## And the log was never readable while the program ran — 25 August 2026
+
+Stopping the machine to read `DKRR.LOG` returned **nothing**: `size 0` in the
+directory entry, against 526 lost clusters — 4,208 KB — on the transfer volume.
+The bytes were on the disk, referenced by nothing.
+
+`game_main.cpp` has carried the explanation, and the remedy, since the bring-up:
+
+> Windows 95 only updates the size in the directory when the file is closed, and
+> the write-behind cache holds the sectors. A frozen program therefore leaves a
+> zero-byte log, whatever it wrote. […] `_commit` calls `FlushFileBuffers` […]
+> which forces the cache **and** the update of the directory entry. Called now
+> and then, it makes the log readable while the program is still running — and
+> that is the only way to observe a hang from the outside.
+
+`dkr_diag_commit` was defined, documented at that length, and **called from
+nowhere**. Every run that produced a readable log did so because the game
+terminated and the exception filter closed the stream; the property the function
+describes had never been true of any run.
+
+It is now called once per report, that is once per sixty lists, and the
+measurement above was read off a running machine:
+
+```
+DKRR     LOG      9197 2026-08-25  16:50      <- while the game was still drawing
+```
+
+The declaration moved into `diagnostic_log.hpp` rather than being repeated at the
+call site, so that a definition and its callers cannot drift apart in silence —
+which is the failure this whole entry is about.
+
+> A function whose comment states a property nothing establishes is worse than no
+> function: the comment was read, several times, as a description of what the
+> program does. The cheapest guard against this class is the one that would have
+> caught it here — a definition with no caller.
+
+## The constant register had two packings, and one consumer each — 25 August 2026
+
+Correct identification routed 12,500 combiner applications a run to their
+catalogued Glide setups for the first time, and the image got **worse** in two
+places: DKR's character names — `TIMBER`, `TIPTUP`, `WIZPIG` — became flat
+rectangles, and the sky behind the intro went white.
+
+The control run settled the attribution in one pass: the same binary without the
+key repair, same anchor (`DKR_DUMP_MODE=1`), same six lists — 209, 359, 509, 659,
+809, 959 — draws the letters. So the regression is in what the catalogue *does*,
+not in the fact that it now matches.
+
+### The defect is visible without running anything
+
+`backend.h` says of `dkr_render_state::constant_color`:
+
+> The constant colour the combiner mixes, **0xAARRGGBB**
+
+`f3ddkr.c` stores `G_SETPRIMCOLOR`'s word as the RDP writes it, `0xRRGGBBAA`, and
+`dkr_rdp_to_render_state` assigned it across unchanged. The field carried one
+packing and its documentation claimed the other.
+
+That had been noticed, and repaired **locally**: `apply_combine`'s
+`TEXTURE_CONSTANT` branch repacked before calling `grConstantColorValue`, under a
+comment recording that the omission had once turned the screen's blue to zero.
+The repair was correct and in the wrong place. When `gl_set_state` grew a second
+consumer — the E05-S03 setups — that one read the field as documented and got the
+RDP word.
+
+**What makes it visible rather than merely off-colour is the alpha.** Under the
+wrong packing the constant's alpha is the RDP's *red*. A pass the game means to
+be invisible — a flat primitive colour with a primitive alpha of zero — comes out
+fully opaque. DKR draws its names in several passes at identical coordinates, and
+one such pass painted a rectangle over the letters.
+
+The packing now happens once, at the source, which is what makes the header's
+sentence true for every consumer instead of for one of them. Four checks pin it,
+the one that names the defect being *a primitive alpha of zero arrives as an
+alpha of zero*.
+
+> A field whose two consumers disagree about its packing is a field with no
+> packing. The local fix is what let it stay that way for a week: it made the
+> only consumer of the day correct, so nothing was wrong until there were two.
+
+## "Exact" and "better than the fallback" are different properties — 25 August 2026
+
+With the packing repaired the sky came back and the letters' colours arrived —
+but as three flat blocks, and Wizpig turned into a black silhouette. So a second
+question, and this time the catalogue itself was under suspicion.
+
+`combiner_probe.c` answers half of it: every configuration declared `DKR_CC_EXACT`
+reproduces `dkr_combiner_eval` on the card, deviations 0 to 8. **The setups do not
+lie.** What the witness had never been asked is the other half — whether a
+catalogued setup is *closer than the fallback it displaces*. `gl_set_state`
+preferred it on the strength of being in the table, and nothing had ever compared
+the two.
+
+It is a number now. Same quad, same inputs, same reading point, both rendered:
+
+```
+configuration                   category      dev   fallback dev
+G_CC_MODULATEIA_PRIM            exact           4        107
+G_CC_PRIMITIVE                  exact           0        156
+G_CC_ENVIRONMENT                exact           0        150
+G_CC_DECAL_A_PRIM               exact           8        107
+G_CC_BLENDT_ENV_ALPHA_A_TxP     approximate   148         66  <-- fallback closer
+G_CC_BLENDT_ENV_ALPHA_A_PRIM    approximate   140         25  <-- fallback closer
+G_CC_BLENDI_ENV_ALPHA_A_PRIM    approximate   156        126  <-- fallback closer
+G_CC_BLENDI_ENV_ALPHA           multipass      99         49  <-- fallback closer
+G_CC_BLENDTEX_PRIM              two texels    117          0  <-- fallback closer
+...
+  configurations the announced fallback renders closer: 7 of 29
+```
+
+**Every one of the seven is non-exact, and not one exact entry is beaten.** So the
+rule follows the certification rather than table membership: a setup that
+reproduces the configuration is applied; one that is only its best available
+imitation gives way to the fallback E05-S03 specified for exactly this case.
+
+Six non-exact entries whose setup happens to measure closer than the fallback
+lose it here too. That is deliberate: their advantage was measured on one
+synthetic quad with one set of inputs, which is not a property of the
+configuration, whereas an exact entry's fidelity is.
+
+Wizpig's surfaces are `G_CC_BLENDT_ENV_ALPHA_A_TxP` — 148 against the fallback's
+66, the widest gap in the table.
+
+### What the three repairs together do to the image
+
+Against the control, at the same six anchored lists:
+
+| | control | after |
+|---|---|---|
+| combiner configurations unmatched | 18,450 over 959 lists | **0** |
+| Ancient Lake's water | flat yellow | **blue** |
+| the title screen's foreground | a black wedge across the corner | scenery, and a `START` banner |
+| character names | letters | letters |
+| Wizpig | uniform blue | dark, with his own colours |
+
+> The table has classified its entries since E05-S03 generated it, and the
+> classification was never load-bearing, because the setups it guards were
+> unreachable. The day they became reachable, table membership was read as "use
+> this" — and the entries that hurt were the ones the table had been calling
+> not-exact all along. The label was right; nothing was reading it.

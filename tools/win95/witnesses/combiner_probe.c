@@ -35,6 +35,7 @@
 
 static FILE *g_out;
 static int   g_fails;
+static int   g_fallback_wins;
 
 static void say(const char *fmt, ...)
 {
@@ -206,8 +207,9 @@ int main(void)
     }
 
     n = dkr_cc_table_count();
-    say("%-34s %-12s %8s %8s %s\n",
-        "configuration", "category", "expected", "got", "deviation");
+    say("%-34s %-12s %8s %8s %5s %8s %5s\n",
+        "configuration", "category", "expected", "got", "dev",
+        "fallback", "dev");
 
     for (i = 0; i < n; i++) {
         const dkr_cc_entry *e = dkr_cc_table_at(i);
@@ -253,9 +255,42 @@ int main(void)
         cb = g_pixels[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)] & 0x00FFFFFFu;
         d  = deviation(ca, cb);
 
-        say("%-34s %-12s   %06X   %06X %5d %s\n",
-            e->name, dkr_cc_category_text(e->category), ca, cb, d,
-            (e->category == DKR_CC_EXACT && d > 8) ? "<-- EXACT BUT WRONG" : "");
+        /* --- And the same quad through the announced fallback ---------------- *
+         *
+         * "Exact" and "closer to the game's image than the fallback" are two
+         * different properties, and the table only ever certified the first. A
+         * configuration classified `approximate` carries a setup nobody has
+         * compared against `dkr_cc_fallback`, and `gl_set_state` prefers it on
+         * the strength of the classification alone.
+         *
+         * That preference cost an image on 25 August 2026: the one-cycle entries
+         * became reachable, `G_CC_BLENDT_ENV_ALPHA_A_TxP` -- approximate,
+         * deviation 148 -- took over surfaces the fallback had been rendering,
+         * and a character came out a black silhouette. The fallback's deviation
+         * was not known, so neither was whether the change was an improvement.
+         *
+         * It is a number now. Same quad, same inputs, same reading point. */
+        {
+            unsigned cf;
+            int df;
+            bk.begin_frame(bk.self, 0x000000);
+            dkr_glide_backend_bind(handle);
+            dkr_glide_backend_set_recipe(dkr_cc_fallback(), constant);
+            draw_quad(&bk, W, H);
+            bk.present(bk.self);
+            if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) <= 0) {
+                cf = 0u; df = -1;
+            } else {
+                cf = g_pixels[(size_t)(rh / 2) * (size_t)rw
+                              + (size_t)(rw / 2)] & 0x00FFFFFFu;
+                df = deviation(ca, cf);
+            }
+            say("%-34s %-12s   %06X   %06X %5d   %06X %5d %s\n",
+                e->name, dkr_cc_category_text(e->category), ca, cb, d, cf, df,
+                (e->category == DKR_CC_EXACT && d > 8) ? "<-- EXACT BUT WRONG"
+                : (df >= 0 && df < d) ? "<-- the fallback is closer" : "");
+            if (df >= 0 && df < d) { g_fallback_wins++; }
+        }
 
         /* **The check that counts.** A configuration declared exact must be so:
            beyond the quantisation, it has been misclassified and the table lies.
@@ -268,7 +303,9 @@ int main(void)
         }
     }
 
-    say("\n  worst deviation among the configurations declared exact: %d (%s)\n",
+    say("\n  configurations the announced fallback renders closer: %d of %d\n",
+        g_fallback_wins, n);
+    say("  worst deviation among the configurations declared exact: %d (%s)\n",
         worst_exact, worst_name);
     if (worst_exact > 8) {
         say("  FAILED: a configuration declared exact is not\n");

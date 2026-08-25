@@ -178,6 +178,12 @@ unsigned long long dkr_rdp_combiner_key(const dkr_combiner *c,
 void dkr_rdp_to_render_state(const dkr_rdp_state *rdp,
                              dkr_render_state *out, int *exact);
 
+/* `0xRRGGBBAA` -- the RDP's spelling of a colour register -- to `0xAARRGGBB`,
+   which is what `dkr_render_state::constant_color` is documented to hold and
+   what `grConstantColorValue` reads. Exposed so that the tests can state the
+   convention rather than restate the shift. */
+unsigned int dkr_rdp_pack_argb(unsigned int rgba);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,3 +1,4 @@
+#include "diagnostic_log.hpp"
 #include "game_registration.hpp"
 #include "glide_renderer.hpp"
 #include "null_renderer.hpp"
