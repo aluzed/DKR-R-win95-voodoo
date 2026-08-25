@@ -1448,6 +1448,23 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         ^ ((unsigned long long)width << 9)
         ^ (unsigned long long)height;
 
+    /* The distinct set, kept before the one-entry cache answers: what is counted
+       is what the *list* asks for, not what survives the cache. */
+    {
+        unsigned i;
+        int seen = 0;
+        for (i = 0; i < c->state.distinct_keys; i++) {
+            if (c->state.distinct_key_set[i] == key) { seen = 1; break; }
+        }
+        if (!seen) {
+            if (c->state.distinct_keys < 64u) {
+                c->state.distinct_key_set[c->state.distinct_keys++] = key;
+            } else {
+                c->state.distinct_overflow++;
+            }
+        }
+    }
+
     if (key == c->texture_key && c->render_state.texture != 0) {
         /* Already uploaded and still bound: nothing to do. Without this test we
            would reconvert the same texture thousands of times per frame, and on
@@ -1519,6 +1536,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         c->tex_padded_height = padh;
     }
 
+    c->state.conversion_texels += (unsigned long)(width * height);
     if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
                              c->timg_address,
                              (dkr_n64_format)c->timg_format,

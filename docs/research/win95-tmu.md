@@ -129,3 +129,21 @@ Descending to the hardware granularity of 8 bytes would multiply the tracking ta
 by sixteen for textures that probably do not exist. It is the only place in the
 allocator that does not rest on a measurement, and it will fall as soon as the ROM
 allows the real sizes to be recorded.
+
+## The descriptor table is not the allocator, and it deadlocked with it — 25 August 2026
+
+This file is about `dkr_tmu`, and the defect below is not in it — which is the
+point of recording it here.
+
+The Glide backend keeps its own table of 512 descriptors mapping a handle to a
+resident texture. It refused an upload when that table was full, **before**
+calling `dkr_tmu_acquire`. The allocator therefore never saw the request, never
+allocated, never evicted; nothing freed a descriptor, and the table stayed full
+for the rest of the run. Measured over 840 lists: 12,685 refusals with
+`tmu-memory=0` — the allocator had room throughout and was never asked.
+
+The allocator's own two-level eviction (evict for space, then evict for a table
+entry) works and is untouched. What was missing was above it: a cache that
+refuses before consulting the one below it puts both out of action. The
+descriptor table now evicts least-recently-used on its own terms, and the
+refusals go to zero.

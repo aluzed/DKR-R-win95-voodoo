@@ -138,6 +138,23 @@ typedef struct {
     dkr_texture_stats textures;           /* converted, refused, out of bounds */
     unsigned long     textures_loaded;    /* handed to the backend */
     unsigned long     textures_reused;    /* served from the cache */
+    /* --- What the conversions actually cost, and how much of it repeats ------ *
+     *
+     * `textures_reused` counts hits on a cache of **one entry**: the tile whose
+     * key matches the last one converted. Everything else is converted again,
+     * texel by texel, and on a 400 MHz Pentium II that is the decoder's largest
+     * per-frame cost after the transform.
+     *
+     * Two figures size it. `conversion_texels` is the work done; `distinct_keys`
+     * is how many different tiles a list actually asks for, which is the work a
+     * cache of the right size would leave. If the second is far below the number
+     * of conversions, the cache is worth building and its size is known rather
+     * than guessed. `distinct_overflow` says when the set could not hold them
+     * all, so the figure is never read as complete when it is not. */
+    unsigned long     conversion_texels;
+    unsigned long long distinct_key_set[64];
+    unsigned          distinct_keys;
+    unsigned long     distinct_overflow;
     unsigned long     textures_refused;   /* texture memory full */
     /* Padded up to the next power of two, which the Voodoo requires and the N64
        does not. */

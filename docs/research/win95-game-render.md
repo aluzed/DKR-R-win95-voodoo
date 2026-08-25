@@ -2424,3 +2424,78 @@ DKR's `IA` textures therefore keep their one alpha bit, and the grey sheets stay
 > combiner, or to the game. The cost of the witness is visible and the cost it
 > avoided is not, which is the usual shape of this trade and the reason it keeps
 > being got wrong.
+
+## Two caches that deadlocked each other — 25 August 2026
+
+The renderer now gets far enough to enter a race, and a counter that had read
+zero for the whole bring-up stops reading zero. Over 840 display lists:
+
+```
+textures: uploaded=57184 reused=891 refused-tmu=12685
+refusal-detail: aspect=0 size=0 slots=12685 tmu-memory=0
+```
+
+**Twelve thousand six hundred and eighty-five refusals, and none of them for want
+of room on the card.** Every one is a surface drawn without its texture, and the
+count grows: 0 up to list 600, then 179, 3,383, 5,231, 9,191, 12,685. Once it
+starts it never stops.
+
+### The rule with a hole that closes on itself
+
+The Glide backend keeps a table of 512 texture descriptors. A slot was cleared in
+exactly one circumstance: when a later allocation's address range **overlapped**
+it. That rule was written on 21 August to make the table follow the allocator's
+evictions, and it is correct as far as it goes.
+
+It goes as far as the first moment all 512 slots are live. From there the upload
+is refused **before `dkr_tmu_acquire` is ever called** — so no allocation
+happens, so nothing is evicted, so no range overlaps, so no slot is ever cleared
+again. The table is full for good, and the only thing that could unstick it is
+the thing the fullness prevents.
+
+### The attempted fix, and the zero that named the real one
+
+The first repair asked the allocator: a slot whose key the TMU no longer holds is
+dead by definition, so reclaim it. It compiled, it ran, and it reclaimed
+**zero** — `slots=12791` unchanged.
+
+That zero is worth more than the fix would have been. None of the 512 keys had
+been evicted, *because the refusal is what stops eviction happening*. A cache
+that refuses before consulting the one below it cannot be repaired by consulting
+the one below it. The `dkr_tmu_holds` query written for that repair was removed
+again rather than left behind as a function whose justification had been
+disproved.
+
+The table now evicts on its own terms, least-recently-used, by a clock that
+**bindings** advance and not only uploads — without that, "least recently used"
+would mean "least recently uploaded", and the texture drawn on every triangle of
+the frame would be the first thrown out. The allocator keeps the texture
+resident, so a key that comes back is a hit and costs no download.
+
+```
+before: slots=12685  reclaimed=—     reused=891
+after:  slots=0      reclaimed=442   reused=2320
+```
+
+Zero refusals over a run that goes further than any before it. And the frames
+have their textures: Ancient Lake with the plane, the palms, the dust, and the
+character banner reading **CONKER** in gold with its outline — one clean word
+where the same list used to draw a smear.
+
+### And the cost of the conversions, measured while the counters were open
+
+Per display list: `conversions: texels=78,000 to 180,000, distinct-keys=48 to
+64`. So a list asks for some fifty distinct tiles and converts about as many —
+the one-entry cache is already near optimal *within* a list. What repeats is
+**across** lists: the decoder is re-initialised for every graphics task, so the
+same fifty tiles are converted again sixty times a second, some ninety thousand
+texels a frame, while the card already holds every one of them.
+
+That figure is not acted on here. It is written down because E00-S03's go/no-go
+wants the CPU cost of a frame, and this is a part of it that is now a number.
+
+> **The repair that fails can be worth more than the one that works**, when what
+> it fails at is a hypothesis. "The table cannot tell which entries still mean
+> anything" was a good story and the wrong one; one run and a counter reading
+> zero replaced it with the mechanism. The temptation was to raise 512 to 2048
+> and move on, which would have worked for a while and taught nothing.

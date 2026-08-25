@@ -171,6 +171,7 @@ typedef struct {
     unsigned int       address;
     unsigned int       bytes;    /* what it occupies, to detect overlap */
     GrTexInfo          info;
+    unsigned long      last_used; /* logical timestamp, for least-recently-used */
     unsigned char      tmu;      /* which unit it resides on */
     unsigned char      live;
 } glide_texture;
@@ -190,11 +191,23 @@ enum {
     GL_TEX_FAIL_COUNT
 };
 static unsigned long g_tex_failures[GL_TEX_FAIL_COUNT];
+/* Slots taken back rather than refused. Reported so that "the table never fills"
+   is a figure and not a hope. */
+static unsigned long g_tex_reclaimed;
+/* The table's own clock, advanced on every upload and every binding. The
+   allocator has one of its own and they are deliberately separate: this one
+   measures the age of a *handle*, which is what the table hands out. */
+static unsigned long g_tex_clock;
 
 unsigned long dkr_glide_backend_upload_failure(int kind)
 {
     if (kind < 0 || kind >= GL_TEX_FAIL_COUNT) { return 0; }
     return g_tex_failures[kind];
+}
+
+unsigned long dkr_glide_backend_slots_reclaimed(void)
+{
+    return g_tex_reclaimed;
 }
 
 #define GLIDE_MAX_TEXTURES 512
@@ -832,6 +845,44 @@ static dkr_texture_handle gl_texture_upload(void *self,
         if (g_tex[i].live && g_tex[i].key == desc->key) { slot = i; break; }
         if (!g_tex[i].live && slot < 0) { slot = i; }
     }
+    /* --- The two caches deadlocked each other ------------------------------- *
+     *
+     * A slot was cleared only when a later allocation's range **overlapped** it.
+     * That is a rule with a hole in it, and the hole closes on itself: once all
+     * 512 slots are live the upload is refused **before** `dkr_tmu_acquire` is
+     * ever called, so no allocation happens, so nothing is evicted, so no range
+     * overlaps, so no slot is ever cleared again. The table is full for good and
+     * every texture from then on is a surface drawn without one.
+     *
+     * Measured on 25 August 2026 over 840 lists: `refusal-detail slots=12685`
+     * against `tmu-memory=0`. Nothing was short of room on the card.
+     *
+     * The first attempt was to reclaim slots whose key the allocator no longer
+     * held. It reclaimed **zero**, and the zero is the proof: none had been
+     * evicted, because the refusal is what stops eviction happening. A cache
+     * that refuses before consulting the one below it cannot be repaired by
+     * consulting the one below it.
+     *
+     * So the table evicts on its own terms, least-recently-used, by a clock the
+     * bindings advance. The allocator keeps the texture resident; if the key
+     * comes back it is a hit and costs no download. A slot the current state
+     * still names is the most recently bound, so it is the last candidate — and
+     * if it were taken anyway, `bind_texture` refuses a dead handle and counts
+     * it, which is a visible degradation rather than a wrong texture. */
+    if (slot < 0) {
+        int oldest = -1;
+        for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
+            if (!g_tex[i].live) { continue; }
+            if (oldest < 0 || g_tex[i].last_used < g_tex[oldest].last_used) {
+                oldest = i;
+            }
+        }
+        if (oldest >= 0) {
+            g_tex[oldest].live = 0;
+            g_tex_reclaimed++;
+            slot = oldest;
+        }
+    }
     if (slot < 0) { g_tex_failures[GL_TEX_FAIL_SLOT]++; return 0; }
 
     /* **We go through the allocator even when the texture is already known.**
@@ -915,6 +966,7 @@ static dkr_texture_handle gl_texture_upload(void *self,
     g_tex[slot].bytes   = bytes;
     g_tex[slot].info    = info;
     g_tex[slot].info.data = 0;   /* the pixels do not belong to us */
+    g_tex[slot].last_used = ++g_tex_clock;
     g_tex[slot].live    = 1;
     return (dkr_texture_handle)(slot + 1);
 }
@@ -940,6 +992,11 @@ static void bind_texture(dkr_texture_handle handle)
     if (handle == 0 || handle > GLIDE_MAX_TEXTURES || !gs.tex_source) { return; }
     tx = &g_tex[handle - 1];
     if (!tx->live) { b.binds_dead++; return; }
+    /* The binding is what makes a handle recent. Without this the table's
+       least-recently-used would mean "least recently *uploaded*", and the
+       texture drawn on every triangle of the frame would be the first one
+       thrown out. */
+    tx->last_used = ++g_tex_clock;
     b.binds++;
     if (tx->address != b.last_bound_address) {
         b.binds_changed++;

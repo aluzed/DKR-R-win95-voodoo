@@ -396,6 +396,12 @@ void dkr_glide_backend_bind_stats(unsigned long *binds,
    2 descriptor table full, 3 TMU memory exhausted. Four causes behind a single
    returned zero; conflating them makes one fix the wrong thing. */
 unsigned long dkr_glide_backend_upload_failure(int kind);
+
+/* Descriptor slots taken back from textures the allocator no longer holds.
+   Reported beside the refusals so that "the table never fills" is a figure
+   and not a hope: the two together say whether the reclaim is doing the work
+   or whether the working set has simply not reached the limit yet. */
+unsigned long dkr_glide_backend_slots_reclaimed(void);
 /* The TMU allocator's state, for E08-S01's diagnostic display. Returns NULL if
    the requested TMU does not exist. */
 struct dkr_tmu;

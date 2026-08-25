@@ -1006,13 +1006,23 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      "refused-tmu=%lu unknown-format=%lu outside-rdram=%lu\n",
                      total_tex_loaded_, total_tex_reused_,
                      total_tex_refused_, total_tex_unsupported_, total_tex_out_of_rdram_);
+        // What the conversions cost this list, and how much of it repeats. The
+        // hit rate of a one-entry cache says nothing about how big a real one
+        // would have to be; the distinct count does.
+        std::fprintf(stderr,
+                     "[gfx]   conversions: texels=%lu distinct-keys=%u"
+                     " overflow=%lu\n",
+                     context_.state.conversion_texels,
+                     context_.state.distinct_keys,
+                     context_.state.distinct_overflow);
         std::fprintf(stderr,
                      "[gfx]   refusal-detail: aspect=%lu size=%lu "
-                     "slots=%lu tmu-memory=%lu\n",
+                     "slots=%lu tmu-memory=%lu reclaimed=%lu\n",
                      dkr_glide_backend_upload_failure(0),
                      dkr_glide_backend_upload_failure(1),
                      dkr_glide_backend_upload_failure(2),
-                     dkr_glide_backend_upload_failure(3));
+                     dkr_glide_backend_upload_failure(3),
+                     dkr_glide_backend_slots_reclaimed());
         std::fprintf(stderr,
                      "[gfx]   padded-to-power-of-2=%lu "
                      "refused-aspect=%lu\n",
