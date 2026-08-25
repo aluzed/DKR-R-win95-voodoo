@@ -104,6 +104,7 @@ typedef int           FxBool;
 #define GR_TEXFMT_ARGB_1555  0x0B
 #define GR_TEXFMT_INTENSITY_8 0x03
 #define GR_TEXFMT_ALPHA_INTENSITY_88 0x0D
+#define GR_TEXFMT_ARGB_4444  0x0C
 #define GR_MIPMAPLEVELMASK_BOTH  0x03
 #define GR_TMU0  0
 #define GR_TMU1  1
@@ -814,6 +815,8 @@ static dkr_texture_handle gl_texture_upload(void *self,
                          ? GR_TEXFMT_INTENSITY_8
                      : (desc->format == DKR_TEXFMT_ALPHA_INTENSITY88)
                          ? GR_TEXFMT_ALPHA_INTENSITY_88
+                     : (desc->format == DKR_TEXFMT_ARGB4444)
+                         ? GR_TEXFMT_ARGB_4444
                          : GR_TEXFMT_ARGB_1555;
     info.data        = (void *)desc->pixels;
 

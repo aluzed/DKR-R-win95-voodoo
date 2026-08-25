@@ -331,6 +331,208 @@ int main(void)
         }
     }
 
+    /* --- 4. The control's own control -------------------------------------- *
+     *
+     * Test 3 drew an ARGB1555 texel whose alpha bit was **set**, over a quad
+     * whose vertices are opaque white, and read back white. That is what the
+     * texture alpha arriving looks like — and it is also exactly what the
+     * *vertex* alpha arriving looks like, the texture playing no part. The two
+     * cannot be told apart by a value both would produce, which is the mistake
+     * this repository keeps a list of.
+     *
+     * Clearing the alpha bit separates them. If the blender reads the texel, a
+     * fully transparent white leaves the blue background; if it reads the
+     * vertex, it paints white just the same. */
+    say("\n-- and the control's control: 1555 with the alpha bit clear --\n");
+    {
+        int j;
+        for (j = 0; j < TW * TH; j++) {
+            g_texture[j] = (unsigned short)((31u << 10) | (31u << 5) | 31u);
+        }
+        bk.begin_frame(bk.self, 0x000000);
+        draw_background(&bk, W, H, 0.0f, 0.0f, 255.0f);
+        desc.format = DKR_TEXFMT_ARGB1555;
+        desc.key    = 0xA188000000000004ull;
+        handle = bk.texture_upload(bk.self, &desc);
+        st.texture = handle;
+        st.blend   = DKR_BLEND_ALPHA;
+        bk.set_state(bk.self, &st);
+        draw_quad(&bk, W, H, (float)TW);
+        bk.present(bk.self);
+        if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) > 0) {
+            const unsigned c = read_at(rw / 2, rh / 2, rw);
+            say("  transparent white 1555 over blue -> %06X\n", c);
+            say("  %s\n", (((c >> 16) & 0xFFu) < 60u)
+                ? "the blender reads the TEXEL's alpha"
+                : "the blender reads the VERTEX's alpha, and test 3 proved nothing");
+            check("a texel alpha of zero leaves the background alone",
+                  ((c >> 16) & 0xFFu) < 60u);
+        } else {
+            check("the second control frame can be read back", 0);
+        }
+    }
+
+    /* --- 5. The byte order, asked the other way round ----------------------- *
+     *
+     * Test 1 read the intensity out of the low byte. A single reading of a
+     * single texel is one arithmetic slip away from being an artefact, and the
+     * cheapest way to strengthen it is to swap the two bytes and require the
+     * answer to swap with them. `0x30C0` must return 192 where `0xC030`
+     * returned 48. */
+    say("\n-- byte order, the same question with the bytes swapped --\n");
+    {
+        fill_uniform(0x30u, 0xC0u);
+        bk.begin_frame(bk.self, 0x000000);
+        desc.format = DKR_TEXFMT_ALPHA_INTENSITY88;
+        desc.key    = 0xA188000000000005ull;
+        handle = bk.texture_upload(bk.self, &desc);
+        st.texture = handle;
+        st.blend   = DKR_BLEND_OPAQUE;
+        bk.set_state(bk.self, &st);
+        draw_quad(&bk, W, H, (float)TW);
+        bk.present(bk.self);
+        if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) > 0) {
+            const unsigned c = read_at(rw / 2, rh / 2, rw);
+            const int red = (int)((c >> 16) & 0xFFu);
+            say("  texel 0x30C0 drawn opaque -> %06X, red=%d\n", c, red);
+            check("swapping the bytes swaps the intensity",
+                  alpha_high ? near_to(red, 0xC0, 16) : near_to(red, 0x30, 16));
+        } else {
+            check("the swapped frame can be read back", 0);
+        }
+    }
+
+    /* --- 6. ARGB4444, the other sixteen-bit format with an alpha ------------ *
+     *
+     * AI88 would have been exact and it does not deliver its alpha. ARGB4444
+     * costs the same sixteen bits a texel and carries **four** alpha bits, which
+     * is exactly what the N64's `IA8` holds and sixteen times what a threshold
+     * leaves of `IA16`. Its layout mirrors ARGB1555's, which this port has
+     * already had measured right.
+     *
+     * The same four bands, and the same answer known in advance: alpha nibbles
+     * 0, 5, 10 and 15 blend to a red of 0, 85, 170 and 255. */
+    say("\n-- ARGB4444, four alpha bits --\n");
+    {
+        static const unsigned int NIB[4] = { 0u, 5u, 10u, 15u };
+        int y, x;
+        for (y = 0; y < TH; y++) {
+            const unsigned int a = NIB[y / (TH / 4)];
+            const unsigned short w = (unsigned short)((a << 12) | 0x0FFFu);
+            for (x = 0; x < TW; x++) { g_texture[y * TW + x] = w; }
+        }
+        bk.begin_frame(bk.self, 0x000000);
+        draw_background(&bk, W, H, 0.0f, 0.0f, 255.0f);
+        desc.format = DKR_TEXFMT_ARGB4444;
+        desc.key    = 0xA188000000000006ull;
+        handle = bk.texture_upload(bk.self, &desc);
+        check("the card accepts an ARGB4444 texture", handle != 0);
+        st.texture = handle;
+        st.blend   = DKR_BLEND_ALPHA;
+        bk.set_state(bk.self, &st);
+        draw_quad(&bk, W, H, (float)TW);
+        bk.present(bk.self);
+        if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) > 0) {
+            int ok_all = 1, mid_ok;
+            int red4[4];
+            say("  %-8s %8s %8s   %s\n", "nibble", "expected", "red", "pixel");
+            for (i = 0; i < 4; i++) {
+                const int yy = (rh / 8) + i * (rh / 4);
+                const unsigned c = read_at(rw / 2, yy, rw);
+                red4[i] = (int)((c >> 16) & 0xFFu);
+                say("  %-8u %8u %8d   %06X\n",
+                    NIB[i], (NIB[i] * 255u) / 15u, red4[i], c);
+                if (!near_to(red4[i], (int)((NIB[i] * 255u) / 15u), 20)) {
+                    ok_all = 0;
+                }
+            }
+            mid_ok = red4[1] > 30 && red4[1] < 200 &&
+                     red4[2] > 60 && red4[2] < 240;
+            check("every one of the four alphas comes back as itself", ok_all);
+            check("the two intermediate alphas are neither 0 nor 255", mid_ok);
+        } else {
+            check("the ARGB4444 frame can be read back", 0);
+        }
+    }
+
+    /* --- 7. Is it the format, or is it what came before it? ----------------- *
+     *
+     * Three formats, and the pattern is not the one the tests were built to
+     * find. AI88 paints in tests 1 and 5 and vanishes in test 2; ARGB4444
+     * vanishes in test 6 even at a fully opaque nibble, which no alpha depth can
+     * explain. What the vanishing draws share is not their format: it is that a
+     * quad in `DKR_COMBINE_SHADE` was drawn immediately before them, and
+     * `apply_combine` returns early for that mode **without touching the TMU**.
+     *
+     * So the same AI88 texel that worked, drawn opaquely, with a shade quad in
+     * front of it. If it disappears, the format was never the question. */
+    say("\n-- the same AI88 texel, opaque, after a shade quad --\n");
+    {
+        fill_uniform(0xC0u, 0x30u);
+        bk.begin_frame(bk.self, 0x000000);
+        draw_background(&bk, W, H, 0.0f, 0.0f, 255.0f);
+        desc.format = DKR_TEXFMT_ALPHA_INTENSITY88;
+        desc.key    = 0xA188000000000007ull;
+        handle = bk.texture_upload(bk.self, &desc);
+        st.texture = handle;
+        st.blend   = DKR_BLEND_OPAQUE;
+        bk.set_state(bk.self, &st);
+        draw_quad(&bk, W, H, (float)TW);
+        bk.present(bk.self);
+        if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) > 0) {
+            const unsigned c = read_at(rw / 2, rh / 2, rw);
+            const int red = (int)((c >> 16) & 0xFFu);
+            say("  texel 0xC030 opaque, shade quad first -> %06X, red=%d\n",
+                c, red);
+            say("  %s\n", near_to(red, 0x30, 16)
+                ? "the texel still arrives: the shade quad is innocent"
+                : "the texel is gone: what precedes a draw is the question, "
+                  "not the format");
+            check("a shade quad does not cost the next draw its texture",
+                  near_to(red, 0x30, 16));
+        } else {
+            check("the sequence frame can be read back", 0);
+        }
+    }
+
+    /* --- 8. Does ARGB4444's colour arrive at all? --------------------------- *
+     *
+     * Under `src_alpha / one_minus_src_alpha`, a source alpha of zero returns
+     * the destination whatever the source colour was. So test 6's four blue
+     * bands say the alpha is zero and say **nothing** about the colour — the
+     * same conflation as reading a coverage figure off a corner.
+     *
+     * Drawn opaquely, the colour has nowhere to hide. A texel of `0x0F30`
+     * — alpha nibble 0, red 15, green 3, blue 0 — must come back orange. If it
+     * does, the card reads ARGB4444 and only its alpha is lost; if it does not,
+     * the format is not being read at all. */
+    say("\n-- ARGB4444 drawn opaque: does the colour arrive? --\n");
+    {
+        int j;
+        for (j = 0; j < TW * TH; j++) { g_texture[j] = (unsigned short)0x0F30u; }
+        bk.begin_frame(bk.self, 0x000000);
+        desc.format = DKR_TEXFMT_ARGB4444;
+        desc.key    = 0xA188000000000008ull;
+        handle = bk.texture_upload(bk.self, &desc);
+        st.texture = handle;
+        st.blend   = DKR_BLEND_OPAQUE;
+        bk.set_state(bk.self, &st);
+        draw_quad(&bk, W, H, (float)TW);
+        bk.present(bk.self);
+        if (dkr_glide_read_framebuffer(g_pixels, W * H, &rw, &rh) > 0) {
+            const unsigned c = read_at(rw / 2, rh / 2, rw);
+            const int r8 = (int)((c >> 16) & 0xFFu);
+            const int g8 = (int)((c >> 8) & 0xFFu);
+            const int b8 = (int)(c & 0xFFu);
+            say("  texel 0x0F30 opaque -> %06X (r=%d g=%d b=%d)\n",
+                c, r8, g8, b8);
+            check("ARGB4444's colour reaches the frame buffer",
+                  r8 > 200 && g8 > 20 && g8 < 90 && b8 < 40);
+        } else {
+            check("the ARGB4444 opaque frame can be read back", 0);
+        }
+    }
+
     say("\n  the layout to write: alpha in the %s byte\n",
         alpha_high ? "HIGH" : "LOW");
 

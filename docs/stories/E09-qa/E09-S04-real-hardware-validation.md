@@ -51,6 +51,12 @@ floor is the right one.
 6. Check what the emulator cannot show: compatibility of the real 3dfx drivers, the sound
    card's behaviour, off-the-shelf gamepads, output to a cathode-ray monitor, load times
    from a period disk.
+6b. **Run `AI88.EXE`.** Under emulation the texel alpha arrives for `ARGB1555` and is zero
+   for `ALPHA_INTENSITY_88` and `ARGB_4444`, whose colours both arrive correctly — measured
+   25 August 2026, see `docs/TEST-ENVIRONMENT.md`. If real silicon carries those alphas,
+   DKR's `IA` textures stop being thresholded to one bit at no cost in memory, and the
+   halos and shadows the game draws stop being hard-edged. The witness answers it in one
+   run and prints the layout to write.
 7. Actually play. A complete playthrough, several levels, in multiplayer. Playability
    defects — input latency, irregular pacing, imprecise driving — do not reveal themselves
    otherwise.

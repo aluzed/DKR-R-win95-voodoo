@@ -214,10 +214,31 @@ The following **cannot** be validated here, and must go through E09-S04:
 | The host runs the rendering far faster than period hardware | the fill budget cannot be measured here |
 | Neither period PCI bandwidth nor period disk latency | texture downloads (E05-S02) and load times (E02-S04) are optimistic |
 | Real 3dfx drivers, retail sound cards and controllers | compatibility to be checked on hardware |
+| **The texel alpha arrives for `ARGB1555` and for no other 16-bit format** | the one-bit alpha stays; see below |
 
 Everything **functional**, on the other hand, is validated here: binary format, PE
 imports, startup, threads, display-list decoding, correctness of the rendering,
-saves, input.
+saves, input — with the one exception the last row names, which was found on
+25 August 2026 and is the first *functional* limit this environment has shown.
+
+`AI88.EXE` measures it directly. Three texture formats, the same quad, the same
+combiner, the same blend:
+
+| format | colour, drawn opaque | texel alpha, blended |
+|---|---|---|
+| `GR_TEXFMT_ARGB_1555` | arrives | arrives, and honours zero as well as one |
+| `GR_TEXFMT_ALPHA_INTENSITY_88` | arrives — intensity in the low byte | **zero** |
+| `GR_TEXFMT_ARGB_4444` | arrives exactly: `0x0F30` returns `FF3000` | **zero** |
+
+Two sixteen-bit formats whose colour the card reads correctly and whose alpha is
+zero at every value, against one whose alpha is right in both directions. The
+`grTexCombine` and `grAlphaCombine` calls are identical across the three, so this
+is not a translation fault, and the byte order is confirmed twice over by
+swapping the bytes and watching the answer swap with them.
+
+Whether the silicon behaves this way or 86Box's Voodoo simply does not implement
+a multi-bit texel alpha cannot be settled here. Until it is, DKR's `IA` textures
+keep the one-bit alpha `texture.c` gives them and its halos stay hard-edged.
 
 ## Current state
 

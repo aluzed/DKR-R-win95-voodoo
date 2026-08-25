@@ -269,6 +269,12 @@ typedef enum {
        Which byte carries which is measured by `AI88.EXE` rather than assumed:
        this port has already had one texel layout wrong from memory. */
     DKR_TEXFMT_ALPHA_INTENSITY88,
+    /* Four bits an axis. Sixteen a texel again, so no more memory than
+       ARGB1555, and **four alpha bits instead of one** — which is exactly what
+       the N64's `IA8` carries, and sixteen times what a threshold leaves of
+       `IA16`. Measured by `AI88.EXE` alongside AI88, whose alpha does not
+       arrive. */
+    DKR_TEXFMT_ARGB4444,
     DKR_TEXFMT_COUNT
 } dkr_texture_format;
 

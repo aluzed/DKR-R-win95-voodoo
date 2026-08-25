@@ -2367,3 +2367,60 @@ card.
 > format being adopted on the strength of "sixteen bits a texel, same memory,
 > exact semantics" — every word of which is true and none of which would have
 > made the sheets soft. That is what these are for.
+
+### Four more runs, and the answer is about the machine — 25 August 2026
+
+The sentence "the AI88 alpha does not arrive" had three readings left, and each
+was answered by adding one case to the same witness rather than by reasoning
+about the first.
+
+**The control was not a control.** Test 3 drew a 1555 texel with its alpha bit
+*set* over vertices that are opaque white, and read back white — which is what a
+texture alpha arriving looks like and equally what the *vertex* alpha arriving
+looks like. Clearing the bit separates them: `transparent white 1555 over blue ->
+0000FF`. The blender does read the texel. The control survives, and it very
+nearly did not deserve to.
+
+**The byte order, asked backwards.** `0xC030` returned 41; `0x30C0` returns
+**189**. The colour follows the low byte in both directions, so the reading is
+not an artefact of one texel.
+
+**A second format with more alpha bits.** `ARGB4444` costs the same sixteen bits
+and carries four alpha bits — exactly what `IA8` holds. Its four bands come back
+`0000FF`, `0000FF`, `0000FF`, `0000FF`: nothing, the fully opaque nibble
+included, which no alpha *depth* can explain.
+
+**And whether its colour arrives at all**, because under `src_alpha /
+one_minus_src_alpha` a source alpha of zero returns the destination whatever the
+source colour was — so four blue bands say the alpha is zero and say nothing
+about the colour. Drawn opaquely: `texel 0x0F30 -> FF3000`. Red 15, green 3,
+blue 0, expanded exactly. The card reads ARGB4444 perfectly.
+
+| format | colour, opaque | texel alpha, blended |
+|---|---|---|
+| `ARGB_1555` | arrives | arrives, and honours zero as well as one |
+| `ALPHA_INTENSITY_88` | arrives, intensity in the low byte | **zero** |
+| `ARGB_4444` | arrives exactly | **zero** |
+
+Two sixteen-bit formats read correctly for colour and delivering an alpha of zero
+at every value, against one that is right in both directions — under identical
+`grTexCombine` and `grAlphaCombine` calls. That is not a byte order, not a
+combiner setting, and not the shade quad drawn before them, which was checked and
+is innocent.
+
+**So the limit is the machine, and it is the first functional one this
+environment has shown.** Everything else it could not answer was temporal — fill
+rate, bus bandwidth, disk latency. This is a rendering behaviour that differs, or
+may differ, between 86Box's Voodoo and the silicon, and no amount of care on this
+side settles it. It is written into `docs/TEST-ENVIRONMENT.md`'s known limits and
+into E09-S04's work list, with the witness that answers it in one run.
+
+DKR's `IA` textures therefore keep their one alpha bit, and the grey sheets stay.
+
+> **Eight runs to decide not to change anything.** The alternative was to adopt a
+> format on four true sentences — sixteen bits a texel, same memory, exact `IA`
+> semantics, the card accepts it — and ship a change that could not have worked,
+> then spend a week attributing the unchanged sheets to the conversion, to the
+> combiner, or to the game. The cost of the witness is visible and the cost it
+> avoided is not, which is the usual shape of this trade and the reason it keeps
+> being got wrong.
