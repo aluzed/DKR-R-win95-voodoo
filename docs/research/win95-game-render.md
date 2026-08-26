@@ -2785,3 +2785,64 @@ that trade is not worth making, and saying so is the point of having measured it
 > cost a patch and a run, and it turned a hunt into a line in a table. The
 > instinct to fix what looks wrong is the expensive one here: the ratio was true,
 > the reading of it was not.
+
+## The bus is not the problem: 98.9 % of the conversions are thrown away — 26 August 2026
+
+`tmu.h` has said since E05-S02 that the ticket wants the allocator's counters
+readable in-game, and the only thing that had ever read them was a witness. So
+the sentence this port has rested on since 25 August — *the allocator keeps the
+texture resident, so a key that comes back is a hit and costs no download* — was
+never measured on the game. It is now, once per report:
+
+```
+[gfx]   textures: uploaded=64358 reused=1413 refused-tmu=0
+[gfx]   conversions: texels=78536 distinct-keys=64 overflow=24
+[gfx]   tmu0: hits=63670/64358 downloads=688 bytes=1225472 evict=176 fail=0 peak=970K
+[gfx]   tmu1: hits=0/0 downloads=0 bytes=0 evict=0 fail=0 peak=0K
+```
+
+Over 780 display lists:
+
+| | |
+|---|---:|
+| allocator hit rate | **98.9 %** |
+| downloads per display list | 0.88 |
+| bytes crossing the bus per list | 1,571 |
+| peak occupancy | 970 KiB of 2 MiB |
+| allocation failures | 0 |
+
+**The claim holds, and it holds so well that it moves the problem.** A Voodoo 2's
+texture path was the thing to fear — 64 KiB inside a 16 ms frame is a hitch felt
+on the controller — and the game asks it for a kilobyte and a half a frame. There
+is nothing to win there.
+
+### What the same numbers say about the CPU
+
+`uploaded=64358` and `hits+misses=64358` are the same quantity counted on either
+side of the interface: every conversion the decoder performs is handed to the
+allocator, and **63,670 of the 64,358 are handed to an allocator that already has
+it**. The texture was converted to discover that converting it was unnecessary.
+
+That is the 25 August observation — "some ninety thousand texels re-converted
+every frame for tiles the card already holds" — with the half that was missing.
+The two together are unambiguous:
+
+- the bus cost of a frame is **1.5 KiB**, negligible;
+- the CPU cost is some 78,000 texels converted per list, at sixty lists a second,
+  on a 400 MHz Pentium II;
+- and **98.9 % of it is provably redundant**, because the destination already
+  holds the result.
+
+The decoder's own cache cannot fix this: it holds one entry, and the decoder is
+re-initialised for every graphics task, so it cannot remember across lists. The
+allocator can and does — its 98.9 % is precisely the memory the decoder lacks. The
+repair therefore has a shape and a measured ceiling: **ask the residency before
+converting, not after**, and 63,670 conversions a run become 688.
+
+> The counter that finally mattered had been sitting in the struct since the
+> allocator was written, with a comment saying why it should be read. Nothing
+> read it, so a figure that looked like a cache failure -- `uploaded=64358
+> reused=1413`, two per cent -- had been on the screen for days meaning something
+> else entirely. `reused` counts the one-entry cache in front of the conversion;
+> `hits` counts the card. Two caches, two counters, and only one of them was ever
+> printed.

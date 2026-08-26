@@ -10,6 +10,9 @@
 // backend interface, because it is a property of the card and not of the
 // abstraction the decoder drives.
 #include "render/glide.h"
+// The allocator's own counters, for the report below. `backend.h` hands out a
+// pointer to it; reading the struct needs its definition.
+#include "render/tmu.h"
 #endif
 
 #include <cstdio>
@@ -1016,6 +1019,36 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      context_.state.conversion_texels,
                      context_.state.distinct_keys,
                      context_.state.distinct_overflow);
+        // --- What the card was actually asked to swallow --------------------
+        //
+        // Everything above counts what the *decoder* did: `uploaded` is the
+        // number of times a tile was converted and handed down, `reused` the
+        // hits on the one-entry cache in front of it. Neither says whether the
+        // texture then had to cross the PCI bus, and that is the quantity a
+        // Voodoo 2 is limited by -- 64 KiB moved inside a 16 ms frame is a
+        // hitch felt on the controller, not a line in a log.
+        //
+        // The allocator has kept `hits`, `misses`, `downloads` and
+        // `download_bytes` since E05-S02, `tmu.h` says in as many words that the
+        // ticket wants them readable in-game, and until now the only thing that
+        // ever read them was a witness. So the claim this port has been resting
+        // on since 25 August -- "the allocator keeps the texture resident, so a
+        // key that comes back is a hit and costs no download" -- had never been
+        // measured on the game.
+        {
+            int u;
+            for (u = 0; u < dkr_glide_backend_tmu_count(); u++) {
+                const dkr_tmu* t = dkr_glide_backend_tmu(u);
+                if (t == nullptr) { continue; }
+                std::fprintf(stderr,
+                             "[gfx]   tmu%d: hits=%lu/%lu downloads=%lu "
+                             "bytes=%lu evict=%lu fail=%lu peak=%luK\n",
+                             u, t->stats.hits, t->stats.hits + t->stats.misses,
+                             t->stats.downloads, t->stats.download_bytes,
+                             t->stats.evictions, t->stats.failures,
+                             t->stats.peak_bytes / 1024u);
+            }
+        }
         std::fprintf(stderr,
                      "[gfx]   refusal-detail: aspect=%lu size=%lu "
                      "slots=%lu tmu-memory=%lu reclaimed=%lu\n",
