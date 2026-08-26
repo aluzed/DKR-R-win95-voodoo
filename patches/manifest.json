@@ -109,6 +109,10 @@
         {
           "path": "patches/n64-modern-runtime/0026-commit-the-log-from-the-queue-trace.patch",
           "sha256": "dd6f64ba022f485eab1eaf7b5b8e4ac077d9a525a57e45d56e2bd8fd13d82d3b"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0027-count-the-drains-and-hoist-the-switch.patch",
+          "sha256": "33c59acb9ce18bbc7e29208f4f99c8950307fcdee8b3db06b5c06fee23a19379"
         }
       ]
     },

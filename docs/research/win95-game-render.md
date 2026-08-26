@@ -2561,7 +2561,7 @@ Zero unknown configurations, over a run that goes further than any before it.
 > whereas two generators, each internally consistent, disagreeing only on how to
 > spell "this field is ignored", read as one system that must be right.
 
-## And the log was never readable while the program ran — 25 August 2026
+## The log was readable only when the scheduler trace was on — 25 August 2026
 
 Stopping the machine to read `DKRR.LOG` returned **nothing**: `size 0` in the
 directory entry, against 526 lost clusters — 4,208 KB — on the transfer volume.
@@ -2576,26 +2576,41 @@ The bytes were on the disk, referenced by nothing.
 > and then, it makes the log readable while the program is still running — and
 > that is the only way to observe a hang from the outside.
 
-`dkr_diag_commit` was defined, documented at that length, and **called from
-nowhere**. Every run that produced a readable log did so because the game
-terminated and the exception filter closed the stream; the property the function
-describes had never been true of any run.
+The whole call graph of `dkr_diag_commit` sat **behind `DKR_TRACE_SP`**: patches
+0022 and 0026 call it from `events.cpp` and from `mesgqueue.cpp`, inside blocks
+that only run when the queue trace is switched on. A run that asks for frame
+dumps and not for the scheduler trace therefore reaches it never, and that is
+every run of this session.
 
-It is now called once per report, that is once per sixty lists, and the
-measurement above was read off a running machine:
+So the property the comment states holds for one kind of run and the comment does
+not say which. It is now called once per renderer report, that is once per sixty
+lists, on every run, and the measurement above was read off a running machine:
 
 ```
 DKRR     LOG      9197 2026-08-25  16:50      <- while the game was still drawing
 ```
 
 The declaration moved into `diagnostic_log.hpp` rather than being repeated at the
-call site, so that a definition and its callers cannot drift apart in silence —
-which is the failure this whole entry is about.
+call site, so that a definition and its callers cannot drift apart in silence.
 
-> A function whose comment states a property nothing establishes is worse than no
-> function: the comment was read, several times, as a description of what the
-> program does. The cheapest guard against this class is the one that would have
-> caught it here — a definition with no caller.
+### Correction, 26 August 2026
+
+The paragraph above first said the function was **called from nowhere**, and the
+commit message that carried this work says so too. It is wrong. The two call
+sites in the patched dependency existed the whole time; the `grep` that
+established "nowhere" was run through a proxy that truncates output, and the
+`extern/` hits fell off the end of it.
+
+The defect is real and the repair is unchanged — a normal run never reached the
+function — but its shape is different, and the difference matters: this was not a
+function nobody wired up, it was a function wired up **only to a diagnostic that
+is off by default**, which no "definition with no caller" check would ever flag.
+
+> Twice in two days a truncated instrument has been read as an answer: the
+> zero-byte log, and now the grep. The pattern is the same one this file records
+> against counters -- an absence of output taken for evidence about the thing
+> being measured -- and it does not stop applying because the instrument is a
+> shell command.
 
 ## The constant register had two packings, and one consumer each — 25 August 2026
 
@@ -2701,3 +2716,72 @@ Against the control, at the same six anchored lists:
 > unreachable. The day they became reachable, table membership was read as "use
 > this" — and the entries that hurt were the ones the table had been calling
 > not-exact all along. The label was right; nothing was reading it.
+
+## The requeue count that looked like a spin — 26 August 2026
+
+The scheduler trace had been reporting, all through the bring-up:
+
+```
+[trace][mq] total msg=0x00000000 deposited=7723 refused=0 requeued=108794
+```
+
+Fourteen retries per deposit, climbing by two hundred between reports while the
+deposits moved by ten. It reads as a queue turning over on itself, and it was
+written down as the next thread to pull.
+
+**It is not a finding, because a requeue is one retry per drain and nothing was
+counting drains.** The same 108,794 describes a message blocked for fourteen
+drains and a genuine spin; only the denominator tells them apart. So the
+denominator was added, along with the size of the priority pass that runs at the
+head of every drain.
+
+```
+[trace][mq] drains=44882 priority-copies=95375
+[trace][mq] total msg=0x00000000 deposited=5689 refused=0 requeued=82260
+```
+
+Over 720 display lists:
+
+| | |
+|---|---:|
+| drains per display list | 62.3 |
+| messages the priority pass copies per drain | 2.13 |
+| requeues per drain | 1.83 |
+| drains a `msg=0` waits before landing | 14.5 |
+| messages ever refused | **0** |
+
+So there are, at any moment, about **two** messages in the external queue, one of
+them blocked; each drain retries it once and it lands after some fourteen
+attempts. That is backpressure on one guest queue, not a loop. Nothing is lost —
+`refused=0` over the whole run — and no other message value requeues even once.
+
+The cost is real and small: 62 drains a display list, each allocating a vector,
+copying two `QueuedMessage` — a `shared_ptr` apiece, hence an atomic pair per
+copy — partitioning them, putting them back into the concurrent queue and
+draining it a second time. Of the order of a hundred microseconds in a 16.7 ms
+frame.
+
+**The lead is therefore retired rather than followed.** E00-S03 wants the CPU cost
+of a frame; this is one percent of it and it is now a number instead of an
+alarming ratio.
+
+### What was fixed anyway, and what was not
+
+The two trace blocks asked `std::getenv("DKR_TRACE_SP")` **on every message that
+passes through**, switched off or not. At the rates above that is some 190,000
+scans of the environment block over 720 lists, for an answer that cannot change.
+The rest of this port reads a switch into a `static const bool`; this file
+predates the habit. One lookup for the process now.
+
+What is *not* done, and the reason is worth as much as the change would be: the
+priority pass could drain once and iterate its own vector, instead of drain,
+partition, refill, drain again — removing some ninety thousand enqueue/dequeue
+pairs a run. It would also change which messages a given call sees, deferring
+anything that arrives mid-processing by one drain, that is 0.27 ms. This
+scheduler's defects have cost this project days apiece. At a measured one percent
+that trade is not worth making, and saying so is the point of having measured it.
+
+> The figure was alarming for a week because it had no denominator. Adding one
+> cost a patch and a run, and it turned a hunt into a line in a table. The
+> instinct to fix what looks wrong is the expensive one here: the ratio was true,
+> the reading of it was not.

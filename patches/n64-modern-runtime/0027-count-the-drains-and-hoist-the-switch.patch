@@ -1,0 +1,101 @@
+From: DKR-R Win95 port
+Subject: [PATCH] Count the drains, and stop asking the environment per message
+
+The queue trace reports 108,794 requeues of one message value against 7,723
+deposits of it. Fourteen retries per deposit is not a finding: a requeue is one
+retry per *drain*, so the same figure describes a message blocked for fourteen
+drains and a message spun on. Only the number of drains tells them apart, and
+nothing was counting them.
+
+The priority pass at the head of `dequeue_external_messages` is counted with
+them. It empties the external queue and refills it on every call, copying every
+pending message -- each holding a `shared_ptr`, hence an atomic pair per copy --
+before the loop below drains it a second time. Its cost scales with how often the
+function is entered, which is the quantity that was missing.
+
+And the two trace blocks asked `std::getenv("DKR_TRACE_SP")` on **every message
+that passes through**, switched off or not. Over a run reaching a thousand
+display lists that is more than two hundred thousand scans of the environment
+block for an answer that cannot change. The rest of this port reads a switch into
+a `static const bool` for exactly that reason; this file predates the habit.
+
+A diagnostic that is off should cost nothing, and this one was not free.
+
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -189,6 +189,31 @@
+ 
+ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
+ 
++// **A trace that is switched off must cost nothing per message.**
++//
++// The two blocks below used to ask `std::getenv("DKR_TRACE_SP")` on every message
++// that passes through here, which on a run reaching a thousand display lists is
++// over two hundred thousand scans of the environment block for an answer that
++// cannot change. The rest of this port reads its switches into a `static const
++// bool` for exactly that reason; this file had been written before that was the
++// habit.
++static const bool trace_sp = std::getenv("DKR_TRACE_SP") != nullptr;
++
++// **What the requeues actually cost, in calls rather than in messages.**
++//
++// The totals below report 108,794 requeues of one message value against 7,723
++// deposits of it -- fourteen retries per deposit -- and that ratio says nothing
++// on its own. A requeue is one retry per *drain*, so the same figure describes a
++// message blocked for fourteen drains and a genuine spin, and only the number of
++// drains tells them apart.
++//
++// The priority pass at the head of the function is counted with it: it empties
++// the queue and refills it on every call, copying every pending message --
++// each holding a `shared_ptr`, hence an atomic pair per copy -- before the loop
++// below drains it a second time. That is the part whose cost scales with how
++// often the function is entered, and nothing was measuring it.
++static unsigned long drains = 0, priority_moves = 0;
++
+ void dequeue_external_messages(RDRAM_ARG1) {
+     if (exited.load()) {
+         throw ultramodern::thread_terminated{};
+@@ -211,11 +236,13 @@
+     // events whose relative order is not guaranteed. Serving them first is
+     // therefore faithful, and it suffices to lift them out of starvation. Their
+     // order among themselves is preserved - that is the one the game observes.
++    drains++;
+     {
+         std::vector<QueuedMessage> all{};
+         while (external_messages.try_dequeue(to_send)) {
+             all.push_back(to_send);
+         }
++        priority_moves += (unsigned long)all.size();
+         std::stable_partition(all.begin(), all.end(), [](const QueuedMessage& m) {
+             return m.source == ultramodern::EventMessageSource::Sp ||
+                    m.source == ultramodern::EventMessageSource::Dp;
+@@ -263,8 +290,7 @@
+         // symbol map. Hard-coding it would not be acceptable elsewhere; here it
+         // is a diagnostic behind an environment variable, and the only way to
+         // ask the question.
+-        if (to_send.source == ultramodern::EventMessageSource::Dp &&
+-            std::getenv("DKR_TRACE_SP") != nullptr) {
++        if (to_send.source == ultramodern::EventMessageSource::Dp && trace_sp) {
+             static unsigned nulls = 0, set = 0, shown = 0;
+             /* The guest RDRAM is stored byte-swapped on the host side: we read
+                the word backwards to recover the game's value. */
+@@ -290,7 +316,7 @@
+         // A crash on Windows 95 finds `curRSPTask` null in `__scHandleRSP`, while
+         // a single task has been submitted and a single `sp_complete` called. If
+         // the count below exceeds that one, the question is settled.
+-        if (std::getenv("DKR_TRACE_SP") != nullptr) {
++        if (trace_sp) {
+             static unsigned deposits = 0, refusals = 0, requeues = 0;
+             if (sent) { deposits++; } else if (to_send.requeue_if_blocked) { requeues++; }
+             else { refusals++; }
+@@ -339,6 +365,10 @@
+                                  "[trace][mq] total msg=0x%08X deposited=%u refused=%u requeued=%u\n",
+                                  seen[m][0], tot[m][0], tot[m][1], tot[m][2]);
+                 }
++                // The denominator the ratios above are missing.
++                std::fprintf(stderr,
++                             "[trace][mq] drains=%lu priority-copies=%lu\n",
++                             drains, priority_moves);
+                 // Force the log onto the disk: Windows 95 only updates the size
+                 // at close time, so a frozen program leaves a zero-byte file
+                 // whatever it wrote. Without this call, "the program stopped
