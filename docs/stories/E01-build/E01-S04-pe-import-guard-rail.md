@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E01 — 32-bit Windows 95 build chain |
-| **Status** | TODO |
+| **Status** | REVIEW |
 | **Priority** | P1 |
 | **Estimate** | S |
 | **Depends on** | E01-S03 |

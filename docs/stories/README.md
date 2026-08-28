@@ -36,19 +36,37 @@ rest of the stack is specific to modern systems.
 
 ## Overall status
 
-| Epic | Title | Tickets | TODO | In progress |
-|---|---|---|---|---|
-| [E00](E00-scoping/) | Scoping, measurements and decisions | 7 | 5 | **2** |
-| [E01](E01-build/) | 32-bit Win95 build chain | 6 | 5 | **1** |
-| [E02](E02-system/) | Win95 system substrate | 6 | 2 | **4** |
-| [E03](E03-rsp/) | RSP on x86 without SSE | 3 | 3 | 0 |
-| [E04](E04-hle-f3ddkr/) | RT64-independent F3DDKR HLE | 8 | 8 | 0 |
-| [E05](E05-glide/) | Glide backend | 8 | 8 | 0 |
-| [E06](E06-platform/) | Win95 platform | 6 | 6 | 0 |
-| [E07](E07-scope/) | Scope reduction | 3 | 2 | **1** |
-| [E08](E08-perf/) | Performance | 4 | 4 | 0 |
-| [E09](E09-qa/) | Integration, QA and distribution | 5 | 4 | **1** |
-| | **Total** | **56** | **48** | **8** |
+*Audited against the repository on 28 August 2026. The table below had drifted
+badly — it read `48 TODO` while the ticket files themselves read 24, and several
+tickets marked `TODO` are demonstrably finished. Both were counting intentions
+rather than code. Each line now carries the evidence it rests on.*
+
+| Epic | Title | Tickets | Built | Open | Where it really stands |
+|---|---|---:|---:|---:|---|
+| [E00](E00-scoping/) | Scoping, measurements and decisions | 7 | 6 | 1 | Only E00-S03's go/no-go is open, and it waits on a frame's CPU cost in milliseconds |
+| [E01](E01-build/) | 32-bit Win95 build chain | 6 | 5 | 1 | An 8.3 MB PE builds, loads and runs; E01-S06 (generating sources off Windows) is partial |
+| [E02](E02-system/) | Win95 system substrate | 6 | 6 | 0 | Threads, clock, saves, ROM, bring-up — the game runs 1,500 display lists |
+| [E03](E03-rsp/) | RSP on x86 without SSE | 3 | 0 | **3** | **Untouched.** E00-S04 measured 3.9 % of the needed throughput; E03-S03 is the way out and is not started |
+| [E04](E04-hle-f3ddkr/) | RT64-independent F3DDKR HLE | 8 | 8 | 0 | Decoder, transform, clipping, RDP state, 12 texture formats, software oracle — all implemented |
+| [E05](E05-glide/) | Glide backend | 8 | 7 | 1 | Renders the game on the card; E05-S04 (second TMU) is written and never exercised — `tmu1: hits=0/0` |
+| [E06](E06-platform/) | Win95 platform | 6 | 0 | **6** | **Untouched.** The binary imports one USER32 symbol, `MessageBoxA`, and no WINMM: no window, no input, no sound |
+| [E07](E07-scope/) | Scope reduction | 3 | 1 | 2 | SDL2 is cut; ImGui, texture packs and the modern profile are still linked on the modern target |
+| [E08](E08-perf/) | Performance | 4 | 1 | 3 | The instrumentation exists and has produced every figure this month; no optimisation pass beyond the texture cache |
+| [E09](E09-qa/) | Integration, QA and distribution | 5 | 1 | 4 | The test machine is complete; frame dumps exist, an automated comparison does not |
+| | **Total** | **56** | **35** | **21** | |
+
+**"Built" means the code exists and has been exercised on the target**, not that
+the ticket's acceptance criteria are ticked — almost none are, which is a
+bookkeeping debt and not an engineering one. The tickets whose declared status is
+provably stale, with the evidence:
+
+| Ticket | Says | Is | Evidence |
+|---|---|---|---|
+| [E01-S04](E01-build/E01-S04-pe-import-guard-rail.md) | `TODO` | built | `check-win95-imports.sh` is blocking in every build, has a self-test, and every exception carries a written justification |
+| [E02-S06](E02-system/E02-S06-game-bring-up.md) | `TODO` | built | The game starts, submits 1,500 display lists and draws its intro on the Voodoo |
+| [E04-S07](E04-hle-f3ddkr/E04-S07-n64-texture-decoding.md) | `TODO` | built | 12 formats decoded; the cache measured at 98.9 % and now consulted before converting |
+| [E04-S04](E04-hle-f3ddkr/E04-S04-billboarding.md) | `TODO` | built | Implemented in `f3ddkr.c` and exercised by the menu |
+| [E08-S01](E08-perf/E08-S01-frame-budget-instrumentation.md) | `TODO` | partly built | 21 counter groups per display list; they produced every measurement in `win95-game-render.md` |
 
 ### In progress
 
@@ -131,15 +149,48 @@ E03 (RSP / audio) is largely independent and can be carried out in parallel.
 
 ### The three verifiable milestones
 
-| Milestone | Ticket | What it proves |
+| Milestone | Ticket | State on 28 August 2026 |
 |---|---|---|
-| The game runs | [E02-S06](E02-system/E02-S06-game-bring-up.md) | The build, the system substrate and the scheduler hold. No image, but graphics tasks submitted at a measurable rate. |
-| The first image | [E04-S08](E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) | The F3DDKR decoder is right, independently of Glide. Becomes E05's oracle. |
-| The game is playable | E05 + E06 | Accelerated rendering, input, audio, pacing. |
+| The game runs | [E02-S06](E02-system/E02-S06-game-bring-up.md) | **Passed.** 1,500 display lists in a run, 2.9 M commands decoded, no rejection. |
+| The first image | [E04-S08](E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) | **Passed, and passed on the card rather than on the oracle.** The intro, Ancient Lake, the character select and the title screen draw with their textures, their names and their sky. |
+| The game is playable | E05 + E06 | **Not begun.** This is the whole remaining distance, and it is not in the renderer. |
 
-## The hard point
+**The third milestone is where the project actually is, and the gap is sharper
+than any status field says it.** The Windows 95 binary imports **one** symbol from
+`USER32` — `MessageBoxA`, for the crash dialog — and nothing at all from `WINMM`.
+There is therefore no window, no message loop, no keyboard, no gamepad and no
+sound. What runs on the test machine is the game playing its own attract mode to
+an audience that cannot touch it.
 
-[**E05-S03**](E05-glide/E05-S03-color-combiner-translation.md) — the colour
+That is not a defect: E06 was scheduled after the renderer on purpose, and the
+renderer is the part that could have proved the target impossible. It is worth
+stating plainly all the same, because "the game renders on the Voodoo" and "the
+game can be played" are three untouched tickets apart, plus an audio epic whose
+only measurement so far says the obvious road is closed.
+
+## The hard point — and it has moved
+
+**It was E05-S03, and E05-S03 is done.** The catalogue matches every combiner the
+game applies (`unknown=0` over 146,000 applications, against 12,500 unmatched a
+week ago), and the setups it hands the card are applied only where the table
+certifies them faithful — a rule taken from measurement, not from the table's
+membership. The paragraphs below are kept because the reasoning still holds and
+because E05-S04 inherits it.
+
+**The hard point is now [E03](E03-rsp/), and it has been since E00-S04
+measured it.** The recompiled audio microcode reaches **3.9 %** of the RSP's
+vector throughput on the target; no amount of care on that path closes a factor of
+twenty-five. E03-S03 — a high-level mixer that does not emulate the microcode at
+all — moved from contingency to critical path on that measurement and has not been
+started. It is the one place where a measurement says the obvious road is closed
+and the alternative is unwritten.
+
+**Behind it, [E06](E06-platform/)** — window, input, audio output, pacing. Not
+hard, but six tickets of it, and nothing is playable until they exist.
+
+### The old hard point, for the record
+
+[E05-S03](E05-glide/E05-S03-color-combiner-translation.md) — the colour
 combiner's translation. The RDP's combiner is programmable; Glide's is fixed. It is
 the only ticket estimated XL in the graphics part.
 

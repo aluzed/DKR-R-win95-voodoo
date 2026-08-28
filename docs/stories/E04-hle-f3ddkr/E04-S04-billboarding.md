@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E04 — RT64-independent F3DDKR HLE |
-| **Status** | TODO |
+| **Status** | REVIEW |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E04-S03 |
