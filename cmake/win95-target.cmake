@@ -123,6 +123,18 @@ target_include_directories(win95clock PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95clock PUBLIC win95compat winmm)
 add_dependencies(win95clock dkr_win95_cpp_subset)
 
+# --- Window and message loop (E06-S01) ---------------------------------------
+#
+# `user32` and nothing else. The window is a message receiver -- the Voodoo owns
+# the screen through its passthrough relay -- so there is no GDI, no DirectDraw
+# and no surface here.
+add_library(win95window STATIC "${DKR_WIN95_PLATFORM}/window.c")
+target_include_directories(win95window PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95window PUBLIC win95compat user32)
+# `game_main.cpp` includes `render/glide.h` to hand the window to `grSstWinOpen`.
+target_include_directories(win95window INTERFACE "${DKRPORT_ROOT}/platform")
+add_dependencies(win95window dkr_win95_cpp_subset)
+
 # --- File writing (E02-S05) --------------------------------------------------
 #
 # Depends only on `win95compat`, like the threading layer: the durable-write
@@ -1052,7 +1064,7 @@ target_compile_definitions(DKRWin95Game PRIVATE
 target_link_libraries(DKRWin95Game PRIVATE
     -Wl,--start-group
     win95recompiled win95librecomp win95ultramodern win95liverecomp
-    win95fileio win95clock win95threading
+    win95fileio win95clock win95threading win95window
     -Wl,--end-group
     # The render chain. `win95f3ddkr` pulls in clipping and the transformation;
     # `win95glide` pulls in the TMU and the combiner. The game is the first binary

@@ -49,11 +49,11 @@ rather than code. Each line now carries the evidence it rests on.*
 | [E03](E03-rsp/) | RSP on x86 without SSE | 3 | 0 | **3** | **Untouched.** E00-S04 measured 3.9 % of the needed throughput; E03-S03 is the way out and is not started |
 | [E04](E04-hle-f3ddkr/) | RT64-independent F3DDKR HLE | 8 | 8 | 0 | Decoder, transform, clipping, RDP state, 12 texture formats, software oracle — all implemented |
 | [E05](E05-glide/) | Glide backend | 8 | 7 | 1 | Renders the game on the card; E05-S04 (second TMU) is written and never exercised — `tmu1: hits=0/0` |
-| [E06](E06-platform/) | Win95 platform | 6 | 0 | **6** | **Untouched.** The binary imports one USER32 symbol, `MessageBoxA`, and no WINMM: no window, no input, no sound |
+| [E06](E06-platform/) | Win95 platform | 6 | 2 | 4 | **The keyboard works**: a window bound to Glide, 18 USER32 imports, six taps sent and six read. Audio, pacing, configuration and ROM selection remain |
 | [E07](E07-scope/) | Scope reduction | 3 | 1 | 2 | SDL2 is cut; ImGui, texture packs and the modern profile are still linked on the modern target |
 | [E08](E08-perf/) | Performance | 4 | 1 | 3 | The instrumentation exists and has produced every figure this month; no optimisation pass beyond the texture cache |
 | [E09](E09-qa/) | Integration, QA and distribution | 5 | 1 | 4 | The test machine is complete; frame dumps exist, an automated comparison does not |
-| | **Total** | **56** | **36** | **20** | |
+| | **Total** | **56** | **38** | **18** | |
 
 **"Built" means the code exists and has been exercised on the target**, not that
 the ticket's acceptance criteria are ticked — almost none are, which is a
@@ -153,7 +153,7 @@ E03 (RSP / audio) is largely independent and can be carried out in parallel.
 |---|---|---|
 | The game runs | [E02-S06](E02-system/E02-S06-game-bring-up.md) | **Passed.** 1,500 display lists in a run, 2.9 M commands decoded, no rejection. |
 | The first image | [E04-S08](E04-hle-f3ddkr/E04-S08-reference-software-rasteriser.md) | **Passed, and passed on the card rather than on the oracle.** The intro, Ancient Lake, the character select and the title screen draw with their textures, their names and their sky. |
-| The game is playable | E05 + E06 | **Not begun.** This is the whole remaining distance, and it is not in the renderer. |
+| The game is playable | E05 + E06 | **Begun.** The keyboard reaches the game — six taps sent, six read — through a window Glide is bound to. Audio and pacing remain, and the frame is 5.1× over budget. |
 
 **The third milestone is where the project actually is, and the gap is sharper
 than any status field says it.** The Windows 95 binary imports **one** symbol from

@@ -269,9 +269,17 @@ static void restore_display_on_crash(void)
     dkr_glide_shutdown();
 }
 
+static unsigned long g_hwnd_for_glide;
+
+void dkr_glide_set_window(unsigned long hwnd)
+{
+    g_hwnd_for_glide = hwnd;
+}
+
 dkr_glide_result dkr_glide_open(dkr_glide_resolution wanted,
                                 dkr_glide_context *out)
 {
+    const FxU32 hwnd = (FxU32)g_hwnd_for_glide;
     dkr_glide_hardware hw;
     dkr_glide_result   r;
     int                i;
@@ -293,8 +301,31 @@ dkr_glide_result dkr_glide_open(dkr_glide_resolution wanted,
         if (fb_cost_kb(RESOLUTIONS[i].w, RESOLUTIONS[i].h) > hw.fb_memory_kb) {
             continue;
         }
-        if (g.win_open(0, RESOLUTIONS[i].glide_id, GR_REFRESH_60Hz,
-                       GR_COLORFORMAT_ARGB, GR_ORIGIN_UPPER_LEFT, 2, 1)) {
+        /* --- The window Glide is given, and why it is not zero -------------- *
+         *
+         * `grSstWinOpen`'s first argument is a window handle. This port passed
+         * **zero** from the bring-up until 28 August 2026, which works -- the
+         * card opens and draws -- and leaves the full-screen context belonging to
+         * no window. The consequence only appears once there *is* a window:
+         * measured on the machine, creating a foreground window while Glide held
+         * a zero-handle context put the desktop back on the screen and the game
+         * stopped advancing at list 300.
+         *
+         * Bound to the window, Glide's context and the message queue are the same
+         * object as far as Windows is concerned: the window keeps the foreground,
+         * receives the keyboard, and is what the task switcher comes back to.
+         * That is the arrangement every Glide title of the period used, and
+         * E06-S01 lists `E05-S01` among what it blocks for exactly this reason.
+         *
+         * **The fallback is a retry, not a hope.** A driver that refuses the
+         * handle refuses `grSstWinOpen` outright, and a card that does not open
+         * is worse than one that opens unbound -- so a refusal is retried with
+         * zero and the outcome is logged either way. */
+        if (g.win_open(hwnd, RESOLUTIONS[i].glide_id, GR_REFRESH_60Hz,
+                       GR_COLORFORMAT_ARGB, GR_ORIGIN_UPPER_LEFT, 2, 1) ||
+            (hwnd != 0u &&
+             g.win_open(0, RESOLUTIONS[i].glide_id, GR_REFRESH_60Hz,
+                        GR_COLORFORMAT_ARGB, GR_ORIGIN_UPPER_LEFT, 2, 1))) {
             g.context_open   = 1;
             g.ctx.resolution = (dkr_glide_resolution)i;
             g.ctx.width      = RESOLUTIONS[i].w;

@@ -2940,3 +2940,73 @@ here is acted on — what it earns is a name and a place to be found from.
 > was the right thing to do and left nothing behind. The second is only useful
 > because the first was written down with its registers. A crash report costs
 > nothing to keep and cannot be reconstructed later.
+
+## A window, a keyboard, and the two things that only appear once they exist — 28 August 2026
+
+E06-S01 and E06-S02 are written: a Win32 window with its message loop, and the
+keyboard mapped to the N64 controller. The binary's `USER32` imports go from
+**one** — `MessageBoxA`, for the crash dialog — to eighteen, every one an ANSI
+variant present in Windows 95.
+
+Two defects only became visible because the window existed, and neither is in the
+window.
+
+### `grSstWinOpen` was being given a window handle of zero
+
+It had been since the bring-up, and it works: the card opens, the game draws, and
+nothing complains. What a zero handle means is that Glide's full-screen context
+belongs to **no window** — and for a fortnight there was no window, so nothing
+could notice.
+
+The first run with one showed it immediately: the desktop came back on screen and
+the game stopped advancing at list 300. A foreground window and an unbound
+full-screen context are two owners of the same display.
+
+The order is now load-bearing and is written down as such: the window is created
+**before** the runtime thread, because that thread opens Glide, and Glide is given
+the handle. Bound, they are one object as far as Windows is concerned — the window
+keeps the foreground, receives the keyboard, and is what the task switcher returns
+to. That is what every Glide title of the period did, and it is why E06-S01's
+header lists `E05-S01` among what it blocks.
+
+The retry is a retry and not a hope: a driver that refuses the handle refuses
+`grSstWinOpen` outright, and a card that does not open is worse than one that
+opens unbound, so a refusal falls back to zero and says so.
+
+```
+before: window created after Glide -> desktop returns, game stalls at list 300
+after:  window created first, handed to Glide -> list 720 and climbing, Wizpig on screen
+```
+
+### The keyboard worked, and a keystroke in fifteen arrived
+
+The cut that settled it logs only when a button is actually read, so silence and
+noise mean different things. It read `buttons=8000 focus=1` — A, with the
+foreground. The chain was sound end to end on its first run.
+
+But **four keystrokes were sent and one was seen**, and the arithmetic is exact:
+the game reads its controller once per frame, E00-S03 measured a frame at 170 ms,
+and an `xdotool` tap lasts about 10 ms. Six per cent. One in four is what that
+predicts.
+
+On the console the controller is polled at 60 Hz and the question does not arise.
+Here it is polled at 5.88 Hz, so **a press shorter than a frame is invisible** —
+which is a real input defect and not a testing artefact. A player tapping Start
+would be tapping it several times before one landed.
+
+The fix is a latch: a key that went down since the last poll is reported down for
+that poll, whether or not it is still held, and the latch is cleared by the poll
+that read it. A very short tap then costs a whole frame of press instead of part
+of one, which is the right way round — a press held slightly too long is a press,
+a press dropped is a player pushing the button again.
+
+```
+before the latch: 4 taps sent, 1 read
+after  the latch: 6 taps sent, 6 read -- 1000, 8000, 1000, 8000, 1000, 8000
+```
+
+> Both defects had been latent for weeks and neither could have been found by
+> reading the code, because in both cases the code was correct for the
+> configuration it was written in. A zero window handle is right when there is no
+> window; sampling the instantaneous key state is right at 60 Hz. What made them
+> defects was the frame rate and the window — two things measured this same week.

@@ -1,4 +1,10 @@
 #include "diagnostic_log.hpp"
+#if defined(DKR_TARGET_WIN95)
+extern "C" {
+#include "window.h"
+#include "render/glide.h"
+}
+#endif
 #include "game_registration.hpp"
 #include "glide_renderer.hpp"
 #include "null_renderer.hpp"
@@ -623,6 +629,30 @@ int DkrMain(int argc, char** argv) {
         .message_queue_control = {.requeue_sp = true, .requeue_dp = true},
     };
 
+#if defined(DKR_TARGET_WIN95)
+    // --- E06-S01: the window, created here and not later ---------------------
+    //
+    // **On this thread**, because a window belongs to the thread that created it:
+    // its messages go to that thread's queue and nowhere else. This loop is the
+    // only thread that lives for the whole session without belonging to
+    // `ultramodern`, and it already polls at one millisecond -- the cadence a
+    // message pump wants.
+    //
+    // **And before the runtime thread**, because that thread opens Glide, and
+    // Glide must be given this window. Measured on the machine on 28 August 2026:
+    // with the window created afterwards, `grSstWinOpen` had already taken a
+    // full-screen context bound to nothing, the new foreground window put the
+    // desktop back on the screen, and the game stopped advancing at list 300.
+    // The order is therefore load-bearing and not a tidy-up.
+    //
+    // Failing to create it is not fatal: the port rendered its intro for a
+    // fortnight with no window at all, and a player who cannot press Start is
+    // better off than one who cannot start the game.
+    const bool have_window = dkr_window_open("DKR-R") != 0;
+    if (have_window) {
+        dkr_glide_set_window(dkr_window_handle());
+    }
+#endif
     std::fprintf(stderr, "[boot] runtime initialized; waiting for first safe VI state\n");
     std::atomic<bool> runtime_finished{false};
     std::exception_ptr runtime_failure;
@@ -637,7 +667,21 @@ int DkrMain(int argc, char** argv) {
 
     const auto runtime_started_at = std::chrono::steady_clock::now();
     bool timeout_requested = false;
+#if defined(DKR_TARGET_WIN95)
+    bool window_quit = false;
+#endif
     while (!runtime_finished.load(std::memory_order_acquire)) {
+#if defined(DKR_TARGET_WIN95)
+        if (have_window && !window_quit && !dkr_window_pump()) {
+            // Every shutdown route -- the close button, Alt+F4, the session
+            // ending -- arrives here as a single answer, and it asks the runtime
+            // to stop rather than tearing it down: the game's threads are running
+            // and the display is the card's until it gives it back.
+            std::fprintf(stderr, "[boot][window] shutdown requested\n");
+            window_quit = true;
+            ultramodern::quit();
+        }
+#endif
 #if DKR_RUNTIME_HAS_RT64
         // The SDL video subsystem and native window were created on this
         // thread. Keep all window/input event pumping here for Windows, X11
@@ -660,6 +704,9 @@ int DkrMain(int argc, char** argv) {
         dkr::sync::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     runtime_thread.join();
+#if defined(DKR_TARGET_WIN95)
+    dkr_window_close();
+#endif
 #if DKR_RUNTIME_HAS_RT64
     const auto lifecycle_request = dkr::runtime::ui::lifecycle_request();
 #endif

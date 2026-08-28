@@ -1,4 +1,5 @@
 #include "runtime_platform.hpp"
+#include "diagnostic_log.hpp"
 #include "audio_equalizer.hpp"
 #include "runtime_input.hpp"
 #include "runtime_enhancements.hpp"
@@ -730,6 +731,89 @@ void dkr::runtime::platform::set_audio_frequency(std::uint32_t frequency) {
 #endif
 }
 
+#if defined(DKR_TARGET_WIN95)
+extern "C" {
+#include "window.h"
+}
+#include <windows.h>
+
+/* The N64 controller's button bits. Repeated here rather than shared with
+   `runtime_input.cpp`, where they sit in an anonymous namespace: hoisting them
+   into a header for one caller would put a translation unit's private detail on
+   the project's surface. They are a hardware layout and do not drift. */
+constexpr std::uint16_t kButtonA     = 0x8000;
+constexpr std::uint16_t kButtonB     = 0x4000;
+constexpr std::uint16_t kButtonZ     = 0x2000;
+constexpr std::uint16_t kButtonStart = 0x1000;
+constexpr std::uint16_t kDpadUp      = 0x0800;
+constexpr std::uint16_t kDpadDown    = 0x0400;
+constexpr std::uint16_t kDpadLeft    = 0x0200;
+constexpr std::uint16_t kDpadRight   = 0x0100;
+constexpr std::uint16_t kButtonL     = 0x0020;
+constexpr std::uint16_t kButtonR     = 0x0010;
+constexpr std::uint16_t kCUp         = 0x0008;
+constexpr std::uint16_t kCDown       = 0x0004;
+constexpr std::uint16_t kCLeft       = 0x0002;
+constexpr std::uint16_t kCRight      = 0x0001;
+
+/* --- E06-S02: the keyboard, mapped to the N64 controller -------------------- *
+ *
+ * The bindings are E06-S01's window's key state read through a table, and the
+ * table is the same one the modern target announces at boot -- WASD for the
+ * stick, the arrows for the d-pad, Space for A, Shift for B, IJKL for the C
+ * buttons. Keeping them identical is not cosmetic: it is what lets a player
+ * describe a problem once and have it mean the same thing on both targets, and
+ * what lets the two be compared by someone driving them the same way.
+ *
+ * **One controller.** DKR's four-player mode wants four, and one keyboard cannot
+ * sensibly serve them; the gamepad this ticket also names goes through
+ * `joyGetPosEx`, which is `winmm` and belongs with E06-S03's audio in the same
+ * import. Ports 2 to 4 therefore read as disconnected rather than as a second
+ * copy of player one -- a controller that mirrors another is worse than an absent
+ * one, because the game accepts it and two karts steer together. */
+struct KeyBinding { int vk; std::uint16_t mask; };
+
+static const KeyBinding kKeyBindings[] = {
+    { VK_SPACE,   kButtonA },
+    { VK_SHIFT,   kButtonB },
+    { 'Z',        kButtonZ },
+    { VK_RETURN,  kButtonStart },
+    { VK_UP,      kDpadUp },
+    { VK_DOWN,    kDpadDown },
+    { VK_LEFT,    kDpadLeft },
+    { VK_RIGHT,   kDpadRight },
+    { 'Q',        kButtonL },
+    { 'E',        kButtonR },
+    { 'I',        kCUp },
+    { 'K',        kCDown },
+    { 'J',        kCLeft },
+    { 'L',        kCRight },
+};
+
+/* The analogue stick, from four digital keys.
+ *
+ * **Full deflection on a diagonal would be 1.41 times the range**, which the game
+ * reads as a stick pushed past its own gate: on the N64 the stick is physically
+ * round and cannot reach (1,1). Normalising the diagonal to the same magnitude as
+ * a cardinal is what makes a keyboard steer like a controller rather than turn
+ * faster on the diagonals -- and in a racing game that difference is felt on
+ * every corner. */
+static void keyboard_stick(float* x, float* y) {
+    float dx = 0.0F, dy = 0.0F;
+    if (dkr_window_key_down('D')) { dx += 1.0F; }
+    if (dkr_window_key_down('A')) { dx -= 1.0F; }
+    if (dkr_window_key_down('W')) { dy += 1.0F; }
+    if (dkr_window_key_down('S')) { dy -= 1.0F; }
+    if (dx != 0.0F && dy != 0.0F) {
+        const float k = 0.70710678F;   /* 1 / sqrt(2) */
+        dx *= k;
+        dy *= k;
+    }
+    *x = dx;
+    *y = dy;
+}
+#endif
+
 void dkr::runtime::platform::poll_input() {
 #if DKR_RUNTIME_HAS_RT64
     dkr::sync::scoped_lock lock(g_platform_mutex);
@@ -744,6 +828,64 @@ void dkr::runtime::platform::poll_input() {
         g_buttons[player].store(state.buttons, std::memory_order_release);
         g_stick_x[player].store(state.stick_x, std::memory_order_release);
         g_stick_y[player].store(state.stick_y, std::memory_order_release);
+    }
+#elif defined(DKR_TARGET_WIN95)
+    std::uint16_t buttons = 0;
+    float sx = 0.0F, sy = 0.0F;
+    /* **Nothing is pressed while we do not have the foreground.** The window
+       clears its key state on losing focus, so this is belt and braces -- but the
+       braces are cheap and the failure they guard against is a kart that keeps
+       accelerating while the player is in another window. */
+    if (dkr_window_focused()) {
+        for (std::size_t i = 0;
+             i < sizeof(kKeyBindings) / sizeof(kKeyBindings[0]); ++i) {
+            if (dkr_window_key_down(kKeyBindings[i].vk)) {
+                buttons |= kKeyBindings[i].mask;
+            }
+        }
+        keyboard_stick(&sx, &sy);
+    }
+    /* The latch spans exactly one poll: cleared here, once the state above has
+       been read, so a press can neither be dropped nor counted twice. */
+    dkr_window_latch_clear();
+    /* --- The one-variable cut ---------------------------------------------- *
+     *
+     * A game that does not react to Start has three possible causes and they are
+     * on opposite sides of the process boundary: the key never reached us, it
+     * reached us and the mapping is wrong, or it reached the game and the game
+     * ignored it. Watching `gGameMode` cannot tell them apart -- it stays at
+     * MENU through the whole of DKR's front end, attract mode included, so an
+     * unchanged mode is evidence of nothing.
+     *
+     * This line is the cut. It fires only when something is actually pressed, so
+     * a silent log means the keys are not arriving and a noisy one moves the
+     * question inside the game. Bounded to the first few, and the totals after:
+     * a key held down would otherwise write sixty lines a second to a floppy. */
+    {
+        static unsigned long shown = 0, presses = 0;
+        static std::uint16_t last = 0;
+        if (buttons != 0 && buttons != last) {
+            presses++;
+            if (++shown <= 12UL) {
+                std::fprintf(stderr,
+                             "[input] buttons=%04X stick=(%d,%d) focus=%d "
+                             "presses=%lu\n",
+                             static_cast<unsigned>(buttons),
+                             static_cast<int>(sx * 100.0F),
+                             static_cast<int>(sy * 100.0F),
+                             dkr_window_focused(), presses);
+                dkr_diag_commit();
+            }
+        }
+        last = buttons;
+    }
+    g_buttons[0].store(buttons, std::memory_order_release);
+    g_stick_x[0].store(sx, std::memory_order_release);
+    g_stick_y[0].store(sy, std::memory_order_release);
+    for (std::size_t player = 1; player < kControllerCount; ++player) {
+        g_buttons[player].store(0, std::memory_order_release);
+        g_stick_x[player].store(0.0F, std::memory_order_release);
+        g_stick_y[player].store(0.0F, std::memory_order_release);
     }
 #else
     for (std::size_t player = 0; player < kControllerCount; ++player) {

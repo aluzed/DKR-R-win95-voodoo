@@ -90,6 +90,15 @@ typedef struct {
 dkr_glide_result dkr_glide_open(dkr_glide_resolution wanted,
                                 dkr_glide_context *out);
 
+/* The window `grSstWinOpen` is to bind its context to, set before opening. Zero,
+   the default, opens an unbound full-screen context.
+ *
+ * A setter rather than a parameter because two of the three callers are witnesses
+ * that genuinely have no window, and threading one through their signatures would
+ * make every one of them carry a zero to say so. The game sets it once at
+ * bring-up; nothing else needs to know the call exists. */
+void dkr_glide_set_window(unsigned long hwnd);
+
 /* Clears the back buffer then swaps it. `argb` is the clear colour. */
 void dkr_glide_clear(unsigned argb);
 void dkr_glide_swap(void);

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | TODO |
+| **Status** | REVIEW |
 | **Priority** | P0 |
 | **Estimate** | M |
 | **Depends on** | E01-S03, E02-S06 |
