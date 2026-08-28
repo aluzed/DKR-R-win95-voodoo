@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E00 — Scoping, measurements and decisions |
-| **Status** | IN_PROGRESS |
+| **Status** | REVIEW |
 | **Priority** | P0 |
 | **Estimate** | L |
 | **Depends on** | E00-S02 |
@@ -50,13 +50,37 @@ difficulty under Windows 95: that is a direct result for
 [E00-S02](E00-S02-spike-pe-win95-toolchain.md), which held that question to be the
 principal unknown.
 
-**The go/no-go is still not pronounced**, but what is missing has changed in nature:
-it is no longer a factor, it is a **denominator**. The bench measures isolated leaf
-functions; it gives the relative cost from one machine to another, not the absolute
-cost of a game frame. What is now needed is step 2 (a deterministic play sequence),
-which requires
-[E02-S06](../E02-system/E02-S06-game-bring-up.md), and
-[E00-S04](E00-S04-spike-rsp-cost-without-sse.md)'s audio figure.
+**The denominator is measured — 28 August 2026.** Over 1,016 frames on the
+emulated Pentium II, with E02-S03's time base:
+
+| | |
+|---|---:|
+| A frame | **170 ms — 5.88 fps** |
+| — the renderer (E04 + E05) | 23 ms, **13.6 %** |
+| — everything else (recompiled code, scheduler, audio) | 147 ms, **86.4 %** |
+| The budget at 30 fps | 33.3 ms |
+| **Over budget** | **5.1×** |
+
+Corroborated by a second, independent instrument: the VI thread counts 8.53
+presents per display list, that is one list every 142 ms at 60 Hz, against 170 ms
+measured by the PIT from another thread. Method, reservations and the confound
+that is **not** closed — busy versus blocked — in
+[`docs/research/cpu-budget.md`](../../research/cpu-budget.md).
+
+**What this settles, and it is not the go/no-go.** The split reassigns the
+optimisation work: 86 % of a frame is outside the graphics stack, so
+[E08-S02](../E08-perf/E08-S02-recompiled-code-optimisation.md) is the only lever
+with the leverage to matter, and the renderer — 69 % of a whole 30 fps budget on
+its own — has no room to grow either.
+
+**What the go/no-go still waits on** is no longer a measurement of this port. It is
+a decision about what "playable" means for it, and two facts that bear on it: the
+5.1× is against 86Box's timing model rather than silicon
+([E09-S04](../E09-qa/E09-S04-real-hardware-validation.md)), and the audio is not
+in this figure at all — [E00-S04](E00-S04-spike-rsp-cost-without-sse.md) measured
+the microcode path at 3.9 % of the needed throughput and
+[E03-S03](../E03-rsp/E03-S03-high-level-mixer-fallback.md), which replaces it, is
+unwritten. A frame that already costs 5.1× its budget has no room for it.
 
 Usable straight away: the **38×** factor transposes onto the target any measurement
 made on the development machine.

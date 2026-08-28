@@ -43,7 +43,7 @@ rather than code. Each line now carries the evidence it rests on.*
 
 | Epic | Title | Tickets | Built | Open | Where it really stands |
 |---|---|---:|---:|---:|---|
-| [E00](E00-scoping/) | Scoping, measurements and decisions | 7 | 6 | 1 | Only E00-S03's go/no-go is open, and it waits on a frame's CPU cost in milliseconds |
+| [E00](E00-scoping/) | Scoping, measurements and decisions | 7 | 7 | 0 | E00-S03's denominator is measured: **a frame costs 170 ms against a 33.3 ms budget, and 86 % of it is not the renderer** |
 | [E01](E01-build/) | 32-bit Win95 build chain | 6 | 5 | 1 | An 8.3 MB PE builds, loads and runs; E01-S06 (generating sources off Windows) is partial |
 | [E02](E02-system/) | Win95 system substrate | 6 | 6 | 0 | Threads, clock, saves, ROM, bring-up — the game runs 1,500 display lists |
 | [E03](E03-rsp/) | RSP on x86 without SSE | 3 | 0 | **3** | **Untouched.** E00-S04 measured 3.9 % of the needed throughput; E03-S03 is the way out and is not started |
@@ -53,7 +53,7 @@ rather than code. Each line now carries the evidence it rests on.*
 | [E07](E07-scope/) | Scope reduction | 3 | 1 | 2 | SDL2 is cut; ImGui, texture packs and the modern profile are still linked on the modern target |
 | [E08](E08-perf/) | Performance | 4 | 1 | 3 | The instrumentation exists and has produced every figure this month; no optimisation pass beyond the texture cache |
 | [E09](E09-qa/) | Integration, QA and distribution | 5 | 1 | 4 | The test machine is complete; frame dumps exist, an automated comparison does not |
-| | **Total** | **56** | **35** | **21** | |
+| | **Total** | **56** | **36** | **20** | |
 
 **"Built" means the code exists and has been exercised on the target**, not that
 the ticket's acceptance criteria are ticked — almost none are, which is a

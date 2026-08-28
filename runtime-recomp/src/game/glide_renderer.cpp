@@ -13,6 +13,13 @@
 // The allocator's own counters, for the report below. `backend.h` hands out a
 // pointer to it; reading the struct needs its definition.
 #include "render/tmu.h"
+// E00-S03's denominator. The time base is E02-S03's, measured on the machine at
+// 1,193,180 Hz -- the 8254 PIT, 4.19 us a tick -- and **not**
+// `high_resolution_clock`, which E02-S03 established is the wall clock on this
+// toolchain and therefore steps with the system date.
+extern "C" {
+#include "clock.h"
+}
 #endif
 
 #include <cstdio>
@@ -561,6 +568,67 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         return;
     }
 
+    /* --- E00-S03's missing denominator -------------------------------------- *
+     *
+     * The CPU budget has had both its *factors* since 11 August -- 2.16x for the
+     * 64 to 32 bit move, 17.7x for the normalisation to a 400 MHz Pentium II,
+     * hence 38x from this development machine to the target. What it has never
+     * had is the quantity those factors multiply: **how long a frame actually
+     * takes on the machine**. The ticket says so in as many words -- "it is no
+     * longer a factor, it is a denominator" -- and names E02-S06 as what was
+     * blocking it. E02-S06 is passed.
+     *
+     * Two clocks, and the pair is the point:
+     *
+     *   - `period` is the wall time between one graphics task arriving and the
+     *     next. That is the frame rate, whatever produces it.
+     *   - `render` is the time spent inside this function: decode, transform,
+     *     clip, convert, hand to Glide, present.
+     *
+     * Their difference is everything else -- the recompiled MIPS code, the
+     * scheduler, the audio -- which is the half nobody can time directly and the
+     * half the go/no-go is about. Reporting only one of the two would say which
+     * number is large without saying whose it is, and this project has already
+     * spent a week on a ratio with no denominator.
+     *
+     * The mean is kept alongside the worst case because they answer different
+     * questions: the mean is the frame rate, the worst case is whether the
+     * scheduler's watchdog fires. `[trace][dl]` in `events.cpp` already watches
+     * the worst case and nothing watched the mean. */
+    /* **The clock does not initialise itself, and returns zero until it does.**
+     *
+     * `dkr_clock_now` answers 0 while `clock_source` is NONE, so an uninitialised
+     * base does not fail -- it reports every frame as instantaneous, which is a
+     * plausible-looking wrong answer of exactly the kind this project has spent
+     * days on. Nothing in the game called `dkr_clock_init`: the witnesses did,
+     * and E02-S03's measurements were all made by them. Called here, once, and
+     * the source it settled on is logged so that a fallback to a coarser clock
+     * cannot pass unnoticed -- `GetTickCount` at 9 ms would quantise a 33 ms
+     * frame into four steps. */
+    static const bool clock_ready = [] {
+        const int ok = dkr_clock_init();
+        std::fprintf(stderr, "[boot][clock] source=%s frequency=%lu Hz\n",
+                     dkr_clock_source_name(),
+                     static_cast<unsigned long>(dkr_clock_frequency()));
+        return ok != 0;
+    } ();
+    const unsigned long long t_entry = clock_ready ? dkr_clock_now_us() : 0ULL;
+    if (clock_ready && last_task_us_ != 0ULL) {
+        const unsigned long long d = t_entry - last_task_us_;
+        /* A first period after a pause is not a frame -- the ROM load and the
+           dumps both produce one -- and averaging it in would move the mean by
+           more than the thing being measured. Anything past a second is dropped
+           and counted, so the drop is visible rather than silent. */
+        if (d < 1000000ULL) {
+            period_us_total_ += d;
+            period_n_++;
+            if (d > period_us_worst_) { period_us_worst_ = d; }
+        } else {
+            period_dropped_++;
+        }
+    }
+    last_task_us_ = t_entry;
+
     backend_.begin_frame(backend_.self, 0x000000);
 
     // Reset for every display list, not carried across frames. That is the
@@ -880,6 +948,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 
     backend_.present(backend_.self);
 
+    if (clock_ready) {
+        const unsigned long long d = dkr_clock_now_us() - t_entry;
+        render_us_total_ += d;
+        render_n_++;
+        if (d > render_us_worst_) { render_us_worst_ = d; }
+    }
+
     for (int i = 0; i < DKR_F3D_REJECT_COUNT_MAX; i++) {
         rejects_by_kind_[i] += context_.state.rejects[i];
     }
@@ -1013,6 +1088,31 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // frame, which alone would make the port unplayable. `unknown-format`
         // counts the indexed formats, refused for want of a palette: they come out
         // as untextured surfaces rather than in arbitrary colours.
+        // --- The frame budget, and where it goes ----------------------------
+        //
+        // `period` is the frame; `render` is this file's share of it; the rest is
+        // the recompiled game code, the scheduler and the audio. Announced as
+        // `elsewhere` rather than left to a subtraction the reader has to do --
+        // it is the number the go/no-go turns on, so it gets a name.
+        if (period_n_ > 0 && render_n_ > 0) {
+            const unsigned long long per = period_us_total_ / period_n_;
+            const unsigned long long ren = render_us_total_ / render_n_;
+            std::fprintf(stderr,
+                         "[gfx]   frame: period=%lu us (%lu.%02lu fps) "
+                         "render=%lu us elsewhere=%lu us\n",
+                         static_cast<unsigned long>(per),
+                         static_cast<unsigned long>(per ? 1000000ULL / per : 0ULL),
+                         static_cast<unsigned long>(
+                             per ? (100000000ULL / per) % 100ULL : 0ULL),
+                         static_cast<unsigned long>(ren),
+                         static_cast<unsigned long>(per > ren ? per - ren : 0ULL));
+            std::fprintf(stderr,
+                         "[gfx]   frame-worst: period=%lu us render=%lu us "
+                         "samples=%lu dropped=%lu\n",
+                         static_cast<unsigned long>(period_us_worst_),
+                         static_cast<unsigned long>(render_us_worst_),
+                         period_n_, period_dropped_);
+        }
         std::fprintf(stderr,
                      "[gfx]   textures: uploaded=%lu reused=%lu resident=%lu "
                      "refused-tmu=%lu unknown-format=%lu outside-rdram=%lu\n",

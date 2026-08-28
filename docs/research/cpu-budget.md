@@ -271,3 +271,85 @@ privileges. `uv` creates the same environment without `ensurepip`.
 `tools/cpu-budget/run.sh` redoes the whole measurement end to end: the equivalence
 proof for the 128-bit multiplication, the selection of leaf functions, the double
 compilation, the check for the absence of SSE, and three measurement campaigns.
+
+## The denominator, measured at last — 28 August 2026
+
+This report has carried both *factors* of the budget since 11 August — 2.16× for
+the 64 → 32 bit move, 17.7× for the normalisation to a Pentium II 400 — and said
+in its own words that what remained was "no longer a factor, it is a
+**denominator**": how long a frame of the real game actually takes. That was
+blocked on E02-S06, which is passed.
+
+Measured on the emulated Pentium II over **1,016 frames**, with E02-S03's time
+base (`QueryPerformanceCounter`, confirmed in the run at 1,193,180 Hz — the 8254
+PIT, 4.19 µs a tick):
+
+```
+[gfx]   frame: period=169907 us (5.88 fps) render=23052 us elsewhere=146855 us
+[gfx]   frame-worst: period=648633 us render=479857 us samples=1016 dropped=3
+```
+
+| | |
+|---|---:|
+| A frame | **170 ms** |
+| Frame rate | **5.88 fps** |
+| — of which the renderer (decode, transform, clip, convert, submit, present) | 23 ms — **13.6 %** |
+| — of which everything else (recompiled MIPS code, scheduler, audio) | 147 ms — **86.4 %** |
+| The N64's budget at 30 fps | 33.3 ms |
+| **Over budget by** | **5.1×** |
+
+### The split is the finding, not the total
+
+**Eighty-six per cent of a frame is not the renderer.** E04 and E05 are five
+months of this project's work and they account for one seventh of the time. The
+whole graphics stack could be made free and the game would run at 6.8 fps.
+
+That reassigns the optimisation epics without ambiguity.
+[E08-S02](../stories/E08-perf/E08-S02-recompiled-code-optimisation.md) — the
+recompiled code — is the only lever with the leverage to matter;
+[E08-S03](../stories/E08-perf/E08-S03-vertex-path-optimisation.md), the vertex
+path, is inside the 13.6 %.
+
+And the renderer's own 23 ms is not comfortable either: it is **69 % of the entire
+30 fps budget** on its own. It is not the blocker, and it has no room to grow.
+
+### Corroborated by a second instrument
+
+The period is measured by the PIT, from inside the game thread. The VI thread
+counts its own presents against a different timer, and over the same run it
+reports **8.53 presents per display list** — at 60 Hz, one list every **142 ms**
+against the 170 ms measured. Two clocks, two threads, no shared code, agreeing to
+within 17 %. The residue is expected: presents do not bracket lists exactly.
+
+That agreement is what makes the figure usable. A single clock reading 170 ms
+would have been one instrument's word, and this project has spent days on
+instruments that were the only witness to their own answer.
+
+### Three reservations, and one is a gap
+
+**86Box's model, not silicon.** The measurement is in *emulated* time and reflects
+what 86Box predicts of a Pentium II 400. That reservation is already this report's
+and is unchanged; E09-S04 remains the only way to close it.
+
+**The card's own work costs nothing here.** `docs/TEST-ENVIRONMENT.md` records that
+the Voodoo emulation is functional and not temporal. The 23 ms is therefore the
+*CPU* cost of the rendering path, with the card's fill unmeasured. On real
+hardware the fill happens in parallel, but the 23 ms cannot be assumed to be the
+whole story.
+
+**The 147 ms is not proved to be work.** This instrument measures the interval
+between graphics tasks; it cannot tell a processor that is busy for 147 ms from
+one that is blocked for 147 ms. The argument that it is work is circumstantial and
+worth stating as such: 5.88 fps is not a rate anything paces to — a wait-bound
+loop would land on 60, 30 or 20 — and the message queue was measured on 26 August
+carrying about two messages with no refusals, which is not a starved scheduler.
+Circumstantial is not measured. Closing it needs the game thread instrumented
+where it blocks, and that is a ticket of its own.
+
+> The go/no-go was blocked for seventeen days on a number that took one afternoon
+> to obtain once E02-S06 existed. What made it cheap was that the clock, the
+> report and the display-list counters were all already there — and what nearly
+> made it wrong is that `dkr_clock_now` returns **zero** until `dkr_clock_init` is
+> called, and nothing in the game called it. Every frame would have read as
+> instantaneous. The witnesses called it, which is why E02-S03's measurements were
+> right and this one would not have been.
