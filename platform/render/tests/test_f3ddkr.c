@@ -46,6 +46,28 @@ static int      g_rect[4];
 static unsigned g_rect_argb;
 static int      g_rect_n;
 
+/* A backend that remembers one texture, which is the whole point: the residency
+   query has to be answered by something that outlives `dkr_f3d_init`. */
+#define FAKE_HANDLE ((dkr_texture_handle)7)
+static int g_up_n, g_look_n, g_look_hit, g_resident;
+
+static dkr_texture_handle fake_upload(void *self, const dkr_texture_desc *desc)
+{
+    (void)self; (void)desc;
+    g_up_n++;
+    g_resident = 1;
+    return FAKE_HANDLE;
+}
+
+static dkr_texture_handle fake_lookup(void *self, unsigned long long key, int tmu)
+{
+    (void)self; (void)key; (void)tmu;
+    g_look_n++;
+    if (!g_resident) { return 0; }
+    g_look_hit++;
+    return FAKE_HANDLE;
+}
+
 static void note_rect(void *self, int x0, int y0, int x1, int y1, unsigned argb)
 {
     (void)self;
@@ -524,6 +546,87 @@ int main(void)
         (void)dkr_f3d_run(&ctx4, 0);
         check("a pure 5551 red becomes 0xFF0000",
               ctx4.state.fill_color_argb == 0x00FF0000u);
+    }
+
+    /* --- Residency is asked before converting, and it survives the list -------- *
+     *
+     * The saving this query exists for is **between** display lists, not within
+     * one: `dkr_f3d_init` clears the whole context for every graphics task, so
+     * the one-entry cache in front of the conversion cannot see across that
+     * boundary. Measured on the machine on 26 August 2026, `hits=63670/64358`
+     * -- 98.9 % of conversions handed to an allocator that already had the
+     * result.
+     *
+     * So the check drives the same list twice through **two fresh contexts**
+     * sharing one backend. Doing it in a single context would pass on the
+     * one-entry cache alone and prove nothing about the case that matters. */
+    {
+        dkr_f3d_context ctxr;
+        dkr_render_backend bkr;
+        unsigned int atr = 0;
+
+        memset(&bkr, 0, sizeof(bkr));
+        bkr.name = "residency";
+        bkr.texture_upload = fake_upload;
+        bkr.texture_lookup = fake_lookup;
+        g_up_n = 0; g_look_n = 0; g_look_hit = 0; g_resident = 0;
+
+        memset(g_ram, 0, sizeof(g_ram));
+        /* RGBA, 16 bits, at an address whose 32x32x2 bytes fit inside the fake
+           RDRAM -- 0x400 + 2048 against RAM_SIZE. A texture running off the end
+           is refused by the converter, and the refusal looks exactly like the
+           residency path failing to fire. */
+        atr = put_cmd(atr, 0xFD100000u, 0x00000400u);
+        /* lrs and lrt in 10.2: 31 and 31 texels -> a 32x32 tile. */
+        atr = put_cmd(atr, 0xF2000000u, ((31u << 2) << 12) | ((31u << 2) << 0));
+        (void)put_cmd(atr, 0xB8000000u, 0u);
+
+        dkr_f3d_init(&ctxr, g_ram, RAM_SIZE, &bkr);
+        (void)dkr_f3d_run(&ctxr, 0);
+        check("the first list asks, is told no, and converts",
+              g_look_n == 1 && g_look_hit == 0 && g_up_n == 1);
+        check("and it counts as an upload, not as a residency",
+              ctxr.state.textures_loaded == 1 &&
+              ctxr.state.textures_resident == 0);
+        check("the conversion really ran", ctxr.state.conversion_texels > 0);
+
+        /* A second graphics task: same backend, context cleared, as the renderer
+           does on every display list. */
+        dkr_f3d_init(&ctxr, g_ram, RAM_SIZE, &bkr);
+        (void)dkr_f3d_run(&ctxr, 0);
+        check("the second list is served from the card",
+              g_look_n == 2 && g_look_hit == 1 && g_up_n == 1);
+        check("nothing is converted for it",
+              ctxr.state.conversion_texels == 0 &&
+              ctxr.state.textures_loaded == 0 &&
+              ctxr.state.textures_resident == 1);
+        /* **The texture is still bound.** Saving the conversion is worth nothing
+           if the surface then draws untextured, which is what a `return` in the
+           wrong place would give -- and it would look like a decoding defect. */
+        check("and the handle is bound all the same",
+              ctxr.render_state.texture == FAKE_HANDLE);
+        /* The scale is derived from the padded dimensions, which the residency
+           path computes before asking. Leaving the default would send the
+           texture coordinates thirty-two times too far and read as a
+           transformation defect. */
+        check("the texture scale follows this texture and not the default",
+              ctxr.tex_scale_s > 0.0f &&
+              ctxr.tex_scale_s < 1.0f / 32.0f);
+        /* The four conversion diagnostics have nothing to describe here, and
+           `bound_texels == 0` is what says so to the frame-dump probe. Carrying
+           the previous texture's values forward is the defect this file already
+           records against `bound_texel0`. */
+        check("the unmeasured diagnostics announce themselves",
+              ctxr.bound_texels == 0 && ctxr.bound_texel0 == 0);
+
+        /* And the switch that turns the whole path off, for the runs where the
+           probe's figures are the point. */
+        dkr_f3d_init(&ctxr, g_ram, RAM_SIZE, &bkr);
+        ctxr.no_texture_cache = 1;
+        (void)dkr_f3d_run(&ctxr, 0);
+        check("DKR_NO_TEXCACHE converts even when the card holds it",
+              g_look_n == 2 && g_up_n == 2 &&
+              ctxr.state.conversion_texels > 0);
     }
 
     /* --- The return from a counted list ---------------------------------------- *

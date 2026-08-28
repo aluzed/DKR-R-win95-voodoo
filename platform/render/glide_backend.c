@@ -198,6 +198,20 @@ static unsigned long g_tex_reclaimed;
    allocator has one of its own and they are deliberately separate: this one
    measures the age of a *handle*, which is what the table hands out. */
 static unsigned long g_tex_clock;
+/* What `texture_lookup` answered. Three outcomes and not two: a **stale** hit --
+   the slot named a key the allocator no longer holds -- is the one that would
+   have drawn the wrong texture, so conflating it with a plain miss would hide
+   exactly the failure this query has to be trusted not to make. A run where
+   `stale` is not zero is a run where the two tables disagree. */
+static unsigned long g_tex_lookup_hits, g_tex_lookup_misses, g_tex_lookup_stale;
+
+void dkr_glide_backend_lookup_stats(unsigned long *hits, unsigned long *misses,
+                                    unsigned long *stale)
+{
+    if (hits)   { *hits   = g_tex_lookup_hits; }
+    if (misses) { *misses = g_tex_lookup_misses; }
+    if (stale)  { *stale  = g_tex_lookup_stale; }
+}
 
 unsigned long dkr_glide_backend_upload_failure(int kind)
 {
@@ -995,6 +1009,47 @@ static dkr_texture_handle gl_texture_upload(void *self,
     return (dkr_texture_handle)(slot + 1);
 }
 
+/* --- Residency, asked before converting rather than after -------------------- *
+ *
+ * The contract and the measurement that asks for it are in `backend.h`. What is
+ * decided here is what counts as a hit, and it is deliberately strict: the
+ * descriptor slot must be live, carry this key, sit on this unit, **and** the
+ * allocator below must still hold the key. Two tables, two chances to be stale,
+ * and a wrong answer here does not fail — it draws a surface with another
+ * texture's pattern, in a place that depends on the upload order. That symptom
+ * has cost this port two separate investigations already.
+ *
+ * A hit refreshes the recency in both tables. `bind_texture` will advance the
+ * descriptor clock again when the draw comes, which is harmless; the allocator's
+ * is advanced only here, and `dkr_tmu_touch` exists for it. */
+static dkr_texture_handle gl_texture_lookup(void *self, unsigned long long key,
+                                            int tmu)
+{
+    int i;
+    (void)self;
+    if (g_tmu_count == 0) { return 0; }
+    if (tmu < 0 || tmu >= g_tmu_count) { tmu = 0; }
+    for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
+        if (!g_tex[i].live) { continue; }
+        if (g_tex[i].key != key) { continue; }
+        if (g_tex[i].tmu != (unsigned char)tmu) { continue; }
+        /* The allocator is the sole judge of what resides where -- the same rule
+           the descriptor table already follows on upload. If it no longer holds
+           the key, the slot is stale and says so by being cleared, rather than
+           by handing back an address the TMU has reassigned. */
+        if (dkr_tmu_touch(&g_tmu[tmu], key) == DKR_TMU_NONE) {
+            g_tex[i].live = 0;
+            g_tex_lookup_stale++;
+            return 0;
+        }
+        g_tex[i].last_used = ++g_tex_clock;
+        g_tex_lookup_hits++;
+        return (dkr_texture_handle)(i + 1);
+    }
+    g_tex_lookup_misses++;
+    return 0;
+}
+
 static void gl_texture_release(void *self, dkr_texture_handle handle)
 {
     (void)self;
@@ -1051,6 +1106,7 @@ void dkr_render_backend_glide(dkr_render_backend *out)
     out->fill_rect       = gl_fill_rect;
     out->texture_upload  = gl_texture_upload;
     out->texture_release = gl_texture_release;
+    out->texture_lookup  = gl_texture_lookup;
 }
 
 unsigned long dkr_glide_backend_triangle_count(void)

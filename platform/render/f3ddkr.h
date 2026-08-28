@@ -138,6 +138,13 @@ typedef struct {
     dkr_texture_stats textures;           /* converted, refused, out of bounds */
     unsigned long     textures_loaded;    /* handed to the backend */
     unsigned long     textures_reused;    /* served from the cache */
+    /* Served by the backend's residency query, without converting anything.
+       Distinct from `textures_reused`, which counts the one-entry cache in
+       front of the conversion: that one is per display list, this one is what
+       survives between them. Reading one for the other is how
+       `uploaded=64358 reused=1413` looked like a two-per-cent cache for days
+       while the card was answering 98.9 %. */
+    unsigned long     textures_resident;
     /* --- What the conversions actually cost, and how much of it repeats ------ *
      *
      * `textures_reused` counts hits on a cache of **one entry**: the tile whose
@@ -434,6 +441,13 @@ typedef struct {
     /* Forces depth off, to isolate sorting from a rendering defect. Set by the
        caller; zero by default. */
     unsigned char        no_depth;
+    /* `DKR_NO_TEXCACHE=1`: convert every texture even when the card already
+       holds it. Not a workaround -- it is what makes the frame-dump probe exact
+       again, since the residency path has no converted texels to describe and
+       deliberately reports `dark=0/0` rather than the previous texture's. A
+       diagnostic that costs speed, switched on when the diagnostic is the
+       point. */
+    unsigned char        no_texture_cache;
     /* Forces every draw to one combine mode, to bisect what the image owes to
        what. The frame brought back on 17 August 2026 is a uniform grey over a
        **black** clear, so a quarter of a million triangles are painting and all

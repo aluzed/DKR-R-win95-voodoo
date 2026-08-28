@@ -352,6 +352,35 @@ typedef struct dkr_render_backend {
     dkr_texture_handle (*texture_upload)(void *self, const dkr_texture_desc *desc);
     void               (*texture_release)(void *self, dkr_texture_handle handle);
 
+    /* --- Is this key already on the card? ---------------------------------- *
+     *
+     * Returns the handle if the texture is resident on `tmu` and usable as it
+     * stands, zero otherwise. May be NULL: a backend that keeps nothing answers
+     * by not implementing this, and the caller converts as before.
+     *
+     * **The measurement that asks for it.** The allocator's counters, read on
+     * the game for the first time on 26 August 2026, report `hits=63670/64358`
+     * over 780 display lists — 98.9 %. `uploaded` and `hits+misses` are the same
+     * quantity counted on either side of this interface, so 63,670 times out of
+     * 64,358 the decoder converted a texture in order to hand it to an allocator
+     * that already had it. The bus moved 1.5 KiB a list; the CPU converted some
+     * 78,000 texels a list, and 98.9 % of that work had a destination that did
+     * not need it.
+     *
+     * The decoder cannot answer this itself. Its cache holds one entry and
+     * `dkr_f3d_init` clears the whole context for every graphics task, so it
+     * cannot remember across display lists — and *across* is where the
+     * repetition is. Residency lives here and survives, which is the whole
+     * reason the question is asked here.
+     *
+     * **A hit must advance the recency the eviction policy reads**, both in the
+     * backend's descriptor table and in the allocator below it. Skipping that
+     * would make "least recently used" mean "least recently *uploaded*", and the
+     * texture drawn on every triangle of the frame would be the first thrown
+     * out — the trap `gl_texture_upload` already documents against itself. */
+    dkr_texture_handle (*texture_lookup)(void *self, unsigned long long key,
+                                         int tmu);
+
     void *self;                   /* the implementation's private state */
 } dkr_render_backend;
 
@@ -402,6 +431,13 @@ unsigned long dkr_glide_backend_upload_failure(int kind);
    and not a hope: the two together say whether the reclaim is doing the work
    or whether the working set has simply not reached the limit yet. */
 unsigned long dkr_glide_backend_slots_reclaimed(void);
+/* What `texture_lookup` answered, cumulatively: resident, not resident, and
+   **stale** -- a descriptor naming a key the allocator has since evicted. The
+   third is separated from the second on purpose: a stale hit is the one that
+   would have drawn another texture's pattern, so a non-zero count is a defect
+   report and not a cache statistic. */
+void dkr_glide_backend_lookup_stats(unsigned long *hits, unsigned long *misses,
+                                    unsigned long *stale);
 /* The TMU allocator's state, for E08-S01's diagnostic display. Returns NULL if
    the requested TMU does not exist. */
 struct dkr_tmu;

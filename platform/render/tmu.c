@@ -305,6 +305,20 @@ void dkr_tmu_begin_frame(dkr_tmu *t)
     }
 }
 
+unsigned int dkr_tmu_touch(dkr_tmu *t, unsigned long long key)
+{
+    dkr_tmu_resident *r;
+    if (!t) { return DKR_TMU_NONE; }
+    /* The clock advances on the *use*, as it does in `dkr_tmu_acquire`, and not
+       only when something is downloaded. */
+    t->clock++;
+    r = find_resident(t, key);
+    if (!r) { return DKR_TMU_NONE; }
+    r->last_used = t->clock;
+    r->pinned    = 1;
+    return r->address;
+}
+
 void dkr_tmu_pin(dkr_tmu *t, unsigned long long key)
 {
     dkr_tmu_resident *r;

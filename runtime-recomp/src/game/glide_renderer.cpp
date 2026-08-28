@@ -578,6 +578,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     {
         static const bool no_depth = (std::getenv("DKR_NO_DEPTH") != nullptr);
         context_.no_depth = no_depth ? 1 : 0;
+        // `DKR_NO_TEXCACHE=1` converts every texture even when the card holds
+        // it. It exists so that the frame-dump probe's texel figures come back
+        // exact: the residency path has nothing converted to describe and
+        // reports `dark=0/0` rather than the previous texture's numbers.
+        static const bool no_texcache =
+            (std::getenv("DKR_NO_TEXCACHE") != nullptr);
+        context_.no_texture_cache = no_texcache ? 1 : 0;
         // `DKR_FORCE_COMBINE=shade|texel|texel_shade|texel_shade_a` forces every
         // draw to one combine mode. Named rather than numbered: a run costs four
         // minutes, and `DKR_FORCE_COMBINE=2` in a batch file three weeks from now
@@ -881,6 +888,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_viewports_ += context_.state.viewports;
     total_tex_loaded_ += context_.state.textures_loaded;
     total_tex_reused_ += context_.state.textures_reused;
+    total_tex_resident_ += context_.state.textures_resident;
     total_tex_refused_ += context_.state.textures_refused;
     total_tex_padded_ += context_.state.textures_padded;
     total_emitted_textured_ += context_.state.emitted_textured;
@@ -1006,10 +1014,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // counts the indexed formats, refused for want of a palette: they come out
         // as untextured surfaces rather than in arbitrary colours.
         std::fprintf(stderr,
-                     "[gfx]   textures: uploaded=%lu reused=%lu "
+                     "[gfx]   textures: uploaded=%lu reused=%lu resident=%lu "
                      "refused-tmu=%lu unknown-format=%lu outside-rdram=%lu\n",
-                     total_tex_loaded_, total_tex_reused_,
+                     total_tex_loaded_, total_tex_reused_, total_tex_resident_,
                      total_tex_refused_, total_tex_unsupported_, total_tex_out_of_rdram_);
+        // What the residency query answered, and above all whether it ever
+        // answered **stale** -- a descriptor naming a key the allocator had
+        // evicted. That one would draw another texture's pattern, so it is
+        // printed separately from the misses and a non-zero value is a defect
+        // report rather than a cache statistic.
+        {
+            unsigned long lh = 0, lm = 0, ls = 0;
+            dkr_glide_backend_lookup_stats(&lh, &lm, &ls);
+            std::fprintf(stderr,
+                         "[gfx]   lookup: hits=%lu misses=%lu stale=%lu\n",
+                         lh, lm, ls);
+        }
         // What the conversions cost this list, and how much of it repeats. The
         // hit rate of a one-entry cache says nothing about how big a real one
         // would have to be; the distinct count does.

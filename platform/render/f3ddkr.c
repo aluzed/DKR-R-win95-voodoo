@@ -1536,6 +1536,61 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         c->tex_padded_height = padh;
     }
 
+    /* --- Ask the card before converting for it --------------------------- *
+     *
+     * Everything above is cheap -- a key, a distinct-set scan, the padded
+     * dimensions -- and everything below converts `width * height` texels. The
+     * allocator's counters, read on the game on 26 August 2026, say that
+     * **63,670 of 64,358** conversions were handed to a card that already held
+     * the result: `hits=63670/64358` over 780 display lists, 98.9 %.
+     *
+     * The one-entry cache above cannot catch those. It holds one tile, and
+     * `dkr_f3d_init` clears this whole context for every graphics task, so the
+     * repetition it cannot see is the repetition *between* lists -- which is all
+     * of it. Residency lives in the backend and survives, so that is where the
+     * question goes.
+     *
+     * The padded dimensions are computed before the question rather than after,
+     * and that is not laziness: `tex_scale_s` is derived from them, and a hit
+     * that skipped them would leave the previous texture's scale on the vertices
+     * -- the same class of defect as `bound_texel0` reading the staging buffer,
+     * which cost three eliminations before it was noticed. */
+    if (c->backend && c->backend->texture_lookup && !c->no_texture_cache) {
+        const dkr_texture_handle h =
+            c->backend->texture_lookup(c->backend->self, key, 0);
+        if (h != 0) {
+            const unsigned int big =
+                (c->tex_padded_width > c->tex_padded_height)
+                    ? c->tex_padded_width : c->tex_padded_height;
+            c->tex_scale_s = 1.0f / (32.0f * (float)big);
+            c->tex_scale_t = c->tex_scale_s;
+            c->bound_texture = h;
+            c->render_state.texture = h;
+            c->texture_key = key;
+            /* **The four diagnostics are not measured on this path, and say so.**
+             *
+             * They describe the converted texels -- the texel at (0,0), how many
+             * are dark, the mean luminance -- and nothing was converted. Carrying
+             * the previous texture's values forward would be the exact defect
+             * this file already records: `bound_texel0` used to read the staging
+             * buffer, so on any draw served from the cache it described another
+             * texture, and three eliminations were built on its word.
+             *
+             * `bound_texels = 0` is the marker: the frame-dump probe prints
+             * `dark=0/0`, which reads as "not measured" and cannot be mistaken
+             * for "no dark texels". When the probe is the point of the run,
+             * `DKR_NO_TEXCACHE=1` turns this path off and every figure comes
+             * back exact. */
+            c->bound_texel0 = 0;
+            c->bound_dark = 0;
+            c->bound_texels = 0;
+            c->bound_mean = 0;
+            c->state.textures_resident++;
+            c->state_dirty = 1;
+            return;
+        }
+    }
+
     c->state.conversion_texels += (unsigned long)(width * height);
     if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
                              c->timg_address,

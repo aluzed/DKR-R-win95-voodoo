@@ -168,6 +168,26 @@ void dkr_tmu_begin_frame(dkr_tmu *t);
    display nothing more. */
 void dkr_tmu_pin(dkr_tmu *t, unsigned long long key);
 
+/* --- "I am about to use this one", without acquiring it --------------------- *
+ *
+ * Returns the address if `key` is resident, `DKR_TMU_NONE` otherwise, and on a
+ * hit refreshes the recency **and** the pin exactly as `dkr_tmu_acquire` does.
+ *
+ * It exists because `dkr_tmu_acquire` was the only thing that advanced a
+ * resident texture's timestamp, and it is reached only through an upload. Once
+ * the caller can skip the upload — `texture_lookup` in `backend.h` — a texture
+ * used on every triangle of every frame would never have its timestamp advanced
+ * again, and least-recently-used would evict precisely the working set. This is
+ * the same trap `gl_texture_upload` documents, arriving from the other side.
+ *
+ * **It does not touch `hits` or `misses`.** Those two count what crossed the
+ * upload path, which is what makes `hits/(hits+misses)` mean "of the textures
+ * handed to the allocator, how many were already there" — the ratio that
+ * measured the redundancy in the first place. Counting lookups in it would
+ * make the figure describe the repair rather than the thing repaired. The
+ * lookups are counted by the backend, on their own line. */
+unsigned int dkr_tmu_touch(dkr_tmu *t, unsigned long long key);
+
 /* Empties everything: to be called on a level change. */
 void dkr_tmu_reset(dkr_tmu *t);
 

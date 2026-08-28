@@ -76,6 +76,7 @@ private:
     unsigned long total_viewports_ = 0;
     unsigned long total_tex_loaded_ = 0;
     unsigned long total_tex_reused_ = 0;
+    unsigned long total_tex_resident_ = 0;
     unsigned long total_tex_refused_ = 0;
     unsigned long total_tex_padded_ = 0;
     unsigned long total_emitted_textured_ = 0;

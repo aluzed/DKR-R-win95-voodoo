@@ -2846,3 +2846,97 @@ converting, not after**, and 63,670 conversions a run become 688.
 > else entirely. `reused` counts the one-entry cache in front of the conversion;
 > `hits` counts the card. Two caches, two counters, and only one of them was ever
 > printed.
+
+## Asking the card before converting: 64,358 conversions become 680 — 28 August 2026
+
+The measurement of 26 August named the repair and gave it a ceiling. It is
+implemented: `texture_lookup` in the backend interface, asked **before** the
+conversion rather than after it.
+
+At the same display list, same scene, same anchor:
+
+| | before | after |
+|---|---:|---:|
+| conversions handed down (`uploaded`) | 64,358 | **680** |
+| texels converted in that list | 78,536 | **0** |
+| bytes downloaded to the card | 1,225,472 | 1,218,816 |
+| descriptors naming a key the allocator had evicted (`stale`) | — | **0** |
+
+Ninety-nine per cent of the conversion work is gone and the bus traffic is
+unchanged, which is what it should be: the textures were always resident, the
+CPU was re-deriving what the card already held.
+
+### The three things that would have made this wrong
+
+**Recency.** `dkr_tmu_acquire` was the only thing advancing a resident texture's
+timestamp, and it is reached only through an upload. Skipping the upload would
+have frozen the timestamp of every texture in the working set, and
+least-recently-used would then evict exactly what the frame draws on every
+triangle — the trap `gl_texture_upload` already documents, arriving from the
+other side. `dkr_tmu_touch` exists for that and for nothing else.
+
+**Staleness.** Two tables can disagree: a descriptor slot may name a key the
+allocator has since evicted, and answering "resident" there draws another
+texture's pattern in a place that depends on the upload order — a symptom this
+port has already chased twice. So a hit requires both tables to agree, and the
+disagreement is counted on its own line rather than folded into the misses.
+`stale=0` over 176,622 lookups, so they never disagreed; had it read otherwise it
+would have been a defect report, not a cache statistic.
+
+**The diagnostics that describe converted texels.** `bound_texel0`, `bound_dark`,
+`bound_texels` and `bound_mean` are read off the conversion, and on this path
+nothing is converted. Carrying the previous texture's values forward is precisely
+the defect this file records against `bound_texel0`, which used to read the
+staging buffer and so described another texture on any cached draw — three
+eliminations were built on its word. They are therefore zeroed, `bound_texels = 0`
+being the marker the frame-dump probe prints as `dark=0/0`; and `DKR_NO_TEXCACHE=1`
+turns the whole path off for the runs where those figures are the point.
+
+The counters change meaning with the path, and the report says so: `uploaded` now
+counts only what was really converted, `resident` counts what the card answered,
+and `tmu0: hits=0/909` is not a regression — the allocator's hits were the
+redundancy, and they have moved upstream into `lookup: hits`.
+
+### What the frames say, and an instrument that does not apply
+
+Six dumps at anchored lists, against the same six from before the change: the sea
+is blue, the character names legible, the title screen carries its balloons, its
+scenery and its START banner. Nothing is lost and the run reaches **list 1500**,
+further than any before it.
+
+A pixel-difference metric was computed across the two runs and reports 276,000 to
+307,000 differing pixels of 307,200 — and it means nothing. **The scene is
+animated**, the two runs do not reach a given list number at the same moment of
+it, and this file already recorded the same spread once before as "inside the
+run-to-run spread of the animation". An exact-comparison instrument needs a
+deterministic subject; this one has not got one, and reading its number as "the
+image changed" would have been the fourth time in a week that a measurement was
+believed outside the conditions it holds in.
+
+## A crash with the same registers three days apart — 28 August 2026
+
+The dump run above stopped at list 300 on its first attempt:
+
+```
+28 August: address 0x006ADA97  touching 0x824D0010 on read
+           eax=025F14D4 ebx=05C2FC48 esi=80121260 ebp=024D0000 esp=05C2FB98
+25 August: address 0x006AD8C7  touching 0x824D0010 on read
+           eax=025F14D4 ebx=05C2FC48 esi=80121260 ebp=024D0000 esp=05C2FB98
+```
+
+**Every register identical, the same faulting guest address, on binaries three
+days and several changes apart** — the code address differing by 464 bytes, which
+is a rebuild moving the function. So it is one defect, it predates the residency
+work, and it did not reproduce on retry either time: the second attempt ran to
+list 1500.
+
+That makes it a characterised intermittent fault rather than an accident, and it
+is written down here rather than chased now. `0x824D0010` is outside the guest's
+eight megabytes of RDRAM; `esi=80121260` points into the guest's low memory and
+`edi=FFFFFFFF` is the shape of a loop counter that has gone below zero. Nothing
+here is acted on — what it earns is a name and a place to be found from.
+
+> The first occurrence was read as "the machine had a bad day" and retried, which
+> was the right thing to do and left nothing behind. The second is only useful
+> because the first was written down with its registers. A crash report costs
+> nothing to keep and cannot be reconstructed later.
