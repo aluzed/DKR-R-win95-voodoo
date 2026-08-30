@@ -353,3 +353,76 @@ where it blocks, and that is a ticket of its own.
 > called, and nothing in the game called it. Every frame would have read as
 > instantaneous. The witnesses called it, which is why E02-S03's measurements were
 > right and this one would not have been.
+
+### The 147 ms is work — 30 August 2026
+
+The measurement above left one gap and named it: *"the 147 ms is not proved to be
+work. This instrument measures the interval between graphics tasks; it cannot tell
+a processor that is busy for 147 ms from one that is blocked for 147 ms."* The
+whole reassignment of the optimisation epics rests on that, so it is measured.
+
+The place to measure it is exact. Every guest thread is a real host thread parked
+on a semaphore, and **exactly one runs at a time**: the scheduler signals one and
+blocks the caller. The interval between a thread leaving `wait_for_resumed` and
+re-entering it is that thread's running time; the sum over all of them is the time
+the guest world spent executing. Patch 0028.
+
+Over 176 seconds and 12,723 context switches:
+
+```
+[trace][cpu] guest-run=127518510 us wall=175950942 us switches=12723 busy=72%
+```
+
+**72.5 %**, and steady — six consecutive samples read 73, 73, 72, 72, 72, 72.
+
+| per 173 ms frame | |
+|---|---:|
+| recompiled MIPS code executing | **125 ms** |
+| the renderer, on its own host thread | 22 ms |
+| neither | ~26 ms |
+
+The recompiled code is genuinely working for **five sixths of a frame**. E08-S02
+is confirmed as the lever, and E08-S03's vertex path is confirmed as living inside
+the 13 % that is not.
+
+**What the third row is, and is not.** The renderer runs on a thread ultramodern
+creates, not on a guest `OSThread`, so it is outside this measurement and the two
+can overlap — 86Box models one processor, so they interleave rather than run
+together. The ~26 ms is therefore an upper bound on genuine idleness and not a
+measurement of it; separating them needs the renderer thread instrumented the same
+way, which is a ticket of its own and not on the critical path.
+
+### The instrument took four runs, and each fault was a different one
+
+Written down because the pattern is the report's subject as much as the number is.
+
+1. **Silent because its clock returned zero.** `dkr_clock_now_us` answers 0 until
+   `dkr_clock_init` runs, and the game initialised it *inside the renderer* —
+   after the guest threads start. The guard `tl_resumed_at != 0` then never
+   passed, so the accounting was switched off and said nothing about it. This is
+   the same defect as 28 August's, one level along: the clock is now initialised
+   in `DkrMain`, before a thread or a window exists, because a time base is not a
+   renderer's property.
+
+2. **Silent because it reported on a count.** Five thousand switches a report, and
+   a run of three hundred display lists produced exactly one line — fewer than
+   seventeen switches a list, which nobody had guessed. The report is now on the
+   clock, five seconds, which gives the same number of samples whatever the guest
+   does and costs nothing since the clock has already been read.
+
+3. **Confounded by sharing a switch.** The first run put the trace behind
+   `DKR_TRACE_SP`, which also turns on the scheduler trace and its several lines
+   per display list to an emulated floppy. The game stalled at list 3, and with
+   two variables changed at once the stall was attributable to neither. Its own
+   `DKR_TRACE_CPU` separated them, and the patch turned out to be innocent.
+
+4. **A function-local `static` in the hot path.** Its guard is
+   `__cxa_guard_acquire`, built here on winpthreads, whose primitives E02-S01
+   measured failing on Windows 95. A guard taken on every context switch from
+   every guest thread is the last place to find that out. File scope, initialised
+   before any thread exists.
+
+> Three of the four made the instrument *quiet*, and quiet is the failure mode
+> this report keeps meeting: an absence of output read as evidence about the thing
+> being measured. The fix that generalises is the cheap one in fault 2 — a line at
+> the first event, so that "switched off" and "nothing to say" stop looking alike.

@@ -3,6 +3,7 @@
 extern "C" {
 #include "window.h"
 #include "render/glide.h"
+#include "clock.h"
 }
 #endif
 #include "game_registration.hpp"
@@ -630,6 +631,26 @@ int DkrMain(int argc, char** argv) {
     };
 
 #if defined(DKR_TARGET_WIN95)
+    // --- The clock, before anything that reads it ---------------------------
+    //
+    // `dkr_clock_now` answers **zero** until `dkr_clock_init` has run, and zero
+    // does not fail -- it reports every interval as instantaneous. That cost the
+    // frame budget once already, on 28 August, when nothing in the game called
+    // it and only the witnesses did. It was then initialised lazily inside the
+    // renderer, which put it after the guest threads start; the guest-execution
+    // measurement in `threads.cpp` reads the clock from those threads and got
+    // zero for its trouble, so its whole accounting stayed switched off and said
+    // nothing about it.
+    //
+    // Initialised here, once, before a thread or a window exists. A time base is
+    // not a renderer's property.
+    {
+        const int ok = dkr_clock_init();
+        std::fprintf(stderr, "[boot][clock] source=%s frequency=%lu Hz ok=%d\n",
+                     dkr_clock_source_name(),
+                     static_cast<unsigned long>(dkr_clock_frequency()), ok);
+    }
+
     // --- E06-S01: the window, created here and not later ---------------------
     //
     // **On this thread**, because a window belongs to the thread that created it:

@@ -1,0 +1,118 @@
+Its own switch, DKR_TRACE_CPU, rather than DKR_TRACE_SP: that one also turns
+on the scheduler trace, which writes several lines per display list to an
+emulated floppy -- a load on the very thing being measured. And the flag is a
+file-scope static rather than a function-local one: the local form is
+initialised under a __cxa_guard_acquire built on winpthreads, whose primitives
+E02-S01 measured failing on Windows 95, and a guard taken on every context
+switch from every guest thread is the last place to discover that.
+
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -1,4 +1,6 @@
+ #include <cstdio>
++#include <cstdlib>
++#include <atomic>
+ #include "ultramodern/threading.hpp"
+ #include <cassert>
+ #include <string>
+@@ -158,8 +160,100 @@
+ void ultramodern::set_native_thread_priority(ThreadPriority pri) {}
+ #endif
+ 
++/* --- Is the processor working, or waiting? --------------------------------- *
++ *
++ * E00-S03 measured a frame at 170 ms, of which 23 ms is the renderer and **147 ms
++ * is everything else**, and said in as many words that the 147 ms was *not proved
++ * to be work*: the instrument timed the interval between graphics tasks, which
++ * cannot tell a processor that is busy from one that is blocked. The whole
++ * reassignment of the optimisation epics rests on that number being work, so it
++ * gets measured rather than argued.
++ *
++ * This is the right place and it is exact. Every guest thread is a real host
++ * thread parked on a semaphore, and **exactly one runs at a time**: the scheduler
++ * signals one and blocks the caller. So the interval between a thread leaving
++ * this function and re-entering it is that thread's running time, and the sum
++ * over all of them is the time the guest world spent executing. Whatever is left
++ * of the wall clock is time nothing was running.
++ *
++ * `dkr_clock_now_us` is E02-S03's base -- the 8254 PIT at 1,193,180 Hz, 4.19 µs.
++ * Weakly linked, like `dkr_diag_commit`: the modern targets do not provide it and
++ * must not be made to.
++ *
++ * Off unless DKR_TRACE_SP is set: two clock reads per context switch is not free,
++ * and the switches are frequent. */
++extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++
++/* --- Its own switch, and no function-local static --------------------------- *
++ *
++ * **Its own switch** because `DKR_TRACE_SP` also turns on the scheduler trace,
++ * which writes several lines per display list to an emulated floppy. Sharing the
++ * variable would mean this measurement could never be taken without that load on
++ * the machine -- and the load is on the very thing being measured. Two variables
++ * changed at once is how a measurement stops meaning anything.
++ *
++ * **At file scope** and not inside the function. A function-local `static` is
++ * initialised under a guard (`__cxa_guard_acquire`) that this toolchain builds on
++ * winpthreads, and E02-S01 measured winpthreads' primitives failing on Windows 95
++ * -- `CreateSemaphoreW` and `GetHandleInformation` are exported and empty. A guard
++ * taken on every context switch, from every guest thread, is the last place to
++ * find out. File scope is initialised once, before any thread exists. */
++static const bool g_guest_time_on =
++    (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
++
++static bool guest_time_enabled() { return g_guest_time_on; }
++
++static std::atomic<unsigned long long> g_guest_run_us{0};
++static std::atomic<unsigned long long> g_guest_switches{0};
++/* The wall clock's origin, stamped at the **first** switch and not at the first
++   report. Stamping it at the report would leave `guest-run` accumulating from the
++   start of the run while `wall` measured only from the first report -- a
++   numerator and a denominator covering different periods, which is the shape of
++   error this project has already spent a week on. */
++static std::atomic<unsigned long long> g_first_switch_us{0};
++/* Per thread, so that the accounting cannot mix two threads' intervals -- which
++   would happen with a single global stamp the moment the scheduler switched. */
++static thread_local unsigned long long tl_resumed_at = 0;
++
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
++    if (guest_time_enabled() && tl_resumed_at != 0) {
++        const unsigned long long now = dkr_clock_now_us();
++        g_guest_run_us.fetch_add(now - tl_resumed_at);
++        const unsigned long long n = g_guest_switches.fetch_add(1) + 1;
++        {
++            unsigned long long expected = 0;
++            g_first_switch_us.compare_exchange_strong(expected, now);
++        }
++        /* Reported against the wall clock since the first switch, which is what
++           makes it an answer rather than a total: `run` alone says nothing without
++           `wall` beside it. */
++        /* **Reported on the clock, not on a count.** A count assumes a switch
++           rate, and the rate is what is unknown: at five thousand switches a
++           report, a run of three hundred display lists produced exactly **one**
++           line -- fewer than seventeen switches a list, which no one had guessed
++           and which made the instrument look broken for a third run.
++           Five seconds of wall clock gives the same number of samples whatever
++           the guest does, and costs nothing: the clock has already been read.
++         *
++           The first switch reports too. An instrument that says nothing for its
++           first five seconds is indistinguishable from one that is switched off,
++           and this one was silent for two runs while its clock returned zero. */
++        static unsigned long long last_report_us = 0;
++        if (n == 1ULL || now - last_report_us >= 5000000ULL) {
++            last_report_us = now;
++            const unsigned long long first_at = g_first_switch_us.load();
++            const unsigned long long wall = (now > first_at) ? (now - first_at) : 0ULL;
++            std::fprintf(stderr,
++                         "[trace][cpu] guest-run=%llu us wall=%llu us "
++                         "switches=%llu busy=%llu%%\n",
++                         (unsigned long long)g_guest_run_us.load(), wall, n,
++                         wall ? (100ULL * g_guest_run_us.load()) / wall : 0ULL);
++            if (dkr_diag_commit) { dkr_diag_commit(); }
++        }
++    }
+     thread_context->running.wait();
++    if (guest_time_enabled()) { tl_resumed_at = dkr_clock_now_us(); }
+     // If this thread's context was replaced by another thread or deleted, destroy it again from its own context.
+     // This will trigger thread cleanup instead.
+     if (TO_PTR(OSThread, ultramodern::this_thread())->context != thread_context) {

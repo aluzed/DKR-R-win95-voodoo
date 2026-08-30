@@ -61,6 +61,12 @@ emulated Pentium II, with E02-S03's time base:
 | The budget at 30 fps | 33.3 ms |
 | **Over budget** | **5.1×** |
 
+**And the 147 ms is work.** Measured on 30 August over 176 seconds and 12,723
+context switches: the guest world executes **72.5 %** of the wall clock, steady
+across six samples. Per frame that is 125 ms of recompiled MIPS code, 22 ms of
+renderer on its own thread, and some 26 ms that is neither. E08-S02 is confirmed
+as the lever.
+
 Corroborated by a second, independent instrument: the VI thread counts 8.53
 presents per display list, that is one list every 142 ms at 60 Hz, against 170 ms
 measured by the PIT from another thread. Method, reservations and the confound

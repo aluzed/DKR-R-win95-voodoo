@@ -605,13 +605,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
      * the source it settled on is logged so that a fallback to a coarser clock
      * cannot pass unnoticed -- `GetTickCount` at 9 ms would quantise a 33 ms
      * frame into four steps. */
-    static const bool clock_ready = [] {
-        const int ok = dkr_clock_init();
-        std::fprintf(stderr, "[boot][clock] source=%s frequency=%lu Hz\n",
-                     dkr_clock_source_name(),
-                     static_cast<unsigned long>(dkr_clock_frequency()));
-        return ok != 0;
-    } ();
+    /* `DkrMain` initialises the clock before any thread exists; this call is the
+       idempotent second one, kept so that a renderer driven by a witness -- which
+       has no `DkrMain` -- still gets a time base. `dkr_clock_init` returns 1
+       immediately when a source is already chosen. */
+    static const bool clock_ready = dkr_clock_init() != 0;
     const unsigned long long t_entry = clock_ready ? dkr_clock_now_us() : 0ULL;
     if (clock_ready && last_task_us_ != 0ULL) {
         const unsigned long long d = t_entry - last_task_us_;
