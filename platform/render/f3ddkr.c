@@ -610,6 +610,30 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             if (c->render_state.texture != 0) {
                 c->state.emitted_textured++;
             }
+            /* --- Which catalogue category actually paints the frame ----------- *
+             *
+             * `approximate` above counts the four-mode *shorthand* declaring
+             * itself inexact, and since 28 August the catalogue path bypasses
+             * that shorthand for every entry it certifies. So the figure no
+             * longer describes what is drawn: it read `approximate=92857` of
+             * 106,504 on 30 August while the image was demonstrably right.
+             *
+             * What decides whether E05-S04 is worth building is not how many
+             * *states* name two texels but how many **triangles** are painted
+             * under one, and those are different numbers -- a configuration
+             * applied once can cover the sky. Counted at the emit point, where
+             * the triangle is, and per category so that "exact" and "deferred to
+             * a second TMU" stop being one bucket. */
+            {
+                const dkr_cc_entry *e =
+                    (c->catalogue_index >= 0)
+                        ? dkr_cc_table_at(c->catalogue_index) : 0;
+                if (e != 0 && (unsigned)e->category < 4u) {
+                    c->state.emitted_per_cc[(unsigned)e->category]++;
+                } else {
+                    c->state.emitted_uncatalogued++;
+                }
+            }
             /* --- Fog, counted, and switchable ---------------------------------- *
              *
              * `GR_FOG_WITH_ITERATED_ALPHA` takes its blend factor from the

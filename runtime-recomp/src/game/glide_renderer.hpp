@@ -77,6 +77,8 @@ private:
     unsigned long total_tex_loaded_ = 0;
     unsigned long total_tex_reused_ = 0;
     unsigned long total_tex_resident_ = 0;
+    unsigned long emitted_per_cc_[4] = {0, 0, 0, 0};
+    unsigned long total_emitted_uncatalogued_ = 0;
     // E00-S03's frame budget. Microseconds throughout: at 4.19 us a tick a
     // millisecond counter would quantise a 33 ms frame into 33 steps and lose
     // exactly the resolution the question needs.

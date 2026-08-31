@@ -962,6 +962,10 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_loaded_ += context_.state.textures_loaded;
     total_tex_reused_ += context_.state.textures_reused;
     total_tex_resident_ += context_.state.textures_resident;
+    for (int i = 0; i < 4; i++) {
+        emitted_per_cc_[i] += context_.state.emitted_per_cc[i];
+    }
+    total_emitted_uncatalogued_ += context_.state.emitted_uncatalogued;
     total_tex_refused_ += context_.state.textures_refused;
     total_tex_padded_ += context_.state.textures_padded;
     total_emitted_textured_ += context_.state.emitted_textured;
@@ -1210,6 +1214,15 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      total_emitted_textured_, emitted_per_combine_[0],
                      emitted_per_combine_[1], emitted_per_combine_[2],
                      emitted_per_combine_[3]);
+        // Which catalogue category paints the frame -- the number that decides
+        // whether the second TMU (E05-S04) is worth building, and the only one
+        // that separates "exact" from "the table says this needs two texels".
+        std::fprintf(stderr,
+                     "[gfx]   painted-by: exact=%lu multipass=%lu "
+                     "approximate=%lu two-texel=%lu uncatalogued=%lu\n",
+                     emitted_per_cc_[0], emitted_per_cc_[1],
+                     emitted_per_cc_[2], emitted_per_cc_[3],
+                     total_emitted_uncatalogued_);
         std::fprintf(stderr,
                      "[gfx]   areas: <1px=%lu <100px=%lu <10000px=%lu "
                      ">=10000px=%lu\n",

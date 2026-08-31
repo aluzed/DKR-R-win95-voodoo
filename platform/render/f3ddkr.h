@@ -145,6 +145,11 @@ typedef struct {
        `uploaded=64358 reused=1413` looked like a two-per-cent cache for days
        while the card was answering 98.9 %. */
     unsigned long     textures_resident;
+    /* Triangles painted under each `dkr_cc_category`, and those under no
+       catalogue entry at all. The measurement that decides E05-S04: a
+       configuration reading two texels can be rare and still cover the screen. */
+    unsigned long     emitted_per_cc[4];
+    unsigned long     emitted_uncatalogued;
     /* --- What the conversions actually cost, and how much of it repeats ------ *
      *
      * `textures_reused` counts hits on a cache of **one entry**: the tile whose

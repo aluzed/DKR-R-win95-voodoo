@@ -3010,3 +3010,73 @@ after  the latch: 6 taps sent, 6 read -- 1000, 8000, 1000, 8000, 1000, 8000
 > configuration it was written in. A zero window handle is right when there is no
 > window; sampling the instantaneous key state is right at 60 Hz. What made them
 > defects was the frame rate and the window — two things measured this same week.
+
+## What actually paints the frame, and why E05-S04 is next — 1 September 2026
+
+"Which ticket is next on the Glide side" had an obvious answer — E05-S04 is the
+only one of E05's eight not built — and obvious for the wrong reason: because it
+was the one left, not because anything said it mattered. `tmu1: hits=0/0` says the
+second texture unit has never been touched; it does not say the game wants it.
+
+The number that decides is not how many *states* name two texels but how many
+**triangles are painted** under one: a configuration applied once can cover the
+sky. Counted at the emit point, per catalogue category, over 1,020 display lists
+and 679,684 triangles:
+
+```
+painted-by: exact=4957 multipass=541632 approximate=0 two-texel=133095 uncatalogued=0
+```
+
+| category | triangles | share |
+|---|---:|---:|
+| exact | 4,957 | **0.7 %** |
+| multipass | 541,632 | **79.7 %** |
+| two texels | 133,095 | **19.6 %** |
+| approximate | 0 | 0 % |
+| uncatalogued | 0 | 0 % |
+
+**Ninety-nine per cent of the frame is painted by a fallback**, and the
+certification gate of 28 August is what makes that visible rather than
+comfortable: those triangles were always being drawn this way, the difference is
+that the port now says so.
+
+### The inventory and the card disagree, and only one of them pays
+
+The catalogue carries a weight per entry, taken from the game's static tables, and
+`test_combiner` asserts on it:
+
+> `check("multipass stays in the minority: it is what doubles the fill, and fill is
+> what limits the card", weight[MULTIPASS] * 2 < total)`
+
+By that weight multipass is **33 %** — a minority, and the assertion passes. By
+triangles painted it is **80 %**. The two quantities are not the same and the
+comment names the wrong one: what doubles the fill is a *triangle* drawn twice,
+not an entry in a table. A configuration used by one static table and applied to
+every wall of every track outweighs eleven configurations used once each.
+
+This is the same species of error as the table of 23 August that "compared two
+different quantities", and it was sitting inside the check written to guard
+against exactly this.
+
+### Which is why the second TMU is the right next step, and multipass is not
+
+The two remaining gaps cost completely different things on this card:
+
+| | what it needs | what it costs on a Voodoo 2 |
+|---|---|---|
+| **two texels** (19.6 %) | the second TMU, which is present and idle | **nothing** — same pass, same fill |
+| **multipass** (79.7 %) | the surface drawn twice | **double the fill**, on a card whose limit is fill |
+
+So E05-S04 is next, and now for a measured reason rather than by elimination: it
+corrects a fifth of every painted triangle using hardware that is sitting unused,
+at no cost in the resource the card is short of.
+
+The 80 % is the larger prize and cannot be taken the obvious way. Doubling the
+fill on four fifths of a 640×480 frame is not affordable on a Voodoo 2, and
+nothing has measured what it would cost — which makes it a spike, not a task.
+
+> The two-texel triangles arrive in bursts and then stop: zero for the first eight
+> samples, then 45k, 69k, 87k, 133k, then flat for the rest of the run. They are
+> concentrated in a few scenes rather than spread over the game, so the visible
+> effect of E05-S04 will be large in those places and nil elsewhere. Worth knowing
+> before, rather than being surprised by an unchanged screenshot after.
