@@ -506,7 +506,11 @@ dkr_win95_verify(DKRWin95Transform)
 # likely.
 add_library(win95f3ddkr STATIC
     "${DKRPORT_ROOT}/platform/render/f3ddkr.c"
-    "${DKRPORT_ROOT}/platform/render/texture.c")
+    "${DKRPORT_ROOT}/platform/render/texture.c"
+    # E09-S02's capture. It lives with the decoder because what it freezes is
+    # exactly the decoder's input -- a start address and RDRAM -- and because the
+    # host replay links the decoder and wants the reader beside it.
+    "${DKRPORT_ROOT}/platform/render/capture.c")
 # The chain: the decoder now emits, so it depends on clipping, which itself
 # depends on the transformation. The decoder also now translates the RDP state and
 # hands it to the backend, so the dependency is real and no longer optional.

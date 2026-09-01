@@ -3192,3 +3192,61 @@ scene animates, the two runs do not reach a list at the same moment of it, and
 this file has already recorded once that a pixel comparison across two runs
 measures nothing here. Isolating it needs a control run, which is E09-S02's
 deterministic subject and does not exist yet.
+
+## A frozen input at last: capture and replay — 1 September 2026
+
+Three questions about the image went unanswered this week, and each failed the
+same way. Did the constant-register repacking change the sky? Did the residency
+cache change anything? Is the second texture unit what stopped the character
+names doubling? Every time: the scene animates, two runs do not reach a display
+list at the same moment of it, and comparing their pixels measures the animation.
+The last was written down as *explicitly unattributed* rather than claimed.
+
+A capture ends that. `DKR_CAPTURE_LIST=<n>` writes the display list's start
+address and the whole RDRAM image it reads from; replayed, the same bytes give
+the same image, so a difference between two renderings belongs to the renderer
+and to nothing else.
+
+```
+capture: D:\CAPTURE.BIN list=400 data=0x21E6B0 rdram=8388608 native=1
+CAPTURE  BIN   8388640          <- 32-byte header plus exactly 8 MiB
+```
+
+And replayed on the development machine, through E04-S08's software oracle, with
+no game and no card:
+
+```
+capture: list 400, list at 0x21E6B0, 8388608 bytes of RDRAM, interleaved, 640x480
+decoded: cmd=1539 tri=943 emitted=510 rejects=0 textures=95
+```
+
+Bumper in the canyon, the sky, the track — and the name plate reading **BUMPER**,
+single and clean. Two replays produce **bit-identical** files, which is the
+property the whole harness rests on and is checked rather than assumed.
+
+### Three decisions, and what each avoids
+
+**The whole RDRAM image, eight mebibytes a capture.** The decoder reads at
+addresses the list itself computes — vertices, matrices, textures, nested lists —
+so there is no way to know in advance which bytes matter without running it. A
+capture that omits one produces a *different* image on replay, which is the single
+failure this format exists to rule out. Eight mebibytes is the cheap side of that
+trade.
+
+**Written before the decode, not after.** The decoder writes into the snapshot —
+the vertex scratch window at `0x7FE000` among others — so a capture taken
+afterwards replays a memory the game never had. The first version of this code
+sat after `dkr_f3d_run` while its own comment said "before"; the comment was
+right and the code was not.
+
+**Every property taken from the capture, none assumed.** `rdram_native` in
+particular: replaying an interleaved image as though it were plain gives
+plausible opcodes at absurd addresses, which this project has already spent a day
+on. And each refusal in the reader names itself — wrong magic, wrong version,
+truncated — because "invalid" would leave three problems with three different
+answers looking alike.
+
+> The oracle's image is now the reference the card can be compared against, which
+> is what E04-S08 was built for and what E05-S03 and E05-S04 have been working
+> without. `BUMPER` renders clean here; if it doubles on the card, that is the
+> backend and no longer a question.

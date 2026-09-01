@@ -13,6 +13,7 @@
 // The allocator's own counters, for the report below. `backend.h` hands out a
 // pointer to it; reading the struct needs its definition.
 #include "render/tmu.h"
+#include "render/capture.h"
 // E00-S03's denominator. The time base is E02-S03's, measured on the machine at
 // 1,193,180 Hz -- the 8254 PIT, 4.19 us a tick -- and **not**
 // `high_resolution_clock`, which E02-S03 established is the wall clock on this
@@ -782,6 +783,35 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 
     // The address is guest-virtual (0x80xxxxxx); the snapshot is indexed
     // physically.
+    /* --- E09-S02: freeze one list, so that the next comparison means something -
+     *
+     * `DKR_CAPTURE_LIST=<n>` writes list n to `D:\CAPTURE.BIN` -- the display
+     * list's start address and the whole RDRAM image it reads from. Replayed,
+     * the same bytes give the same image whatever else changed, which is the
+     * only way an image difference becomes attributable to the renderer rather
+     * than to the moment of an animation.
+     *
+     * Written **before** the decode, not after: the decoder writes into the
+     * snapshot -- the vertex scratch window at 0x7FE000 among others -- so a
+     * capture taken afterwards would replay a memory the game never had.
+     *
+     * At or after, once, like the frame dump and for the same reason: a trigger
+     * on an exact count one cannot predict fails silently when the run stops
+     * short of it. */
+    {
+        static const char* const cap_env = std::getenv("DKR_CAPTURE_LIST");
+        static const unsigned long cap_at =
+            cap_env ? std::strtoul(cap_env, nullptr, 10) : 0UL;
+        static bool captured = false;
+        if (cap_at != 0UL && !captured && index >= cap_at) {
+            captured = true;
+            dkr_capture_write("D:\\CAPTURE.BIN",
+                              task->t.data_ptr & 0x00FFFFFFu,
+                              rdram_snapshot, kSnapshotBytes,
+                              context_.rdram_native, static_cast<unsigned>(index),
+                              kWidth, kHeight);
+        }
+
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
 
     // --- The canary -----------------------------------------------------------
@@ -900,6 +930,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     //
     // It is also what E09-S02's corpus needs: captures that can be replayed and
     // compared require a reproducible moment, not a reproducible counter.
+    }
+
     {
         static const char* const dump_env = std::getenv("DKR_DUMP_FRAME");
         static const char* const every_env = std::getenv("DKR_DUMP_EVERY");
