@@ -638,6 +638,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // librecomp's XOR-3 interleaved layout. Without this flag the decoder would
     // read plausible opcodes at absurd addresses.
     context_.rdram_native = 1;
+    // E05-S04. The decoder must know how many units it can aim at, and it reads
+    // it rather than calling: `dkr_glide_backend_tmu_count` accounts for both
+    // E05-S01's detection and the single-TMU test override, and the software
+    // oracle -- which has one -- answers for itself.
+    context_.tmu_count =
+        static_cast<unsigned char>(dkr_glide_backend_tmu_count());
     context_.trace = trace_decoder;
     // `DKR_NO_DEPTH=1` turns depth sorting off. A diagnostic switch: it answers
     // in one run a question that reading the code does not settle.
@@ -972,6 +978,14 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     tile_image_changes_[0] += context_.state.tile_image_changes[0];
     tile_image_changes_[1] += context_.state.tile_image_changes[1];
     total_tile1_distinct_ += context_.state.tile1_distinct;
+    total_two_layer_ += context_.state.emitted_two_layer;
+    total_tile1_unserved_ += context_.state.tile1_unserved;
+    t1_entered_  += context_.state.tile1_entered;
+    t1_cached_   += context_.state.tile1_cached;
+    t1_resident_ += context_.state.tile1_resident;
+    t1_uploaded_ += context_.state.tile1_uploaded;
+    tt_with_     += context_.state.two_texel_with_layer;
+    tt_without_  += context_.state.two_texel_without;
     total_tex_refused_ += context_.state.textures_refused;
     total_tex_padded_ += context_.state.textures_padded;
     total_emitted_textured_ += context_.state.emitted_textured;
@@ -1236,6 +1250,19 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      tilesize_per_tile_[6], tilesize_per_tile_[7],
                      tile_image_changes_[0], tile_image_changes_[1],
                      total_tile1_distinct_);
+        // E05-S04, from both ends. `states` is what the backend programmed,
+        // `triangles` what the decoder handed over with coordinates for the
+        // second unit; one being zero while the other is not is a defect with an
+        // address rather than a puzzle. `unserved` counts the tile-1 sizings
+        // dropped -- a refused upload, or a card with one unit.
+        std::fprintf(stderr,
+                     "[gfx]   two-layer: states=%lu triangles=%lu unserved=%lu | "
+                     "tile1 in=%lu cached=%lu resident=%lu uploaded=%lu | "
+                     "two-texel with-layer=%lu without=%lu\n",
+                     dkr_glide_backend_two_layer_states(),
+                     total_two_layer_, total_tile1_unserved_,
+                     t1_entered_, t1_cached_, t1_resident_, t1_uploaded_,
+                     tt_with_, tt_without_);
         std::fprintf(stderr,
                      "[gfx]   painted-by: exact=%lu multipass=%lu "
                      "approximate=%lu two-texel=%lu uncatalogued=%lu\n",

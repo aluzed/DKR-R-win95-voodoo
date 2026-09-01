@@ -265,6 +265,12 @@ static struct {
      * repository keeps having to rediscover. */
     unsigned long    binds;
     unsigned long    binds_dead;
+    /* State applications served by chaining the two units (E05-S04). Reported
+       beside the decoder's `two-layer` triangle count: the two answer different
+       halves of "is the second unit doing anything" -- this one says the states
+       were programmed, that one says triangles carried coordinates for it, and
+       either being zero while the other is not is a defect with an address. */
+    unsigned long    two_layer_states;
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -687,7 +693,30 @@ static void gl_set_state(void *self, const dkr_render_state *state)
      * with one set of inputs, which is not a property of the configuration. */
     if (state->recipe > 0 && state->recipe <= dkr_cc_table_count()) {
         const dkr_cc_entry *e = dkr_cc_table_at(state->recipe - 1);
-        if (e != 0 && e->category == DKR_CC_EXACT) {
+        /* --- Two texels, one pass (E05-S04) ---------------------------------- *
+         *
+         * The table says this configuration reads `TEXEL1`, and the decoder has
+         * a second layer bound. Chained, TMU 1 samples and its result feeds TMU
+         * 0, which is one pass and no extra fill -- the whole reason this is
+         * worth doing on a card whose limit is fill.
+         *
+         * `DECAL` on TMU 0's stage: the blend between the two layers is the
+         * colour combiner's business, and it has already been programmed from
+         * the table's setup below. Doing it twice would apply the factor twice.
+         *
+         * Not gated on `DKR_CC_EXACT`: the certification of 28 August is about
+         * whether a *single-texture* setup reproduces the configuration, and a
+         * two-texel entry is classified `DKR_CC_TWO_TEXELS` precisely because it
+         * cannot be. Chaining is what makes it reproducible, so the gate that
+         * sends the others to the fallback would send this one there for the one
+         * reason the second unit answers. */
+        if (e != 0 && e->category == DKR_CC_TWO_TEXELS &&
+            state->texture1 != 0 && dkr_glide_backend_tmu_count() >= 2) {
+            dkr_glide_backend_chain(state->texture, state->texture1,
+                                    GR_TEXTURECOMBINE_DECAL, 0);
+            dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
+            b.two_layer_states++;
+        } else if (e != 0 && e->category == DKR_CC_EXACT) {
             if (e->setup.uses_texture) { bind_texture(state->texture); }
             dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
         } else {
@@ -1112,6 +1141,11 @@ void dkr_render_backend_glide(dkr_render_backend *out)
 unsigned long dkr_glide_backend_triangle_count(void)
 {
     return b.triangles;
+}
+
+unsigned long dkr_glide_backend_two_layer_states(void)
+{
+    return b.two_layer_states;
 }
 
 void dkr_glide_backend_bind_stats(unsigned long *binds,

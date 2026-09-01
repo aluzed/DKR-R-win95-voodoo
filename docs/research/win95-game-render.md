@@ -3119,3 +3119,76 @@ One hundred and eleven occurrences in a run, on a path nobody had looked at,
 found by a counter written to answer a different question. Not fixed here: the
 fix *is* E05-S04's first step — tile 0 to TMU 0, tile 1 to TMU 1 — and doing it
 without the chaining would only trade a wrong texture for a missing one.
+
+## E05-S04 wired, and the defect that was fixed once already — 1 September 2026
+
+The chaining, the one-TMU fallback and the two-space allocator had been built and
+verified on the card since E05-S04 was first worked on. What was missing was the
+decoder: nothing ever asked for a second layer, which is why `tmu1: hits=0/0`.
+
+Three pieces close it.
+
+**Tile 1 goes to the second unit.** `cmd_set_tile_size` had ignored the tile index
+since it was written -- right while the port samples one texture, wrong at the 111
+tile-1 sizings, where it took the blend layer for the surface. Tiles beyond 1 are
+counted and ignored rather than treated as tile 0.
+
+**The second layer's coordinates are derived from the first by a ratio.** The RDP
+has one pair of texture coordinates per pixel; both tiles are sampled at the same
+(s,t) through their own descriptors. `tmu[0]` already carries `s * tex_scale_s`
+and this layer wants `s * tex1_scale_s`, so the ratio is a change of unit and not
+an approximation. Carried this way rather than through the clipper, which holds
+one (s,t) pair and would otherwise interpolate twice for a fifth of the triangles.
+
+**The chaining is not gated on certification.** The gate of 28 August asks whether
+a *single-texture* setup reproduces the configuration; a `DKR_CC_TWO_TEXELS` entry
+is classified that way precisely because none can. The gate would have sent it to
+the fallback for the one reason the second unit answers.
+
+### The first run produced nothing, and the counters said which door
+
+```
+two-layer: states=0 triangles=0 unserved=0
+tile1 in=111 cached=0 resident=110 uploaded=1
+two-texel with-layer=0 without=133255
+```
+
+The routing was perfect: 111 sizings entered, 110 served straight from the card,
+one uploaded, none refused. And **every one of 133,255 two-texel triangles drew
+without the layer**. A `with-layer=0` against a healthy `in=111` is the shape of a
+value set and then erased, not one never set.
+
+`dkr_rdp_to_render_state` does a `memset` of the whole render-state block, so
+every state application wipes the texture handles. **That defect was found and
+fixed once already**, for `texture`, and this file carries the paragraph and the
+figures that named it: *45,773 textures uploaded, 246,707 triangles with a
+combiner that reads a texel, and zero triangles with a texture bound.* `texture1`
+was added to the block afterwards and never given the same treatment.
+
+The two restores now sit together, so that the next handle put in this block has
+both lines in front of it.
+
+```
+after: states=111 triangles=141339 with-layer=133240 without=0 unserved=0
+```
+
+Both independent counters fire together, which is what they were separated for:
+the backend says the states were programmed, the decoder says the triangles
+carried coordinates for the second unit, and either being zero while the other is
+not would have been a defect with an address.
+
+### What it costs, and what is not established
+
+The renderer goes from **22.2 ms to 25.5 ms** a frame — the second unit's state
+programmed 111 times, and `tmu[1]` written on 141,339 triangles. Fourteen per cent
+more renderer time for a fifth of the painted triangles rendered as the game asks;
+against a frame of 173 ms it is under two per cent, and against a 33 ms budget it
+is not nothing. Recorded rather than dismissed.
+
+**Not established:** the six anchored captures show the character names rendering
+cleanly — `TIMBER`, `TIPTUP`, `BANJO` — where runs of 28 August showed them
+doubled and offset, `TIMTTIMBER`. That is suggestive and it is not attributed: the
+scene animates, the two runs do not reach a list at the same moment of it, and
+this file has already recorded once that a pixel comparison across two runs
+measures nothing here. Isolating it needs a control run, which is E09-S02's
+deterministic subject and does not exist yet.

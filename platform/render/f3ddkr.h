@@ -159,6 +159,24 @@ typedef struct {
     unsigned int      tile_image[2];
     unsigned long     tile_image_changes[2];
     unsigned long     tile1_distinct;
+    /* Triangles handed over with both layers bound, and tile-1 sizings the port
+       could not serve -- refused upload, or a card with one TMU. The pair is what
+       says whether the chaining is reaching the card or quietly not. */
+    unsigned long     emitted_two_layer;
+    unsigned long     tile1_unserved;
+    /* Every exit of the tile-1 path, separately. Three sizings of the second
+       layer produced one download and no two-layer triangle, and "111 in, 1
+       out" does not say which door the other 110 left by. Each door is counted
+       so the next run names it instead of narrowing it. */
+    unsigned long     tile1_entered;
+    unsigned long     tile1_cached;      /* the one-entry cache answered */
+    unsigned long     tile1_resident;    /* the card already held it */
+    unsigned long     tile1_uploaded;    /* converted and downloaded */
+    /* And at the triangle: a two-texel configuration drawn with the second
+       layer bound, and without. The second is the number that says the layer is
+       not surviving to the draw. */
+    unsigned long     two_texel_with_layer;
+    unsigned long     two_texel_without;
     /* --- What the conversions actually cost, and how much of it repeats ------ *
      *
      * `textures_reused` counts hits on a cache of **one entry**: the tile whose
@@ -462,6 +480,23 @@ typedef struct {
        diagnostic that costs speed, switched on when the diagnostic is the
        point. */
     unsigned char        no_texture_cache;
+    /* The second layer's binding and its own coordinate scale, mirroring
+       `bound_texture` and `tex_scale_s`. Separate rather than an array of two
+       because every other consumer in this file reads the single-texture pair by
+       name, and an index would make each of those call sites say `[0]` for no
+       gain. */
+    dkr_texture_handle   bound_texture1;
+    unsigned long long   texture1_key;
+    float                tex1_scale_s, tex1_scale_t;
+    /* Which layer the sizing in flight is for. Set at the top of
+       `cmd_set_tile_size` and read by the paths below it, rather than threaded
+       through six call sites that otherwise have no interest in it. */
+    unsigned char        tile_target_tmu1;
+    /* How many texture units the backend really has, set by the caller from
+       `dkr_glide_backend_tmu_count` -- which reads E05-S01's detection *and* the
+       test override. Read here rather than called, so that the decoder keeps no
+       dependency on the Glide backend and the software oracle can say one. */
+    unsigned char        tmu_count;
     /* Forces every draw to one combine mode, to bisect what the image owes to
        what. The frame brought back on 17 August 2026 is a uniform grey over a
        **black** clear, so a quarter of a million triangles are painting and all

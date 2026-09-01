@@ -82,6 +82,10 @@ private:
     unsigned long tilesize_per_tile_[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     unsigned long tile_image_changes_[2] = {0, 0};
     unsigned long total_tile1_distinct_ = 0;
+    unsigned long total_two_layer_ = 0;
+    unsigned long total_tile1_unserved_ = 0;
+    unsigned long t1_entered_ = 0, t1_cached_ = 0, t1_resident_ = 0, t1_uploaded_ = 0;
+    unsigned long tt_with_ = 0, tt_without_ = 0;
     // E00-S03's frame budget. Microseconds throughout: at 4.19 us a tick a
     // millisecond counter would quantise a 33 ms frame into 33 steps and lose
     // exactly the resolution the question needs.

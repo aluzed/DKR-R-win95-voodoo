@@ -630,6 +630,13 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                         ? dkr_cc_table_at(c->catalogue_index) : 0;
                 if (e != 0 && (unsigned)e->category < 4u) {
                     c->state.emitted_per_cc[(unsigned)e->category]++;
+                    if (e->category == DKR_CC_TWO_TEXELS) {
+                        if (c->render_state.texture1 != 0) {
+                            c->state.two_texel_with_layer++;
+                        } else {
+                            c->state.two_texel_without++;
+                        }
+                    }
                 } else {
                     c->state.emitted_uncatalogued++;
                 }
@@ -1072,6 +1079,34 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     v[q].tmu[0][DKR_TMU_OOW] = 1.0f;
                 }
             }
+            /* --- The second layer's coordinates --------------------------- *
+             *
+             * The RDP has **one** pair of texture coordinates per pixel: tile 0
+             * and tile 1 are sampled at the same (s,t), each through its own
+             * tile descriptor. So TMU 1 gets TMU 0's coordinates, rescaled --
+             * `tmu[0]` already carries `s * tex_scale_s`, and this layer wants
+             * `s * tex1_scale_s`, hence the ratio.
+             *
+             * Derived from `tmu[0]` rather than carried through the clipper: the
+             * clip vertex holds one (s,t) pair, and giving it a second would
+             * make every interpolation in `clip.c` do twice the work for a fifth
+             * of the triangles. A ratio is exact here because both scales are
+             * `1/(32*big)` over the same raw coordinate -- it is a change of
+             * unit, not an approximation.
+             *
+             * `oow` is copied and not scaled: it is the perspective divide, and
+             * it belongs to the vertex rather than to either texture. */
+            if (c->render_state.texture1 != 0 && c->tex_scale_s != 0.0f) {
+                const float ks = c->tex1_scale_s / c->tex_scale_s;
+                const float kt = c->tex1_scale_t / c->tex_scale_t;
+                int q;
+                for (q = 0; q < 3; q++) {
+                    v[q].tmu[1][DKR_TMU_SOW] = v[q].tmu[0][DKR_TMU_SOW] * ks;
+                    v[q].tmu[1][DKR_TMU_TOW] = v[q].tmu[0][DKR_TMU_TOW] * kt;
+                    v[q].tmu[1][DKR_TMU_OOW] = v[q].tmu[0][DKR_TMU_OOW];
+                }
+                c->state.emitted_two_layer++;
+            }
             if (c->backend && c->backend->draw_triangles) {
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }
@@ -1353,6 +1388,21 @@ static void apply_state(dkr_f3d_context *c)
      * only for the modes that read a texel. */
     c->render_state.texture =
         (c->render_state.combine == DKR_COMBINE_SHADE) ? 0u : c->bound_texture;
+    /* **And the second layer, for exactly the same reason.**
+     *
+     * The paragraph above was written when `texture` was found to be wiped by
+     * every state application, and `texture1` was added to the block afterwards
+     * without being given the same treatment. It cost a run to see: 111 tile-1
+     * sizings all bound their layer, 110 of them served straight from the card,
+     * and **every one of 133,255 two-texel triangles drew without it** --
+     * `with-layer=0 without=133255`, which is the shape of a value that is set
+     * and then erased rather than one that is never set.
+     *
+     * A defect fixed once in a file does not stay fixed for a field added later.
+     * The pair now sits together so that the next handle put in this block has
+     * the two lines in front of it. */
+    c->render_state.texture1 =
+        (c->render_state.combine == DKR_COMBINE_SHADE) ? 0u : c->bound_texture1;
     /* Laid back down after the translation, like the texture handle and for the
        same reason: `dkr_rdp_to_render_state` fills the whole block from the RDP
        state, and the RDP state knows nothing of our catalogue. `force_combine`
@@ -1373,6 +1423,7 @@ static void apply_state(dkr_f3d_context *c)
        in this block: `dkr_rdp_to_render_state` fills it whole. */
     if (!c->batch_textured) {
         c->render_state.texture = 0;
+        c->render_state.texture1 = 0;
         c->render_state.combine = DKR_COMBINE_SHADE;
         c->render_state.recipe = 0;
     }
@@ -1443,6 +1494,18 @@ static int next_power_of_two(int n)
     return p;
 }
 
+/* Can this build serve a second layer at all? A single-TMU card cannot, and
+   neither can a backend without an upload. E05-S04's multipass fallback is the
+   other answer to this question and is not wired here: it draws the surface
+   twice, which doubles the fill on a card whose limit is fill, and the
+   measurement of 1 September puts two-texel triangles at a fifth of the frame.
+   Dropping the layer is the cheaper degradation and it is counted. */
+static int dkr_glide_two_layer_unavailable(const dkr_f3d_context *c)
+{
+    return (c->backend == 0) || (c->backend->texture_upload == 0) ||
+           (c->tmu_count < 2);
+}
+
 static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     /* --- Which tile is being sized, and does a second one exist? ------------- *
@@ -1462,8 +1525,8 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
      * Counted rather than reasoned about, because the alternative is to
      * implement two units and discover afterwards that the second never had
      * anything to sample. */
+    const unsigned int tile = (w1 >> 24) & 0x07u;
     {
-        const unsigned int tile = (w1 >> 24) & 0x07u;
         c->state.tilesize_per_tile[tile]++;
         if (tile < 2u) {
             if (c->state.tile_image[tile] != c->timg_address) {
@@ -1611,13 +1674,69 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
      * that skipped them would leave the previous texture's scale on the vertices
      * -- the same class of defect as `bound_texel0` reading the staging buffer,
      * which cost three eliminations before it was noticed. */
+    /* --- Tile 1 is the second layer, and goes to the second unit ------------ *
+     *
+     * This function ignored the tile index from the day it was written, and that
+     * was right while the port sampled one texture: whichever tile the game
+     * names, the image to convert is the one `G_SETTEXTURE_IMAGE` last pointed
+     * at. It stopped being right at the 111 tile-1 sizings measured on 1
+     * September -- there the game establishes a **blend layer**, and taking it
+     * for the one and only texture drew the following triangles with the blend
+     * in place of the surface until tile 0 came round again.
+     *
+     * Tiles beyond 1 are counted and ignored rather than treated as tile 0. The
+     * measurement says the game sizes none of them; if that ever changes the
+     * counter says so instead of the screen.
+     *
+     * The rest of this function is shared: the conversion, the padding, the 8:1
+     * rule and the residency query are the same work for either layer. Only
+     * where the handle and the scale land differs, and that is `to_tmu1`. */
+    if (tile >= 2u) {
+        return;
+    }
+    {
+        const int to_tmu1 = (tile == 1u);
+        if (to_tmu1) { c->state.tile1_entered++; }
+        if (to_tmu1 && dkr_glide_two_layer_unavailable(c)) {
+            /* One TMU, or the backend cannot chain. Leaving tile 1 to overwrite
+               tile 0 would restore the very defect this branch exists to fix, so
+               the layer is dropped and counted: a surface without its blend,
+               which is a degradation, against a surface wearing the blend
+               instead of its own texture, which is wrong. */
+            c->state.tile1_unserved++;
+            return;
+        }
+        if (to_tmu1) {
+            /* The one-entry cache, for this layer. Same reasoning as tile 0's:
+               without it the blend texture is reconverted on every sizing. */
+            if (key == c->texture1_key && c->render_state.texture1 != 0) {
+                c->state.textures_reused++;
+                c->state.tile1_cached++;
+                return;
+            }
+        }
+        c->tile_target_tmu1 = (unsigned char)to_tmu1;
+    }
+
     if (c->backend && c->backend->texture_lookup && !c->no_texture_cache) {
         const dkr_texture_handle h =
-            c->backend->texture_lookup(c->backend->self, key, 0);
+            c->backend->texture_lookup(c->backend->self, key,
+                                       c->tile_target_tmu1 ? 1 : 0);
         if (h != 0) {
             const unsigned int big =
                 (c->tex_padded_width > c->tex_padded_height)
                     ? c->tex_padded_width : c->tex_padded_height;
+            if (c->tile_target_tmu1) {
+                c->tex1_scale_s = 1.0f / (32.0f * (float)big);
+                c->tex1_scale_t = c->tex1_scale_s;
+                c->bound_texture1 = h;
+                c->render_state.texture1 = h;
+                c->texture1_key = key;
+                c->state.textures_resident++;
+                c->state.tile1_resident++;
+                c->state_dirty = 1;
+                return;
+            }
             c->tex_scale_s = 1.0f / (32.0f * (float)big);
             c->tex_scale_t = c->tex_scale_s;
             c->bound_texture = h;
@@ -1757,6 +1876,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         dkr_texture_handle h;
         memset(&d, 0, sizeof(d));
         d.key = key;
+        d.tmu = c->tile_target_tmu1 ? 1 : 0;
         d.format = DKR_TEXFMT_ARGB1555;
         d.width = c->tex_padded_width;
         d.height = c->tex_padded_height;
@@ -1764,6 +1884,20 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         d.size_bytes = (size_t)c->tex_padded_width *
                        (size_t)c->tex_padded_height * 2u;
         h = c->backend->texture_upload(c->backend->self, &d);
+        if (h != 0 && c->tile_target_tmu1) {
+            const unsigned int big1 =
+                (c->tex_padded_width > c->tex_padded_height)
+                    ? c->tex_padded_width : c->tex_padded_height;
+            c->tex1_scale_s = 1.0f / (32.0f * (float)big1);
+            c->tex1_scale_t = c->tex1_scale_s;
+            c->bound_texture1 = h;
+            c->render_state.texture1 = h;
+            c->texture1_key = key;
+            c->state.textures_loaded++;
+            c->state.tile1_uploaded++;
+            c->state_dirty = 1;
+            return;
+        }
         if (h != 0) {
             c->bound_texture = h;
             /* 1/32 for the microcode's 10.5, then into Glide's texel space.
@@ -1835,6 +1969,14 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             }
             c->state_dirty = 1;
             c->state.textures_loaded++;
+        } else if (c->tile_target_tmu1) {
+            /* The blend layer was refused. Tile 0's binding is **not** touched:
+               clearing it here would blank the surface because its second layer
+               would not fit, which is a worse image than the surface alone. */
+            c->render_state.texture1 = 0;
+            c->bound_texture1 = 0;
+            c->texture1_key = 0;
+            c->state.tile1_unserved++;
         } else {
             /* Texture memory full. E05-S02 administers it; here we merely
                refrain from drawing with an invalid handle. */

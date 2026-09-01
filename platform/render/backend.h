@@ -431,6 +431,8 @@ unsigned long dkr_glide_backend_upload_failure(int kind);
    and not a hope: the two together say whether the reclaim is doing the work
    or whether the working set has simply not reached the limit yet. */
 unsigned long dkr_glide_backend_slots_reclaimed(void);
+/* State applications served by chaining both texture units (E05-S04). */
+unsigned long dkr_glide_backend_two_layer_states(void);
 /* What `texture_lookup` answered, cumulatively: resident, not resident, and
    **stale** -- a descriptor naming a key the allocator has since evicted. The
    third is separated from the second on purpose: a stale hit is the one that
