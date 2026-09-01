@@ -966,6 +966,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         emitted_per_cc_[i] += context_.state.emitted_per_cc[i];
     }
     total_emitted_uncatalogued_ += context_.state.emitted_uncatalogued;
+    for (int i = 0; i < 8; i++) {
+        tilesize_per_tile_[i] += context_.state.tilesize_per_tile[i];
+    }
+    tile_image_changes_[0] += context_.state.tile_image_changes[0];
+    tile_image_changes_[1] += context_.state.tile_image_changes[1];
+    total_tile1_distinct_ += context_.state.tile1_distinct;
     total_tex_refused_ += context_.state.textures_refused;
     total_tex_padded_ += context_.state.textures_padded;
     total_emitted_textured_ += context_.state.emitted_textured;
@@ -1217,6 +1223,19 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // Which catalogue category paints the frame -- the number that decides
         // whether the second TMU (E05-S04) is worth building, and the only one
         // that separates "exact" from "the table says this needs two texels".
+        // E05-S04's precondition, before its implementation: does the game ever
+        // supply a second texel? A tile-1 sizing naming a different texture
+        // image than tile 0 holds is one; zero of them would mean the two-texel
+        // configurations have nothing to read from.
+        std::fprintf(stderr,
+                     "[gfx]   tiles: sized=[%lu %lu %lu %lu %lu %lu %lu %lu] "
+                     "img-changes=%lu/%lu tile1-distinct=%lu\n",
+                     tilesize_per_tile_[0], tilesize_per_tile_[1],
+                     tilesize_per_tile_[2], tilesize_per_tile_[3],
+                     tilesize_per_tile_[4], tilesize_per_tile_[5],
+                     tilesize_per_tile_[6], tilesize_per_tile_[7],
+                     tile_image_changes_[0], tile_image_changes_[1],
+                     total_tile1_distinct_);
         std::fprintf(stderr,
                      "[gfx]   painted-by: exact=%lu multipass=%lu "
                      "approximate=%lu two-texel=%lu uncatalogued=%lu\n",

@@ -1445,6 +1445,38 @@ static int next_power_of_two(int n)
 
 static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
+    /* --- Which tile is being sized, and does a second one exist? ------------- *
+     *
+     * This function has ignored the tile index since it was written, and that is
+     * correct as long as the port samples one texture: whatever tile the game
+     * names, the image to convert is the one `G_SETTEXTURE_IMAGE` last pointed
+     * at. It stops being correct the moment two texels are wanted.
+     *
+     * E05-S04 asks for `TEXEL1`, and 19.6 % of the triangles painted are drawn by
+     * a configuration that reads it. Before any of that is built, the question is
+     * whether DKR ever *supplies* a second texel -- a `SETTILESIZE` for tile 1
+     * carrying a texture image different from tile 0's. If it does not, then
+     * those configurations sample one tile twice and the whole shape of the work
+     * changes.
+     *
+     * Counted rather than reasoned about, because the alternative is to
+     * implement two units and discover afterwards that the second never had
+     * anything to sample. */
+    {
+        const unsigned int tile = (w1 >> 24) & 0x07u;
+        c->state.tilesize_per_tile[tile]++;
+        if (tile < 2u) {
+            if (c->state.tile_image[tile] != c->timg_address) {
+                c->state.tile_image[tile] = c->timg_address;
+                c->state.tile_image_changes[tile]++;
+            }
+        }
+        /* The pair that settles it: a tile-1 sizing whose image differs from the
+           one tile 0 currently holds is a genuine second texture. */
+        if (tile == 1u && c->timg_address != c->state.tile_image[0]) {
+            c->state.tile1_distinct++;
+        }
+    }
     const unsigned int lrs = (w1 >> 12) & 0xFFFu;
     const unsigned int lrt = w1 & 0xFFFu;
     const unsigned int uls = (w0 >> 12) & 0xFFFu;

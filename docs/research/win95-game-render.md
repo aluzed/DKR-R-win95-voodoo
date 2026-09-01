@@ -3080,3 +3080,42 @@ nothing has measured what it would cost — which makes it a spike, not a task.
 > concentrated in a few scenes rather than spread over the game, so the visible
 > effect of E05-S04 will be large in those places and nil elsewhere. Worth knowing
 > before, rather than being surprised by an unchanged screenshot after.
+
+### And the second texel exists — 1 September 2026
+
+E05-S04's precondition, asked before any of it is built: does DKR ever *supply* a
+second texture? A `SETTILESIZE` for tile 1 naming a texture image other than tile
+0's is one. If the answer were zero, the two-texel configurations would be
+sampling one tile twice and the ticket would not be what it says it is.
+
+```
+tiles: sized=[104542 111 0 0 0 0 0 0] img-changes=101970/111 tile1-distinct=111
+```
+
+**Tile 1 is sized 111 times, and all 111 name a different image.** No tile beyond
+1 is ever sized. So the second texel is real, it is rare to set up — one per ten
+display lists — and it feeds 133,246 painted triangles. That is the profile of a
+blend layer established once and applied to a great deal of geometry, which is
+what the ticket's context predicted and what makes the second TMU worth wiring.
+
+The two counters rise together and stop together: tile 1 appears at sample 9 and
+is flat at 111 from sample 14, exactly as the two-texel triangle count is flat at
+133,095 from the same point. Two independent counters agreeing on when the
+phenomenon starts and stops.
+
+### A defect the count exposes on its way past
+
+`cmd_set_tile_size` has ignored the tile index since it was written, and the
+comment above it now says why that was right: while the port samples one texture,
+the image to convert is whatever `G_SETTEXTURE_IMAGE` last named, whichever tile
+the game is talking about.
+
+It is right up to those 111 events. There, the game sizes tile **1** — the second
+layer — and this decoder takes it for the one and only texture, converts it,
+binds it, and draws the following triangles with the blend layer in place of the
+surface. It holds until tile 0 is sized again.
+
+One hundred and eleven occurrences in a run, on a path nobody had looked at,
+found by a counter written to answer a different question. Not fixed here: the
+fix *is* E05-S04's first step — tile 0 to TMU 0, tile 1 to TMU 1 — and doing it
+without the chaining would only trade a wrong texture for a missing one.

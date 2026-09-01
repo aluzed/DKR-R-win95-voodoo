@@ -150,6 +150,15 @@ typedef struct {
        configuration reading two texels can be rare and still cover the screen. */
     unsigned long     emitted_per_cc[4];
     unsigned long     emitted_uncatalogued;
+    /* E05-S04's precondition. `tilesize_per_tile` says which tiles the game
+       sizes at all; `tile1_distinct` counts the sizings of tile 1 that name a
+       texture image other than tile 0's -- that is, a real second texel. Zero
+       there would mean the two-texel configurations have nothing to read from,
+       and the ticket is not what it says it is. */
+    unsigned long     tilesize_per_tile[8];
+    unsigned int      tile_image[2];
+    unsigned long     tile_image_changes[2];
+    unsigned long     tile1_distinct;
     /* --- What the conversions actually cost, and how much of it repeats ------ *
      *
      * `textures_reused` counts hits on a cache of **one entry**: the tile whose
