@@ -3269,9 +3269,11 @@ the whole apparatus was built to be able to say.
 **The nameplate does not double. It loses its blue.**
 
 Of the 2416 pixels the oracle renders strongly blue in the `BUMPER` plate, the
-card renders 2416 with blue below 40 — not one keeps it. Red and green come
-through untouched: `0x2129E7` becomes `0x212800`. The rest of the frame is the
-same picture, canyon, sky, track and character alike.
+card renders 2416 with blue below 40 — not one keeps it. Those pixels are the
+**outline** around the glyphs; the yellow-to-green bodies inside it agree exactly,
+and red and green come through untouched everywhere: `0x2129E7` becomes
+`0x212800`. The rest of the frame is the same picture, canyon, sky, track and
+character alike.
 
 So the question left open on 30 August has an answer of a different shape than
 expected. The doubling is not visible in this capture on either side, and the

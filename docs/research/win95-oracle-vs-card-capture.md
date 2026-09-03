@@ -52,14 +52,15 @@ and not to the machine it ran on.
 
 The scene is otherwise the same picture: same canyon, same sky, same track, same
 character. The divergence has one dominant location, and the difference map names
-it without ambiguity — the **BUMPER** nameplate, blue in the oracle and olive on
-the card.
+it without ambiguity — the **BUMPER** nameplate. The letter bodies match; what
+differs is the **outline around them**, blue in the oracle and black on the card.
 
 Counted directly:
 
 > Of the **2416** pixels the oracle renders strongly blue (blue > 180, red and
 > green < 110), the card renders **2416** with blue below 40. Not one keeps it.
-> Red and green come through unchanged: `0x2129E7` becomes `0x212800`.
+> Red and green come through unchanged: `0x2129E7` becomes `0x212800`. Those 2416
+> pixels are the glyph outline; the yellow-to-green bodies inside it agree.
 
 So it is not a colour shift, a lighting difference or a texture mix-up. **The
 blue channel is zeroed**, and only there. That is a defect in the Glide backend —
