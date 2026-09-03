@@ -579,6 +579,23 @@ static void sw_texture_release(void *self, dkr_texture_handle handle)
 void dkr_render_backend_software(dkr_render_backend *out)
 {
     if (!out) { return; }
+    /* **Zeroed first, and this is not tidiness.**
+     *
+     * The caller's `dkr_render_backend` is usually a local, so any entry this
+     * function does not assign keeps whatever was on the stack. Every call site
+     * in the decoder guards with `if (backend->entry)` -- which protects against
+     * a null pointer and not at all against a stale one.
+     *
+     * Measured on 3 September 2026: `REPLAY.EXE` faulted inside `dkr_f3d_run`
+     * with EIP in `.bss` and EAX equal to the backend's `self`, because
+     * `texture_lookup` -- added with E05's residency cache and never added here
+     * -- held a leftover stack word that the null guard accepted. The synthetic
+     * scene had passed the same code for weeks: its stack happened to hold zero.
+     *
+     * With the block zeroed, an entry nobody implements is null, which is what
+     * the guards already expect and what "this backend has no such thing" means.
+     */
+    memset(out, 0, sizeof(*out));
     memset(&g_sw, 0, sizeof(g_sw));
     out->name            = "software";
     out->open            = sw_open;

@@ -17,6 +17,7 @@
    imposes — see `DKR_TEXCOORD_SCALE` in `backend.h`. The expected values stay
    normalised: that is what the rasteriser samples after the divide, and that is
    what reads back. */
+#include "render/backend.h"
 #include "render/software.h"
 
 #include <stdio.h>
@@ -418,6 +419,48 @@ int main(void)
 
     b.close(b.self);
     check("closing frees without crashing", 1);
+
+    /* --- The factory leaves no entry stale ------------------------------------ *
+     *
+     * This check exists because the absence of it cost an afternoon on
+     * 3 September 2026. `dkr_render_backend` is nearly always a local, so an
+     * entry the factory does not assign keeps whatever was on the stack. The
+     * decoder guards every call with `if (backend->entry)`, which stops a null
+     * pointer and does nothing whatever about a stale one.
+     *
+     * `texture_lookup` arrived with E05's residency cache and was added to the
+     * Glide factory alone. The software oracle went on passing the synthetic
+     * scene for weeks, its stack happening to hold zero there; the first real
+     * captured frame called a leftover word and faulted with EIP inside `.bss`.
+     *
+     * The block is poisoned before the factory runs, and every byte of it must
+     * come back either assigned or zero. Poison rather than zero, deliberately:
+     * a factory that forgets an entry in a zeroed block leaves a null, which is
+     * legal and invisible, and this check would then assert nothing. */
+    {
+        const unsigned char poison = 0xA5u;
+        dkr_render_backend probe;
+        const unsigned char *raw = (const unsigned char *)&probe;
+        size_t i, stale = 0;
+
+        memset(&probe, poison, sizeof(probe));
+        dkr_render_backend_software(&probe);
+        for (i = 0; i < sizeof(probe); i++) {
+            if (raw[i] == poison) { stale++; }
+        }
+        /* Four consecutive poisoned bytes are a pointer-sized hole, not the
+           chance survival of one byte inside a real address. */
+        check("the software factory leaves no entry holding stack rubbish",
+              stale < 4);
+
+        memset(&probe, poison, sizeof(probe));
+        dkr_render_backend_null(&probe);
+        for (i = 0, stale = 0; i < sizeof(probe); i++) {
+            if (raw[i] == poison) { stale++; }
+        }
+        check("the null factory leaves no entry holding stack rubbish",
+              stale < 4);
+    }
 
     printf("\n%d failure(s)\n", g_fails);
     if (g_out) { fprintf(g_out, "\n%d failure(s)\n", g_fails); fclose(g_out); }

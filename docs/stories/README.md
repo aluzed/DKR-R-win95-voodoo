@@ -52,8 +52,8 @@ rather than code. Each line now carries the evidence it rests on.*
 | [E06](E06-platform/) | Win95 platform | 6 | 2 | 4 | **The keyboard works**: a window bound to Glide, 18 USER32 imports, six taps sent and six read. Audio, pacing, configuration and ROM selection remain |
 | [E07](E07-scope/) | Scope reduction | 3 | 1 | 2 | SDL2 is cut; ImGui, texture packs and the modern profile are still linked on the modern target |
 | [E08](E08-perf/) | Performance | 4 | 1 | 3 | The instrumentation exists and has produced every figure this month; no optimisation pass beyond the texture cache |
-| [E09](E09-qa/) | Integration, QA and distribution | 5 | 1 | 4 | The test machine is complete; frame dumps exist, an automated comparison does not |
-| | **Total** | **56** | **38** | **18** | |
+| [E09](E09-qa/) | Integration, QA and distribution | 5 | 2 | 3 | The test machine is complete; a real frame of the game now replays through both backends and is compared automatically. The corpus of captures is one capture |
+| | **Total** | **56** | **39** | **17** | |
 
 **"Built" means the code exists and has been exercised on the target**, not that
 the ticket's acceptance criteria are ticked — almost none are, which is a
@@ -72,6 +72,7 @@ provably stale, with the evidence:
 
 | Ticket | State |
 |---|---|
+| [E09-S02](E09-qa/E09-S02-visual-comparison-harness.md) | `IN_PROGRESS` — **the harness closes on a real frame**. A capture freezes the decoder's whole input; `REPLAY.EXE --both` renders it through the oracle and the Voodoo in one program, on the same object code up to the backend, and compares. The two backends decoded identically (`emitted=510` on both), and the software oracle produced **the same image on the development machine and on the target** — 0 divergent pixels of 307,200 across two compilers and two architectures. The card diverges in one object: **2416 blue pixels of the character's nameplate, every one of them, come out with blue below 40**. Two instruments were repaired to get there — a backend entry that was never assigned and passed a null guard, and an edge rule that reported 186 wrong pixels for 2416. What remains is the **corpus**: one capture is not coverage. |
 | [E09-S01](E09-qa/E09-S01-emulated-test-environment.md) | `REVIEW` — **a complete environment**: Windows 95 OSR2.5 on a Pentium II / Voodoo 2, 3dfx driver installed, **a Glide demonstration rendering a Gouraud triangle**, a reference snapshot frozen, and a machine drivable without a screen. |
 | [E00-S04](E00-scoping/E00-S04-spike-rsp-cost-without-sse.md) | `REVIEW` — **the recompiled audio microcode cannot hold real time**: the target reaches only **3.9 %** of the RSP's vector throughput. The scalar fallback already existed; MMX would not save this path. **[E03-S03](E03-rsp/E03-S03-high-level-mixer-fallback.md) moves from contingency to critical path.** |
 | [E07-S03](E07-scope/E07-S03-sdl2-decoupling.md) | `IN_PROGRESS` — the link with SDL2 is cut: **a single file depended on it outside the RT64 guard**, and all it wanted was the window's size. One function, `platform::window_size`, suffices; `runtime_stubs.cpp` goes through the same accessor rather than duplicating it. **The game's 17 sources compile for Windows 95**, and the modern target's 18 suites pass. |

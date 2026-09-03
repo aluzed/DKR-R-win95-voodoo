@@ -3250,3 +3250,49 @@ answers looking alike.
 > is what E04-S08 was built for and what E05-S03 and E05-S04 have been working
 > without. `BUMPER` renders clean here; if it doubles on the card, that is the
 > backend and no longer a question.
+
+## The card answers, and it is not the doubling — 3 September 2026
+
+The capture of 1 September was replayed through **both** backends on the machine,
+by one program: `REPLAY.EXE --both`. The decoder, the transform and the clipper
+are the same object code on the two paths; only the backend differs.
+
+```
+oracle   cmd=1539 tri=943 emitted=510 rejects=0 textures=95
+card     cmd=1539 tri=943 emitted=510 rejects=0 textures=68
+```
+
+The counts are compared before the images, and they agree: the same geometry
+reached both rasterisers. So a pixel difference is the backend's, which is what
+the whole apparatus was built to be able to say.
+
+**The nameplate does not double. It loses its blue.**
+
+Of the 2416 pixels the oracle renders strongly blue in the `BUMPER` plate, the
+card renders 2416 with blue below 40 — not one keeps it. Red and green come
+through untouched: `0x2129E7` becomes `0x212800`. The rest of the frame is the
+same picture, canyon, sky, track and character alike.
+
+So the question left open on 30 August has an answer of a different shape than
+expected. The doubling is not visible in this capture on either side, and the
+second texture unit is therefore still unindicted and unacquitted for it; what
+the confrontation does produce is a **new defect, precisely located**, in the
+same object. It belongs to E05-S03 now, with a name and a coordinate, rather than
+to a list of things seen once.
+
+Two instruments had to be repaired to get there, and both failures were of the
+kind this file keeps recording.
+
+- The software oracle's factory never assigned `texture_lookup`, added to the
+  interface with E05's residency cache and given to the Glide factory alone. The
+  decoder's `if (backend->texture_lookup)` guard stops a null pointer and does
+  nothing about a stale one, so the first replay called a leftover stack word and
+  faulted with `EIP` inside `.bss`. The synthetic scene had passed the same code
+  for weeks; its stack happened to hold zero.
+- The comparison metric forgave any pixel next to a sharp change in the
+  reference. On four large triangles that is the thin boundary a fill rule can
+  move; on text, where glyphs are one to three pixels wide and outlined, it is the
+  whole object. It reported **186** divergent pixels for a nameplate with 2416
+  wrong ones.
+
+Full account: `docs/research/win95-oracle-vs-card-capture.md`.

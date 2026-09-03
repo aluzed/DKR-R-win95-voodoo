@@ -573,6 +573,20 @@ dkr_win95_verify(DKRWin95RdpState)
 add_library(win95software STATIC "${DKRPORT_ROOT}/platform/render/software.c")
 target_link_libraries(win95software PUBLIC win95renderbackend)
 
+# --- The comparison metric, shared by everything that judges an image ---------
+#
+# It used to live inside `test_compare.c`, serving one synthetic scene on this
+# machine. A replay compares an image made here against an image made on the
+# development machine, so the same metric now runs in two programs built by two
+# compilers. A second copy of it would drift, and the drift would read as the
+# card disagreeing with the oracle -- which is the sentence this project already
+# wrote about the *scene*, and had not applied to the *measurement* of it.
+#
+# It also carries the 24-bit BMP, read and written. That header was being laid
+# out by hand in three places, and one of the three had got the row order wrong.
+add_library(win95imagecmp STATIC "${DKRPORT_ROOT}/platform/render/imagecmp.c")
+target_include_directories(win95imagecmp PUBLIC "${DKRPORT_ROOT}/platform")
+
 add_executable(DKRWin95SoftRaster
     "${DKRPORT_ROOT}/platform/render/tests/test_software.c")
 target_include_directories(DKRWin95SoftRaster PRIVATE "${DKRPORT_ROOT}/platform")
@@ -829,7 +843,7 @@ dkr_win95_verify(DKRWin95GlideRegistry)
 add_executable(DKRWin95Compare
     "${DKRPORT_ROOT}/platform/render/tests/test_compare.c")
 target_link_libraries(DKRWin95Compare PRIVATE
-    win95glide win95software win95f3ddkr win95clock winmm)
+    win95glide win95software win95f3ddkr win95imagecmp win95clock winmm)
 target_include_directories(DKRWin95Compare PRIVATE
     "${DKRPORT_ROOT}/platform/render/tests")
 set_target_properties(DKRWin95Compare PROPERTIES
@@ -837,6 +851,34 @@ set_target_properties(DKRWin95Compare PROPERTIES
     SUFFIX ".EXE"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Compare)
+
+# E09-S02 - the same confrontation, on a real frame of the game.
+#
+# `COMPARE.EXE` above settles the question on a synthetic scene, and a synthetic
+# scene is what the harness could reach without a ROM: four triangles, one
+# texture, no multi-texturing, no multipass, no cache under pressure. The game's
+# own frames exercise all four, and 79.7 % of its triangles take the multipass
+# path -- none of which the synthetic scene can reach.
+#
+# **Both renderings happen in this one program**, on the same object code for the
+# decoder, the transform and the clipper: only the backend differs. Two programs
+# would let a divergence hide in the difference between them, and it would be
+# charged to the card.
+#
+#   REPLAY.EXE --both D:\CAPTURE.BIN
+#
+# It builds from `tools/render/replay.c`, the same source the host build
+# compiles: `DKR_HAVE_GLIDE` is what adds the card's half. The host cannot open a
+# Voodoo, and a second source file would be a second decoder to keep in step.
+add_executable(DKRWin95Replay "${DKRPORT_ROOT}/tools/render/replay.c")
+target_compile_definitions(DKRWin95Replay PRIVATE DKR_HAVE_GLIDE=1)
+target_link_libraries(DKRWin95Replay PRIVATE
+    win95glide win95software win95f3ddkr win95imagecmp win95clock winmm)
+set_target_properties(DKRWin95Replay PROPERTIES
+    OUTPUT_NAME "REPLAY"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Replay)
 
 # --- Power-cut probe (E02-S05) -----------------------------------------------
 #

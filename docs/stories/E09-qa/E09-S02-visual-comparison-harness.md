@@ -68,29 +68,49 @@ backends, automatically.
 
 ## Acceptance criteria
 
-- [ ] The graphics task captures can be recorded and replayed.
+- [x] The graphics task captures can be recorded and replayed. `DKR_CAPTURE_LIST=<n>`
+      writes the list's start address and the whole of RDRAM; `replay` renders it
+      through the oracle on the development machine and `REPLAY.EXE` through the
+      oracle and the card on the target. Two replays of one capture produce
+      byte-identical files, which was checked and not assumed.
 - [ ] The corpus covers title, menus, every level, cutscenes, split screen and results.
-- [~] The replay is deterministic for the synthetic scene — the comparison of the counts
-      of triangles emitted precedes that of the images, precisely so that an image
-      deviation does not mask a determinism defect. **The replayability of a real capture
-      stays blocked**: it presupposes the ROM.
+- [x] The replay is deterministic — the comparison of the counts of triangles emitted
+      precedes that of the images, precisely so that an image deviation does not mask a
+      determinism defect. Established on a **real** capture on 3 September 2026: the two
+      backends decoded `cmd=1539 tri=943 emitted=510 rejects=0` identically, and the
+      software rasteriser produced the same image on the development machine and on the
+      target — 0 divergent pixels out of 307,200 across two compilers and two
+      architectures, x86-64 with SSE against i686 with x87.
 - [x] The comparison metric distinguishes quantisation from error — the reference is
       quantised to 565 before comparison, with the same replication of the high-order
       bits as the read-back, and the edge pixels are counted separately. The wide
       threshold that served to clear the ground is doubled by a tight one once the real
       noise is measured: worst deviation 9 out of 255, bound set at 16. A threshold one
       does not tighten after measuring asserts nothing but its own indulgence.
-- [~] The report presents reference and obtained as 24-bit BMPs brought back to the host,
+- [x] The report presents reference and obtained as 24-bit BMPs brought back to the host,
       plus the metrics — area painted on either side, divergent pixels, edge pixels,
-      worst deviation and its position. **The difference image is not produced by the
-      harness**; it was computed on the host during diagnosis.
+      worst deviation and its position — **and the difference image**, which the harness
+      now draws: a real divergence in red, one forgiven as an edge in dim amber, over the
+      reference darkened so the scene stays readable. Written by `REPLAY.EXE` on the
+      machine that made both images, and by `tools/render/compare.c` on the host.
 - [ ] A visual regression is reported automatically, with a per-scene threshold.
 - [x] The replay works on the target machine with the Glide backend — the same scene
       crosses the complete chain to the rasteriser then to the Voodoo, whose frame buffer
       is read back. Result: 0 divergent pixels out of 307,200, after correcting three
       defects **all of them located in the oracle**.
       See `docs/research/win95-oracle-vs-card.md`.
-- [ ] The capture format is documented.
+- [x] The capture format is documented — `docs/VISUAL-TESTING.md`, field by field, with
+      the reason each field is in the file rather than assumed by the reader.
+
+> **Correction of 3 September 2026**: the metric's edge rule was forgiving far too much.
+> It absolved any pixel standing next to a sharp change in the reference — right for four
+> large triangles, wrong for text, where glyphs one to three pixels wide are edges
+> throughout. It reported 186 divergent pixels for a nameplate with 2416 wrong ones. A
+> pixel is now forgiven only if the card's colour matches one of the reference's
+> neighbours, which is the whole of what a half-pixel fill-rule shift can produce. The
+> count went from 186 to 5071 on that image, and from 0 to 0 between the two oracles —
+> the control that says the extra pixels are real. See
+> `docs/research/win95-oracle-vs-card-capture.md`.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 

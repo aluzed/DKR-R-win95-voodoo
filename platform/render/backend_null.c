@@ -113,6 +113,7 @@ void dkr_render_backend_null(dkr_render_backend *out)
         return;
     }
     memset(&g_null, 0, sizeof(g_null));
+    memset(out, 0, sizeof(*out));   /* see software.c: a stale entry passes a null guard */
     out->name            = "null";
     out->open            = null_open;
     out->close           = null_close;

@@ -1121,6 +1121,8 @@ static void bind_texture(dkr_texture_handle handle)
 void dkr_render_backend_glide(dkr_render_backend *out)
 {
     if (!out) { return; }
+    /* Zeroed first -- this factory already did, and the software and null ones
+       did not. See `software.c` for what that cost on 3 September 2026. */
     memset(out, 0, sizeof(*out));
     out->self            = &b;
     out->name            = "3dfx Glide";
