@@ -59,8 +59,9 @@ DKR_STATIC_ASSERT(sizeof(dkr_render_vertex) == 36 + 3 * 4 * 4,
  */
 /* Every field is counted **by its name**, and that is what makes the check
  * useful. A first version added up types — "four `unsigned char`" — and the
- * self-test caught it out: removing `pad_` left the sum unchanged, the compiler
- * putting back exactly the byte that had just been taken away. A check that
+ * self-test caught it out: removing the explicit padding byte left the sum
+ * unchanged, the compiler putting back exactly the byte that had just been taken
+ * away. (That byte is now `alpha_scale`, a real field of the same width.) A check that
  * counts types also counts the padding it is looking for. */
 #define DKR_FIELD_SIZE(f) sizeof(((dkr_render_state *)0)->f)
 
@@ -74,7 +75,7 @@ DKR_STATIC_ASSERT(
         DKR_FIELD_SIZE(filter)    + DKR_FIELD_SIZE(wrap_s) +
         DKR_FIELD_SIZE(wrap_t)    + DKR_FIELD_SIZE(alpha_test) +
         DKR_FIELD_SIZE(alpha_reference) + DKR_FIELD_SIZE(fog_enabled) +
-        DKR_FIELD_SIZE(pad_)      + DKR_FIELD_SIZE(fog_color) +
+        DKR_FIELD_SIZE(alpha_scale)      + DKR_FIELD_SIZE(fog_color) +
         DKR_FIELD_SIZE(texture)  + DKR_FIELD_SIZE(texture1),
     "dkr_render_state carries padding: memcmp would compare indeterminate "
     "bytes and state tracking would re-emit on every call");

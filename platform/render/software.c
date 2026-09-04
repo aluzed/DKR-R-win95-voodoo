@@ -182,7 +182,11 @@ static void combine(const dkr_render_state *st, unsigned texel,
         const float cg = (float)((st->constant_color >>  8) & 0xFF);
         const float cb = (float)( st->constant_color        & 0xFF);
         *r = tr * cr / 255.0f; *g = tg * cg / 255.0f; *b = tb * cb / 255.0f;
-        *a = ta;
+        /* The alpha follows the RDP's **alpha** mux, which `alpha_scale` carries.
+           This line used to be `*a = ta` without asking, and the Glide backend
+           multiplied by the colour register's alpha without asking either; the
+           two answers differ by a whole nameplate. See `backend.h`. */
+        *a = ta * (float)st->alpha_scale / 255.0f;
         break;
     }
     case DKR_COMBINE_SHADE:
@@ -192,7 +196,43 @@ static void combine(const dkr_render_state *st, unsigned texel,
     }
 }
 
-/* --- Writing one pixel ----------------------------------------------------- */
+/* --- The probe: which state painted this pixel ------------------------------ *
+ *
+ * The first question in every image investigation is "what drew that", and until
+ * now answering it meant reading the display list by hand. The oracle already
+ * knows: it rasterises, so at the moment it writes a pixel it holds the state
+ * that asked for it. Recording that for one chosen pixel costs a comparison per
+ * write and turns a divergence at (x,y) into a render state, which is something
+ * one can reason about.
+ *
+ * **Every write is kept, not just the last.** The first version kept the last one
+ * only, and the first pixel it was pointed at had been painted **seven** times —
+ * DKR draws its text in passes. Which of the seven supplies a colour is the
+ * question, and a record of the last one cannot answer it. The history is capped;
+ * beyond the cap the count still rises, so a truncated record says so. */
+static int              g_probe_armed;
+static int              g_probe_x, g_probe_y;
+static int              g_probe_writes;
+static dkr_probe_write  g_probe_log[DKR_PROBE_WRITES];
+
+void dkr_software_probe(int x, int y)
+{
+    g_probe_armed  = 1;
+    g_probe_x      = x;
+    g_probe_y      = y;
+    g_probe_writes = 0;
+    memset(g_probe_log, 0, sizeof(g_probe_log));
+}
+
+int dkr_software_probe_result(const dkr_probe_write **log, int *kept)
+{
+    if (log)  { *log  = g_probe_log; }
+    if (kept) {
+        *kept = (g_probe_writes < DKR_PROBE_WRITES) ? g_probe_writes
+                                                    : DKR_PROBE_WRITES;
+    }
+    return g_probe_writes;
+}
 
 static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
 {
@@ -243,6 +283,16 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
         ((unsigned)clampf(r, 0.0f, 255.0f) << 16) |
         ((unsigned)clampf(g, 0.0f, 255.0f) <<  8) |
         ( unsigned)clampf(b, 0.0f, 255.0f);
+
+    if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
+        if (g_probe_writes < DKR_PROBE_WRITES) {
+            dkr_probe_write *w = &g_probe_log[g_probe_writes];
+            w->state  = *st;
+            w->before = dst;
+            w->after  = g_sw.color[index];
+        }
+        g_probe_writes++;
+    }
 }
 
 /* --- Rasterisation --------------------------------------------------------- *

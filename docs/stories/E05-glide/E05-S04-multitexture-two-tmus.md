@@ -67,7 +67,11 @@ multipass fallback on one TMU.
       **measured** — `OTHER` is 3 and `ADD` is 4, shifted by one from what had been
       written from memory.
 - [x] The one-TMU fallback produces a **strictly identical** image: 0 pixels different
-      out of 307,200, verified by difference and not by eye.
+      out of 307,200, verified by difference and not by eye. **Re-established on a real
+      frame of the game** on 4 September 2026, which the synthetic scene could not
+      reach: the same capture replayed through the card with two units and with one
+      forced gives **byte-identical files** — 1539 commands, 943 triangles, 510 emitted
+      on both. See `docs/research/win95-oracle-vs-card-capture.md`.
 - [x] The allocator manages both spaces: `dkr_texture_desc` carries the TMU aimed at,
       and `bind_texture` binds on the unit where the texture resides — binding a TMU 1
       address on TMU 0 causes no error, TMU 0 sampling whatever is lying at that

@@ -285,7 +285,7 @@ static void bind_texture(dkr_texture_handle handle);
 static void gl_invalidate(void *self);
 
 static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
-                          unsigned int constant)
+                          unsigned int constant, unsigned char alpha_scale)
 {
     if (!gs.color_combine || !gs.alpha_combine) { return; }
 
@@ -334,7 +334,24 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
            makes that sentence true for **every** consumer -- including the
            catalogue setups, which read the field as documented and got the RDP
            word for it. See the note there for what that cost. */
-        if (gs.constant_color) { gs.constant_color(constant); }
+        /* **The alpha handed to the card is the one the RDP's alpha mux computes,
+           not the alpha of the colour register.**
+         *
+         * `GR_COMBINE_LOCAL_CONSTANT` reads the constant's RGB for the colour and
+         * its alpha for the alpha, so putting the mux's factor in the alpha byte
+         * makes one register serve both correctly. The byte that was there is the
+         * colour register's own alpha, which the RDP's alpha side need never have
+         * named -- and for this game's text it names the other register.
+         *
+         * What that cost: the last of five text passes carried an environment
+         * alpha of zero, `FACTOR_LOCAL` multiplied by it, and the pass that paints
+         * the character's name contributed nothing. 2416 pixels of the nameplate
+         * came out black where the oracle put blue -- the whole of the divergence
+         * E09-S02 found on its first real frame. */
+        if (gs.constant_color) {
+            gs.constant_color(((unsigned int)alpha_scale << 24) |
+                              (constant & 0x00FFFFFFu));
+        }
         gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
@@ -720,10 +737,12 @@ static void gl_set_state(void *self, const dkr_render_state *state)
             if (e->setup.uses_texture) { bind_texture(state->texture); }
             dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
         } else {
-            apply_combine(state->combine, state->texture, state->constant_color);
+            apply_combine(state->combine, state->texture, state->constant_color,
+                          state->alpha_scale);
         }
     } else {
-        apply_combine(state->combine, state->texture, state->constant_color);
+        apply_combine(state->combine, state->texture, state->constant_color,
+                          state->alpha_scale);
     }
     apply_texture_modes(state);
     apply_blend(state->blend);

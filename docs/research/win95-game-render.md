@@ -3298,3 +3298,38 @@ kind this file keeps recording.
   wrong ones.
 
 Full account: `docs/research/win95-oracle-vs-card-capture.md`.
+
+## The nameplate answered: the alpha came from the wrong register — 4 September 2026
+
+The divergence found the day before was one defect, and the oracle's new pixel
+probe named it in a single run. Armed at one pixel of the outline, it recorded
+every draw that wrote there:
+
+```
+probe (318,437): 7 draw(s):
+   3  0xFEDF00 -> 0xCBB22C  TEX*CONST const=0xFF0000FF ascale=51  ...
+   4  0xCBB22C -> 0x796A73  TEX*CONST const=0xFF00FFFF ascale=102 ...
+   5  0x796A73 -> 0x302A2D  TEX*CONST const=0xFF00FF00 ascale=153 ...
+   6  0x302A2D -> 0x090808  TEX*CONST const=0xFFFFFF00 ascale=204 ...
+   7  0x090808 -> 0x0000DE  TEX*CONST const=0x00FFFFFF ascale=255 ...
+```
+
+Five passes of the same glyph at the same coordinates, at 51, 102, 153, 204, 255
+— exact fifths. The game lays the nameplate down five times at a rising opacity,
+and this port had been ignoring the ramp entirely.
+
+The RDP's **alpha** mux is separate from its colour mux, and nothing in
+`dkr_rdp_to_render_state` had ever read it for `TEXTURE_CONSTANT`. So the two
+backends each decided alone: the oracle took the texel's alpha untouched, the
+Glide path multiplied it by the alpha of `constant_color`. The second is wrong
+twice — the RDP need not scale at all, and when it does it may name the *other*
+register. `G_CC_BLENDT_ENV_ALPHA_A_TxP` takes its colour from ENVIRONMENT and its
+alpha from PRIMITIVE; the fifth pass carries an environment alpha of zero, so the
+pass that paints the letters contributed nothing.
+
+`alpha_scale` now carries the factor the alpha mux actually computes, in the byte
+that used to be explicit padding. Off-edge divergence **5071 → 95**, painted
+surface 304825 → 306365 against the oracle's 306367, and the oracle's own image
+byte-identical before and after.
+
+Full account: `docs/research/win95-alpha-scale.md`.

@@ -275,6 +275,37 @@ static int stage_reads(const dkr_cc_stage *s, unsigned char input)
     return s->a == input || s->b == input || s->c == input || s->d == input;
 }
 
+/* The factor the RDP's alpha mux applies to the texel's alpha, 0..255, where 255
+   means none.
+
+   **Narrow on purpose.** Only the shape `(TEXEL0 - 0) * C + 0` is read, C being a
+   constant register, plus the degenerate shapes that yield the texel's alpha
+   unchanged. That is what DKR's text uses and what a single byte can carry; any
+   other shape keeps 255, which is what both backends did before this existed and
+   is therefore no worse than the state we are leaving. Widening it means widening
+   the field, and there is no measurement yet asking for that. */
+static unsigned char alpha_scale_of(const dkr_rdp_state *rdp)
+{
+    /* In the alpha mux the code 7 is the constant zero, in every position. */
+    enum { A_ZERO = 7u };
+    const dkr_cc_stage *s = (rdp->cycle == DKR_CYCLE_2) ? &rdp->combiner.alpha[1]
+                                                        : &rdp->combiner.alpha[0];
+
+    if (s->a == (unsigned char)DKR_CC_TEXEL0 && s->b == A_ZERO &&
+        s->d == A_ZERO) {
+        if (s->c == (unsigned char)DKR_CC_PRIMITIVE) {
+            return (unsigned char)(rdp->prim_color & 0xFFu);
+        }
+        if (s->c == (unsigned char)DKR_CC_ENVIRONMENT) {
+            return (unsigned char)(rdp->env_color & 0xFFu);
+        }
+        if (s->c == A_ZERO) {
+            return 0u;   /* the mux says nothing comes through */
+        }
+    }
+    return 255u;
+}
+
 void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
                              int *exact)
 {
@@ -344,6 +375,27 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
         } else if (uses_env) {
             out->constant_color = dkr_rdp_pack_argb(rdp->env_color);
         }
+        /* --- And what the **alpha** mux does with it ----------------------- *
+         *
+         * The alpha mux is separate from the colour one on the RDP, and until
+         * 4 September 2026 nothing here consulted it for this mode. The two
+         * backends each decided alone and decided differently: the oracle took
+         * the texel's alpha untouched, the Glide path multiplied it by the alpha
+         * of whichever register the *colour* side had named.
+         *
+         * The second is wrong twice over. The RDP need not scale the alpha at
+         * all, and when it does it may name the **other** register: the
+         * configuration this game's text uses,
+         * `G_CC_BLENDT_ENV_ALPHA_A_TxP`, takes its colour from ENVIRONMENT and
+         * its alpha from PRIMITIVE. Multiplying by the environment's alpha was
+         * therefore not an approximation of anything — and the last of the five
+         * text passes carries an environment alpha of zero, so the pass that
+         * paints the letters was thrown away. 2416 pixels of a nameplate.
+         *
+         * So the factor is read from the alpha mux and carried as a value rather
+         * than as a flag, which is what lets the Glide backend hand the card the
+         * right number instead of the wrong register's. */
+        out->alpha_scale = alpha_scale_of(rdp);
         if (uses_prim && uses_env) {
             /* Two constants, one register on our side. Announced rather than
                silently halved. */

@@ -55,6 +55,35 @@ const unsigned *dkr_software_framebuffer(int *width, int *height);
    Returns 0 on failure. */
 int dkr_software_write_bmp(const char *path);
 
+/* --- The probe: which state painted this pixel ------------------------------ *
+ *
+ * `dkr_software_probe(x, y)` arms it; the next frame records, for that pixel,
+ * **every** draw that writes it, in order — the state, what was underneath and
+ * what was left.
+ *
+ * It exists because the first question about a divergent pixel is always "what
+ * drew that", and answering it by reading the display list by hand is a morning.
+ * The rasteriser already holds the answer at the moment it writes.
+ *
+ * The history and not merely the last writer, because the first pixel this was
+ * pointed at had been painted **seven times**: DKR draws its text in passes, and
+ * which pass supplies a colour is exactly the question a record of the last one
+ * cannot answer.
+ *
+ * `dkr_software_probe_result` returns the **total** number of writes and sets
+ * `kept` to how many the log holds. The two differ when a pixel is painted more
+ * than `DKR_PROBE_WRITES` times, and the difference is what says so. */
+#define DKR_PROBE_WRITES 16
+
+typedef struct {
+    dkr_render_state state;
+    unsigned         before;   /* what was in the buffer */
+    unsigned         after;    /* what this draw left */
+} dkr_probe_write;
+
+void dkr_software_probe(int x, int y);
+int  dkr_software_probe_result(const dkr_probe_write **log, int *kept);
+
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */
 const float *dkr_software_depthbuffer(int *width, int *height);

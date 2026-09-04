@@ -237,7 +237,35 @@ typedef struct {
        One of the few things Glide does better than its contemporaries, and DKR
        uses it constantly. */
     unsigned char      fog_enabled;
-    unsigned char      pad_;              /* explicit: the block is memcmp-able */
+    /* **The factor the RDP's alpha mux applies to the texel's alpha**, 0..255,
+     * with 255 meaning none. This byte used to be `pad_`, explicit padding
+     * keeping the block memcmp-able; it is a field of the same width now, so the
+     * layout is unchanged.
+     *
+     * It exists because the two backends had each decided the question alone and
+     * decided differently — the oracle took the texel's alpha untouched, the
+     * Glide path multiplied it by the alpha of `constant_color` — and neither had
+     * read the RDP's alpha stages, which are a separate mux from the colour ones.
+     *
+     * The disagreement is not a rounding one. DKR draws a character's name in
+     * five passes at the same coordinates, differing only by a constant colour,
+     * and the register the *colour* side reads is not always the register the
+     * *alpha* side reads. Measured 4 September 2026: the last pass carried a
+     * constant whose alpha byte was zero, the Glide path multiplied by it, and
+     * 2416 pixels of the nameplate went black.
+     *
+     * Derived in `dkr_rdp_to_render_state` for the shapes the alpha mux takes in
+     * this game; anything else keeps 255, which is the texel's alpha alone.
+     *
+     * **Read by the fallback path only, and deliberately.** The E05-S03 catalogue
+     * programs its alpha combiner from the table's own `ac_*`, generated from the
+     * real alpha stages, so it does not need this. It does share the register
+     * question — a catalogued entry whose alpha names the register the colour side
+     * did not still receives the colour register's alpha — but no measurement has
+     * reached that case yet, and a blind substitution there would be wrong for
+     * every entry whose alpha shape this byte cannot carry. Left as it is, and
+     * written down. */
+    unsigned char      alpha_scale;
     unsigned int       fog_color;         /* 0x00RRGGBB */
 
     dkr_texture_handle texture;

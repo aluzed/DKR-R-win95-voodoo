@@ -147,11 +147,63 @@ static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
     take_counts(&g_ctx, out);
 }
 
+/* What the oracle recorded at the probed pixel. Printed in the terms the state
+   is written in, not as a hex dump: the point of the probe is to turn a divergent
+   pixel into something one can reason about. */
+static const char *combine_name(int m)
+{
+    switch (m) {
+    case 0: return "SHADE";
+    case 1: return "TEXTURE";
+    case 2: return "TEX*SHADE";
+    case 3: return "TEX*SHADE+A";
+    case 4: return "TEX*CONST";
+    default: return "?";
+    }
+}
+
+static const char *blend_name(int m)
+{
+    switch (m) {
+    case 0: return "opaque";
+    case 1: return "alpha";
+    case 2: return "additive";
+    default: return "?";
+    }
+}
+
+static void say_probe(int x, int y)
+{
+    const dkr_probe_write *log = 0;
+    int kept = 0, i;
+    const int writes = dkr_software_probe_result(&log, &kept);
+
+    if (writes == 0) {
+        say("  probe (%d,%d): nothing drew this pixel\n", x, y);
+        return;
+    }
+    say("  probe (%d,%d): %d draw(s)%s\n", x, y, writes,
+        (kept < writes) ? ", the first few:" : ":");
+    for (i = 0; i < kept; i++) {
+        const dkr_render_state *st = &log[i].state;
+        say("    %2d  0x%06X -> 0x%06X  %-11s const=0x%08X ascale=%-3u recipe=%d"
+            "  blend=%-8s tex=%lu/%lu  alpha=%u/%u fog=%u\n",
+            i + 1,
+            log[i].before & 0x00FFFFFFu, log[i].after & 0x00FFFFFFu,
+            combine_name((int)st->combine), st->constant_color,
+            (unsigned)st->alpha_scale,
+            (int)st->recipe, blend_name((int)st->blend),
+            (unsigned long)st->texture, (unsigned long)st->texture1,
+            (unsigned)st->alpha_test, (unsigned)st->alpha_reference,
+            (unsigned)st->fog_enabled);
+    }
+}
+
 static void usage(const char *me)
 {
     fprintf(stderr,
             "usage: %s [--card|--both] [--single-tmu] [--log file]\n"
-            "          capture.bin [out.bmp]\n",
+            "          [--probe X,Y] capture.bin [out.bmp]\n",
             me);
 }
 
@@ -161,6 +213,7 @@ int main(int argc, char **argv)
     unsigned char *rdram = 0;
     const char *cap_path = 0, *out_path = 0, *log_path = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
+    int probe_on = 0, probe_x = -1, probe_y = -1;
     int oracle_tmus = 1;
     int i, status = 0;
 
@@ -170,6 +223,19 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--single-tmu") == 0) { single_tmu = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
+        }
+        else if (strcmp(argv[i], "--probe") == 0 && i + 1 < argc) {
+            /* `--probe X,Y`. The comma keeps it one argument, so that a batch
+               file on the target does not have to quote anything. */
+            const char *v = argv[++i];
+            char *end = 0;
+            probe_x = (int)strtol(v, &end, 10);
+            probe_y = (end && *end == ',') ? (int)strtol(end + 1, 0, 10) : -1;
+            if (probe_x < 0 || probe_y < 0) {
+                fprintf(stderr, "replay: --probe wants X,Y, got \"%s\"\n", v);
+                return 2;
+            }
+            probe_on = 1;
         }
         else if (argv[i][0] == '-' && argv[i][1] != '\0') {
             fprintf(stderr, "replay: unknown option %s\n", argv[i]);
@@ -226,6 +292,10 @@ int main(int argc, char **argv)
         if (!want_card || want_both) {
             say("oracle: opening the rasteriser\n");
             dkr_render_backend_software(&soft);
+            /* Armed before the frame, and only on the oracle: it is the one that
+               rasterises in software and therefore the one that can say which
+               state wrote a pixel. The card cannot be asked. */
+            if (probe_on) { dkr_software_probe(probe_x, probe_y); }
             if (!soft.open(soft.self, (int)h.screen_w, (int)h.screen_h)) {
                 fprintf(stderr, "replay: the rasteriser refused %ux%u\n",
                         h.screen_w, h.screen_h);
@@ -234,6 +304,7 @@ int main(int argc, char **argv)
             }
             run_capture(&soft, &h, rdram, oracle_tmus, &sc);
             say_counts("oracle", &sc);
+            if (probe_on) { say_probe(probe_x, probe_y); }
 
             {
                 const unsigned *fb = dkr_software_framebuffer(&sw, &sh);

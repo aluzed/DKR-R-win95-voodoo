@@ -74,6 +74,27 @@ scene. `win95-game-render.md` says so explicitly rather than claiming the second
 texture unit had fixed it. That question is now answerable by construction, and
 the same object has produced a different, precisely located defect instead.
 
+## Fixed the same day
+
+The cause was found with the oracle's new pixel probe and is recorded in
+`docs/research/win95-alpha-scale.md`: the RDP's **alpha** mux is separate from its
+colour mux, nothing had read it for this mode, and the Glide backend was
+multiplying the output alpha by the alpha of whichever register the *colour* side
+had named. For this game's text that is the wrong register, and the last of the
+five passes carries a zero in it.
+
+After the fix, against the target's own oracle:
+
+| | before | after |
+|---|---|---|
+| frankly different, off-edge | 5071 | **95** |
+| per million | 16507 | **309** |
+| painted surface | 304825 | **306365** (oracle: 306367) |
+
+The oracle's image is byte-identical before and after, and the two oracles still
+differ by 0 pixels. Of the 95 that remain, 80 are one step past the threshold in
+the sky's gradient and 12 are isolated pixels on the character model.
+
 ## Two defects found on the way, both in the instruments
 
 ### A backend entry that was never assigned, and a null guard that could not help
