@@ -90,3 +90,51 @@ reads at addresses the display list itself computes, so there is no knowing in
 advance which bytes matter. Four scenes are thirty-two megabytes; a lap of each
 level would be hundreds. What is versioned is the script, and the counts, which
 are text.
+
+## The copyright screen, measured — 4 September 2026
+
+Two instruments were added to answer "why is the Rare logo a blank plate", and
+both belong to the oracle for the same reason the probe does: it rasterises, so
+it knows.
+
+**How many pixels each texture actually painted.** "Uploaded" and "reached the
+screen" are different facts, and only the second says whether an object is in the
+image.
+
+    textures: 15 written, 11 of them painted nothing
+      tex001  32x32   19091 px    a yellow gradient — the plate
+      tex003  64x32       0 px    RAREWARE
+      tex004  32x32       0 px    TM
+      tex006  64x32  288109 px    one sky tile, over the whole background
+      tex014  256x32   1236 px    the font atlas
+      tex015  256x32   4160 px    the font atlas
+      (nine more sky tiles, 0 px each)
+
+So the logo's texture is decoded, uploaded, correct — `RAREWARE` is legible in
+the dump — and **nothing samples it**. The plate is a 32×32 yellow gradient drawn
+flat: measured over the plate's area, four colours in 9,600 pixels, so the quad
+samples essentially one texel of a texture that has a gradient.
+
+**Where every triangle went.** The replay's count line accounted for `tri` and
+`emitted` and nothing between them, which left 194 of 293 unexplained on this
+screen — and an unexplained gap of two thirds is indistinguishable from geometry
+silently going missing. Culled and clipped are now printed, and `lost` is what
+remains:
+
+    CAP0050  tri=419  emitted=234 culled=162 clipped=29 rejects=0 lost=0
+    CAP0150  tri=293  emitted=99  culled=171 clipped=28 rejects=0 lost=0
+    CAP0250  tri=1293 emitted=904 culled=306 clipped=108 rejects=0 lost=0
+    CAP0400  tri=943  emitted=510 culled=332 clipped=131 rejects=0 lost=0
+
+**`lost=0` everywhere.** No geometry vanishes between the decoder and the
+backend, on any scene in the corpus. That is a negative result worth having: it
+was the first hypothesis and it is now excluded rather than still open.
+
+**And it is not culling.** `--no-cull` draws both faces of everything. On the
+copyright screen that raises emitted from 99 to 270 — and the same four textures
+paint, `RAREWARE` still at zero. So the logo's quads are not being culled: no
+triangle is drawn while that texture is bound.
+
+That is where this stops. The question is now narrow and named — a texture is
+bound and nothing draws with it — and it belongs to E04, with a frozen input to
+put it to.

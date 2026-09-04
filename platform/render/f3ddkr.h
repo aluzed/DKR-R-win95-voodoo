@@ -480,6 +480,17 @@ typedef struct {
        diagnostic that costs speed, switched on when the diagnostic is the
        point. */
     unsigned char        no_texture_cache;
+    /* Draws both faces of every triangle, whatever the winding says. Zero by
+       default.
+     *
+       A diagnostic and not a mode: back-face culling is where geometry
+       legitimately disappears, and it is therefore where geometry that
+       disappears *wrongly* hides. The copyright screen of 4 September 2026 culls
+       171 of its 293 triangles and draws a blank plate where the `RAREWARE`
+       logo belongs, its texture painting exactly zero pixels. Whether the logo
+       is being culled or was never asked for is one run apart with this, and
+       unanswerable without it. */
+    unsigned char        no_cull;
     /* The second layer's binding and its own coordinate scale, mirroring
        `bound_texture` and `tex_scale_s`. Separate rather than an array of two
        because every other consumer in this file reads the single-texture pair by

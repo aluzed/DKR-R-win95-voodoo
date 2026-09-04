@@ -92,6 +92,8 @@ typedef struct {
     unsigned long triangles;
     unsigned long emitted;
     unsigned long rejects;
+    unsigned long culled;
+    unsigned long clipped;
     unsigned long textures;
 } replay_counts;
 
@@ -103,13 +105,26 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->rejects   = ctx->state.rejects[0] + ctx->state.rejects[1] +
                    ctx->state.rejects[2] + ctx->state.rejects[3] +
                    ctx->state.rejects[4];
+    c->culled    = ctx->state.culled;
+    c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
 }
 
 static void say_counts(const char *who, const replay_counts *c)
 {
-    say("  %-8s cmd=%lu tri=%lu emitted=%lu rejects=%lu textures=%lu\n",
-           who, c->commands, c->triangles, c->emitted, c->rejects, c->textures);
+    /* The triangles are **accounted for**, not merely counted. `tri` against
+       `emitted` left 194 of 293 unexplained on the copyright screen, and an
+       unexplained gap of two thirds is indistinguishable from geometry silently
+       going missing. Culled and clipped are the two legitimate fates; `lost` is
+       what remains, and it should be zero. */
+    const unsigned long accounted = c->emitted + c->culled + c->clipped +
+                                    c->rejects;
+    const unsigned long lost = (c->triangles > accounted)
+                                 ? c->triangles - accounted : 0UL;
+    say("  %-8s cmd=%lu tri=%lu emitted=%lu culled=%lu clipped=%lu rejects=%lu"
+        " lost=%lu textures=%lu\n",
+        who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
+        c->rejects, lost, c->textures);
 }
 
 /* Runs the capture into `bk`. Every property of the replay is taken from the
@@ -125,13 +140,15 @@ static void say_counts(const char *who, const replay_counts *c)
 static dkr_f3d_context g_ctx;
 
 static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
-                        unsigned char *rdram, int tmus, replay_counts *out)
+                        unsigned char *rdram, int tmus, int no_cull,
+                        replay_counts *out)
 {
     dkr_f3d_init(&g_ctx, rdram, h->rdram_bytes, bk);
     g_ctx.rdram_native  = (unsigned char)(h->rdram_native ? 1 : 0);
     g_ctx.screen_width  = (short)h->screen_w;
     g_ctx.screen_height = (short)h->screen_h;
     g_ctx.tmu_count     = (unsigned char)tmus;
+    g_ctx.no_cull       = (unsigned char)(no_cull ? 1 : 0);
 
     /* Each step announces itself before it runs, and the line is flushed. This
        program opens a card that has faulted before and decodes eight mebibytes
@@ -199,11 +216,39 @@ static void say_probe(int x, int y)
     }
 }
 
+/* Writes every texture the oracle holds, as a BMP, named by its slot and its key.
+   The question after "what drew this pixel" is "with what", and a quad that comes
+   out one flat colour has either the wrong texture or degenerate coordinates --
+   which only looking at the texture separates. */
+static void dump_textures(const char *dir)
+{
+    int slot, written = 0, unpainted = 0;
+    for (slot = 0; slot < 256; slot++) {
+        int w = 0, h = 0;
+        unsigned long long key = 0;
+        const unsigned *texels = dkr_software_texture(slot, &w, &h, &key);
+        char path[512];
+        const unsigned long painted = dkr_software_texture_pixels(slot);
+        if (!texels || w <= 0 || h <= 0) { continue; }
+        /* The painted count is in the name, so that a directory listing already
+           answers "which of these reached the screen". A texture uploaded and
+           never sampled is an object missing from the image, and no upload
+           counter can say that. */
+        sprintf(path, "%s/tex%03d_%dx%d_%08lX_%lupx.bmp", dir, slot + 1, w, h,
+                (unsigned long)(key & 0xFFFFFFFFu), painted);
+        if (dkr_image_write_bmp(path, texels, w, h)) { written++; }
+        if (painted == 0u) { unpainted++; }
+    }
+    say("  textures: %d written to %s, %d of them painted nothing\n",
+        written, dir, unpainted);
+}
+
 static void usage(const char *me)
 {
     fprintf(stderr,
             "usage: %s [--card|--both] [--single-tmu] [--log file]\n"
-            "          [--probe X,Y] capture.bin [out.bmp]\n",
+            "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
+            "          capture.bin [out.bmp]\n",
             me);
 }
 
@@ -212,8 +257,10 @@ int main(int argc, char **argv)
     dkr_capture_header h;
     unsigned char *rdram = 0;
     const char *cap_path = 0, *out_path = 0, *log_path = 0;
+    const char *dump_dir = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
+    int no_cull = 0;
     int oracle_tmus = 1;
     int i, status = 0;
 
@@ -221,8 +268,12 @@ int main(int argc, char **argv)
         if      (strcmp(argv[i], "--card") == 0)       { want_card = 1; }
         else if (strcmp(argv[i], "--both") == 0)       { want_both = 1; }
         else if (strcmp(argv[i], "--single-tmu") == 0) { single_tmu = 1; }
+        else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
+        }
+        else if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
+            dump_dir = argv[++i];
         }
         else if (strcmp(argv[i], "--probe") == 0 && i + 1 < argc) {
             /* `--probe X,Y`. The comma keeps it one argument, so that a batch
@@ -302,9 +353,11 @@ int main(int argc, char **argv)
                 free(rdram);
                 return 1;
             }
-            run_capture(&soft, &h, rdram, oracle_tmus, &sc);
+            run_capture(&soft, &h, rdram, oracle_tmus, no_cull, &sc);
             say_counts("oracle", &sc);
             if (probe_on) { say_probe(probe_x, probe_y); }
+            /* Before the backend closes: it frees the textures on close. */
+            if (dump_dir) { dump_textures(dump_dir); }
 
             {
                 const unsigned *fb = dkr_software_framebuffer(&sw, &sh);
@@ -373,7 +426,7 @@ int main(int argc, char **argv)
             say("  card opened with %d texture unit(s)%s\n", card_tmus,
                    single_tmu ? " (forced to one)" : "");
 
-            run_capture(&card, &h, rdram, card_tmus, &cc);
+            run_capture(&card, &h, rdram, card_tmus, no_cull, &cc);
             say_counts("card", &cc);
 
             if (dkr_glide_read_framebuffer(card_pixels,

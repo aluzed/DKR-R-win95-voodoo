@@ -210,6 +210,21 @@ static void combine(const dkr_render_state *st, unsigned texel,
  * DKR draws its text in passes. Which of the seven supplies a colour is the
  * question, and a record of the last one cannot answer it. The history is capped;
  * beyond the cap the count still rises, so a truncated record says so. */
+/* How many pixels each texture actually painted.
+ *
+ * "Uploaded" and "reached the screen" are different facts, and only the second
+ * says whether an object is in the image. The copyright screen of 4 September
+ * 2026 uploaded a `RAREWARE` texture and drew a flat yellow plate where the logo
+ * belongs; a count per texture is what turns "the logo looks wrong" into "the
+ * logo's texture painted nothing". */
+static unsigned long g_tex_pixels[MAX_TEXTURES];
+
+unsigned long dkr_software_texture_pixels(int slot)
+{
+    if (slot < 0 || slot >= MAX_TEXTURES) { return 0u; }
+    return g_tex_pixels[slot];
+}
+
 static int              g_probe_armed;
 static int              g_probe_x, g_probe_y;
 static int              g_probe_writes;
@@ -283,6 +298,10 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
         ((unsigned)clampf(r, 0.0f, 255.0f) << 16) |
         ((unsigned)clampf(g, 0.0f, 255.0f) <<  8) |
         ( unsigned)clampf(b, 0.0f, 255.0f);
+
+    if (st->texture != 0 && st->texture <= MAX_TEXTURES) {
+        g_tex_pixels[st->texture - 1]++;
+    }
 
     if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
         if (g_probe_writes < DKR_PROBE_WRITES) {
@@ -647,6 +666,7 @@ void dkr_render_backend_software(dkr_render_backend *out)
      */
     memset(out, 0, sizeof(*out));
     memset(&g_sw, 0, sizeof(g_sw));
+    memset(g_tex_pixels, 0, sizeof(g_tex_pixels));
     out->name            = "software";
     out->open            = sw_open;
     out->close           = sw_close;
@@ -668,6 +688,19 @@ const unsigned *dkr_software_framebuffer(int *width, int *height)
     if (width)  { *width  = g_sw.width; }
     if (height) { *height = g_sw.height; }
     return g_sw.color;
+}
+
+const unsigned *dkr_software_texture(int slot, int *width, int *height,
+                                    unsigned long long *key)
+{
+    const sw_texture *t;
+    if (slot < 0 || slot >= MAX_TEXTURES) { return 0; }
+    t = &g_sw.textures[slot];
+    if (!t->used || !t->texels) { return 0; }
+    if (width)  { *width  = t->width; }
+    if (height) { *height = t->height; }
+    if (key)    { *key    = t->key; }
+    return t->texels;
 }
 
 const float *dkr_software_depthbuffer(int *width, int *height)

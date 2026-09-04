@@ -84,6 +84,27 @@ typedef struct {
 void dkr_software_probe(int x, int y);
 int  dkr_software_probe_result(const dkr_probe_write **log, int *kept);
 
+/* --- The textures, as the oracle holds them --------------------------------- *
+ *
+ * Every format is converted to 32-bit ARGB on upload, so one accessor shows what
+ * any of them became. It answers the question that follows "what drew this
+ * pixel": *with what*. A quad that samples one colour over its whole surface has
+ * either the wrong texture or degenerate coordinates, and only looking at the
+ * texture separates the two.
+ *
+ * `slot` is the handle minus one, as `dkr_render_state.texture` carries it.
+ * Returns NULL for a slot that holds nothing, which is the answer when a draw
+ * names a texture that was never uploaded. */
+const unsigned *dkr_software_texture(int slot, int *width, int *height,
+                                     unsigned long long *key);
+
+/* How many pixels this texture actually painted over the frame.
+ *
+ * "Uploaded" and "reached the screen" are different facts, and only the second
+ * says whether an object is in the image. A texture uploaded and never sampled
+ * is an object that is missing, which no upload counter can tell you. */
+unsigned long dkr_software_texture_pixels(int slot);
+
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */
 const float *dkr_software_depthbuffer(int *width, int *height);

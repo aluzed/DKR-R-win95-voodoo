@@ -587,7 +587,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             dkr_clip_project(&c->transform, &clipped[k * 3 + 0], &v[0]);
             dkr_clip_project(&c->transform, &clipped[k * 3 + 1], &v[1]);
             dkr_clip_project(&c->transform, &clipped[k * 3 + 2], &v[2]);
-            if (!dkr_cull_accept(v, cull)) {
+            if (!c->no_cull && !dkr_cull_accept(v, cull)) {
                 c->state.culled++;
                 continue;
             }

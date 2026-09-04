@@ -84,7 +84,11 @@ for cap in "${captures[@]}"; do
   fi
 
   # --- 1. The counts ---------------------------------------------------------
-  counts="$(grep -o 'cmd=[0-9]* tri=[0-9]* emitted=[0-9]* rejects=[0-9]* textures=[0-9]*' "$log" | head -1)"
+  # Everything from `cmd=` to the end of the line, whatever fields the replay
+  # prints. Naming them here once meant that adding `culled` and `clipped` to the
+  # accounting made every scene fail with "printed no counts" — which the check
+  # did catch, and which is not what it is for.
+  counts="$(grep -o 'cmd=.*' "$log" | head -1)"
   ref_counts="$corpus/$name.counts"
   if [[ -z "$counts" ]]; then
     fail "the replay printed no counts"
