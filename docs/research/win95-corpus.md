@@ -9,16 +9,17 @@ already shown.
 | capture | scene | commands | triangles | emitted | textures |
 |---|---|---|---|---|---|
 | `CAP0050.BIN` | the Nintendo 64 logo, intro | 640 | 419 | 234 | 35 |
-| `CAP0150.BIN` | the copyright screen | 459 | 293 | 99 | 18 |
+| `CAP0150.BIN` | the copyright screen, logo face-on | 459 | 293 | 99 | 18 |
+| `CAP0160.BIN` | the same, ten lists later, logo turned | 459 | 293 | 181 | 18 |
 | `CAP0250.BIN` | the hub, Pipsy on the beach | 3592 | 1293 | 904 | 190 |
 | `CAP0400.BIN` | Ancient Lake, Bumper racing | 1539 | 943 | 510 | 95 |
 
-Four scenes that share almost nothing: one large model on a sky, a mostly
+Five captures of four scenes that share almost nothing: one large model on a sky, a mostly
 two-dimensional screen with text, an outdoor hub with 190 textures, and a race
 with five-pass text. That is coverage of a kind — of the *decoder's* paths, not of
 the game — and it is what the harness needed to stop being a one-scene instrument.
 
-**It is four, and the ticket asks for a lap of each level.** Recorded as
+**It is four scenes, and the ticket asks for a lap of each level.** Recorded as
 incomplete rather than presented as a corpus.
 
 ## How they were obtained, and what that cost
@@ -49,10 +50,9 @@ Two obstacles were met on the way and both are recorded elsewhere:
 
 ## What the corpus has already shown
 
-**The copyright screen renders a blank shape**, or so it looked. The Rare logo
-comes out as a flat yellow rounded rectangle with the copyright text legible
-below it, in the **oracle**, so it is not the card's. What it is remains open —
-and the first two explanations are already excluded, which is recorded below.
+**The copyright screen looked broken and is not.** See below: it took two
+captures ten display lists apart to establish that, and the first one on its own
+said the opposite.
 
 **And the hub draws large grey rectangles over the scene.** Several flat
 light-grey quads and one black one sit across Pipsy and the water in
@@ -78,7 +78,7 @@ input that can be pointed at whenever E04 or E05 next has a hypothesis.
 Counts first, then images, with a per-scene threshold. See
 `docs/VISUAL-TESTING.md`.
 
-The four scenes replay to their references at **0 divergent pixels of 307,200**,
+The five captures replay to their references at **0 divergent pixels of 307,200**,
 which is what one expects of a deterministic replay and which is checked rather
 than assumed — it is the property every other measurement in this harness rests
 on.
@@ -87,7 +87,7 @@ on.
 
 Outside the repository. A capture is eight mebibytes and has to be: the decoder
 reads at addresses the display list itself computes, so there is no knowing in
-advance which bytes matter. Four scenes are thirty-two megabytes; a lap of each
+advance which bytes matter. Five captures are forty megabytes; a lap of each
 level would be hundreds. What is versioned is the script, and the counts, which
 are text.
 
@@ -151,14 +151,31 @@ outside the viewport looks like. `RAREWARE` is not drawn at all — and texture
 rectangles go through `draw_triangles` in this decoder, so that path is counted
 too.
 
-## What this may not be
+## It was not a defect, and a second capture is what said so
 
-**It may not be a defect.** The Rare logo is an animation: the plate arrives
-first and the letters land on it. A frame in which the texture is loaded and not
-yet drawn is exactly what the measurements show, and nothing measured so far
-distinguishes that from a logo that never arrives.
+The Rare logo **spins**. `CAP0160.BIN`, ten display lists later on the same
+screen, shows it turned: a gold frame around a navy face carrying the letters.
+The flat yellow rectangle of `CAP0150.BIN` is the back of that plate, seen
+face-on, and it is correct.
 
-Settling it needs a second frame of the same screen — the corpus's one capture of
-it cannot answer a question about time. That is the corpus's own limit showing:
-**a scene sampled once is a still, and a still cannot tell an animation from a
-defect.** Recorded here so that the observation above is not read as a diagnosis.
+The numbers follow the animation exactly:
+
+| | list 150 | list 160 |
+|---|---|---|
+| emitted | 99 | 181 |
+| `tex001` the gold plate | 82 tri, 19091 px | 113 tri, 7119 px |
+| `tex002` the navy face | 0 tri, 0 px | 41 tri, 6355 px |
+| `tex003` RAREWARE | **0 tri**, 0 px | **3 tri**, 0 px |
+
+At 150 the letters are not drawn at all; at 160 they are drawn and face away.
+Both are what a spinning logo does.
+
+**The lesson is about the corpus and not about the renderer.** A scene sampled
+once is a still, and a still cannot tell an animation from a defect. The first
+capture supported a confident wrong reading — "a texture that never arrives" —
+and the instruments built to chase it were what showed there was nothing to
+chase. Two frames of a screen are worth more than one of each of two screens,
+where anything moves.
+
+`CAP0160.BIN` stays in the corpus for that reason: it is the control for
+`CAP0150.BIN`.
