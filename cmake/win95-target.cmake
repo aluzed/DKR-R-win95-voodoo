@@ -571,7 +571,13 @@ dkr_win95_verify(DKRWin95RdpState)
 # lies in the trust placed in it as a reference, and an optimised rasteriser is a
 # rasteriser whose own correctness must in turn be checked.
 add_library(win95software STATIC "${DKRPORT_ROOT}/platform/render/software.c")
-target_link_libraries(win95software PUBLIC win95renderbackend)
+# `win95combiner` since 4 September 2026: the oracle evaluates the RDP's real
+# combiner, `(a - b) * c + d` over both cycles, instead of the four-mode shorthand
+# the *card* is obliged to use. An oracle that shares the backend's approximation
+# cannot detect the backend's approximation -- measured on the hub, where the two
+# agreed to 165 pixels of 307,200 while both drew a character as a black
+# silhouette.
+target_link_libraries(win95software PUBLIC win95renderbackend win95combiner)
 
 # --- The comparison metric, shared by everything that judges an image ---------
 #

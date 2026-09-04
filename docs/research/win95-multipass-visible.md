@@ -67,13 +67,17 @@ The gap is not a defect to fix here. It is the shape of a piece of work E05-S03
 has already named, now with an image, a measured scene, and a deterministic input
 to develop it against.
 
-## What would close it
+## The smaller half, done the same day
 
-An oracle that computes both cycles would put a *correct* reference on one side of
-the comparison, and the card's grey quads would then show up as a divergence
-instead of an agreement. That is the smaller half of the job and it is the half
-that makes the other half checkable — a second pass on the card can be measured
-against something only once the oracle is right.
+An oracle that computes both cycles puts a *correct* reference on one side of the
+comparison, so that what the card cannot express shows up as a divergence instead
+of an agreement. That was the smaller half of the job and the half that makes the
+other half checkable, and it is done: see `win95-oracle-combiner.md`.
+
+The result on this very scene: **165 divergent pixels became 11,396**, and the
+difference map is a character the card paints black. The grey quads are still
+there on both sides — a glow whose second cycle would fade it — but they are no
+longer the biggest thing wrong, and the biggest thing wrong is now measurable.
 
 ## Files
 

@@ -1,6 +1,8 @@
 /* E04-S08 — implementation. The why lives in `software.h`. */
 #include "software.h"
 
+#include "combiner.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -151,6 +153,73 @@ static unsigned sample_texture(const sw_texture *t, float s, float tc,
  * this backend its value as an oracle: it shows what the image should be, and
  * E05-S03 will measure Glide's gap against that reference.
  */
+/* --- The combiner, evaluated rather than approximated ----------------------- *
+ *
+ * **This is the oracle's whole job and it was not doing it.** Below this block
+ * is a switch over four modes, which is the shorthand `dkr_render_state.combine`
+ * carries and which the Glide backend is *obliged* to use because the card has
+ * one combiner stage. The oracle has no such obligation: it exists to say what
+ * the image should be, and the RDP's answer is `(a - b) * c + d`, twice, over
+ * inputs the four modes cannot name.
+ *
+ * Measured on 4 September 2026, before this existed: on the hub, the oracle and
+ * the card agreed to 165 pixels of 307,200 and **both drew large flat grey quads
+ * over the scene**, because `G_CC_MODULATEIA_PRIM` / `G_CC_BLEND_ENV_ALPHA2` is
+ * two cycles and both computed only the first. An oracle that shares the
+ * backend's approximation cannot detect the backend's approximation; the
+ * agreement measured the shorthand and nothing else.
+ *
+ * `recipe` names the catalogued configuration and the catalogue holds the real
+ * mux fields, so the evaluation costs a lookup and `dkr_combiner_eval_all`.
+ * Recipe zero -- an uncatalogued configuration, or a forced mode -- keeps the
+ * four-mode path, which is then the best description available of what was
+ * asked for.
+ *
+ * It is slower per pixel, and that is the correct trade for this file: "allowed
+ * to be slow, not allowed to be complicated". One faithful path is simpler than
+ * four hand-written cases, not more complex. */
+static int combine_from_catalogue(const dkr_render_state *st, unsigned texel,
+                                  float sr, float sg, float sb, float sa,
+                                  float *r, float *g, float *b, float *a)
+{
+    const dkr_cc_entry *e;
+    dkr_combiner cc;
+    dkr_combiner_inputs in;
+    float out[4];
+
+    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
+    e = dkr_cc_table_at(st->recipe - 1);
+    if (!e) { return 0; }
+
+    cc.rgb[0]   = e->rgb[0];
+    cc.rgb[1]   = e->rgb[1];
+    cc.alpha[0] = e->alpha[0];
+    cc.alpha[1] = e->alpha[1];
+
+    memset(&in, 0, sizeof(in));
+    in.texel0[0] = (float)((texel >> 16) & 0xFF);
+    in.texel0[1] = (float)((texel >>  8) & 0xFF);
+    in.texel0[2] = (float)( texel        & 0xFF);
+    in.texel0[3] = (float)((texel >> 24) & 0xFF);
+    /* No second layer here: the oracle samples one texture, and a configuration
+       that reads TEXEL1 is catalogued `DKR_CC_TWO_TEXELS` precisely because one
+       stage cannot express it. Leaving it at zero is visible in the image rather
+       than silently plausible. */
+    in.shade[0] = sr; in.shade[1] = sg; in.shade[2] = sb; in.shade[3] = sa;
+    in.primitive[0] = (float)((st->prim_color >> 16) & 0xFF);
+    in.primitive[1] = (float)((st->prim_color >>  8) & 0xFF);
+    in.primitive[2] = (float)( st->prim_color        & 0xFF);
+    in.primitive[3] = (float)((st->prim_color >> 24) & 0xFF);
+    in.environment[0] = (float)((st->env_color >> 16) & 0xFF);
+    in.environment[1] = (float)((st->env_color >>  8) & 0xFF);
+    in.environment[2] = (float)( st->env_color        & 0xFF);
+    in.environment[3] = (float)((st->env_color >> 24) & 0xFF);
+
+    dkr_combiner_eval_all(&cc, e->cycle, &in, out);
+    *r = out[0]; *g = out[1]; *b = out[2]; *a = out[3];
+    return 1;
+}
+
 static void combine(const dkr_render_state *st, unsigned texel,
                     float sr, float sg, float sb, float sa,
                     float *r, float *g, float *b, float *a)
@@ -159,6 +228,10 @@ static void combine(const dkr_render_state *st, unsigned texel,
     const float tg = (float)((texel >>  8) & 0xFF);
     const float tb = (float)( texel        & 0xFF);
     const float ta = (float)((texel >> 24) & 0xFF);
+
+    if (combine_from_catalogue(st, texel, sr, sg, sb, sa, r, g, b, a)) {
+        return;
+    }
 
     switch (st->combine) {
     case DKR_COMBINE_TEXTURE:

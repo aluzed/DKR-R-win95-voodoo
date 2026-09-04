@@ -375,6 +375,12 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
         } else if (uses_env) {
             out->constant_color = dkr_rdp_pack_argb(rdp->env_color);
         }
+        /* And both of them, unconditionally. The choice above is Glide's
+           limitation -- one constant register -- and not a fact about the RDP,
+           which has two and may read both in the same configuration. A rasteriser
+           that evaluates the real combiner needs both. */
+        out->prim_color = dkr_rdp_pack_argb(rdp->prim_color);
+        out->env_color  = dkr_rdp_pack_argb(rdp->env_color);
         /* --- And what the **alpha** mux does with it ----------------------- *
          *
          * The alpha mux is separate from the colour one on the RDP, and until

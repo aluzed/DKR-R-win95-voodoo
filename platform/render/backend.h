@@ -197,6 +197,19 @@ typedef struct {
        mode that uses one. **NATIVE** — `grConstantColorValue`. It is what tells
        one pass of DKR's multi-pass text from the next; see `rdp_state.h`. */
     unsigned int       constant_color;
+    /* **Both constant registers, always, whatever the colour side read.**
+     *
+     * `constant_color` above carries the one Glide can be given, chosen by which
+     * register the colour mux names. That choice is a Glide limitation and not a
+     * property of the RDP, which has two and may read both:
+     * `G_CC_MODULATEIA_PRIM` in cycle 1 with `G_CC_BLEND_ENV_ALPHA2` in cycle 2
+     * does exactly that, and it is what draws this game's glows.
+     *
+     * A reference rasteriser that evaluates the real combiner needs both, so both
+     * are carried. Both are `0xAARRGGBB`, repacked at the source like
+     * `constant_color`, so that no consumer has to know the RDP's own order. */
+    unsigned int       prim_color;
+    unsigned int       env_color;
     /* --- Which entry of the E05-S03 catalogue applies, or none --------------- *
      *
      * `combine` above is a four-mode shorthand; the generated table covers

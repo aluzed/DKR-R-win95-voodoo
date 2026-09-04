@@ -101,6 +101,12 @@ deviation.
       `apply_combine`'s four single-pass modes. The cost of a second pass cannot be
       measured before a second pass exists.
 
+      And there is now a **correct reference** to measure a second pass against: the
+      oracle evaluates the RDP's real combiner over both cycles since 4 September 2026
+      (`docs/research/win95-oracle-combiner.md`), so what the card cannot express is a
+      divergence in the harness instead of an agreement. On the hub that took the
+      measured gap from 165 divergent pixels of 307,200 to **11,396**.
+
       Its **visible** cost, on the other hand, is now measured: the hub draws large
       flat grey quads where a `G_CC_BLEND_ENV_ALPHA2` second cycle should have blended
       a glow toward the environment colour. See

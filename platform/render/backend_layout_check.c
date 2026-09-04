@@ -69,6 +69,7 @@ DKR_STATIC_ASSERT(
     sizeof(dkr_render_state) ==
         DKR_FIELD_SIZE(combine)   + DKR_FIELD_SIZE(blend) +
         DKR_FIELD_SIZE(constant_color) +
+        DKR_FIELD_SIZE(prim_color) + DKR_FIELD_SIZE(env_color) +
     DKR_FIELD_SIZE(recipe) +
     DKR_FIELD_SIZE(recipe_pad) +
         DKR_FIELD_SIZE(depth)     + DKR_FIELD_SIZE(cull) +
