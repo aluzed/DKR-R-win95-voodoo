@@ -219,10 +219,25 @@ static void combine(const dkr_render_state *st, unsigned texel,
  * logo's texture painted nothing". */
 static unsigned long g_tex_pixels[MAX_TEXTURES];
 
+/* And how many triangles were **drawn** with it, which is a different question.
+ *
+ * Zero pixels has two causes and they need opposite answers: either nothing was
+ * drawn while the texture was bound, or something was and covered no pixel — a
+ * triangle that projects to nothing, or lands off screen. The pixel count alone
+ * cannot tell them apart, and on the copyright screen of 4 September 2026 that
+ * is precisely the fork the investigation stopped at. */
+static unsigned long g_tex_tris[MAX_TEXTURES];
+
 unsigned long dkr_software_texture_pixels(int slot)
 {
     if (slot < 0 || slot >= MAX_TEXTURES) { return 0u; }
     return g_tex_pixels[slot];
+}
+
+unsigned long dkr_software_texture_triangles(int slot)
+{
+    if (slot < 0 || slot >= MAX_TEXTURES) { return 0u; }
+    return g_tex_tris[slot];
 }
 
 static int              g_probe_armed;
@@ -558,6 +573,10 @@ static void sw_draw_triangles(void *self, const dkr_render_vertex *v, int count)
     int i;
     (void)self;
     if (!g_sw.open || !v) { return; }
+    if (g_sw.state.texture != 0 && g_sw.state.texture <= MAX_TEXTURES &&
+        count > 0) {
+        g_tex_tris[g_sw.state.texture - 1] += (unsigned long)count;
+    }
     for (i = 0; i < count; i++) {
         raster_triangle(&v[i * 3 + 0], &v[i * 3 + 1], &v[i * 3 + 2]);
     }
@@ -667,6 +686,7 @@ void dkr_render_backend_software(dkr_render_backend *out)
     memset(out, 0, sizeof(*out));
     memset(&g_sw, 0, sizeof(g_sw));
     memset(g_tex_pixels, 0, sizeof(g_tex_pixels));
+    memset(g_tex_tris, 0, sizeof(g_tex_tris));
     out->name            = "software";
     out->open            = sw_open;
     out->close           = sw_close;

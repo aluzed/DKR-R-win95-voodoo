@@ -105,6 +105,11 @@ const unsigned *dkr_software_texture(int slot, int *width, int *height,
  * is an object that is missing, which no upload counter can tell you. */
 unsigned long dkr_software_texture_pixels(int slot);
 
+/* And how many triangles were drawn with it. Zero pixels has two causes needing
+   opposite answers — nothing drawn while it was bound, or something drawn that
+   covered no pixel — and the pixel count alone cannot tell them apart. */
+unsigned long dkr_software_texture_triangles(int slot);
+
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */
 const float *dkr_software_depthbuffer(int *width, int *height);

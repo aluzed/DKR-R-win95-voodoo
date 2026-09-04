@@ -229,13 +229,14 @@ static void dump_textures(const char *dir)
         const unsigned *texels = dkr_software_texture(slot, &w, &h, &key);
         char path[512];
         const unsigned long painted = dkr_software_texture_pixels(slot);
+        const unsigned long tris = dkr_software_texture_triangles(slot);
         if (!texels || w <= 0 || h <= 0) { continue; }
         /* The painted count is in the name, so that a directory listing already
            answers "which of these reached the screen". A texture uploaded and
            never sampled is an object missing from the image, and no upload
            counter can say that. */
-        sprintf(path, "%s/tex%03d_%dx%d_%08lX_%lupx.bmp", dir, slot + 1, w, h,
-                (unsigned long)(key & 0xFFFFFFFFu), painted);
+        sprintf(path, "%s/tex%03d_%dx%d_%08lX_%lutri_%lupx.bmp", dir, slot + 1,
+                w, h, (unsigned long)(key & 0xFFFFFFFFu), tris, painted);
         if (dkr_image_write_bmp(path, texels, w, h)) { written++; }
         if (painted == 0u) { unpainted++; }
     }

@@ -49,10 +49,10 @@ Two obstacles were met on the way and both are recorded elsewhere:
 
 ## What the corpus has already shown
 
-**The copyright screen renders a blank shape.** The Rare logo comes out as a flat
-yellow rounded rectangle, with the copyright text legible below it. The **oracle**
-produces that, so it is not the card: it is the decoder or a texture that never
-arrives. Eighteen textures for that screen, against ninety-five for the race.
+**The copyright screen renders a blank shape**, or so it looked. The Rare logo
+comes out as a flat yellow rounded rectangle with the copyright text legible
+below it, in the **oracle**, so it is not the card's. What it is remains open —
+and the first two explanations are already excluded, which is recorded below.
 
 **And the hub draws large grey rectangles over the scene.** Several flat
 light-grey quads and one black one sit across Pipsy and the water in
@@ -135,6 +135,30 @@ copyright screen that raises emitted from 99 to 270 — and the same four textur
 paint, `RAREWARE` still at zero. So the logo's quads are not being culled: no
 triangle is drawn while that texture is bound.
 
-That is where this stops. The question is now narrow and named — a texture is
-bound and nothing draws with it — and it belongs to E04, with a frozen input to
-put it to.
+**Nothing is drawn with it, by any path.** A count of *triangles* per texture
+separates the two causes of "zero pixels" — nothing drawn while it was bound, or
+something drawn that covered no pixel — and they are both present on this screen:
+
+    tex001  82 triangles  19091 px    the plate
+    tex003   0 triangles      0 px    RAREWARE
+    tex006   3 triangles 288109 px    the visible sky
+    tex007   3 triangles      0 px    a sky tile drawn off screen
+    tex009   2 triangles      0 px       "
+    tex013   2 triangles      0 px       "
+
+The sky tiles are drawn and cover nothing, which is what a scrolling backdrop
+outside the viewport looks like. `RAREWARE` is not drawn at all — and texture
+rectangles go through `draw_triangles` in this decoder, so that path is counted
+too.
+
+## What this may not be
+
+**It may not be a defect.** The Rare logo is an animation: the plate arrives
+first and the letters land on it. A frame in which the texture is loaded and not
+yet drawn is exactly what the measurements show, and nothing measured so far
+distinguishes that from a logo that never arrives.
+
+Settling it needs a second frame of the same screen — the corpus's one capture of
+it cannot answer a question about time. That is the corpus's own limit showing:
+**a scene sampled once is a still, and a still cannot tell an animation from a
+defect.** Recorded here so that the observation above is not read as a diagnosis.
