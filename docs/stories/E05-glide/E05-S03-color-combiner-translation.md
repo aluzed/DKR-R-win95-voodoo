@@ -91,8 +91,20 @@ deviation.
       `PASS2` is the identity, `(COMBINED,0,X,0)` is a scaling that composes — which
       avoids declaring every second cycle multipass and doubling the fill on the most
       common surfaces.
-- [ ] The multipass fill cost is measured — not yet done. It needs a race, not the
-      menu, and the port does not render one legibly yet. The multipass
+- [ ] The multipass fill cost is measured — not yet done. **The reason given here is
+      no longer true**: it said "it needs a race, not the menu, and the port does not
+      render one legibly yet", and since 4 September 2026 the port renders one legibly
+      and E09-S02's corpus holds a frozen capture of it (`CAP0400.BIN`) and of a hub
+      scene at 904 triangles and 190 textures (`CAP0250.BIN`). What blocks the
+      measurement now is that **there is no multipass to measure**: the category is a
+      classification and `gl_set_state` sends everything that is not `DKR_CC_EXACT` to
+      `apply_combine`'s four single-pass modes. The cost of a second pass cannot be
+      measured before a second pass exists.
+
+      Its **visible** cost, on the other hand, is now measured: the hub draws large
+      flat grey quads where a `G_CC_BLEND_ENV_ALPHA2` second cycle should have blended
+      a glow toward the environment colour. See
+      `docs/research/win95-multipass-visible.md`. The multipass
       share is, on the other hand, bounded and watched: a check fails if it exceeds
       half the table's entries, because it is fill that limits a Voodoo 2 at 640×480.
 - [~] `docs/research/combiner-mapping.md` documents category, setting and

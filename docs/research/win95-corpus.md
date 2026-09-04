@@ -54,12 +54,13 @@ Two obstacles were met on the way and both are recorded elsewhere:
 captures ten display lists apart to establish that, and the first one on its own
 said the opposite.
 
-**And the hub draws large grey rectangles over the scene.** Several flat
-light-grey quads and one black one sit across Pipsy and the water in
-`CAP0250.BIN`, again in the **oracle**. A flat untextured quad where a textured
-one belongs is the signature of a texture that never arrived or a combiner that
-fell through; 190 textures is twice any other scene in the corpus, so a cache or
-an allocator limit is the first thing to ask about.
+**And the hub draws large grey rectangles over the scene** — resolved the same
+day, and not by finding a defect. They are a two-cycle combiner whose **second
+cycle neither backend computes**: `DKR_CC_MULTIPASS` is a classification, not an
+implementation, and both the oracle and the Glide backend fall through to the
+nearest of four single-pass modes. The card and the oracle agree on that scene to
+165 pixels of 307,200 and are both wrong in the same place. See
+`docs/research/win95-multipass-visible.md`.
 
 Neither is explained. `conversions: distinct-keys=64 overflow=48` in the same
 report is **not** the cause, tempting though it looks: that counter says the

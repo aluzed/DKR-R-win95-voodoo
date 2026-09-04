@@ -24,6 +24,15 @@ agree, which is the only verification available without a ROM, and the one that
 catches the costliest class of errors: those where every stage declares itself
 satisfied while producing something other than what it announces.
 
+> **Correction of 4 September 2026 — how independent they are, and where they
+> are not.** They are independent below `dkr_render_state` and not above it. Both
+> receive the decoder's collapse of the RDP's two-cycle combiner into one of four
+> modes, and both then compute *that* faithfully. So an agreement proves the
+> backend right about the state it was given and says nothing about the
+> translation. Measured on a real frame: the hub agrees to 165 pixels of 307,200
+> and both sides draw large grey quads where a second cycle should have blended a
+> glow away. See `docs/research/win95-multipass-visible.md`.
+
 ## The point was not settled: the first measurement diverged over 24 % of the image
 
 Three defects were found, all **in the oracle**, none in the card. That is the
