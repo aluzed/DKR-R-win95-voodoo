@@ -785,31 +785,67 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // physically.
     /* --- E09-S02: freeze one list, so that the next comparison means something -
      *
-     * `DKR_CAPTURE_LIST=<n>` writes list n to `D:\CAPTURE.BIN` -- the display
-     * list's start address and the whole RDRAM image it reads from. Replayed,
-     * the same bytes give the same image whatever else changed, which is the
-     * only way an image difference becomes attributable to the renderer rather
-     * than to the moment of an animation.
+     * `DKR_CAPTURE_LIST=<n>[,<n>...]` writes each list to `D:\CAPnnnn.BIN` -- the
+     * display list's start address and the whole RDRAM image it reads from.
+     * Replayed, the same bytes give the same image whatever else changed, which
+     * is the only way an image difference becomes attributable to the renderer
+     * rather than to the moment of an animation.
      *
      * Written **before** the decode, not after: the decoder writes into the
      * snapshot -- the vertex scratch window at 0x7FE000 among others -- so a
      * capture taken afterwards would replay a memory the game never had.
      *
-     * At or after, once, like the frame dump and for the same reason: a trigger
-     * on an exact count one cannot predict fails silently when the run stops
-     * short of it. */
+     * At or after, once each, like the frame dump and for the same reason: a
+     * trigger on an exact count one cannot predict fails silently when the run
+     * stops short of it. */
     {
-        static const char* const cap_env = std::getenv("DKR_CAPTURE_LIST");
-        static const unsigned long cap_at =
-            cap_env ? std::strtoul(cap_env, nullptr, 10) : 0UL;
-        static bool captured = false;
-        if (cap_at != 0UL && !captured && index >= cap_at) {
-            captured = true;
-            dkr_capture_write("D:\\CAPTURE.BIN",
-                              task->t.data_ptr & 0x00FFFFFFu,
-                              rdram_snapshot, kSnapshotBytes,
-                              context_.rdram_native, static_cast<unsigned>(index),
-                              kWidth, kHeight);
+        // `DKR_CAPTURE_LIST=400` or `DKR_CAPTURE_LIST=100,400,900`. Each index
+        // writes `D:\CAPnnnn.BIN`, the file naming the list it holds.
+        //
+        // **Several per run, and that is the point of the comma.** A capture
+        // needs a boot, a launch and a wait; the corpus E09-S02 asks for is
+        // title, menus, a lap of each level, cutscenes, split screen and
+        // results, and taking them one boot at a time is a day. Firing on
+        // several indices in one run costs nothing but disk.
+        //
+        // Eight at most: the transfer disk holds about fifty captures, and a
+        // bound one can read here beats a run that fills the volume and reports
+        // it as a write failure at the least useful moment.
+        static const int kMaxCaptures = 8;
+        static unsigned long cap_at[kMaxCaptures];
+        static bool cap_done[kMaxCaptures];
+        static int cap_count = -1;
+        if (cap_count < 0) {
+            const char* const env = std::getenv("DKR_CAPTURE_LIST");
+            cap_count = 0;
+            for (const char* p = env; p != nullptr && *p != '\0';) {
+                char* end = nullptr;
+                const unsigned long v = std::strtoul(p, &end, 10);
+                if (end == p) { break; }          // not a number: stop, do not spin
+                if (v != 0UL && cap_count < kMaxCaptures) {
+                    cap_at[cap_count++] = v;
+                }
+                p = (*end == ',') ? end + 1 : end;
+                if (*end != ',' && *end != '\0') { break; }
+            }
+            if (cap_count > 0) {
+                std::fprintf(stderr, "[gfx] capture: %d list(s) armed\n", cap_count);
+            }
+        }
+        for (int c = 0; c < cap_count; ++c) {
+            // At or after, once, like the frame dump: a trigger on an exact
+            // count one cannot predict fails silently when the run stops short.
+            if (!cap_done[c] && index >= cap_at[c]) {
+                char path[32];
+                cap_done[c] = true;
+                std::sprintf(path, "D:\\CAP%04lu.BIN", cap_at[c]);
+                dkr_capture_write(path,
+                                  task->t.data_ptr & 0x00FFFFFFu,
+                                  rdram_snapshot, kSnapshotBytes,
+                                  context_.rdram_native,
+                                  static_cast<unsigned>(index),
+                                  kWidth, kHeight);
+            }
         }
 
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);

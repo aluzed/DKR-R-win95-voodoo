@@ -93,7 +93,16 @@ backends, automatically.
       now draws: a real divergence in red, one forgiven as an edge in dim amber, over the
       reference darkened so the scene stays readable. Written by `REPLAY.EXE` on the
       machine that made both images, and by `tools/render/compare.c` on the host.
-- [ ] A visual regression is reported automatically, with a per-scene threshold.
+- [x] A visual regression is reported automatically, with a per-scene threshold.
+      `tools/render/check-corpus.sh` replays every capture of a corpus through the
+      oracle and checks the decoder's counts **before** the image — a count that moved
+      is a determinism change, and an image difference downstream of one says nothing
+      about rendering. The threshold is a file per scene, `<max-gap> <ppm>`, because
+      scenes are not equally close and one global bound either passes the loose ones or
+      fails the tight ones for ever. A failure leaves the difference map beside the
+      capture: a failing run one cannot look at is a failing run one starts ignoring.
+      The three paths — new, agreeing, failing — were each exercised, the last by
+      corrupting a reference on purpose.
 - [x] The replay works on the target machine with the Glide backend — the same scene
       crosses the complete chain to the rasteriser then to the Voodoo, whose frame buffer
       is read back. Result: 0 divergent pixels out of 307,200, after correcting three

@@ -30,9 +30,22 @@ list starts at, and RDRAM.
     D:\> set DKR_CAPTURE_LIST=400
     D:\> DKRR.EXE D:\DKR.Z64
 
-The game runs normally and writes `D:\CAPTURE.BIN` when it reaches display list
-number 400, then carries on. One capture, then, per run; the list number chooses
-which frame.
+The game runs normally and writes `D:\CAP0400.BIN` when it reaches display list
+number 400, then carries on. The file names the list it holds.
+
+**Several in one run**, separated by commas, up to eight:
+
+    D:\> set DKR_CAPTURE_LIST=50,150,300,450,700,1000
+
+That is not a convenience. A capture costs a boot, a launch and a wait; the
+corpus below wants title, menus, a lap of each level, cutscenes, split screen and
+results, and taking them one boot at a time is a day. Firing on several indices
+in one run costs nothing but disk — and the transfer disk holds about fifty
+captures, which is the bound the code enforces rather than filling the volume and
+reporting it as a write failure at the least useful moment.
+
+Each index fires **at or after** its list, once. On an exact match a run that
+stopped short would simply produce nothing, and say nothing about why.
 
 ### The format
 
@@ -79,7 +92,7 @@ and it would be charged to the card.
 ### On the development machine
 
     tools/render/build-host-tools.sh
-    build/render-tools/replay capture.bin out.bmp
+    build/render-tools/replay CAP0400.BIN out.bmp
 
 This renders through E04-S08's software rasteriser — the oracle. It implements
 the RDP's combiner without Glide's constraints, so when its image is right and
@@ -91,7 +104,7 @@ of the same capture produce byte-identical files.
 
 ### On the Windows 95 machine
 
-    D:\> REPLAY.EXE --both --log D:\REPLAY.TXT D:\CAPTURE.BIN
+    D:\> REPLAY.EXE --both --log D:\REPLAY.TXT D:\CAP0400.BIN
 
 Renders the same capture twice, once through the oracle and once through the
 Voodoo, reads the card's frame buffer back, and compares. It writes:
@@ -162,9 +175,62 @@ is quantised to 565 and the candidate side is not, so the self-comparison
 measures the quantisation and nothing else. It is the floor below which no
 comparison can go, and it is worth knowing before reading any other number.
 
+## Asking what drew a pixel
+
+    build/render-tools/replay --probe X,Y capture.bin out.bmp
+
+The oracle rasterises, so at the moment it writes a pixel it holds the state that
+asked for it. `--probe` records **every** draw that writes the chosen pixel, in
+order: what was underneath, what was left, and the state.
+
+    probe (318,437): 7 draw(s):
+       3  0xFEDF00 -> 0xCBB22C  TEX*CONST const=0xFF0000FF ascale=51  ...
+       4  0xCBB22C -> 0x796A73  TEX*CONST const=0xFF00FFFF ascale=102 ...
+       ...
+
+The coordinates are the frame buffer's — x from the left, y from the **top** —
+which is what `compare` and `REPLAY.EXE` print in "worst gap off-edge at (x,y)",
+so a divergence can be pasted straight into `--probe`.
+
+The whole history and not merely the last writer: the first pixel this was pointed
+at had been painted seven times, and the answer was in the ramp across the seven.
+
+## The corpus, and checking it automatically
+
+    tools/render/check-corpus.sh <corpus-dir>
+    tools/render/check-corpus.sh <corpus-dir> --accept
+
+**The corpus lives outside the repository.** A capture is eight mebibytes and has
+to be; a dozen scenes is a hundred megabytes, which does not belong in git. What
+is versioned is the script. Put the `.BIN` files in a directory of your own and
+point the script at it.
+
+For each capture it replays through the oracle and checks two things, in this
+order:
+
+1. **The decoder's counts** — commands, triangles, emitted, rejects, textures,
+   against `<name>.counts`. First, because a count that moved is a decoder or
+   determinism change, and an image difference downstream of one says nothing
+   about rendering. It is also the check that works before any reference image
+   exists.
+2. **The image**, against `<name>.bmp`, with the metric above.
+
+`--accept` writes what came out as the reference. Use it to start a corpus, and
+to adopt a change you have looked at.
+
+**The threshold is per scene**, in `<name>.threshold`: `<max-gap> <ppm>` on one
+line, defaulting to 16 and 10000. Per scene because scenes are not equally close —
+one that is all flat colour agrees to the bit, one full of gradients does not, and
+a single threshold either passes the second or fails the first for ever.
+
+A failure leaves `<name>.diff.bmp` beside the capture. A failing run one cannot
+look at is a failing run one starts ignoring.
+
 ## Where the numbers so far come from
 
 - `docs/research/win95-oracle-vs-card.md` — the synthetic scene, four triangles,
   0 divergent pixels out of 307,200, after three defects **all of them in the
   oracle**.
 - `docs/research/win95-oracle-vs-card-capture.md` — a real frame of the game.
+- `docs/research/win95-alpha-scale.md` — what the first real divergence turned out
+  to be, and the probe that named it.
