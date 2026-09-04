@@ -73,7 +73,15 @@ backends, automatically.
       through the oracle on the development machine and `REPLAY.EXE` through the
       oracle and the card on the target. Two replays of one capture produce
       byte-identical files, which was checked and not assumed.
-- [ ] The corpus covers title, menus, every level, cutscenes, split screen and results.
+- [~] The corpus covers title, menus, every level, cutscenes, split screen and results.
+      **Four scenes on 4 September 2026** — the Nintendo 64 logo, the copyright screen,
+      the hub with 190 textures, and a race — replaying to their references at 0
+      divergent pixels of 307,200. No lap of any level, and the reason is measured
+      rather than pending: **the game reaches display list 300 and stops**, in MENU
+      mode, with no error. A capture armed at 800 is never written; two armed at 200
+      and 250 both are. The corpus cannot cover what the run does not reach, so this
+      criterion now depends on E02-S06 and not on this harness.
+      See `docs/research/win95-corpus.md`.
 - [x] The replay is deterministic — the comparison of the counts of triangles emitted
       precedes that of the images, precisely so that an image deviation does not mask a
       determinism defect. Established on a **real** capture on 3 September 2026: the two
