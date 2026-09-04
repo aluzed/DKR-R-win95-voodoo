@@ -6,6 +6,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>       /* _commit */
+#endif
+
+/* Pushes a file all the way to the disk, not merely out of the C library.
+ *
+ * **`fclose` is not enough on this target**, and the cost of assuming it was is
+ * on record twice. `D:\REPLAY.TXT` came back at zero bytes after a fault that
+ * happened well after its first line was flushed; and on 4 September 2026 a run
+ * armed with six captures produced one file, the other five having been written,
+ * closed, and then lost with the guest's write-behind cache when the emulator was
+ * stopped. On a machine where the normal end of a run is a crash or a kill, a
+ * capture that is not on the platter is not a capture. */
+static int commit_to_disk(FILE *f)
+{
+#ifdef _WIN32
+    if (fflush(f) != 0) { return 0; }
+    if (_commit(_fileno(f)) != 0) { return 0; }
+#else
+    if (fflush(f) != 0) { return 0; }
+#endif
+    return 1;
+}
+
 /* Little-endian on both hosts, written byte by byte rather than by casting the
    struct. A `fwrite` of the struct would carry whatever padding the compiler
    chose, and the two ends of this format are built by two different compilers
@@ -79,10 +103,17 @@ int dkr_capture_write(const char *path, unsigned int data_ptr,
         }
     }
 
+    /* Committed before the close, and the close checked after it. Windows 95
+       reports a full disk at one or the other and not earlier -- the write-behind
+       cache accepts what it cannot store -- and a capture that failed at either
+       is not a capture. */
+    if (!commit_to_disk(out)) {
+        fprintf(stderr, "[gfx] capture: %s could not be committed to disk\n",
+                path);
+        fclose(out);
+        return 0;
+    }
     if (fclose(out) != 0) {
-        /* Windows 95 reports a full disk here and not earlier -- the write-behind
-           cache accepts what it cannot store. A capture that failed at close is
-           not a capture. */
         fprintf(stderr, "[gfx] capture: close failed for %s\n", path);
         return 0;
     }

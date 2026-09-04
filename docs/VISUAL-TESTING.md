@@ -82,6 +82,14 @@ The reader refuses a bad file with a message naming **which** check failed. Wron
 magic, wrong version and a truncated transfer are three problems with three
 different answers, and `capture: invalid` would send the reader to the wrong one.
 
+**The writer commits the file to the disk before closing it**, and that is not
+belt and braces. On 4 September 2026 a run armed with six captures produced one
+file: the other five had been written and closed, and were lost with Windows 95's
+write-behind cache when the emulator was stopped. On a machine whose runs
+normally end in a crash or a kill, `fclose` promises nothing — a capture that is
+not on the platter is not a capture. The frame and comparison images are written
+the same way, for the same reason.
+
 ## The replay
 
 One program, `tools/render/replay.c`, built for both machines. The decoder, the
