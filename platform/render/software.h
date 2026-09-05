@@ -122,6 +122,14 @@ unsigned long dkr_software_texture_triangles(int slot);
  * have been; the card cannot report on a configuration it cannot express. */
 unsigned long dkr_software_category_pixels(int category);
 
+/* The same fill broken down by catalogue entry — `recipe` as the state carries
+ * it, one-based, zero meaning none.
+ *
+ * The category says how much of the frame the card is approximating; this says
+ * **which configurations to work on**. "90 % is multipass" is a problem; "three
+ * entries account for 85 % of it" is a task. */
+unsigned long dkr_software_recipe_pixels(int recipe);
+
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */
 const float *dkr_software_depthbuffer(int *width, int *height);

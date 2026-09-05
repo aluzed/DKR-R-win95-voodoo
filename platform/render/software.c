@@ -321,6 +321,23 @@ unsigned long dkr_software_category_pixels(int category)
     return g_cat_pixels[category];
 }
 
+/* And the same fill broken down by catalogue entry.
+ *
+ * The category tells you how much of the frame the card is approximating; this
+ * tells you **which configurations to work on**. "90 % is multipass" is a
+ * problem; "three entries account for 85 % of it" is a task. The bound is
+ * generous rather than exact so that a table that grows does not silently start
+ * dropping entries off the end of this count -- the overflow slot says when it
+ * has. */
+#define SW_RECIPES 64
+static unsigned long g_recipe_pixels[SW_RECIPES + 1];
+
+unsigned long dkr_software_recipe_pixels(int recipe)
+{
+    if (recipe < 0 || recipe > SW_RECIPES) { return 0u; }
+    return g_recipe_pixels[recipe];
+}
+
 unsigned long dkr_software_texture_pixels(int slot)
 {
     if (slot < 0 || slot >= MAX_TEXTURES) { return 0u; }
@@ -415,6 +432,8 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
                                  st->recipe <= dkr_cc_table_count())
                                   ? dkr_cc_table_at(st->recipe - 1) : 0;
         g_cat_pixels[e ? (int)e->category : SW_CATEGORIES - 1]++;
+        g_recipe_pixels[(st->recipe >= 0 && st->recipe <= SW_RECIPES)
+                          ? st->recipe : SW_RECIPES]++;
     }
 
     if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
@@ -787,6 +806,7 @@ void dkr_render_backend_software(dkr_render_backend *out)
     memset(g_tex_pixels, 0, sizeof(g_tex_pixels));
     memset(g_tex_tris, 0, sizeof(g_tex_tris));
     memset(g_cat_pixels, 0, sizeof(g_cat_pixels));
+    memset(g_recipe_pixels, 0, sizeof(g_recipe_pixels));
     out->name            = "software";
     out->open            = sw_open;
     out->close           = sw_close;

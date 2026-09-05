@@ -50,6 +50,40 @@ Two consequences, in opposite directions, and both are real:
   which the renderer is 23 ms. Doubling the fill on 90 % of it is not free, and
   it lands on the one resource this card has least of.
 
+## One configuration is most of it
+
+The same counter, broken down by catalogue entry:
+
+| scene | share of all fill | configuration |
+|---|---:|---|
+| hub | **85.1 %** | `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` |
+| race | **82.6 %** | the same |
+| intro | **37.9 %** | the same |
+| race | 10.5 % | `G_CC_BLENDT_ENV_ALPHA_A_TxP` (approximate, one cycle) |
+| hub | 11.9 % | `G_CC_MODULATEIA_PRIM` + `G_CC_BLEND_ENV_ALPHA2` |
+| race | 6.4 % | `G_CC_MODULATERGBA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` |
+
+**One entry carries the whole problem.** "Ninety per cent of the frame is
+multipass" is a wall; "one configuration is 85 % of it" is a task.
+
+And that configuration's second cycle is a shape worth reading:
+
+    cycle 1  (TEXEL0 - 0) * SHADE + 0            texel modulated by the vertex colour
+    cycle 2  (ENV - COMBINED) * ENV_ALPHA + COMBINED
+
+Cycle 2 is a **lerp from the first cycle's result toward the environment colour
+by the environment's alpha**. The catalogue's note is right that one Glide stage
+cannot do both — the stage that multiplies the texel by the iterated colour is the
+same one that would have to blend toward the constant.
+
+But the second pass it needs is **untextured**: draw the same triangles flat in
+the environment colour, alpha `ENV_ALPHA`, through the frame-buffer blender. No
+texel fetch, no TMU traffic, no state beyond a constant. That is the cheap end of
+what "double the fill" can mean on this card, and it is the case that matters
+most.
+
+Not implemented here. Measured, and the shape of the work named.
+
 ## What this does not say
 
 It does not say multipass is the wrong choice. It says the choice is between a

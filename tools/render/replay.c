@@ -31,6 +31,7 @@
 
 #include "render/backend.h"
 #include "render/capture.h"
+#include "render/combiner.h"
 #include "render/f3ddkr.h"
 #include "render/imagecmp.h"
 #include "render/software.h"
@@ -270,6 +271,45 @@ static void say_categories(void)
     }
 }
 
+/* The same fill, by catalogue entry, worst first. Three lines of this turn "90 %
+   of the frame is multipass" into a list of configurations to work on. */
+static void say_recipes(void)
+{
+    unsigned long n[65];
+    unsigned long total = 0;
+    int count, i, shown;
+
+    count = dkr_cc_table_count();
+    if (count > 64) { count = 64; }
+    for (i = 0; i <= count; i++) {
+        n[i] = dkr_software_recipe_pixels(i);
+        total += n[i];
+    }
+    if (total == 0u) { return; }
+
+    /* Copied out and struck off here rather than sorted: six passes over
+       thirty entries is nothing, and it keeps the backend's counters read-only,
+       which is what makes them safe to print twice. */
+    say("  fill by configuration, worst first:\n");
+    for (shown = 0; shown < 6; shown++) {
+        unsigned long best = 0;
+        int best_i = -1;
+        for (i = 0; i <= count; i++) {
+            if (n[i] > best) { best = n[i]; best_i = i; }
+        }
+        if (best_i < 0) { break; }
+        {
+            const dkr_cc_entry *e = (best_i > 0) ? dkr_cc_table_at(best_i - 1) : 0;
+            say("    %8lu  %6ld ppm  %s%s%s\n", best,
+                dkr_image_per_million((long)best, (long)total),
+                e ? e->name : "(no catalogue entry)",
+                (e && e->name_cycle2) ? " + " : "",
+                (e && e->name_cycle2) ? e->name_cycle2 : "");
+        }
+        n[best_i] = 0u;
+    }
+}
+
 static void usage(const char *me)
 {
     fprintf(stderr,
@@ -384,6 +424,7 @@ int main(int argc, char **argv)
             say_counts("oracle", &sc);
             if (probe_on) { say_probe(probe_x, probe_y); }
             say_categories();
+            say_recipes();
             /* Before the backend closes: it frees the textures on close. */
             if (dump_dir) { dump_textures(dump_dir); }
 
