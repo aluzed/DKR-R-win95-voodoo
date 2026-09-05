@@ -101,6 +101,14 @@ deviation.
       `apply_combine`'s four single-pass modes. The cost of a second pass cannot be
       measured before a second pass exists.
 
+      **And the cost is far smaller than the multipass share suggests.** The second
+      cycle of the dominant entry is a lerp toward the environment colour by that
+      colour's alpha, so an alpha of zero makes it the identity. Measured on the
+      corpus: the fill where the second cycle actually changes the pixel is 0 % of the
+      copyright screen, 0.08 % of the intro, 1.4 % of the race and 6.3 % of the hub —
+      against a two-cycle share of 37 % to 100 %. A second pass skipped when it would
+      be the identity costs at most 6.3 % more fill on the worst scene measured.
+
       And there is now a **correct reference** to measure a second pass against: the
       oracle evaluates the RDP's real combiner over both cycles since 4 September 2026
       (`docs/research/win95-oracle-combiner.md`), so what the card cannot express is a

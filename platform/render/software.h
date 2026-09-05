@@ -130,6 +130,16 @@ unsigned long dkr_software_category_pixels(int category);
  * entries account for 85 % of it" is a task. */
 unsigned long dkr_software_recipe_pixels(int recipe);
 
+/* Fill computed through a two-cycle configuration, and the part of it where the
+ * second cycle **actually changed the pixel**.
+ *
+ * The two are not the same number and the difference decides a design. A second
+ * cycle that is a lerp toward a constant by that constant's alpha is the identity
+ * when the alpha is zero, so the cost of a second pass on the card is not the
+ * multipass fill — it is the multipass fill that is not a no-op, which is a
+ * property of the constants at draw time and not of the configuration. */
+unsigned long dkr_software_second_cycle_pixels(int effective_only);
+
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */
 const float *dkr_software_depthbuffer(int *width, int *height);

@@ -153,6 +153,33 @@ static unsigned sample_texture(const sw_texture *t, float s, float tc,
  * this backend its value as an oracle: it shows what the image should be, and
  * E05-S03 will measure Glide's gap against that reference.
  */
+/* Fill where the **second cycle actually changed the pixel**.
+ *
+ * The share of the frame painted by a two-cycle configuration is not the share
+ * the card gets wrong, and the corpus says so loudly: the race and the hub are
+ * both about 85 % `G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2`, and the
+ * card diverges from the oracle by 403 per million on one and 37,096 on the
+ * other. The second cycle of that entry is a lerp toward the environment colour
+ * by the environment's **alpha**, and an alpha of zero makes it the identity.
+ *
+ * So the cost of a second pass is not the multipass fill: it is the multipass
+ * fill where the second cycle is not a no-op, and that is a property of the
+ * constants at draw time, not of the configuration. This counter measures it. */
+static unsigned long g_cycle2_pixels;
+static unsigned long g_cycle2_pixels_effective;
+/* Set by `combine`, consumed by `put_pixel`. The two counters have to share a
+   denominator with `g_cat_pixels` or the shares cannot be compared, and the
+   shading of a pixel is not its writing: the scissor, the depth test and the
+   alpha cutout all sit between them. Counting where the write happens is what
+   makes "16.6 % of the fill" a sentence about fill. */
+static unsigned char g_last_two_cycle;
+static unsigned char g_last_cycle2_changed;
+
+unsigned long dkr_software_second_cycle_pixels(int effective_only)
+{
+    return effective_only ? g_cycle2_pixels_effective : g_cycle2_pixels;
+}
+
 /* --- The combiner, evaluated rather than approximated ----------------------- *
  *
  * **This is the oracle's whole job and it was not doing it.** Below this block
@@ -215,7 +242,28 @@ static int combine_from_catalogue(const dkr_render_state *st, unsigned texel,
     in.environment[2] = (float)( st->env_color        & 0xFF);
     in.environment[3] = (float)((st->env_color >> 24) & 0xFF);
 
-    dkr_combiner_eval_all(&cc, e->cycle, &in, out);
+    if (e->cycle == DKR_CYCLE_2) {
+        /* Evaluated a cycle at a time rather than through `eval_all`, so that
+           the first cycle's result is in hand and can be compared with the
+           second's. That comparison is the measurement `win95-multipass-cost.md`
+           turns on: a second cycle that changes nothing costs a pass for
+           nothing. */
+        float first[4];
+        int k, changed = 0;
+        dkr_combiner_eval(&cc, 0, &in, first);
+        for (k = 0; k < 4; k++) { in.combined[k] = first[k]; }
+        dkr_combiner_eval(&cc, 1, &in, out);
+        for (k = 0; k < 4; k++) {
+            const float d = first[k] - out[k];
+            if (d > 1.0f || d < -1.0f) { changed = 1; }
+        }
+        g_last_two_cycle = 1u;
+        g_last_cycle2_changed = (unsigned char)(changed ? 1 : 0);
+    } else {
+        g_last_two_cycle = 0u;
+        g_last_cycle2_changed = 0u;
+        dkr_combiner_eval_all(&cc, e->cycle, &in, out);
+    }
     *r = out[0]; *g = out[1]; *b = out[2]; *a = out[3];
     return 1;
 }
@@ -232,6 +280,10 @@ static void combine(const dkr_render_state *st, unsigned texel,
     if (combine_from_catalogue(st, texel, sr, sg, sb, sa, r, g, b, a)) {
         return;
     }
+    /* The four-mode path is one cycle by construction. Cleared here so that a
+       pixel shaded through it never inherits the previous pixel's answer. */
+    g_last_two_cycle = 0u;
+    g_last_cycle2_changed = 0u;
 
     switch (st->combine) {
     case DKR_COMBINE_TEXTURE:
@@ -338,6 +390,8 @@ unsigned long dkr_software_recipe_pixels(int recipe)
     return g_recipe_pixels[recipe];
 }
 
+
+
 unsigned long dkr_software_texture_pixels(int slot)
 {
     if (slot < 0 || slot >= MAX_TEXTURES) { return 0u; }
@@ -434,6 +488,10 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
         g_cat_pixels[e ? (int)e->category : SW_CATEGORIES - 1]++;
         g_recipe_pixels[(st->recipe >= 0 && st->recipe <= SW_RECIPES)
                           ? st->recipe : SW_RECIPES]++;
+    }
+    if (g_last_two_cycle) {
+        g_cycle2_pixels++;
+        if (g_last_cycle2_changed) { g_cycle2_pixels_effective++; }
     }
 
     if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
@@ -807,6 +865,8 @@ void dkr_render_backend_software(dkr_render_backend *out)
     memset(g_tex_tris, 0, sizeof(g_tex_tris));
     memset(g_cat_pixels, 0, sizeof(g_cat_pixels));
     memset(g_recipe_pixels, 0, sizeof(g_recipe_pixels));
+    g_cycle2_pixels = 0u;
+    g_cycle2_pixels_effective = 0u;
     out->name            = "software";
     out->open            = sw_open;
     out->close           = sw_close;

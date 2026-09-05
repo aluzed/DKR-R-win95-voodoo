@@ -290,6 +290,15 @@ static void say_recipes(void)
     /* Copied out and struck off here rather than sorted: six passes over
        thirty entries is nothing, and it keeps the backend's counters read-only,
        which is what makes them safe to print twice. */
+    {
+        const unsigned long two = dkr_software_second_cycle_pixels(0);
+        const unsigned long eff = dkr_software_second_cycle_pixels(1);
+        if (two > 0u) {
+            say("    two-cycle %8lu  of which the second cycle changes the "
+                "pixel: %lu (%ld ppm of all fill)\n",
+                two, eff, dkr_image_per_million((long)eff, (long)total));
+        }
+    }
     say("  fill by configuration, worst first:\n");
     for (shown = 0; shown < 6; shown++) {
         unsigned long best = 0;

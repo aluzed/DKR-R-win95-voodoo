@@ -34,10 +34,13 @@ card cannot express in one pass.** The two screens that are mostly a background 
 the logo and the copyright — are around 38 %; the hub and the race, which are the
 game, are 90 % and 100 %.
 
-A second pass over those surfaces would therefore **roughly double the frame's
-fill**. That is the trade E05-S03 named without a figure, and the figure is worse
-than "several configurations out of thirty-three" suggests: what matters is the
-area they cover, and they cover almost everything.
+A second pass over *all* of those surfaces would therefore roughly double the
+frame's fill. That is the trade E05-S03 named without a figure, and taken alone
+the figure looks worse than "several configurations out of thirty-three"
+suggests: what matters is the area they cover, and they cover almost everything.
+
+**Taken alone it is also the wrong figure**, and the section below gives the
+right one.
 
 Two consequences, in opposite directions, and both are real:
 
@@ -83,6 +86,41 @@ what "double the fill" can mean on this card, and it is the case that matters
 most.
 
 Not implemented here. Measured, and the shape of the work named.
+
+## And the share that would actually cost a pass is far smaller
+
+The share of the frame painted by a two-cycle configuration is **not** the share
+the card gets wrong, and the corpus says so loudly. The race and the hub are both
+about 85 % `G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2`, and the card
+diverges from the oracle by **403 per million** on one and **37,096** on the
+other.
+
+The reason is in the shape of the second cycle. It is a lerp toward the
+environment colour **by the environment's alpha**, so an alpha of zero makes it
+the identity. Whether it does anything is a property of the constants at draw
+time, not of the configuration.
+
+Measured — the oracle evaluates cycle 1, feeds it in, evaluates cycle 2, and
+counts the pixels where the two differ by more than one level in any channel:
+
+| capture | total fill | two-cycle | **cycle 2 changes the pixel** | share of all fill |
+|---|---:|---:|---:|---:|
+| `CAP0050` intro | 822,234 | 314,072 | 633 | **0.08 %** |
+| `CAP0150` copyright | 820,758 | 307,200 | **0** | **0 %** |
+| `CAP0250` hub | 530,782 | 530,737 | 33,628 | **6.3 %** |
+| `CAP0400` race | 615,192 | 550,792 | 8,872 | **1.4 %** |
+
+**A second pass that is skipped when it would be the identity costs at most 6.3 %
+more fill on the worst scene in this corpus, and nothing at all on one of them.**
+Not ninety per cent. The figure that made multipass look prohibitive was the
+wrong figure — the right one is two orders of magnitude smaller, and the test
+that separates them is a comparison of two constants at draw time.
+
+The counters share a denominator, and that took care: shading a pixel is not
+writing it, since the scissor, the depth test and the alpha cutout sit between
+the two. Counted where the write happens, `two-cycle` matches the `multipass`
+category exactly — which is the check that the two counters mean what their
+names say.
 
 ## What this does not say
 
