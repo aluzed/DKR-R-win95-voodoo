@@ -244,6 +244,32 @@ static void dump_textures(const char *dir)
         written, dir, unpainted);
 }
 
+/* How much of the frame each category of combiner painted. The card renders
+   everything that is not `DKR_CC_EXACT` through `apply_combine`'s four
+   single-pass modes, so the three other columns are the share of the image it is
+   approximating -- and, doubled, the fill a second pass would cost. */
+static void say_categories(void)
+{
+    static const char *const name[5] = {
+        "exact", "multipass", "approximate", "two-texel", "uncatalogued"
+    };
+    unsigned long total = 0;
+    int i;
+    for (i = 0; i < 5; i++) { total += dkr_software_category_pixels(i); }
+    if (total == 0) { return; }
+    /* **Writes, not distinct pixels**, and the difference is the point: a pixel
+       written five times costs five times the fill, and fill is what limits a
+       Voodoo 2 at 640x480. A count of distinct pixels would read like a coverage
+       figure and be the wrong number for the only question it is asked. */
+    say("  fill: %lu writes over %d pixels\n", total, 640 * 480);
+    for (i = 0; i < 5; i++) {
+        const unsigned long n = dkr_software_category_pixels(i);
+        if (n == 0u) { continue; }
+        say("    %-13s %8lu  %ld ppm\n", name[i], n,
+            dkr_image_per_million((long)n, (long)total));
+    }
+}
+
 static void usage(const char *me)
 {
     fprintf(stderr,
@@ -357,6 +383,7 @@ int main(int argc, char **argv)
             run_capture(&soft, &h, rdram, oracle_tmus, no_cull, &sc);
             say_counts("oracle", &sc);
             if (probe_on) { say_probe(probe_x, probe_y); }
+            say_categories();
             /* Before the backend closes: it frees the textures on close. */
             if (dump_dir) { dump_textures(dump_dir); }
 

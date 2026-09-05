@@ -301,6 +301,26 @@ static unsigned long g_tex_pixels[MAX_TEXTURES];
  * is precisely the fork the investigation stopped at. */
 static unsigned long g_tex_tris[MAX_TEXTURES];
 
+/* And how much of the frame each category of combiner configuration paints.
+ *
+ * This is the number E05-S03 wants and could not get: **fill is what limits a
+ * Voodoo 2 at 640x480**, so the cost of implementing multipass is the area the
+ * multipass entries cover, doubled. Counted in the oracle because the oracle is
+ * the one that knows what the pixel should have been; the card cannot report on a
+ * configuration it cannot express.
+ *
+ * Indexed by `dkr_cc_category`, with a fifth slot for a state naming no catalogue
+ * entry at all — which is a different thing from an entry that is exact, and
+ * lumping the two would flatter the figure. */
+#define SW_CATEGORIES 5
+static unsigned long g_cat_pixels[SW_CATEGORIES];
+
+unsigned long dkr_software_category_pixels(int category)
+{
+    if (category < 0 || category >= SW_CATEGORIES) { return 0u; }
+    return g_cat_pixels[category];
+}
+
 unsigned long dkr_software_texture_pixels(int slot)
 {
     if (slot < 0 || slot >= MAX_TEXTURES) { return 0u; }
@@ -389,6 +409,12 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
 
     if (st->texture != 0 && st->texture <= MAX_TEXTURES) {
         g_tex_pixels[st->texture - 1]++;
+    }
+    {
+        const dkr_cc_entry *e = (st->recipe > 0 &&
+                                 st->recipe <= dkr_cc_table_count())
+                                  ? dkr_cc_table_at(st->recipe - 1) : 0;
+        g_cat_pixels[e ? (int)e->category : SW_CATEGORIES - 1]++;
     }
 
     if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
@@ -760,6 +786,7 @@ void dkr_render_backend_software(dkr_render_backend *out)
     memset(&g_sw, 0, sizeof(g_sw));
     memset(g_tex_pixels, 0, sizeof(g_tex_pixels));
     memset(g_tex_tris, 0, sizeof(g_tex_tris));
+    memset(g_cat_pixels, 0, sizeof(g_cat_pixels));
     out->name            = "software";
     out->open            = sw_open;
     out->close           = sw_close;

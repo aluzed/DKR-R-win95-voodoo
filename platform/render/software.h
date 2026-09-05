@@ -110,6 +110,18 @@ unsigned long dkr_software_texture_pixels(int slot);
    covered no pixel — and the pixel count alone cannot tell them apart. */
 unsigned long dkr_software_texture_triangles(int slot);
 
+/* How much of the frame each category of combiner configuration painted, indexed
+ * by `dkr_cc_category`, with a fifth slot (4) for a state naming no catalogue
+ * entry at all.
+ *
+ * **This is the fill figure E05-S03 could not get.** Fill is what limits a
+ * Voodoo 2 at 640x480, so the cost of implementing multipass is the area the
+ * multipass entries cover, doubled — and the share of the frame those entries
+ * paint is also the share the card currently renders through an approximation.
+ * Counted here because the oracle is the one that knows what the pixel should
+ * have been; the card cannot report on a configuration it cannot express. */
+unsigned long dkr_software_category_pixels(int category);
+
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */
 const float *dkr_software_depthbuffer(int *width, int *height);
