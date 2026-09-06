@@ -506,6 +506,13 @@ int main(int argc, char **argv)
 
             run_capture(&card, &h, rdram, card_tmus, no_cull, &cc);
             say_counts("card", &cc);
+            {
+                unsigned long d = 0, id = 0, un = 0, bl = 0;
+                dkr_glide_backend_pass2_stats(&d, &id, &un, &bl);
+                say("  second pass: drawn=%lu (of which approximate over a"
+                    " blended first pass: %lu) skipped: identity=%lu"
+                    " unsupported=%lu\n", d, bl, id, un);
+            }
 
             if (dkr_glide_read_framebuffer(card_pixels,
                                            (int)(h.screen_w * h.screen_h),

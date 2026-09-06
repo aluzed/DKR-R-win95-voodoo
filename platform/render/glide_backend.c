@@ -70,6 +70,8 @@ typedef int           FxBool;
 #define GR_BLEND_ONE_MINUS_SRC_ALPHA      0x5
 
 /* Comparisons — shared by the depth test and the alpha test. */
+#define GR_CMP_LEQUAL                     0x3
+
 #define GR_CMP_NEVER                      0x0
 #define GR_CMP_LESS                       0x1
 #define GR_CMP_GREATER                    0x4
@@ -271,6 +273,13 @@ static struct {
        were programmed, that one says triangles carried coordinates for it, and
        either being zero while the other is not is a defect with an address. */
     unsigned long    two_layer_states;
+    /* E05-S03's second pass: drawn, and skipped with the reason. A pass that is
+       silently not drawn is indistinguishable from one that is not needed, and
+       the whole point of the guards below is that most of them are not needed. */
+    unsigned long    pass2_drawn;
+    unsigned long    pass2_identity;    /* the constant's alpha is zero */
+    unsigned long    pass2_unsupported; /* two cycles, but not the lerp form */
+    unsigned long    pass2_blend;       /* drawn over a blended first pass */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -767,6 +776,150 @@ static void gl_set_scissor(void *self, int x0, int y0, int x1, int y1)
     gs.clip_window((FxU32)x0, (FxU32)y0, (FxU32)x1, (FxU32)y1);
 }
 
+/* --- E05-S03's second pass ---------------------------------------------------- *
+ *
+ * **Why one exists at all.** `DKR_CC_MULTIPASS` said "several passes get there"
+ * and named a classification, not an implementation: everything that was not
+ * `DKR_CC_EXACT` fell through to `apply_combine`'s four single-pass modes, which
+ * compute the RDP's *first* cycle and drop the second. Measured on 4 September
+ * 2026, that is why the card drew a character as a black silhouette while the
+ * oracle drew him in a red cap.
+ *
+ * **Why it is affordable.** The multipass share of the fill is 90 to 100 % on
+ * this game's scenes, which is what made a second pass look prohibitive on a
+ * fill-limited Voodoo 2. It is the wrong figure: the dominant second cycle is a
+ * lerp toward the environment colour **by that colour's alpha**, and an alpha of
+ * zero makes it the identity. The fill where the second cycle actually changes a
+ * pixel is 0 % of the copyright screen, 0.08 % of the intro, 1.4 % of the race
+ * and 6.3 % of the hub. See `docs/research/win95-multipass-cost.md`.
+ *
+ * **What is drawn.** The same triangles, the environment colour flat, at an alpha
+ * of `texel_alpha x env_alpha`, blended over what the first pass left. The colour
+ * is taken from the constant register and the alpha keeps the texture's, which is
+ * what makes the second pass cover exactly what the first covered: a cut-out
+ * texel has alpha zero and contributes nothing, here as there.
+ *
+ * **Three guards, each counted.** A second pass drawn where it is not wanted is
+ * worse than none, because it costs fill *and* is wrong.
+ */
+static int pass2_is_env_lerp(const dkr_cc_entry *e)
+{
+    /* `(ENVIRONMENT - COMBINED) * ENV_ALPHA + COMBINED`: a lerp from the first
+       cycle's result toward the environment colour. The one shape this pass
+       reproduces, recognised by its mux fields rather than by its name -- names
+       are the generator's, the fields are the hardware's. */
+    return e != 0 && e->cycle == DKR_CYCLE_2 &&
+           e->rgb[1].a == (unsigned char)DKR_CC_ENVIRONMENT &&
+           e->rgb[1].b == (unsigned char)DKR_CC_COMBINED &&
+           e->rgb[1].c == (unsigned char)DKR_CC_ENV_ALPHA &&
+           e->rgb[1].d == (unsigned char)DKR_CC_COMBINED;
+}
+
+static int pass2_wanted(const dkr_render_state *st)
+{
+    const dkr_cc_entry *e;
+
+    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
+    e = dkr_cc_table_at(st->recipe - 1);
+    /* A one-cycle configuration has nothing to compose and is not a refusal.
+       Counting it as one made the first measurement read "unsupported=165" for a
+       scene whose problem was elsewhere entirely. */
+    if (e == 0 || e->cycle != DKR_CYCLE_2) { return 0; }
+    /* **Only the entries the catalogue classifies as needing several passes.**
+     *
+     * An `EXACT` entry is one a single Glide setup reproduces, second cycle
+     * included, so a pass on top of it would apply that cycle twice. A
+     * `TWO_TEXELS` entry is served by chaining the units in E05-S04, which is
+     * also a complete answer. Neither is a case for this.
+     *
+     * No entry in today's table is both `EXACT` and the lerp shape, so this
+     * changes nothing now -- which is exactly why it is written down rather than
+     * left to the table's current contents. The table is generated. */
+    if (e->category != DKR_CC_MULTIPASS) { return 0; }
+    if (!pass2_is_env_lerp(e)) { b.pass2_unsupported++; return 0; }
+    /* The environment's alpha is the lerp factor. Zero means the second cycle is
+       the identity, and this is the guard that makes the whole thing cheap. */
+    if (((st->env_color >> 24) & 0xFFu) == 0u) { b.pass2_identity++; return 0; }
+    /* --- Over a blended first pass it is approximate, and drawn anyway -------- *
+     *
+     * The RDP computes cycle 2 and *then* blends with the frame buffer; this
+     * draws cycle 2 as a blend against a frame buffer that already holds cycle 1.
+     * Over an opaque first pass the two are equal. Over an alpha-blended one they
+     * are not, and the gap is `dst * (1 - a) * k * a` -- bounded by a quarter of
+     * the lerp factor, and zero where the surface is opaque or invisible.
+     *
+     * **Refusing it was measured and was worse.** On 6 September 2026 the first
+     * version refused, and drew 2 second passes out of 900 batches on the hub:
+     * the surfaces whose second cycle actually does something there are the
+     * alpha-blended ones, so the guard removed exactly the cases the pass exists
+     * for. An approximation that announces itself beats a correct rule that
+     * applies to nothing.
+     *
+     * It announces itself here, by being counted separately. */
+    if (st->blend != DKR_BLEND_OPAQUE) { b.pass2_blend++; }
+    return 1;
+}
+
+static void pass2_draw(const dkr_render_vertex *vertices, int count)
+{
+    int i;
+
+    if (gs.constant_color) { gs.constant_color(b.current.env_color); }
+    /* Colour: the constant alone. `FUNCTION_LOCAL` outputs `local` and ignores
+       `other` entirely, so `other` is given the value this file already uses and
+       has seen work rather than `GR_COMBINE_OTHER_NONE`, whose numeric value
+       would be written here from memory. This file has a record of what that
+       costs: the texture-combine enumeration was found to be shifted by one from
+       what had been written the same way. An unused argument is not worth an
+       unverified constant. */
+    if (gs.color_combine) {
+        gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+    }
+    /* Alpha: the texel's times the constant's. The constant's is the lerp factor;
+       the texel's is what keeps the pass inside the first pass's coverage. */
+    if (gs.alpha_combine) {
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+    }
+    if (gs.blend_function) {
+        gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+                          GR_BLEND_ONE, GR_BLEND_ZERO);
+    }
+    /* `LEQUAL` and no write: the second pass sits at exactly the depth the first
+       one left, and `LESS` -- which is what everything else uses -- would reject
+       every pixel of it. Writing again would be harmless and is skipped because
+       it is a write. */
+    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
+        gs.depth_function(GR_CMP_LEQUAL);
+    }
+    if (gs.depth_mask) { gs.depth_mask(0); }
+
+    for (i = 0; i + 2 < count * 3; i += 3) {
+        dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+    }
+    b.pass2_drawn++;
+
+    /* --- And the first pass's programming is put back, at once ---------------- *
+     *
+     * Clearing `has_state` so that the *next* `set_state` reprograms is not
+     * enough, and the gap is the dangerous kind. The decoder calls `set_state`
+     * before each batch today; a batch drawn without one -- and nothing in the
+     * interface promises there will be one -- would render with the second pass's
+     * combiner still loaded, which is a flat constant colour over the geometry.
+     * A silent flat-colour object is exactly the class of defect this file keeps
+     * a record of.
+     *
+     * So the state is re-applied here, through the same path that applied it in
+     * the first place. Restoring five registers by hand is how one of them gets
+     * forgotten. */
+    {
+        const dkr_render_state saved = b.current;
+        b.has_state = 0;
+        gl_set_state(0, &saved);
+    }
+}
+
 static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                               int count)
 {
@@ -780,6 +933,9 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     for (i = 0; i + 2 < count * 3; i += 3) {
         dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
         b.triangles++;
+    }
+    if (b.has_state && pass2_wanted(&b.current)) {
+        pass2_draw(vertices, count);
     }
 }
 
@@ -1167,6 +1323,16 @@ unsigned long dkr_glide_backend_triangle_count(void)
 unsigned long dkr_glide_backend_two_layer_states(void)
 {
     return b.two_layer_states;
+}
+
+void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity,
+                                   unsigned long *unsupported,
+                                   unsigned long *blend)
+{
+    if (drawn)       { *drawn       = b.pass2_drawn; }
+    if (identity)    { *identity    = b.pass2_identity; }
+    if (unsupported) { *unsupported = b.pass2_unsupported; }
+    if (blend)       { *blend       = b.pass2_blend; }
 }
 
 void dkr_glide_backend_bind_stats(unsigned long *binds,

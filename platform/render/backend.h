@@ -474,6 +474,15 @@ unsigned long dkr_glide_backend_upload_failure(int kind);
 unsigned long dkr_glide_backend_slots_reclaimed(void);
 /* State applications served by chaining both texture units (E05-S04). */
 unsigned long dkr_glide_backend_two_layer_states(void);
+/* E05-S03's second pass: how many batches got one, and how many did not with the
+   reason — the second cycle would have been the identity, or its shape is not the
+   one the pass reproduces. `blend` counts passes that *were* drawn over an
+   alpha-blended first pass, where the composition is approximate rather than
+   exact; it is a subset of `drawn` and not a refusal. A pass silently not drawn is indistinguishable from one
+   not needed, and the guards exist precisely because most are not needed. */
+void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity,
+                                   unsigned long *unsupported,
+                                   unsigned long *blend);
 /* What `texture_lookup` answered, cumulatively: resident, not resident, and
    **stale** -- a descriptor naming a key the allocator has since evicted. The
    third is separated from the second on purpose: a stale hit is the one that
