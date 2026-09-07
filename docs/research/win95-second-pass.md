@@ -86,13 +86,18 @@ catalogue entry, so it never takes this path, which is the control.
 The oracle now writes a **recipe map** — one byte a pixel, the configuration that
 painted it last. Crossed with the difference map it stops the guessing.
 
-On the hub, before any second pass:
+On the hub, before and after the second pass:
 
-| configuration | divergent | of painted | share |
+| configuration | painted | divergent before | after |
 |---|---:|---:|---:|
-| `G_CC_BLEND_SHADEALPHA` + `G_CC_BLENDI_SHADE` | 6,420 | 6,420 | **100 %** |
-| `G_CC_MODULATEIA_PRIM` + `G_CC_BLEND_ENV_ALPHA2` | 5,693 | 44,362 | 13 % |
-| `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` | 356 | 235,717 | 0.15 % |
+| `G_CC_BLEND_SHADEALPHA` + `G_CC_BLENDI_SHADE` | 6,420 | 6,420 (**100 %**) | 6,420 |
+| `G_CC_MODULATEIA_PRIM` + `G_CC_BLEND_ENV_ALPHA2` | 44,362 | 5,693 | **3,604** |
+| `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` | 235,717 | 356 | 357 |
+
+**That is the second pass verified rather than merely measured.** It improved the
+one entry whose shape it reproduces, by 37 %; it left untouched the entry whose
+shape it refuses; and it disturbed nothing else. A feature that improved a total
+would have been consistent with a dozen stories, including several bad ones.
 
 **The entry that carries 85 % of the fill is wrong on one pixel in seven
 hundred.** The entry that is wrong on *every* pixel it paints covers 6,420 of
