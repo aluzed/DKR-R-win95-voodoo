@@ -294,9 +294,43 @@ static void say_recipes(void)
         const unsigned long two = dkr_software_second_cycle_pixels(0);
         const unsigned long eff = dkr_software_second_cycle_pixels(1);
         if (two > 0u) {
+            const unsigned long al = dkr_software_second_cycle_pixels(2);
             say("    two-cycle %8lu  of which the second cycle changes the "
-                "pixel: %lu (%ld ppm of all fill)\n",
-                two, eff, dkr_image_per_million((long)eff, (long)total));
+                "colour: %lu (%ld ppm)  the alpha: %lu (%ld ppm)\n",
+                two, eff, dkr_image_per_million((long)eff, (long)total),
+                al, dkr_image_per_million((long)al, (long)total));
+        }
+    }
+    {
+        /* Which second cycles actually do something, worst first. The card
+           reproduces one shape; this says what the next one would be worth. */
+        unsigned long e[65];
+        int j, shown2;
+        int any = 0;
+        for (j = 0; j <= count; j++) {
+            e[j] = dkr_software_second_cycle_by_recipe(j);
+            if (e[j] > 0u) { any = 1; }
+        }
+        if (any) {
+            say("  second cycles that change a pixel, worst first:\n");
+            for (shown2 = 0; shown2 < 4; shown2++) {
+                unsigned long best = 0;
+                int best_j = -1;
+                for (j = 0; j <= count; j++) {
+                    if (e[j] > best) { best = e[j]; best_j = j; }
+                }
+                if (best_j < 0) { break; }
+                {
+                    const dkr_cc_entry *ent =
+                        (best_j > 0) ? dkr_cc_table_at(best_j - 1) : 0;
+                    say("    %8lu  %6ld ppm  %s%s%s\n", best,
+                        dkr_image_per_million((long)best, (long)total),
+                        ent ? ent->name : "(no catalogue entry)",
+                        (ent && ent->name_cycle2) ? " + " : "",
+                        (ent && ent->name_cycle2) ? ent->name_cycle2 : "");
+                }
+                e[best_j] = 0u;
+            }
         }
     }
     say("  fill by configuration, worst first:\n");
@@ -333,7 +367,7 @@ int main(int argc, char **argv)
     dkr_capture_header h;
     unsigned char *rdram = 0;
     const char *cap_path = 0, *out_path = 0, *log_path = 0;
-    const char *dump_dir = 0;
+    const char *dump_dir = 0, *map_path = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
     int no_cull = 0;
@@ -347,6 +381,9 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
+        }
+        else if (strcmp(argv[i], "--recipe-map") == 0 && i + 1 < argc) {
+            map_path = argv[++i];
         }
         else if (strcmp(argv[i], "--dump-textures") == 0 && i + 1 < argc) {
             dump_dir = argv[++i];
@@ -436,6 +473,24 @@ int main(int argc, char **argv)
             say_recipes();
             /* Before the backend closes: it frees the textures on close. */
             if (dump_dir) { dump_textures(dump_dir); }
+            if (map_path) {
+                int mw = 0, mh = 0;
+                const unsigned char *m = dkr_software_recipe_map(&mw, &mh);
+                if (m && mw > 0 && mh > 0) {
+                    /* Written as a plain byte per pixel, top row first. Not a BMP:
+                       this is data for a script, and a viewer that made it look
+                       like a picture would invite reading it as one. */
+                    FILE *f = fopen(map_path, "wb");
+                    if (f && fwrite(m, 1, (size_t)mw * (size_t)mh, f) ==
+                              (size_t)mw * (size_t)mh) {
+                        say("  recipe map: %s (%dx%d, one byte a pixel)\n",
+                            map_path, mw, mh);
+                    } else {
+                        fprintf(stderr, "replay: cannot write %s\n", map_path);
+                    }
+                    if (f) { fclose(f); }
+                }
+            }
 
             {
                 const unsigned *fb = dkr_software_framebuffer(&sw, &sh);

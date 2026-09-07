@@ -138,7 +138,30 @@ unsigned long dkr_software_recipe_pixels(int recipe);
  * when the alpha is zero, so the cost of a second pass on the card is not the
  * multipass fill — it is the multipass fill that is not a no-op, which is a
  * property of the constants at draw time and not of the configuration. */
-unsigned long dkr_software_second_cycle_pixels(int effective_only);
+/* `which`: 0 = all two-cycle fill, 1 = where the second cycle changes the
+ * **colour**, 2 = where it changes the **alpha**.
+ *
+ * The two are counted apart because they have different remedies, and because a
+ * single figure was misleading: on the race it reported 8,872 pixels whose second
+ * cycle "does something" while the card, guarding on the environment's alpha,
+ * drew zero second passes — and both were right. The colour lerp is the identity
+ * there; what moves is the alpha, through a stage of its own. */
+unsigned long dkr_software_second_cycle_pixels(int which);
+
+/* The same effective fill, by catalogue entry. "A fifth of the divergence" is a
+ * result; "which configuration is the next fifth" is a plan, and this is where
+ * that plan comes from — without going near the machine. */
+unsigned long dkr_software_second_cycle_by_recipe(int recipe);
+
+/* Which configuration painted each pixel last — `recipe` as the state carries it,
+ * 0 where nothing painted and 255 where the state named no catalogue entry.
+ *
+ * The counters say how much fill each configuration takes; this says **where**.
+ * Crossed with a difference map it answers the question that decides what to
+ * write next: of the pixels where the card disagrees, which configuration drew
+ * them. Guessing that from the totals is how one implements the shape with the
+ * largest fill and finds it was not the one that was wrong. */
+const unsigned char *dkr_software_recipe_map(int *width, int *height);
 
 /* Depth, for the cases where depth is the suspect. `NULL` if no context is
    open. */

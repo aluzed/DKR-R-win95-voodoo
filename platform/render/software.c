@@ -167,6 +167,7 @@ static unsigned sample_texture(const sw_texture *t, float s, float tc,
  * constants at draw time, not of the configuration. This counter measures it. */
 static unsigned long g_cycle2_pixels;
 static unsigned long g_cycle2_pixels_effective;
+static unsigned long g_cycle2_pixels_alpha;
 /* Set by `combine`, consumed by `put_pixel`. The two counters have to share a
    denominator with `g_cat_pixels` or the shares cannot be compared, and the
    shading of a pixel is not its writing: the scissor, the depth test and the
@@ -174,9 +175,45 @@ static unsigned long g_cycle2_pixels_effective;
    makes "16.6 % of the fill" a sentence about fill. */
 static unsigned char g_last_two_cycle;
 static unsigned char g_last_cycle2_changed;
+static unsigned char g_last_cycle2_alpha;
+/* The same effective fill, by catalogue entry.
+ *
+ * "A fifth of the divergence" is a result; "which configuration is the next
+ * fifth" is a plan. The card reproduces one second-cycle shape today, and the
+ * question is which of the others is worth writing next — that is the fill where
+ * *their* second cycle changes a pixel, and it is knowable here without going
+ * near the machine. */
+static unsigned long g_cycle2_by_recipe[65];
+
+unsigned long dkr_software_second_cycle_by_recipe(int recipe)
+{
+    if (recipe < 0 || recipe > 64) { return 0u; }
+    return g_cycle2_by_recipe[recipe];
+}
+
+/* Which configuration painted each pixel last.
+ *
+ * The counters say how much fill each configuration takes; this says **where**.
+ * Crossed with the difference map it answers the question that decides what to
+ * write next: of the pixels where the card disagrees with the oracle, which
+ * configuration drew them. Guessing that from the totals is how one implements
+ * the shape with the largest fill and finds it was not the one that was wrong. */
+static unsigned char g_recipe_map[640 * 480];
+
+const unsigned char *dkr_software_recipe_map(int *width, int *height)
+{
+    if (width)  { *width  = g_sw.width; }
+    if (height) { *height = g_sw.height; }
+    if (!g_sw.open || g_sw.width <= 0 || g_sw.height <= 0 ||
+        (size_t)g_sw.width * (size_t)g_sw.height > sizeof(g_recipe_map)) {
+        return 0;
+    }
+    return g_recipe_map;
+}
 
 unsigned long dkr_software_second_cycle_pixels(int effective_only)
 {
+    if (effective_only == 2) { return g_cycle2_pixels_alpha; }
     return effective_only ? g_cycle2_pixels_effective : g_cycle2_pixels;
 }
 
@@ -249,16 +286,33 @@ static int combine_from_catalogue(const dkr_render_state *st, unsigned texel,
            turns on: a second cycle that changes nothing costs a pass for
            nothing. */
         float first[4];
-        int k, changed = 0;
+        int k, changed_rgb = 0, changed_alpha = 0;
         dkr_combiner_eval(&cc, 0, &in, first);
         for (k = 0; k < 4; k++) { in.combined[k] = first[k]; }
         dkr_combiner_eval(&cc, 1, &in, out);
-        for (k = 0; k < 4; k++) {
+        /* **Colour and alpha counted apart, and the separation was not obvious.**
+         *
+         * The first version counted a change in any of the four components. On
+         * the race that reported 8,872 pixels whose second cycle "does something"
+         * while the card, guarding on the environment's alpha, drew **zero**
+         * second passes -- and both were right. The colour mux's lerp really is
+         * the identity there; what changes is the *alpha*, through a stage of its
+         * own that the constant's colour alpha does not govern.
+         *
+         * The two have different remedies, so they get different counters. A
+         * single "effective" figure made the card's guard look wrong when it was
+         * measuring something else. */
+        for (k = 0; k < 3; k++) {
             const float d = first[k] - out[k];
-            if (d > 1.0f || d < -1.0f) { changed = 1; }
+            if (d > 1.0f || d < -1.0f) { changed_rgb = 1; }
+        }
+        {
+            const float d = first[3] - out[3];
+            if (d > 1.0f || d < -1.0f) { changed_alpha = 1; }
         }
         g_last_two_cycle = 1u;
-        g_last_cycle2_changed = (unsigned char)(changed ? 1 : 0);
+        g_last_cycle2_changed = (unsigned char)(changed_rgb ? 1 : 0);
+        g_last_cycle2_alpha = (unsigned char)(changed_alpha ? 1 : 0);
     } else {
         g_last_two_cycle = 0u;
         g_last_cycle2_changed = 0u;
@@ -481,6 +535,10 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
     if (st->texture != 0 && st->texture <= MAX_TEXTURES) {
         g_tex_pixels[st->texture - 1]++;
     }
+    if (index < sizeof(g_recipe_map)) {
+        g_recipe_map[index] = (unsigned char)((st->recipe > 0 &&
+                                               st->recipe < 255) ? st->recipe : 255);
+    }
     {
         const dkr_cc_entry *e = (st->recipe > 0 &&
                                  st->recipe <= dkr_cc_table_count())
@@ -491,7 +549,13 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
     }
     if (g_last_two_cycle) {
         g_cycle2_pixels++;
-        if (g_last_cycle2_changed) { g_cycle2_pixels_effective++; }
+        if (g_last_cycle2_alpha) { g_cycle2_pixels_alpha++; }
+        if (g_last_cycle2_changed) {
+            g_cycle2_pixels_effective++;
+            if (st->recipe >= 0 && st->recipe <= 64) {
+                g_cycle2_by_recipe[st->recipe]++;
+            }
+        }
     }
 
     if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
@@ -867,6 +931,9 @@ void dkr_render_backend_software(dkr_render_backend *out)
     memset(g_recipe_pixels, 0, sizeof(g_recipe_pixels));
     g_cycle2_pixels = 0u;
     g_cycle2_pixels_effective = 0u;
+    g_cycle2_pixels_alpha = 0u;
+    memset(g_cycle2_by_recipe, 0, sizeof(g_cycle2_by_recipe));
+    memset(g_recipe_map, 0, sizeof(g_recipe_map));
     out->name            = "software";
     out->open            = sw_open;
     out->close           = sw_close;

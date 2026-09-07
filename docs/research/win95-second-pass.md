@@ -81,6 +81,39 @@ disappointment.
 `COMPARE.EXE` reports 0 failures throughout — the synthetic scene names no
 catalogue entry, so it never takes this path, which is the control.
 
+## Where the rest of the divergence is, attributed
+
+The oracle now writes a **recipe map** — one byte a pixel, the configuration that
+painted it last. Crossed with the difference map it stops the guessing.
+
+On the hub, before any second pass:
+
+| configuration | divergent | of painted | share |
+|---|---:|---:|---:|
+| `G_CC_BLEND_SHADEALPHA` + `G_CC_BLENDI_SHADE` | 6,420 | 6,420 | **100 %** |
+| `G_CC_MODULATEIA_PRIM` + `G_CC_BLEND_ENV_ALPHA2` | 5,693 | 44,362 | 13 % |
+| `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` | 356 | 235,717 | 0.15 % |
+
+**The entry that carries 85 % of the fill is wrong on one pixel in seven
+hundred.** The entry that is wrong on *every* pixel it paints covers 6,420 of
+them — and they sit at x 371–527, y 161–339, which is exactly where the character
+the card renders as a black silhouette is.
+
+So the headline defect has a name: `G_CC_BLEND_SHADEALPHA` +
+`G_CC_BLENDI_SHADE`, whose second cycle is
+
+    (ENV - COMBINED) * SHADE + COMBINED
+
+a lerp toward the environment colour by the **vertex colour** — per channel, not
+by an alpha. That is the one thing the pass above cannot do: Glide's frame-buffer
+blender takes scalar alpha factors, and a per-channel factor is not among them in
+the positions that would be needed. Named, not solved.
+
+It also explains why the fill figures were the wrong guide. Ranking
+configurations by the area they cover put `MODULATEIDECALA` first at 85 %; ranking
+them by the area they get *wrong* puts it last of the three. Fill says what a fix
+would cost, not what it would buy.
+
 ## What it is not worth
 
 **A fifth of the divergence, not the whole of it.** 11,396 to 9,051 is 21 %. The
