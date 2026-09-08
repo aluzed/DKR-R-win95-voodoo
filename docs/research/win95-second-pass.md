@@ -152,15 +152,38 @@ and the RDP's factor is the **iterated alpha**. Glide offers a factor from the
 local or from the other, and `PRIM` and `SHADE_ALPHA` cannot both be the local.
 Irreducible in one pass, like the second cycle and for the same reason.
 
-It does decompose, and into passes that use only factors this file has seen work:
+It decomposes into passes that use only factors this file has seen work, and it
+is written:
 
     A:  colour = PRIM,   blend ONE / ZERO                  -> dst = PRIM
     B:  colour = TEXEL0, blend SRC_ALPHA / ONE_MINUS_SRC_ALPHA
-                         with the source alpha = shade alpha
+                         with the source alpha = the iterated alpha
                                                            -> TEXEL0*sa + PRIM*(1-sa)
 
-That is a **pre**-pass, not a post-pass: a different mechanism from the one built
-here, which composes *after* the first pass. Designed, not written.
+A **pre**-pass, not a post-pass: it *replaces* the ordinary draw instead of
+following it, and the second-cycle pass then composes on top of its result as it
+would over any other first pass.
+
+One guard: **not while a cutout is in force.** Pass B has to put the iterated
+alpha in the alpha combiner, because that alpha is its blend factor — and the
+alpha test reads the same output, so a state cutting holes by alpha would have
+them cut by the vertex alpha instead of the texel's. Refused and counted; the
+ordinary draw then applies, wrong in the old way rather than wrong in a new one.
+On the hub the refusal costs nothing: **0 of 162** batches carry an alpha test.
+
+### What it was worth
+
+    hub CAP0250, card against oracle          divergent   recipe 10
+    before the pre-pass                           8,657   6,133 of 6,420
+    with it                                       1,629      67 of 6,420
+
+**Eighty-one per cent of what remained, and the configuration it targets goes
+from wrong on every pixel to wrong on one in ninety-six.** From the start of the
+day's work — 11,396 — that is 86 % of the divergence gone. `COMPARE.EXE` reports
+0 failures, and the corpus still replays to 0 divergent pixels, the oracle being
+untouched by any of this.
+
+The character is a red cap and a blue plane on the card now.
 
 ## What it is not worth
 

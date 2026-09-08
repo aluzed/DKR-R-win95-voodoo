@@ -564,9 +564,13 @@ int main(int argc, char **argv)
             {
                 unsigned long d = 0, id = 0, un = 0, bl = 0, sh = 0;
                 dkr_glide_backend_pass2_stats(&d, &id, &un, &bl, &sh);
+                unsigned long pd = 0, pa = 0;
+                dkr_glide_backend_prepass_stats(&pd, &pa);
                 say("  second pass: drawn=%lu (by-shade=%lu, approximate over a"
                     " blended first pass=%lu) skipped: identity=%lu"
                     " unsupported=%lu\n", d, sh, bl, id, un);
+                say("  first cycle in two blends: drawn=%lu refused"
+                    " (alpha test)=%lu\n", pd, pa);
             }
 
             if (dkr_glide_read_framebuffer(card_pixels,

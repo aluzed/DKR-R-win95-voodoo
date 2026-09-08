@@ -296,6 +296,8 @@ static struct {
     unsigned long    pass2_blend;       /* drawn over a blended first pass */
     unsigned long    pass2_by_shade;    /* the per-channel form, two passes */
     unsigned long    recipe_multipass;  /* first cycles taken from the table */
+    unsigned long    prepass_drawn;     /* first cycles done in two blends */
+    unsigned long    prepass_alpha_test;/* refused: a cutout is in force */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -919,6 +921,62 @@ static int pass2_wanted(const dkr_render_state *st)
     return kind;
 }
 
+/* --- The first cycle, when one Glide stage cannot hold it -------------------- *
+ *
+ * `(TEXEL0 - PRIMITIVE) * SHADE_ALPHA + PRIMITIVE` is a lerp between the constant
+ * register and the texel, by the **vertex alpha**. Glide's combiner has the right
+ * shape for it -- `(other - local) * factor + local` -- and cannot supply the
+ * factor: a factor comes from the local or from the other, and `PRIMITIVE` has to
+ * be the local while `SHADE_ALPHA` is neither. The catalogue's generated setup
+ * runs into the same wall and names the local's factor instead.
+ *
+ * So the shorthand rendered it as `texel x shade`, using the shade's *colour*
+ * where the RDP uses its *alpha*. Measured at (417,161) of the hub on 8 September
+ * 2026: the shade colour is near zero and its alpha is one, so the RDP's answer is
+ * the texel -- a red cap -- and the card's was black. That single configuration
+ * was the largest divergence in the corpus, wrong on **every** pixel it painted,
+ * and two days had been spent on its *second* cycle before the recipe map said
+ * where to look.
+ *
+ * It decomposes into two passes that use only what the blender has:
+ *
+ *     A:  colour = PRIMITIVE, blend ONE / ZERO
+ *     B:  colour = TEXEL0,    blend SRC_ALPHA / ONE_MINUS_SRC_ALPHA,
+ *                             the source alpha being the iterated alpha
+ *
+ * A lays the constant down; B blends the texel over it by the vertex alpha. The
+ * result is exactly the RDP's first cycle, and the second-cycle pass then
+ * composes on top of it as it does over any other first pass.
+ *
+ * **A pre-pass and not a post-pass**: it *replaces* the ordinary draw rather than
+ * following it.
+ */
+static int prepass_wanted(const dkr_render_state *st)
+{
+    const dkr_cc_entry *e;
+
+    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
+    e = dkr_cc_table_at(st->recipe - 1);
+    if (e == 0 || e->category == DKR_CC_EXACT) { return 0; }
+    if (e->rgb[0].a != (unsigned char)DKR_CC_TEXEL0 ||
+        e->rgb[0].b != (unsigned char)DKR_CC_PRIMITIVE ||
+        e->rgb[0].c != (unsigned char)DKR_CC_SHADE_ALPHA ||
+        e->rgb[0].d != (unsigned char)DKR_CC_PRIMITIVE) {
+        return 0;
+    }
+    /* **Not while a cutout is in force.** Pass B has to put the *iterated* alpha
+       in the alpha combiner, because that alpha is its blend factor -- and the
+       alpha test reads the same output. A state that cuts holes by alpha would
+       have them cut by the vertex alpha instead of the texel's, which is a
+       different shape entirely. Refused and counted; the ordinary draw then
+       applies, wrong in the old way rather than wrong in a new one.
+       Measured: the states this shape appears in on the hub carry no alpha
+       test, so the refusal costs nothing there and guards the case it cannot
+       serve. */
+    if (st->alpha_test) { b.prepass_alpha_test++; return 0; }
+    return 1;
+}
+
 static void pass2_geometry(const dkr_render_vertex *vertices, int count)
 {
     int i;
@@ -949,6 +1007,39 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * pixel it paints, and those pixels are a character the card renders as a black
  * silhouette. Fill says what a fix costs; this is what one buys.
  */
+static void prepass_draw(const dkr_render_vertex *vertices, int count)
+{
+    if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
+
+    /* A: the constant, opaque. `constant_color` carries the register the colour
+       mux named, which for this shape is `PRIMITIVE`. */
+    if (gs.constant_color) { gs.constant_color(b.current.constant_color); }
+    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
+    /* Depth as the state asks: this pass stands in for the ordinary draw, so it
+       is the one that may write. */
+    apply_depth(b.current.depth);
+    pass2_geometry(vertices, count);
+
+    /* B: the texel over it, by the vertex alpha. */
+    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+                      GR_BLEND_ONE, GR_BLEND_ZERO);
+    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
+        gs.depth_function(GR_CMP_LEQUAL);
+    }
+    if (gs.depth_mask) { gs.depth_mask(0); }
+    pass2_geometry(vertices, count);
+
+    b.prepass_drawn++;
+}
+
 static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
 {
     if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
@@ -1073,6 +1164,7 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
 static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                               int count)
 {
+    const unsigned long prepass_before = b.prepass_drawn;
     int i;
     (void)self;
     if (!vertices || count <= 0) { return; }
@@ -1080,10 +1172,17 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
        `backend_layout_check.c` checks it at compile time. The hand-off therefore
        needs no conversion and no copy, which was the whole point of this
        layer. */
-    for (i = 0; i + 2 < count * 3; i += 3) {
-        dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
-        b.triangles++;
+    /* The pre-pass **replaces** the ordinary draw: it is the first cycle, done in
+       two blends because one stage cannot hold it. Drawing both would lay the
+       constant over the result and waste the fill doing it. */
+    if (b.has_state && prepass_wanted(&b.current)) {
+        prepass_draw(vertices, count);
+    } else {
+        for (i = 0; i + 2 < count * 3; i += 3) {
+            dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+        }
     }
+    b.triangles += (unsigned long)count;
     if (b.has_state) {
         const int kind = pass2_wanted(&b.current);
         if (kind == PASS2_BY_ENV_ALPHA) {
@@ -1096,6 +1195,12 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                 b.has_state = 0;
                 gl_set_state(0, &saved);
             }
+        } else if (b.prepass_drawn != prepass_before) {
+            /* A pre-pass with no second cycle to follow still left the registers
+               where it put them. Same restoration, same reason. */
+            const dkr_render_state saved = b.current;
+            b.has_state = 0;
+            gl_set_state(0, &saved);
         }
     }
 }
@@ -1496,6 +1601,13 @@ void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity
     if (unsupported) { *unsupported = b.pass2_unsupported; }
     if (blend)       { *blend       = b.pass2_blend; }
     if (by_shade)    { *by_shade    = b.pass2_by_shade; }
+}
+
+void dkr_glide_backend_prepass_stats(unsigned long *drawn,
+                                     unsigned long *refused_alpha_test)
+{
+    if (drawn)              { *drawn              = b.prepass_drawn; }
+    if (refused_alpha_test) { *refused_alpha_test = b.prepass_alpha_test; }
 }
 
 void dkr_glide_backend_bind_stats(unsigned long *binds,
