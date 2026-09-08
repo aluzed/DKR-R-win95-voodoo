@@ -68,7 +68,13 @@ Measured on the machine, card against the oracle:
 |---|---:|---:|
 | before any second pass | 11,396 | 124 |
 | opaque first pass only | 10,908 | 124 |
-| **and over a blended one** | **9,051** | 124 |
+| and over a blended one | 9,051 | 124 |
+| and the per-channel form | 8,701 | 124 |
+| **and the catalogue's first-cycle setups for `MULTIPASS`** | **8,657** | 124 |
+
+Twenty-four per cent over five changes, of which the last two account for four.
+The reason they account for so little is the section below: they address the
+second cycle of a configuration whose **first** cycle is what is wrong.
 
 Second passes on the hub: **152 drawn** of 900 batches, 148 of them approximate;
 585 skipped as the identity, 162 as a shape this does not reproduce.
@@ -118,6 +124,43 @@ It also explains why the fill figures were the wrong guide. Ranking
 configurations by the area they cover put `MODULATEIDECALA` first at 85 %; ranking
 them by the area they get *wrong* puts it last of the three. Fill says what a fix
 would cost, not what it would buy.
+
+## The black character is the **first** cycle, not the second
+
+Three attempts were spent on that configuration's second cycle, and the third
+measurement is what named the mistake. At one pixel of the character —
+(417,161), where the oracle puts `0xFF0000` and the card puts `0x000000`:
+
+    RDP cycle 1   (TEXEL0 - PRIM) * SHADE_ALPHA + PRIM
+    the shorthand  texel x shade                        (TEXTURE_SHADE_ALPHA)
+
+`PRIM` is black there and the shade's **colour** is near zero while its **alpha**
+is one. So the RDP's first cycle is the texel — a red cap — and the four-mode
+shorthand is texel × 0. The second cycle then lerps by the shade colour, which is
+near zero, so it changes almost nothing: the pixel the oracle draws red is red
+*before* cycle 2 ever runs.
+
+Two days on the second cycle of a configuration whose first cycle was the defect.
+The recipe map is what finally said so, by attributing the divergence to
+`G_CC_BLEND_SHADEALPHA` and holding it there through three changes that each
+moved the total by a few hundred pixels.
+
+**The catalogue's own setup does not express it either.** Recipe 10's generated
+setup is `(other − local) × factor + local` with other = texture and local = the
+constant, which is the right shape — but the factor it can name is the local's,
+and the RDP's factor is the **iterated alpha**. Glide offers a factor from the
+local or from the other, and `PRIM` and `SHADE_ALPHA` cannot both be the local.
+Irreducible in one pass, like the second cycle and for the same reason.
+
+It does decompose, and into passes that use only factors this file has seen work:
+
+    A:  colour = PRIM,   blend ONE / ZERO                  -> dst = PRIM
+    B:  colour = TEXEL0, blend SRC_ALPHA / ONE_MINUS_SRC_ALPHA
+                         with the source alpha = shade alpha
+                                                           -> TEXEL0*sa + PRIM*(1-sa)
+
+That is a **pre**-pass, not a post-pass: a different mechanism from the one built
+here, which composes *after* the first pass. Designed, not written.
 
 ## What it is not worth
 

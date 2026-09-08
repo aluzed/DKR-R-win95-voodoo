@@ -482,7 +482,8 @@ unsigned long dkr_glide_backend_two_layer_states(void);
    not needed, and the guards exist precisely because most are not needed. */
 void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity,
                                    unsigned long *unsupported,
-                                   unsigned long *blend);
+                                   unsigned long *blend,
+                                   unsigned long *by_shade);
 /* What `texture_lookup` answered, cumulatively: resident, not resident, and
    **stale** -- a descriptor naming a key the allocator has since evicted. The
    third is separated from the second on purpose: a stale hit is the one that

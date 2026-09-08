@@ -68,6 +68,20 @@ typedef int           FxBool;
 #define GR_BLEND_SRC_ALPHA                0x1
 #define GR_BLEND_ONE                      0x4
 #define GR_BLEND_ONE_MINUS_SRC_ALPHA      0x5
+/* **Per-channel factors, and where they are legal.** `GR_BLEND_SRC_COLOR` is a
+   *destination* factor and `GR_BLEND_DST_COLOR` a *source* one; both are 0x2 and
+   which is meant depends on the argument's position. Likewise 0x6 is
+   `ONE_MINUS_SRC_COLOR` for the destination and `ONE_MINUS_DST_COLOR` for the
+   source. Only the destination forms are used here, and they are named for what
+   they are in the position they are used in.
+
+   These two are the only values in this file not yet seen to work on the card.
+   The four that were -- ZERO 0x0, SRC_ALPHA 0x1, ONE 0x4, ONE_MINUS_SRC_ALPHA
+   0x5 -- match the canonical table position for position, which is why these are
+   taken from the same table rather than guessed; it is not the same as having
+   measured them, and this comment is here so that a wrong image is diagnosed
+   from here first. */
+#define GR_BLEND_ONE_MINUS_SRC_COLOR      0x6   /* destination factor only */
 
 /* Comparisons — shared by the depth test and the alpha test. */
 #define GR_CMP_LEQUAL                     0x3
@@ -280,6 +294,8 @@ static struct {
     unsigned long    pass2_identity;    /* the constant's alpha is zero */
     unsigned long    pass2_unsupported; /* two cycles, but not the lerp form */
     unsigned long    pass2_blend;       /* drawn over a blended first pass */
+    unsigned long    pass2_by_shade;    /* the per-channel form, two passes */
+    unsigned long    recipe_multipass;  /* first cycles taken from the table */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -742,9 +758,33 @@ static void gl_set_state(void *self, const dkr_render_state *state)
                                     GR_TEXTURECOMBINE_DECAL, 0);
             dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
             b.two_layer_states++;
-        } else if (e != 0 && e->category == DKR_CC_EXACT) {
+        } else if (e != 0 && (e->category == DKR_CC_EXACT ||
+                              e->category == DKR_CC_MULTIPASS)) {
+            /* --- `MULTIPASS` joins `EXACT` here, and that is the point --------- *
+             *
+             * The gate used to be `EXACT` alone, on the reasoning that a setup
+             * which only imitates a configuration should give way to the
+             * fallback -- written after an *approximate* entry took over surfaces
+             * and rendered Wizpig as a black silhouette.
+             *
+             * `MULTIPASS` is not that case. Such an entry is classified so
+             * because a *second* pass is needed, and its setup describes the
+             * **first cycle exactly**. Sending it to `apply_combine`'s four modes
+             * threw that exactness away for nothing.
+             *
+             * What it cost, measured on 8 September 2026 at one pixel of the
+             * character the card renders black:
+             *
+             *   RDP cycle 1   (TEXEL0 - PRIM) * SHADE_ALPHA + PRIM   = the texel
+             *   the shorthand  texel x shade                          = black
+             *
+             * The shorthand used the shade's **colour** where the RDP uses its
+             * **alpha**, and the vertex colour is near zero there. Two days were
+             * spent on the second cycle of that configuration; the first was
+             * what was wrong. */
             if (e->setup.uses_texture) { bind_texture(state->texture); }
             dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
+            if (e->category == DKR_CC_MULTIPASS) { b.recipe_multipass++; }
         } else {
             apply_combine(state->combine, state->texture, state->constant_color,
                           state->alpha_scale);
@@ -802,22 +842,36 @@ static void gl_set_scissor(void *self, int x0, int y0, int x1, int y1)
  * **Three guards, each counted.** A second pass drawn where it is not wanted is
  * worse than none, because it costs fill *and* is wrong.
  */
-static int pass2_is_env_lerp(const dkr_cc_entry *e)
+/* The second cycles this reproduces. Both are the same shape --
+   `(ENVIRONMENT - COMBINED) * factor + COMBINED`, a lerp from the first cycle's
+   result toward the environment colour -- and they differ by the factor, which
+   is what decides how many passes it takes.
+
+   Recognised by the mux fields and not by the entry's name: names are the
+   generator's, fields are the hardware's. */
+#define PASS2_NONE        0
+#define PASS2_BY_ENV_ALPHA 1   /* factor = the environment's alpha, a scalar */
+#define PASS2_BY_SHADE     2   /* factor = the vertex colour, per channel */
+
+static int pass2_kind(const dkr_cc_entry *e)
 {
-    /* `(ENVIRONMENT - COMBINED) * ENV_ALPHA + COMBINED`: a lerp from the first
-       cycle's result toward the environment colour. The one shape this pass
-       reproduces, recognised by its mux fields rather than by its name -- names
-       are the generator's, the fields are the hardware's. */
-    return e != 0 && e->cycle == DKR_CYCLE_2 &&
-           e->rgb[1].a == (unsigned char)DKR_CC_ENVIRONMENT &&
-           e->rgb[1].b == (unsigned char)DKR_CC_COMBINED &&
-           e->rgb[1].c == (unsigned char)DKR_CC_ENV_ALPHA &&
-           e->rgb[1].d == (unsigned char)DKR_CC_COMBINED;
+    if (e == 0 || e->cycle != DKR_CYCLE_2) { return PASS2_NONE; }
+    if (e->rgb[1].a != (unsigned char)DKR_CC_ENVIRONMENT ||
+        e->rgb[1].b != (unsigned char)DKR_CC_COMBINED ||
+        e->rgb[1].d != (unsigned char)DKR_CC_COMBINED) {
+        return PASS2_NONE;
+    }
+    if (e->rgb[1].c == (unsigned char)DKR_CC_ENV_ALPHA) {
+        return PASS2_BY_ENV_ALPHA;
+    }
+    if (e->rgb[1].c == (unsigned char)DKR_CC_SHADE) { return PASS2_BY_SHADE; }
+    return PASS2_NONE;
 }
 
 static int pass2_wanted(const dkr_render_state *st)
 {
     const dkr_cc_entry *e;
+    int kind;
 
     if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
     e = dkr_cc_table_at(st->recipe - 1);
@@ -836,10 +890,15 @@ static int pass2_wanted(const dkr_render_state *st)
      * changes nothing now -- which is exactly why it is written down rather than
      * left to the table's current contents. The table is generated. */
     if (e->category != DKR_CC_MULTIPASS) { return 0; }
-    if (!pass2_is_env_lerp(e)) { b.pass2_unsupported++; return 0; }
-    /* The environment's alpha is the lerp factor. Zero means the second cycle is
-       the identity, and this is the guard that makes the whole thing cheap. */
-    if (((st->env_color >> 24) & 0xFFu) == 0u) { b.pass2_identity++; return 0; }
+    kind = pass2_kind(e);
+    if (kind == PASS2_NONE) { b.pass2_unsupported++; return 0; }
+    /* The environment's alpha is the lerp factor for the scalar form. Zero means
+       the second cycle is the identity, and this is the guard that makes the
+       whole thing cheap -- 585 batches of 900 on the hub, and all 510 on the
+       race. The per-channel form has no such constant to test: its factor is the
+       vertex colour, which varies across the triangle. */
+    if (kind == PASS2_BY_ENV_ALPHA &&
+        ((st->env_color >> 24) & 0xFFu) == 0u) { b.pass2_identity++; return 0; }
     /* --- Over a blended first pass it is approximate, and drawn anyway -------- *
      *
      * The RDP computes cycle 2 and *then* blends with the frame buffer; this
@@ -857,7 +916,85 @@ static int pass2_wanted(const dkr_render_state *st)
      *
      * It announces itself here, by being counted separately. */
     if (st->blend != DKR_BLEND_OPAQUE) { b.pass2_blend++; }
-    return 1;
+    return kind;
+}
+
+static void pass2_geometry(const dkr_render_vertex *vertices, int count)
+{
+    int i;
+    for (i = 0; i + 2 < count * 3; i += 3) {
+        dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+    }
+}
+
+/* --- The per-channel form, in two more passes -------------------------------- *
+ *
+ * `(ENV - COMBINED) * SHADE + COMBINED` is a lerp by the **vertex colour**, one
+ * factor per channel. Glide's frame-buffer blender takes scalar alpha factors in
+ * the place a lerp would want one, so a single pass cannot do it -- but the
+ * identity
+ *
+ *     out = dst * (1 - shade) + ENV * shade
+ *
+ * splits into two blends that use only factors the blender has:
+ *
+ *     A:  src = shade,      src factor ZERO, dst factor ONE_MINUS_SRC_COLOR
+ *     B:  src = ENV * shade, src factor ONE,  dst factor ONE
+ *
+ * A multiplies what is there by `1 - shade`; B adds the tint. Two extra passes
+ * over 6,420 pixels on the hub -- two per cent of the frame -- which is why the
+ * arithmetic is worth doing rather than approximating.
+ *
+ * **Why it matters more than its size.** That configuration is wrong on *every*
+ * pixel it paints, and those pixels are a character the card renders as a black
+ * silhouette. Fill says what a fix costs; this is what one buys.
+ */
+static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
+{
+    if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
+
+    /* **The alpha combiner is left exactly as the first pass set it**, and the
+       first version's mistake was to touch it.
+     *
+       The blend factors below use no alpha, so the only thing the alpha still
+       does here is feed the alpha *test* -- which is programmed from the state and
+       cuts the same holes it cut for the first pass. Reprogramming it to "the
+       texel's alpha" was an attempt to preserve that and did the opposite: where
+       the configuration binds no texture, `OTHER_TEXTURE` is not the texel's alpha
+       but whatever the unit holds, and an alpha test at `GEQUAL 1` then rejects
+       the whole pass. Measured on 8 September 2026: the second pass drawn on 162
+       batches and the character still black to the pixel.
+     */
+    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
+        gs.depth_function(GR_CMP_LEQUAL);
+    }
+    if (gs.depth_mask) { gs.depth_mask(0); }
+
+    /* A: dst *= 1 - shade. The source is the iterated colour and contributes
+       nothing of itself -- `ZERO` -- it is there to *be* the factor. */
+    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_COLOR,
+                      GR_BLEND_ONE, GR_BLEND_ZERO);
+    pass2_geometry(vertices, count);
+
+    /* B: dst += ENV * shade.
+     *
+       The product is written `other x local` with the constant as **local** and
+       the iterated colour as **other**, rather than the other way round. It is
+       the same product, and it uses only `GR_COMBINE_LOCAL_CONSTANT` and
+       `GR_COMBINE_OTHER_ITERATED`, both of which this file already programs and
+       has seen work. `GR_COMBINE_OTHER_CONSTANT` would do as well and has never
+       been exercised on the card; there is no reason to spend an unverified
+       enumeration value on a choice that is free. */
+    if (gs.constant_color) { gs.constant_color(b.current.env_color); }
+    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                     GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
+    gs.blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
+    pass2_geometry(vertices, count);
+
+    b.pass2_drawn++;
+    b.pass2_by_shade++;
 }
 
 static void pass2_draw(const dkr_render_vertex *vertices, int count)
@@ -877,10 +1014,23 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     }
     /* Alpha: the texel's times the constant's. The constant's is the lerp factor;
-       the texel's is what keeps the pass inside the first pass's coverage. */
+       the texel's is what keeps the pass inside the first pass's coverage.
+     *
+       **Unless there is no texture**, in which case `OTHER_TEXTURE` is not the
+       texel's alpha but whatever the unit happens to hold, and the alpha becomes
+       the constant's alone -- which is the right answer for an untextured surface
+       and the only one available. */
     if (gs.alpha_combine) {
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
-                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        if (b.current.texture != 0) {
+            gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER,
+                             GR_COMBINE_FACTOR_LOCAL,
+                             GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE,
+                             0);
+        } else {
+            gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                             GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE,
+                             0);
+        }
     }
     if (gs.blend_function) {
         gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
@@ -934,8 +1084,19 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
         dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
         b.triangles++;
     }
-    if (b.has_state && pass2_wanted(&b.current)) {
-        pass2_draw(vertices, count);
+    if (b.has_state) {
+        const int kind = pass2_wanted(&b.current);
+        if (kind == PASS2_BY_ENV_ALPHA) {
+            pass2_draw(vertices, count);
+        } else if (kind == PASS2_BY_SHADE) {
+            pass2_draw_by_shade(vertices, count);
+            /* The same restoration, and for the same reason: see `pass2_draw`. */
+            {
+                const dkr_render_state saved = b.current;
+                b.has_state = 0;
+                gl_set_state(0, &saved);
+            }
+        }
     }
 }
 
@@ -1327,12 +1488,14 @@ unsigned long dkr_glide_backend_two_layer_states(void)
 
 void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity,
                                    unsigned long *unsupported,
-                                   unsigned long *blend)
+                                   unsigned long *blend,
+                                   unsigned long *by_shade)
 {
     if (drawn)       { *drawn       = b.pass2_drawn; }
     if (identity)    { *identity    = b.pass2_identity; }
     if (unsupported) { *unsupported = b.pass2_unsupported; }
     if (blend)       { *blend       = b.pass2_blend; }
+    if (by_shade)    { *by_shade    = b.pass2_by_shade; }
 }
 
 void dkr_glide_backend_bind_stats(unsigned long *binds,
