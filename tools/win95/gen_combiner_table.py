@@ -256,18 +256,16 @@ def classify(c1, c2):
     #
     # A way out was recorded here as untested: ENV_ALPHA is a constant known to
     # the CPU, hence carriable in the vertex alpha, where `LOCAL_ALPHA` would go
-    # and fetch it. **The backend does that now, and it works** - the copyright
-    # screen goes from 801 divergent pixels to 17 - so this classification is
-    # conservative rather than accurate for that family.
+    # and fetch it. **It was tested on 9 September 2026 and it is closed.** A
+    # third sweep, with `other` driven from the texture - the configuration the
+    # backend actually uses, which the first two did not cover - finds that no
+    # factor delivers an alpha there either. `0x0B` reads as 0.97, not 0.216.
     #
-    # It is left as `approximate` all the same, because the *reason* it works is
-    # not established. Both of `combine_enum_probe.c`'s sweeps drive `other` from
-    # the constant register with no texture bound, and there no factor delivers an
-    # alpha; the backend drives `other` from the texture, and there something
-    # evidently does. Extending the sweep to a textured `other` is what would turn
-    # a working pass into a justified classification. Announcing as exact what has
-    # not been measured is precisely the failing this ticket warns against, and
-    # the direction of the error does not change that.
+    # The classification therefore stands, and stands on a measurement rather than
+    # on an untried idea. The backend renders this family close to right by a
+    # different accident - 0.97 of the texel is very nearly the RDP's answer where
+    # k is small - which is worth 801 divergent pixels down to 17 on the copyright
+    # screen, and is still an approximation.
     if c_name in ("ENV_ALPHA", "PRIMITIVE_ALPHA"):
         return ("DKR_CC_APPROXIMATE", const,
                 "factor = alpha of a constant register: measured on the card, "

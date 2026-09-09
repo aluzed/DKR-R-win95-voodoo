@@ -199,6 +199,117 @@ int main(void)
         }
     }
 
+    /* --- A third sweep, with `other` driven from the **texture** -------------- *
+     *
+     * Both sweeps above drive `other` from the constant register. The backend's
+     * one use of a factor that would read an alpha drives it from the *texture*,
+     * and the two configurations do not answer the same question: replacing that
+     * factor with a plain `ONE` -- which is what the second sweep says it reads as
+     * -- puts the copyright screen back from 17 divergent pixels to 801, so
+     * something in the textured case is not `ONE`.
+     *
+     * That gap is the whole of what is unmeasured about a change already
+     * shipped. This closes it, or says it is not closed.
+     *
+     * The texture is one solid colour, so the sweep reads a flat quad and the
+     * candidates stay as far apart as they were before. The expected values are
+     * computed from the texel **after** its trip through 1555, because that is
+     * what the combiner sees. */
+    {
+        const int LR = 20,  LG = 60,  LB = 100, LA = 200;
+        /* (240,200,160) as ARGB1555, and back: the low bits do not survive. */
+        const int TR = (240 >> 3) << 3 | (240 >> 3) >> 2;
+        const int TG = (200 >> 3) << 3 | (200 >> 3) >> 2;
+        const int TB = (160 >> 3) << 3 | (160 >> 3) >> 2;
+        static unsigned short texels[32 * 32];
+        dkr_texture_desc d;
+        dkr_texture_handle h;
+        dkr_render_vertex v[6];
+        const float xs[6] = {0,(float)W,(float)W,0,(float)W,0};
+        const float ys[6] = {0,0,(float)H,0,(float)H,(float)H};
+        const int want_local  = LR;
+        const int want_one    = TR;
+        const int want_lcol   = (TR - LR) * LR  / 255 + LR;
+        const int want_omlcol = (TR - LR) * (255 - LR) / 255 + LR;
+        const int want_lalpha = (TR - LR) * LA  / 255 + LR;
+        const int want_omla   = (TR - LR) * (255 - LA) / 255 + LR;
+        int i;
+
+        for (i = 0; i < 32 * 32; i++) {
+            texels[i] = (unsigned short)((1u << 15) |
+                                         (((unsigned)(240 >> 3) & 0x1Fu) << 10) |
+                                         (((unsigned)(200 >> 3) & 0x1Fu) <<  5) |
+                                          ((unsigned)(160 >> 3) & 0x1Fu));
+        }
+        memset(&d, 0, sizeof(d));
+        d.key = 0x5150524F4245ULL;
+        d.format = DKR_TEXFMT_ARGB1555;
+        d.width = 32; d.height = 32;
+        d.pixels = texels;
+        d.size_bytes = sizeof(texels);
+        h = bk.texture_upload(bk.self, &d);
+
+        say("\n-- FACTOR sweep, BLEND (7), other = TEXTURE (%d,%d,%d) --\n",
+            TR, TG, TB);
+        say("   local = vertex (%d,%d,%d) alpha %d\n", LR, LG, LB, LA);
+        say("   on red:  ZERO->%d  ONE->%d  LOCAL->%d  1-LOCAL->%d"
+            "  LOCAL_A->%d  1-LOCAL_A->%d\n",
+            want_local, want_one, want_lcol, want_omlcol, want_lalpha, want_omla);
+        if (h == 0) { say("   the texture did not upload; sweep skipped\n"); }
+        else {
+            say("%-4s %-8s %s\n", "fac", "read", "reading");
+            for (fn = 0; fn <= 15; fn++) {
+                dkr_cc_setup r;
+                unsigned c;
+                int got;
+                memset(&r, 0, sizeof(r));
+                r.cc_function = 7; r.cc_factor = (unsigned char)fn;
+                r.cc_local = 0; r.cc_other = 1;      /* other = TEXTURE */
+                r.ac_function = 1; r.ac_factor = 8;
+                r.ac_local = 0; r.ac_other = 0;
+                /* `GR_TEXTURECOMBINE_DECAL`: the unit passes its own texel
+                   through. The first attempt left this at zero, which is
+                   `GR_TEXTURECOMBINE_ZERO` -- the sweep read black on every value
+                   that should have shown the texture, which is what a texture
+                   unit told to output nothing looks like. The catalogue's own
+                   entries carry `tc=1/0`, and that is where the value comes
+                   from. */
+                r.tc_function = 1; r.tc_factor = 0;
+                r.uses_texture = 1;
+
+                memset(v, 0, sizeof(v));
+                for (i = 0; i < 6; i++) {
+                    v[i].x = xs[i]; v[i].y = ys[i];
+                    v[i].r = (float)LR; v[i].g = (float)LG; v[i].b = (float)LB;
+                    v[i].a = (float)LA;
+                    v[i].oow = 1.0f;
+                    /* The whole quad samples one texel; any coordinate does. */
+                    v[i].tmu[0][0] = 0.0f; v[i].tmu[0][1] = 0.0f;
+                }
+
+                bk.begin_frame(bk.self, 0x000000);
+                bk.set_state(bk.self, &st);
+                dkr_glide_backend_bind(h);
+                dkr_glide_backend_set_recipe(&r, 0xFF000000u);
+                bk.draw_triangles(bk.self, v, 2);
+                bk.present(bk.self);
+                if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) <= 0) {
+                    continue;
+                }
+                c = g_px[(size_t)(rh/2) * (size_t)rw + (size_t)(rw/2)];
+                got = (int)((c >> 16) & 0xFF);
+                say("%-4d %06X   %s\n", fn, c & 0x00FFFFFFu,
+                    (got > want_local  - 8 && got < want_local  + 8) ? "ZERO (result = local)" :
+                    (got > want_one    - 8 && got < want_one    + 8) ? "ONE (result = texture)" :
+                    (got > want_lcol   - 8 && got < want_lcol   + 8) ? "<== LOCAL colour" :
+                    (got > want_omlcol - 8 && got < want_omlcol + 8) ? "<== ONE_MINUS_LOCAL colour" :
+                    (got > want_lalpha - 8 && got < want_lalpha + 8) ? "<== LOCAL_ALPHA" :
+                    (got > want_omla   - 8 && got < want_omla   + 8) ? "<== ONE_MINUS_LOCAL_ALPHA" :
+                    "unrecognised");
+            }
+        }
+    }
+
     bk.close(bk.self);
     say("\nend\n");
     if (g_out) { fclose(g_out); }

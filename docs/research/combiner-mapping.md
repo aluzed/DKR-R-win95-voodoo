@@ -58,10 +58,34 @@ deviation across the whole `BLENDI`/`BLENDT` family.
 > what `ONE` means — puts the screen back at 801. Something is scaling the texel
 > toward the constant, and `1 − local_alpha` is the only candidate on offer.
 >
-> So the way out recorded below is **not** closed, and it is not confirmed either:
-> it works, measured by difference on a real frame, for a reason the sweep cannot
-> yet see. Extending the sweep to a textured `other` is what would settle it, and
-> that has not been done.
+> **A third sweep, with `other` driven from the texture, closes it.** That is the
+> configuration `glide_backend.c` actually uses, and the earlier sweeps did not
+> cover it. With a vertex alpha of 200:
+>
+> | factor | reads as |
+> |---|---|
+> | 1 | the local **colour** |
+> | 9 | `1 − local` **colour** |
+> | 4, 8, 14, 15 | one (the texel, whose alpha is 1 here) |
+> | 5, 11 | ≈ 0.97 — the texel colour as a factor |
+> | 0, 3, 6, 7, 12, 13 | zero |
+>
+> `0x0B` reads as **0.97**, not the 0.216 that `1 − local_alpha` would give. **No
+> factor delivers an alpha, textured or not**, so the way out recorded below —
+> carrying `ENV_ALPHA` in the vertex where `LOCAL_ALPHA` would fetch it — is
+> closed.
+>
+> The backend still uses `0x0B` for `G_CC_BLENDT_ENV_ALPHA_A_TxP`, and it takes
+> that screen from 801 divergent pixels to 17, because 0.97 of the texel is very
+> nearly the RDP's answer where `k` is small. **One thing is not explained**:
+> `SCALE_OTHER / FACTOR_ONE`, which the sweep says computes almost the same, puts
+> the screen back at 801. Recorded as unexplained rather than reasoned away.
+>
+> The first attempt at the second sweep put two candidates six units apart and
+> duly reported an alpha factor that was a colour factor; the first attempt at the
+> third left the texture unit at `GR_TEXTURECOMBINE_ZERO` and read black on every
+> value. Both are in the file so that the next reader knows what the classifier
+> can and cannot see.
 >
 > The first attempt at this second sweep put two candidates six units apart and
 > duly reported an alpha factor that was a colour factor. Six units of separation

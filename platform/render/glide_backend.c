@@ -1087,25 +1087,27 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * the vertex colour: its first cycle names TEXEL0 and ENVIRONMENT and nothing
  * else, so overwriting the shade costs nothing the RDP was using.
  *
- * ## What is measured, and how far the measurement reaches
+ * ## What is measured, and what the measurement refuted
  *
- * The image, on the machine: the copyright screen goes from **801** divergent
- * pixels to **17**, the race is unchanged at 124, `COMPARE.EXE` stays clean.
+ * The image, on the machine, twice: the copyright screen goes from **801**
+ * divergent pixels to **17**, the race is unchanged at 124, `COMPARE.EXE` stays
+ * clean. That much is solid and is why this is here.
  *
- * The mechanism is measured **by difference and not by sweep**, and the
- * difference is sharp. Replacing this with a plain `SCALE_OTHER / FACTOR_ONE`
- * -- which draws the texture alone -- puts the copyright screen back at 801. So
- * factor `0x0B` here is not behaving as `ONE`: something is scaling the texel
- * toward the constant, and `1 - local_alpha` is the only candidate on offer.
+ * **The explanation above is not.** `combine_enum_probe.c` was extended to sweep
+ * the factors with `other` driven from the **texture**, which is this
+ * configuration and which the earlier sweeps did not cover. Factor `0x0B`, with a
+ * vertex alpha of 200, reads as roughly 0.97 -- indistinguishable from the texel
+ * colour as a factor, and nowhere near the 0.216 that `1 - local_alpha` would
+ * give. So this pass is **not** fetching `k` from the iterated alpha; it is
+ * drawing very nearly the texel, which is the RDP's first cycle at `k = 0`.
  *
- * `combine_enum_probe.c`'s sweeps say no factor delivers an alpha, and that is
- * **not a contradiction**: both sweeps drive `other` from the constant register
- * with no texture bound, and this drives it from the texture. The sweep's reach
- * is its own configuration. Extending it to a textured `other` is what would turn
- * "the only candidate on offer" into a measurement, and it has not been done.
- *
- * Written down because the alternative is to let a working pass rest on an
- * enumeration value this project has already been wrong about once.
+ * And one measurement is left unexplained rather than explained away: replacing
+ * this with `SCALE_OTHER / FACTOR_ONE`, which should also draw very nearly the
+ * texel, put the copyright screen back at 801. Two settings that the sweep says
+ * compute almost the same thing do not produce the same image, and this file does
+ * not know why. It is written down because the alternative is to invent a reason,
+ * and because whoever next touches this should start from the contradiction
+ * rather than from the comment.
  *
  * **A two-pass decomposition would be exact and cannot be used here.** It needs
  * an opaque first pass to compose against, and this configuration's fill is 0 %
