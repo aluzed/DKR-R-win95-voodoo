@@ -310,6 +310,91 @@ int main(void)
         }
     }
 
+    /* --- The same sweep again, with the texel's alpha at **zero** ------------- *
+     *
+     * Comparing this with the sweep above names every factor that depends on the
+     * texture's alpha: such a factor flips between the two, and no other does.
+     *
+     * The question it settles is a live one. `glide_backend.c` uses factor `0x0B`
+     * on a **font atlas**, where the texel alpha is 0 outside the glyph and 255
+     * inside, and gets 17 divergent pixels where `SCALE_OTHER / ONE` gets 801.
+     * The sweep above, on a texture with alpha 1 throughout, cannot tell those two
+     * settings apart -- it reads `0x0B` as very nearly one, and one is what
+     * `SCALE_OTHER / ONE` applies. A factor that varies with the texel's alpha
+     * would explain the whole difference. */
+    {
+        const int LR = 20,  LG = 60,  LB = 100, LA = 200;
+        const int TR = (240 >> 3) << 3 | (240 >> 3) >> 2;
+        static unsigned short texels0[32 * 32];
+        dkr_texture_desc d;
+        dkr_texture_handle h;
+        dkr_render_vertex v[6];
+        const float xs[6] = {0,(float)W,(float)W,0,(float)W,0};
+        const float ys[6] = {0,0,(float)H,0,(float)H,(float)H};
+        int i;
+
+        for (i = 0; i < 32 * 32; i++) {
+            /* The same colour, alpha bit clear. */
+            texels0[i] = (unsigned short)((((unsigned)(240 >> 3) & 0x1Fu) << 10) |
+                                          (((unsigned)(200 >> 3) & 0x1Fu) <<  5) |
+                                           ((unsigned)(160 >> 3) & 0x1Fu));
+        }
+        memset(&d, 0, sizeof(d));
+        d.key = 0x5150524F4245ULL + 1u;
+        d.format = DKR_TEXFMT_ARGB1555;
+        d.width = 32; d.height = 32;
+        d.pixels = texels0;
+        d.size_bytes = sizeof(texels0);
+        h = bk.texture_upload(bk.self, &d);
+
+        say("\n-- FACTOR sweep, BLEND (7), other = TEXTURE, texel alpha 0 --\n");
+        say("   a factor that reads the texel's alpha flips against the sweep"
+            " above; nothing else does\n");
+        say("   on red:  result = local -> %d,  result = texture -> %d\n",
+            LR, TR);
+        if (h == 0) { say("   the texture did not upload; sweep skipped\n"); }
+        else {
+            say("%-4s %-8s %s\n", "fac", "read", "reading");
+            for (fn = 0; fn <= 15; fn++) {
+                dkr_cc_setup r;
+                unsigned c;
+                int got;
+                memset(&r, 0, sizeof(r));
+                r.cc_function = 7; r.cc_factor = (unsigned char)fn;
+                r.cc_local = 0; r.cc_other = 1;
+                r.ac_function = 1; r.ac_factor = 8;
+                r.ac_local = 0; r.ac_other = 0;
+                r.tc_function = 1; r.tc_factor = 0;
+                r.uses_texture = 1;
+
+                memset(v, 0, sizeof(v));
+                for (i = 0; i < 6; i++) {
+                    v[i].x = xs[i]; v[i].y = ys[i];
+                    v[i].r = (float)LR; v[i].g = (float)LG; v[i].b = (float)LB;
+                    v[i].a = (float)LA;
+                    v[i].oow = 1.0f;
+                    v[i].tmu[0][0] = 0.0f; v[i].tmu[0][1] = 0.0f;
+                }
+
+                bk.begin_frame(bk.self, 0x000000);
+                bk.set_state(bk.self, &st);
+                dkr_glide_backend_bind(h);
+                dkr_glide_backend_set_recipe(&r, 0xFF000000u);
+                bk.draw_triangles(bk.self, v, 2);
+                bk.present(bk.self);
+                if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) <= 0) {
+                    continue;
+                }
+                c = g_px[(size_t)(rh/2) * (size_t)rw + (size_t)(rw/2)];
+                got = (int)((c >> 16) & 0xFF);
+                say("%-4d %06X   %s\n", fn, c & 0x00FFFFFFu,
+                    (got > LR - 8 && got < LR + 8) ? "result = local" :
+                    (got > TR - 8 && got < TR + 8) ? "result = texture" :
+                    "between");
+            }
+        }
+    }
+
     bk.close(bk.self);
     say("\nend\n");
     if (g_out) { fclose(g_out); }

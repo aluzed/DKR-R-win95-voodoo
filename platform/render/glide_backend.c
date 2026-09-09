@@ -1118,8 +1118,15 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * this configuration**, and neither does the 0.97 above: what this setting
  * actually computes on a font atlas is not known.
  *
+ * A fourth sweep, with the texel's alpha at zero, eliminates the other obvious
+ * candidate: `0x0B` reads the same 0.97 whether the texel's alpha is 0 or 255, so
+ * "a font atlas has varying alpha and that is the difference" is out as well. The
+ * same sweep does identify `TEXTURE_ALPHA` at 4 and `ONE_MINUS_TEXTURE_ALPHA` at
+ * 12, which the generator had been assuming without measuring.
+ *
  * What is known is the image, twice, and that every other setting tried is worse.
- * Whoever next touches this should start from the two lines above.
+ * Two explanations have been eliminated by measurement and none found. Whoever
+ * next touches this should start from the two lines above.
  *
  * **A two-pass decomposition would be exact and cannot be used here.** It needs
  * an opaque first pass to compose against, and this configuration's fill is 0 %

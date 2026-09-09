@@ -286,6 +286,10 @@ def classify(c1, c2):
         if factor == "IRREDUCIBLE":
             return ("DKR_CC_MULTIPASS", const,
                     "irreducible second cycle: one stage more than Glide offers")
+        # `TEXEL0_ALPHA` as a factor is **measured** since 9 September 2026, at
+        # value 4, by `combine_enum_probe.c`'s textured sweeps: it is the one that
+        # flips when the texel's alpha goes from 255 to 0. It had been assumed
+        # here, and this classification rests on it.
         if factor in ("SHADE", "PRIMITIVE", "ENVIRONMENT", "TEXEL0_ALPHA"):
             return ("DKR_CC_EXACT", const,
                     "second stage = scaling: folds into SCALE_OTHER")

@@ -94,6 +94,24 @@ deviation across the whole `BLENDI`/`BLENDT` family.
 > one — and not for a font atlas. What the setting computes there is **not known**,
 > and is recorded as not known.
 >
+> **A fourth sweep eliminates the obvious candidate.** Repeating the textured
+> sweep with the texel's alpha at **zero** names every factor that depends on it —
+> such a factor flips between the two runs and nothing else does:
+>
+> | factor | alpha 1 | alpha 0 | |
+> |---|---|---|---|
+> | 4 | one | zero | **`TEXTURE_ALPHA`** |
+> | 12 | zero | one | **`ONE_MINUS_TEXTURE_ALPHA`** |
+> | 0x0B | 0.97 | 0.97 | unchanged |
+>
+> `0x0B` does not read the texel's alpha, so "the font atlas has varying alpha and
+> that is the difference" is excluded too. Two explanations eliminated by
+> measurement, none found.
+>
+> The sweep does confirm something the generator had been assuming: `TEXEL0_ALPHA`
+> **is** available as a factor, at value 4. It is used to classify a family of
+> second stages as exact, and until now it was assumed rather than measured.
+>
 > The first attempt at the second sweep put two candidates six units apart and
 > duly reported an alpha factor that was a colour factor; the first attempt at the
 > third left the texture unit at `GR_TEXTURECOMBINE_ZERO` and read black on every
