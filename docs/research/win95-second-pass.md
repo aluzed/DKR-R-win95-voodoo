@@ -203,9 +203,51 @@ correct change makes: it moves what it addresses and leaves the rest exactly
 where it was. `COMPARE.EXE` reports 0 failures and the corpus still replays to 0
 divergent pixels.
 
-The copyright screen's 801 pixels are untouched by any of this and remain
-unexplained: its two-cycle fill is entirely identity, so no pass fires there and
-nothing in this work could have moved it. It is the next thing to attribute.
+## The copyright screen's 801, attributed
+
+The recipe map, once it recorded the last configuration that **changed** a pixel
+rather than the last that wrote one:
+
+| configuration | divergent | of painted |
+|---|---:|---:|
+| `G_CC_BLENDT_ENV_ALPHA_A_TxP` | **784** | 1,208 |
+| `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` | 51 | 305,992 |
+
+The 801 are the **copyright text**: 784 of its 1,208 pixels, white in the oracle
+and near-black on the card. The sky, which is 99.6 % of the screen, is wrong on
+51 pixels.
+
+That configuration is
+
+    (ENVIRONMENT - TEXEL0) * ENVIRONMENT_ALPHA + TEXEL0
+
+the texel tinted toward the constant by that constant's alpha — catalogued
+**approximate**, with the note *"no Glide factor delivers it"*.
+
+### And the obvious fix was written, measured, and thrown away
+
+It decomposes like everything else here: the texel, then the constant over it by
+the constant's alpha. Measured:
+
+| | before | after |
+|---|---:|---:|
+| copyright screen | 801 | **3,828** |
+| the race | 124 | **2,313** |
+
+Four to eighteen times worse. The fault is the first of the two passes: it lays
+the texel down **opaque**, and these states blend. Over an alpha-blended
+background the pair computes `(T·a + dst(1−a))(1−k) + E·k` where the RDP computes
+`(T(1−k) + E·k)·a + dst(1−a)`, and the difference is the background showing
+through by the wrong amount.
+
+Reverted. It could be gated on an opaque first pass, where the two do agree —
+that was not measured, so it is not written: a guard that makes a change apply to
+nothing is indistinguishable from the change being absent, and there is no
+evidence yet that anything would be left for it.
+
+The shape is kept as a comment in `glide_backend.c` rather than deleted, because
+it is still the largest single defect on that screen and the next attempt should
+start from why this one failed.
 
 ## What it is not worth
 

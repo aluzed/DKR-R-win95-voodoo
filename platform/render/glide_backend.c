@@ -951,19 +951,59 @@ static int pass2_wanted(const dkr_render_state *st)
  * **A pre-pass and not a post-pass**: it *replaces* the ordinary draw rather than
  * following it.
  */
+/* The first cycles this reproduces in two blends. Both are lerps between the
+   texel and a constant register; they differ by which one is the base and by
+   where the factor comes from, and that decides what each pass draws. */
+#define PREPASS_NONE           0
+#define PREPASS_PRIM_TO_TEXEL  1  /* (TEXEL0 - PRIM) * SHADE_ALPHA + PRIM */
+
+static int prepass_shape(const dkr_cc_entry *e)
+{
+    if (e == 0 || e->category == DKR_CC_EXACT) { return PREPASS_NONE; }
+    if (e->rgb[0].a == (unsigned char)DKR_CC_TEXEL0 &&
+        e->rgb[0].b == (unsigned char)DKR_CC_PRIMITIVE &&
+        e->rgb[0].c == (unsigned char)DKR_CC_SHADE_ALPHA &&
+        e->rgb[0].d == (unsigned char)DKR_CC_PRIMITIVE) {
+        return PREPASS_PRIM_TO_TEXEL;
+    }
+    /* --- `(ENVIRONMENT - TEXEL0) * ENV_ALPHA + TEXEL0`: tried, measured, rejected *
+     *
+     * That shape draws this game's copyright text, and the card renders 784 of
+     * its 1,208 pixels near-black where the oracle puts white. It decomposes the
+     * same way as everything else here -- the texel, then the constant over it by
+     * the constant's alpha -- and the decomposition was written and measured on
+     * 9 September 2026:
+     *
+     *     copyright screen    801 divergent  ->  3,828
+     *     the race            124 divergent  ->  2,313
+     *
+     * **Four to eighteen times worse**, so it is not here. The reason is the
+     * first of the two passes: it lays the texel down *opaque*, and these states
+     * blend. Over an alpha-blended background the pair computes
+     * `(T*a + dst(1-a))(1-k) + E*k` where the RDP computes
+     * `(T(1-k) + E*k)*a + dst(1-a)`, and the difference is the whole background
+     * showing through the wrong amount.
+     *
+     * It could be gated on an opaque first pass, where the two do agree. That was
+     * not measured, so it is not written: a guard that makes a change apply to
+     * nothing is indistinguishable from the change being absent, and this one has
+     * no evidence yet that anything is left for it to apply to.
+     *
+     * Kept as a comment rather than deleted because the shape is still the
+     * largest single defect on that screen, and the next attempt should start
+     * from why this one failed. */
+    return PREPASS_NONE;
+}
+
 static int prepass_wanted(const dkr_render_state *st)
 {
     const dkr_cc_entry *e;
+    int shape;
 
     if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
     e = dkr_cc_table_at(st->recipe - 1);
-    if (e == 0 || e->category == DKR_CC_EXACT) { return 0; }
-    if (e->rgb[0].a != (unsigned char)DKR_CC_TEXEL0 ||
-        e->rgb[0].b != (unsigned char)DKR_CC_PRIMITIVE ||
-        e->rgb[0].c != (unsigned char)DKR_CC_SHADE_ALPHA ||
-        e->rgb[0].d != (unsigned char)DKR_CC_PRIMITIVE) {
-        return 0;
-    }
+    shape = prepass_shape(e);
+    if (shape == PREPASS_NONE) { return 0; }
     /* **Not while a cutout is in force.** Pass B has to put the *iterated* alpha
        in the alpha combiner, because that alpha is its blend factor -- and the
        alpha test reads the same output. A state that cuts holes by alpha would
@@ -973,8 +1013,11 @@ static int prepass_wanted(const dkr_render_state *st)
        Measured: the states this shape appears in on the hub carry no alpha
        test, so the refusal costs nothing there and guards the case it cannot
        serve. */
-    if (st->alpha_test) { b.prepass_alpha_test++; return 0; }
-    return 1;
+    if (shape == PREPASS_PRIM_TO_TEXEL && st->alpha_test) {
+        b.prepass_alpha_test++;
+        return 0;
+    }
+    return shape;
 }
 
 static void pass2_geometry(const dkr_render_vertex *vertices, int count)
@@ -1175,11 +1218,18 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     /* The pre-pass **replaces** the ordinary draw: it is the first cycle, done in
        two blends because one stage cannot hold it. Drawing both would lay the
        constant over the result and waste the fill doing it. */
-    if (b.has_state && prepass_wanted(&b.current)) {
-        prepass_draw(vertices, count);
-    } else {
-        for (i = 0; i + 2 < count * 3; i += 3) {
-            dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+    {
+        /* Asked **once**: the guard counts its refusals, and calling it twice
+           would count them twice. A counter that inflates with the shape of the
+           code around it is worse than no counter. */
+        const int shape = b.has_state ? prepass_wanted(&b.current) : PREPASS_NONE;
+        if (shape == PREPASS_PRIM_TO_TEXEL) {
+            prepass_draw(vertices, count);
+        } else {
+            for (i = 0; i + 2 < count * 3; i += 3) {
+                dkr_glide_draw_raw(&vertices[i], &vertices[i + 1],
+                                   &vertices[i + 2]);
+            }
         }
     }
     b.triangles += (unsigned long)count;
