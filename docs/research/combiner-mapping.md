@@ -76,10 +76,23 @@ deviation across the whole `BLENDI`/`BLENDT` family.
 > closed.
 >
 > The backend still uses `0x0B` for `G_CC_BLENDT_ENV_ALPHA_A_TxP`, and it takes
-> that screen from 801 divergent pixels to 17, because 0.97 of the texel is very
-> nearly the RDP's answer where `k` is small. **One thing is not explained**:
-> `SCALE_OTHER / FACTOR_ONE`, which the sweep says computes almost the same, puts
-> the screen back at 801. Recorded as unexplained rather than reasoned away.
+> that screen from 801 divergent pixels to 17.
+>
+> **And that is where the sweep stops transferring.** The two settings were run
+> back to back on one boot, with the pass's own counter printed:
+>
+>     BLEND_OTHER / 0x0B     pass drawn 20 times     17 divergent pixels
+>     SCALE_OTHER / ONE      pass drawn 20 times    801 divergent pixels
+>
+> Both fire, so "the alternative never ran" is excluded — and it was the likeliest
+> explanation until that counter existed. They differ in nothing but the colour
+> combine. If `0x0B` were the `ONE` this sweep reads it as, `BLEND_OTHER` with it
+> would compute `other`, which is what `SCALE_OTHER / ONE` computes, and the images
+> would agree. They do not.
+>
+> So the sweep's reading holds for the sweep's texture — one solid colour, alpha
+> one — and not for a font atlas. What the setting computes there is **not known**,
+> and is recorded as not known.
 >
 > The first attempt at the second sweep put two candidates six units apart and
 > duly reported an alpha factor that was a colour factor; the first attempt at the

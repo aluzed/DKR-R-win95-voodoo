@@ -1101,13 +1101,25 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * give. So this pass is **not** fetching `k` from the iterated alpha; it is
  * drawing very nearly the texel, which is the RDP's first cycle at `k = 0`.
  *
- * And one measurement is left unexplained rather than explained away: replacing
- * this with `SCALE_OTHER / FACTOR_ONE`, which should also draw very nearly the
- * texel, put the copyright screen back at 801. Two settings that the sweep says
- * compute almost the same thing do not produce the same image, and this file does
- * not know why. It is written down because the alternative is to invent a reason,
- * and because whoever next touches this should start from the contradiction
- * rather than from the comment.
+ * And one measurement stands against that, unexplained rather than explained
+ * away. The two settings were run back to back on one boot, with this pass's own
+ * counter finally printed:
+ *
+ *     BLEND_OTHER / 0x0B     texel-alone drawn=20    17 divergent pixels
+ *     SCALE_OTHER / ONE      texel-alone drawn=20   801 divergent pixels
+ *
+ * **Both fire, twenty times each**, so "the alternative never ran" is excluded --
+ * and it was the likeliest explanation until the counter existed. The two differ
+ * in nothing but the colour combine.
+ *
+ * If `0x0B` were the `ONE` the sweep reads it as, `BLEND_OTHER` with it would be
+ * `other`, which is exactly what `SCALE_OTHER / ONE` computes, and the two images
+ * would be the same. They are not. **So the sweep's reading does not transfer to
+ * this configuration**, and neither does the 0.97 above: what this setting
+ * actually computes on a font atlas is not known.
+ *
+ * What is known is the image, twice, and that every other setting tried is worse.
+ * Whoever next touches this should start from the two lines above.
  *
  * **A two-pass decomposition would be exact and cannot be used here.** It needs
  * an opaque first pass to compose against, and this configuration's fill is 0 %
@@ -1115,6 +1127,10 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * tried, reverted, and is not tried again.
  */
 #define PREPASS_BATCH 256
+
+static int g_texel_factor_one;
+
+void dkr_glide_backend_texel_factor_one(int on) { g_texel_factor_one = on; }
 
 static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                                      int count)
@@ -1128,9 +1144,27 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
 
     if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
 
-    gs.color_combine(GR_COMBINE_FUNCTION_BLEND_OTHER,
-                     GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA,
-                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    /* --- The switch that exists to settle a contradiction --------------------- *
+     *
+     * Replacing the pair below with `SCALE_OTHER / FACTOR_ONE` -- which the factor
+     * sweep says computes almost the same thing, 1.00 against 0.97 -- was measured
+     * once and put the copyright screen back from 17 divergent pixels to 801.
+     * That was a whole rebuild ago, with the counter for this pass not yet
+     * printed, so "the alternative is worse" and "the alternative never ran" were
+     * indistinguishable.
+     *
+     * `dkr_glide_backend_texel_factor_one` selects between them at run time, so
+     * that one boot can measure both with the pass counter visible. A
+     * contradiction between two settings of the same renderer is not something to
+     * leave in a comment. */
+    if (g_texel_factor_one) {
+        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    } else {
+        gs.color_combine(GR_COMBINE_FUNCTION_BLEND_OTHER,
+                         GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    }
     /* The alpha stays the texel's. The iterated alpha now carries the lerp
        factor and is no longer the vertex's own, so leaving the alpha combiner to
        read it would put that factor into the alpha test. */
@@ -1764,10 +1798,15 @@ void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity
 }
 
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,
-                                     unsigned long *refused_alpha_test)
+                                     unsigned long *refused_alpha_test,
+                                     unsigned long *texel_alone)
 {
     if (drawn)              { *drawn              = b.prepass_drawn; }
     if (refused_alpha_test) { *refused_alpha_test = b.prepass_alpha_test; }
+    /* Its own counter, and it was missing. Without it, a run where this pass
+       never fired and a run where it fired and did the wrong thing produce the
+       same log -- which is how one contradiction spent a day in a comment. */
+    if (texel_alone)        { *texel_alone        = b.prepass_in_vertex; }
 }
 
 void dkr_glide_backend_bind_stats(unsigned long *binds,

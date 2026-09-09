@@ -488,7 +488,13 @@ void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity
    how many batches took that route, and how many were refused because a cutout was
    in force. See `prepass_wanted` for why an alpha test rules it out. */
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,
-                                     unsigned long *refused_alpha_test);
+                                     unsigned long *refused_alpha_test,
+                                     unsigned long *texel_alone);
+/* Selects `SCALE_OTHER / FACTOR_ONE` instead of `BLEND_OTHER / 0x0B` for the
+   configuration that draws this game's copyright text. The factor sweep says the
+   two compute almost the same thing; one measurement says they do not produce the
+   same image. A switch is how that gets settled rather than argued. */
+void dkr_glide_backend_texel_factor_one(int on);
 /* What `texture_lookup` answered, cumulatively: resident, not resident, and
    **stale** -- a descriptor naming a key the allocator has since evicted. The
    third is separated from the second on purpose: a stale hit is the one that

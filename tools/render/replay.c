@@ -400,7 +400,8 @@ static void usage(const char *me)
     fprintf(stderr,
             "usage: %s [--card|--both] [--single-tmu] [--log file]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
-            "          [--recipe-map file] capture.bin [out.bmp]\n"
+            "          [--recipe-map file] [--texel-factor-one]\n"
+            "          capture.bin [out.bmp]\n"
             "       %s --recipe N          print one catalogue entry and stop\n",
             me, me);
 }
@@ -413,7 +414,7 @@ int main(int argc, char **argv)
     const char *dump_dir = 0, *map_path = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
-    int no_cull = 0;
+    int no_cull = 0, factor_one = 0;
     int oracle_tmus = 1;
     int i, status = 0;
 
@@ -422,6 +423,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--both") == 0)       { want_both = 1; }
         else if (strcmp(argv[i], "--single-tmu") == 0) { single_tmu = 1; }
         else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
+        else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
         }
@@ -603,6 +605,7 @@ int main(int argc, char **argv)
             /* Forced *after* opening: the count is detected during the open, and
                forcing before it would be overwritten by the detection. */
             if (single_tmu) { dkr_glide_backend_force_single_tmu(1); }
+            if (factor_one) { dkr_glide_backend_texel_factor_one(1); }
             card_tmus = dkr_glide_backend_tmu_count();
             say("  card opened with %d texture unit(s)%s\n", card_tmus,
                    single_tmu ? " (forced to one)" : "");
@@ -612,13 +615,13 @@ int main(int argc, char **argv)
             {
                 unsigned long d = 0, id = 0, un = 0, bl = 0, sh = 0;
                 dkr_glide_backend_pass2_stats(&d, &id, &un, &bl, &sh);
-                unsigned long pd = 0, pa = 0;
-                dkr_glide_backend_prepass_stats(&pd, &pa);
+                unsigned long pd = 0, pa = 0, ta = 0;
+                dkr_glide_backend_prepass_stats(&pd, &pa, &ta);
                 say("  second pass: drawn=%lu (by-shade=%lu, approximate over a"
                     " blended first pass=%lu) skipped: identity=%lu"
                     " unsupported=%lu\n", d, sh, bl, id, un);
                 say("  first cycle in two blends: drawn=%lu refused"
-                    " (alpha test)=%lu\n", pd, pa);
+                    " (alpha test)=%lu | texel-alone: drawn=%lu\n", pd, pa, ta);
             }
 
             if (dkr_glide_read_framebuffer(card_pixels,
