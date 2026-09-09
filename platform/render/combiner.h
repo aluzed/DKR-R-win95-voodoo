@@ -79,6 +79,17 @@ typedef struct {
 void dkr_combiner_eval(const dkr_combiner *c, int cycle,
                        const dkr_combiner_inputs *in, float out[4]);
 
+/* Names one mux input, in the position it appears in.
+ *
+ * `position` is 0..3 for `a`, `b`, `c`, `d`; `is_alpha` selects the alpha mux.
+ * **The same number does not designate the same thing depending on position** —
+ * 6 is `1` in `a`, `CENTER` in `b`, `SCALE` in `c`; 0 is `COMBINED` in the colour
+ * mux and `LOD_FRACTION` in the alpha `c` — and the tables here mirror the
+ * evaluator's, case for case, so that reading an entry and computing one cannot
+ * disagree. A dumper written by hand for the occasion is how that disagreement
+ * happens, and it cost an afternoon on 9 September 2026. */
+const char *dkr_cc_input_name(int position, int is_alpha, unsigned value);
+
 /* Evaluates the whole configuration: one or two cycles depending on
    `cycle_type`, feeding the first result back in as the second's `COMBINED`. */
 void dkr_combiner_eval_all(const dkr_combiner *c, dkr_cycle_type cycle_type,

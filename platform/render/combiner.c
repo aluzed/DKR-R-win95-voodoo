@@ -126,6 +126,68 @@ static float alpha_c(const dkr_combiner_inputs *in, unsigned v)
     }
 }
 
+/* --- The same tables, as names ----------------------------------------------- *
+ *
+ * **Why this exists.** On 9 September 2026 a throwaway dumper printed recipe 8's
+ * first cycle as `(TEXEL0 - TEXEL0_ALPHA) * PRIM + COMBINED_ALPHA` and it is
+ * `(TEXEL0 - 0) * PRIM + 0`. The dumper used position `a`'s dictionary for all
+ * four fields -- the exact trap `rdp_state.h` names in its first paragraph -- and
+ * the misreading pointed an afternoon at a first cycle that was already correct.
+ *
+ * The evaluator above has always read each position with its own table. The
+ * *names* did not exist, so anyone wanting to read an entry wrote them again,
+ * and writing them again is where they go wrong. They are here now, mirroring
+ * the switches above case for case.
+ *
+ * `position` is 0..3 for `a`, `b`, `c`, `d`. Values a position treats as zero
+ * are named `"0"`, and values it treats as one are named `"1"`, because that is
+ * what the hardware does with them and a reader wants the arithmetic, not the
+ * register that is being ignored. */
+const char *dkr_cc_input_name(int position, int is_alpha, unsigned value)
+{
+    static const char *const common[7] = {
+        "COMBINED", "TEXEL0", "TEXEL1", "PRIMITIVE", "SHADE", "ENVIRONMENT", "1"
+    };
+    static const char *const alpha_common[7] = {
+        "COMBINED_ALPHA", "TEXEL0_ALPHA", "TEXEL1_ALPHA", "PRIMITIVE_ALPHA",
+        "SHADE_ALPHA", "ENVIRONMENT_ALPHA", "1"
+    };
+
+    if (is_alpha) {
+        if (position == 2) {              /* the alpha `c` table differs at 0 and 6 */
+            if (value == 0u) { return "LOD_FRACTION"; }
+            if (value == 6u) { return "PRIM_LOD_FRAC"; }
+            return (value < 6u) ? alpha_common[value] : "0";
+        }
+        return (value < 7u) ? alpha_common[value] : "0";
+    }
+
+    switch (position) {
+    case 0:                                /* a: 6 is 1, 7 is NOISE */
+        if (value == 7u) { return "NOISE"; }
+        return (value < 7u) ? common[value] : "0";
+    case 1:                                /* b: 6 is CENTER, 7 is K4 */
+        return (value < 6u) ? common[value] : "0";
+    case 2:                                /* c: the scalar sources live here */
+        if (value < 6u) { return common[value]; }
+        switch (value) {
+        case 6:  return "1";               /* SCALE, no register on this path */
+        case 7:  return "COMBINED_ALPHA";
+        case 8:  return "TEXEL0_ALPHA";
+        case 9:  return "TEXEL1_ALPHA";
+        case 10: return "PRIMITIVE_ALPHA";
+        case 11: return "SHADE_ALPHA";
+        case 12: return "ENVIRONMENT_ALPHA";
+        case 13: return "LOD_FRACTION";
+        case 14: return "PRIM_LOD_FRAC";
+        case 15: return "K5";
+        default: return "0";
+        }
+    default:                               /* d */
+        return (value < 7u) ? common[value] : "0";
+    }
+}
+
 static float clamp255(float v)
 {
     return (v < 0.0f) ? 0.0f : (v > 255.0f ? 255.0f : v);

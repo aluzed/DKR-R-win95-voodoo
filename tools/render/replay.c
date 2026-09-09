@@ -353,13 +353,54 @@ static void say_recipes(void)
     }
 }
 
+/* Prints one catalogue entry in full: both cycles as arithmetic, the category and
+   the Glide setup. It reads the mux with `dkr_cc_input_name`, which mirrors the
+   evaluator's own position tables -- the point being that a reader and a
+   rasteriser cannot disagree about what an entry says. */
+static void say_recipe_entry(int index)
+{
+    const dkr_cc_entry *e;
+    int cyc;
+
+    if (index < 1 || index > dkr_cc_table_count()) {
+        fprintf(stderr, "replay: recipe %d is outside 1..%d\n", index,
+                dkr_cc_table_count());
+        return;
+    }
+    e = dkr_cc_table_at(index - 1);
+    say("recipe %d: %s%s%s\n", index, e->name,
+        e->name_cycle2 ? " + " : "", e->name_cycle2 ? e->name_cycle2 : "");
+    say("  cycles=%d  category=%s  constant=%d  uses_texture=%d\n",
+        (e->cycle == DKR_CYCLE_2) ? 2 : 1, dkr_cc_category_text(e->category),
+        (int)e->constant, (int)e->setup.uses_texture);
+    for (cyc = 0; cyc <= ((e->cycle == DKR_CYCLE_2) ? 1 : 0); cyc++) {
+        say("  cycle %d  rgb   = (%s - %s) * %s + %s\n", cyc + 1,
+            dkr_cc_input_name(0, 0, e->rgb[cyc].a),
+            dkr_cc_input_name(1, 0, e->rgb[cyc].b),
+            dkr_cc_input_name(2, 0, e->rgb[cyc].c),
+            dkr_cc_input_name(3, 0, e->rgb[cyc].d));
+        say("           alpha = (%s - %s) * %s + %s\n",
+            dkr_cc_input_name(0, 1, e->alpha[cyc].a),
+            dkr_cc_input_name(1, 1, e->alpha[cyc].b),
+            dkr_cc_input_name(2, 1, e->alpha[cyc].c),
+            dkr_cc_input_name(3, 1, e->alpha[cyc].d));
+    }
+    say("  glide setup  cc=%d/%d/%d/%d  ac=%d/%d/%d/%d  tc=%d/%d\n",
+        e->setup.cc_function, e->setup.cc_factor, e->setup.cc_local,
+        e->setup.cc_other, e->setup.ac_function, e->setup.ac_factor,
+        e->setup.ac_local, e->setup.ac_other, e->setup.tc_function,
+        e->setup.tc_factor);
+    say("  note: %s\n", e->note);
+}
+
 static void usage(const char *me)
 {
     fprintf(stderr,
             "usage: %s [--card|--both] [--single-tmu] [--log file]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
-            "          capture.bin [out.bmp]\n",
-            me);
+            "          [--recipe-map file] capture.bin [out.bmp]\n"
+            "       %s --recipe N          print one catalogue entry and stop\n",
+            me, me);
 }
 
 int main(int argc, char **argv)
@@ -381,6 +422,11 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
+        }
+        else if (strcmp(argv[i], "--recipe") == 0 && i + 1 < argc) {
+            /* Reads no capture: it prints a table entry and stops. */
+            say_recipe_entry(atoi(argv[++i]));
+            return 0;
         }
         else if (strcmp(argv[i], "--recipe-map") == 0 && i + 1 < argc) {
             map_path = argv[++i];
