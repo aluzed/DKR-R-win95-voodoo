@@ -842,6 +842,23 @@ set_target_properties(DKRWin95GlideRegistry PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideRegistry)
 
+# E05-S03 - the combiner's enumeration values, measured on the card.
+#
+# The values in `glide_backend.c` were written from memory once and were wrong by
+# one, which classified a whole family of configurations as exact when it is not.
+# This is what caught that, and it had **no build rule**: a measurement whose
+# harness cannot be rebuilt is a measurement that cannot be repeated, and this one
+# is cited by `gen_combiner_table.py` to justify a classification.
+add_executable(DKRWin95CombineEnum
+    "${DKR_WIN95_TOOLS}/witnesses/combine_enum_probe.c")
+target_link_libraries(DKRWin95CombineEnum PRIVATE
+    win95glide win95f3ddkr win95clock winmm)
+set_target_properties(DKRWin95CombineEnum PROPERTIES
+    OUTPUT_NAME "CCENUM"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95CombineEnum)
+
 # E09-S02 - the oracle finally confronted with the hardware. The same synthetic
 # scene passes through the reference rasteriser and then the Voodoo, and the two
 # images are compared pixel by pixel. That is what reading the frame buffer back

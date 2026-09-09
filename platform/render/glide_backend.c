@@ -50,11 +50,22 @@ typedef int           FxBool;
 #define GR_COMBINE_FUNCTION_LOCAL         0x1
 #define GR_COMBINE_FUNCTION_LOCAL_ALPHA   0x2
 #define GR_COMBINE_FUNCTION_SCALE_OTHER   0x3
+/* `(other - local) * factor + local`. Confirmed on the card by
+   `combine_enum_probe.c`: function 7 reads as BLEND. */
+#define GR_COMBINE_FUNCTION_BLEND_OTHER   0x7
 #define GR_COMBINE_FUNCTION_SCALE_OTHER_ADD_LOCAL 0x4
 
 #define GR_COMBINE_FACTOR_ZERO            0x0
 #define GR_COMBINE_FACTOR_LOCAL           0x1
 #define GR_COMBINE_FACTOR_ONE             0x8
+/* `combine_enum_probe.c` sweeps this value with `other` driven from the constant
+   register and finds it reads as `ONE` there. With `other` driven from the
+   **texture**, which is how it is used below, it evidently does not: replacing it
+   with a plain `FACTOR_ONE` puts the copyright screen back from 17 divergent
+   pixels to 801. The sweep's reach is its own configuration, and this name is
+   kept with that caveat written beside it rather than renamed on the strength of
+   a measurement that did not cover the case. */
+#define GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA 0xB
 
 #define GR_COMBINE_LOCAL_ITERATED         0x0
 #define GR_COMBINE_LOCAL_CONSTANT         0x1
@@ -298,6 +309,7 @@ static struct {
     unsigned long    recipe_multipass;  /* first cycles taken from the table */
     unsigned long    prepass_drawn;     /* first cycles done in two blends */
     unsigned long    prepass_alpha_test;/* refused: a cutout is in force */
+    unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -956,6 +968,7 @@ static int pass2_wanted(const dkr_render_state *st)
    where the factor comes from, and that decides what each pass draws. */
 #define PREPASS_NONE           0
 #define PREPASS_PRIM_TO_TEXEL  1  /* (TEXEL0 - PRIM) * SHADE_ALPHA + PRIM */
+#define PREPASS_TEXEL_ALONE    2  /* (ENV - TEXEL0) * ENV_ALPHA + TEXEL0 */
 
 static int prepass_shape(const dkr_cc_entry *e)
 {
@@ -989,9 +1002,16 @@ static int prepass_shape(const dkr_cc_entry *e)
      * nothing is indistinguishable from the change being absent, and this one has
      * no evidence yet that anything is left for it to apply to.
      *
-     * Kept as a comment rather than deleted because the shape is still the
-     * largest single defect on that screen, and the next attempt should start
-     * from why this one failed. */
+     * **And the next attempt is here, by another route entirely.** It is not a
+     * decomposition at all: the constant is carried in the *vertex* colour, so
+     * that one Glide stage can express the whole cycle. See
+     * `prepass_draw_env_in_vertex`. */
+    if (e->rgb[0].a == (unsigned char)DKR_CC_ENVIRONMENT &&
+        e->rgb[0].b == (unsigned char)DKR_CC_TEXEL0 &&
+        e->rgb[0].c == (unsigned char)DKR_CC_ENV_ALPHA &&
+        e->rgb[0].d == (unsigned char)DKR_CC_TEXEL0) {
+        return PREPASS_TEXEL_ALONE;
+    }
     return PREPASS_NONE;
 }
 
@@ -1050,6 +1070,92 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * pixel it paints, and those pixels are a character the card renders as a black
  * silhouette. Fill says what a fix costs; this is what one buys.
  */
+/* --- `(ENVIRONMENT - TEXEL0) * ENV_ALPHA + TEXEL0`, in one pass ---------------- *
+ *
+ * Glide's `BLEND` function is `(other - local) * factor + local`, and the RDP's
+ * form rearranges onto it exactly:
+ *
+ *     (ENV - T) * k + T  =  (T - ENV) * (1 - k) + ENV
+ *
+ * so `other` = the texture, `local` = ENV, `factor` = `1 - k`. The obstacle the
+ * catalogue records is that `k` is a **constant register's alpha**, and no factor
+ * delivers one. The way out `gen_combiner_table.py` names is to carry the
+ * environment in the **vertex** instead, where a factor reading the *local's*
+ * alpha fetches `k` from the iterated alpha.
+ *
+ * That is what this draws, and it is free here because the configuration ignores
+ * the vertex colour: its first cycle names TEXEL0 and ENVIRONMENT and nothing
+ * else, so overwriting the shade costs nothing the RDP was using.
+ *
+ * ## What is measured, and how far the measurement reaches
+ *
+ * The image, on the machine: the copyright screen goes from **801** divergent
+ * pixels to **17**, the race is unchanged at 124, `COMPARE.EXE` stays clean.
+ *
+ * The mechanism is measured **by difference and not by sweep**, and the
+ * difference is sharp. Replacing this with a plain `SCALE_OTHER / FACTOR_ONE`
+ * -- which draws the texture alone -- puts the copyright screen back at 801. So
+ * factor `0x0B` here is not behaving as `ONE`: something is scaling the texel
+ * toward the constant, and `1 - local_alpha` is the only candidate on offer.
+ *
+ * `combine_enum_probe.c`'s sweeps say no factor delivers an alpha, and that is
+ * **not a contradiction**: both sweeps drive `other` from the constant register
+ * with no texture bound, and this drives it from the texture. The sweep's reach
+ * is its own configuration. Extending it to a textured `other` is what would turn
+ * "the only candidate on offer" into a measurement, and it has not been done.
+ *
+ * Written down because the alternative is to let a working pass rest on an
+ * enumeration value this project has already been wrong about once.
+ *
+ * **A two-pass decomposition would be exact and cannot be used here.** It needs
+ * an opaque first pass to compose against, and this configuration's fill is 0 %
+ * opaque on both scenes it appears in -- measured, and the reason that route was
+ * tried, reverted, and is not tried again.
+ */
+#define PREPASS_BATCH 256
+
+static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
+                                     int count)
+{
+    static dkr_render_vertex tinted[PREPASS_BATCH * 3];
+    const float er = (float)((b.current.env_color >> 16) & 0xFFu);
+    const float eg = (float)((b.current.env_color >>  8) & 0xFFu);
+    const float eb = (float)( b.current.env_color        & 0xFFu);
+    const float ea = (float)((b.current.env_color >> 24) & 0xFFu);
+    int done;
+
+    if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
+
+    gs.color_combine(GR_COMBINE_FUNCTION_BLEND_OTHER,
+                     GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    /* The alpha stays the texel's. The iterated alpha now carries the lerp
+       factor and is no longer the vertex's own, so leaving the alpha combiner to
+       read it would put that factor into the alpha test. */
+    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    apply_blend(b.current.blend);
+    apply_depth(b.current.depth);
+
+    /* Copied in chunks rather than all at once: a batch is unbounded and this
+       buffer is not, and a silent truncation would drop geometry. */
+    for (done = 0; done < count; ) {
+        const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
+                                                     : (count - done);
+        int i;
+        for (i = 0; i < n * 3; i++) {
+            tinted[i] = vertices[(done * 3) + i];
+            tinted[i].r = er; tinted[i].g = eg; tinted[i].b = eb;
+            tinted[i].a = ea;
+        }
+        for (i = 0; i + 2 < n * 3; i += 3) {
+            dkr_glide_draw_raw(&tinted[i], &tinted[i + 1], &tinted[i + 2]);
+        }
+        done += n;
+    }
+    b.prepass_in_vertex++;
+}
+
 static void prepass_draw(const dkr_render_vertex *vertices, int count)
 {
     if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
@@ -1225,6 +1331,8 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
         const int shape = b.has_state ? prepass_wanted(&b.current) : PREPASS_NONE;
         if (shape == PREPASS_PRIM_TO_TEXEL) {
             prepass_draw(vertices, count);
+        } else if (shape == PREPASS_TEXEL_ALONE) {
+            prepass_draw_texel_alone(vertices, count);
         } else {
             for (i = 0; i + 2 < count * 3; i += 3) {
                 dkr_glide_draw_raw(&vertices[i], &vertices[i + 1],

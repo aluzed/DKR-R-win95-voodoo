@@ -115,6 +115,90 @@ int main(void)
             (got > want_add   - 12 && got < want_add   + 12) ? "SCALE_OTHER_ADD_LOCAL" :
             (got == 0) ? "zero" : "other");
     }
+    /* --- A second sweep, with inputs that separate colour from alpha ---------- *
+     *
+     * The sweep above puts the constant in `other`, gives every vertex alpha 255
+     * and asks which factor yields the *constant's* alpha. None does, and that is
+     * the result on record. It cannot say anything about a factor that reads the
+     * **local's** alpha, because at 255 such a factor is `ONE` and its complement
+     * is `ZERO` — both already in the table.
+     *
+     * That distinction decides a real question: `gen_combiner_table.py` names the
+     * way out for the whole `BLENDI`/`BLENDT` family — "ENV_ALPHA is a constant
+     * known to the CPU, hence carriable in the vertex alpha, where `LOCAL_ALPHA`
+     * would go and fetch it" — and marks it untested.
+     *
+     * **The inputs have to separate six candidates, and the first attempt did
+     * not.** With a local of (200,160,240) at alpha 64, `LOCAL` reads 74 and
+     * `ONE_MINUS_LOCAL_ALPHA` 80; a window of ten around either swallows the
+     * other, and this probe duly reported an alpha factor that was a colour
+     * factor. Six units of separation is not a measurement, it is a coincidence
+     * waiting to be believed. The values below put the nearest pair 17 apart.
+     */
+    {
+        const int OR = 240, OG = 200, OB = 160, OA = 128;
+        const int LR = 20,  LG = 60,  LB = 100, LA = 200;
+        dkr_render_vertex v[6];
+        const float xs[6] = {0,(float)W,(float)W,0,(float)W,0};
+        const float ys[6] = {0,0,(float)H,0,(float)H,(float)H};
+        const int want_local  = LR;
+        const int want_one    = OR;
+        const int want_lcol   = (OR - LR) * LR  / 255 + LR;
+        const int want_omlcol = (OR - LR) * (255 - LR) / 255 + LR;
+        const int want_lalpha = (OR - LR) * LA  / 255 + LR;
+        const int want_omla   = (OR - LR) * (255 - LA) / 255 + LR;
+        int i;
+
+        say("\n-- FACTOR sweep, BLEND (7), local = vertex (%d,%d,%d) alpha %d --\n",
+            LR, LG, LB, LA);
+        say("   other = constant (%d,%d,%d) alpha %d\n", OR, OG, OB, OA);
+        say("   on red:  ZERO->%d  ONE->%d  LOCAL->%d  1-LOCAL->%d"
+            "  LOCAL_A->%d  1-LOCAL_A->%d\n",
+            want_local, want_one, want_lcol, want_omlcol, want_lalpha, want_omla);
+        say("%-4s %-8s %s\n", "fac", "read", "reading");
+
+        for (fn = 0; fn <= 15; fn++) {
+            dkr_cc_setup r;
+            unsigned c;
+            int got;
+            memset(&r, 0, sizeof(r));
+            r.cc_function = 7; r.cc_factor = (unsigned char)fn;
+            r.cc_local = 0; r.cc_other = 2;
+            r.ac_function = 1; r.ac_factor = 8; r.ac_local = 0; r.ac_other = 0;
+            r.uses_texture = 0;
+
+            memset(v, 0, sizeof(v));
+            for (i = 0; i < 6; i++) {
+                v[i].x = xs[i]; v[i].y = ys[i];
+                v[i].r = (float)LR; v[i].g = (float)LG; v[i].b = (float)LB;
+                v[i].a = (float)LA;
+                v[i].oow = 1.0f;
+            }
+
+            bk.begin_frame(bk.self, 0x000000);
+            bk.set_state(bk.self, &st);
+            dkr_glide_backend_set_recipe(&r,
+                ((unsigned)OA << 24) | ((unsigned)OR << 16) |
+                ((unsigned)OG << 8) | (unsigned)OB);
+            bk.draw_triangles(bk.self, v, 2);
+            bk.present(bk.self);
+            if (dkr_glide_read_framebuffer(g_px, W * H, &rw, &rh) <= 0) { continue; }
+            c = g_px[(size_t)(rh/2) * (size_t)rw + (size_t)(rw/2)];
+            got = (int)((c >> 16) & 0xFF);
+            /* Eight, not ten: the nearest pair is 17 apart, so a window of eight
+               can never claim two candidates at once. A classifier that can is
+               not one. */
+            say("%-4d %06X   %s\n", fn, c & 0x00FFFFFFu,
+                (got > want_local  - 8 && got < want_local  + 8) ? "ZERO (result = local)" :
+                (got > want_one    - 8 && got < want_one    + 8) ? "ONE (result = other)" :
+                (got > want_lcol   - 8 && got < want_lcol   + 8) ? "<== LOCAL colour" :
+                (got > want_omlcol - 8 && got < want_omlcol + 8) ? "<== ONE_MINUS_LOCAL colour" :
+                (got > want_lalpha - 8 && got < want_lalpha + 8) ? "<== LOCAL_ALPHA" :
+                (got > want_omla   - 8 && got < want_omla   + 8) ? "<== ONE_MINUS_LOCAL_ALPHA" :
+                "unrecognised");
+        }
+    }
+
     bk.close(bk.self);
     say("\nend\n");
     if (g_out) { fclose(g_out); }

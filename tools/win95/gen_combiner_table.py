@@ -254,11 +254,20 @@ def classify(c1, c2):
     # caught it out with a gap of 140 to 156 units, and that is exactly what it
     # was asked to do.
     #
-    # A way out exists and is not yet tested: ENV_ALPHA is a constant known to
+    # A way out was recorded here as untested: ENV_ALPHA is a constant known to
     # the CPU, hence carriable in the vertex alpha, where `LOCAL_ALPHA` would go
-    # and fetch it. Until that is measured, the configuration stays approximate -
-    # announcing as exact what is not is precisely the failing this ticket warns
-    # against.
+    # and fetch it. **The backend does that now, and it works** - the copyright
+    # screen goes from 801 divergent pixels to 17 - so this classification is
+    # conservative rather than accurate for that family.
+    #
+    # It is left as `approximate` all the same, because the *reason* it works is
+    # not established. Both of `combine_enum_probe.c`'s sweeps drive `other` from
+    # the constant register with no texture bound, and there no factor delivers an
+    # alpha; the backend drives `other` from the texture, and there something
+    # evidently does. Extending the sweep to a textured `other` is what would turn
+    # a working pass into a justified classification. Announcing as exact what has
+    # not been measured is precisely the failing this ticket warns against, and
+    # the direction of the error does not change that.
     if c_name in ("ENV_ALPHA", "PRIMITIVE_ALPHA"):
         return ("DKR_CC_APPROXIMATE", const,
                 "factor = alpha of a constant register: measured on the card, "

@@ -267,9 +267,40 @@ that is **0 %**. The rule is not "decompose lerps" but "decompose lerps over
 opaque first passes", and the oracle can say which those are before a line is
 written or a minute spent on the machine.
 
-The shape is kept as a comment in `glide_backend.c` rather than deleted, because
-it is still the largest single defect on that screen and the next attempt should
-start from why this one failed.
+### And a route that is not a decomposition at all
+
+The two-pass route needs an opaque first pass and this configuration has none, so
+the answer was not another pass. Glide's `BLEND` function already has the *shape*
+— `(other − local) × factor + local`, and the RDP's form rearranges onto it as
+`(T − ENV) × (1 − k) + ENV`. What it lacks is a factor delivering a constant
+register's alpha.
+
+`gen_combiner_table.py` had recorded the way round and marked it untested: the
+environment and its alpha are constants the CPU knows, so they can be carried in
+the **vertex** instead, where a factor reading the local's alpha fetches `k` from
+the iterated alpha. It is free for this configuration, which names TEXEL0 and
+ENVIRONMENT and nothing else — overwriting the shade costs nothing the RDP was
+using.
+
+| | before | after |
+|---|---:|---:|
+| copyright screen | 801 | **17** |
+| the race | 124 | 124 |
+
+One pass, no extra fill, and nothing assumed about what lies underneath.
+
+**The mechanism is measured by difference, not by sweep, and that is stated
+rather than glossed.** `combine_enum_probe.c` sweeps the sixteen factor values and
+finds none that delivers an alpha — but both of its sweeps drive `other` from the
+constant register with no texture bound, and this drives it from the texture.
+Replacing the factor with a plain `FACTOR_ONE`, which would draw the texture
+alone, puts the screen back at **801**. So something is scaling the texel toward
+the constant, and `1 − local_alpha` is the only candidate on offer. Extending the
+sweep to a textured `other` is what would settle it, and it has not been done.
+
+That caveat is worth its lines: this project has already classified a whole
+family of configurations as exact on the strength of an enumeration value written
+from memory, and the measurement harness caught it out by 140 units.
 
 ## What it is not worth
 

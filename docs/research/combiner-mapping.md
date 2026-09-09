@@ -33,6 +33,41 @@ deviation across the whole `BLENDI`/`BLENDT` family.
 | factor | 8 | one |
 | factor | 9 | `1 − local` (a **colour**, not a scalar) |
 
+> **Extended on 9 September 2026, and it closes the way out this file named.**
+> The sweep above puts the constant in `other` and every vertex alpha at 255, so
+> it could say nothing about a factor reading the *local's* alpha: at 255 such a
+> factor is `ONE` and its complement `ZERO`, both already in the table. A second
+> sweep, with the local at (20,60,100) alpha 200 against a constant at
+> (240,200,160) — six candidates separated by at least seventeen units — reports:
+>
+> | factor | reads as |
+> |---|---|
+> | 1 | the local **colour** |
+> | 9 | `1 − local` **colour** |
+> | 0, 3, 4, 5, 6, 7, 10 | zero |
+> | 2, 8, 11, 12, 13, 14, 15 | one |
+>
+> **No value delivers an alpha** *in this configuration* — and the qualification
+> is the whole of it. Both sweeps drive `other` from the constant register with no
+> texture bound.
+>
+> With `other` driven from the **texture**, the same value behaves differently.
+> `glide_backend.c` uses factor `0x0B` with `local` = the iterated colour carrying
+> the environment, and the copyright screen reads 17 divergent pixels; replacing
+> it with a plain `FACTOR_ONE` — which would draw the texture alone, and which is
+> what `ONE` means — puts the screen back at 801. Something is scaling the texel
+> toward the constant, and `1 − local_alpha` is the only candidate on offer.
+>
+> So the way out recorded below is **not** closed, and it is not confirmed either:
+> it works, measured by difference on a real frame, for a reason the sweep cannot
+> yet see. Extending the sweep to a textured `other` is what would settle it, and
+> that has not been done.
+>
+> The first attempt at this second sweep put two candidates six units apart and
+> duly reported an alpha factor that was a colour factor. Six units of separation
+> is not a measurement; it is a coincidence waiting to be believed. The probe's
+> inputs were changed before its answer was used.
+
 And the negative result, which is the most important: **none of the sixteen factor
 values delivers the constant register's alpha**. The confirmed factors are all
 functions of the local colour, or constants.
