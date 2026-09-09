@@ -535,7 +535,14 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
     if (st->texture != 0 && st->texture <= MAX_TEXTURES) {
         g_tex_pixels[st->texture - 1]++;
     }
-    if (index < sizeof(g_recipe_map)) {
+    /* **The last configuration that *changed* the pixel, not the last that wrote
+       it.** The two differ, and the difference makes or breaks the attribution:
+       the copyright screen ends with a full-screen `G_CC_PRIMITIVE` overlay whose
+       constant is black at alpha zero, so it writes every pixel and alters none.
+       Under "last writer" it claimed all 307,200 and the map said nothing.
+       Measured 9 September 2026. */
+    if (index < sizeof(g_recipe_map) &&
+        (g_sw.color[index] & 0x00FFFFFFu) != (dst & 0x00FFFFFFu)) {
         g_recipe_map[index] = (unsigned char)((st->recipe > 0 &&
                                                st->recipe < 255) ? st->recipe : 255);
     }

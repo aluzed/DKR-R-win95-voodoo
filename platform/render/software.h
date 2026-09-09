@@ -153,8 +153,14 @@ unsigned long dkr_software_second_cycle_pixels(int which);
  * that plan comes from — without going near the machine. */
 unsigned long dkr_software_second_cycle_by_recipe(int recipe);
 
-/* Which configuration painted each pixel last — `recipe` as the state carries it,
- * 0 where nothing painted and 255 where the state named no catalogue entry.
+/* Which configuration last **changed** each pixel — `recipe` as the state carries
+ * it, 0 where nothing changed it and 255 where the state named no catalogue entry.
+ *
+ * Changed, not merely wrote, and the distinction is what makes the map usable:
+ * the copyright screen ends with a full-screen `G_CC_PRIMITIVE` overlay whose
+ * constant is black at alpha zero, which writes all 307,200 pixels and alters
+ * none. Recording the last *writer* let it claim the whole screen and the map
+ * said nothing at all.
  *
  * The counters say how much fill each configuration takes; this says **where**.
  * Crossed with a difference map it answers the question that decides what to
