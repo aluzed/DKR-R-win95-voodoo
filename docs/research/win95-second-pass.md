@@ -185,6 +185,28 @@ untouched by any of this.
 
 The character is a red cap and a blue plane on the card now.
 
+## The whole corpus, before and after
+
+One sweep of the four scenes through both backends, with every change of this
+work in place:
+
+| capture | scene | before | after | second passes | pre-passes |
+|---|---|---:|---:|---:|---:|
+| `CAP0050` | the Nintendo 64 logo | 829 | **20** | 161 | 157 |
+| `CAP0150` | the copyright screen | 801 | 801 | 0 | 0 |
+| `CAP0250` | the hub | 11,396 | **1,629** | 314 | 162 |
+| `CAP0400` | Ancient Lake | 124 | 124 | 0 | 0 |
+
+The intro falls by 98 %, the hub by 86 %, and **the two scenes that draw neither
+a second pass nor a pre-pass are unchanged to the pixel**. That is the shape a
+correct change makes: it moves what it addresses and leaves the rest exactly
+where it was. `COMPARE.EXE` reports 0 failures and the corpus still replays to 0
+divergent pixels.
+
+The copyright screen's 801 pixels are untouched by any of this and remain
+unexplained: its two-cycle fill is entirely identity, so no pass fires there and
+nothing in this work could have moved it. It is the next thing to attribute.
+
 ## What it is not worth
 
 **A fifth of the divergence, not the whole of it.** 11,396 to 9,051 is 21 %. The
