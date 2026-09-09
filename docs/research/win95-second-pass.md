@@ -190,18 +190,26 @@ The character is a red cap and a blue plane on the card now.
 One sweep of the four scenes through both backends, with every change of this
 work in place:
 
-| capture | scene | before | after | second passes | pre-passes |
-|---|---|---:|---:|---:|---:|
-| `CAP0050` | the Nintendo 64 logo | 829 | **20** | 161 | 157 |
-| `CAP0150` | the copyright screen | 801 | 801 | 0 | 0 |
-| `CAP0250` | the hub | 11,396 | **1,629** | 314 | 162 |
-| `CAP0400` | Ancient Lake | 124 | 124 | 0 | 0 |
+One sweep of the four scenes through both backends, in the committed state:
 
-The intro falls by 98 %, the hub by 86 %, and **the two scenes that draw neither
-a second pass nor a pre-pass are unchanged to the pixel**. That is the shape a
-correct change makes: it moves what it addresses and leaves the rest exactly
-where it was. `COMPARE.EXE` reports 0 failures and the corpus still replays to 0
-divergent pixels.
+| capture | scene | before | after |
+|---|---|---:|---:|
+| `CAP0050` | the Nintendo 64 logo | 829 | **20** |
+| `CAP0150` | the copyright screen | 801 | **17** |
+| `CAP0250` | the hub | 11,396 | **1,629** |
+| `CAP0400` | Ancient Lake | 124 | 124 |
+
+**13,150 divergent pixels to 1,790**, an 86 % reduction over the corpus, and the
+race — the one scene none of these passes fires on — is unchanged to the pixel.
+That is the shape a correct change makes: it moves what it addresses and leaves
+the rest exactly where it was.
+
+`COMPARE.EXE` reports 0 failures and the corpus still replays to 0 divergent
+pixels, the oracle being untouched throughout.
+
+The hub was re-measured here rather than carried forward. Its configurations do
+not include the one the last pass fires on, so it should not have moved — and
+"should not have moved" is what had to be checked twice already in this work.
 
 ## The copyright screen's 801, attributed
 
