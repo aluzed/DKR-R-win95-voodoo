@@ -130,6 +130,13 @@ unsigned long dkr_software_category_pixels(int category);
  * entries account for 85 % of it" is a task. */
 unsigned long dkr_software_recipe_pixels(int recipe);
 
+/* And the part of that fill drawn with no blending. A two-pass decomposition of
+ * a lerp is exact over an opaque first pass and wrong over a blended one, so
+ * whether one is worth writing turns on this ratio — knowable here, without a
+ * trip to the machine, which is where the last such question cost twenty
+ * minutes and a wrong answer. */
+unsigned long dkr_software_recipe_opaque_pixels(int recipe);
+
 /* Fill computed through a two-cycle configuration, and the part of it where the
  * second cycle **actually changed the pixel**.
  *

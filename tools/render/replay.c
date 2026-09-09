@@ -343,8 +343,10 @@ static void say_recipes(void)
         if (best_i < 0) { break; }
         {
             const dkr_cc_entry *e = (best_i > 0) ? dkr_cc_table_at(best_i - 1) : 0;
-            say("    %8lu  %6ld ppm  %s%s%s\n", best,
+            const unsigned long op = dkr_software_recipe_opaque_pixels(best_i);
+            say("    %8lu  %6ld ppm  opaque %3ld%%  %s%s%s\n", best,
                 dkr_image_per_million((long)best, (long)total),
+                best ? (long)((op * 100u) / best) : 0L,
                 e ? e->name : "(no catalogue entry)",
                 (e && e->name_cycle2) ? " + " : "",
                 (e && e->name_cycle2) ? e->name_cycle2 : "");

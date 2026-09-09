@@ -437,11 +437,25 @@ unsigned long dkr_software_category_pixels(int category)
  * has. */
 #define SW_RECIPES 64
 static unsigned long g_recipe_pixels[SW_RECIPES + 1];
+/* And the part of it drawn with no blending.
+ *
+ * A two-pass decomposition of a lerp is exact over an **opaque** first pass and
+ * wrong over a blended one -- measured on 9 September 2026, where the wrong half
+ * made the copyright screen four times worse. Whether such a decomposition is
+ * worth writing at all therefore turns on how much of that configuration's fill
+ * is opaque, and that is knowable here, without a trip to the machine. */
+static unsigned long g_recipe_opaque[SW_RECIPES + 1];
 
 unsigned long dkr_software_recipe_pixels(int recipe)
 {
     if (recipe < 0 || recipe > SW_RECIPES) { return 0u; }
     return g_recipe_pixels[recipe];
+}
+
+unsigned long dkr_software_recipe_opaque_pixels(int recipe)
+{
+    if (recipe < 0 || recipe > SW_RECIPES) { return 0u; }
+    return g_recipe_opaque[recipe];
 }
 
 
@@ -551,8 +565,12 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
                                  st->recipe <= dkr_cc_table_count())
                                   ? dkr_cc_table_at(st->recipe - 1) : 0;
         g_cat_pixels[e ? (int)e->category : SW_CATEGORIES - 1]++;
-        g_recipe_pixels[(st->recipe >= 0 && st->recipe <= SW_RECIPES)
-                          ? st->recipe : SW_RECIPES]++;
+        {
+            const int slot = (st->recipe >= 0 && st->recipe <= SW_RECIPES)
+                               ? st->recipe : SW_RECIPES;
+            g_recipe_pixels[slot]++;
+            if (st->blend == DKR_BLEND_OPAQUE) { g_recipe_opaque[slot]++; }
+        }
     }
     if (g_last_two_cycle) {
         g_cycle2_pixels++;
@@ -936,6 +954,7 @@ void dkr_render_backend_software(dkr_render_backend *out)
     memset(g_tex_tris, 0, sizeof(g_tex_tris));
     memset(g_cat_pixels, 0, sizeof(g_cat_pixels));
     memset(g_recipe_pixels, 0, sizeof(g_recipe_pixels));
+    memset(g_recipe_opaque, 0, sizeof(g_recipe_opaque));
     g_cycle2_pixels = 0u;
     g_cycle2_pixels_effective = 0u;
     g_cycle2_pixels_alpha = 0u;

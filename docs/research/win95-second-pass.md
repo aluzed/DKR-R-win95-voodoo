@@ -240,10 +240,32 @@ background the pair computes `(T·a + dst(1−a))(1−k) + E·k` where the RDP c
 `(T(1−k) + E·k)·a + dst(1−a)`, and the difference is the background showing
 through by the wrong amount.
 
-Reverted. It could be gated on an opaque first pass, where the two do agree —
-that was not measured, so it is not written: a guard that makes a change apply to
-nothing is indistinguishable from the change being absent, and there is no
-evidence yet that anything would be left for it.
+Reverted. It could be gated on an opaque first pass, where the two do agree — and
+that is now measured rather than guessed at.
+
+### The rule, and it is measurable before anything is written
+
+The oracle counts, per configuration, the share of its fill drawn with **no
+blending**. That share is exactly the share a two-pass decomposition can be
+exact on:
+
+| configuration | fill | opaque | decomposition |
+|---|---:|---:|---|
+| `G_CC_BLEND_SHADEALPHA` + `G_CC_BLENDI_SHADE` | 16,007 | **100 %** | written, 6,420 wrong → 67 |
+| `G_CC_BLENDT_ENV_ALPHA_A_TxP` (copyright) | 5,396 | **0 %** | written, reverted |
+| `G_CC_BLENDT_ENV_ALPHA_A_TxP` (race) | 64,400 | **0 %** | — |
+| `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` | 451,760 | 50 % | second pass, half exact |
+| `G_CC_MODULATEIA_PRIM` + `G_CC_BLEND_ENV_ALPHA2` | 62,970 | 40 % | second pass, part exact |
+
+**The copyright text is 0 % opaque on both scenes it appears in.** A gated
+version of that pre-pass would apply to nothing at all, so it is not written —
+and that is a measurement now, not a hunch.
+
+It also explains the two results side by side. The pre-pass that worked fires on
+a configuration whose fill is **100 %** opaque; the one that failed fires on one
+that is **0 %**. The rule is not "decompose lerps" but "decompose lerps over
+opaque first passes", and the oracle can say which those are before a line is
+written or a minute spent on the machine.
 
 The shape is kept as a comment in `glide_backend.c` rather than deleted, because
 it is still the largest single defect on that screen and the next attempt should
