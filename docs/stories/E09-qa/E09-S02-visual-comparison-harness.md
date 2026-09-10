@@ -78,12 +78,19 @@ backends, automatically.
       copyright screen twice ten display lists apart, the hub with 190 textures, and a
       race — replaying to their references at 0 divergent pixels of 307,200. The second
       capture of the copyright screen earned its place immediately: on one frame the
-      screen reads as broken, and only the pair shows it is a logo spinning. No lap of any level, and the reason is measured
-      rather than pending: **the game reaches display list 300 and stops**, in MENU
-      mode, with no error. A capture armed at 800 is never written; two armed at 200
-      and 250 both are. The corpus cannot cover what the run does not reach, so this
-      criterion now depends on E02-S06 and not on this harness.
-      See `docs/research/win95-corpus.md`.
+      screen reads as broken, and only the pair shows it is a logo spinning.
+
+      No lap of any level yet — and the reason recorded here on 4 September, that the
+      game stopped at display list 300, **was wrong and is retracted**. The log was
+      being committed to the platter only from the display-list report, so every run's
+      log ended at its last list whatever the runtime was doing. With the VI thread
+      committing too, a plain run reaches **list 2520 and 19,800 presents** and is
+      still on its title screen when the machine is stopped.
+
+      What is true is narrower and is a limit on the harness: **a capture ends the run
+      that takes it**, so the corpus grows one scene per run. That is enough, lists
+      deep into a race being reachable. `CAP0800.BIN` — Wizpig and Diddy, 1,397
+      triangles — is the first taken that way. See `docs/research/win95-corpus.md`.
 - [x] The replay is deterministic — the comparison of the counts of triangles emitted
       precedes that of the images, precisely so that an image deviation does not mask a
       determinism defect. Established on a **real** capture on 3 September 2026: the two
