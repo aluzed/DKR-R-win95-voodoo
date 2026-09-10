@@ -1454,6 +1454,17 @@ void dkr::runtime::GlideRenderer::update_screen() {
     if (index <= 10 || index % 300 == 0) {
         std::fprintf(stderr, "[boot][vi] present=%llu\n",
                      static_cast<unsigned long long>(index));
+        // Committed here as well as in the display-list report, and the reason is
+        // a question this line is meant to answer: the game stops submitting
+        // lists around 300 and nothing says whether the *rest* of the runtime
+        // stops with it. `dkr_diag_commit` ran only from the list report, so once
+        // the lists ceased the log ceased being written to disk, and a VI thread
+        // still presenting looked exactly like a VI thread that had stopped.
+        //
+        // Windows 95 updates a file's directory entry at close, and this program
+        // is normally killed rather than closed, so an uncommitted tail is a lost
+        // tail. See `diagnostic_log.hpp`.
+        dkr_diag_commit();
     }
 }
 

@@ -13,6 +13,7 @@ already shown.
 | `CAP0160.BIN` | the same, ten lists later, logo turned | 459 | 293 | 181 | 18 |
 | `CAP0250.BIN` | the hub, Pipsy on the beach | 3592 | 1293 | 904 | 190 |
 | `CAP0400.BIN` | Ancient Lake, Bumper racing | 1539 | 943 | 510 | 95 |
+| `CAP0800.BIN` | Wizpig and Diddy, the attract sequence | 1427 | 1397 | 755 | 85 |
 
 Five captures of four scenes that share almost nothing: one large model on a sky, a mostly
 two-dimensional screen with text, an outdoor hub with 190 textures, and a race
@@ -33,20 +34,34 @@ Two obstacles were met on the way and both are recorded elsewhere:
 - **Five captures of six were lost to the disk cache.** `fclose` hands the bytes
   to Windows 95 and Windows 95 keeps them; stopping the emulator took them. The
   writer commits before closing now. See the commit of 4 September 2026.
-- **A run does not reach an arbitrary list, and that is what bounds the corpus.**
-  Measured on 4 September 2026 over four runs: the game reaches display list
-  **300** and stops there, in `gGameMode=1 (MENU)`, with no error and with its
-  window still answering the message loop. A single capture armed at list 800 was
-  never written. Two armed at 200 and 250 were both written, so it is not the
-  captures that shorten the run — the run is short.
+- **"The game reaches list 300 and stops" was wrong.** It was recorded here on
+  4 September 2026 from four runs, and it is retracted on 10 September: a plain
+  run with no capture armed reaches **list 2520 and 19,800 presents** in thirteen
+  minutes and is still going when the machine is stopped, sitting on its title
+  screen — the logo, the kart, START and OPTIONS, on the Voodoo.
 
-  The log is durable (`dkr_diag_commit` calls `FlushFileBuffers` at every report),
-  so this is read from the last report rather than inferred: `list=300 cmd=291998
-  tri=152849 emitted=92252 rejects=0`, and nothing after it.
+  The error was in the instrument, not in the observation. `dkr_diag_commit`,
+  which forces the log to the platter, ran **only from the display-list report**.
+  So once the lists stopped the log stopped being written, and every run's log
+  ended at its last list report whatever the rest of the runtime was doing. The VI
+  thread's own report now commits too, and that is what showed presents and lists
+  advancing together into the thousands.
 
-  That is well short of the 1500 lists E02-S06 recorded, and it is why the corpus
-  has no lap of any level: the game does not get there. **Recorded as a limit on
-  E09-S02's coverage and as a question for E02-S06, not diagnosed here.**
+  **What shortens the run is the capture itself.** With `DKR_CAPTURE_LIST=800`
+  armed, the same build reaches list 800, writes the file — and stops there. The
+  log's last line is the capture's own confirmation, and nothing follows it:
+  neither a display-list report nor a VI present, on a log now committed from both
+  threads. The screen goes back to the desktop with the game's window black, which
+  is what every capture run has looked like since the first.
+
+  So the rule is **one capture per run**, and that is a limit on the harness, not
+  on the game. It is also enough: lists deep into a race are reachable now that
+  the game is known to run to 2520 and beyond, and the corpus can grow one scene
+  at a time.
+
+  Why an eight-mebibyte write ends the run is not diagnosed. It predates the
+  `_commit` added on 4 September — the run of 1 September ended at its capture
+  too — so it is the write and not the flush.
 
 ## What the corpus has already shown
 
