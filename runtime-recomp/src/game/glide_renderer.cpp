@@ -815,6 +815,28 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         static unsigned long cap_at[kMaxCaptures];
         static bool cap_done[kMaxCaptures];
         static int cap_count = -1;
+        // **The list number is not a stable landmark, `gGameMode` is** -- the same
+        // reasoning the frame dump below already carries, and the capture had not
+        // been given it. How far the game has got by its four-hundredth display
+        // list depends on load times and on how long a cutscene took; "twenty
+        // lists after entering the menu" is the same moment in every run.
+        //
+        // That matters more for a capture than for a dump. A dump is looked at; a
+        // capture is *replayed and compared*, and E09-S02's corpus is only worth
+        // keeping if each of its scenes is a moment one can return to. It also
+        // decides what the corpus can cover at all: since a capture ends the run
+        // that takes it, each run buys exactly one scene, and naming that scene
+        // by the game's own state is how the six the ticket asks for get chosen
+        // rather than hunted.
+        //
+        // `DKR_CAPTURE_MODE=<n>` anchors: -1 INTRO, 0 INGAME, 1 MENU, 5 LOCKUP.
+        // Without it the indices are absolute, as before.
+        static const char* const cap_mode_env = std::getenv("DKR_CAPTURE_MODE");
+        static const bool cap_have_mode = (cap_mode_env != nullptr);
+        static const int cap_wanted_mode =
+            cap_mode_env ? static_cast<int>(std::strtol(cap_mode_env, nullptr, 10))
+                         : 0;
+        static unsigned long cap_anchor = 0UL;
         if (cap_count < 0) {
             const char* const env = std::getenv("DKR_CAPTURE_LIST");
             cap_count = 0;
@@ -832,13 +854,35 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 std::fprintf(stderr, "[gfx] capture: %d list(s) armed\n", cap_count);
             }
         }
-        for (int c = 0; c < cap_count; ++c) {
+        if (cap_have_mode && cap_anchor == 0UL && cap_count > 0) {
+            if (read_word(rdram_snapshot, kAddrGameMode) == cap_wanted_mode) {
+                cap_anchor = index;
+                std::fprintf(stderr,
+                             "[gfx] capture: gGameMode=%d reached at list %llu\n",
+                             cap_wanted_mode,
+                             static_cast<unsigned long long>(index));
+            }
+        }
+        const bool cap_armed = cap_have_mode ? (cap_anchor != 0UL) : true;
+        for (int c = 0; cap_armed && c < cap_count; ++c) {
             // At or after, once, like the frame dump: a trigger on an exact
             // count one cannot predict fails silently when the run stops short.
-            if (!cap_done[c] && index >= cap_at[c]) {
+            if (!cap_done[c] && index >= cap_anchor + cap_at[c]) {
                 char path[32];
                 cap_done[c] = true;
-                std::sprintf(path, "D:\\CAP%04lu.BIN", cap_at[c]);
+                // Named by the moment, not by a counter, when one is given: a
+                // letter for the mode and the offset within it. Two runs anchored
+                // on different modes then cannot overwrite each other's scene,
+                // which a bare `CAP0020.BIN` would.
+                if (cap_have_mode) {
+                    const char m = (cap_wanted_mode == -1) ? 'I'
+                                 : (cap_wanted_mode ==  0) ? 'G'
+                                 : (cap_wanted_mode ==  1) ? 'M'
+                                 : (cap_wanted_mode ==  5) ? 'L' : 'X';
+                    std::sprintf(path, "D:\\C%c%04lu.BIN", m, cap_at[c]);
+                } else {
+                    std::sprintf(path, "D:\\CAP%04lu.BIN", cap_at[c]);
+                }
                 dkr_capture_write(path,
                                   task->t.data_ptr & 0x00FFFFFFu,
                                   rdram_snapshot, kSnapshotBytes,
