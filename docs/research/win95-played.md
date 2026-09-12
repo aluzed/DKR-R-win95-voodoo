@@ -34,10 +34,47 @@ lacks. And the reason is worth recording precisely, because it cost a run:
 > from `0x801FB780`. A capture anchored on `DKR_CAPTURE_MODE=0` (INGAME) therefore
 > never fires there, and mode 0 means a race proper.
 
-So the corpus's first gameplay scene needs the navigation carried further: from
-the hub through a door, or `TRACKS` from GAME SELECT instead of `ADVENTURE`. Both
-are more keystrokes into a menu whose layout this repository does not yet know,
-at five seconds a round trip.
+So the corpus's first gameplay scene needs the navigation carried further. And
+carrying it further ran into something worth its own section.
+
+## The buttons arrive; the directions arrive sometimes
+
+Navigating properly means *choosing* menu items, not accepting the first one, and
+that needs a direction. Measured screen by screen on the letter carousel, where a
+move is unmistakable — the strip reads `? SP DEL Ok A B C D` and the selection is
+visible:
+
+| sent | effect |
+|---|---|
+| `space` (A), `Return` (Start) | every time: letters typed, screens advanced, five screens deep |
+| `d` `d` `d` — the stick right | the selection moved **A → D** |
+| `Right` `Right` — the D-pad | nothing |
+| `a` `a` `a` `a` — the stick left | nothing |
+
+**The directions are intermittent, which is worse than absent.** Absent would
+have been diagnosed on the first screen; intermittent let five screens of
+navigation look like success while every menu quietly took its default — which is
+why the first attempt landed on `ADVENTURE` and the hub when it had asked for
+`TRACKS`.
+
+Two things are worth separating here. The arrow keys may simply not be read by
+this game: **DKR navigates its menus with the analogue stick**, and the D-pad's
+silence is as likely to be the game's as the port's. The stick moving three times
+and then not at all is not explicable that way.
+
+A mechanism suggests itself and is **not** established. `dkr_window_key_down`
+answers true while a key is held *or* while it is latched since the last
+`dkr_window_latch_clear`, and the poll clears the latch once it has read it. A
+keystroke injected by `xdotool` is pressed and released within milliseconds, so it
+exists only as a latch — and if two polls happen between the keystroke and the
+game's own read of the controller, the first clears what the second would have
+reported. E06-S01 built the latch precisely because a 10 ms tap against a 170 ms
+sampling interval is invisible otherwise, and measured four keystrokes sent and
+one seen before it existed. One in four is close to what the carousel just did.
+
+That is a hypothesis with a measurement behind it and no test yet. What it
+predicts is that a *held* key would work where a tap does not, which
+`Drive-Win95-VM.sh` cannot currently send.
 
 ## The capture is anchored on the mode now
 
