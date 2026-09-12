@@ -9,6 +9,9 @@
 #   scripts/Drive-Win95-VM.sh start                starts the machine
 #   scripts/Drive-Win95-VM.sh shot screen.png      captures the screen
 #   scripts/Drive-Win95-VM.sh key F1               sends one key
+#   scripts/Drive-Win95-VM.sh hold a 400           holds one key, in milliseconds
+#   scripts/Drive-Win95-VM.sh pad left a start     the game's controls, by what
+#                                                  they do -- use this one
 #   scripts/Drive-Win95-VM.sh type "E:\WIN95\INSTALL.EXE"
 #   scripts/Drive-Win95-VM.sh run "D:\DKRR.EXE D:\DKR.Z64"   starts the game
 #
@@ -168,6 +171,77 @@ case "${1:-}" in
     [[ $# -gt 0 ]] || die "usage: key <key> [key...]"
     for k in "$@"; do DISPLAY="$DISP" "$XDO" key --clearmodifiers "$k"; sleep 0.3; done
     say "keys sent: $*"
+    ;;
+  pad)
+    # The game's controls by what they DO, not by which host key happens to
+    # produce them.
+    #
+    # **The guest's layout is AZERTY and the host sends scancodes**, which this
+    # file already says about `type` and did not say about `key`. The cost of that
+    # gap, measured on 12 September 2026: `a` -- the port's stick-left -- arrives
+    # at the guest as `Q`, which is bound to the L button, so the menu never moved
+    # left. `d` is the same key on both layouts and worked. Four taps left moved
+    # nothing, four taps right moved four, and a whole afternoon was spent calling
+    # that intermittent and writing up a latch hypothesis for it.
+    #
+    # Nothing was intermittent. Two keys, one of them mistranslated.
+    #
+    # The mapping is `runtime_platform.cpp`'s: WASD is the analogue stick, SPACE
+    # is A, SHIFT is B, RETURN is Start, Z is the Z button. DKR navigates its
+    # menus with the **stick**, not the D-pad, which is why `left`/`right` below
+    # are the stick and not the arrows.
+    need_running; shift
+    [[ $# -gt 0 ]] || die "usage: pad <left|right|up|down|a|b|z|start|l|r> [...]"
+    for name in "$@"; do
+      case "$name" in
+        left)  k=q ;;          # guest 'A' -- stick left
+        right) k=d ;;          # 'D' on both layouts
+        up)    k=z ;;          # guest 'W' -- stick up
+        down)  k=s ;;          # 'S' on both layouts
+        a)     k=space ;;
+        b)     k=shift ;;
+        z)     k=w ;;          # guest 'Z' -- the Z button
+        start) k=Return ;;
+        l)     k=a ;;          # guest 'Q' -- the L button
+        r)     k=e ;;          # 'E' on both layouts
+        *)     die "pad: unknown control '$name'" ;;
+      esac
+      DISPLAY="$DISP" "$XDO" key --clearmodifiers "$k"
+      sleep 0.3
+    done
+    say "pad: $*"
+    ;;
+  hold)
+    # Presses a key, waits, releases it. `key` above sends a press and a release
+    # within milliseconds, and that is not the same input.
+    #
+    # **Why the difference matters here.** The game reads its controller once a
+    # frame and a frame is 170 ms (E00-S03). E06-S01's latch exists so that a tap
+    # shorter than that is still seen: `dkr_window_key_down` answers true while a
+    # key is held *or* while it is latched since the last `dkr_window_latch_clear`.
+    # But the poll clears the latch when it reads it, so a keystroke that exists
+    # only as a latch is reported to exactly one poll -- and if two polls fall
+    # between the keystroke and the game's own read, the first consumes it.
+    #
+    # **The asymmetry this was built to explain had another cause**, and the
+    # hypothesis above is unproven and probably unnecessary: three taps right
+    # moved three and four taps left moved none because the guest reads AZERTY
+    # and the host sends scancodes -- `a` arrived as `Q`. See `pad` above.
+    #
+    # Kept because a held key is a real input a tap is not -- accelerating out of
+    # a corner needs one -- and because the reasoning above still describes a race
+    # the latch does not obviously close. It is no longer offered as the
+    # explanation of anything measured.
+    #
+    # The default is 400 ms: two frames at the measured rate, so at least one poll
+    # sees the key genuinely down.
+    need_running; shift
+    [[ $# -gt 0 ]] || die "usage: hold <key> [milliseconds]"
+    hold_ms="${2:-400}"
+    DISPLAY="$DISP" "$XDO" keydown --clearmodifiers "$1"
+    sleep "$(awk -v m="$hold_ms" 'BEGIN{printf "%.3f", m/1000}')"
+    DISPLAY="$DISP" "$XDO" keyup --clearmodifiers "$1"
+    say "held: $1 for ${hold_ms} ms"
     ;;
   type)
     # `xdotool type` sends scancodes, and the guest reads them with ITS OWN

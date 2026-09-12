@@ -37,59 +37,48 @@ lacks. And the reason is worth recording precisely, because it cost a run:
 So the corpus's first gameplay scene needs the navigation carried further. And
 carrying it further ran into something worth its own section.
 
-## The buttons arrive; the directions arrive sometimes
+## The directions were not intermittent; one of them was mistranslated
 
-Navigating properly means *choosing* menu items, not accepting the first one, and
-that needs a direction. Measured screen by screen on the letter carousel, where a
-move is unmistakable — the strip reads `? SP DEL Ok A B C D` and the selection is
-visible:
+Navigating properly means *choosing* menu items rather than accepting the first
+one, and that needs a direction. Measured on the letter carousel, where a move is
+unmistakable — the strip reads `? SP DEL Ok A B C D` and the selection is drawn
+with a bright outline:
 
 | sent | effect |
 |---|---|
 | `space` (A), `Return` (Start) | every time: letters typed, screens advanced, five screens deep |
-| `d` `d` `d` — the stick right | the selection moved **A → D** |
-| `Right` `Right` — the D-pad | nothing |
-| `a` `a` `a` `a` — the stick left | nothing |
+| `d` ×4 — the stick right | the selection moved **A → E**, four for four |
+| `a` ×4 — the stick left | **nothing**, twice |
+| `Right` ×2 — the D-pad | nothing |
+| `q` ×4 | the selection moved **E → A**, four for four |
 
-**The directions are intermittent, which is worse than absent.** Absent would
-have been diagnosed on the first screen; intermittent let five screens of
-navigation look like success while every menu quietly took its default — which is
-why the first attempt landed on `ADVENTURE` and the hub when it had asked for
-`TRACKS`.
+**The guest's layout is AZERTY and the host sends scancodes.** `a` arrives at the
+guest as `Q`, which `runtime_platform.cpp` binds to the L button, so the stick
+never went left. `d` is the same key on both layouts and worked perfectly. `q`
+arrives as `A` and is the stick-left the port is waiting for.
 
-Two things are worth separating here. The arrow keys may simply not be read by
-this game: **DKR navigates its menus with the analogue stick**, and the D-pad's
-silence is as likely to be the game's as the port's. The stick moving three times
-and then not at all is not explicable that way.
+`Drive-Win95-VM.sh` already says this — about its `type` subcommand, which routes
+through `tools/win95/azerty_keys.py` because "no Windows path is written without a
+`:` or a `\`". It did not say it about `key`, and `key` is what one drives a game
+with.
 
-A mechanism suggests itself and is **not** established. `dkr_window_key_down`
-answers true while a key is held *or* while it is latched since the last
-`dkr_window_latch_clear`, and the poll clears the latch once it has read it. A
-keystroke injected by `xdotool` is pressed and released within milliseconds, so it
-exists only as a latch — and if two polls happen between the keystroke and the
-game's own read of the controller, the first clears what the second would have
-reported. E06-S01 built the latch precisely because a 10 ms tap against a 170 ms
-sampling interval is invisible otherwise, and measured four keystrokes sent and
-one seen before it existed. One in four is close to what the carousel just did.
+**Nothing was intermittent.** The first write-up of this called it that, built a
+`hold` subcommand for a latch race, and reasoned about polls consuming each other
+— all of it addressed to a symptom produced by two keys, one of which was being
+mistranslated. Three right and four left is perfectly consistent behaviour once
+you know that only one of the two arrives.
 
-That is a hypothesis with a measurement behind it and no test yet. What it
-predicts is that a *held* key would work where a tap does not, which
-`Drive-Win95-VM.sh` cannot currently send.
+### What replaces it
 
-## The capture is anchored on the mode now
+`Drive-Win95-VM.sh pad <left|right|up|down|a|b|z|start|l|r>` names the game's
+controls by what they **do** and sends whatever physical key the guest's layout
+needs. `left` is `q`, `up` is `z`, `right` and `down` are themselves. The trap is
+closed at its source rather than left for each caller to remember.
 
-`DKR_CAPTURE_MODE=<n>` makes `DKR_CAPTURE_LIST` count from the moment the game's
-own state variable reaches `n` — the same anchoring the frame dump has had since
-August, and whose comment already said it was what the corpus needed.
+Verified by round trip: `pad right ×4` walks the carousel to `B`, `pad left ×4`
+walks it back past `A` to **`Ok`** — the item that could not be reached at all
+before, and the reason every earlier run ended up on `ADVENTURE` and the hub.
 
-The list number is not a stable landmark. How far the game has got by its
-four-hundredth display list depends on load times and on how long a cutscene
-took; "twenty lists after entering the menu" is the same moment in every run.
-That matters more for a capture than for a dump, because a capture is replayed
-and compared, and it decides what the corpus can cover at all: **a capture ends
-the run that takes it**, so each run buys exactly one scene, and naming the scene
-by the game's own state is how the six the ticket asks for get chosen rather than
-hunted.
-
-Files are named for the moment — `CG0060.BIN` is sixty lists into INGAME — so two
-runs anchored on different modes cannot overwrite each other's scene.
+`hold` is kept. A held key is a real input a tap is not — accelerating out of a
+corner needs one — and its own comment now says that the asymmetry it was built to
+explain had another cause.
