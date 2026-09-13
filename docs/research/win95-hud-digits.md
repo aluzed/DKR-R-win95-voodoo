@@ -438,7 +438,7 @@ line of arithmetic.
 - **Not the card, not Glide, not the upload, not the alpha test, not the tile
   origin.** All measured earlier in this document.
 
-### The one thing still missing: where the true stride is declared
+### Where the true stride is declared — answered below
 
 Three places could carry it, and all three have now been decoded and measured,
 and none of them says 128 for this tile:
@@ -455,3 +455,64 @@ The likeliest remaining answer is that the render tile's `line` is being read fr
 the wrong `G_SETTILE` — the decoder keeps one render tile and the conversion is
 not ordered with respect to it, which is the same doubt already written against
 the stride counter.
+
+## The answer: RGBA32 loaded by `LoadBlock`, and the split this port does not model
+
+14 September 2026. `replay --trace` — the decoder's trace hook, which had existed
+since the decoder was written and which only the game had ever wired — now works
+on a capture. The question that had cost four runs on the machine took one grep.
+
+Around the digit texture:
+
+    SetTextureImage RGBA32 at 0x32D9E0 (shift 0)
+    SetTile tile=7 w0=0xF5180000 w1=0x07080200
+    LoadBlock  w0=0xF3000000 w1=0x070EF000
+    SetTile tile=0 w0=0xF5180800 w1=0x00080200
+    SetTileSize 16x15 RGBA32 at 0x32D9E0
+
+Beside the label on the same screen, which renders perfectly:
+
+| | label 72x12 | digit 16x15 | digit 12x15 |
+|---|---|---|---|
+| tile `line` | 18 words, 144 B | 4 words, 32 B | 3 words, 24 B |
+| a row at RGBA32 | 288 B | 64 B | 48 B |
+| ratio | half | half | half |
+| `LoadBlock` `lrs` | 863 = 72x12-1 | 239 = 16x15-1 | 179 = 12x15-1 |
+| **`LoadBlock` `dxt`** | **57** | **0** | **0** |
+
+`line` is half the naive row for **all three**, label included — that is the RDP's
+32-bit split, where each texel's halves live in the two banks of texture memory,
+and it is not the difference. **`dxt` is.** For the label, `2048/57` is 36 words,
+288 bytes, exactly a 72-texel row: the load declares its rows. For the digits
+`dxt` is zero, which says the block has no row structure at all — it is one
+linear run, and the RDP fills texture memory from it under the 32-bit split.
+
+**Our converter does not model texture memory.** It reads RDRAM straight through,
+`width x bytes-per-texel` to a row, which reproduces the RDP only when the load
+declared rows of that length. For these glyphs it does not.
+
+### The measurement that settles it
+
+Read the same bytes at **twice** the pitch and the glyphs come out clean — all
+three of them, and they are the timer:
+
+    16x15 at  64 B/row -> a speckled blob      at 128 B/row -> 0
+    12x15 at  48 B/row -> a speckled blob      at  96 B/row -> 7
+    12x10 at  48 B/row -> a speckled blob      at  96 B/row -> :
+
+`00:27:15`. The factor of two is systematic across every glyph in the buffer, and
+it is the same factor by which `line` differs from the naive row — which is what
+makes the 32-bit split the explanation and not a coincidence.
+
+### Stated at the strength it deserves
+
+The mechanism is **inferred from the measurements above, not read from a
+specification**: three glyphs, one clean control on the same screen, a factor of
+two that appears in two independent places. Before a line is changed, the rule
+should be checked against the RDP's actual 32-bit `LoadBlock` addressing, because
+a conversion that starts doubling pitches on a guess would break every RGBA32
+texture in the game to fix three.
+
+**And it is a defect in this port, not in the game.** No render-to-texture targets
+that buffer — the colour image is the framebuffer and nothing else, over the whole
+list. The game wrote what the RDP asked for; the port reads it the wrong way.
