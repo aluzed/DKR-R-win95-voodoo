@@ -12,6 +12,8 @@
 #   scripts/Drive-Win95-VM.sh hold a 400           holds one key, in milliseconds
 #   scripts/Drive-Win95-VM.sh pad left a start     the game's controls, by what
 #                                                  they do -- use this one
+#   scripts/Drive-Win95-VM.sh pad-hold 1200 a right   the same names, held down,
+#                                                  several at once -- for driving
 #   scripts/Drive-Win95-VM.sh type "E:\WIN95\INSTALL.EXE"
 #   scripts/Drive-Win95-VM.sh run "D:\DKRR.EXE D:\DKR.Z64"   starts the game
 #
@@ -44,6 +46,30 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 box_pids() { ps -eo pid,args | grep -F 'local/bin/86Box' | grep -v grep | awk '{print $1}'; }
 window() { DISPLAY="$DISP" "$XDO" search --name "86Box" 2>/dev/null | tail -1; }
+
+# **The one mapping**, used by `pad` and by `pad-hold`. It was written out twice
+# for about a minute, which is how a table that has already cost an afternoon
+# starts to drift: the layout note below applies to every caller, and a second
+# copy is a second place to forget it.
+#
+# The guest's layout is AZERTY and the host sends scancodes. `a` -- the port's
+# stick-left -- arrives at the guest as `Q`, which is bound to L. See the comment
+# on `pad` for what that cost.
+pad_key() {
+  case "$1" in
+    left)  printf q ;;          # guest 'A' -- stick left
+    right) printf d ;;          # 'D' on both layouts
+    up)    printf z ;;          # guest 'W' -- stick up
+    down)  printf s ;;          # 'S' on both layouts
+    a)     printf space ;;
+    b)     printf shift ;;
+    z)     printf w ;;          # guest 'Z' -- the Z button
+    start) printf Return ;;
+    l)     printf a ;;          # guest 'Q' -- the L button
+    r)     printf e ;;          # 'E' on both layouts
+    *)     die "unknown control '$1'" ;;
+  esac
+}
 
 need_running() {
   [[ -n "$(box_pids)" ]] || die "the machine is not started (scripts/Drive-Win95-VM.sh start)"
@@ -193,23 +219,51 @@ case "${1:-}" in
     need_running; shift
     [[ $# -gt 0 ]] || die "usage: pad <left|right|up|down|a|b|z|start|l|r> [...]"
     for name in "$@"; do
-      case "$name" in
-        left)  k=q ;;          # guest 'A' -- stick left
-        right) k=d ;;          # 'D' on both layouts
-        up)    k=z ;;          # guest 'W' -- stick up
-        down)  k=s ;;          # 'S' on both layouts
-        a)     k=space ;;
-        b)     k=shift ;;
-        z)     k=w ;;          # guest 'Z' -- the Z button
-        start) k=Return ;;
-        l)     k=a ;;          # guest 'Q' -- the L button
-        r)     k=e ;;          # 'E' on both layouts
-        *)     die "pad: unknown control '$name'" ;;
-      esac
+      k="$(pad_key "$name")" || exit 1
       DISPLAY="$DISP" "$XDO" key --clearmodifiers "$k"
       sleep 0.3
     done
     say "pad: $*"
+    ;;
+  pad-hold)
+    # **Several of the game's controls held down together, by name.**
+    #
+    # `hold` takes a host key, so holding the accelerator means knowing that the
+    # port's A button is SPACE, and holding a turn means knowing that stick-left
+    # is the host's `q` -- the AZERTY translation this file exists to keep people
+    # out of. `pad-hold` takes the same names as `pad` and goes through the same
+    # table.
+    #
+    # And it holds **more than one**, which is the part `hold` could not do at
+    # all. Driving in this game is accelerate *and* steer: with one key at a time
+    # the only way to take a corner is to alternate, and alternating gives a car
+    # that lurches and a heading nobody chose. Four separate attempts to drive
+    # to a landmark twenty seconds away went that way before this existed.
+    #
+    #   pad-hold 1200 a right      accelerate and turn right for 1.2 s
+    #   pad-hold 400 a             a nudge forward
+    #
+    # Released in reverse order, and released even if the sleep is interrupted:
+    # a key left down in the guest is an accelerator stuck on, and the next
+    # command inherits it without any sign that it did.
+    need_running; shift
+    [[ $# -ge 2 ]] || die "usage: pad-hold <milliseconds> <control> [control...]"
+    hold_ms="$1"; shift
+    keys=()
+    for name in "$@"; do keys+=("$(pad_key "$name")") || exit 1; done
+    release() {
+      for (( i=${#keys[@]}-1; i>=0; i-- )); do
+        DISPLAY="$DISP" "$XDO" keyup --clearmodifiers "${keys[$i]}" 2>/dev/null || true
+      done
+    }
+    trap release EXIT INT TERM
+    for k in "${keys[@]}"; do
+      DISPLAY="$DISP" "$XDO" keydown --clearmodifiers "$k"
+    done
+    sleep "$(awk -v m="$hold_ms" 'BEGIN{printf "%.3f", m/1000}')"
+    release
+    trap - EXIT INT TERM
+    say "pad-hold: $* for ${hold_ms} ms"
     ;;
   hold)
     # Presses a key, waits, releases it. `key` above sends a press and a release
