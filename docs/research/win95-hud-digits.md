@@ -214,3 +214,43 @@ down because the reflow images look like evidence and are not.
 
 The instrument that would settle it is a dump taken **before** the padding, at the
 tile's true 248×11, which does not exist yet.
+
+## The stride was a good hypothesis and it is wrong
+
+`G_SETTILE` carries `line`, the number of 64-bit words between two rows of a tile,
+and **nothing in this decoder read it**: the handler took `w1` for the wrap modes
+and let `w0` go by. Meanwhile `dkr_texture_convert` walks RDRAM linearly, so it
+places row *y* at `width x bytes-per-texel x y`. Two numbers that have to agree,
+one of them never looked at, and a defect that looks exactly like rows read at the
+wrong offset. That is as good a shape as a hypothesis gets here.
+
+So `line` and the tile's own `siz` are decoded now, and the two strides are
+compared at every conversion. On the scene that contains the shredded text:
+
+    stride: 16 of 132 textures disagree with their tile line (12032 texels)
+      line=64 bytes, a row of 32 texels needs 128 (32x32)
+      line=32 bytes, a row of 16 texels needs 64 (16x16)
+      ... fourteen more, every one of them 32x32 or 16x16
+
+**The font atlas is not among them.** It is 248x11, and its stride agrees. The
+hypothesis is out — measured, not argued, and out on the first run.
+
+Two further things the measurement says about itself. Every disagreement is a
+factor of exactly *two*, in every scene of the corpus; and sixteen genuinely
+sheared textures in one frame would be visible, which they are not. So the
+sixteen are far more likely the check comparing a conversion against a
+`G_SETTILE` from another tile or another moment than sixteen real defects. The
+counter ships labelled as unvalidated, in those words, in the header.
+
+What survives is worth keeping anyway: the decoder now reads `line` and the
+tile's `siz`, which it did not, and the day a stride does matter the number is
+already there.
+
+### Where that leaves the font
+
+The atlas arrives at its declared width, from the declared address, at the
+declared stride. The shear is therefore not in *getting* the texels. It is in the
+texels themselves, in how they are sampled, or in the geometry that carries them —
+and the next instrument is the one this document asked for last time and still
+does not have: a dump taken before the aspect padding, at the tile's true 248x11,
+so that what is read can be compared with what the game stored.

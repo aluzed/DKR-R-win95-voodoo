@@ -254,6 +254,39 @@ typedef struct {
        carries bit 16 as a "recorded" marker, so that a legitimate value of zero
        is not mistaken for an empty slot. */
     unsigned long     tiles_decoded;      /* G_SETTILE, render tile only */
+    /* **The tile's row stride, against the one the conversion assumes.**
+     *
+     * `G_SETTILE`'s `w0` carries `line`, the number of 64-bit words between two
+     * rows of the tile in texture memory. Nothing decoded it: the handler read
+     * `w1` for the wrap modes and let `w0` go by. The conversion, meanwhile,
+     * walks RDRAM linearly and therefore assumes the rows are exactly
+     * `width * bytes-per-texel` apart.
+     *
+     * Where the two agree the assumption is free. Where they do not, every row
+     * after the first is read at the wrong offset, and the image comes out
+     * sheared — which is what a texture "read at the wrong width" looks like and
+     * what this port's small font looks like.
+     *
+     * Counted rather than asserted. `stride_checked` is the denominator: a
+     * mismatch count without it cannot be told from a check that never ran.
+     *
+     * **This counter has not been validated, and what it reports is suspect.**
+     * Every disagreement it finds is a factor of exactly two, on 16x16 and 32x32
+     * textures, in every scene of the corpus. A real stride error shears the
+     * image; sixteen sheared textures in one frame would be visible and are not.
+     * The likeliest reading is that the check compares a conversion against a
+     * `G_SETTILE` that belongs to another tile or another moment — the decoder
+     * keeps one render tile and the two are not ordered with respect to each
+     * other. Read it as "something here does not line up", never as a defect
+     * count, until a texture of known layout has been put through it. */
+    unsigned long     stride_checked;
+    unsigned long     stride_mismatch;
+    unsigned long     stride_mismatch_texels;
+    /* The first four disagreements, whole: tile line in bytes, the bytes a row
+       of `width` texels needs, and the dimensions. Four because one example can
+       be a special case and a histogram cannot be read. */
+    unsigned short    stride_first[8][4];   /* line_bytes, row_bytes, w, h */
+    unsigned int      stride_first_n;
     /* The texture-offset indirection: shifts actually applied to an image
        address, and the times the table was abandoned for a shift that does not
        land on a block boundary. Both counted, because a base that is decoded and
@@ -558,6 +591,11 @@ typedef struct {
     /* The render tile's wrap modes, from `G_SETTILE`. Defaults to repeat, which
        is what the translation used to write unconditionally. */
     unsigned char        tile_wrap_s, tile_wrap_t;
+    /* `line` from the render tile's `G_SETTILE`, in 64-bit words. See
+       `stride_mismatch` in the counters. */
+    unsigned short       tile_line;
+    /* `siz` from the same `G_SETTILE`. See `tile_line`. */
+    unsigned char        tile_size;
     /* `G_SETFOGCOLOR` and `G_SETBLENDCOLOR`, as 0xRRGGBB. Nothing reads the
        blend colour yet; it is decoded so the audit closes. */
     unsigned int         fog_color, blend_color;

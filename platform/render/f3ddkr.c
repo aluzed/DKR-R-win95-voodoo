@@ -1771,6 +1771,38 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
     }
 
     c->state.conversion_texels += (unsigned long)(width * height);
+    /* **Does the tile's row stride agree with the one about to be assumed?**
+     *
+     * `dkr_texture_convert` reads RDRAM linearly, so it places row `y` at
+     * `width * bytes-per-texel * y`. The tile says the rows are `line * 8` bytes
+     * apart. Both numbers are available here and have never been compared.
+     *
+     * Measured and not acted on: a conversion that started honouring `line`
+     * today would change every texture in the game at once, and the point of
+     * this line is to find out how many of them it would change. */
+    {
+        /* `dkr_texture_bytes` of a single row: it already rounds the sub-byte
+           formats up to whole bytes, which is the one detail worth not
+           reimplementing here. */
+        const unsigned long row_bytes =
+            (unsigned long)dkr_texture_bytes((dkr_n64_size)c->tile_size,
+                                             width, 1);
+        const unsigned long line_bytes = (unsigned long)c->tile_line * 8ul;
+        c->state.stride_checked++;
+        if (c->tile_line != 0u && line_bytes != row_bytes) {
+            c->state.stride_mismatch++;
+            c->state.stride_mismatch_texels +=
+                (unsigned long)(width * height);
+            if (c->state.stride_first_n < 8u) {
+                const unsigned int n = c->state.stride_first_n;
+                c->state.stride_first[n][0] = (unsigned short)line_bytes;
+                c->state.stride_first[n][1] = (unsigned short)row_bytes;
+                c->state.stride_first[n][2] = (unsigned short)width;
+                c->state.stride_first[n][3] = (unsigned short)height;
+                c->state.stride_first_n++;
+            }
+        }
+    }
     if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
                              c->timg_address,
                              (dkr_n64_format)c->timg_format,
@@ -2833,6 +2865,17 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             const unsigned int tile = (w1 >> 24) & 0x07u;
             if (tile == 0u) {
                 const unsigned int cms = (w1 >> 8) & 0x03u;
+                /* `line` was in `w0` all along, next to the format and the size,
+                   and this handler read only `w1`. It is kept here and compared
+                   at conversion time; see `stride_mismatch`. */
+                c->tile_line = (unsigned short)((w0 >> 9) & 0x1FFu);
+                /* The tile declares its own format and size, and they are not
+                   always `SetTextureImage`'s: `gDPLoadTextureBlock` re-declares
+                   the image as 16-bit for the transfer whatever the texels
+                   really are. Comparing a stride against the wrong size gives a
+                   factor of two on every texture in the game, which is what the
+                   first version of this check did. */
+                c->tile_size = (unsigned char)((w0 >> 19) & 0x03u);
                 const unsigned int cmt = (w1 >> 18) & 0x03u;
                 /* `G_TX_WRAP` 0, `G_TX_MIRROR` 1, `G_TX_CLAMP` 2. The Voodoo 2
                    has no mirroring, so it folds into repeat here and is noted

@@ -96,6 +96,10 @@ typedef struct {
     unsigned long culled;
     unsigned long clipped;
     unsigned long textures;
+    /* The stride check: see `stride_mismatch` in `f3ddkr.h`. */
+    unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
+    unsigned short stride_first[8][4];
+    unsigned int  stride_first_n;
 } replay_counts;
 
 static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
@@ -109,6 +113,11 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->culled    = ctx->state.culled;
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
+    c->stride_checked        = ctx->state.stride_checked;
+    c->stride_mismatch       = ctx->state.stride_mismatch;
+    c->stride_mismatch_texels = ctx->state.stride_mismatch_texels;
+    c->stride_first_n        = ctx->state.stride_first_n;
+    memcpy(c->stride_first, ctx->state.stride_first, sizeof(c->stride_first));
 }
 
 static void say_counts(const char *who, const replay_counts *c)
@@ -126,6 +135,25 @@ static void say_counts(const char *who, const replay_counts *c)
         " lost=%lu textures=%lu\n",
         who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
         c->rejects, lost, c->textures);
+    /* **The tile's row stride against the one the conversion assumes.** Printed
+       beside the counts and not behind a switch: a texture read at the wrong
+       stride comes out sheared, and this is the number that says whether any
+       is. Silent when nothing disagrees, because a line of zeroes on every
+       scene is a line nobody reads. */
+    if (c->stride_mismatch != 0UL) {
+        unsigned int i;
+        say("  %-8s stride: %lu of %lu textures disagree with their tile line"
+            " (%lu texels)\n",
+            "", c->stride_mismatch, c->stride_checked,
+            c->stride_mismatch_texels);
+        for (i = 0; i < c->stride_first_n; i++) {
+            say("             line=%u bytes, a row of %u texels needs %u"
+                " (%ux%u)\n",
+                (unsigned)c->stride_first[i][0], (unsigned)c->stride_first[i][2],
+                (unsigned)c->stride_first[i][1], (unsigned)c->stride_first[i][2],
+                (unsigned)c->stride_first[i][3]);
+        }
+    }
 }
 
 /* Runs the capture into `bk`. Every property of the replay is taken from the
