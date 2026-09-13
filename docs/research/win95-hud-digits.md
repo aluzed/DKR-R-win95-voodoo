@@ -88,7 +88,22 @@ with none pending.
 
 Two runs have gone far — one to list 2,520 with no keystroke sent at all, one to
 1,717 through a full navigation into a race, ending at its own capture by design.
-Nothing yet separates those from the short ones.
+
+**A fifth run then refuted the next hypothesis too.** If the long one differed by
+having been sent no keystrokes, a run left equally untouched should go equally
+far. One was: armed at list 1,500, no key sent, nothing driven. It stopped at 300.
+
+So three explanations have now been tried and excluded — the capture key, the
+keystrokes, and an armed capture pending — and the honest reading is the one the
+repository has recorded elsewhere about this game's bring-up: **the stop is
+intermittent.** Two runs in a row have differed in nothing under my control and
+gone 2,520 and 300. Each correlation I found was pattern-matching on a sample of
+three or four against noise, and each was published before the fourth run that
+broke it.
+
+That is worth its own line, because it is the third time in a week: a small number
+of runs on an unstable subject will always offer a variable that separates them,
+and it will usually be the one most recently changed.
 
 The trigger was rewritten once on the strength of the wrong conclusion:
 `dkr_window_take_capture_request` is now a single byte set in the window procedure
