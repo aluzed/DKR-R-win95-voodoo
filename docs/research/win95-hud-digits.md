@@ -404,3 +404,54 @@ later, into the demo race.
 mechanism — a click into the guest taking focus from a full-screen Glide context —
 and committed the fix; the next run died the same way with no `grab` in it at all.
 The `grab` change stands on its own merits and is not the cause of this.
+
+## Why. The rows are read half a row apart
+
+14 September 2026, on `CKEY0540.BIN`, entirely on the host.
+
+**The digits are not a static asset.** The labels beside them (`BEST TIME`, at
+`0x2430D0`) and the font atlas (`0x1F4960`) are **md5-identical in all four
+captures**, taken nine days and two sessions apart. The digit glyphs
+(`0x32D9E0`, `0x32DE70`, `0x330730`) are **different in every capture and all
+zeros in the two that have no timer on screen**. They live in a buffer the game
+fills at run time with the timer text.
+
+**And the buffer is read with the wrong row stride.** The tile is 16 texels wide
+at RGBA32, so `dkr_texture_convert` walks the texels linearly, 64 bytes to a row.
+Read the same bytes **128 bytes to a row** and the blob becomes a clean, smooth
+`0`, counter and outline intact:
+
+    64 bytes a row -> a speckled orange blob
+    128 bytes a row -> 0
+
+So the image in that buffer is twice as wide as the tile taken from it, and every
+row after the first is read sixteen texels to the left of where it belongs —
+interleaving each glyph with its neighbour. That is the shredding, and it is one
+line of arithmetic.
+
+### What it is not
+
+- **Not the alpha threshold.** `pack_argb1555` keeps one alpha bit and these
+  glyphs do carry a soft outline, so it was the obvious suspect. Rendering the
+  same texels with their full eight-bit alpha changes 58 of 240 texels and leaves
+  the glyph exactly as broken. Measured, and out.
+- **Not the card, not Glide, not the upload, not the alpha test, not the tile
+  origin.** All measured earlier in this document.
+
+### The one thing still missing: where the true stride is declared
+
+Three places could carry it, and all three have now been decoded and measured,
+and none of them says 128 for this tile:
+
+| source | what it says |
+|---|---|
+| `G_SETTEXTUREIMAGE` width | **1** — the `LoadBlock` idiom sets it to one |
+| `G_SETTILE`'s `line` | 4 words, 32 bytes |
+| `G_LOADBLOCK`'s `dxt` | agrees with 64 to within the formula's rounding |
+
+The counters for all three ship with this commit and print beside the replay's
+counts, so the next attempt starts from measurements rather than from guesses.
+The likeliest remaining answer is that the render tile's `line` is being read from
+the wrong `G_SETTILE` — the decoder keeps one render tile and the conversion is
+not ordered with respect to it, which is the same doubt already written against
+the stride counter.

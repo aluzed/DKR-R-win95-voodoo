@@ -1789,6 +1789,44 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                                              width, 1);
         const unsigned long line_bytes = (unsigned long)c->tile_line * 8ul;
         c->state.stride_checked++;
+        if (c->block_row_bytes != 0u &&
+            (unsigned long)c->block_row_bytes != row_bytes) {
+            c->state.dxt_disagrees++;
+            c->state.dxt_disagrees_texels += (unsigned long)(width * height);
+            if (c->state.dxt_first_n < 8u) {
+                const unsigned int n = c->state.dxt_first_n;
+                c->state.dxt_first[n][0] = c->block_row_bytes;
+                c->state.dxt_first[n][1] = (unsigned short)row_bytes;
+                c->state.dxt_first[n][2] = (unsigned short)width;
+                c->state.dxt_first[n][3] = (unsigned short)height;
+                c->state.dxt_first_n++;
+            }
+        }
+        if (c->timg_width != 0u && (int)c->timg_width != width) {
+            c->state.image_wider++;
+            c->state.image_wider_texels += (unsigned long)(width * height);
+            if (c->state.image_wider_first_n < 8u) {
+                const unsigned int n = c->state.image_wider_first_n;
+                c->state.image_wider_first[n][0] = c->timg_width;
+                c->state.image_wider_first[n][1] = (unsigned short)width;
+                c->state.image_wider_first[n][2] = (unsigned short)height;
+                c->state.image_wider_first[n][3] = (unsigned short)c->timg_size;
+                c->state.image_wider_first_n++;
+            }
+        }
+        if ((unsigned)c->tile_size != (unsigned)c->timg_size) {
+            c->state.size_mismatch++;
+            if (c->state.size_first_n < 24u) {
+                const unsigned int n = c->state.size_first_n;
+                c->state.size_first[n][0] = (unsigned short)c->tile_size;
+                c->state.size_first[n][1] = (unsigned short)c->timg_size;
+                c->state.size_first[n][2] = (unsigned short)width;
+                c->state.size_first[n][3] = (unsigned short)height;
+                c->state.size_first[n][4] = (unsigned short)c->tile_format;
+                c->state.size_first[n][5] = (unsigned short)c->timg_format;
+                c->state.size_first_n++;
+            }
+        }
         if (c->tile_uls != 0u || c->tile_ult != 0u) {
             c->state.tile_origin_nonzero++;
             if (c->state.tile_origin_first_n < 8u) {
@@ -2887,6 +2925,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                    factor of two on every texture in the game, which is what the
                    first version of this check did. */
                 c->tile_size = (unsigned char)((w0 >> 19) & 0x03u);
+                c->tile_format = (unsigned char)((w0 >> 21) & 0x07u);
                 const unsigned int cmt = (w1 >> 18) & 0x03u;
                 /* `G_TX_WRAP` 0, `G_TX_MIRROR` 1, `G_TX_CLAMP` 2. The Voodoo 2
                    has no mirroring, so it folds into repeat here and is noted
@@ -2964,6 +3003,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         case OP_SETTEXIMAGE:
             c->timg_format  = (w0 >> 21) & 0x07u;
             c->timg_size    = (w0 >> 19) & 0x03u;
+            /* The low twelve bits are `width - 1`, in texels. Decoded at last;
+               see `image_wider`. */
+            c->timg_width   = (unsigned short)((w0 & 0x0FFFu) + 1u);
             c->timg_address = w1 & RDRAM_MASK;
             /* --- DKR's texture-offset indirection --------------------------- *
              *
@@ -3059,6 +3101,15 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 } else {
                     c->state.texture_count++;
                 }
+            }
+            {
+                /* `dxt` is the RDP's row-advance increment: the row is
+                   `2048 / dxt` 64-bit words. Zero means "one row", which is what
+                   a genuinely linear block says, and there is nothing to learn
+                   from it. */
+                const unsigned int dxt = w1 & 0x0FFFu;
+                c->block_row_bytes = (dxt != 0u)
+                    ? (unsigned short)((2048u / dxt) * 8u) : 0u;
             }
             trace(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
             break;

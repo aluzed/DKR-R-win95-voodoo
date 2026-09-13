@@ -97,6 +97,15 @@ typedef struct {
     unsigned long clipped;
     unsigned long textures;
     /* The stride check: see `stride_mismatch` in `f3ddkr.h`. */
+    unsigned long dxt_disagrees, dxt_disagrees_texels;
+    unsigned short dxt_first[8][4];
+    unsigned int  dxt_first_n;
+    unsigned long image_wider, image_wider_texels;
+    unsigned short image_wider_first[8][4];
+    unsigned int  image_wider_first_n;
+    unsigned long size_mismatch;
+    unsigned short size_first[24][6];
+    unsigned int  size_first_n;
     unsigned long tile_origin_nonzero;
     unsigned short tile_origin_first[8][4];
     unsigned int  tile_origin_first_n;
@@ -116,6 +125,18 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->culled    = ctx->state.culled;
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
+    c->dxt_disagrees         = ctx->state.dxt_disagrees;
+    c->dxt_disagrees_texels  = ctx->state.dxt_disagrees_texels;
+    c->dxt_first_n           = ctx->state.dxt_first_n;
+    memcpy(c->dxt_first, ctx->state.dxt_first, sizeof(c->dxt_first));
+    c->image_wider           = ctx->state.image_wider;
+    c->image_wider_texels    = ctx->state.image_wider_texels;
+    c->image_wider_first_n   = ctx->state.image_wider_first_n;
+    memcpy(c->image_wider_first, ctx->state.image_wider_first,
+           sizeof(c->image_wider_first));
+    c->size_mismatch         = ctx->state.size_mismatch;
+    c->size_first_n          = ctx->state.size_first_n;
+    memcpy(c->size_first, ctx->state.size_first, sizeof(c->size_first));
     c->tile_origin_nonzero   = ctx->state.tile_origin_nonzero;
     c->tile_origin_first_n   = ctx->state.tile_origin_first_n;
     memcpy(c->tile_origin_first, ctx->state.tile_origin_first,
@@ -147,6 +168,47 @@ static void say_counts(const char *who, const replay_counts *c)
        stride comes out sheared, and this is the number that says whether any
        is. Silent when nothing disagrees, because a line of zeroes on every
        scene is a line nobody reads. */
+    if (c->dxt_disagrees != 0UL) {
+        unsigned int i;
+        say("  %-8s dxt: %lu of %lu conversions have a LoadBlock row length the"
+            " conversion does not use (%lu texels)\n",
+            "", c->dxt_disagrees, c->stride_checked, c->dxt_disagrees_texels);
+        for (i = 0; i < c->dxt_first_n; i++) {
+            say("             dxt says %u bytes a row, the conversion uses %u"
+                " (%ux%u)\n",
+                (unsigned)c->dxt_first[i][0], (unsigned)c->dxt_first[i][1],
+                (unsigned)c->dxt_first[i][2], (unsigned)c->dxt_first[i][3]);
+        }
+    }
+    if (c->image_wider != 0UL) {
+        static const char *const sz2[4] = { "4b", "8b", "16b", "32b" };
+        unsigned int i;
+        say("  %-8s image width: %lu of %lu conversions read a tile narrower than"
+            " its image (%lu texels)\n",
+            "", c->image_wider, c->stride_checked, c->image_wider_texels);
+        for (i = 0; i < c->image_wider_first_n; i++) {
+            say("             image %u wide, tile %ux%u at %s\n",
+                (unsigned)c->image_wider_first[i][0],
+                (unsigned)c->image_wider_first[i][1],
+                (unsigned)c->image_wider_first[i][2],
+                sz2[c->image_wider_first[i][3] & 3u]);
+        }
+    }
+    if (c->size_mismatch != 0UL) {
+        static const char *const sz[4] = { "4b", "8b", "16b", "32b" };
+        unsigned int i;
+        say("  %-8s texel size: %lu of %lu conversions read a size the tile does"
+            " not declare\n", "", c->size_mismatch, c->stride_checked);
+        for (i = 0; i < c->size_first_n; i++) {
+            {
+                static const char *const fm[8] = { "RGBA","YUV","CI","IA","I","?","?","?" };
+                say("             tile says %s/%s, the image says %s/%s, for %ux%u\n",
+                    fm[c->size_first[i][4] & 7u], sz[c->size_first[i][0] & 3u],
+                    fm[c->size_first[i][5] & 7u], sz[c->size_first[i][1] & 3u],
+                    (unsigned)c->size_first[i][2], (unsigned)c->size_first[i][3]);
+            }
+        }
+    }
     if (c->tile_origin_nonzero != 0UL) {
         unsigned int i;
         say("  %-8s tile origin: %lu of %lu conversions come from a tile that is"

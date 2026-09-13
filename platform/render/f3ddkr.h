@@ -293,6 +293,43 @@ typedef struct {
     unsigned long     tile_origin_nonzero;
     unsigned short    tile_origin_first[8][4];  /* uls, ult, width, height */
     unsigned int      tile_origin_first_n;
+    /* **The size the tile declares against the size the image declares.**
+     *
+     * `dkr_texture_convert` is called with `timg_size`, from
+     * `G_SETTEXTUREIMAGE`. But `gDPLoadTextureBlock` re-declares the image in
+     * whatever unit suits the *transfer* and leaves the real texel size on the
+     * tile, in `G_SETTILE`'s `siz`. Where they differ, every texel is read at
+     * the wrong width. */
+    /* **Tiles narrower than the image they come from.**
+     *
+     * `G_SETTEXTUREIMAGE` carries `width - 1` in the low twelve bits of `w0`,
+     * and nothing decoded it: the handler took `fmt` and `siz` and let the width
+     * go by. `dkr_texture_convert` therefore reads the texels linearly, which
+     * assumes the image is exactly as wide as the tile.
+     *
+     * Where it is not, every row after the first starts at the wrong offset. */
+    /* **The row stride `G_LOADBLOCK` declares, against the one assumed.**
+     *
+     * `gsDPLoadBlock(tile, uls, ult, lrs, dxt)` puts `dxt` in the low twelve
+     * bits of `w1`. It is the RDP's row-advance increment, and it names the
+     * row length: `dxt = 2048 / words-per-row`, so the row is `2048 / dxt`
+     * 64-bit words. Nothing decoded it.
+     *
+     * `dkr_texture_convert` reads the texels linearly, which assumes the rows
+     * are `tile width x bytes-per-texel` apart. Where `dxt` says otherwise, the
+     * tile is a window into a wider image and every row after the first is read
+     * from the wrong place. */
+    unsigned long     dxt_disagrees;
+    unsigned long     dxt_disagrees_texels;
+    unsigned short    dxt_first[8][4];   /* dxt row bytes, assumed row bytes, w, h */
+    unsigned int      dxt_first_n;
+    unsigned long     image_wider;
+    unsigned long     image_wider_texels;
+    unsigned short    image_wider_first[8][4];  /* image w, tile w, tile h, siz */
+    unsigned int      image_wider_first_n;
+    unsigned long     size_mismatch;
+    unsigned short    size_first[24][6];  /* tile siz, timg siz, w, h, tile fmt, timg fmt */
+    unsigned int      size_first_n;
     unsigned long     stride_checked;
     unsigned long     stride_mismatch;
     unsigned long     stride_mismatch_texels;
@@ -610,6 +647,12 @@ typedef struct {
     unsigned short       tile_line;
     /* `siz` from the same `G_SETTILE`. See `tile_line`. */
     unsigned char        tile_size;
+    /* `fmt` from the same `G_SETTILE`. */
+    unsigned char        tile_format;
+    /* `width` from `G_SETTEXTUREIMAGE`, in texels. See `image_wider`. */
+    unsigned short       timg_width;
+    /* Row bytes implied by the last `G_LOADBLOCK`'s `dxt`, 0 if unknown. */
+    unsigned short       block_row_bytes;
     /* `G_SETFOGCOLOR` and `G_SETBLENDCOLOR`, as 0xRRGGBB. Nothing reads the
        blend colour yet; it is decoded so the audit closes. */
     unsigned int         fog_color, blend_color;
