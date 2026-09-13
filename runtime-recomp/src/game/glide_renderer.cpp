@@ -911,6 +911,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 key_shot = true;
                 std::fprintf(stderr, "[gfx] capture: F9 at list %llu\n",
                              static_cast<unsigned long long>(index));
+                /* Committed here too. The line above was added this morning so a
+                   run could say whether the key arrived, and the first run to use
+                   it wrote a capture and never printed it: the program is killed
+                   rather than closed, and an uncommitted tail is a lost tail.
+                   A diagnostic whose own output does not survive the run it
+                   diagnoses is the thing it was written against. */
+                dkr_diag_commit();
                 std::sprintf(path_key, "D:\\CKEY%04lu.BIN",
                              static_cast<unsigned long>(index % 10000u));
                 dkr_capture_write(path_key,

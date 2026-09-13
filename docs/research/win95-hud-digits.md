@@ -345,3 +345,20 @@ So the remaining question is not about texels at all. It is: **which of the two
 copies should be sampled, and does something put s 124 texels away from where the
 game meant it?** That is a question about coordinates, and it is the first
 formulation of this defect that the instruments here can attack directly.
+
+## A third scene, and a second UI element
+
+`CKEY1150.BIN` — Taj's vehicle prompt in the hub: two boxes with a strip of label
+text under them. On the machine the labels are a row of dots and fragments. The
+oracle reproduces it identically.
+
+It matters because it is a **different UI element** from the dialogue box, drawn
+at a different place on screen, and it comes apart the same way. Three scenes in
+the corpus now carry this defect, and it follows the small font wherever the font
+goes.
+
+Reached with `Drive-Win95-VM.sh pad-hold`, which holds several of the game's
+controls at once. Four earlier attempts to drive the twenty seconds to this
+landmark failed because `hold` takes one host key and `pad` only taps: steering
+and accelerating had to alternate, and the car went where the alternation sent it.
+A sustained hold drives straight to the arch first time.
