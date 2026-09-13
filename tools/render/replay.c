@@ -401,7 +401,7 @@ static void usage(const char *me)
     fprintf(stderr,
             "usage: %s [--card|--both] [--single-tmu] [--log file]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
-            "          [--recipe-map file] [--texel-factor-one]\n"
+            "          [--recipe-map file] [--texel-factor-one] [--no-multipass]\n"
             "          capture.bin [out.bmp]\n"
             "       %s --recipe N          print one catalogue entry and stop\n",
             me, me);
@@ -415,7 +415,7 @@ int main(int argc, char **argv)
     const char *dump_dir = 0, *map_path = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
-    int no_cull = 0, factor_one = 0, no_alpha = 0;
+    int no_cull = 0, factor_one = 0, no_alpha = 0, no_multipass = 0;
     int oracle_tmus = 1;
     int i, status = 0;
 
@@ -426,6 +426,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
         else if (strcmp(argv[i], "--no-alpha-test") == 0) { no_alpha = 1; }
         else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
+        else if (strcmp(argv[i], "--no-multipass") == 0) { no_multipass = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
         }
@@ -477,7 +478,7 @@ int main(int argc, char **argv)
     /* The host has no card to force to one unit, nor a combiner whose factor to
        choose. Both switches are the Windows 95 build's. */
     (void)single_tmu;
-    (void)factor_one;
+    (void)factor_one; (void)no_multipass;
     if (want_card || want_both) {
         /* Named rather than ignored: a host build silently rendering the oracle
            when the card was asked for would produce a file that looks like the
@@ -611,6 +612,7 @@ int main(int argc, char **argv)
                forcing before it would be overwritten by the detection. */
             if (single_tmu) { dkr_glide_backend_force_single_tmu(1); }
             if (factor_one) { dkr_glide_backend_texel_factor_one(1); }
+            if (no_multipass) { dkr_glide_backend_extra_passes(0); }
             card_tmus = dkr_glide_backend_tmu_count();
             say("  card opened with %d texture unit(s)%s\n", card_tmus,
                    single_tmu ? " (forced to one)" : "");

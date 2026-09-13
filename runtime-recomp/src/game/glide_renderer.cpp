@@ -666,6 +666,17 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         static const bool no_alpha_test =
             (std::getenv("DKR_NO_ALPHA_TEST") != nullptr);
         context_.no_alpha_test = no_alpha_test ? 1 : 0;
+        // `DKR_NO_MULTIPASS=1` draws every triangle once, turning off the
+        // pre-pass and the second pass together. The cutout was excluded for the
+        // shredded digits by exactly this method — one switch, one run — and the
+        // extra passes are the next hypothesis with a shape: they are the newest
+        // thing in the pixel path, and one of them lays an opaque constant over
+        // the whole triangle before putting the texel back.
+        static const bool no_multipass =
+            (std::getenv("DKR_NO_MULTIPASS") != nullptr);
+        if (no_multipass) {
+            dkr_glide_backend_extra_passes(0);
+        }
         // `DKR_FORCE_COMBINE=shade|texel|texel_shade|texel_shade_a` forces every
         // draw to one combine mode. Named rather than numbered: a run costs four
         // minutes, and `DKR_FORCE_COMBINE=2` in a batch file three weeks from now

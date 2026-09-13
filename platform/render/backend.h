@@ -495,6 +495,10 @@ void dkr_glide_backend_prepass_stats(unsigned long *drawn,
    two compute almost the same thing; one measurement says they do not produce the
    same image. A switch is how that gets settled rather than argued. */
 void dkr_glide_backend_texel_factor_one(int on);
+
+/* Turns off the pre-pass and the second pass together: one draw per triangle,
+   the state E05-S04 improved on. A diagnostic switch, not a mode. */
+void dkr_glide_backend_extra_passes(int on);
 /* What `texture_lookup` answered, cumulatively: resident, not resident, and
    **stale** -- a descriptor naming a key the allocator has since evicted. The
    third is separated from the second on purpose: a stale hit is the one that

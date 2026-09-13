@@ -882,11 +882,32 @@ static int pass2_kind(const dkr_cc_entry *e)
     return PASS2_NONE;
 }
 
+/* **One switch that turns off everything this backend draws beyond one pass.**
+ *
+ * The extra passes exist because one Glide stage cannot hold two RDP cycles. They
+ * are also, by construction, the newest and least-checked thing in the pixel
+ * path, and when a defect appears on a screen nobody has a capture of, the first
+ * question worth an experiment is whether the port drew it or whether the port
+ * drew it *twice*.
+ *
+ * `DKR_NO_MULTIPASS=1` answers that in one run. It does not make the picture
+ * right -- the configurations that need two cycles come out with one, which is
+ * the state the port was in before E05-S04 -- but it is the state whose defects
+ * are already described. A defect that survives the switch is not the passes';
+ * a defect that vanishes with it is.
+ *
+ * This is the same instrument as `DKR_NO_ALPHA_TEST`, and it exists for the same
+ * reason: a hypothesis with a shape deserves a switch, not an argument. */
+static int g_extra_passes = 1;
+
+void dkr_glide_backend_extra_passes(int on) { g_extra_passes = on ? 1 : 0; }
+
 static int pass2_wanted(const dkr_render_state *st)
 {
     const dkr_cc_entry *e;
     int kind;
 
+    if (!g_extra_passes) { return 0; }
     if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
     e = dkr_cc_table_at(st->recipe - 1);
     /* A one-cycle configuration has nothing to compose and is not a refusal.
@@ -1020,6 +1041,7 @@ static int prepass_wanted(const dkr_render_state *st)
     const dkr_cc_entry *e;
     int shape;
 
+    if (!g_extra_passes) { return 0; }
     if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
     e = dkr_cc_table_at(st->recipe - 1);
     shape = prepass_shape(e);
