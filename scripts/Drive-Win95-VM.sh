@@ -20,7 +20,11 @@
 # The game **requires the ROM path as an argument**; without it, it stops on "The
 # diagnostic runtime requires a ROM path" and closes its window, which looks
 # exactly like a silent crash. The ROM is on D:.
-#   scripts/Drive-Win95-VM.sh grab                 captures keyboard and mouse
+#   scripts/Drive-Win95-VM.sh grab                 gives the machine X focus
+#   scripts/Drive-Win95-VM.sh grab click           ... and clicks into the guest.
+#                                                  NEVER while the game is up: it
+#                                                  drops the Voodoo full screen
+#                                                  and the run does not recover.
 #   scripts/Drive-Win95-VM.sh stop
 #
 # Two traps discovered while building this, each costing an hour:
@@ -111,6 +115,8 @@ case "${1:-}" in
     W="$(window)"; [[ -n "$W" ]] || die "the 86Box window did not appear"
     say "Window $W ready. Capturing the keyboard:"
     DISPLAY="$DISP" "$XDO" windowfocus --sync "$W" 2>/dev/null || true
+    # Here the click is right: nothing is running in the guest but the desktop,
+    # and 86Box needs one to capture input at all. See `grab`.
     DISPLAY="$DISP" "$XDO" mousemove --window "$W" 300 250 click 1 2>/dev/null || true
     say "The machine is running. `basename "$0"` shot / key / type / stop"
     ;;
@@ -147,11 +153,11 @@ case "${1:-}" in
       case "$colour" in
         *"85,170,170"*|*"102,153,153"*)
           rm -f "$tmp_shot"
-          "$0" grab >/dev/null 2>&1
+          "$0" grab click >/dev/null 2>&1
           say "machine started, ScanDisk cleared in $attempt round(s)"
           exit 0 ;;
       esac
-      "$0" grab >/dev/null 2>&1
+      "$0" grab click >/dev/null 2>&1
       "$0" key Return >/dev/null 2>&1; sleep 4
       "$0" key Tab >/dev/null 2>&1; sleep 1
       "$0" key Return >/dev/null 2>&1; sleep 8
@@ -180,10 +186,29 @@ case "${1:-}" in
     say "box closed"
     ;;
   grab)
+    # **Do not click into a running game.** Measured on 13 September 2026: the
+    # click below lands inside the guest, and while DKR holds the Voodoo's
+    # full-screen pass-through that takes the focus away from it. The picture
+    # drops to the Windows desktop, the game's window goes black, and it **does
+    # not come back** -- clicking its taskbar button does nothing. The run is
+    # over.
+    #
+    # That is what killed the navigated run earlier the same day, whose log
+    # stopped at list 300 with a black window: `grab` had been called before the
+    # keystrokes, out of habit, from a session where the game was not yet up.
+    #
+    # So the click is no longer the default. Focusing the X window is what the
+    # keystrokes actually need; the click exists only to make 86Box capture input
+    # the first time, which it needs once, at the desktop, before the game starts.
+    # `grab click` asks for it explicitly.
     need_running; W="$(window)"
     DISPLAY="$DISP" "$XDO" windowfocus --sync "$W" 2>/dev/null || true
-    DISPLAY="$DISP" "$XDO" mousemove --window "$W" 300 250 click 1
-    say "keyboard and mouse captured by the machine"
+    if [[ "${2:-}" == "click" ]]; then
+      DISPLAY="$DISP" "$XDO" mousemove --window "$W" 300 250 click 1
+      say "keyboard and mouse captured by the machine (clicked)"
+    else
+      say "X focus given to the machine; no click sent into the guest"
+    fi
     ;;
   shot)
     need_running
