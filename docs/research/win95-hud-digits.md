@@ -1,5 +1,9 @@
 # The small font comes out shredded, wherever it is drawn
 
+> **The reported screen is captured.** `CKEY0540.BIN`, Ancient Lake's vehicle
+> select — the exact screen this began with — is in the corpus, and the oracle
+> reproduces its shredded digits. See the last section.
+
 Reported by the user on 13 September 2026 from the driven play session's
 screenshots, and confirmed here.
 
@@ -362,3 +366,41 @@ controls at once. Four earlier attempts to drive the twenty seconds to this
 landmark failed because `hold` takes one host key and `pad` only taps: steering
 and accelerating had to alternate, and the car went where the alternation sent it.
 A sustained hold drives straight to the arch first time.
+
+## The screen the report named, captured
+
+13 September 2026. `CKEY0540.BIN`: **Ancient Lake's vehicle-select screen**, the
+one the defect was first reported from. In it:
+
+- `ANCIENT LAKE`, `BEST TIME`, `BEST LAP`, `VEHICLE`, `CAR`, `HOVER`, `PLANE`,
+  and the initials `DkR` — all clean;
+- the digits `01:25:90` and `00:27:15` — shredded, eaten through by a speckle
+  that takes the colour of what is behind them: green over the first line, orange
+  over the second, exactly as reported.
+
+The oracle reproduces it, so the whole screen is now available on the host.
+Twelve corpus scenes, 0 divergent pixels, four of them carrying this defect.
+
+**It was not reached by driving.** Four attempts to drive there wandered off,
+wedged against cliffs, or died. The route that works has no driving in it at all:
+`GAME SELECT -> TRACKS -> DINO DOMAIN / ANCIENT LAKE`, and the vehicle screen is
+the next thing the game shows. Two keystrokes from a menu the attract sequence
+leaves you one button from.
+
+That is worth writing down as a method and not just as a route: the hub is a
+physics simulation driven blind through a virtual X display, and the menu is a
+list. Where both reach the same screen, the list is the instrument.
+
+### And a run that keeps dying with no explanation
+
+Twice today a run stopped dead — lists and presents both, at 300 — shortly after
+`pad start` was sent several times while the attract demo was playing, leaving the
+game's window black on the Windows desktop, unrecoverable. Untouched runs reach
+1080 and keep going. The sequence that works sends its first `start` about eighty
+seconds in and spaces the presses six seconds apart; the two that died sent theirs
+later, into the demo race.
+
+**Not attributed.** I blamed `grab`'s mouse click first, with a plausible
+mechanism — a click into the guest taking focus from a full-screen Glide context —
+and committed the fix; the next run died the same way with no `grab` in it at all.
+The `grab` change stands on its own merits and is not the cause of this.
