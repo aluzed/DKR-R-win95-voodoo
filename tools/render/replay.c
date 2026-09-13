@@ -97,6 +97,9 @@ typedef struct {
     unsigned long clipped;
     unsigned long textures;
     /* The stride check: see `stride_mismatch` in `f3ddkr.h`. */
+    unsigned long tile_origin_nonzero;
+    unsigned short tile_origin_first[8][4];
+    unsigned int  tile_origin_first_n;
     unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
     unsigned short stride_first[8][4];
     unsigned int  stride_first_n;
@@ -113,6 +116,10 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->culled    = ctx->state.culled;
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
+    c->tile_origin_nonzero   = ctx->state.tile_origin_nonzero;
+    c->tile_origin_first_n   = ctx->state.tile_origin_first_n;
+    memcpy(c->tile_origin_first, ctx->state.tile_origin_first,
+           sizeof(c->tile_origin_first));
     c->stride_checked        = ctx->state.stride_checked;
     c->stride_mismatch       = ctx->state.stride_mismatch;
     c->stride_mismatch_texels = ctx->state.stride_mismatch_texels;
@@ -140,6 +147,19 @@ static void say_counts(const char *who, const replay_counts *c)
        stride comes out sheared, and this is the number that says whether any
        is. Silent when nothing disagrees, because a line of zeroes on every
        scene is a line nobody reads. */
+    if (c->tile_origin_nonzero != 0UL) {
+        unsigned int i;
+        say("  %-8s tile origin: %lu of %lu conversions come from a tile that is"
+            " not at the image's corner\n",
+            "", c->tile_origin_nonzero, c->stride_checked);
+        for (i = 0; i < c->tile_origin_first_n; i++) {
+            say("             uls=%u ult=%u for a %ux%u tile\n",
+                (unsigned)c->tile_origin_first[i][0],
+                (unsigned)c->tile_origin_first[i][1],
+                (unsigned)c->tile_origin_first[i][2],
+                (unsigned)c->tile_origin_first[i][3]);
+        }
+    }
     if (c->stride_mismatch != 0UL) {
         unsigned int i;
         say("  %-8s stride: %lu of %lu textures disagree with their tile line"
@@ -288,8 +308,14 @@ static void dump_textures(const char *dir)
             const int kh = (int)(key & 0x1FFu);
             const int cw = (kw > 0 && kw <= w) ? kw : w;
             const int ch = (kh > 0 && kh <= h) ? kh : h;
-            sprintf(path, "%s/tex%03d_%dx%d_of_%dx%d_%08lX_%lutri_%lupx.bmp",
+            /* The RDRAM address, not just the low half of the key: the key is
+               `address<<24 ^ ...` and every other field sits below bit 24, so
+               the shift recovers the address exactly. Without it a texture in
+               the dump cannot be found again in the capture, which is the one
+               thing one wants of a texture in a dump. */
+            sprintf(path, "%s/tex%03d_%dx%d_of_%dx%d_at%06lX_%08lX_%lutri_%lupx.bmp",
                     dir, slot + 1, cw, ch, w, h,
+                    (unsigned long)((key >> 24) & 0xFFFFFFu),
                     (unsigned long)(key & 0xFFFFFFFFu), tris, painted);
             if (cw == w && ch == h) {
                 if (dkr_image_write_bmp(path, texels, w, h)) { written++; }

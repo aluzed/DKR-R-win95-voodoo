@@ -297,3 +297,51 @@ What is left is the texels themselves, how they are sampled, or the geometry
 carrying them. The next measurement is the ROM's own copy of this atlas against
 the one in RDRAM, which decides in one comparison whether anything is damaged at
 all before another afternoon goes into how.
+
+## Five measurements, and the renderer is innocent of all of them
+
+13 September 2026, all on the host, no machine involved.
+
+**The atlas is the same bytes in four captures.** Key `6039F00B` appears in
+`CAP0150`, `CAP0160`, `CKEY0951` and `CKEY1622` — two sessions nine days apart,
+two different scenes — and the dumps are **md5-identical**. Nothing corrupts it
+between the game writing it and the port reading it. Whatever is in there is what
+the game put there.
+
+**The tile is at the image's corner.** `uls`/`ult` have been decoded and recorded
+since they were first read, with a comment saying that whether the offset matters
+should be measured before anything acts on it. Measured: `tile origin: 0` on every
+scene of the corpus. The decoder converting from the image origin costs nothing,
+because the tile *is* at the origin.
+
+**The magnification is exactly two, and clean.** In the rendered frame the text
+rows come in identical pairs, and on a text row every run of ink is an even number
+of columns with all 150 even boundaries agreeing. That is 2x2 point magnification
+aligned to the grid — no half-texel drift, no fractional scale.
+
+**And it samples at step one, not step two.** Matching the rendered row against
+the atlas, allowing any row and any offset:
+
+    step 1: 165/200 (82%)   step 2: 84/200 (42%)
+
+A shredded look is what minification does to small glyphs, so the question was
+whether the port was dropping every other texel. It is not. It reads the atlas
+one texel at a time and doubles it.
+
+**The format is the declared one.** The same bytes were re-read from the capture
+as I8 at two strides and as I4, to see whether any of them produced a cleaner
+alphabet than IA16 does. None did: the 8-bit readings give glyphs at twice their
+proper width, the 4-bit one likewise. IA16 at 248 is the reading that gives
+correctly proportioned letters.
+
+### What that leaves, stated narrowly
+
+Every step from RDRAM to the screen has now been measured and each is faithful.
+The glyph data being sampled is itself thin and broken up, and it is stable data
+the game wrote. The atlas holds **two aligned copies** of the alphabet, and the
+one the coordinates address is the thinner one.
+
+So the remaining question is not about texels at all. It is: **which of the two
+copies should be sampled, and does something put s 124 texels away from where the
+game meant it?** That is a question about coordinates, and it is the first
+formulation of this defect that the instruments here can attack directly.

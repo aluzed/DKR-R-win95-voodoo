@@ -279,6 +279,20 @@ typedef struct {
      * keeps one render tile and the two are not ordered with respect to each
      * other. Read it as "something here does not line up", never as a defect
      * count, until a texture of known layout has been put through it. */
+    /* **Tiles whose upper-left corner is not the image's.**
+     *
+     * `uls`/`ult` place the tile inside the texture image; this decoder converts
+     * from the image origin and the s,t it hands the rasteriser are the ones the
+     * microcode gave, unshifted. Where `uls` is zero the two conventions agree
+     * and nothing is owed. Where it is not, the texels come from one place and
+     * the coordinates address another.
+     *
+     * `f3ddkr.c` has recorded `uls` and `ult` since they were first decoded,
+     * with a comment saying that whether it matters should be measured before
+     * anything is written to act on it. This is that measurement. */
+    unsigned long     tile_origin_nonzero;
+    unsigned short    tile_origin_first[8][4];  /* uls, ult, width, height */
+    unsigned int      tile_origin_first_n;
     unsigned long     stride_checked;
     unsigned long     stride_mismatch;
     unsigned long     stride_mismatch_texels;

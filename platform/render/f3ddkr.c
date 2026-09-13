@@ -1789,6 +1789,17 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                                              width, 1);
         const unsigned long line_bytes = (unsigned long)c->tile_line * 8ul;
         c->state.stride_checked++;
+        if (c->tile_uls != 0u || c->tile_ult != 0u) {
+            c->state.tile_origin_nonzero++;
+            if (c->state.tile_origin_first_n < 8u) {
+                const unsigned int n = c->state.tile_origin_first_n;
+                c->state.tile_origin_first[n][0] = c->tile_uls;
+                c->state.tile_origin_first[n][1] = c->tile_ult;
+                c->state.tile_origin_first[n][2] = (unsigned short)width;
+                c->state.tile_origin_first[n][3] = (unsigned short)height;
+                c->state.tile_origin_first_n++;
+            }
+        }
         if (c->tile_line != 0u && line_bytes != row_bytes) {
             c->state.stride_mismatch++;
             c->state.stride_mismatch_texels +=
