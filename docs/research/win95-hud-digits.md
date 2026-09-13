@@ -1,4 +1,4 @@
-# The timers come out shredded, and only on one screen
+# The small font comes out shredded, wherever it is drawn
 
 Reported by the user on 13 September 2026 from the driven play session's
 screenshots, and confirmed here.
@@ -16,6 +16,24 @@ On the **vehicle-select** and **ghost-prompt** screens of Ancient Lake:
 
 On the **in-race HUD**, the same font renders perfectly: `8TH`, `LAP 1/3`, the
 banana count, `TIME 00:00:00`, all clean.
+
+## It is not "one screen": it is the small font
+
+Found on 13 September 2026, by driving into Timber's Island and running into Taj,
+whose greeting opens a dialogue box. **The two lines of text in that box are
+shredded in exactly the way the best-time digits are** — glyph shapes legible
+only in outline, eaten through by a regular speckle.
+
+That box is nowhere near the vehicle-select screen, and it is not a timer. What it
+shares with the digits is the **font**: the small proportional face the game uses
+for running text and for numerals. Everything drawn in the large outlined display
+face — `BEST TIME`, `BEST LAP`, `GAME SELECT`, `PLAYER SELECT`, `ENTER YOUR
+INITIALS`, `COPY`, `ERASE` — is clean, on every screen seen so far.
+
+So the question is no longer "what is wrong with that screen". It is "what is
+wrong with that font", and the hub is a far cheaper place to ask it than a screen
+five menus deep: the dialogue is about twenty seconds of driving from the start of
+a run.
 
 ## What is established
 
