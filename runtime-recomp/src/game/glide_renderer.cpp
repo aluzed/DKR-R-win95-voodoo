@@ -14,6 +14,7 @@
 // pointer to it; reading the struct needs its definition.
 #include "render/tmu.h"
 #include "render/capture.h"
+#include "window.h"
 // E00-S03's denominator. The time base is E02-S03's, measured on the machine at
 // 1,193,180 Hz -- the 8254 PIT, 4.19 us a tick -- and **not**
 // `high_resolution_clock`, which E02-S03 established is the wall clock on this
@@ -831,12 +832,32 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         //
         // `DKR_CAPTURE_MODE=<n>` anchors: -1 INTRO, 0 INGAME, 1 MENU, 5 LOCKUP.
         // Without it the indices are absolute, as before.
+        // **`DKR_CAPTURE_KEY=1`: capture what is on the screen now.**
+        //
+        // Anchoring on `gGameMode` names a moment the game defines, which is what
+        // the corpus wants for scenes the game reaches on its own. It cannot name
+        // a moment *inside* a mode: the vehicle-select screen and the race are
+        // both preceded by MENU, and the screen one wants to look at is usually
+        // one the game passes through on the way somewhere.
+        //
+        // The occasion for this: the timers on the vehicle-select screen render
+        // shredded — the digits speckled through, where the same font in the race
+        // HUD is clean — and there was no way to freeze that screen. A defect one
+        // can see and cannot capture is a defect one cannot attribute, which is
+        // the whole disease E09-S02 exists to cure.
+        //
+        // `F9` because it is bound to nothing: `runtime_platform.cpp` maps space,
+        // shift, Z, return, the arrows, Q/E, IJKL and WASD, and a capture key that
+        // also steers would fire while the player was driving.
+        static const bool cap_on_key =
+            (std::getenv("DKR_CAPTURE_KEY") != nullptr);
         static const char* const cap_mode_env = std::getenv("DKR_CAPTURE_MODE");
         static const bool cap_have_mode = (cap_mode_env != nullptr);
         static const int cap_wanted_mode =
             cap_mode_env ? static_cast<int>(std::strtol(cap_mode_env, nullptr, 10))
                          : 0;
         static unsigned long cap_anchor = 0UL;
+        char path_key[32];
         if (cap_count < 0) {
             const char* const env = std::getenv("DKR_CAPTURE_LIST");
             cap_count = 0;
@@ -852,6 +873,20 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             }
             if (cap_count > 0) {
                 std::fprintf(stderr, "[gfx] capture: %d list(s) armed\n", cap_count);
+            }
+        }
+        if (cap_on_key) {
+            static bool key_shot = false;
+            if (!key_shot && dkr_window_key_down(0x78 /* VK_F9 */)) {
+                key_shot = true;
+                std::sprintf(path_key, "D:\\CKEY%04lu.BIN",
+                             static_cast<unsigned long>(index % 10000u));
+                dkr_capture_write(path_key,
+                                  task->t.data_ptr & 0x00FFFFFFu,
+                                  rdram_snapshot, kSnapshotBytes,
+                                  context_.rdram_native,
+                                  static_cast<unsigned>(index),
+                                  kWidth, kHeight);
             }
         }
         if (cap_have_mode && cap_anchor == 0UL && cap_count > 0) {
