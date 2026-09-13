@@ -88,9 +88,15 @@ backends, automatically.
       still on its title screen when the machine is stopped.
 
       What is true is narrower and is a limit on the harness: **a capture ends the run
-      that takes it**, so the corpus grows one scene per run. That is enough, lists
-      deep into a race being reachable. `CAP0800.BIN` — Wizpig and Diddy, 1,397
-      triangles — is the first taken that way. See `docs/research/win95-corpus.md`.
+      that takes it**, so the corpus grows one scene per run.
+
+      **And the first lap is in.** `CG0060.BIN` was taken from play on 13 September
+      2026 — the game driven from the host through PLAYER SELECT, GAME SELECT, TRACKS,
+      ANCIENT LAKE, the vehicle and the ghost prompt, into the race, and captured sixty
+      lists after `gGameMode` reached 0. 4,644 commands, 1,995 triangles, **290
+      textures**, and a HUD: the densest scene in the corpus and the first from
+      gameplay rather than from the game driving itself.
+      See `docs/research/win95-corpus.md`.
 - [x] The replay is deterministic — the comparison of the counts of triangles emitted
       precedes that of the images, precisely so that an image deviation does not mask a
       determinism defect. Established on a **real** capture on 3 September 2026: the two

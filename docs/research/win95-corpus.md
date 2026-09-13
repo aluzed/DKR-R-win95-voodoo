@@ -14,6 +14,7 @@ already shown.
 | `CAP0250.BIN` | the hub, Pipsy on the beach | 3592 | 1293 | 904 | 190 |
 | `CAP0400.BIN` | Ancient Lake, Bumper racing | 1539 | 943 | 510 | 95 |
 | `CAP0800.BIN` | Wizpig and Diddy, the attract sequence | 1427 | 1397 | 755 | 85 |
+| `CG0060.BIN` | **Ancient Lake, the start line, in play** | 4644 | 1995 | 1412 | 290 |
 
 Five captures of four scenes that share almost nothing: one large model on a sky, a mostly
 two-dimensional screen with text, an outdoor hub with 190 textures, and a race
@@ -25,7 +26,17 @@ incomplete rather than presented as a corpus.
 
 ## How they were obtained, and what that cost
 
-`DKR_CAPTURE_LIST=50,150,400` and the like, several to a run. The comma is what makes a corpus
+`DKR_CAPTURE_LIST=50,150,400` and the like, several to a run.
+
+`CG0060.BIN` is the first taken from **play**: the game driven from the host
+through PLAYER SELECT, GAME SELECT, TRACKS, DINO DOMAIN / ANCIENT LAKE, the
+vehicle and the ghost prompt, into the race — then captured sixty display lists
+after `gGameMode` reached 0, which is what `DKR_CAPTURE_MODE=0` means. The
+anchoring did its job: mode 0 arrived at absolute list 1657 and the capture
+landed at 1717, a number no run could have been asked for in advance.
+
+It is also the densest scene here — **290 textures**, against 190 for the hub —
+and the first that carries a HUD. The comma is what makes a corpus
 practical: a capture costs a boot, a launch and a wait, so one per run is a day's
 work for a dozen scenes.
 
