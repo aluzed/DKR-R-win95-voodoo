@@ -73,18 +73,29 @@ freeze is a defect one cannot attribute.
 return, the arrows, Q/E, IJKL and WASD, and a capture key that also steers would
 fire while the player was driving.
 
-**It has produced no capture, and it destabilises the run.** Three runs with
-`DKR_CAPTURE_KEY=1` all stopped early — twice at display list 300, once before the
-track select. Three runs without it, on the same builds, navigated menu after menu
-without trouble, one of them all the way into a race. Three for three each way.
+**It has produced no capture, and the run it was in stopped early — three times.**
+That was written up here as "the capture key destabilises the run, three for three",
+and **that conclusion was wrong.** A fourth run, with `DKR_CAPTURE_LIST=3000` and
+no key feature at all — a capture that never fired — stopped at display list 300
+in exactly the same way.
 
-The first suspicion was the keyboard poll from the render thread, so the trigger
-was rewritten: `dkr_window_take_capture_request` is a single byte set in the
-window procedure where the message arrives and taken by whoever asks first, with
-the render thread never touching the key arrays or the latch. **It made no
-difference.** Two unrelated implementations of the same feature, the same failure.
+So the stopping is not the key's. What it is remains unknown, and it leaves no
+trace: the last report before a stop shows 893 KiB of texture memory in use, no
+refusals, no failures, nothing at its limit, and the display-list and VI-present
+counters advance together at their usual ratio right up to it and then both cease.
+It has now happened with the key feature and without it, with a capture armed and
+with none pending.
 
-So the feature is off by default and is not to be relied on. What it is doing to
-the run is not known, and the correlation is strong enough that finding out is a
-prerequisite for using it. The screen still cannot be frozen, and until it can,
-the shredded digits cannot be attributed to the decoder or to the card.
+Two runs have gone far — one to list 2,520 with no keystroke sent at all, one to
+1,717 through a full navigation into a race, ending at its own capture by design.
+Nothing yet separates those from the short ones.
+
+The trigger was rewritten once on the strength of the wrong conclusion:
+`dkr_window_take_capture_request` is now a single byte set in the window procedure
+where the message arrives and taken by whoever asks first, the render thread never
+touching the key arrays or the latch. That is a better design than polling the key
+state from another thread and it is kept on those grounds, not as a fix for
+anything — it changed nothing, which at the time looked like evidence and was not.
+
+The screen still cannot be frozen, and until it can, the shredded digits cannot be
+attributed to the decoder or to the card.
