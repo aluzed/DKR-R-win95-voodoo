@@ -1409,6 +1409,10 @@ static void apply_state(dkr_f3d_context *c)
        turns it off, because forcing a mode and then applying a table setup that
        ignores the mode would make the switch lie. */
     /* Plus one, zero meaning none -- see the note in `backend.h`. */
+    /* Laid down after the translation, like everything else in this block:
+       `dkr_rdp_to_render_state` fills the whole state from the RDP, and this is a
+       diagnostic the RDP knows nothing about. */
+    if (c->no_alpha_test) { c->render_state.alpha_test = 0; }
     c->render_state.recipe =
         c->force_combine ? (short)0 : (short)(c->catalogue_index + 1);
     c->render_state.recipe_pad = 0;

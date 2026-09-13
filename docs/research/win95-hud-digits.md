@@ -29,20 +29,38 @@ document cannot yet say whether it is the decoder or the backend — **there is 
 capture of that screen**. Every image of it is the card's own output with nothing
 to compare against, which is the exact condition E09-S02 exists to remove.
 
-## What it might be, and none of it is measured
+## It is not the alpha cutout — refuted, in one run
 
-The speckle is regular, which is what a **dithered alpha** looks like when it is
-resolved by a hard threshold instead of by coverage. `rdp_state.c` already names
-that approximation:
+The speckle is regular, which is what a **dithered alpha** looks like when a hard
+threshold resolves it instead of coverage. `rdp_state.c` already names that
+approximation:
 
 > `CVG_X_ALPHA` multiplies the coverage by the alpha … The threshold is 1 rather
 > than 128 because that is what the mechanism says … Where the alpha has more bits
 > the N64 dithers a partial coverage and a hard threshold cannot; that is an
 > approximation.
 
-A best-time readout is plausibly drawn semi-transparent, which would make it
-exactly the case that comment describes. That is a hypothesis with a shape, not a
-finding.
+A best-time readout drawn semi-transparent would be exactly that case, so the
+hypothesis had a shape — and `DKR_NO_ALPHA_TEST=1` was written to switch it off
+and settle it rather than argue it.
+
+**The switch works and the digits do not change.** With the cutout disabled the
+character-select screen shows it plainly: every foliage sprite and flower gains
+the black rectangle its transparent border had been cut from, which is precisely
+what "draw every texel whatever its alpha" looks like. On the vehicle screen, in
+the same run, the digits are shredded exactly as before, speckle for speckle.
+
+So the cutout is not the mechanism. One hypothesis, one switch, one run, and it
+is out.
+
+**What that leaves.** The dropped pixels are not being *killed*, so they are being
+*drawn* wrong: the texture the numerals come from is arriving corrupt, or being
+sampled wrong. A regular checkerboard in a texture is the signature of a format
+read at the wrong width — a 4-bit atlas taken for 8-bit, a colour-indexed one
+taken for direct — and the labels beside the digits, which come from a different
+texture and are clean, fit that.
+
+Not measured. The next thing is a capture of that screen, not another guess.
 
 ## Capturing the screen: written, not proven
 
@@ -55,10 +73,18 @@ freeze is a defect one cannot attribute.
 return, the arrows, Q/E, IJKL and WASD, and a capture key that also steers would
 fire while the player was driving.
 
-**It has not yet produced a capture, and the run that carried it stopped at
-display list 300** — presents last reported at 2,700 — where a plain run on
-10 September reached list 2,520 and 19,800 presents. The only difference is that
-this build polls the keyboard from the render thread on every list, and only when
-the feature is enabled. That makes the poll the first suspect and nothing more:
-one run, one difference, no isolation. The obvious control — the same build with
-`DKR_CAPTURE_KEY` unset — has not been run.
+**It has produced no capture, and it destabilises the run.** Three runs with
+`DKR_CAPTURE_KEY=1` all stopped early — twice at display list 300, once before the
+track select. Three runs without it, on the same builds, navigated menu after menu
+without trouble, one of them all the way into a race. Three for three each way.
+
+The first suspicion was the keyboard poll from the render thread, so the trigger
+was rewritten: `dkr_window_take_capture_request` is a single byte set in the
+window procedure where the message arrives and taken by whoever asks first, with
+the render thread never touching the key arrays or the latch. **It made no
+difference.** Two unrelated implementations of the same feature, the same failure.
+
+So the feature is off by default and is not to be relied on. What it is doing to
+the run is not known, and the correlation is strong enough that finding out is a
+prerequisite for using it. The screen still cannot be frozen, and until it can,
+the shredded digits cannot be attributed to the decoder or to the card.

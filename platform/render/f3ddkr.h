@@ -491,6 +491,21 @@ typedef struct {
        is being culled or was never asked for is one run apart with this, and
        unanswerable without it. */
     unsigned char        no_cull;
+    /* `DKR_NO_ALPHA_TEST=1`: draw every texel, whatever its alpha.
+     *
+       A diagnostic, and it exists for one question. The cutout this port applies
+       is `CVG_X_ALPHA` translated to a hard alpha test at reference 1, and
+       `rdp_state.c` records the approximation that entails: "where the alpha has
+       more bits the N64 dithers a partial coverage and a hard threshold cannot".
+       A dithered coverage resolved by a threshold looks like a regular speckle
+       eaten out of a shape -- which is exactly how this game's best-time digits
+       come out on the vehicle-select screen, while the same font elsewhere is
+       clean.
+     *
+       Turning the test off does not fix anything: it answers, in one run, whether
+       the speckle is the cutout at all. A hypothesis one cannot switch off is a
+       hypothesis one argues about. */
+    unsigned char        no_alpha_test;
     /* The second layer's binding and its own coordinate scale, mirroring
        `bound_texture` and `tex_scale_s`. Separate rather than an array of two
        because every other consumer in this file reads the single-texture pair by

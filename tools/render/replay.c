@@ -142,7 +142,7 @@ static dkr_f3d_context g_ctx;
 
 static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
                         unsigned char *rdram, int tmus, int no_cull,
-                        replay_counts *out)
+                        int no_alpha, replay_counts *out)
 {
     dkr_f3d_init(&g_ctx, rdram, h->rdram_bytes, bk);
     g_ctx.rdram_native  = (unsigned char)(h->rdram_native ? 1 : 0);
@@ -150,6 +150,7 @@ static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
     g_ctx.screen_height = (short)h->screen_h;
     g_ctx.tmu_count     = (unsigned char)tmus;
     g_ctx.no_cull       = (unsigned char)(no_cull ? 1 : 0);
+    g_ctx.no_alpha_test = (unsigned char)(no_alpha ? 1 : 0);
 
     /* Each step announces itself before it runs, and the line is flushed. This
        program opens a card that has faulted before and decodes eight mebibytes
@@ -414,7 +415,7 @@ int main(int argc, char **argv)
     const char *dump_dir = 0, *map_path = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
-    int no_cull = 0, factor_one = 0;
+    int no_cull = 0, factor_one = 0, no_alpha = 0;
     int oracle_tmus = 1;
     int i, status = 0;
 
@@ -423,6 +424,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--both") == 0)       { want_both = 1; }
         else if (strcmp(argv[i], "--single-tmu") == 0) { single_tmu = 1; }
         else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
+        else if (strcmp(argv[i], "--no-alpha-test") == 0) { no_alpha = 1; }
         else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
@@ -472,7 +474,10 @@ int main(int argc, char **argv)
     }
 
 #ifndef DKR_HAVE_GLIDE
-    (void)single_tmu;   /* the host has no card to force to one unit */
+    /* The host has no card to force to one unit, nor a combiner whose factor to
+       choose. Both switches are the Windows 95 build's. */
+    (void)single_tmu;
+    (void)factor_one;
     if (want_card || want_both) {
         /* Named rather than ignored: a host build silently rendering the oracle
            when the card was asked for would produce a file that looks like the
@@ -516,7 +521,7 @@ int main(int argc, char **argv)
                 free(rdram);
                 return 1;
             }
-            run_capture(&soft, &h, rdram, oracle_tmus, no_cull, &sc);
+            run_capture(&soft, &h, rdram, oracle_tmus, no_cull, no_alpha, &sc);
             say_counts("oracle", &sc);
             if (probe_on) { say_probe(probe_x, probe_y); }
             say_categories();
@@ -610,7 +615,7 @@ int main(int argc, char **argv)
             say("  card opened with %d texture unit(s)%s\n", card_tmus,
                    single_tmu ? " (forced to one)" : "");
 
-            run_capture(&card, &h, rdram, card_tmus, no_cull, &cc);
+            run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha, &cc);
             say_counts("card", &cc);
             {
                 unsigned long d = 0, id = 0, un = 0, bl = 0, sh = 0;

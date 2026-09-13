@@ -659,6 +659,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         static const bool no_texcache =
             (std::getenv("DKR_NO_TEXCACHE") != nullptr);
         context_.no_texture_cache = no_texcache ? 1 : 0;
+        // `DKR_NO_ALPHA_TEST=1` draws every texel whatever its alpha. It answers
+        // in one run whether the speckle eaten out of this game's best-time
+        // digits is the `CVG_X_ALPHA` cutout meeting a dithered coverage — the
+        // approximation `rdp_state.c` already names — or something else.
+        static const bool no_alpha_test =
+            (std::getenv("DKR_NO_ALPHA_TEST") != nullptr);
+        context_.no_alpha_test = no_alpha_test ? 1 : 0;
         // `DKR_FORCE_COMBINE=shade|texel|texel_shade|texel_shade_a` forces every
         // draw to one combine mode. Named rather than numbered: a run costs four
         // minutes, and `DKR_FORCE_COMBINE=2` in a batch file three weeks from now
@@ -877,7 +884,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         }
         if (cap_on_key) {
             static bool key_shot = false;
-            if (!key_shot && dkr_window_key_down(0x78 /* VK_F9 */)) {
+            if (!key_shot && dkr_window_take_capture_request()) {
                 key_shot = true;
                 std::sprintf(path_key, "D:\\CKEY%04lu.BIN",
                              static_cast<unsigned long>(index % 10000u));

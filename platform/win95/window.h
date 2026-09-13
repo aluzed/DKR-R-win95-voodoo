@@ -91,6 +91,23 @@ void dkr_window_close(void);
  * reading past the array. */
 int  dkr_window_key_down(int vk);
 
+/* Non-zero once for each press of **F9**, and zero thereafter until the next.
+ *
+ * A capture of whatever is on the screen is the only way to attribute a defect on
+ * a screen the game passes through: `gGameMode` names a mode, and both the
+ * vehicle-select screen and the race that follows it sit inside MENU. A screen one
+ * can see and cannot freeze is a defect one cannot attribute.
+ *
+ * **Its own flag rather than a key-state query**, because the caller is the render
+ * thread and the key state is the main thread's: `dkr_window_key_down` consults a
+ * latch that the input poll clears for its own reasons, and a second reader with
+ * different timing has no business in it. One byte, written where the message
+ * arrives, taken once by whoever asks first.
+ *
+ * F9 because the controller mapping leaves it free. A capture key that also steers
+ * would fire while the player was driving. */
+int  dkr_window_take_capture_request(void);
+
 /* Forgets what was pressed-and-released, keeping what is still held. Called by
    the input poll once it has read the state -- the latch spans exactly one poll,
    so it cannot accumulate a press the game never asked about. */

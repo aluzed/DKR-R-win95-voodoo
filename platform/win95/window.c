@@ -16,6 +16,8 @@ static unsigned char g_keys[256];
 /* Pressed since the last `dkr_window_latch_clear`, whether or not still held.
    See `window.h` for why a 170 ms frame makes this necessary rather than nice. */
 static unsigned char g_latch[256];
+/* Set when F9 arrives, cleared when the renderer takes it. See `window.h`. */
+static volatile unsigned char g_capture_request;
 
 /* The class name is not the window title and does not need to be pretty; it needs
    to be unlikely to collide with anything else registered in the session. */
@@ -74,6 +76,14 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         if (wp < 256u) { g_keys[wp] = 1; g_latch[wp] = 1; }
+        /* The capture request is its own flag, set here where the message
+           arrives. The renderer runs on another thread and asks for it once a
+           display list; making it read the key arrays instead would put the
+           render thread inside the latch, which the input poll clears from the
+           main thread for its own reasons. One byte written by the thread that
+           owns the window and read by one other is the narrowest thing that
+           does the job. */
+        if (wp == VK_F9) { g_capture_request = 1; }
         /* `Alt+F4` still has to close the window, and a handled `WM_SYSKEYDOWN`
            never reaches `DefWindowProc` to do it. */
         if (msg == WM_SYSKEYDOWN && wp == VK_F4) { break; }
@@ -208,6 +218,13 @@ void dkr_window_latch_clear(void)
     memset(g_latch, 0, sizeof(g_latch));
 }
 
+int dkr_window_take_capture_request(void)
+{
+    if (!g_capture_request) { return 0; }
+    g_capture_request = 0;
+    return 1;
+}
+
 void dkr_window_keys_clear(void)
 {
     memset(g_keys, 0, sizeof(g_keys));
@@ -234,6 +251,7 @@ int  dkr_window_pump(void)   { return 1; }
 int  dkr_window_focused(void) { return 1; }
 unsigned long dkr_window_handle(void) { return 0; }
 int  dkr_window_key_down(int vk) { (void)vk; return 0; }
+int  dkr_window_take_capture_request(void) { return 0; }
 void dkr_window_keys_clear(void) { }
 void dkr_window_latch_clear(void) { }
 void dkr_window_close(void)  { }
