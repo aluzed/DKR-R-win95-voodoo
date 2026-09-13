@@ -89,6 +89,11 @@ with none pending.
 Two runs have gone far — one to list 2,520 with no keystroke sent at all, one to
 1,717 through a full navigation into a race, ending at its own capture by design.
 
+**And then the premise itself turned out to be false.** See below: the runs were
+not stopping. Everything between here and that section is the record of three
+hypotheses built on a reading that was wrong, and it is kept because the shape of
+the mistake is the useful part.
+
 **A fifth run then refuted the next hypothesis too.** If the long one differed by
 having been sent no keystrokes, a run left equally untouched should go equally
 far. One was: armed at list 1,500, no key sent, nothing driven. It stopped at 300.
@@ -114,3 +119,40 @@ anything — it changed nothing, which at the time looked like evidence and was 
 
 The screen still cannot be frozen, and until it can, the shredded digits cannot be
 attributed to the decoder or to the card.
+
+## The runs were not stopping. They were not finished.
+
+Measured on 13 September 2026. An untouched run, nothing armed, no key sent,
+photographed every thirty seconds for six minutes and then stopped by the script:
+
+    last list:    list=1080
+    last present: present=8700
+
+Twelve screenshots, twelve different pictures — mean brightness 4225, 23066,
+21361, 7888, 16959, 11388, 22866, 17017, 16488, 21459, 17473, 15235. The attract
+sequence animated for the whole six minutes and was still animating when the
+machine was stopped, by me, on a timer.
+
+So the game reaches **list 1080** and is still going. Three lists a second. A
+capture armed at list 1500 needs about eight minutes of wall clock to fire.
+
+**Every "the run stopped at list 300" was a run that had not got there yet.** The
+log was read after a fixed wait, the wait was shorter than the run, and the last
+line in a log that is still being written looks exactly like the last line of a
+log that has stopped. Four runs, four readings, one instrument reporting on my
+patience rather than on the program.
+
+That is the fourth correction in this thread, and the previous three are all
+downstream of this one: the capture key, the keystrokes, and the "intermittent"
+reading each explained a stop that never happened.
+
+### What the method has to be
+
+A run is read when the log shows it has passed the list in question — not after a
+wall-clock wait chosen by guess. The wait is not evidence and must never again be
+allowed to stand in for one:
+
+    until <log shows list >= N>; do sleep; done
+
+The one durable fact from all of it is the rate, and it is worth having: **three
+display lists a second**, eight and a half presents to the list.
