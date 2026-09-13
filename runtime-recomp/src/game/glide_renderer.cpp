@@ -895,8 +895,22 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         }
         if (cap_on_key) {
             static bool key_shot = false;
+            // **Say that it is armed.** The first run with this feature pressed
+            // F9 on the screen it was built for, wrote nothing, and left three
+            // candidate causes indistinguishable: the variable never reached the
+            // program, the key never reached the window, or the write failed.
+            // One line at arming and one line per key seen separate all three,
+            // and the run that would have needed them had already been spent.
+            static bool armed_said = false;
+            if (!armed_said) {
+                armed_said = true;
+                std::fprintf(stderr, "[gfx] capture: F9 armed\n");
+                dkr_diag_commit();
+            }
             if (!key_shot && dkr_window_take_capture_request()) {
                 key_shot = true;
+                std::fprintf(stderr, "[gfx] capture: F9 at list %llu\n",
+                             static_cast<unsigned long long>(index));
                 std::sprintf(path_key, "D:\\CKEY%04lu.BIN",
                              static_cast<unsigned long>(index % 10000u));
                 dkr_capture_write(path_key,
