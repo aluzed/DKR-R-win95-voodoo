@@ -254,3 +254,46 @@ texels themselves, in how they are sampled, or in the geometry that carries them
 and the next instrument is the one this document asked for last time and still
 does not have: a dump taken before the aspect padding, at the tile's true 248x11,
 so that what is read can be compared with what the game stored.
+
+## The atlas at its true size, and a number instead of an eye
+
+`replay --dump-textures` now writes each texture at the **tile's** dimensions
+rather than the padded ones, cropping with the width and height the key already
+carries. The name records both: `tex096_248x11_of_256x32_...`.
+
+That was worth doing for one reason: the padded dump of this atlas had been read
+as corrupt three separate times, and each time the repetition was the padding
+doing what its own comment says it does.
+
+At 248x11 the atlas holds **two copies of the same alphabet, side by side**, 124
+columns each, plus a row of lowercase under each. So the question became whether
+the second copy is an outline layer the game stores on purpose, or a damaged copy
+— and after three misreadings of this image, not one I was going to settle by
+looking at it:
+
+    left  mean 56.8  ink 458/1364
+    right mean 68.3  ink 504/1364
+    agreement on ink/no-ink, left against right shifted by:
+      -2: 66%   -1: 60%   0: 77%   +1: 60%   +2: 69%
+
+**Aligned, not offset.** Agreement peaks at shift zero and falls away either side,
+which is what two copies at the same position look like and not what an outline
+looks like — an outline would peak off-centre. The left copy carries 9 % less ink
+and 17 % less mean intensity than the right, at the same alignment.
+
+So: two aligned copies of one alphabet, one thinner than the other. That is
+equally consistent with a font stored in two weights and with one copy arriving
+damaged, and nothing here separates them. What would: the atlas as the ROM
+stores it.
+
+### The state of it
+
+- not the alpha cutout (one switch, one run)
+- not the card, not Glide, not the upload — the oracle shreds it identically
+- not the tile stride — measured, the atlas agrees with its `line`
+- the atlas is read at its declared width, address and stride
+
+What is left is the texels themselves, how they are sampled, or the geometry
+carrying them. The next measurement is the ROM's own copy of this atlas against
+the one in RDRAM, which decides in one comparison whether anything is damaged at
+all before another afternoon goes into how.

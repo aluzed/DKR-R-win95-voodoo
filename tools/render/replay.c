@@ -265,9 +265,47 @@ static void dump_textures(const char *dir)
            answers "which of these reached the screen". A texture uploaded and
            never sampled is an object missing from the image, and no upload
            counter can say that. */
-        sprintf(path, "%s/tex%03d_%dx%d_%08lX_%lutri_%lupx.bmp", dir, slot + 1,
-                w, h, (unsigned long)(key & 0xFFFFFFFFu), tris, painted);
-        if (dkr_image_write_bmp(path, texels, w, h)) { written++; }
+        /* **Written at the tile's true size, not the padded one.**
+         *
+         * What reaches the card is rounded up to a power of two and then rounded
+         * again to stay inside its 8:1 aspect limit, and the padding *repeats*
+         * the pattern rather than zeroing it. A 248x11 font atlas therefore
+         * arrives as 256x32 showing its alphabet three times down and once and a
+         * bit across — which looks precisely like a corrupt texture, and cost an
+         * afternoon being read as one.
+         *
+         * The true dimensions are in the key, which `f3ddkr.c` composes as
+         * `address<<24 ^ format<<20 ^ size<<18 ^ width<<9 ^ height`. Bits 0..17
+         * carry width and height and nothing else overlaps them. The backend is
+         * told the key is opaque and it keeps to that; this is a diagnostic
+         * reading the decoder's own format on purpose, and it is spelt out here
+         * so the next person to change that composition finds this.
+         *
+         * The crop is the top-left corner because that is where the unpadded
+         * content sits, padding only ever having been appended. */
+        {
+            const int kw = (int)((key >> 9) & 0x1FFu);
+            const int kh = (int)(key & 0x1FFu);
+            const int cw = (kw > 0 && kw <= w) ? kw : w;
+            const int ch = (kh > 0 && kh <= h) ? kh : h;
+            sprintf(path, "%s/tex%03d_%dx%d_of_%dx%d_%08lX_%lutri_%lupx.bmp",
+                    dir, slot + 1, cw, ch, w, h,
+                    (unsigned long)(key & 0xFFFFFFFFu), tris, painted);
+            if (cw == w && ch == h) {
+                if (dkr_image_write_bmp(path, texels, w, h)) { written++; }
+            } else {
+                static unsigned crop[1024 * 1024];
+                int y;
+                if ((size_t)cw * (size_t)ch <= sizeof(crop) / sizeof(crop[0])) {
+                    for (y = 0; y < ch; y++) {
+                        memcpy(&crop[(size_t)y * (size_t)cw],
+                               &texels[(size_t)y * (size_t)w],
+                               (size_t)cw * sizeof(unsigned));
+                    }
+                    if (dkr_image_write_bmp(path, crop, cw, ch)) { written++; }
+                }
+            }
+        }
         if (painted == 0u) { unpainted++; }
     }
     say("  textures: %d written to %s, %d of them painted nothing\n",
