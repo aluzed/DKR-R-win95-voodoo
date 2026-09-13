@@ -191,6 +191,43 @@ int main(void)
           dkr_texture_bytes(DKR_N64_SIZ_16, 8, 8) == 128u &&
           dkr_texture_bytes(DKR_N64_SIZ_32, 8, 8) == 256u);
 
+    /* --- A tile that is a window into a wider image --------------------- *
+     *
+     * `dkr_texture_convert_strided` exists because this game's timer glyphs sit
+     * side by side in a buffer wider than the tile that samples them, and read
+     * linearly they interleave. The property worth pinning is the boring one:
+     * with `src_row_texels == width` the strided call **is** the linear one, and
+     * with a wider stride it skips exactly the right number of texels.
+     *
+     * Built as an 8-texel-wide RGBA16 image whose every texel encodes its own
+     * linear index in the red field, so a wrong stride cannot look right by
+     * accident. */
+    {
+        unsigned int i;
+        unsigned short win[4 * 2];
+        int ok_linear = 1, ok_window = 1;
+        for (i = 0; i < 8u * 2u; i++) {
+            write16(0x600u + i * 2u, ((i & 0x1Fu) << 11) | 1u);
+        }
+        (void)dkr_texture_convert_strided(g_ram, RAM, 0, 0x600u,
+                                          DKR_N64_FMT_RGBA, DKR_N64_SIZ_16,
+                                          8, 2, 8, g_out, &st);
+        for (i = 0; i < 16u; i++) {
+            if (((unsigned)(g_out[i] >> 10) & 0x1Fu) != i) { ok_linear = 0; }
+        }
+        check("strided with stride == width is the linear conversion", ok_linear);
+
+        (void)dkr_texture_convert_strided(g_ram, RAM, 0, 0x600u,
+                                          DKR_N64_FMT_RGBA, DKR_N64_SIZ_16,
+                                          4, 2, 8, win, &st);
+        for (i = 0; i < 4u; i++) {
+            if (((unsigned)(win[i] >> 10) & 0x1Fu) != i) { ok_window = 0; }
+            if (((unsigned)(win[4u + i] >> 10) & 0x1Fu) != 8u + i) { ok_window = 0; }
+        }
+        check("a 4-wide window into an 8-wide image skips the right texels",
+              ok_window);
+    }
+
     printf("\n  converted=%lu refused=%lu out-of-rdram=%lu too-large=%lu\n",
            st.converted, st.unsupported, st.out_of_rdram, st.too_large);
     printf("\n%d failure(s)\n", g_fails);

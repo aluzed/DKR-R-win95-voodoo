@@ -516,3 +516,55 @@ texture in the game to fix three.
 **And it is a defect in this port, not in the game.** No render-to-texture targets
 that buffer — the colour image is the framebuffer and nothing else, over the whole
 list. The game wrote what the RDP asked for; the port reads it the wrong way.
+
+## The pitch is the fault, and no rule from the display list can fix it
+
+14 September 2026. `dkr_texture_convert_strided` — a tile that is a window into a
+wider image — and `replay --rgba32-pitch2`, which applies a doubled pitch to
+RGBA32 tiles loaded with `dxt == 0`. Both are **probes**, not a fix, and the
+measurements below are why.
+
+**The doubled pitch is right for the digits.** With the switch on, the
+vehicle-select screen reads `00:27:36`: clean numerals, outlines intact, legible.
+That is the proof that the pitch is the fault and the pixels are sound.
+
+**And it is wrong for everything else.** Applied across the corpus the switch
+changes three scenes of twelve, and on the race scene it destroys the banana
+sprite — a clean tall sprite becomes fragments. A rule conditioned on `dxt == 0`
+is far too broad: 85 of 310 loads in that scene have `dxt == 0`, most of them
+benign.
+
+**Nothing in the display list separates the two cases.** Side by side, a 44x23
+RGBA32 that renders correctly at linear pitch against the two digits that do not:
+
+| | sign 44x23 | digit 16x15 | digit 12x15 |
+|---|---|---|---|
+| `dxt` | 0 | 0 | 0 |
+| `lrs` | 1011 = w·h-1 | 239 = w·h-1 | 179 = w·h-1 |
+| tile `line` | 88 B = w·2 | 32 B = w·2 | 24 B = w·2 |
+| renders | correctly | shredded | shredded |
+
+Every field agrees. The renderer treats them identically and correctly. And all
+three are runtime-composed — the sign's bytes differ across captures too — so
+"runtime buffer" is not the difference either.
+
+**So the anomaly is in the contents, not in the description of them.** Something
+writes those two glyph buffers at twice the row pitch their own display list
+declares, and the next question is what — which is a question about the
+recompiled game code, not about the renderer.
+
+### What ships
+
+- `dkr_texture_convert_strided`, with the ordinary conversion implemented as the
+  `stride == width` case of it, so the common path is one comparison and no
+  division.
+- Two tests. The second one **failed first**, and usefully: one of the six source
+  reads had not been rewritten, because the line I matched said
+  `const unsigned short w` and the code said `const unsigned int w`. A silent
+  no-op edit, caught by the test that existed to catch exactly that.
+- `--rgba32-pitch2`, labelled a probe in the header, with the banana recorded
+  beside it as the reason it is not a default.
+- `--trace`, which put the decoder's trace on the bench and turned a four-run
+  question into one grep.
+
+Corpus with the probe off: twelve scenes, 0 divergent pixels.

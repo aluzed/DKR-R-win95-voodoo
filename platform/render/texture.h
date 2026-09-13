@@ -79,6 +79,24 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
                         int width, int height,
                         unsigned short *out, dkr_texture_stats *stats);
 
+/* The same, for a tile that is a **window into a wider image**.
+ *
+ * `src_row_texels` is how far apart two rows of the source are, in texels of
+ * this format; `width` stays the number of texels actually wanted from each row.
+ * Passing `src_row_texels == width` is exactly `dkr_texture_convert`, which is
+ * how that function is now implemented.
+ *
+ * It exists because the timer digits on this game's vehicle-select screen are
+ * two glyphs side by side in a 32-texel-wide buffer, drawn with a 16-texel tile.
+ * Read linearly they interleave, which is what "shredded" looked like. See
+ * `docs/research/win95-hud-digits.md`. */
+int dkr_texture_convert_strided(const unsigned char *rdram,
+                                unsigned int rdram_size, int native,
+                                unsigned int address,
+                                dkr_n64_format format, dkr_n64_size size,
+                                int width, int height, int src_row_texels,
+                                unsigned short *out, dkr_texture_stats *stats);
+
 /* The size in bytes of a texture of these dimensions in this format. Returns 0
    if the combination makes no sense. */
 unsigned int dkr_texture_bytes(dkr_n64_size size, int width, int height);

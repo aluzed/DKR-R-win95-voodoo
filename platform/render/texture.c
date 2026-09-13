@@ -114,8 +114,34 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
                         int width, int height,
                         unsigned short *out, dkr_texture_stats *stats)
 {
+    return dkr_texture_convert_strided(rdram, rdram_size, native, address,
+                                       format, size, width, height, width,
+                                       out, stats);
+}
+
+/* Destination texel `i` comes from source texel `src_index(i)`. The two are the
+   same thing whenever the tile is the whole image, which is nearly always: the
+   equality is tested first so that the ordinary case costs one comparison and no
+   division. */
+static unsigned int src_index(unsigned int i, int width, int src_row_texels)
+{
+    if (width == src_row_texels || width <= 0) {
+        return i;
+    }
+    return (i / (unsigned int)width) * (unsigned int)src_row_texels
+         + (i % (unsigned int)width);
+}
+
+int dkr_texture_convert_strided(const unsigned char *rdram,
+                                unsigned int rdram_size,
+                        int native, unsigned int address,
+                        dkr_n64_format format, dkr_n64_size size,
+                        int width, int height, int src_row_texels,
+                        unsigned short *out, dkr_texture_stats *stats)
+{
     const unsigned int bytes = dkr_texture_bytes(size, width, height);
     unsigned int i, n;
+#define SI(k) src_index((k), width, src_row_texels)
 
     if (!rdram || !out || bytes == 0u) {
         return 0;
@@ -140,7 +166,7 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
            differ by a rotation of one bit, which is why this path was a
            `read16` and nothing else for four months -- see `pack_argb1555`. */
         for (i = 0; i < n; i++) {
-            const unsigned int w = read16(rdram, native, address + i * 2u);
+            const unsigned int w = read16(rdram, native, address + SI(i) * 2u);
             out[i] = pack_argb1555((w >> 11) & 0x1Fu, (w >> 6) & 0x1Fu,
                                    (w >> 1) & 0x1Fu, w & 1u);
         }
@@ -150,7 +176,7 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
 
     if (format == DKR_N64_FMT_RGBA && size == DKR_N64_SIZ_32) {
         for (i = 0; i < n; i++) {
-            const unsigned int a = address + i * 4u;
+            const unsigned int a = address + SI(i) * 4u;
             const unsigned int r = read8(rdram, native, a) >> 3;
             const unsigned int g = read8(rdram, native, a + 1u) >> 3;
             const unsigned int b = read8(rdram, native, a + 2u) >> 3;
@@ -176,7 +202,7 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
                not one: `G_TEXRECT` was handing over exactly the coordinates the
                game asked for. */
             {
-                const unsigned int it = read8(rdram, native, address + i);
+                const unsigned int it = read8(rdram, native, address + SI(i));
                 out[i] = grey_to_5551(it, it >= 128u);
             }
         }
@@ -186,8 +212,9 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
 
     if (format == DKR_N64_FMT_I && size == DKR_N64_SIZ_4) {
         for (i = 0; i < n; i++) {
-            const unsigned char o = read8(rdram, native, address + i / 2u);
-            const unsigned int  q = (i & 1u) ? (o & 0x0Fu) : (unsigned int)(o >> 4);
+            const unsigned char o = read8(rdram, native, address + SI(i) / 2u);
+            const unsigned int  q = (SI(i) & 1u) ? (o & 0x0Fu)
+                                                : (unsigned int)(o >> 4);
             /* 4 bits to 8 by replication: 15 must give 255, not 240. */
             out[i] = grey_to_5551((q << 4) | q, q >= 8u);
         }
@@ -197,7 +224,8 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
 
     if (format == DKR_N64_FMT_IA && size == DKR_N64_SIZ_16) {
         for (i = 0; i < n; i++) {
-            const unsigned short m = read16(rdram, native, address + i * 2u);
+            const unsigned short m = read16(rdram, native,
+                                           address + SI(i) * 2u);
             out[i] = grey_to_5551((m >> 8) & 0xFFu, (m & 0xFFu) >= 128u);
         }
         if (stats) { stats->converted++; }
@@ -206,7 +234,7 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
 
     if (format == DKR_N64_FMT_IA && size == DKR_N64_SIZ_8) {
         for (i = 0; i < n; i++) {
-            const unsigned char o = read8(rdram, native, address + i);
+            const unsigned char o = read8(rdram, native, address + SI(i));
             const unsigned int  it = (unsigned int)(o >> 4);
             out[i] = grey_to_5551((it << 4) | it, (o & 0x0Fu) >= 8u);
         }
@@ -216,8 +244,9 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
 
     if (format == DKR_N64_FMT_IA && size == DKR_N64_SIZ_4) {
         for (i = 0; i < n; i++) {
-            const unsigned char o = read8(rdram, native, address + i / 2u);
-            const unsigned int  q = (i & 1u) ? (o & 0x0Fu) : (unsigned int)(o >> 4);
+            const unsigned char o = read8(rdram, native, address + SI(i) / 2u);
+            const unsigned int  q = (SI(i) & 1u) ? (o & 0x0Fu)
+                                                : (unsigned int)(o >> 4);
             const unsigned int  it = q >> 1;   /* three bits of intensity */
             const unsigned int  it8 = (it << 5) | (it << 2) | (it >> 1);
             out[i] = grey_to_5551(it8, q & 1u);
@@ -233,4 +262,5 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
        caller does not draw rather than drawing wrong. */
     if (stats) { stats->unsupported++; }
     return 0;
+#undef SI
 }

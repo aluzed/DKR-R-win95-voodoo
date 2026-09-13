@@ -1852,19 +1852,29 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             }
         }
     }
-    if (!dkr_texture_convert(c->rdram, c->rdram_size, c->rdram_native,
-                             c->timg_address,
-                             (dkr_n64_format)c->timg_format,
-                             (dkr_n64_size)c->timg_size,
-                             width, height, c->texels, &c->state.textures)) {
-        /* Refused: we **unbind** rather than draw with the previous one. A stale
-           texture on a surface is more confusing than a surface with no texture,
-           because it passes for rendering. */
-        c->render_state.texture = 0;
-        c->bound_texture = 0;
-        c->texture_key = 0;
-        c->state_dirty = 1;
-        return;
+    {
+        int src_row = width;
+        if (c->rgba32_pitch2 &&
+            c->timg_format == DKR_N64_FMT_RGBA &&
+            c->timg_size == DKR_N64_SIZ_32 &&
+            c->block_row_bytes == 0u) {
+            src_row = width * 2;
+        }
+        if (!dkr_texture_convert_strided(c->rdram, c->rdram_size,
+                                         c->rdram_native, c->timg_address,
+                                         (dkr_n64_format)c->timg_format,
+                                         (dkr_n64_size)c->timg_size,
+                                         width, height, src_row, c->texels,
+                                         &c->state.textures)) {
+            /* Refused: we **unbind** rather than draw with the previous one. A
+               stale texture on a surface is more confusing than a surface with
+               no texture, because it passes for rendering. */
+            c->render_state.texture = 0;
+            c->bound_texture = 0;
+            c->texture_key = 0;
+            c->state_dirty = 1;
+            return;
+        }
     }
 
     /* The padding, in place and bottom to top so as not to overwrite what is
