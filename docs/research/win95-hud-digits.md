@@ -174,3 +174,43 @@ allowed to stand in for one:
 
 The one durable fact from all of it is the rate, and it is worth having: **three
 display lists a second**, eight and a half presents to the list.
+
+## Caught on a capture, and the card is out of it
+
+13 September 2026. `CKEY1622.BIN` and `CKEY0951.BIN` — Taj's dialogue in Timber's
+Island, taken with F9 — replayed through the **software oracle** on the
+development machine. The oracle has no Glide, no TMU, no ARGB1555 upload and no
+Voodoo of any kind.
+
+**It renders the text shredded, speckle for speckle, exactly as the card does.**
+
+So the defect is not the backend, not the texture upload, and not the emulated
+Voodoo's one alpha bit — the hypothesis this document was about to spend a run on.
+It is in the decoder or in the texture conversion the two backends share, and it
+is now reproducible on the host, offline, on demand, in a debugger.
+
+Both captures are in the corpus and compare at 0 divergent pixels oracle-to-oracle.
+
+### What the texture says
+
+The text comes from an **IA16** font atlas, which the key names as tile **248×11**
+and which arrives as a **256×32** texture: 248 rounded up to a power of two, 11
+rounded to 16, then padded to 32 to stay inside the card's 8:1 aspect limit. The
+dump shows the alphabet `@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^` repeated three times
+down the image and one-and-a-bit times across, which is the documented padding
+doing exactly what it says it does — repeating the pattern rather than filling
+with zero. That part is not the defect and it took a while to stop reading it as
+one.
+
+What is left, and not yet attributed: within each eleven-row band, the glyphs are
+mottled through.
+
+### A test that proved nothing, recorded as such
+
+I reflowed the dumped atlas at 248, 252, 254 and 256 columns to see which width
+straightened the alphabet. 256 did. That was **circular** — the dump is already
+laid out at 256, so the test could not have returned anything else. It is written
+down because the reflow images look like evidence and are not.
+
+The instrument that would settle it is a dump taken **before** the padding, at the
+tile's true 248×11, which does not exist yet.

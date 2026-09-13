@@ -206,3 +206,14 @@ where anything moves.
 
 `CAP0160.BIN` stays in the corpus for that reason: it is the control for
 `CAP0150.BIN`.
+
+## Two scenes of the shredded font — 13 September 2026
+
+`CKEY1622.BIN` and `CKEY0951.BIN`, both Taj's dialogue box in Timber's Island,
+taken with the F9 key. They are the first captures of a defect the user reported
+from a photograph, and they turn it from something only visible on the machine
+into something reproducible on the development host.
+
+    cmd=2430 tri=2864 emitted=1602 culled=593 clipped=719 rejects=0 textures=132
+
+Ten scenes now, all at 0 divergent pixels oracle-to-oracle.
