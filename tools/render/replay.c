@@ -801,6 +801,25 @@ int main(int argc, char **argv)
             card_tmus = dkr_glide_backend_tmu_count();
             say("  card opened with %d texture unit(s)%s\n", card_tmus,
                    single_tmu ? " (forced to one)" : "");
+            /* **Before anything is drawn**, because a Glide entry point that did
+               not resolve makes every call through it a silent no-op, and every
+               figure below it then describes a frame drawn with state nobody
+               programmed. It is the first thing to read, not the last. */
+            {
+                unsigned long total = 0, missing = 0;
+                const char *const *names = 0;
+                unsigned int n = 0, i;
+                dkr_glide_backend_symbols(&total, &missing, &names, &n);
+                say("  glide entry points: %lu of %lu resolved\n",
+                    total - missing, total);
+                for (i = 0; i < n; i++) {
+                    say("    MISSING %s - every call through it is skipped\n",
+                        names[i]);
+                }
+                if (missing > n) {
+                    say("    ... and %lu more\n", missing - n);
+                }
+            }
 
             run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha, &cc);
             say_counts("card", &cc);

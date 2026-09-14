@@ -472,6 +472,16 @@ unsigned long dkr_glide_backend_upload_failure(int kind);
    and not a hope: the two together say whether the reclaim is doing the work
    or whether the working set has simply not reached the limit yet. */
 unsigned long dkr_glide_backend_slots_reclaimed(void);
+/* **Which Glide entry points the card's driver actually exports.**
+ *
+ * They are resolved by `GetProcAddress`, which answers null for a name it cannot
+ * find, and every caller guards itself and returns quietly -- so a missing
+ * export does not fail, it draws with whatever state was last programmed. That
+ * is a wrong image with no message, on the one side of this port the host cannot
+ * examine. `names`/`n` carry the first few missing, for the report. */
+void dkr_glide_backend_symbols(unsigned long *total, unsigned long *missing,
+                               const char *const **names, unsigned int *n);
+
 /* State applications served by chaining both texture units (E05-S04). */
 unsigned long dkr_glide_backend_two_layer_states(void);
 /* E05-S03's second pass: how many batches got one, and how many did not with the

@@ -298,6 +298,12 @@ static struct {
        were programmed, that one says triangles carried coordinates for it, and
        either being zero while the other is not is a defect with an address. */
     unsigned long    two_layer_states;
+    /* Glide entry points `GetProcAddress` could not find. See
+       `dkr_glide_backend_symbols`. */
+    unsigned long    symbols_total;
+    unsigned long    symbols_missing;
+    const char      *symbol_first_missing[6];
+    unsigned int     symbol_first_missing_n;
     /* E05-S03's second pass: drawn, and skipped with the reason. A pass that is
        silently not drawn is indistinguishable from one that is not needed, and
        the whole point of the guards below is that most of them are not needed. */
@@ -595,6 +601,64 @@ static int gl_open(void *self, int width, int height)
         gs.tex_filter   = (pfn_tex_mode)dkr_glide_symbol("_grTexFilterMode@12");
         gs.tex_clamp    = (pfn_tex_mode)dkr_glide_symbol("_grTexClampMode@12");
         gs.ready = 1;
+
+        /* --- Which of those the card's Glide actually exports ---------------- *
+         *
+         * `dkr_glide_symbol` is `GetProcAddress`, and a name it cannot find comes
+         * back **null without a word**. Every user of these pointers then guards
+         * itself and returns quietly -- `apply_blend` opens with
+         * `if (!gs.blend_function) { return; }`, `apply_combine` with a test on
+         * the two combine entries. A missing export therefore does not fail: it
+         * draws the frame with whatever state was last programmed, and the image
+         * is wrong in a way that reads as a decoder defect, on the one side of
+         * this port that cannot be examined from the host.
+         *
+         * Counted here and printed by the tool, as everything else in this file
+         * is. Eighteen pointers and one line of output, against two evenings
+         * spent on a shadow and a caption that both come out opaque on the card
+         * -- which is what a blender that was never programmed would do. Whether
+         * that is the cause is the next measurement; that it could not be
+         * *asked* was the defect. */
+        {
+            static const char *const names[] = {
+                "grColorCombine", "grAlphaCombine", "grAlphaBlendFunction",
+                "grConstantColorValue", "grClipWindow", "grDepthBufferMode",
+                "grDepthBufferFunction", "grDepthMask", "grCullMode",
+                "grAlphaTestFunction", "grAlphaTestReferenceValue",
+                "grFogMode", "grFogColorValue", "grTexMinAddress",
+                "grTexMaxAddress", "grTexTextureMemRequired",
+                "grTexDownloadMipMap", "grTexSource", "grTexCombine",
+                "grTexFilterMode", "grTexClampMode"
+            };
+            const void *const fns[] = {
+                (const void *)gs.color_combine, (const void *)gs.alpha_combine,
+                (const void *)gs.blend_function, (const void *)gs.constant_color,
+                (const void *)gs.clip_window, (const void *)gs.depth_mode,
+                (const void *)gs.depth_function, (const void *)gs.depth_mask,
+                (const void *)gs.cull_mode, (const void *)gs.alpha_test_function,
+                (const void *)gs.alpha_test_reference, (const void *)gs.fog_mode,
+                (const void *)gs.fog_color, (const void *)gs.tex_min,
+                (const void *)gs.tex_max, (const void *)gs.tex_required,
+                (const void *)gs.tex_download, (const void *)gs.tex_source,
+                (const void *)gs.tex_combine, (const void *)gs.tex_filter,
+                (const void *)gs.tex_clamp
+            };
+            unsigned int i;
+            b.symbols_total = (unsigned long)(sizeof(fns) / sizeof(fns[0]));
+            b.symbols_missing = 0;
+            b.symbol_first_missing_n = 0;
+            for (i = 0; i < b.symbols_total; i++) {
+                if (fns[i] == 0) {
+                    b.symbols_missing++;
+                    if (b.symbol_first_missing_n <
+                        sizeof(b.symbol_first_missing) /
+                        sizeof(b.symbol_first_missing[0])) {
+                        b.symbol_first_missing[b.symbol_first_missing_n++] =
+                            names[i];
+                    }
+                }
+            }
+        }
     }
 
     /* The TMU's bounds are **asked for**, never assumed. Measurement showed
@@ -1807,6 +1871,15 @@ void dkr_render_backend_glide(dkr_render_backend *out)
 unsigned long dkr_glide_backend_triangle_count(void)
 {
     return b.triangles;
+}
+
+void dkr_glide_backend_symbols(unsigned long *total, unsigned long *missing,
+                               const char *const **names, unsigned int *n)
+{
+    if (total)   { *total = b.symbols_total; }
+    if (missing) { *missing = b.symbols_missing; }
+    if (names)   { *names = b.symbol_first_missing; }
+    if (n)       { *n = b.symbol_first_missing_n; }
 }
 
 unsigned long dkr_glide_backend_two_layer_states(void)
