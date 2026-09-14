@@ -698,3 +698,46 @@ working ones and the broken ones:
 
 Nothing says 32. `dkr_texture_convert_strided` is written and tested and takes
 exactly that number as its argument; what is missing is where to get it.
+
+## The geometry does not carry it either
+
+The trace now prints, beside each triangle batch, the texture extent its corners
+ask for, in texels:
+
+    digit   Triangle 2  s=0..15 t=0..14 texels (tile 16x16)
+    banana  Triangle 2  s=0..11 t=0..22 texels (tile 16x32)
+
+Both quads ask for **exactly their declared tile**, edge to edge. So the geometry
+agrees with the display list in the broken case as well as the working one, and it
+is not the missing source either.
+
+That closes the list. Every field that describes these textures has now been
+decoded and compared between a texture that reads correctly and one that does
+not — image width, tile `line`, tile `siz`, `uls`/`ult`, `cms`/`masks`,
+`LoadBlock`'s `lrs` and `dxt`, and now the quad's own s and t. **None of them
+distinguishes the two.**
+
+### Why the doubled reading is nonetheless the true one
+
+Because of what it produces. With the pitch doubled the vehicle-select screen
+reads `00:27:36`: six well-formed numerals and two colons, on two lines, with
+outlines intact. An interleaving read at the wrong pitch does not produce
+well-formed digits by accident, and certainly not eight of them in a row.
+
+So the data is what it is, and the number that recovers it is `2 x tile width` for
+these textures — established by what comes out, not by a field that declares it.
+
+### Where it now stands
+
+- **The defect is understood**: a tile read at its own width where the image is
+  wider, so consecutive rows alternate between halves of the source.
+- **The fix's shape exists and is tested**: `dkr_texture_convert_strided`.
+- **The fix's input does not**: nothing in the display list says how wide the
+  image is, and a rule derived from any field measured so far is either wrong for
+  the digits or wrong for the sprites.
+
+What would settle it is a reference for what the RDP does with a 32-bit
+`LoadBlock` — the fill order into the two banks of texture memory. That is a
+question about hardware, answerable from a specification or from another
+implementation, and not from this capture. It is the one thing this investigation
+has needed and not had.

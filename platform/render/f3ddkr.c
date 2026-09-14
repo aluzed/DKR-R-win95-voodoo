@@ -424,7 +424,30 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         }
     }
     c->state.triangles += count;
-    trace(c, "Triangle %u from 0x%06X", count, source);
+    /* **The extent the geometry asks for, in texels**, beside the tile the state
+       declares. The two should agree; where they do not, the tile's shape is not
+       the image's shape — which is the whole question the timer digits raise, and
+       no field of the display list answers it. Traced rather than counted: it is
+       one line per batch and only when the trace is on. */
+    if (c->trace) {
+        int smin = 32767, smax = -32768, tmin = 32767, tmax = -32768, ti;
+        for (ti = 0; ti < (int)count; ti++) {
+            const unsigned int ta = source + (unsigned)ti * TRIANGLE_STRIDE;
+            int corner;
+            for (corner = 0; corner < 3; corner++) {
+                const int sb = read_s16(c, ta + 4 + corner * 4);
+                const int tb = read_s16(c, ta + 6 + corner * 4);
+                if (sb < smin) { smin = sb; } if (sb > smax) { smax = sb; }
+                if (tb < tmin) { tmin = tb; } if (tb > tmax) { tmax = tb; }
+            }
+        }
+        trace(c, "Triangle %u from 0x%06X  s=%d..%d t=%d..%d texels"
+                 " (tile %dx%d)",
+              count, source, smin / 32, smax / 32, tmin / 32, tmax / 32,
+              (int)c->tex_padded_width, (int)c->tex_padded_height);
+    } else {
+        trace(c, "Triangle %u from 0x%06X", count, source);
+    }
 
     /* --- Emission, and this is where the chain closes ----------------------- *
      *
