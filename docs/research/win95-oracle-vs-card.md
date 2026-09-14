@@ -166,3 +166,68 @@ gradients — the surface on which a dither differs from an undithered reference
 everywhere at once, and small per-pixel amounts over a large area is exactly the
 shape of 4 %. Testing it needs the card's image for that scene, which this run
 did not bring back.
+
+## Correction, and what the card's images actually show
+
+The section above says "the combiner shorthand is not what the two backends
+disagree about". **That is wrong, and the card's own images say so.** It was
+inferred from a table of aggregate shares, and an aggregate cannot refute a
+cause — only a measurement of the thing itself can, which is what was missing.
+
+Both scenes were fetched off the machine and compared pixel by pixel.
+
+### Nine tenths of the difference is dither, and it is not a defect
+
+| | CKEY1622 | CAP0800 |
+|---|---|---|
+| pixels differing at all | 896,126 ppm | 912,893 ppm |
+| of those, by 0–7 levels | 93 % | 86 % |
+| sign alternation between neighbours | 62 % | 64 % |
+| blocks touched, of 64 | 64 | 64 |
+
+A difference that is everywhere, tiny, and **changes sign from one pixel to the
+next** is a dither against an undithered reference. The Voodoo stores 565 and
+dithers into it; the oracle does neither. Nine tenths of "the card disagrees" is
+that, and no amount of decoder work will move it.
+
+**What the comparison should be reading is the tail**, and `compare`'s
+"frankly different" already is — its threshold is what separates the two.
+
+### Above the floor, each scene has one defect and it dominates
+
+`CKEY1622`: 1,293 pixels at a gap of 32 or more, and **56 % of them sit in three
+adjacent 40x40 blocks** — the shadow beside Taj's kart. Everything else on that
+screen is dither. The shadow is not one of several disagreements; once the floor
+is subtracted it is very nearly the only one.
+
+`CAP0800`: 12,141 pixels at 32 or more, **63 % of them in one horizontal band**
+at y=360..440. The band is the attract sequence's caption, and the two images are
+unambiguous: the oracle blends the letters into the orange behind them, pastel
+and translucent; the card paints them **saturated and opaque**.
+
+### And the cause is the shorthand, for one entry
+
+The probe names it. The caption is painted by `G_CC_BLENDT_ENV_ALPHA_A_TxP`,
+recipe 20, catalogued **approximate**, and the catalogue's own note says why:
+
+    cycle 1  rgb = (ENVIRONMENT - TEXEL0) * ENVIRONMENT_ALPHA + TEXEL0
+    note: factor = alpha of a constant register:
+          measured on the card, no Glide factor delivers it
+
+The RDP interpolates from the texel toward the environment colour. The card's
+shorthand multiplies them. With an environment of `0xFF00FFFF` — cyan at full
+alpha — those are not close, and that is exactly the difference between the
+pastel and the saturated cyan.
+
+### What still does not follow, and is the next measurement
+
+The aggregate share genuinely predicts nothing, and that part of the table
+stands: `CAP0400` carries **more** of this very entry — 104,688 ppm against
+82,503 — and diverges by 286 ppm against 40,224. Same recipe, same shorthand,
+a hundred and forty times less visible cost.
+
+So the cost is not in how much of the entry a scene paints but in how far the
+shorthand lands from the combiner in that scene's context. Both scenes set
+similar environment colours, so the answer is not simply "a saturated
+environment". Finding it means sampling recipe-20 pixels in `CAP0400` the way
+this note sampled them in `CAP0800`, which five blind probes failed to hit.
