@@ -1211,8 +1211,28 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  * 12, which the generator had been assuming without measuring.
  *
  * What is known is the image, twice, and that every other setting tried is worse.
- * Two explanations have been eliminated by measurement and none found. Whoever
- * next touches this should start from the two lines above.
+ *
+ * **And what `0x0B` does is now measured, in this very configuration.**
+ * `constant_alpha_probe.c` draws `(T - E) * f + E` with a white texel as `other`
+ * and a cyan iterated colour as `local`, so that the red channel *is* `255 x f`,
+ * and sweeps the three alphas that could be feeding it:
+ *
+ *     iterated alpha  0 .. 255   ->  factor 247, unchanged
+ *     constant alpha  0 .. 255   ->  factor 247, unchanged
+ *     texel alpha        136     ->  factor 247
+ *
+ * It is a **constant 247/255**, and it fetches nothing. So the vertex route does
+ * not work as written: this pass computes `(T - E) x 0.97 + E`, which is very
+ * nearly the texel alone - the RDP's cycle at `k = 0` - and the name of this
+ * function is the truest thing about it. That it still beats every alternative
+ * tried says the alternatives are worse, not that this is right.
+ *
+ * Two explanations were eliminated before; this one is measured. What remains
+ * unexplained is narrower and sharper: why `SCALE_OTHER / ONE`, which computes
+ * `other` and should therefore equal `BLEND_OTHER / 0x0B` at f = 0.97, gives 801
+ * divergent pixels against 17. Two settings that compute almost the same thing
+ * do not differ by forty-seven times, and one of those two images is telling us
+ * something else entirely.
  *
  * **A two-pass decomposition would be exact and cannot be used here.** It needs
  * an opaque first pass to compose against, and this configuration's fill is 0 %
@@ -1258,9 +1278,40 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                          GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     }
-    /* The alpha stays the texel's. The iterated alpha now carries the lerp
-       factor and is no longer the vertex's own, so leaving the alpha combiner to
-       read it would put that factor into the alpha test. */
+    /* --- The alpha stays the texel's, and that is measured, not chosen ------- *
+     *
+     * The iterated alpha now carries the lerp factor and is no longer the
+     * vertex's own, so leaving the alpha combiner to read it would put that
+     * factor into the alpha test.
+     *
+     * **What is missing here, and what putting it in cost.** This pass replaces
+     * the ordinary draw, and the ordinary draw applies `alpha_scale` - the RDP's
+     * alpha mux, `TEXEL0_ALPHA x PRIMITIVE_ALPHA` for this configuration. Taking
+     * the texel's alpha alone hands the blender 255 where the mux says 102, and
+     * the attract sequence's caption comes out opaque: 12,141 pixels of
+     * `CAP0800` at a gap of 32 or more, 63 % of them in one band, the largest
+     * disagreement E09-S02 has outside the dither floor.
+     *
+     * Supplying it was written and measured on 14 September 2026 - the constant
+     * register is free here, and `constant_alpha_probe.c` had just shown the card
+     * delivers `texel x constant_alpha` through `FACTOR_LOCAL / LOCAL_CONSTANT`.
+     * The caption stopped being opaque and the scene got **worse**:
+     *
+     *     CAP0800, gap >= 32     12,141  ->  18,695
+     *     of which newly wrong                7,657, all in the caption's band
+     *
+     * Because the colour this pass computes is not the RDP's either, and scaling
+     * the alpha of a wrong colour composites it more visibly rather than less.
+     * See the note above: factor `0x0B` reads a constant 247/255 whatever alpha
+     * is put in front of it, so this pass draws very nearly the texel alone, at
+     * `k = 0`, where the RDP wants `(ENV - TEXEL0) * ENV_ALPHA + TEXEL0`.
+     *
+     * **The two have to be fixed together or not at all**, and neither the
+     * one-pass route (no Glide factor delivers a register's alpha) nor the
+     * two-pass decomposition (tried 9 September, four to eighteen times worse on
+     * an alpha-blended background) reaches it today. The scale is therefore left
+     * out on purpose, and the number it costs is written here so that the next
+     * attempt starts with it. */
     gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     apply_blend(b.current.blend);

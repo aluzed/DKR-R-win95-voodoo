@@ -271,3 +271,107 @@ over a known destination with a known texture, and read the framebuffer back.
 Either the Voodoo's alpha unit does not take its local from the constant
 register, or `grConstantColorValue`'s alpha byte does not reach it. Both are
 answerable in one frame, and neither is answerable from the host.
+
+## The witness was written, and both candidates are wrong
+
+`constant_alpha_probe.c` (`CONSTA.EXE`), run on the machine, 14 September 2026.
+The frame buffer has no alpha, so the blender is made to reveal it: over a black
+destination with `SRC_ALPHA / ONE_MINUS_SRC_ALPHA` the stored pixel is
+`source x alpha`, and the source is measured first with blending off. One
+division against one measured reference, rather than a model of the 1555 texel,
+the 255/256 truncation and the 565 store stacked on each other.
+
+    the constant alone, FUNCTION_LOCAL / LOCAL_CONSTANT
+       0 ->   0     51 ->  48    102 -> 101    153 -> 150    204 -> 203   255 -> 255
+
+    the game's setup, SCALE_OTHER x FACTOR_LOCAL, LOCAL_CONSTANT, OTHER_TEXTURE
+       texel alpha 255:  102 -> 101          (wanted 102)
+       texel alpha 136:  102 ->  52          (the product is 54; the constant
+                                              alone would be 102)
+
+    102 in each byte position, FUNCTION_LOCAL
+       0x00000066 -> 0    0x00006600 -> 0    0x00660000 -> 0    0x66000000 -> 101
+
+So the alpha unit **does** take its local from the constant register, the top
+byte **does** reach it, and the product with the texel is what comes out. Both
+candidate causes are refuted, and the caption's opacity is not in that setup.
+
+## It is in the pass that replaces it
+
+The state is not in doubt either: `replay --probe 267,389` on `CAP0800`, run on
+the host and again on the target, reports the same five draws at the pixel where
+the card paints `(0,255,255)` and the oracle `(45,102,132)`:
+
+     4  0x5E0000 -> 0x4B0033  TEX*CONST  const=0xFF0000FF ascale=51   recipe=20
+     5  0x4B0033 -> 0x2D6684  TEX*CONST  const=0xFF00FFFF ascale=102  recipe=20
+
+`alpha_scale` is 102, and `apply_combine`'s `TEXTURE_CONSTANT` would put it in
+the constant register's alpha — the setup the witness just certified. **That path
+does not run.** Recipe 20's first cycle is `(ENV - TEXEL0) * ENV_ALPHA + TEXEL0`,
+which `prepass_shape` recognises as `PREPASS_TEXEL_ALONE`, and
+`prepass_draw_texel_alone` *replaces* the ordinary draw. Its alpha combiner is
+
+    SCALE_OTHER / FACTOR_ONE / LOCAL_ITERATED / OTHER_TEXTURE
+
+the texel's alpha and nothing else. The mux's factor never reaches the card, the
+blender gets 255 where the RDP says 102, and the caption is opaque.
+
+## Why `CAP0400` gets away with it
+
+The question this note left open — more of the entry, a hundred and forty times
+less divergence — has an answer, and it is not "how far the shorthand lands".
+`--recipe-map` finds the 9,272 recipe-20 pixels of `CAP0400` and the probe reads
+them:
+
+    (220,386)   ascale 51, 102, 153, 204       four passes, then another draw
+    (424,404)   ascale 51, 102, 153, 204, 255  the fifth writes 0x000000
+
+The **same ladder** as `CAP0800` — DKR paints its text in five passes at 51, 102,
+153, 204 and 255. Where the ladder's last pass lands on a pixel, it writes over
+the four wrong ones and the defect is invisible. On the attract caption the
+visible pass is the one at 102, and nothing covers it. The cost is not in how
+much of a configuration a scene paints, nor in the configuration's context: it is
+in **whether a later pass covers it**.
+
+## Supplying the scale: tried, measured, refused
+
+The one-line change is obvious and it was made: program the constant's alpha with
+`alpha_scale` and take the alpha through `FACTOR_LOCAL / LOCAL_CONSTANT`, the
+setup the witness had just certified. Measured on the machine, same capture, same
+metric:
+
+    CAP0800, gap >= 32     12,141  ->  18,695
+    newly beyond 32                    7,657, every one in the caption's band
+    brought under 32                   1,103
+
+**Worse**, and the change is reverted. The reason is the other half of the same
+pass, and it is now measured too.
+
+## Factor `0x0B` fetches nothing: it is a constant 0.97
+
+`prepass_draw_texel_alone` carries the environment in the vertex so that
+`BLEND_OTHER / ONE_MINUS_LOCAL_ALPHA` fetches the lerp factor `k` from the
+iterated alpha. The file already doubted it — "what this setting actually
+computes on a font atlas is not known". The witness settles it. With a white
+texel as `other` and a cyan iterated colour as `local`, the result
+`(T - E) * f + E` puts `255 x f` in the **red** channel and nothing else:
+
+    iterated alpha   0 .. 255  ->  factor 247, unchanged
+    constant alpha   0 .. 255  ->  factor 247, unchanged
+    texel alpha         136    ->  factor 247
+
+A constant `247/255`. The pass computes very nearly **the texel alone**, the
+RDP's cycle at `k = 0`, which is exactly what its name says and not what its
+comment says. So scaling its alpha composites a wrong colour more visibly rather
+than less, which is the 18,695 above. The colour and the alpha have to be fixed
+together or not at all, and neither route reaches it today: no Glide factor
+delivers a register's alpha in one pass, and the two-pass decomposition was
+measured four to eighteen times worse on 9 September.
+
+What is left unexplained is narrower than before, and sharper. `SCALE_OTHER /
+ONE` computes `other`, and `BLEND_OTHER / 0x0B` at `f = 0.97` computes very
+nearly `other` as well — yet the two give 801 divergent pixels against 17 on the
+copyright screen, both firing twenty times. Two settings that compute almost the
+same thing do not differ by forty-seven times. One of those two images is saying
+something that has not been read yet, and that is where the next measurement
+goes.

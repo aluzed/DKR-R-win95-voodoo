@@ -770,6 +770,20 @@ set_target_properties(DKRWin95CombinerProbe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95CombinerProbe)
 
+# E09-S02 - where the source alpha comes from when the local is the constant
+# register. The card paints the attract caption opaque where the oracle paints it
+# translucent, and everything else is excluded by measurement: the pass is drawn,
+# the entry points resolve, both setups read correctly out of the source. Two
+# candidates are left and only the card can separate them.
+add_executable(DKRWin95ConstantAlpha
+    "${DKR_WIN95_TOOLS}/witnesses/constant_alpha_probe.c")
+target_link_libraries(DKRWin95ConstantAlpha PRIVATE win95glide win95clock winmm)
+set_target_properties(DKRWin95ConstantAlpha PROPERTIES
+    OUTPUT_NAME "CONSTA"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95ConstantAlpha)
+
 # The AI88 texture format, before anything is written to use it. Two facts about
 # the card that memory must not supply: which byte carries the alpha, and whether
 # the alpha really has eight bits. This port has already had one texel layout
