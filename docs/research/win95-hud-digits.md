@@ -962,3 +962,24 @@ count by the wrong texel.
 measured rather than asserted, and pinned by four checks in `test_f3ddkr.c`. One
 of them asserts the two readings actually differ, because a test that compares
 the converter against itself passes whatever the converter does.
+
+### Confirmed on the Voodoo
+
+14 September 2026, the same method as the timers: `REPLAY.EXE --both` on the
+capture of the screen itself — the same display list, through Glide, on the
+emulated Voodoo 2. No navigation, because the capture already is the screen.
+
+    painted surface: oracle 306421, card 306423 (0% gap)
+    frankly different: 884 of 307200 (2877 per million)
+    worst off-edge: 255 at (221,237)  oracle 0xEFFFFF  card 0xFF0000
+
+And the box reads `I am here to HELP you!` on the card, glyph for glyph with the
+oracle's. **The defect is closed on the hardware path it was reported from.**
+
+The 884 that remain are a dark smudge beside Taj's kart, and they are a different
+question: the card's, not the decoder's, and unchanged by this rule.
+
+One practical note for the next run. The batch file went to the machine with Unix
+line endings and `COMMAND.COM` printed `OFF` and stopped — a file that looks
+launched, a window that says *Terminé*, and nothing done. `printf '...\r\n'`, or
+the run is wasted and reads like a crash.
