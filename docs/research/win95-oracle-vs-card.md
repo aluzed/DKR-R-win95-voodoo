@@ -375,3 +375,54 @@ copyright screen, both firing twenty times. Two settings that compute almost the
 same thing do not differ by forty-seven times. One of those two images is saying
 something that has not been read yet, and that is where the next measurement
 goes.
+
+## The factor sweep nobody had run, and what it refutes
+
+The question above — two settings that compute nearly the same thing, 801
+divergent pixels against 17 — was taken up the same evening. First it was
+reproduced with today's build and today's metric, on `CAP0150`:
+
+    BLEND_OTHER / 0x0B    36 pixels at a gap of 32 or more
+    SCALE_OTHER / ONE    640
+
+Then the two card images were differenced against each other, which no earlier
+run had done:
+
+    776 pixels differ, every one of them in rows 400..440 — the copyright text
+    (369,421)  0x0B = (255,255,255)   ONE = (140,138,140)   oracle = (255,255,255)
+
+So `BLEND_OTHER / 0x0B` is exact on those pixels and `SCALE_OTHER / ONE` is 115
+levels dark. The obvious reading is that one of the two factors is not what it is
+called, and `constant_alpha_probe.c` was extended to sweep all sixteen with
+`other` driven from the **texture** — the configuration
+`combine_enum_probe.c` never covered, and the one the game draws text in. With a
+white texel as `other` and a cyan iterated colour as `local`, the red channel is
+`255 x factor` under either function:
+
+    factor   SCALE_OTHER   BLEND_OTHER        texel alpha 136 (4444)
+    0x04     255           255                132  <- the texel's alpha
+    0x05     255           255                255
+    0x08     255           255                255  <- called ONE, and it is one
+    0x09     255           255                255
+    0x0B     247           247                247  <- the one in use
+    0x0C       0             0                115  <- one minus the texel's alpha
+    every other value reads zero
+
+`0x04` is `TEXTURE_ALPHA` and `0x0C` its complement, as the fourth sweep had
+said. **`0x08` is one, even on a texel that is not opaque**, and `0x0B` is one
+less three per cent. The two differ by 8 levels out of 255, and no configuration
+moves either: the iterated alpha, the constant's alpha, the texel's alpha, the
+local's colour, the alpha unit's own setup, the sampling scale from 15x
+magnified to 2x minified, and point against bilinear — seven sweeps, and the
+columns read 247 and 255 throughout.
+
+**So the scene's 115 levels cannot come from the factor.** Whatever
+`BLEND_OTHER / 0x0B` computes, `SCALE_OTHER / ONE` computes to within three per
+cent of it, and the arithmetic of the composite leaves no room: the difference
+between the two card images at that pixel is 115 levels, where `0.03 x (E - T)`
+can be at most 8.
+
+That is a sharper statement than the one this note started with, and it moves the
+search. The next measurement is not about the factor at all — it is about what
+else changes when that branch is taken. The two witnesses are in the tree and the
+reproduction costs one run of each.

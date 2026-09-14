@@ -116,11 +116,64 @@ static void quad(dkr_render_backend *bk, int w, int h, float vertex_alpha)
     bk->draw_triangles(bk->self, v, 2);
 }
 
+static int draw_and_read_red_local(dkr_render_backend *bk, dkr_render_state *st,
+                                   dkr_texture_handle tex,
+                                   const dkr_cc_setup *setup,
+                                   unsigned constant, float vertex_alpha,
+                                   float local_red);
+
+/* The same draw at a chosen size, the texture mapped once over it: `side` pixels
+   for `TW` texels. Full screen magnifies 20x, 32 is one texel per pixel, 16
+   minifies by two - the only variable the sweeps above have not moved. */
+static int draw_at_scale(dkr_render_backend *bk, dkr_render_state *st,
+                         dkr_texture_handle tex, const dkr_cc_setup *setup,
+                         unsigned constant, int side)
+{
+    dkr_render_vertex v[6];
+    const float x0 = 320.0f - (float)side * 0.5f, x1 = x0 + (float)side;
+    const float y0 = 240.0f - (float)side * 0.5f, y1 = y0 + (float)side;
+    const float xs[6] = { 0, 0, 0, 0, 0, 0 };
+    int rw = 0, rh = 0, k;
+    const float px[6] = { x0, x1, x1, x0, x1, x0 };
+    const float py[6] = { y0, y0, y1, y0, y1, y1 };
+    const float ss[6] = { 0.0f, (float)TW, (float)TW, 0.0f, (float)TW, 0.0f };
+    const float ts[6] = { 0.0f, 0.0f, (float)TH, 0.0f, (float)TH, (float)TH };
+    (void)xs;
+    bk->begin_frame(bk->self, 0x000000);
+    bk->set_state(bk->self, st);
+    dkr_glide_backend_bind(tex);
+    dkr_glide_backend_set_recipe(setup, constant);
+    memset(v, 0, sizeof(v));
+    for (k = 0; k < 6; k++) {
+        v[k].x = px[k]; v[k].y = py[k];
+        v[k].r = 0.0f; v[k].g = 255.0f; v[k].b = 255.0f; v[k].a = 255.0f;
+        v[k].oow = 1.0f;
+        v[k].tmu[0][DKR_TMU_SOW] = ss[k];
+        v[k].tmu[0][DKR_TMU_TOW] = ts[k];
+        v[k].tmu[0][DKR_TMU_OOW] = 1.0f;
+    }
+    bk->draw_triangles(bk->self, v, 2);
+    bk->present(bk->self);
+    if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) <= 0) { return -1; }
+    return (int)((g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)]
+                  >> 16) & 0xFFu);
+}
+
 /* The same draw with a cyan iterated colour at full alpha, read on the red
    channel: that is where `(T - E) * f + E` puts the factor, undiluted. */
 static int draw_and_read_red(dkr_render_backend *bk, dkr_render_state *st,
                              dkr_texture_handle tex, const dkr_cc_setup *setup,
                              unsigned constant, float vertex_alpha)
+{
+    return draw_and_read_red_local(bk, st, tex, setup, constant, vertex_alpha,
+                                   0.0f);
+}
+
+static int draw_and_read_red_local(dkr_render_backend *bk, dkr_render_state *st,
+                                   dkr_texture_handle tex,
+                                   const dkr_cc_setup *setup,
+                                   unsigned constant, float vertex_alpha,
+                                   float local_red)
 {
     dkr_render_vertex v[6];
     const float xs[6] = { 0.0f, 640.0f, 640.0f, 0.0f, 640.0f, 0.0f };
@@ -135,7 +188,8 @@ static int draw_and_read_red(dkr_render_backend *bk, dkr_render_state *st,
     memset(v, 0, sizeof(v));
     for (k = 0; k < 6; k++) {
         v[k].x = xs[k]; v[k].y = ys[k];
-        v[k].r = 0.0f; v[k].g = 255.0f; v[k].b = 255.0f; v[k].a = vertex_alpha;
+        v[k].r = local_red; v[k].g = 255.0f; v[k].b = 255.0f;
+        v[k].a = vertex_alpha;
         v[k].oow = 1.0f;
         v[k].tmu[0][DKR_TMU_SOW] = ss[k];
         v[k].tmu[0][DKR_TMU_TOW] = ts[k];
@@ -404,6 +458,182 @@ int main(void)
         factor_texel = red;
         say("   texel alpha 136 -> red %3d -> factor %3d "
             "(1 - texel = 119)\n", red, red);
+    }
+
+    /* --- What every factor does when `other` is the texture ------------------ *
+     *
+     * The sweep `combine_enum_probe.c` ran drove `other` from the **constant**
+     * register, and `glide_backend.c` says in as many words that its reading does
+     * not carry over: "With `other` driven from the texture, which is how it is
+     * used below, it evidently does not". That is the configuration the game
+     * draws its text in, and it has never been swept.
+     *
+     * Here it is, for both functions this port uses over a texture. With a white
+     * texel as `other` and a cyan iterated colour as `local`, the **red** channel
+     * is `255 x factor` under either function - `SCALE_OTHER` gives `T x f` and
+     * `BLEND_OTHER` gives `(T - E) x f + E`, and E has no red - so one column
+     * compares them directly.
+     *
+     * What it is for: 640 pixels of the copyright screen, where `SCALE_OTHER`
+     * with `FACTOR_ONE` renders 140 and `BLEND_OTHER` with `0x0B` renders the
+     * oracle's 255. Two settings that were supposed to compute nearly the same
+     * thing. */
+    say("\n-- the factor sweep nobody ran: other = TEXTURE, red = 255 x factor\n");
+    say("   %-6s %-14s %-14s\n", "factor", "SCALE_OTHER", "BLEND_OTHER");
+    for (i = 0; i <= 15; i++) {
+        int red_scale, red_blend;
+        setup_blend_other(&r);
+        r.cc_function = FN_SCALE_OTHER; r.cc_factor = (unsigned char)i;
+        red_scale = draw_and_read_red(&bk, &st, tex1555, &r, 0xFF00FFFFu, 255.0f);
+        setup_blend_other(&r);
+        r.cc_factor = (unsigned char)i;
+        red_blend = draw_and_read_red(&bk, &st, tex1555, &r, 0xFF00FFFFu, 255.0f);
+        say("   0x%02X   %-14d %-14d %s\n", i, red_scale, red_blend,
+            (i == 8) ? "<- called ONE" : (i == 0x0B) ? "<- the one in use" : "");
+    }
+
+    /* --- Is 0x0B reading the local's *colour* rather than its alpha? --------- *
+     *
+     * The sweep above reads 0x0B as very nearly one, with a cyan local whose red
+     * is zero. The copyright screen reads it as very nearly **zero**, with a
+     * white local - the arithmetic of the scene leaves no room for anything else:
+     * the card writes `E` where `SCALE_OTHER` writes `T`.
+     *
+     * One factor answers both: `ONE_MINUS_LOCAL`, per channel, rather than
+     * `ONE_MINUS_LOCAL_ALPHA`. Glide's canonical table puts those at 0x9 and 0xB,
+     * and this card's enumeration has been found shifted before - the
+     * texture-combine values were, by one.
+     *
+     * The two candidates give curves that cannot be confused. `other` is the
+     * white texel, `local` the iterated colour whose **red** is swept, and the
+     * result's red is `(255 - E) * f + E`:
+     *
+     *     ONE_MINUS_LOCAL        f = 1 - E/255  ->  255, 214, 194, 194, 214, 255
+     *     ONE_MINUS_LOCAL_ALPHA  f = 0 (alpha is 255)  ->    0,  51, 102, 153, 204, 255
+     *
+     * `SCALE_OTHER / 0x08` is carried alongside as the control: it ignores the
+     * local entirely, so its column should not move at all. */
+    say("\n-- 0x0B against the local's red, texel white, local alpha 255\n");
+    say("   %-8s %-12s %-12s %-10s %s\n", "local R", "BLEND 0x0B", "SCALE 0x08",
+        "1-LOCAL", "1-LOCAL_A");
+    for (i = 0; i < 6; i++) {
+        int red_blend, red_scale;
+        const int want_local = ((255 - SWEEP[i]) * (255 - SWEEP[i])) / 255
+                               + SWEEP[i];
+        setup_blend_other(&r);
+        red_blend = draw_and_read_red_local(&bk, &st, tex1555, &r, 0xFF00FFFFu,
+                                            255.0f, (float)SWEEP[i]);
+        setup_blend_other(&r);
+        r.cc_function = FN_SCALE_OTHER; r.cc_factor = FAC_ONE;
+        red_scale = draw_and_read_red_local(&bk, &st, tex1555, &r, 0xFF00FFFFu,
+                                            255.0f, (float)SWEEP[i]);
+        say("   %-8d %-12d %-12d %-10d %d\n",
+            SWEEP[i], red_blend, red_scale, want_local, SWEEP[i]);
+    }
+
+    /* --- Does the colour's factor follow the *alpha* unit's local? ----------- *
+     *
+     * Everything the factor could read has been swept and it moved for none of
+     * them, while the copyright screen says it reads nearly zero where this quad
+     * says nearly one. One difference is left between the two, and it is not in
+     * the colour combiner at all: `prepass_draw_texel_alone` programs the alpha
+     * unit as `SCALE_OTHER / FACTOR_ONE / LOCAL_ITERATED / OTHER_TEXTURE` - the
+     * texel's alpha - where the sweeps above parked it on `FUNCTION_LOCAL` over
+     * the iterated alpha.
+     *
+     * On the Voodoo both calls write the same path register, so a factor named
+     * after "the local's alpha" may well be reading the **alpha unit's** local
+     * rather than the colour unit's. If that is it, the column below moves. */
+    say("\n-- the same colour setup under two alpha setups, texel white\n");
+    say("   %-34s %s\n", "alpha unit", "red");
+    {
+        int red;
+        setup_blend_other(&r);
+        red = draw_and_read_red(&bk, &st, tex1555, &r, 0xFF00FFFFu, 255.0f);
+        say("   %-34s %d\n", "LOCAL / ONE / ITERATED (swept above)", red);
+
+        setup_blend_other(&r);
+        r.ac_function = FN_SCALE_OTHER; r.ac_factor = FAC_ONE;
+        r.ac_local = LOCAL_ITERATED;    r.ac_other = OTHER_TEXTURE;
+        red = draw_and_read_red(&bk, &st, tex1555, &r, 0xFF00FFFFu, 255.0f);
+        say("   %-34s %d\n", "SCALE_OTHER / ONE / TEXTURE (the game's)", red);
+
+        setup_blend_other(&r);
+        r.ac_function = FN_SCALE_OTHER; r.ac_factor = FAC_LOCAL;
+        r.ac_local = LOCAL_CONSTANT;    r.ac_other = OTHER_TEXTURE;
+        red = draw_and_read_red(&bk, &st, tex1555, &r, 0x0000FFFFu, 255.0f);
+        say("   %-34s %d\n", "FACTOR_LOCAL / CONSTANT, alpha 0", red);
+    }
+
+    /* --- The one variable left: how much the texture is magnified ------------ *
+     *
+     * Every sweep above draws a 32x32 texture over the whole screen - a
+     * magnification of twenty. DKR's text is drawn at very nearly one texel per
+     * pixel. If the factor is one of Glide's LOD-derived ones, that is exactly
+     * the difference the sweeps could not see, and the column below moves with
+     * the scale rather than with any colour. */
+    say("\n-- the same setups at three sampling scales, texel white\n");
+    say("   %-22s %-12s %s\n", "quad", "BLEND 0x0B", "SCALE 0x08");
+    {
+        const int sides[3] = { 480, 32, 16 };
+        const char *names[3] = { "480 px (magnified 15x)", "32 px (one to one)",
+                                 "16 px (minified 2x)" };
+        int k;
+        for (k = 0; k < 3; k++) {
+            int red_blend, red_scale;
+            setup_blend_other(&r);
+            red_blend = draw_at_scale(&bk, &st, tex1555, &r, 0xFF00FFFFu,
+                                      sides[k]);
+            setup_blend_other(&r);
+            r.cc_function = FN_SCALE_OTHER; r.cc_factor = FAC_ONE;
+            red_scale = draw_at_scale(&bk, &st, tex1555, &r, 0xFF00FFFFu,
+                                      sides[k]);
+            say("   %-22s %-12d %d\n", names[k], red_blend, red_scale);
+        }
+    }
+
+    /* --- And the last difference in the state: the filter --------------------- *
+     *
+     * Every sweep above samples with `DKR_FILTER_POINT`. DKR's text does not:
+     * the decoder asks for bilinear, and that is the only field of the state
+     * left between this quad and the pass whose factor reads differently. */
+    say("\n-- the same setups under bilinear sampling, texel white\n");
+    st.filter = DKR_FILTER_BILINEAR;
+    {
+        int red_blend, red_scale;
+        setup_blend_other(&r);
+        red_blend = draw_and_read_red(&bk, &st, tex1555, &r, 0xFF00FFFFu, 255.0f);
+        setup_blend_other(&r);
+        r.cc_function = FN_SCALE_OTHER; r.cc_factor = FAC_ONE;
+        red_scale = draw_and_read_red(&bk, &st, tex1555, &r, 0xFF00FFFFu, 255.0f);
+        say("   %-22s %-12d %d\n", "bilinear", red_blend, red_scale);
+    }
+    st.filter = DKR_FILTER_POINT;
+
+    /* --- The same sweep on a texel that is NOT opaque ------------------------ *
+     *
+     * Every reading above used a texel at alpha 255, and on such a texel `ONE`
+     * and `TEXTURE_ALPHA` are the same number. That is exactly the confusion the
+     * copyright screen exposes: `SCALE_OTHER / 0x08` renders 140 there, and the
+     * scene's arithmetic says the texel is white, so 0x08 delivered 0.55 - which
+     * is a glyph's alpha, not one.
+     *
+     * The 4444 texel at alpha 136 separates them in one column: a factor that
+     * reads the texture's alpha drops to about 136, `ONE` stays at 255. */
+    say("\n-- the same sweep, texel alpha 136 (4444): ONE and TEXTURE_ALPHA part\n");
+    say("   %-6s %-14s %-14s %s\n", "factor", "SCALE_OTHER", "BLEND_OTHER",
+        "reading");
+    for (i = 0; i <= 15; i++) {
+        int red_scale, red_blend;
+        setup_blend_other(&r);
+        r.cc_function = FN_SCALE_OTHER; r.cc_factor = (unsigned char)i;
+        red_scale = draw_and_read_red(&bk, &st, tex4444, &r, 0xFF00FFFFu, 255.0f);
+        setup_blend_other(&r);
+        r.cc_factor = (unsigned char)i;
+        red_blend = draw_and_read_red(&bk, &st, tex4444, &r, 0xFF00FFFFu, 255.0f);
+        say("   0x%02X   %-14d %-14d %s\n", i, red_scale, red_blend,
+            (red_scale > 120 && red_scale < 152) ? "<- the texel's alpha" :
+            (red_scale > 235) ? "one" : "");
     }
 
     /* --- What the numbers say ------------------------------------------------- */
