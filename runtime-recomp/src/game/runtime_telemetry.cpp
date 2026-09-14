@@ -1,5 +1,8 @@
 #include "runtime_telemetry.hpp"
+#include "netplay_presence.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "runtime_netplay.hpp"
+#endif
 
 #include "recomp.h"
 
@@ -124,6 +127,11 @@ dkr::runtime::telemetry::Metrics dkr::runtime::telemetry::metrics() {
 }
 
 extern "C" void dkr_telemetry_simulation_tick(std::uint8_t*, recomp_context*) {
+#if DKR_RUNTIME_HAS_NETPLAY
+    // A rollback replay re-runs ticks that already happened; recording them
+    // again would count them twice. Without netplay no tick is ever replayed,
+    // so there is nothing to refuse.
     if (!dkr::runtime::netplay::external_side_effects_allowed()) return;
+#endif
     dkr::runtime::telemetry::record_simulation_tick();
 }

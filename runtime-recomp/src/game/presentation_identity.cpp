@@ -6,7 +6,10 @@
 
 #include "runtime_enhancements.hpp"
 #include "runtime_hud_layout.hpp"
+#include "netplay_presence.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "runtime_netplay.hpp"
+#endif
 #include "vehicle_context_policy.hpp"
 
 #include <array>
@@ -1354,7 +1357,14 @@ extern "C" void dkr_presentation_object_freed(std::uint8_t*,
 extern "C" void dkr_presentation_task_submitted(std::uint8_t* rdram,
                                                   recomp_context* context) {
     dkr::runtime::presentation::postrace_presentation_submit_frame(
+#if DKR_RUNTIME_HAS_NETPLAY
         dkr::runtime::netplay::external_side_effects_allowed());
+#else
+        true);
+#endif
+#if DKR_RUNTIME_HAS_NETPLAY
+    // A replayed frame must not leave its recorded identities behind: the maps
+    // are cleared and the frame dropped. No frame is replayed without netplay.
     if (!dkr::runtime::netplay::external_side_effects_allowed()) {
         dkr::sync::scoped_lock lock(g_identity_mutex);
         g_matrix_maps[g_recording_buffer & 1U].clear();
@@ -1362,6 +1372,7 @@ extern "C" void dkr_presentation_task_submitted(std::uint8_t* rdram,
         g_shadow_owner_motion_maps[g_recording_buffer & 1U].clear();
         return;
     }
+#endif
     if (!dkr::runtime::enhancements::modern_presentation_enabled()) {
         return;
     }

@@ -1,11 +1,14 @@
 #include "game_payload.hpp"
+#include "netplay_presence.hpp"
 
 #include <atomic>
 
 namespace dkr::runtime {
 
 const GamePayload& payload_v77();
+#if DKR_RUNTIME_HAS_PAYLOAD_V80
 const GamePayload& payload_v80();
+#endif
 
 namespace {
 
@@ -17,8 +20,10 @@ const GamePayload* payload_for(rom::Revision revision) {
     switch (revision) {
     case rom::Revision::UsV77:
         return &payload_v77();
+#if DKR_RUNTIME_HAS_PAYLOAD_V80
     case rom::Revision::UsV80:
         return &payload_v80();
+#endif
     default:
         return nullptr;
     }

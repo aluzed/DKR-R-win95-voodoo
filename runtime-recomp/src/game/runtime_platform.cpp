@@ -3,12 +3,17 @@
 #include "audio_equalizer.hpp"
 #include "controller_snapshot.hpp"
 #include "controller_mapping_policy.hpp"
+#include "netplay_presence.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "netplay/online_input_broker.hpp"
+#endif
 #include "online_input_policy.hpp"
 #include "runtime_input.hpp"
 #include "runtime_texture_packs.hpp"
 #include "runtime_enhancements.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "runtime_netplay.hpp"
+#endif
 #include "startup_performance.hpp"
 #include "runtime_telemetry.hpp"
 #include "sdl3_input_client.hpp"
@@ -1897,7 +1902,9 @@ void dkr::runtime::platform::update_ui_gamepad_navigation() {
 
 void dkr::runtime::platform::queue_audio(std::int16_t* samples,
                                          std::size_t sample_count) {
+#if DKR_RUNTIME_HAS_NETPLAY
     if (!dkr::runtime::netplay::external_side_effects_allowed()) return;
+#endif
     dkr::runtime::telemetry::record_audio_buffer(sample_count);
     const auto index = ++g_audio_buffers;
 #if DKR_RUNTIME_HAS_RT64
@@ -2293,14 +2300,18 @@ void dkr::runtime::platform::set_online_input_routing(
         enabled ? local_slot : dkr::runtime::netplay::kNoOnlinePlayerSlot,
         std::memory_order_release);
     g_online_input_routing.store(enabled, std::memory_order_release);
+#if DKR_RUNTIME_HAS_NETPLAY
     dkr::runtime::netplay::online_input_broker().configure(
         enabled, occupied_mask, local_slot);
+#endif
 }
 
 void dkr::runtime::platform::set_online_input_profile(std::size_t profile) {
     profile = std::min(profile, kControllerCount - 1U);
     g_online_input_profile.store(profile, std::memory_order_release);
+#if DKR_RUNTIME_HAS_NETPLAY
     dkr::runtime::netplay::online_input_broker().set_local_profile(profile);
+#endif
 }
 
 std::size_t dkr::runtime::platform::online_input_profile() {
@@ -2314,6 +2325,7 @@ bool dkr::runtime::platform::get_input(int controller, std::uint16_t* buttons,
         return false;
     }
     const auto index = static_cast<std::size_t>(controller);
+#if DKR_RUNTIME_HAS_NETPLAY
     if (g_online_input_routing.load(std::memory_order_acquire)) {
         const auto input =
             dkr::runtime::netplay::online_input_broker().input_for_port(index);
@@ -2322,6 +2334,7 @@ bool dkr::runtime::platform::get_input(int controller, std::uint16_t* buttons,
         *y = dkr::runtime::netplay::unpack_input_axis(input.stick_y);
         return true;
     }
+#endif
     *buttons = g_buttons[index].load(std::memory_order_acquire);
     *x = g_stick_x[index].load(std::memory_order_acquire);
     *y = g_stick_y[index].load(std::memory_order_acquire);
@@ -2343,6 +2356,7 @@ bool dkr::runtime::platform::get_physical_input(
 
 bool dkr::runtime::platform::get_local_online_input(
     std::uint16_t* buttons, float* x, float* y, bool* blocked) {
+#if DKR_RUNTIME_HAS_NETPLAY
     const auto sample =
         dkr::runtime::netplay::online_input_broker().local_sample();
     if (!sample.valid) return false;
@@ -2351,10 +2365,19 @@ bool dkr::runtime::platform::get_local_online_input(
     *y = dkr::runtime::netplay::unpack_input_axis(sample.input.stick_y);
     if (blocked != nullptr) *blocked = sample.blocked;
     return true;
+#else
+    (void)buttons;
+    (void)x;
+    (void)y;
+    (void)blocked;
+    return false;
+#endif
 }
 
 void dkr::runtime::platform::set_rumble(int controller, bool enabled) {
+#if DKR_RUNTIME_HAS_NETPLAY
     if (!dkr::runtime::netplay::external_side_effects_allowed()) return;
+#endif
 #if DKR_RUNTIME_HAS_RT64
     if (g_input_backend_switch_in_progress.load(std::memory_order_acquire)) {
         return;

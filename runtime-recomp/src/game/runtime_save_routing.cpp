@@ -8,6 +8,7 @@
 #include <mutex>
 #include <string_view>
 #include <vector>
+#include "netplay_presence.hpp"
 
 namespace {
 
@@ -15,8 +16,16 @@ std::mutex g_runtime_save_mutex;
 dkr::runtime::saves::RuntimeOnlineSaveStatus g_runtime_save_status;
 
 std::uint64_t HashSave(const std::vector<std::uint8_t>& bytes) {
+#if DKR_RUNTIME_HAS_NETPLAY
     return dkr::runtime::netplay::stable_hash(std::string_view(
         reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+#else
+    // The hash exists to tell two peers whether they hold the same save. With
+    // no peer there is nothing to compare it against, and every caller of this
+    // file's online-save status is itself behind the netplay guard.
+    (void)bytes;
+    return 0U;
+#endif
 }
 
 } // namespace

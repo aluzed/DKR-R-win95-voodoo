@@ -7,7 +7,6 @@
 #include <ctime>
 #include <fstream>
 #include <iomanip>
-#include <mutex>
 #include <sstream>
 #include <system_error>
 
@@ -16,14 +15,28 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
-#include <Shellapi.h>
+// Lowercase: mingw's SDK ships `shellapi.h`, and this repository is built on a
+// case-sensitive filesystem where `Shellapi.h` simply does not exist. The
+// capitalised spelling works on Windows only because NTFS does not care.
+#include <shellapi.h>
+// DXGI is Direct3D's adapter enumeration, and it arrived with Windows Vista.
+// This target reports its graphics adapter from the Voodoo itself, and asking
+// DXGI for it would not fail at run time -- the import would stop the process
+// loading. See `netplay_presence.hpp` for the same failure mode.
+#if !defined(DKR_TARGET_WIN95)
 #include <dxgi1_6.h>
+#endif
 #include <winioctl.h>
 #else
 #include <sys/sysinfo.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #endif
+
+// After the platform block, not inside one of its arms: the seam is what this
+// file's filesystem and locking go through on every target.
+#include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace dkr::runtime::support {
 namespace {
@@ -34,16 +47,16 @@ std::filesystem::path g_crash_dump_directory;
 std::filesystem::path g_support_report_directory;
 std::atomic<bool> g_diagnostic_logging{true};
 std::atomic<bool> g_crash_dumps{true};
-std::mutex g_preferences_mutex;
+dkr::sync::mutex g_preferences_mutex;
 
 std::filesystem::path PreferencesPath() {
     return g_config_directory / "support-options.ini";
 }
 
 void SavePreferences() {
-    std::lock_guard lock(g_preferences_mutex);
+    dkr::sync::lock_guard lock(g_preferences_mutex);
     std::error_code error;
-    std::filesystem::create_directories(g_config_directory, error);
+    dkr::fs::create_directories(g_config_directory, error);
     if (error) return;
     std::ofstream output(PreferencesPath(), std::ios::trunc);
     if (!output) return;
@@ -104,6 +117,12 @@ std::string WindowsCpuName() {
     return status == ERROR_SUCCESS ? Trim(WideToUtf8(value)) : "Unknown CPU";
 }
 
+#if defined(DKR_TARGET_WIN95)
+std::string WindowsGpuName() {
+    // The card is a 3dfx Voodoo 2 on this target, by construction.
+    return "3dfx Voodoo 2";
+}
+#else
 std::string WindowsGpuName() {
     IDXGIFactory1* factory = nullptr;
     if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1),
@@ -128,7 +147,19 @@ std::string WindowsGpuName() {
     factory->Release();
     return result;
 }
+#endif
 
+#if defined(DKR_TARGET_WIN95)
+std::string WindowsDriveKind(const std::filesystem::path&) {
+    // The question this answers is "spinning platter or solid state", and it
+    // asks it through `IOCTL_STORAGE_QUERY_PROPERTY`, which arrived with Windows
+    // Vista. `GetVolumePathNameW` and `CreateFileW` are not there either -- the
+    // first is missing from this machine's KERNEL32 and the second is one of the
+    // exported-but-empty wide stubs. On a 1995 machine the answer is known
+    // without asking.
+    return "HDD";
+}
+#else
 std::string WindowsDriveKind(const std::filesystem::path& path) {
     wchar_t volume_path[MAX_PATH]{};
     if (!GetVolumePathNameW(path.c_str(), volume_path,
@@ -157,6 +188,7 @@ std::string WindowsDriveKind(const std::filesystem::path& path) {
     if (!ok) return "Unknown storage";
     return descriptor.IncursSeekPenalty ? "HDD" : "SSD";
 }
+#endif
 #else
 std::string ReadFirstMatchingLine(const std::filesystem::path& path,
                                   const std::string& prefix) {
@@ -176,7 +208,7 @@ std::string ReadFirstMatchingLine(const std::filesystem::path& path,
 std::string LinuxGpuName() {
     const std::filesystem::path drm{"/sys/class/drm"};
     std::error_code error;
-    if (!std::filesystem::exists(drm, error)) return "Unknown graphics adapter";
+    if (!dkr::fs::exists(drm, error)) return "Unknown graphics adapter";
     for (const auto& entry : std::filesystem::directory_iterator(drm, error)) {
         const std::string name = entry.path().filename().string();
         if (name.rfind("card", 0) != 0 || name.find('-') != std::string::npos)
@@ -250,7 +282,7 @@ const std::filesystem::path& support_report_directory() {
 bool open_directory(const std::filesystem::path& directory,
                     std::string& error) {
     std::error_code filesystem_error;
-    std::filesystem::create_directories(directory, filesystem_error);
+    dkr::fs::create_directories(directory, filesystem_error);
     if (filesystem_error) {
         error = "Could not create that DKR-R support folder.";
         return false;
@@ -281,7 +313,7 @@ bool open_directory(const std::filesystem::path& directory,
 bool export_report(const std::string& report, std::filesystem::path& output,
                    std::string& error) {
     std::error_code filesystem_error;
-    std::filesystem::create_directories(g_support_report_directory,
+    dkr::fs::create_directories(g_support_report_directory,
                                         filesystem_error);
     if (filesystem_error) {
         error = "Could not create the DKR-R support-report folder.";
@@ -299,7 +331,7 @@ bool export_report(const std::string& report, std::filesystem::path& output,
     name << "DKR-R-Support-" << std::put_time(&local, "%Y%m%d-%H%M%S")
          << ".txt";
     output = g_support_report_directory / name.str();
-    std::ofstream stream(output, std::ios::binary | std::ios::trunc);
+    std::ofstream stream(output.string(), std::ios::binary | std::ios::trunc);
     if (!stream) {
         error = "Could not write the DKR-R support report.";
         return false;

@@ -3,7 +3,10 @@
 #include "magic_code_policy.hpp"
 #include "magic_code_runtime_policy.hpp"
 #include "revision_addresses.hpp"
+#include "netplay_presence.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "runtime_netplay.hpp"
+#endif
 
 #include "recomp.h"
 
@@ -268,19 +271,29 @@ extern "C" void dkr_apply_launch_magic_codes(std::uint8_t* rdram,
 extern "C" void dkr_magic_code_credits_started(std::uint8_t*, recomp_context*) {
     g_session_state = dkr::runtime::magic_codes::complete_magic_code_action(
         g_session_state, 1U << 10,
+#if DKR_RUNTIME_HAS_NETPLAY
         dkr::runtime::netplay::external_side_effects_allowed());
+#else
+        true);
+#endif
 }
 
 extern "C" void dkr_magic_code_balloon_awarded(std::uint8_t*, recomp_context*) {
     g_session_state = dkr::runtime::magic_codes::complete_magic_code_action(
         g_session_state, 1U << 26,
+#if DKR_RUNTIME_HAS_NETPLAY
         dkr::runtime::netplay::external_side_effects_allowed());
+#else
+        true);
+#endif
 }
 
 extern "C" void dkr_magic_codes_frame_complete(std::uint8_t*, recomp_context*) {
     const auto completed = g_session_state.completed_action_mask;
-    if (completed == 0U ||
-        !dkr::runtime::netplay::external_side_effects_allowed()) return;
+    if (completed == 0U) return;
+#if DKR_RUNTIME_HAS_NETPLAY
+    if (!dkr::runtime::netplay::external_side_effects_allowed()) return;
+#endif
     const auto now = std::chrono::steady_clock::now();
     if (now < g_retry_after) return;
     std::string error;

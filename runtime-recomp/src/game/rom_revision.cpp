@@ -14,6 +14,7 @@
 #include <random>
 #include <sstream>
 #include <vector>
+#include "win95/fileio.hpp"
 
 namespace dkr::runtime::rom {
 namespace {
@@ -52,11 +53,23 @@ std::string CacheKey(const std::filesystem::path& path) {
 FileStamp ReadStamp(const std::filesystem::path& path) {
     FileStamp stamp{};
     std::error_code error;
-    stamp.size = std::filesystem::file_size(path, error);
+    stamp.size = dkr::fs::file_size(path, error);
     if (error) return stamp;
+#if defined(DKR_TARGET_WIN95)
+    // `std::filesystem::last_write_time` reaches the file through the wide API,
+    // and `_wstat64` is not in this machine's MSVCRT -- a missing import stops
+    // the process loading, so the call cannot simply fail at run time.
+    //
+    // The stamp falls back to the size alone. **This is a degradation and it is
+    // worth stating**: a ROM replaced in place by one of exactly the same size
+    // would not invalidate the identity cache. The seam wants a `dkr_file_mtime`
+    // to close it properly, which is its own piece of work.
+    stamp.modified = 0;
+#else
     const auto modified = std::filesystem::last_write_time(path, error);
     if (error) return stamp;
     stamp.modified = modified.time_since_epoch().count();
+#endif
     stamp.valid = true;
     return stamp;
 }

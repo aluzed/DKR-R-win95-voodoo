@@ -2,7 +2,10 @@
 
 #include "game_payload.hpp"
 #include "revision_addresses.hpp"
+#include "netplay_presence.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "runtime_netplay.hpp"
+#endif
 #include "runtime_save_routing.hpp"
 #include "runtime_legacy_mods.hpp"
 
@@ -21,15 +24,29 @@ void InitialiseEntrypointContext(std::uint8_t*, recomp_context* context) {
     // tail-calling mainproc. RDRAM is already zeroed by N64ModernRuntime.
     context->r29 = static_cast<gpr>(static_cast<std::int32_t>(
         dkr::runtime::revision_addresses::EntrypointStackTop));
+#if DKR_RUNTIME_HAS_NETPLAY
+    // Rollback needs to find the guest's context to save and restore it. With
+    // no netplay nothing ever rolls back, and nothing asks.
     dkr::runtime::netplay::register_runtime_context(nullptr, context);
+#endif
 }
 
 void RegisterThreadContext(std::uint8_t* rdram, recomp_context* context) {
+#if DKR_RUNTIME_HAS_NETPLAY
     dkr::runtime::netplay::register_runtime_context(rdram, context);
+#else
+    (void)rdram;
+    (void)context;
+#endif
 }
 
 void UnregisterThreadContext(std::uint8_t* rdram, recomp_context* context) {
+#if DKR_RUNTIME_HAS_NETPLAY
     dkr::runtime::netplay::unregister_runtime_context(rdram, context);
+#else
+    (void)rdram;
+    (void)context;
+#endif
 }
 
 void RunDkrEntrypoint(std::uint8_t* rdram, recomp_context* context) {
@@ -40,6 +57,7 @@ void RunDkrEntrypoint(std::uint8_t* rdram, recomp_context* context) {
     }
 
     dkr::runtime::saves::reset_runtime_online_save_status();
+#if DKR_RUNTIME_HAS_NETPLAY
     const auto online = dkr::runtime::netplay::session().runtime_view();
     if (online.active) {
         if (!online.launch_descriptor) {
@@ -60,14 +78,19 @@ void RunDkrEntrypoint(std::uint8_t* rdram, recomp_context* context) {
         }
         std::fprintf(stderr,
                      "[netplay][save] isolated online EEPROM activated\n");
-    } else if(const auto mods=dkr::runtime::legacy::prepared_launch();mods && mods->session) {
+    } else
+#endif
+#if DKR_RUNTIME_HAS_LEGACY_MODS
+    if(const auto mods=dkr::runtime::legacy::prepared_launch();mods && mods->session) {
         ultramodern::change_save_file(mods->save_subfolder.generic_u8string(),u8"dkr.us.v77");
         if(ultramodern::get_save_file_path().lexically_normal()!=mods->save_path.lexically_normal()) {
             std::fprintf(stderr,"[legacy][save] Refusing guest entry: isolated save route did not activate.\n");
             ultramodern::quit();return;
         }
         std::fprintf(stderr,"[legacy][save] isolated offline mod-set EEPROM activated\n");
-    } else {
+    } else
+#endif
+    {
         // A game can return to this launcher and start again in the same
         // process. Explicitly leave any prior online route before a local
         // launch so single-player always reopens its ordinary EEPROM.

@@ -13,7 +13,10 @@ extern "C" {
 #include "rev_a_asset_mutex.hpp"
 #include "runtime_magic_codes.hpp"
 #include "runtime_platform.hpp"
+#include "netplay_presence.hpp"
+#if DKR_RUNTIME_HAS_NETPLAY
 #include "runtime_netplay.hpp"
+#endif
 #include "runtime_support.hpp"
 #include "save_manager.hpp"
 #include "startup_performance.hpp"
@@ -805,7 +808,9 @@ int DkrMain(int argc, char** argv) {
         return 2;
     }
     std::filesystem::path& rom_path = launch.rom_path;
+#if DKR_RUNTIME_HAS_LEGACY_MODS
     std::shared_ptr<const dkr::mods::PreparedModLaunch> prepared_mods;
+#endif
     const std::filesystem::path& config_directory = launch.config_directory;
     const unsigned timeout_seconds = launch.timeout_seconds;
     dkr::fs::create_directories(config_directory);
@@ -998,16 +1003,20 @@ int DkrMain(int argc, char** argv) {
         .queue_samples = dkr::runtime::platform::queue_audio,
         .get_frames_remaining = dkr::runtime::platform::audio_frames_remaining,
         .set_frequency = dkr::runtime::platform::set_audio_frequency,
+#if DKR_RUNTIME_HAS_NETPLAY
         .external_work_allowed = []() {
             return dkr::runtime::netplay::external_side_effects_allowed();
         },
+#endif
     };
     const ultramodern::input::callbacks_t input_callbacks{
         .poll_input = dkr::runtime::platform::poll_input,
+#if DKR_RUNTIME_HAS_NETPLAY
         .frame_boundary = dkr::runtime::netplay::on_frame_boundary,
         .physical_poll_allowed = []() {
             return dkr::runtime::netplay::physical_input_poll_allowed();
         },
+#endif
         .get_input = dkr::runtime::platform::get_input,
         .set_rumble = dkr::runtime::platform::set_rumble,
         .get_connected_device_info = dkr::runtime::platform::get_connected_device_info,
@@ -1020,13 +1029,16 @@ int DkrMain(int argc, char** argv) {
     // leave Escape, window close and Exit to Desktop unresponsive.
     const ultramodern::gfx_callbacks_t gfx_callbacks{};
     const ultramodern::events::callbacks_t events_callbacks{
+#if DKR_RUNTIME_HAS_NETPLAY
         .authored_simulation_pacing_scale_milli_callback = []() {
             return dkr::runtime::netplay::
                 authored_simulation_pacing_scale_milli();
         },
         .presentation_allowed_callback = []() {
             return dkr::runtime::netplay::external_side_effects_allowed();
-        }};
+        }
+#endif
+    };
     const ultramodern::error_handling::callbacks_t error_callbacks{.message_box = MessageBox};
     const ultramodern::threads::callbacks_t thread_callbacks{.get_game_thread_name = GetThreadName};
 
@@ -1040,9 +1052,11 @@ int DkrMain(int argc, char** argv) {
         .input_callbacks = input_callbacks,
         .gfx_callbacks = gfx_callbacks,
         .events_callbacks = events_callbacks,
+#if DKR_RUNTIME_HAS_NETPLAY
         .save_write_allowed_callback = []() {
             return dkr::runtime::netplay::external_side_effects_allowed();
         },
+#endif
         .error_handling_callbacks = error_callbacks,
         .threads_callbacks = thread_callbacks,
         // DKR's scheduler interrupt queue can briefly be full while the VI and
@@ -1121,33 +1135,48 @@ int DkrMain(int argc, char** argv) {
         // A lobby's accepted manifest, not later overlay preferences, owns
         // the simulation selection on every peer.
         std::optional<std::uint32_t> online_magic_codes;
+#if DKR_RUNTIME_HAS_NETPLAY
         if (dkr::runtime::netplay::session().active()) {
             online_magic_codes = static_cast<std::uint32_t>(
                 dkr::runtime::netplay::session().view().room.manifest.magic_codes_hash);
         }
+#endif
         dkr::runtime::magic_codes::begin_game_session(online_magic_codes);
+#if DKR_RUNTIME_HAS_NETPLAY
         dkr::runtime::netplay::reset_runtime_state();
+#endif
         dkr::runtime::rev_a_asset_mutex::reset_statistics();
+#if DKR_RUNTIME_HAS_LEGACY_MODS
         dkr::runtime::legacy::begin_session(nullptr);
         try {
             // Launcher preparation already ran on a worker with a progress
             // modal. Explicit command-line launches validate here instead.
             if(!prepared_mods)prepared_mods=dkr::mods::prepare_mod_launch(config_directory,rom_path,
-                dkr::runtime::netplay::session().active(),[](const char* stage){std::fprintf(stderr,"[legacy][launch] %s\n",stage);});
+#if DKR_RUNTIME_HAS_NETPLAY
+                dkr::runtime::netplay::session().active(),
+#else
+                false,
+#endif
+                [](const char* stage){std::fprintf(stderr,"[legacy][launch] %s\n",stage);});
+#if DKR_RUNTIME_HAS_NETPLAY
             if(prepared_mods->session && dkr::runtime::netplay::session().active())
                 throw dkr::mods::Error("Offline custom assets cannot enter an online runtime.");
+#endif
             dkr::runtime::legacy::begin_prepared(prepared_mods);
             dkr::runtime::pak::begin_session_directory(prepared_mods->pak_directory);
         } catch(const std::exception& error) {
             std::fprintf(stderr,"[legacy][launch] %s\n",error.what());
             dkr::runtime::platform::shutdown();return 4;
         }
+#endif
 #if DKR_LEGACY_QUALIFICATION
         if (const char* recipe = std::getenv("DKR_LEGACY_QUALIFICATION_RECIPE")) {
+#if DKR_RUNTIME_HAS_NETPLAY
             if (dkr::runtime::netplay::session().active()) {
                 std::fprintf(stderr, "[legacy][qualification] Refusing to modify an online session.\n");
                 return 4;
             }
+#endif
             try {
                 dkr::runtime::legacy::configure_qualification(rom_path, std::filesystem::u8path(recipe));
             } catch (const std::exception& error) {
@@ -1222,9 +1251,11 @@ int DkrMain(int argc, char** argv) {
         dkr_window_close();
 #endif
         dkr::runtime::pak::begin_session_directory({});
+#if DKR_RUNTIME_HAS_LEGACY_MODS
         prepared_mods.reset();
         const auto mod_failure=dkr::runtime::legacy::failure();
         dkr::runtime::legacy::begin_session(nullptr);
+#endif
         if (registered_revision == dkr::runtime::rom::Revision::UsV80) {
             const auto mutex_stats =
                 dkr::runtime::rev_a_asset_mutex::statistics();
@@ -1292,7 +1323,9 @@ int DkrMain(int argc, char** argv) {
                 return RelaunchApplication(argc, argv) ? 0 : 6;
             }
             rom_path = std::move(next_rom_path);
+#if DKR_RUNTIME_HAS_LEGACY_MODS
             prepared_mods = startup.mods;
+#endif
             rom_identity = next_identity;
             std::fprintf(stderr,
                          "[boot][start] launching a new game session\n");

@@ -1104,15 +1104,26 @@ target_compile_options(win95recompiled PRIVATE -w)   # generated code
 # The sources this target builds: those of `DKR_GAME_SOURCES` less the ones only
 # RT64 compiles, since RT64 requires D3D12, Vulkan or Metal.
 #
-# `game_payload` joined the list with the 1.0.5b8 merge: upstream moved
-# `active_payload` into it, and `runtime_quick_restart` -- which this target does
-# build -- calls it.
+# Seven more joined the list with the 1.0.5b8 merge, because upstream's `main()`
+# grew to depend on them: `startup_performance`, `runtime_support`, the ROM
+# identity cache in `rom_revision`, the legacy mod route, the Rev A asset mutex,
+# the HUD layout and the save routing. None of them pulls RT64, SDL3, GekkoNet or
+# libdatachannel -- that was checked before adding them, one at a time.
+#
+# Two of upstream's are deliberately NOT here. `runtime_netplay` cannot be: see
+# `netplay_presence.hpp`, four of the socket functions it calls are absent from
+# this machine's WSOCK32 and a missing import stops the process loading.
+# `sdl3_input_client` belongs to the SDL3 input host, which this target does not
+# build either.
 set(DKR_WIN95_GAME_SOURCES
-    audio_equalizer dkr_save_codec game_main game_payload game_registration
+    audio_equalizer dkr_save_codec game_main game_payload game_payload_v77
+    game_registration
     glide_renderer null_renderer
-    presentation_identity renderer_snapshot runtime_enhancements
-    runtime_audio_controls runtime_input runtime_magic_codes runtime_platform
-    runtime_quick_restart save_manager runtime_stubs runtime_telemetry
+    presentation_identity renderer_snapshot rev_a_asset_mutex rom_revision
+    runtime_audio_controls runtime_enhancements runtime_hud_layout
+    runtime_input runtime_magic_codes runtime_platform
+    runtime_quick_restart runtime_save_routing runtime_support
+    save_manager runtime_stubs runtime_telemetry startup_performance
     virtual_pak)
 list(TRANSFORM DKR_WIN95_GAME_SOURCES
      PREPEND "${DKRPORT_ROOT}/runtime-recomp/src/game/")
@@ -1128,6 +1139,16 @@ target_include_directories(DKRWin95Game PRIVATE
 target_compile_definitions(DKRWin95Game PRIVATE
     NOMINMAX
     DKR_RUNTIME_HAS_RT64=0
+    # See `runtime-recomp/src/game/netplay_presence.hpp`: four of the socket
+    # functions the netplay sources call are absent from this machine's
+    # `WSOCK32.DLL`, and a missing import here stops the process from loading.
+    DKR_RUNTIME_HAS_NETPLAY=0
+    # Thirty-five sources and five thousand lines of character and asset
+    # modding, for a launcher path this target never takes, against ADR 0003's
+    # eight mebibytes. Out of scope since E00-S01; this makes the build say so.
+    DKR_RUNTIME_HAS_LEGACY_MODS=0
+    # This target recompiles US v1.0 only, so there is no v1.1 payload to link.
+    DKR_RUNTIME_HAS_PAYLOAD_V80=0
     "DKR_RELEASE_VERSION=\"${DKR_RELEASE_VERSION}\""
     DKR_TARGET_WIN95=1)
 
