@@ -535,7 +535,8 @@ is far too broad: 85 of 310 loads in that scene have `dxt == 0`, most of them
 benign.
 
 **Nothing in the display list separates the two cases.** Side by side, a 44x23
-RGBA32 that renders correctly at linear pitch against the two digits that do not:
+RGBA32 — which I took to render correctly at linear pitch, wrongly; see the
+correction at the end — against the two digits:
 
 | | sign 44x23 | digit 16x15 | digit 12x15 |
 |---|---|---|---|
@@ -568,3 +569,48 @@ recompiled game code, not about the renderer.
   question into one grep.
 
 Corpus with the probe off: twelve scenes, 0 divergent pixels.
+
+## Correction, and a measurement instead of an assumption
+
+The section above rests on "a 44x23 RGBA32 that renders correctly at linear
+pitch". I never checked that. The scene looked right, so I assumed the sprite in
+it did, and built an argument on it.
+
+Read at the doubled pitch, **that sign is clean too** — a smooth blue and yellow
+emblem where the linear reading is speckled. So it was never the control it was
+presented as.
+
+The replacement is a measurement over every RGBA32 texture in two captures, not
+one example. Roughness is the mean absolute difference between horizontally
+adjacent texels; an image laid out correctly is smooth, one read at half its pitch
+is not. A texture is called for the pitch whose roughness is at least 20 % lower.
+
+    CKEY0540 (vehicle select)          CG0060 (race)
+      16x15  dxt=0    DOUBLE x6          16x16  dxt=256  linear x6
+      12x15  dxt=0    DOUBLE             32x32  dxt=128  linear x4
+      12x10  dxt=0    DOUBLE             24x12  dxt=171  linear x2
+      44x23  dxt=0    DOUBLE x2          44x23  dxt=0    DOUBLE x2
+      16x16  dxt=256  linear             28x14  dxt=0    linear
+      11 of 27 favour doubling           2 of 28 favour doubling
+
+**`dxt == 0` is necessary and not sufficient.** Every texture that wants the
+doubled pitch has `dxt == 0`; but so do `12x23` and `28x14` in the race scene,
+and those want the linear one. A rule on `dxt` alone is what broke the banana.
+
+And the same 44x23 sign wants the doubled pitch in **both** captures, so whatever
+decides it is a property of the texture and not of the frame.
+
+### Where this leaves it
+
+The display list describes every one of these the same way — `lrs = w·h-1`,
+`line = w·2`, tile at the image origin — and the memory does not match that
+description for a particular set of them. Nothing readable from the list
+separates the set.
+
+So the next instrument is not another rule. It is **watching the writes**: what
+fills those buffers, and why it lays some out at twice the pitch its own display
+list declares. That is a question about the recompiled game code, and the
+policy file already shows this port patching `load_texture`'s heap arithmetic in
+six places — which is the first place to look and was not, on inspection, an
+obvious cause: those patches move where a frame's data begins, not how far apart
+its rows are.
