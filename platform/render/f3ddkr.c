@@ -1849,13 +1849,35 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
      * today would change every texture in the game at once, and the point of
      * this line is to find out how many of them it would change. */
     {
-        /* `dkr_texture_bytes` of a single row: it already rounds the sub-byte
-           formats up to whole bytes, which is the one detail worth not
-           reimplementing here. */
+        /* **Two row lengths, in two different units, for two different checks.**
+         *
+         * `row_bytes` is a row in **RDRAM**, which is where `dxt` and the
+         * converter both live: `dkr_texture_bytes` already rounds the sub-byte
+         * formats up to whole bytes, which is the one detail worth not
+         * reimplementing here.
+         *
+         * `tmem_row_bytes` is the same row in **texture memory**, which is what
+         * `line` counts -- and the two are not the same number. The SDK's
+         * `G_IM_SIZ_*_LINE_BYTES` gives 1 for 8-bit, 2 for 16-bit, and **2 again
+         * for 32-bit**: an RGBA32 texel is split across the two banks and takes
+         * two bytes in each, so its row is half as long in `line` as it is in
+         * RDRAM.
+         *
+         * Measuring `line` against the RDRAM figure declared every 32-bit
+         * texture in the game a stride mismatch, at a constant factor of two --
+         * a counter crying wolf at a hardware convention, and 16 of 132 on the
+         * dialogue scene. Against the right unit there are none in the whole
+         * corpus. */
         const unsigned long row_bytes =
             (unsigned long)dkr_texture_bytes((dkr_n64_size)c->tile_size,
                                              width, 1);
+        unsigned long tmem_row_bytes;
         const unsigned long line_bytes = (unsigned long)c->tile_line * 8ul;
+        switch ((dkr_n64_size)c->tile_size) {
+        case DKR_N64_SIZ_4:  tmem_row_bytes = ((unsigned long)width + 1ul) / 2ul; break;
+        case DKR_N64_SIZ_8:  tmem_row_bytes = (unsigned long)width; break;
+        default:             tmem_row_bytes = (unsigned long)width * 2ul; break;
+        }
         c->state.stride_checked++;
         if (c->block_row_bytes != 0u &&
             (unsigned long)c->block_row_bytes != row_bytes) {
@@ -1906,14 +1928,14 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                 c->state.tile_origin_first_n++;
             }
         }
-        if (c->tile_line != 0u && line_bytes != row_bytes) {
+        if (c->tile_line != 0u && line_bytes != tmem_row_bytes) {
             c->state.stride_mismatch++;
             c->state.stride_mismatch_texels +=
                 (unsigned long)(width * height);
             if (c->state.stride_first_n < 8u) {
                 const unsigned int n = c->state.stride_first_n;
                 c->state.stride_first[n][0] = (unsigned short)line_bytes;
-                c->state.stride_first[n][1] = (unsigned short)row_bytes;
+                c->state.stride_first[n][1] = (unsigned short)tmem_row_bytes;
                 c->state.stride_first[n][2] = (unsigned short)width;
                 c->state.stride_first[n][3] = (unsigned short)height;
                 c->state.stride_first_n++;
