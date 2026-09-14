@@ -983,3 +983,61 @@ One practical note for the next run. The batch file went to the machine with Uni
 line endings and `COMMAND.COM` printed `OFF` and stopped — a file that looks
 launched, a window that says *Terminé*, and nothing done. `printf '...\r\n'`, or
 the run is wasted and reads like a crash.
+
+## The shadow beside Taj's kart: an alpha scale read from the wrong cycle
+
+14 September 2026. The texel-size fix left 884 divergent pixels on `CKEY1622`,
+and they were the scene's largest single disagreement: a black blob beside Taj's
+kart where the oracle lays down a faint smudge.
+
+**It is not the second pass.** That was the first guess — recipe 8 is a multipass
+entry, and the card approximates those. The oracle run with `--no-multipass`
+looks the same as with it: a faint smudge either way. Whatever the card is doing,
+it is doing it in the first cycle.
+
+The probe named it:
+
+    2  TEX*CONST  const=0x2DFFFFFF  ascale=255  recipe=8  blend=alpha  tex=93
+
+`ascale=255` is "no scaling", and the constant's alpha is `0x2D` — eighteen per
+cent. The shadow is being laid on at full strength.
+
+`alpha_scale_of` in `rdp_state.c` reads the **last** cycle of a two-cycle
+combiner, which is right when that cycle computes something. Recipe 8 is
+`G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2`:
+
+    cycle 1  alpha = (TEXEL0_ALPHA - 0) * PRIMITIVE_ALPHA + 0
+    cycle 2  alpha = (0 - 0) * 0 + COMBINED_ALPHA
+
+The scale lives in cycle one and cycle two only passes it on. Reading cycle two
+finds no shape the function knows, and it answers 255.
+
+**Why it showed on one backend only.** The oracle does not consult
+`alpha_scale`: it evaluates the real two-cycle combiner through
+`dkr_combiner_eval_all`. Only the Glide path reads the byte. So the fault sat in
+a shared function and was invisible in every host-side image — and every
+comparison this document has run until now was against that oracle.
+
+A passthrough second cycle now defers to the first, and the probe reads
+`ascale=45` and `ascale=36`, which are `0x2D` and `0x24` to the digit. The
+oracle's images are bit-identical across all twelve captures, as they must be.
+
+**How much of the game this configuration paints**, measured rather than assumed:
+
+| scene | pixels |
+|---|---|
+| CAP0250 hub | 61,560 |
+| CKEY0951 | 19,032 |
+| CG0060 race | 17,040 |
+| CAP0800 attract | 16,117 |
+| CKEY1622 | 15,290 |
+| CKEY1150 | 12,122 |
+| CAP0400 | 2,752 |
+| CAP0050 | 868 |
+| **total** | **144,781** |
+
+Every one of them was going on the card at full alpha.
+
+Two checks pin it in `test_rdp_state.c`, and the second is what makes the first
+bear on anything: a second cycle that really does compute must still be the one
+read, or the rule would have traded one wrong answer for another.

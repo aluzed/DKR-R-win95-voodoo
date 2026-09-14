@@ -417,6 +417,57 @@ int main(void)
         }
     }
 
+    /* --- A second cycle that only passes the first one's alpha through ------ *
+     *
+     * `alpha_scale` is read by the Glide backend and not by the oracle, which
+     * evaluates the real combiner -- so a wrong value here shows on the card
+     * alone, which is how it went unnoticed.
+     *
+     * The shape is DKR's shadows: `G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2`.
+     * Cycle one scales the texel's alpha by the primitive's; cycle two passes it
+     * on. Reading the *last* cycle, as this function does when a cycle computes
+     * something, finds no shape it knows there and answers "no scaling" --
+     * putting an eighteen-per-cent shadow on at full strength.
+     *
+     * The second check is what makes the first bear on anything: a second cycle
+     * that really does compute must still be the one read, or the rule would
+     * have traded one wrong answer for another. */
+    {
+        dkr_rdp_state s;
+        dkr_render_state r;
+        int exact = 0;
+
+        memset(&s, 0, sizeof(s));
+        s.cycle = DKR_CYCLE_2;
+        s.prim_color = 0x0000002Du;     /* alpha 0x2D, eighteen per cent */
+        s.env_color  = 0x000000FFu;
+
+        /* Cycle one: (TEXEL0_ALPHA - 0) * PRIMITIVE_ALPHA + 0. */
+        s.combiner.alpha[0].a = DKR_CC_TEXEL0;
+        s.combiner.alpha[0].b = 7;                    /* zero */
+        s.combiner.alpha[0].c = DKR_CC_PRIMITIVE;
+        s.combiner.alpha[0].d = 7;                    /* zero */
+        /* Cycle two: (0 - 0) * 0 + COMBINED. */
+        s.combiner.alpha[1].a = 7;
+        s.combiner.alpha[1].b = 7;
+        s.combiner.alpha[1].c = 7;
+        s.combiner.alpha[1].d = DKR_CC_COMBINED;
+
+        dkr_rdp_to_render_state(&s, &r, &exact);
+        check("a passthrough second cycle defers to the first one's alpha scale",
+              r.alpha_scale == 0x2Du);
+
+        /* And the control: a second cycle that computes keeps being the one read.
+           Here it scales the texel by the environment's alpha, 0xFF. */
+        s.combiner.alpha[1].a = DKR_CC_TEXEL0;
+        s.combiner.alpha[1].b = 7;
+        s.combiner.alpha[1].c = DKR_CC_ENVIRONMENT;
+        s.combiner.alpha[1].d = 7;
+        dkr_rdp_to_render_state(&s, &r, &exact);
+        check("but a second cycle that computes is still the one read",
+              r.alpha_scale == 0xFFu);
+    }
+
     /* --- Fog, deduced from the blender -------------------------------------- *
      *
      * `G_RM_FOG_SHADE_A` is `GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, ...)`, that is,

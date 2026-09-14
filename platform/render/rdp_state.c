@@ -291,6 +291,33 @@ static unsigned char alpha_scale_of(const dkr_rdp_state *rdp)
     const dkr_cc_stage *s = (rdp->cycle == DKR_CYCLE_2) ? &rdp->combiner.alpha[1]
                                                         : &rdp->combiner.alpha[0];
 
+    /* --- A second cycle that only passes the first one's alpha through ------ *
+     *
+     * Taking the *last* cycle is right when that cycle computes something. It is
+     * wrong when it is a passthrough, `(0 - 0) * 0 + COMBINED`, because then the
+     * alpha was decided in cycle one and reading cycle two finds no shape it
+     * knows and answers 255 -- "no scaling at all".
+     *
+     * `G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2` is exactly that: cycle one
+     * is `TEXEL0_ALPHA * PRIMITIVE_ALPHA`, cycle two passes it on. **This is the
+     * configuration DKR draws its shadows with**, at a primitive alpha of 0x2D --
+     * eighteen per cent. Losing it puts the shadow on at full strength, and on
+     * the dialogue capture of 14 September that is a black blob beside Taj's
+     * kart where the oracle lays down a faint smudge: 884 of the scene's 3113
+     * divergent pixels, its largest single disagreement.
+     *
+     * The oracle never suffered it -- it evaluates the real two-cycle combiner
+     * and does not consult this byte at all. Only the card reads it, which is why
+     * the bug could sit in a shared function and show on one backend.
+     *
+     * The rule stays as narrow as the one below: a passthrough second cycle
+     * defers to the first, and anything else is unchanged. */
+    if (rdp->cycle == DKR_CYCLE_2 &&
+        s->a == A_ZERO && s->b == A_ZERO && s->c == A_ZERO &&
+        s->d == (unsigned char)DKR_CC_COMBINED) {
+        s = &rdp->combiner.alpha[0];
+    }
+
     if (s->a == (unsigned char)DKR_CC_TEXEL0 && s->b == A_ZERO &&
         s->d == A_ZERO) {
         if (s->c == (unsigned char)DKR_CC_PRIMITIVE) {
