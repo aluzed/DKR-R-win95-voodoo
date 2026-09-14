@@ -1,5 +1,11 @@
 # The small font comes out shredded, wherever it is drawn
 
+> **Fixed for the timers, on the card.** `REPLAY.EXE --both` on the machine now
+> renders the reported screen as `BEST TIME 01:25:90` / `BEST LAP 00:27:36`,
+> legible, at 117 divergent pixels of 307,200 against the oracle. The cause was
+> the RDP's odd-row swap; see the last sections. The dialogue box is a separate
+> defect and is still open.
+
 > **The reported screen is captured.** `CKEY0540.BIN`, Ancient Lake's vehicle
 > select — the exact screen this began with — is in the corpus, and the oracle
 > reproduces its shredded digits. See the last section.
@@ -833,3 +839,27 @@ readable — better, not right.
 It ships **off**, behind `--row-from-line`. A rule that improves most things and
 worsens three for reasons nobody has looked into does not belong in the default
 path, and the three are the next thing to look at.
+
+## Confirmed on the Voodoo
+
+14 September 2026. Rather than navigate five menus again on an unstable machine,
+`REPLAY.EXE --both` was run on the capture of the screen itself — the same
+display list, through Glide, on the emulated Voodoo 2:
+
+    painted surface: oracle 305068, card 305121 (0% gap)
+    frankly different: 117 of 307200 (380 per million)
+    worst off-edge: 239 at (166,118)  oracle 0xFFFFFF  card 0x101010
+
+And the screen reads:
+
+    BEST TIME  01:25:90  DkR
+    BEST LAP   00:27:36  DkR
+
+`01:25:90` is the value in the original report, to the digit. The defect that
+started this document is closed on the hardware path it was reported from, and
+the 117 pixels that remain are on the `ANCIENT LAKE` title, not on the timers.
+
+**Method worth keeping.** Four attempts to reach that screen by driving and by
+menu failed or died; the replay needed no navigation at all, because the capture
+already *is* the screen. A harness that can re-run one frame on the card is worth
+more than the ability to reach it again.
