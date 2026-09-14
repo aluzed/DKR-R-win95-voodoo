@@ -615,7 +615,11 @@ six places — which is the first place to look and was not, on inspection, an
 obvious cause: those patches move where a frame's data begins, not how far apart
 its rows are.
 
-## It is a font sheet, and nothing writes it wrong
+## It is a wider strip, and nothing writes it wrong
+
+> The section below first called this "the digit font sheet". It is not one sheet:
+> see the correction under it. What it got right, and what matters, is that the
+> data is **wider than the tile** and nothing is written wrongly.
 
 Read the same memory as a **32-texel-wide image over 120 rows** and the whole
 numeral font appears, stacked: `0`, `2`, `4`, `5`, `6`, `7`, `8`, `9`, clean and
@@ -650,3 +654,47 @@ The answer is likely to be in how `LoadBlock` fills texture memory for a 32-bit
 texture — the split across the two banks that already explains why `line` is half
 the naive row. `dkr_texture_convert_strided` is the shape of the fix and is
 already written and tested; what it still needs is the number.
+
+### Correction: not one sheet, a strip per allocation
+
+The glyph addresses are `0x32D9E0`, `0x32DE70`, `0x32E210`, `0x32E6A0`,
+`0x32EFC0`… — 1168, 928, 2336, 1328 bytes apart, irregular and not multiples of
+128. They are **separate allocations**, not offsets into a single sheet. A 16x15
+RGBA32 tile is 960 bytes and the commonest gap is 1168, which leaves about 208
+bytes of command list per texture — exactly what `load_texture` builds.
+
+So the 120-row render that showed `0 2 4 5 6 7 8 9` stacked was showing
+*successive allocations*, each read 32 wide, not one sheet. The shape of the
+conclusion survives; its extent does not.
+
+### What one allocation actually contains
+
+The 960 bytes at `0x32D9E0`, read **32 texels wide and 7 rows tall** — entirely
+inside its own allocation, nothing borrowed from the next — show `0`, a colon, and
+the start of another glyph. It is a **strip of rendered text**, seven texels tall.
+
+That fits what is on screen: the timer glyphs measure about eighteen screen pixels
+tall at the 2x magnification already established, which is nine texels, not
+fifteen.
+
+And it explains the interleave exactly. The tile is declared 16 wide, so the
+conversion takes texels 0..15 as row 0 — the strip's **left half** — then 16..31
+as row 1 — the strip's **right half** — and so on. Consecutive rows of the tile
+alternate between the two halves of the strip. That is the speckle, precisely.
+
+### The number is still not in the display list
+
+Every field has now been decoded and printed for six textures side by side, the
+working ones and the broken ones:
+
+- `G_SETTEXTUREIMAGE` width: 1, for all of them
+- tile `line`: `w x 2` bytes, **for every texture in the game**, so it carries no
+  information about which are strips
+- `LoadBlock` `lrs`: `w·h - 1`, for all of them
+- `LoadBlock` `dxt`: 0 for the strips — and also 0 for textures that are not
+  strips, so necessary and not sufficient
+- `uls`/`ult`: 0 everywhere
+- `cms`/`masks`: the one texture that differs is a sprite that reads correctly
+
+Nothing says 32. `dkr_texture_convert_strided` is written and tested and takes
+exactly that number as its argument; what is missing is where to get it.
