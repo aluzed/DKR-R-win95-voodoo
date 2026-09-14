@@ -406,10 +406,39 @@ using std::filesystem::is_directory;
 using std::filesystem::remove;
 // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::filesystem::is_regular_file;
-// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
-using std::filesystem::create_directory;
-// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
-using std::filesystem::is_empty;
+/* These two join `file_size`, `rename` and `absolute` in being wrapped rather
+   than taken over: without an error code the standard's versions **throw**,
+   where the Windows 95 branch returns false. Two branches of one indirection
+   point that differ on error handling are worse than no indirection point --
+   the code works on the host and behaves differently on the target.
+
+   Found by the seam's own suite, which run on the host threw a
+   `filesystem_error` out of `create_directory` on an absent parent where the
+   target's branch answers false. */
+inline bool create_directory(const std::filesystem::path &p)
+{
+    std::error_code ec;
+    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+    return std::filesystem::create_directory(p, ec) && !ec;
+}
+
+inline bool create_directory(const std::filesystem::path &p, std::error_code &ec)
+{
+    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+    return std::filesystem::create_directory(p, ec);
+}
+
+inline bool is_empty(const std::filesystem::path &p, std::error_code &ec)
+{
+    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+    return std::filesystem::is_empty(p, ec);
+}
+
+inline bool is_empty(const std::filesystem::path &p)
+{
+    std::error_code ec;
+    return dkr::fs::is_empty(p, ec);
+}
 
 /* These three are not taken over as they are, and the reason is worth stating:
  * `std::filesystem::file_size`, `rename` and `absolute` **throw** when they are

@@ -157,6 +157,59 @@ int main(){
 
 
   {
+    /* `create_directory` against `create_directories`, which is the whole reason
+       for having both: the recursive form creates the parents, this one fails
+       without them. A caller that wants to know whether the parent existed
+       cannot learn it from the recursive form.
+
+       Both were added on 14 September 2026, for a self-test route that wanted a
+       blocking directory where a temporary file was about to go. */
+    const std::filesystem::path parent = deep / "one";
+    const std::filesystem::path child  = parent / "two";
+
+    check("create_directory refuses when the parent is absent",
+          !dkr::fs::create_directory(child));
+    check("and the recursive form makes both", dkr::fs::create_directories(child));
+    check("which leaves the child there", dkr::fs::is_directory(child));
+
+    /* The standard reports an existing directory by returning false with no
+       error, and so does this: the caller asked for a directory at that path and
+       there is one. */
+    check("create_directory on a directory that is already there returns false",
+          !dkr::fs::create_directory(child));
+
+    /* `is_empty`: no entries for a directory, no bytes for a file. */
+    check("a fresh directory is empty", dkr::fs::is_empty(child));
+    {
+      FILE *h = std::fopen((child / "x.dat").string().c_str(), "wb");
+      if (h) std::fclose(h);
+    }
+    check("and stops being so once it holds something",
+          !dkr::fs::is_empty(child));
+    check("a zero-byte file is empty", dkr::fs::is_empty(child / "x.dat"));
+    {
+      FILE *h = std::fopen((child / "x.dat").string().c_str(), "wb");
+      if (h) { std::fputs("ab", h); std::fclose(h); }
+    }
+    check("and a file with bytes in it is not",
+          !dkr::fs::is_empty(child / "x.dat"));
+
+    /* **A path that does not exist is not empty.** Reporting `true` would let a
+       caller take the "nothing to do" branch for a directory that is missing
+       rather than bare, which is a different situation and a worse one. */
+    {
+      std::error_code ec;
+      const bool empty = dkr::fs::is_empty(deep / "no-such-thing", ec);
+      check("an absent path is an error, not an empty one", !empty && !!ec);
+    }
+
+    dkr::fs::remove(child / "x.dat");
+    dkr::fs::remove(child);
+    dkr::fs::remove(parent);
+  }
+
+
+  {
     /* `remove_all` returns the number of entries deleted, not a boolean. The
        check bears on the count **and** on the effect: it is by returning success
        without doing anything that `remove` went wrong. */
