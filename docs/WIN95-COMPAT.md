@@ -408,3 +408,79 @@ so the attribution was there the whole time. The prose was what silenced it.
 
 **Read the other entries against this.** Each one asserts a provenance that no
 check verifies, and each was true when written.
+
+## The eight others, read against it
+
+Same day, one relink per binary — `ninja -t commands bin/X.EXE`, the link line
+re-run with `-Wl,--cref` into a throwaway output — over all thirty-eight. Seven
+entries named their referrer exactly:
+
+| symbol | claimed | found, by `--cref` |
+|---|---|---|
+| `GetHandleInformation` | libwinpthread `thread.o`, `sched.o` | the same two, in 8 binaries |
+| `LoadLibraryW` | libmsvcrt `rand_s.o` | `rand_s.o`, in 6 |
+| `GetProcessTimes` | libwinpthread `clock.o` | `clock.o`, in 2 |
+| `GetThreadTimes` | libwinpthread `clock.o` | `clock.o`, in 2 |
+| `GetSystemTimeAdjustment` | libwinpthread `clock.o` | `clock.o`, in 2 |
+| `LoadLibraryExW` | librecomp `mods.cpp` | `mods.cpp.obj`, in DKRR.EXE alone |
+| `WriteConsoleW` | N64Recomp's three | the same three, in DKRR.EXE alone |
+
+The eighth did not. `GetModuleHandleW` was tolerated on the account of
+libmsvcrt's `_vscprintf.o`, `_scprintf.o` and `wassert.o`, and of the
+`_emu_vscprintf` fallback a null handle selects. **None of those three objects
+references it in any of the thirty-eight links.** The real referrers are three
+other libmsvcrt objects:
+
+    lc_locale_func.o     all 38 binaries
+    rand_s.o             the 6 that carry std::filesystem::path
+    _localtime32_s.o     DKRR.EXE and SAVEMGR.EXE
+
+All three call `GetModuleHandleW(L"msvcrt.dll")` looking for a newer runtime
+than the one they linked against, and each disassembly shows what a null handle
+selects:
+
+- `_init_codepage_func` tests the handle and falls back to
+  `_setlocale_codepage_hack`, which reads the codepage out of
+  `setlocale(LC_CTYPE, NULL)`;
+- `__localtime32_s` resolves to mingw's own `__int_localtime32_s`;
+- `_init_rand_s` leaves its function pointer null, and `_mingw_rand_s` **tests
+  that pointer** and returns `EINVAL` rather than calling through it.
+
+So the conclusion held — the stub selects a portable path, three times over, and
+nothing is lost — while the evidence for it had been somebody else's for some
+time. The entry now carries the build's own.
+
+One consequence needed correcting with it. The `LoadLibraryW` entry said that
+calling `std::random_device` on this target "would jump through a null pointer".
+It does not: `_mingw_rand_s` returns `EINVAL`, and libstdc++'s
+`__winxp_rand_s` turns that into `std::runtime_error("random_device: rand_s
+failed")`. Every use throws; none crashes. And the `<chrono>` trio claimed "it
+does not extend to the game" while listing `DKRR.EXE`, and covered
+`SAVECDC.EXE` and `WPROBE.EXE`, which import none of the three. Scope is now the
+two binaries that do.
+
+## Provenance the checker can read
+
+A justification is prose, so it cannot go stale loudly. Each exception now also
+carries `referenced_by`: the project objects allowed to reference the symbol,
+`[]` when the import comes from the toolchain alone. `check_imports.py` refuses
+to start on an entry without it, and compares it against `nm -u -A` over the
+build tree:
+
+    UNDECLARED  GetModuleHandleW  <- undecl.o
+            the tolerance names no project object - this reference is not covered by it.
+
+That is a failure, and it is exactly the shape `MoveFileExW` had: excused for
+libstdc++'s sake, called directly by `save_manager.cpp`. The reverse case — a
+declared object that has stopped referencing the symbol — prints `STALE` and
+does not fail, since the tolerance may simply have outlived its reason and wants
+reading again.
+
+The scan sees only the project's objects: the toolchain's archives are not in
+`--objects`. That is the useful half. Where an import comes from inside mingw
+stays prose, and stays checkable the slow way, with `--cref`; whether the
+project itself calls the function is now checked on every link.
+
+`--self-test` grew a fourth witness for it, alongside the clean, dirty and
+hollow ones: an object that calls a tolerated symbol from a file no tolerance
+names. A broken check and a satisfied check keep quiet the same way.

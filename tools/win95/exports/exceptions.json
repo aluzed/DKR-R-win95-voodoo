@@ -14,6 +14,12 @@
     "must not be tolerated in the game: without this field, the exception",
     "applies everywhere.",
     "",
+    "'referenced_by' is mandatory, and is the part of the justification a",
+    "machine can read: the project objects allowed to reference the symbol,",
+    "[] when the import comes from the toolchain alone. check_imports.py",
+    "compares it with `nm -u -A` over the build tree and fails on any other",
+    "project object - and says so when a declared one stops referencing it.",
+    "",
     "A tolerance whose reason has disappeared is worse than no tolerance: it goes",
     "on passing an import nobody re-examined. MoveFileExW was removed from this",
     "list on 14 September 2026 for exactly that. Its justification said the symbol",
@@ -22,66 +28,80 @@
     "save_manager.cpp and runtime_magic_codes.cpp, the checker passed it on the",
     "strength of the stale sentence, and every atomic save write on the target was",
     "failing. `ld --cref` names who really references a symbol; a justification",
-    "does not. Re-read every entry below against that before trusting it."
+    "does not.",
+    "",
+    "The eight entries below were then read against that, one relink with",
+    "--cref per binary, on the same day. Seven named their referrer exactly.",
+    "GetModuleHandleW named three objects that reference nothing here; its",
+    "conclusion survived the audit, its evidence did not, and both the text and",
+    "the LoadLibraryW consequence are corrected below."
   ],
   "exceptions": [
     {
       "symbol": "GetModuleHandleW",
-      "justification": "A Windows 95 stub (returns 0), asked for by libmsvcrt's _vscprintf.o, _scprintf.o and wassert.o. The disassembly of _init_vscprintf shows the failure is anticipated: a null GetModuleHandleW makes mingw branch to its own _emu_vscprintf implementation, built on strlen/malloc/vsnprintf. The stub therefore selects the portable fallback, which is the intended behaviour here. Nothing is lost.",
-      "binaries": []
+      "justification": "A Windows 95 stub (returns 0). `ld --cref` names three referrers across the thirty-eight binaries, all from libmsvcrt and none from the project: lc_locale_func.o everywhere, rand_s.o in the six binaries that carry std::filesystem::path, _localtime32_s.o in DKRR.EXE and SAVEMGR.EXE. All three call GetModuleHandleW(L\"msvcrt.dll\") to look for a newer runtime than the one they linked against, and the disassembly of each shows what a null handle selects: _init_codepage_func falls back to _setlocale_codepage_hack, which reads the codepage out of setlocale(LC_CTYPE, NULL); __localtime32_s falls back to mingw's own __int_localtime32_s; _init_rand_s leaves its function pointer null, and _mingw_rand_s tests that pointer and returns EINVAL rather than calling through it. The stub therefore selects the portable path three times over, and nothing is lost. Until 14 September 2026 this entry named _vscprintf.o, _scprintf.o and wassert.o instead, and the mingw _emu_vscprintf fallback: true of some build, not of this one - those objects reference nothing in any of the thirty-eight links. The conclusion survived the audit; the evidence is now the build's own.",
+      "binaries": [],
+      "referenced_by": []
     },
     {
       "symbol": "GetHandleInformation",
-      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread's thread.o and sched.o, which the posix threading model and libstdc++'s static linking bring into every C++ binary - including through <chrono> alone. It is only reached through pthread_join and pthread_cancel, where it is far from harmless: pthread_join tests its return and takes its error path, so std::thread::join() throws under Windows 95. That is one of the reasons the E02-S01 layer exists, whose dkr_thread_join goes through WaitForSingleObject. What makes the import harmless is structural and not hoped for: check-cpp-subset.py forbids <thread> on the target, so no project code can reach pthread_join. The two guard rails compose. WITNESS.EXE is the exception within the exception - it is E00-S02's witness, whose role is precisely to exercise std::thread, and where the symbol is genuinely reachable.",
-      "binaries": []
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread's thread.o and sched.o - confirmed by --cref in the eight binaries that import it - which the posix threading model and libstdc++'s static linking bring into every C++ binary, including through <chrono> alone. It is only reached through pthread_join and pthread_cancel, where it is far from harmless: pthread_join tests its return and takes its error path, so std::thread::join() throws under Windows 95. That is one of the reasons the E02-S01 layer exists, whose dkr_thread_join goes through WaitForSingleObject. What makes the import harmless is structural and not hoped for: check-cpp-subset.py forbids <thread> on the target, so no project code can reach pthread_join. The two guard rails compose. WITNESS.EXE is the exception within the exception - it is E00-S02's witness, whose role is precisely to exercise std::thread, and where the symbol is genuinely reachable.",
+      "binaries": [],
+      "referenced_by": []
     },
     {
       "symbol": "LoadLibraryW",
-      "justification": "A Windows 95 stub (returns 0), asked for by libmsvcrt's rand_s.o, itself pulled in by libstdc++'s std::random_device::_M_getentropy - which the mere presence of std::filesystem::path in a binary brings in. rand_s calls LoadLibraryW then GetProcAddress to reach the system generator; under Windows 95 it therefore obtains a null function pointer. What is tolerated here is the *presence* of the import, which does not stop the load. What is not, and must be remembered: **std::random_device does not work on this target**, and calling it would jump through a null pointer. No project code uses it; verified that manipulating std::filesystem::path does not touch it - the FSPATH.EXE probe returns correct results on the machine.",
-      "binaries": []
+      "justification": "A Windows 95 stub (returns 0), asked for by libmsvcrt's rand_s.o and by nothing else (--cref, six binaries), itself pulled in by libstdc++'s std::random_device::_M_getentropy - which the mere presence of std::filesystem::path in a binary brings in. _init_rand_s looks for msvcrt's own rand_s through GetModuleHandleW, then for advapi32's SystemFunction036 through LoadLibraryW; under Windows 95 both handles are null, GetProcAddress returns null twice, and the function pointer stays null. What is tolerated here is the *presence* of the import, which does not stop the load. What is not, and must be remembered: **std::random_device does not work on this target**. It does not jump through a null pointer - the entry said so until 14 September 2026 and the disassembly disagrees: _mingw_rand_s tests the pointer, returns EINVAL, and libstdc++'s __winxp_rand_s turns that into std::runtime_error(\"random_device: rand_s failed\"). Every use throws; none crashes. No project code uses it; verified that manipulating std::filesystem::path does not touch it - the FSPATH.EXE probe returns correct results on the machine.",
+      "binaries": [],
+      "referenced_by": []
     },
     {
       "symbol": "GetProcessTimes",
-      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o and by nothing else (--cref), which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. Scope: the two binaries that actually import it. It covered SAVECDC.EXE and WPROBE.EXE too until 14 September 2026, which import none of the three - and the sentence 'it does not extend to the game' was contradicted by DKRR.EXE's own presence in the list. The game does import it, through the same clock.o, and for the same unreached branch.",
       "binaries": [
-        "SAVEMGR.EXE",
-        "SAVECDC.EXE",
-        "WPROBE.EXE",
-        "DKRR.EXE"
-      ]
+        "DKRR.EXE",
+        "SAVEMGR.EXE"
+      ],
+      "referenced_by": []
     },
     {
       "symbol": "GetThreadTimes",
-      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o and by nothing else (--cref), which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. Scope: the two binaries that actually import it. It covered SAVECDC.EXE and WPROBE.EXE too until 14 September 2026, which import none of the three - and the sentence 'it does not extend to the game' was contradicted by DKRR.EXE's own presence in the list. The game does import it, through the same clock.o, and for the same unreached branch.",
       "binaries": [
-        "SAVEMGR.EXE",
-        "SAVECDC.EXE",
-        "WPROBE.EXE",
-        "DKRR.EXE"
-      ]
+        "DKRR.EXE",
+        "SAVEMGR.EXE"
+      ],
+      "referenced_by": []
     },
     {
       "symbol": "GetSystemTimeAdjustment",
-      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
+      "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o and by nothing else (--cref), which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. Scope: the two binaries that actually import it. It covered SAVECDC.EXE and WPROBE.EXE too until 14 September 2026, which import none of the three - and the sentence 'it does not extend to the game' was contradicted by DKRR.EXE's own presence in the list. The game does import it, through the same clock.o, and for the same unreached branch.",
       "binaries": [
-        "SAVEMGR.EXE",
-        "SAVECDC.EXE",
-        "WPROBE.EXE",
-        "DKRR.EXE"
-      ]
+        "DKRR.EXE",
+        "SAVEMGR.EXE"
+      ],
+      "referenced_by": []
     },
     {
       "symbol": "LoadLibraryExW",
-      "justification": "A Windows 95 stub (returns 0). Asked for by librecomp's mods.cpp to load a native mod - a compiled DLL. The function itself only exists from Windows NT4/98 in this form, and its LOAD_LIBRARY_SEARCH_* flags date from Windows 7. The stub therefore returns a null handle, and loading the mod fails cleanly through the error path already provided. That is the intended behaviour: native mods cannot work on this target, and the mod system has been out of scope since E00-S01. What matters is that the failure is an operation's, not the program's load.",
+      "justification": "A Windows 95 stub (returns 0). Asked for by librecomp's mods.cpp to load a native mod - a compiled DLL - and by nothing else (--cref, DKRR.EXE alone). The function itself only exists from Windows NT4/98 in this form, and its LOAD_LIBRARY_SEARCH_* flags date from Windows 7. The stub therefore returns a null handle, and loading the mod fails cleanly through the error path already provided. That is the intended behaviour: native mods cannot work on this target, and the mod system has been out of scope since E00-S01. What matters is that the failure is an operation's, not the program's load.",
       "binaries": [
         "DKRR.EXE"
+      ],
+      "referenced_by": [
+        "mods.cpp.obj"
       ]
     },
     {
       "symbol": "WriteConsoleW",
-      "justification": "A Windows 95 stub (returns 0). Asked for by N64Recomp's analysis.cpp, cgenerator.cpp and recompilation.cpp - not by their code, but by fmt, the formatting header they use, which writes to the console through the wide API when it detects a terminal. The stub makes that write fail, and fmt does not test it: the on-the-fly recompiler's diagnostic messages will not appear on this machine. It is a degradation, and it is accepted as such - those messages concern only mod recompilation, already out of scope. Nothing the player sees goes through there.",
+      "justification": "A Windows 95 stub (returns 0). Asked for by N64Recomp's analysis.cpp, cgenerator.cpp and recompilation.cpp, and by nothing else (--cref, DKRR.EXE alone) - not by their code, but by fmt, the formatting header they use, which writes to the console through the wide API when it detects a terminal. The stub makes that write fail, and fmt does not test it: the on-the-fly recompiler's diagnostic messages will not appear on this machine. It is a degradation, and it is accepted as such - those messages concern only mod recompilation, already out of scope. Nothing the player sees goes through there.",
       "binaries": [
         "DKRR.EXE"
+      ],
+      "referenced_by": [
+        "analysis.cpp.obj",
+        "cgenerator.cpp.obj",
+        "recompilation.cpp.obj"
       ]
     }
   ]

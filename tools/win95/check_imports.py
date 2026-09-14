@@ -24,6 +24,7 @@ Three categories of DLL, and the distinction matters:
             slipping through unnoticed.
 """
 import argparse
+import fnmatch
 import json
 import os
 import pathlib
@@ -106,7 +107,12 @@ def load_stubs():
 
 def load_exceptions():
     """Explicit exceptions. Each must carry a written justification: without
-    that, the list becomes the place where the tool is silenced."""
+    that, the list becomes the place where the tool is silenced.
+
+    Each must also carry `referenced_by`: the project objects allowed to
+    reference the symbol, which is the part of the justification a machine can
+    read. The prose says where an import comes from; only this list can be
+    compared with the build. `MoveFileExW` stood for a merge on prose alone."""
     if not EXCEPTIONS.is_file():
         return {}
     data = json.loads(EXCEPTIONS.read_text())
@@ -119,11 +125,19 @@ def load_exceptions():
         if len(why) < 20:
             sys.exit(f"{EXCEPTIONS}: the exception '{sym}' has no written "
                      f"justification - it is refused.")
+        if "referenced_by" not in entry:
+            sys.exit(f"{EXCEPTIONS}: the exception '{sym}' has no "
+                     f"'referenced_by' - it is refused. List the project "
+                     f"objects that may reference the symbol, or [] if the "
+                     f"import comes from the toolchain alone.")
+        if not isinstance(entry["referenced_by"], list):
+            sys.exit(f"{EXCEPTIONS}: 'referenced_by' of '{sym}' is not a list")
         # `binaries` restricts the scope to certain executables, by file name.
         # Without it the exception applies everywhere - which is rarely what is
         # wanted: an API tolerated in a witness that exercises it on purpose
         # must not be tolerated in the game.
-        out[sym] = (why, [b.upper() for b in entry.get("binaries", [])])
+        out[sym] = (why, [b.upper() for b in entry.get("binaries", [])],
+                    list(entry["referenced_by"]))
     return out
 
 
@@ -133,42 +147,108 @@ def excused_here(exceptions, symbol, binary):
     entry = exceptions.get(symbol)
     if entry is None:
         return None
-    why, binaries = entry
+    why, binaries, _ = entry
     if binaries and pathlib.Path(binary).name.upper() not in binaries:
         return None
     return why
 
 
+def first_line(why, width=96):
+    """The ALLOWED line gives the gist; exceptions.json holds the reasoning.
+
+    These justifications run to a paragraph each - which is the point of them,
+    and which would bury the rest of a thirty-eight binary sweep."""
+    why = " ".join((why or "").split())
+    return why if len(why) <= width else why[:width - 1].rstrip() + "..."
+
+
+NM_LINE = re.compile(r"^(?P<loc>.+?):\s+U\s+(?P<sym>\S+)$")
+
+
+def object_name(loc):
+    """`nm -A` prints the archive *and* the member: keep the member.
+
+    `libwin95librecomp.a:mods.cpp.obj` and the loose
+    `CMakeFiles/.../mods.cpp.obj` are the same object seen twice. Reducing both
+    to `mods.cpp.obj` is what makes them comparable with `referenced_by`."""
+    head, sep, tail = loc.rpartition(":")
+    if sep and tail.endswith((".o", ".obj")):
+        loc = tail
+    return pathlib.Path(loc).name
+
+
 def attribute(symbols, objdirs):
-    """Finds which object imports each offending symbol.
+    """Finds which object references each symbol, by archive member.
 
     The PE's import table does not keep that information: it is lost at link
     time. We rebuild it by re-reading the objects and archives, where the symbol
     appears undefined in the form `__imp__X@n` or `_X`. Without this, the report
-    names the symbol but leaves the diagnosis to be done."""
+    names the symbol but leaves the diagnosis to be done.
+
+    It only sees the project's objects - the toolchain's archives are not in
+    these directories. That is the useful half: an excused symbol referenced
+    from *here* is the project's own call, whatever the justification says about
+    libstdc++."""
     if not objdirs:
         return {}
     nm = shutil.which("i686-w64-mingw32-nm") or shutil.which("nm")
     if not nm:
         return {}
     wanted = {s: set() for s in symbols}
-    pats = {s: re.compile(rf"\b_?_?imp_?_?{re.escape(s)}\b|\b_{re.escape(s)}\b")
+    pats = {s: re.compile(rf"^_?_?imp_?_?{re.escape(s)}(@\d+)?$|^_{re.escape(s)}$")
             for s in symbols}
     for d in objdirs:
         root = pathlib.Path(d)
         if not root.exists():
             continue
-        files = [p for p in root.rglob("*") if p.suffix in (".o", ".obj", ".a")]
-        for f in files:
+        files = [str(p) for p in root.rglob("*")
+                 if p.suffix in (".o", ".obj", ".a")]
+        # By the batch: this runs on every link, and a `nm` per object over a
+        # tree of two hundred costs more in process starts than in reading.
+        for i in range(0, len(files), 64):
             try:
-                out = subprocess.run([nm, "-u", str(f)], capture_output=True,
-                                     text=True, timeout=30).stdout
+                out = subprocess.run([nm, "-u", "-A"] + files[i:i + 64],
+                                     capture_output=True, text=True,
+                                     timeout=120).stdout
             except (subprocess.SubprocessError, OSError):
                 continue
-            for sym, rx in pats.items():
-                if rx.search(out):
-                    wanted[sym].add(f.name)
+            for line in out.splitlines():
+                m = NM_LINE.match(line)
+                if not m:
+                    continue
+                for sym, rx in pats.items():
+                    if rx.match(m.group("sym")):
+                        wanted[sym].add(object_name(m.group("loc")))
     return {k: sorted(v) for k, v in wanted.items() if v}
+
+
+def check_provenance(excused, exceptions, objdirs):
+    """Compares each tolerance's declared provenance with the build.
+
+    Returns (undeclared, vanished): objects that reference a tolerated symbol
+    without being declared, and declarations that match nothing any more.
+
+    This is the check that was missing on 14 September 2026. `MoveFileExW` was
+    tolerated because libstdc++ asked for it; a merge put a direct call back
+    into `save_manager.cpp`, and the tool went on printing ALLOWED because it
+    only ever read the symbol. The prose could not go stale loudly. This can."""
+    if not objdirs or not excused:
+        return [], []
+    symbols = sorted({s for _, s in excused})
+    owners = attribute(symbols, objdirs)
+    undeclared, vanished = [], []
+    for sym in symbols:
+        declared = exceptions[sym][2]
+        seen = owners.get(sym, [])
+        extra = [o for o in seen
+                 if not any(fnmatch.fnmatch(o, d) for d in declared)]
+        if extra:
+            undeclared.append((sym, extra))
+        gone = [d for d in declared
+                if not any(fnmatch.fnmatch(o, d) for o in seen)]
+        if gone:
+            vanished.append((sym, gone))
+    return undeclared, vanished
 
 
 def check(binary, ref, stubs, exceptions, objdirs):
@@ -211,9 +291,30 @@ def check(binary, ref, stubs, exceptions, objdirs):
         print(f"          not checkable here; its presence is, at launch.")
     for dll, sym in excused:
         print(f"  {YELLOW}ALLOWED{OFF}  {dll}:{sym} - "
-              f"{excused_here(exceptions, sym, binary)}")
+              f"{first_line(excused_here(exceptions, sym, binary))}")
 
     ok = True
+    undeclared, vanished = check_provenance(excused, exceptions, objdirs)
+    for sym, gone in vanished:
+        print(f"  {YELLOW}STALE{OFF}  {sym} - declared as referenced by "
+              f"{', '.join(gone)}, which no longer reference it.")
+        print(f"          The tolerance may have outlived its reason: read it "
+              f"again before keeping it.")
+    if undeclared:
+        ok = False
+        for sym, extra in undeclared:
+            print(f"  {RED}UNDECLARED{OFF}  {sym}  <- {', '.join(extra)}")
+            declared = exceptions[sym][2]
+            print(f"          the tolerance names "
+                  f"{', '.join(declared) if declared else 'no project object'}"
+                  f" - this reference is not covered by it.")
+        print(f"          The symbol is tolerated for a reason that does not "
+              f"cover the project's own call.")
+        print(f"          Read the justification before adding the object to "
+              f"'referenced_by': a tolerance")
+        print(f"          whose reason has disappeared passes an import nobody "
+              f"re-examines.")
+
     if unknown_dlls:
         ok = False
         for dll, n in unknown_dlls:
@@ -337,6 +438,31 @@ def self_test():
         if check(tmp / "hollow.exe", ref, stubs, exc, []):
             print(f"{RED}the hollow witness is accepted - the stub check detects "
                   f"nothing{OFF}")
+            return 1
+
+        # Undeclared witness: a tolerated symbol, called from an object the
+        # tolerance does not name. That is the MoveFileExW shape - the symbol
+        # was excused for libstdc++'s sake and the project called it directly -
+        # and the only case the three witnesses above cannot produce.
+        sym = next((s for s, (_, b, r) in exc.items() if not b and not r), None)
+        if sym is None:
+            print(f"{YELLOW}no toolchain-only exception left to test the "
+                  f"provenance check with - skipped{OFF}")
+            return 0
+        say(f"undeclared witness: {sym}, tolerated but called from here")
+        (tmp / "undecl.c").write_text(
+            "#include <windows.h>\n"
+            "volatile void *sink;\n"
+            f"int main(void){{ sink = (void *)&{sym}; return 0; }}\n")
+        subprocess.run([cc, "-O2", "-march=pentium2", "-mno-sse", "-static",
+                        "-c", str(tmp / "undecl.c"), "-o", str(tmp / "undecl.o")],
+                       check=True, capture_output=True)
+        subprocess.run([cc, "-O2", "-march=pentium2", "-mno-sse", "-static",
+                        str(tmp / "undecl.o"), "-o", str(tmp / "undecl.exe")],
+                       check=True, capture_output=True)
+        if check(tmp / "undecl.exe", ref, stubs, exc, [str(tmp)]):
+            print(f"{RED}the undeclared witness is accepted - the provenance "
+                  f"check detects nothing{OFF}")
             return 1
         say(f"{GREEN}the tool works{OFF}")
     return 0
