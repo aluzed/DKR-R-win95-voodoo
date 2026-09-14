@@ -59,64 +59,116 @@
           "sha256": "61712c2e214a2604b5460bcfa3c9a6dc1735859a53fd0f0e9e9f0b138a12cc08"
         },
         {
-          "path": "patches/n64-modern-runtime/0014-build-for-windows-95-targets.patch",
-          "sha256": "f6a339578eefcdd96b2a569ada618a3721d55cf4517fb3e9e837c054621e48da"
+          "path": "patches/n64-modern-runtime/0014-expose-authored-input-frame-boundary.patch",
+          "sha256": "6649f610b5f5e165e31dd3f4635681466ccf6e86465647688c725d763e3bd603"
         },
         {
-          "path": "patches/n64-modern-runtime/0015-platform-seam-for-threading-primitives.patch",
-          "sha256": "4a5a73a03ddf22fe002c186015ce07baba2cc76f9ea2ef2a14aba162425575a9"
+          "path": "patches/n64-modern-runtime/0015-place-authored-boundary-after-physical-poll.patch",
+          "sha256": "d7e291d27e98a894265ffea82f721cd20a98cdbfbb8a1daae6c62882ad39808f"
         },
         {
-          "path": "patches/n64-modern-runtime/0016-build-librecomp-for-32-bit-targets.patch",
-          "sha256": "01eb04c82df57b97de042c3cab23c15bf5a3ef6bc0d57fced7bf167cb735c2ad"
+          "path": "patches/n64-modern-runtime/0016-notify-authored-thread-retirement.patch",
+          "sha256": "6bcc69b673198647d08df0965e9a35aeee830304fbf83793540afe53a6850f9e"
         },
         {
-          "path": "patches/n64-modern-runtime/0017-size-rdram-for-32-bit-targets.patch",
-          "sha256": "0cd233ff1c958878b4e694d1d4b8802bc23bf5e7111136f0a79c6ad6f2a36e75"
+          "path": "patches/n64-modern-runtime/0017-use-canonical-recomp-context-definition.patch",
+          "sha256": "7d8a46a4d6efbf71f51a74991a57c4aa9680d59285d441a3ac600ad66849e7f9"
         },
         {
-          "path": "patches/n64-modern-runtime/0018-platform-seam-for-filesystem-operations.patch",
-          "sha256": "74793b992fd2b870329ae4e091ec9bab31dad4c2ad3b95717c7b138a03a82091"
+          "path": "patches/n64-modern-runtime/0018-forward-declare-named-recomp-context.patch",
+          "sha256": "4b60cb0c81e6ba002b5ce0219a9f0d2c57ee170f7dcac3e9daa616243e65aad0"
         },
         {
-          "path": "patches/n64-modern-runtime/0019-open-streams-from-narrow-strings.patch",
-          "sha256": "0906928da3d45fca0ff5d46c5eb93d970ca33815263c10a95772ef2a2a62ce9b"
+          "path": "patches/n64-modern-runtime/0019-suppress-rollback-replay-presentation.patch",
+          "sha256": "17c4e0c6b7692af5fc22877f837c5e8cf17e6cd69129a6b1e9472a0952f42d4f"
         },
         {
-          "path": "patches/n64-modern-runtime/0020-platform-seam-for-synchronisation-primitives.patch",
-          "sha256": "3b2f43e56423ff1821bd49f468b69501b3e99217f70336a6d2fb0f463d5f9657"
+          "path": "patches/n64-modern-runtime/0020-suppress-rollback-replay-save-writes.patch",
+          "sha256": "9f57dfb4bd649fa6fc452a56410a77568b5ce2ed27d72fb58270a37be911d290"
         },
         {
-          "path": "patches/n64-modern-runtime/0021-route-threads-through-the-sync-seam.patch",
-          "sha256": "005f6c350ed2d2d01fde534cbf8f2853d2bea4dd3bfbe5f49b5cccd2ab3260e2"
+          "path": "patches/n64-modern-runtime/0021-isolate-rollback-replay-external-work.patch",
+          "sha256": "9ca2cdd9256b84cdf78dadfe3129652d54050ae57ef1c240c9db77748a47fdb2"
         },
         {
-          "path": "patches/n64-modern-runtime/0022-trace-sp-and-dp-edges.patch",
-          "sha256": "0c68306b0edbdf63ad097e4e3114db1dfcd43b5bd279e191a9cd292d8d81b748"
+          "path": "patches/n64-modern-runtime/0022-suppress-rollback-replay-audio-and-rumble.patch",
+          "sha256": "a772a428ed23dc832d84816d984f14fe979ecda41a9e7812125e02695039d2ac"
         },
         {
-          "path": "patches/n64-modern-runtime/0023-count-guest-queue-deposits.patch",
-          "sha256": "00a8f511cb7a6dd7769ae78d8773772e53db5802e60dd658e906d7d45d5dc0b6"
+          "path": "patches/n64-modern-runtime/0023-install-synchronized-input-before-si-ready.patch",
+          "sha256": "1037204e680a39ff6e8361980335d6a493f3bb84a4424ece75a069d0fe601f34"
         },
         {
-          "path": "patches/n64-modern-runtime/0024-priority-reserved-slots-and-source.patch",
-          "sha256": "dbf3c6945fc85f7a8a13079894d980c77fd870474ac8a8460a1600ceaf7ae5f6"
+          "path": "patches/n64-modern-runtime/0024-queue-suppressed-gfx-completion.patch",
+          "sha256": "b99fb87d820769880fbc1c87091ac72ee3eed4a8ab41bf4925846f696d1134c5"
         },
         {
-          "path": "patches/n64-modern-runtime/0025-publish-dp-edge-before-rendering.patch",
-          "sha256": "1ab193ff1b3bf0dfcd1363ff68641968c183d88fba8cde4522f9d2a06966f916"
+          "path": "patches/n64-modern-runtime/0025-support-reusable-runtime-sessions.patch",
+          "sha256": "3707fe84f0e245169d8b0820e30d950d7be480ad7ce6b384f2567948b61429fa"
         },
         {
-          "path": "patches/n64-modern-runtime/0026-commit-the-log-from-the-queue-trace.patch",
-          "sha256": "dd6f64ba022f485eab1eaf7b5b8e4ac077d9a525a57e45d56e2bd8fd13d82d3b"
+          "path": "patches/n64-modern-runtime/0026-client-authored-vi-catch-up-pacing.patch",
+          "sha256": "40f4dc029a6a0db8719eb8f8f7a723d4158d6402d5e54fc48c6ee31e61b9765e"
         },
         {
-          "path": "patches/n64-modern-runtime/0027-count-the-drains-and-hoist-the-switch.patch",
-          "sha256": "33c59acb9ce18bbc7e29208f4f99c8950307fcdee8b3db06b5c06fee23a19379"
+          "path": "patches/n64-modern-runtime/0027-build-for-windows-95-targets.patch",
+          "sha256": "1c17c3beb33c622b87f1f304681f9f41b5a1c4dade91595aad83442580d987c8"
         },
         {
-          "path": "patches/n64-modern-runtime/0028-measure-guest-execution-time.patch",
-          "sha256": "a54d8a3abe032fddd2a5f833c40df07e8d6bf9b3076407c82e012d6b547ce502"
+          "path": "patches/n64-modern-runtime/0028-platform-seam-for-threading-primitives.patch",
+          "sha256": "821d8c5183c369e419f755b1f92fe7ffa440139ab7ec592b78fe3d1c4da82cb2"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0029-build-librecomp-for-32-bit-targets.patch",
+          "sha256": "72117d4bf7d4790778cc0dd6113c1ddb3d641e5bf5d264286676fca47a637606"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0030-size-rdram-for-32-bit-targets.patch",
+          "sha256": "504cee30a18226e5e7922496f229d7cb5160c86785555ff6ce52b13f23a6e7ba"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0031-platform-seam-for-filesystem-operations.patch",
+          "sha256": "86fb0425addffc60e9621f70d56dd080af53e8f2fd5a4d9947f771a30aee43a9"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0032-open-streams-from-narrow-strings.patch",
+          "sha256": "c333ed43449ee934e09287b9a5ca4748a28eb850395a9d9ffc1909a7713f6557"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0033-platform-seam-for-synchronisation-primitives.patch",
+          "sha256": "d63dc21051a2b828ea7d56dd7ff18038fcd62e21d5166ebfd4dc5652897bfcc0"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0034-route-threads-through-the-sync-seam.patch",
+          "sha256": "250475f967dd60140ccbf5fe3a58a0086e03de71d4217f7c17ad96ca8edb3f54"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0035-trace-sp-and-dp-edges.patch",
+          "sha256": "44bf18c0d011ceb84723547b576d27157d486226d64ae966871baaf6db4cff8d"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0036-count-guest-queue-deposits.patch",
+          "sha256": "ba823992e18f9d06b370a827115a73c8ab6d18c1d5537d4c9fead5d1be915fa9"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0037-priority-reserved-slots-and-source.patch",
+          "sha256": "b4d2e9ae01b850eb26ca07f6b98802badfbb0bbdbda3836f74de2cc2264119ce"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0038-publish-dp-edge-before-rendering.patch",
+          "sha256": "92b4240c954fcc18e3316c24cdc9e0a1ad7ed06e2032e86d0587bbc1bb66996e"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0039-commit-the-log-from-the-queue-trace.patch",
+          "sha256": "94c339ad6b55edc65314746ebd976d85a0107e32575b3bff528653fd4e190ba8"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0040-count-the-drains-and-hoist-the-switch.patch",
+          "sha256": "ee26d4378835320c9edccab21f6fba4fa296eb223b21cf0b333a18a13c6ade4a"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0041-measure-guest-execution-time.patch",
+          "sha256": "ca108936d4dc26bee88f05ab60ffb947a93ae17037285d76d7a5a8a72a445587"
         }
       ]
     },
@@ -130,7 +182,11 @@
           "sha256": "a3a60874019e1118453cfe9030b071ac22eb1fea41ea7b81b4a8d50e56bd3967"
         },
         {
-          "path": "patches/n64recomp/0002-portable-128-bit-multiply-for-32-bit-targets.patch",
+          "path": "patches/n64recomp/0002-name-recomp-context-struct.patch",
+          "sha256": "6cf31eebf6a5f0a9a31c2912f562f8ef977c0a43dfffd76531f3ceb94ae2bee7"
+        },
+        {
+          "path": "patches/n64recomp/0003-portable-128-bit-multiply-for-32-bit-targets.patch",
           "sha256": "25771fd1bcef4b10a6f4f73603160b375a7c20f13bb0d216339d51c1a2558cd2"
         }
       ]
@@ -183,8 +239,59 @@
         {
           "path": "patches/rt64/0012-cache-rice-replacement-decisions.patch",
           "sha256": "edefb089502f69e8eb1cd99e47307dcb307c973c22ab2838da7acf380f1bb53e"
+        },
+        {
+          "path": "patches/rt64/0013-count-completed-swapchain-presentations.patch",
+          "sha256": "c86a936a477ae6846f47382baff66204c6c240a17307bb3a218f541df940772d"
+        },
+        {
+          "path": "patches/rt64/0014-inset-full-tile-texrect-sampling.patch",
+          "sha256": "a19b0e286482980724c4375433f8d0da41e45306d78bd24bf0553f42c2472bb2"
+        },
+        {
+          "path": "patches/rt64/0015-configurable-default-mip-lod-bias.patch",
+          "sha256": "5de3dff56a71b536b9a9d2a753c07204fb2acdae9620c6ab8feb273037598794"
+        },
+        {
+          "path": "patches/rt64/0016-optional-generated-texture-mips.patch",
+          "sha256": "c3394574e3e740a1c28ff6ca4be135515565966e3023a8511c1a30b335e7a914"
         }
       ]
+    },
+    {
+      "name": "GekkoNet",
+      "repositoryPath": "extern/gekkonet",
+      "expectedCommit": "5924b5c7abb5b1156c3c5609c9c36e9bede58c1c",
+      "patches": []
+    },
+    {
+      "name": "Monocypher",
+      "repositoryPath": "extern/monocypher",
+      "expectedCommit": "0d85f98c9d9b0227e42cf795cb527dff372b40a4",
+      "patches": []
+    },
+    {
+      "name": "libdatachannel",
+      "repositoryPath": "extern/libdatachannel",
+      "expectedCommit": "c6696d157b5612df2a741d9a03b192b47ab6cefb",
+      "patches": [
+        {
+          "path": "patches/libdatachannel/0001-verify-explicit-windows-websocket-ca.patch",
+          "sha256": "4e1ebb9d0fa5440ee0513a00d4e8e6975f0b5be0405441f1e769e91e1e9fb398"
+        }
+      ]
+    },
+    {
+      "name": "MbedTLS",
+      "repositoryPath": "extern/mbedtls",
+      "expectedCommit": "c765c831e5c2a0971410692f92f7a81d6ec65ec2",
+      "patches": []
+    },
+    {
+      "name": "SDL3",
+      "repositoryPath": "extern/sdl3",
+      "expectedCommit": "147a8ee32dbf9ac02f3794964490687b6bbda1bc",
+      "patches": []
     }
   ]
 }

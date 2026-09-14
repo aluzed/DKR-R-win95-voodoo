@@ -17,8 +17,8 @@ def fail(message: str) -> None:
 
 def main() -> int:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        fail(f"VERSION is not a final semantic version: {version!r}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?", version):
+        fail(f"VERSION is not a supported release/beta semantic version: {version!r}")
 
     appdata = (ROOT / "packaging/linux/dkr-port.appdata.xml").read_text(
         encoding="utf-8"
@@ -30,8 +30,16 @@ def main() -> int:
     manifest = json.loads((ROOT / "patches/manifest.json").read_text(encoding="utf-8"))
     locked = {item["name"].lower(): item["commit"].lower()
               for item in lock["dependencies"]}
-    aliases = {"n64modernruntime": "n64-modern-runtime", "n64recomp": "n64recomp",
-               "rt64": "rt64"}
+    aliases = {
+        "n64modernruntime": "n64-modern-runtime",
+        "n64recomp": "n64recomp",
+        "rt64": "rt64",
+        "gekkonet": "gekkonet",
+        "monocypher": "monocypher",
+        "libdatachannel": "libdatachannel",
+        "mbedtls": "mbedtls",
+        "sdl3": "sdl3",
+    }
     checked = 0
     for dependency in manifest["dependencies"]:
         key = aliases[dependency["name"].lower()]

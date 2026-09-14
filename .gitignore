@@ -4,10 +4,30 @@
 /build-logs/
 /.deps/
 /out/
+/artifacts/
+/squashfs-root/
 /.vs/
 /.vscode/
 /--portable/
+/unified-mod-test-902561023969800/
+/unified-mod-test-902924382217100/
 CMakeUserPresets.json
+
+# Build-system and compiler intermediates
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+Testing/
+_deps/
+*.obj
+*.o
+*.a
+*.lib
+*.exp
+*.ilk
+*.pdb
 
 # Runtime data
 /runtime/
@@ -16,7 +36,11 @@ CMakeUserPresets.json
 /runtime-recomp/data_dump.toml
 /runtime-recomp/applied-patches.json
 /runtime-recomp/resolved-runtime-dependencies.json
-/runtime-recomp/dkr.us.v77.generated.toml
+# Recomp configs written by scripts/generate_recomp_config.py. They embed
+# absolute local paths (ELF, ROM, output dirs), so they are per-machine and
+# must be regenerated rather than shared.
+/runtime-recomp/dkr.us.*.generated.toml
+/runtime-recomp/dkr.us.*.regen.toml
 /imgui.ini
 /logs/
 /cache/
@@ -26,7 +50,7 @@ mods/*
 !mods/.gitkeep
 
 # Dependencies fetched locally
-/extern/dkr-decomp/
+/extern/*/
 /extern/.resolved-dependencies.json
 /extern/.resolved-dkr-source.json
 
@@ -47,16 +71,42 @@ baserom*
 # Platform files
 .DS_Store
 Thumbs.db
+Desktop.ini
 *.user
 *.suo
 *.VC.db
 *.VC.VC.opendb
+/.idea/
+
+# Local diagnostics, caches and temporary files
+*.dmp
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+token*.json
 
 # DKR decomp/recomp working data generated locally
-extern/dkr-decomp/baseroms/
-extern/n64-modern-runtime/
-extern/rt64/
 runtime-recomp/RecompiledFuncs/
+runtime-recomp/RecompiledPatches/
 build/runtime-tools/
 
 # Build outputs of the Win95 tools (produced by tools/win95/build-glidetest.sh)
@@ -72,3 +122,26 @@ __pycache__/
 # the worktree. Two of them had been committed that way, in French, read by
 # nothing - see platform/render/tests/test_tmu.c and test_combiner.c.
 D:\\*
+runtime-recomp/build/
+
+# tools/blender holds the DKR track editor addon and is tracked. Everything else
+# under tools/ is not. Git does not descend into an excluded directory, so the
+# directory itself must stay un-excluded for any rule inside it to apply - do
+# not restore a bare /tools/ rule, it makes the addon invisible again.
+/tools/*
+!/tools/blender/
+# ... and the same for every other tool directory this fork tracks. A bare
+# `/tools/*` makes the next file added under any of them invisible, which is
+# exactly the failure the paragraph above describes for the addon.
+!/tools/cpu-budget/
+!/tools/render/
+!/tools/win95/
+
+# Blender addon build output, rebuilt by tools/blender/package_addon.py
+/tools/blender/dkr_track_editor.zip
+
+# Built .dkrmap packages. These carry retail object-map data verbatim - the
+# structure slot of a remix is the base track's map unless every object was
+# moved - and docs/ASSET_POLICY.md forbids committing extracted maps. They are
+# local test artifacts; rebuild them from Blender rather than sharing them.
+/custom-tracks/

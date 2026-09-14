@@ -10,19 +10,23 @@
 #include <iterator>
 #include <sstream>
 #include <vector>
-#include "win95/fileio.hpp"
-#include "win95/sync.hpp"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 #endif
 
 namespace {
 
 constexpr std::size_t kAdventureSaveSize = 0x200U;
+constexpr std::size_t kAdventureSlotSize = 0x28U;
+constexpr std::size_t kAdventureConfigOffset = 0x78U;
+constexpr std::size_t kFastestLapsOffset = 0x80U;
+constexpr std::size_t kCourseTimesOffset = 0x140U;
 constexpr std::size_t kControllerPakSize = 32U * 1024U;
 constexpr std::size_t kPakDirectoryOffset = 256U;
 constexpr std::size_t kPakDirectoryEntrySize = 64U;
@@ -40,9 +44,29 @@ constexpr std::size_t kMaximumBundleSize =
     dkr::runtime::saves::kControllerPakCount * (32U + kControllerPakSize);
 std::filesystem::path g_config_directory;
 dkr::sync::mutex g_save_manager_mutex;
+std::vector<std::uint8_t> g_staged_host_online_save;
 
 std::filesystem::path AdventurePath() {
     return g_config_directory / "saves" / "dkr.us.v77.bin";
+}
+
+std::string MatchIdText(std::uint64_t match_id) {
+    std::ostringstream output;
+    output << std::hex << std::setw(16) << std::setfill('0') << match_id;
+    return output.str();
+}
+
+std::filesystem::path OnlineAdventureSubfolder(bool host,
+                                                std::uint64_t match_id) {
+    if (host) return std::filesystem::path("online") / "host";
+    return std::filesystem::path("online") / "sessions" /
+           MatchIdText(match_id);
+}
+
+std::filesystem::path OnlineAdventurePath(bool host,
+                                          std::uint64_t match_id) {
+    return g_config_directory / "saves" /
+           OnlineAdventureSubfolder(host, match_id) / "dkr.us.v77.bin";
 }
 
 std::filesystem::path ControllerPakPath(int channel) {
@@ -161,22 +185,7 @@ using ImageValidator = bool (*)(const std::filesystem::path&,
 bool ReplaceFileAtomic(const std::filesystem::path& temporary,
                        const std::filesystem::path& destination,
                        std::error_code& error) {
-// Windows 95 is kept off the MoveFileEx path, and this function's name then
-// becomes a promise it does not keep: **there is no atomic replacement on this
-// target**.
-//
-// MoveFileExA and MoveFileExW are both exported there, with real code, and
-// refuse: ERROR_CALL_NOT_IMPLEMENTED. That is the third category of unavailable
-// API, the one no analysis of the import table reveals - measured by E02-S05, and
-// met again here on the machine, the suite dying on "This function is only valid
-// in Win32 mode".
-//
-// The fallback goes through the seam, whose `rename` deletes the target and then
-// renames. The window that opens is accepted and described in
-// platform/win95/fileio.h: what is guaranteed is not "the last write is never
-// lost" but "a valid save is never lost" - and that is why the caller has already
-// taken a backup copy.
-#if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
+#if defined(_WIN32)
     if (MoveFileExW(temporary.c_str(), destination.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
         error.clear();
@@ -267,6 +276,34 @@ bool BackupUnlocked(std::filesystem::path& created, std::string& error) {
     dkr::fs::copy_file_overwrite(source, created, filesystem_error);
     if (filesystem_error) {
         error = "Could not create the backup: " + filesystem_error.message();
+        return false;
+    }
+    return true;
+}
+
+bool BackupRawAdventureUnlocked(std::filesystem::path& created,
+                                std::string& error) {
+    const auto source = AdventurePath();
+    std::vector<std::uint8_t> bytes;
+    if (!ReadFileBounded(source, kAdventureSaveSize, bytes) ||
+        bytes.size() != kAdventureSaveSize) {
+        error = "No 512-byte Adventure EEPROM is available to preserve.";
+        return false;
+    }
+    std::error_code filesystem_error;
+    const auto directory = g_config_directory / "save-backups";
+    dkr::fs::create_directories(directory, filesystem_error);
+    if (filesystem_error) {
+        error = "Could not create the backup garage: " +
+                filesystem_error.message();
+        return false;
+    }
+    created = directory /
+        ("adventure-before-checksum-repair-" + Timestamp() + ".bin");
+    dkr::fs::copy_file_overwrite(source, created, filesystem_error);
+    if (filesystem_error) {
+        error = "Could not preserve the original EEPROM: " +
+                filesystem_error.message();
         return false;
     }
     return true;
@@ -378,6 +415,7 @@ void dkr::runtime::saves::configure(
     const std::filesystem::path& config_directory) {
     dkr::sync::scoped_lock lock(g_save_manager_mutex);
     g_config_directory = config_directory;
+    g_staged_host_online_save.clear();
 }
 
 dkr::runtime::saves::SaveInfo dkr::runtime::saves::adventure_info() {
@@ -407,13 +445,15 @@ std::vector<std::filesystem::path> dkr::runtime::saves::adventure_backups() {
     if (!dkr::fs::is_directory(directory, error)) {
         return result;
     }
-    for (const auto& entry : dkr::fs::list_directory(directory)) {
-        if (dkr::fs::is_regular_file(entry) &&
-            entry.filename().string().rfind("adventure-", 0) == 0 &&
-            entry.extension() == ".bin") {
+    for (const auto& entry : std::filesystem::directory_iterator(
+             directory, std::filesystem::directory_options::skip_permission_denied,
+             error)) {
+        if (entry.is_regular_file(error) &&
+            entry.path().filename().string().rfind("adventure-", 0) == 0 &&
+            entry.path().extension() == ".bin") {
             std::vector<std::uint8_t> bytes;
-            if (ReadAdventure(entry, bytes)) {
-                result.push_back(entry);
+            if (ReadAdventure(entry.path(), bytes)) {
+                result.push_back(entry.path());
             }
         }
         error.clear();
@@ -444,13 +484,28 @@ bool dkr::runtime::saves::import_adventure(
     dkr::sync::scoped_lock lock(g_save_manager_mutex);
     std::vector<std::uint8_t> bytes;
     if (!ReadAdventure(source, bytes)) {
-        error = "That file is not a valid 512-byte DKR Adventure save.";
-        return false;
+        std::vector<std::uint8_t> unverified;
+        if (!ReadFileBounded(source, kAdventureSaveSize, unverified) ||
+            unverified.size() != kAdventureSaveSize) {
+            error = "That file is not a 512-byte DKR Adventure save.";
+            return false;
+        }
+        if (!codec::repair_checksums(unverified, bytes, &error)) {
+            error = "That Adventure save could not be checksum-repaired: " +
+                    error;
+            return false;
+        }
     }
     std::error_code equivalent_error;
     if (dkr::fs::exists(AdventurePath(), equivalent_error)) {
         std::filesystem::path backup;
-        if (!BackupUnlocked(backup, error)) {
+        std::vector<std::uint8_t> current;
+        const bool current_valid = ReadAdventure(AdventurePath(), current);
+        if (current_valid && !BackupUnlocked(backup, error)) {
+            return false;
+        }
+        if (!current_valid &&
+            !BackupRawAdventureUnlocked(backup, error)) {
             return false;
         }
     }
@@ -504,6 +559,195 @@ bool dkr::runtime::saves::commit_adventure(const codec::SaveImage& image,
     return WriteAtomic(AdventurePath(), bytes, ReadAdventure, error);
 }
 
+bool dkr::runtime::saves::repair_adventure_checksums(
+    bool& changed, std::filesystem::path& original_backup,
+    std::string& error) {
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
+    changed = false;
+    original_backup.clear();
+
+    std::vector<std::uint8_t> original;
+    if (!ReadFileBounded(AdventurePath(), kAdventureSaveSize, original) ||
+        original.size() != kAdventureSaveSize) {
+        error = "No 512-byte Adventure EEPROM is available to repair.";
+        return false;
+    }
+    if (codec::validate(original)) {
+        error.clear();
+        return true;
+    }
+
+    std::vector<std::uint8_t> repaired;
+    if (!codec::repair_checksums(original, repaired, &error)) {
+        return false;
+    }
+    if (repaired == original) {
+        error = "The EEPROM remains invalid even though no checksum byte changed.";
+        return false;
+    }
+
+    // Repair is intentionally permitted to alter only checksum bytes:
+    // two bytes at each populated adventure slot, the config checksum byte,
+    // and two bytes at each T.T. record block. This check is independent of
+    // the codec implementation and prevents an accidental payload rewrite.
+    const auto checksum_byte = [](std::size_t index) {
+        if (index == kAdventureConfigOffset) return true;
+        for (std::size_t slot = 0; slot < codec::kAdventureSlotCount; ++slot) {
+            const std::size_t offset = slot * kAdventureSlotSize;
+            if (index == offset || index == offset + 1U) return true;
+        }
+        return index == kFastestLapsOffset ||
+               index == kFastestLapsOffset + 1U ||
+               index == kCourseTimesOffset ||
+               index == kCourseTimesOffset + 1U;
+    };
+    for (std::size_t index = 0; index < original.size(); ++index) {
+        if (original[index] != repaired[index] && !checksum_byte(index)) {
+            error = "Checksum repair attempted to alter Adventure progress data.";
+            return false;
+        }
+    }
+
+    if (!BackupRawAdventureUnlocked(original_backup, error)) {
+        return false;
+    }
+    if (!WriteAtomic(AdventurePath(), repaired, ReadAdventure, error)) {
+        return false;
+    }
+    changed = true;
+    error.clear();
+    return true;
+}
+
+bool dkr::runtime::saves::canonical_adventure_bytes(
+    std::vector<std::uint8_t>& bytes, std::string& error) {
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
+    std::vector<std::uint8_t> stored;
+    if (!ReadFileBounded(AdventurePath(), kAdventureSaveSize, stored) ||
+        stored.size() != kAdventureSaveSize) {
+        error = "No 512-byte Adventure EEPROM is available.";
+        bytes.clear();
+        return false;
+    }
+    return codec::canonical_bytes(stored, bytes, &error);
+}
+
+dkr::runtime::saves::SaveInfo
+dkr::runtime::saves::previous_online_adventure_info() {
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
+    SaveInfo info{};
+    info.path = OnlineAdventurePath(true, 0U);
+    std::error_code filesystem_error;
+    info.exists = dkr::fs::exists(info.path, filesystem_error);
+    if (info.exists && !filesystem_error) {
+        info.size = dkr::fs::file_size(info.path, filesystem_error);
+        std::vector<std::uint8_t> bytes;
+        info.valid = !filesystem_error && ReadAdventure(info.path, bytes);
+    }
+    return info;
+}
+
+bool dkr::runtime::saves::prepare_host_online_adventure(
+    OnlineSaveSeedMode mode, std::vector<std::uint8_t>& bytes,
+    std::string& error) {
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
+    bytes.clear();
+    const std::filesystem::path destination = OnlineAdventurePath(true, 0U);
+
+    if (mode == OnlineSaveSeedMode::Fresh) {
+        bytes = codec::blank_bytes();
+    } else {
+        const std::filesystem::path source =
+            mode == OnlineSaveSeedMode::CopySinglePlayer
+                ? AdventurePath() : destination;
+        std::vector<std::uint8_t> stored;
+        if (!ReadAdventure(source, stored)) {
+            error = mode == OnlineSaveSeedMode::CopySinglePlayer
+                ? "No checksum-valid single-player Adventure save is available to copy."
+                : "No checksum-valid previous online session save is available.";
+            return false;
+        }
+        // The host explicitly chose an existing save. Preserve the complete
+        // checksum-valid EEPROM image byte-for-byte, including opaque retail
+        // data that the save editor does not interpret.
+        bytes = std::move(stored);
+    }
+
+    // Creating a lobby is not a commit point: registration/approval may fail.
+    // Keep the validated seed in memory until actual host game-save activation.
+    g_staged_host_online_save = bytes;
+    error.clear();
+    return true;
+}
+
+bool dkr::runtime::saves::install_synchronized_online_adventure(
+    std::uint64_t match_id, std::span<const std::uint8_t> bytes,
+    std::filesystem::path& installed_path, std::string& error) {
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
+    installed_path.clear();
+    if (match_id == 0U) {
+        error = "The online session has no authenticated match identity.";
+        return false;
+    }
+    if (bytes.size() != kAdventureSaveSize ||
+        !codec::validate(bytes, &error)) {
+        error = "The host supplied an invalid Adventure EEPROM: " + error;
+        return false;
+    }
+
+    const std::vector<std::uint8_t> synchronized(bytes.begin(), bytes.end());
+    installed_path = OnlineAdventurePath(false, match_id);
+    if (!WriteAtomic(installed_path, synchronized, ReadAdventure, error)) {
+        installed_path.clear();
+        return false;
+    }
+    std::vector<std::uint8_t> verified;
+    if (!ReadAdventure(installed_path, verified) || verified != synchronized) {
+        error = "The synchronized online save did not pass its read-back verification.";
+        installed_path.clear();
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
+bool dkr::runtime::saves::read_online_adventure(
+    bool host, std::uint64_t match_id, std::vector<std::uint8_t>& bytes,
+    std::filesystem::path& path, std::string& error) {
+    dkr::sync::scoped_lock lock(g_save_manager_mutex);
+    bytes.clear();
+    path = OnlineAdventurePath(host, match_id);
+    if (host && !g_staged_host_online_save.empty()) {
+        std::vector<std::uint8_t> previous;
+        const bool had_previous = ReadAdventure(path, previous);
+        if (had_previous && previous != g_staged_host_online_save &&
+            !WriteAtomic(path.string() + ".previous-session", previous, ReadAdventure, error)) {
+            error = "The previous online session could not be preserved: " + error;
+            return false;
+        }
+        if ((!had_previous || previous != g_staged_host_online_save) &&
+            !WriteAtomic(path, g_staged_host_online_save, ReadAdventure, error)) return false;
+        std::vector<std::uint8_t> verified;
+        if (!ReadAdventure(path, verified) || verified != g_staged_host_online_save) {
+            error = "The staged host save did not pass activation read-back verification.";
+            return false;
+        }
+        g_staged_host_online_save.clear();
+    }
+    if ((!host && match_id == 0U) || !ReadAdventure(path, bytes)) {
+        error = "The expected checksum-valid online Adventure save is unavailable.";
+        bytes.clear();
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
+std::filesystem::path dkr::runtime::saves::online_adventure_subfolder(
+    bool host, std::uint64_t match_id) {
+    return OnlineAdventureSubfolder(host, match_id);
+}
+
 dkr::runtime::saves::SaveInfo dkr::runtime::saves::controller_pak_info(
     int channel) {
     dkr::sync::scoped_lock lock(g_save_manager_mutex);
@@ -536,13 +780,15 @@ dkr::runtime::saves::controller_pak_backups(int channel) {
     }
     const std::string prefix =
         "controller-pak-" + std::to_string(channel + 1) + "-";
-    for (const auto& entry : dkr::fs::list_directory(directory)) {
-        if (dkr::fs::is_regular_file(entry) &&
-            entry.filename().string().rfind(prefix, 0) == 0 &&
-            entry.extension() == ".mpk") {
+    for (const auto& entry : std::filesystem::directory_iterator(
+             directory, std::filesystem::directory_options::skip_permission_denied,
+             error)) {
+        if (entry.is_regular_file(error) &&
+            entry.path().filename().string().rfind(prefix, 0) == 0 &&
+            entry.path().extension() == ".mpk") {
             std::vector<std::uint8_t> bytes;
-            if (ReadControllerPak(entry, bytes)) {
-                result.push_back(entry);
+            if (ReadControllerPak(entry.path(), bytes)) {
+                result.push_back(entry.path());
             }
         }
         error.clear();

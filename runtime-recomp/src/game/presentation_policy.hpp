@@ -11,7 +11,9 @@ enum class PresentationProfile : std::uint8_t {
 
 inline constexpr int kMinimumPresentationRate = 30;
 inline constexpr int kMaximumPresentationRate = 500;
-inline constexpr int kCurrentSettingsVersion = 7;
+inline constexpr int kMinimumTextureLodBiasHundredths = -200;
+inline constexpr int kMaximumTextureLodBiasHundredths = 200;
+inline constexpr int kCurrentSettingsVersion = 9;
 inline constexpr int kOldestCompatibleSettingsVersion = 6;
 
 constexpr PresentationProfile normalise_presentation_profile(int value) {
@@ -33,19 +35,33 @@ constexpr int clamp_presentation_rate(int rate) {
             : rate;
 }
 
+constexpr int clamp_texture_lod_bias_hundredths(int bias) {
+    return bias < kMinimumTextureLodBiasHundredths
+        ? kMinimumTextureLodBiasHundredths
+        : bias > kMaximumTextureLodBiasHundredths
+            ? kMaximumTextureLodBiasHundredths
+            : bias;
+}
+
 constexpr bool maximum_detail_effective(PresentationProfile profile,
                                          bool requested) {
     return normalise_presentation_profile(profile) == PresentationProfile::Modern &&
            requested;
 }
 
+constexpr bool multiplayer_race_music_effective(
+    PresentationProfile profile, bool requested) {
+    return normalise_presentation_profile(profile) ==
+               PresentationProfile::Modern && requested;
+}
+
 constexpr bool interpolation_allowed(PresentationProfile profile) {
     return normalise_presentation_profile(profile) == PresentationProfile::Modern;
 }
 
-// DKR's fixed post-race cameras rebuild their authored display lists from
-// different spectator nodes. Those tasks are not topology-compatible with a
-// preceding gameplay camera even when the post-race viewport flag is clear.
+// Finish shots can interpolate continuously within a spectator node. Actual
+// changes of shot are separated by per-camera continuity epochs instead of
+// disabling interpolation for every viewport in the entire submitted task.
 inline constexpr int kCameraFinishChallenge = 5;
 inline constexpr int kCameraFinishRace = 7;
 
@@ -55,9 +71,8 @@ constexpr bool is_finish_camera_mode(int camera_mode) {
 }
 
 constexpr bool interpolation_allowed_for_camera(PresentationProfile profile,
-                                                int camera_mode) {
-    return interpolation_allowed(profile) &&
-        !is_finish_camera_mode(camera_mode);
+                                                int /*camera_mode*/) {
+    return interpolation_allowed(profile);
 }
 
 constexpr bool modern_options_visible(PresentationProfile profile) {

@@ -1101,10 +1101,14 @@ target_compile_options(win95recompiled PRIVATE -w)   # generated code
 
 # --- The game (E02-S06) ------------------------------------------------------
 #
-# The 17 sources this target builds: those of `DKR_GAME_SOURCES` less the four that
-# only RT64 compiles, since RT64 requires D3D12, Vulkan or Metal.
+# The sources this target builds: those of `DKR_GAME_SOURCES` less the ones only
+# RT64 compiles, since RT64 requires D3D12, Vulkan or Metal.
+#
+# `game_payload` joined the list with the 1.0.5b8 merge: upstream moved
+# `active_payload` into it, and `runtime_quick_restart` -- which this target does
+# build -- calls it.
 set(DKR_WIN95_GAME_SOURCES
-    audio_equalizer dkr_save_codec game_main game_registration
+    audio_equalizer dkr_save_codec game_main game_payload game_registration
     glide_renderer null_renderer
     presentation_identity renderer_snapshot runtime_enhancements
     runtime_audio_controls runtime_input runtime_magic_codes runtime_platform

@@ -1,0 +1,41 @@
+diff --git a/ultramodern/src/error_handling.cpp b/ultramodern/src/error_handling.cpp
+index 8ca779e..05bc60b 100644
+--- a/ultramodern/src/error_handling.cpp
++++ b/ultramodern/src/error_handling.cpp
+@@ -23,6 +23,11 @@ void ultramodern::error_handling::quick_exit(const char* filename, int line, con
+ 
+ #ifdef __APPLE__
+     std::_Exit(exit_status);
++#elif defined(__MINGW32__) && !defined(_UCRT)
++    // The legacy msvcrt has no quick_exit at all, under either name. _Exit is
++    // the same immediate termination without unwinding; it skips at_quick_exit
++    // handlers, and this codebase registers none.
++    std::_Exit(exit_status);
+ #else
+     std::quick_exit(exit_status);
+ #endif
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index c6a0295..caa418f 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -64,6 +64,12 @@ void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t ar
+ 
+ #if defined(_WIN32)
+ void ultramodern::set_native_thread_name(const std::string& name) {
++#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0A00
++    // SetThreadDescription arrived with Windows 10 1607. It only labels a
++    // thread for a debugger, and there is none on a Windows 95 target, so the
++    // call is dropped rather than emulated.
++    (void)name;
++#else
+     std::wstring wname{name.begin(), name.end()};
+ 
+     HRESULT r;
+@@ -71,6 +77,7 @@ void ultramodern::set_native_thread_name(const std::string& name) {
+         GetCurrentThread(),
+         wname.c_str()
+     );
++#endif
+ }
+ 
+ void ultramodern::set_native_thread_priority(ThreadPriority pri) {

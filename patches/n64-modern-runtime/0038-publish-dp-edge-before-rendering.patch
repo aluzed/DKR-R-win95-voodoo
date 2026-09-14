@@ -1,0 +1,129 @@
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index c18ee3c..c666f40 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -292,6 +292,13 @@ void vi_thread_func() {
+ //
+ // The trace stops on its own after a few hundred lines: the target machine writes
+ // to an emulated floppy.
++// Defined by the game (game_main.cpp): flushes the log AND updates the directory
++// entry, failing which a frozen program leaves a zero-byte file. Declared weak so
++// that the trial binaries, which link ultramodern without the game, still link.
++//
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++static void diag_commit() { if (dkr_diag_commit) { dkr_diag_commit(); } }
++
+ static std::atomic<unsigned> g_trace_submits{0};
+ static std::atomic<unsigned> g_trace_sp{0};
+ static std::atomic<unsigned> g_trace_dp{0};
+@@ -308,6 +315,53 @@ static void trace_sp(const char* what, unsigned type) {
+                  g_trace_dp.load());
+ }
+ 
++// How long does rendering a display list really take?
++//
++// This is the measurement that corrected the diagnosis rather than confirming it.
++//
++// The hypothesis was that a software Glide rendering exceeds the 167 ms that
++// eleven retraces at 60 Hz amount to, and therefore makes DKR's watchdog give
++// way. Measured: **worst case 60 ms over more than two thousand frames, zero
++// overruns**.
++//
++// With the reservation that counts, and that nearly went missing: this build uses
++// the **null renderer**. The 60 ms are the display list's traversal alone, with no
++// rasterisation. The measurement therefore refutes the hypothesis *for this
++// binary*, not for a real Glide rendering -- which will cost considerably more,
++// and will bring the budget question back. Which argues for publishing the edge
++// early: it is not a palliative but the only structure that holds when the
++// rendering gets heavier.
++//
++// What the measurement does establish: 60 ms of mere traversal already produce six
++// retraces per list. The threshold of eleven is not far, without a single line
++// having been rasterised.
++//
++// What the delay costs is not time but **retraces handled in the meantime**:
++// gCurRDPTaskCounter is reset to zero by __scExec when a task starts, then
++// incremented once per __scHandleRetrace. The measurement is kept because it goes
++// on watching the worst case, not because it validates anything.
++static std::atomic<unsigned> g_dl_worst_ms{0};
++static std::atomic<unsigned> g_dl_over_budget{0};
++static std::atomic<unsigned> g_dl_total{0};
++static void trace_dl_duration(std::chrono::high_resolution_clock::time_point start,
++                              std::chrono::high_resolution_clock::time_point end) {
++    const unsigned ms = static_cast<unsigned>(
++        std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
++    const unsigned n = g_dl_total.fetch_add(1) + 1;
++    unsigned worst = g_dl_worst_ms.load();
++    while (ms > worst && !g_dl_worst_ms.compare_exchange_weak(worst, ms)) {}
++    // 167 ms = eleven retraces at 60 Hz, the watchdog's exact threshold.
++    if (ms > 167u) { g_dl_over_budget.fetch_add(1); }
++    if (!trace_sp_enabled()) { return; }
++    if (n % 60u != 0u) { return; }
++    std::fprintf(stderr, "[trace][dl] rendered=%u worst=%u ms over-budget(>167ms)=%u\n",
++                 n, g_dl_worst_ms.load(), g_dl_over_budget.load());
++    // Force the log onto the disk. Without this, a hang leaves a zero-byte file
++    // whatever was written, and one cannot tell "the program stopped early" from
++    // "the program is still running".
++    diag_commit();
++}
++
+ void sp_complete() {
+     g_trace_sp.fetch_add(1);
+     trace_sp("sp", 0);
+@@ -431,6 +485,42 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+                 // games such as DKR that schedule their next task on SP.
+                 sp_complete();
+ 
++                // Publish the DP edge BEFORE rendering, not after.
++                //
++                // DKR's scheduler carries a watchdog that stock libultra does not
++                // have (__scHandleRetrace, sched.c): it counts retraces while an
++                // RDP task is outstanding, and past ten of them it declares the
++                // RDP hung -- it nulls curRDPTask and resets the DP registers,
++                // WITHOUT clearing OS_SC_NEEDS_RDP on the task. A DP edge landing
++                // after that point walks into __scHandleRDP with curRDPTask == 0
++                // and dereferences null.
++                //
++                // The threshold is counted in RETRACES PROCESSED, not in
++                // milliseconds -- gCurRDPTaskCounter is reset in __scExec when a
++                // task starts and incremented once per __scHandleRetrace. The
++                // first draft of this comment claimed a software Glide frame
++                // blows a 167 ms budget; the measurement below refutes that for
++                // this build -- worst case 60 ms, and with the null renderer, so
++                // display-list traversal alone. What the delay costs is not time
++                // but retraces landing in between.
++                //
++                // The run averages 3238 VIDEO messages against 567 RDP_DONE --
++                // about six retraces per display list, comfortably under eleven
++                // on average and not under it in the tail. One excursion is all
++                // it takes, which is why the crash struck once, at display list
++                // 344 of a run that was otherwise progressing.
++                //
++                // Publishing early is safe for exactly the reason sp_complete()
++                // is: the queued task owns an immutable RDRAM snapshot, so the
++                // renderer never reads memory the game may recycle, and the swap
++                // to the screen is ours to schedule rather than the game's.
++                //
++                // It sits OUTSIDE `presentation_allowed`, and that is upstream's
++                // property rather than ours: a suppressed rollback-replay frame
++                // still owes the game its DP edge. Moving the call up keeps both
++                // -- always published, and published before the renderer runs.
++                dp_complete();
++
+                 if (task_action->presentation_allowed) {
+                     // Turn on instant present if the game has been started and it hasn't been turned on yet.
+                     if (ultramodern::is_game_started() && !enabled_instant_present) {
+@@ -444,11 +534,11 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
+                     [[maybe_unused]] auto renderer_start = std::chrono::high_resolution_clock::now();
+                     renderer_context->send_dl(&task_action->task, task_action->rdram_snapshot.get());
+                     [[maybe_unused]] auto renderer_end = std::chrono::high_resolution_clock::now();
++                    trace_dl_duration(renderer_start, renderer_end);
++                    // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
+                     ultramodern::extensions::on_displaylist_parsed(displaylist);
+                     ultramodern::extensions::on_displaylist_completed(displaylist);
+                 }
+-
+-                dp_complete();
+                 // printf("Renderer ProcessDList time: %d us\n", static_cast<u32>(std::chrono::duration_cast<std::chrono::microseconds>(renderer_end - renderer_start).count()));
+             }
+             else if (const auto* screen_update_action = std::get_if<ScreenUpdateAction>(&action)) {

@@ -1,0 +1,59 @@
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index b34b8e4..bf9d4ed 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -167,7 +167,18 @@ void ultramodern::enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg,
+     if (mq == NULLPTR) {
+         return;
+     }
+-    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], {}});
++    // **The source must travel with the message.**
++    //
++    // Without it, everything that passes through here carries the default value,
++    // and two policies written just above miss their target: the priority given
++    // to the SP and DP edges promotes only SP - the only one to go through the
++    // expected variant - and the slot reservation meant for the retraces can
++    // discard a DP edge, which then looks like its twin.
++    //
++    // The defect did not show in the counts: nothing was refused, so nothing
++    // seemed to be missing. It showed because a probe conditioned on the source
++    // never fired, while 544 DP messages were being deposited.
++    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], {}, src});
+ }
+ 
+ bool ultramodern::enqueue_external_message_src_and_wait(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
+@@ -260,6 +271,34 @@ void dequeue_external_messages(RDRAM_ARG1) {
+                 continue;
+             }
+         }
++        // **Read the game's state at deposit time, not afterwards.**
++        //
++        // The remaining crash finds `curRDPTask` null in `__scHandleRDP`. Two
++        // causes remain and can only be told apart there: either we emit a DP
++        // edge for a task the game has not registered as needing the RDP - it
++        // would then already be null when we deposit - or the game clears it
++        // between our deposit and its handling.
++        //
++        // The address is that of `gMainSched` in DKR, taken from the decomp's
++        // symbol map. Hard-coding it would not be acceptable elsewhere; here it
++        // is a diagnostic behind an environment variable, and the only way to
++        // ask the question.
++        if (to_send.source == ultramodern::EventMessageSource::Dp &&
++            std::getenv("DKR_TRACE_SP") != nullptr) {
++            static unsigned nulls = 0, set = 0, shown = 0;
++            /* The guest RDRAM is stored byte-swapped on the host side: we read
++               the word backwards to recover the game's value. */
++            const uint8_t* o = rdram + (0x801214D8u - 0x80000000u);
++            const uint32_t cur = (uint32_t)o[3] | ((uint32_t)o[2] << 8) |
++                                 ((uint32_t)o[1] << 16) | ((uint32_t)o[0] << 24);
++            if (cur == 0u) { nulls++; } else { set++; }
++            if (++shown <= 6u || (nulls + set) % 100u == 0u) {
++                std::fprintf(stderr,
++                             "[trace][dp] curRDPTask at deposit = 0x%08X"
++                             "  (nulls=%u set=%u)\n",
++                             (unsigned)cur, nulls, set);
++            }
++        }
+         const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
+         // **Count the deposits, not the requests.**
+         //

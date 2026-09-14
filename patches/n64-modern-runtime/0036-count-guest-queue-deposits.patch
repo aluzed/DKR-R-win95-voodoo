@@ -1,0 +1,156 @@
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index d6a75a4..b34b8e4 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -1,3 +1,6 @@
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
+ #include <array>
+ #include <bitset>
+ #include <chrono>
+@@ -25,6 +28,10 @@ struct QueuedMessage {
+     bool jam;
+     bool requeue_if_blocked;
+     std::shared_ptr<MessageDeliveryState> delivery;
++    // The source is already carried by `delivery`, but only when there is one. It
++    // is needed here to order the delivery, including for messages with no
++    // waiter - the retrace, precisely.
++    ultramodern::EventMessageSource source = ultramodern::EventMessageSource::Vi;
+ };
+ 
+ // This queue is the wakeup path for emulated hardware events. A conventional
+@@ -170,7 +177,7 @@ bool ultramodern::enqueue_external_message_src_and_wait(PTR(OSMesgQueue) mq, OSM
+     auto delivery = std::make_shared<MessageDeliveryState>();
+     delivery->source = src;
+     external_messages.enqueue({
+-        mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery});
++        mq, msg, jam, requeue_enabled[static_cast<int>(src)], delivery, src});
+     ultramodern::unique_lock lock{ delivery->mutex };
+     while (!delivery->complete && !exited.load()) {
+         delivery->condition.wait_for(lock, std::chrono::milliseconds{1});
+@@ -197,8 +204,124 @@ void dequeue_external_messages(RDRAM_ARG1) {
+     }
+     QueuedMessage to_send;
+     std::vector<QueuedMessage> requeued_messages{};
++
++    // **Serve the SP and DP edges before the others.**
++    //
++    // The N64 scheduler's interrupt queue holds eight messages. We deposit one
++    // retrace per frame there; the game does not always consume them as fast, and
++    // the queue saturates. Measured on Windows 95: the RSP task completion message
++    // was refused, requeued, and deposited nine refusals later.
++    //
++    // The game, for its part, does not wait: a few frames without an answer and
++    // its scheduler gives the task up and resets `curRSPTask` to null. Our message
++    // arrives afterwards, and `__scHandleRSP` dereferences a null pointer.
++    //
++    // On the hardware, an SP interrupt and a scan retrace are two independent
++    // events whose relative order is not guaranteed. Serving them first is
++    // therefore faithful, and it suffices to lift them out of starvation. Their
++    // order among themselves is preserved - that is the one the game observes.
++    {
++        std::vector<QueuedMessage> all{};
++        while (external_messages.try_dequeue(to_send)) {
++            all.push_back(to_send);
++        }
++        std::stable_partition(all.begin(), all.end(), [](const QueuedMessage& m) {
++            return m.source == ultramodern::EventMessageSource::Sp ||
++                   m.source == ultramodern::EventMessageSource::Dp;
++        });
++        for (QueuedMessage& m : all) {
++            external_messages.enqueue(m);
++        }
++    }
++
+     while (external_messages.try_dequeue(to_send)) {
++        // **Reserve two slots for what cannot be lost.**
++        //
++        // The scheduler's interrupt queue holds eight messages and serves at once
++        // our retraces, our SP and DP edges, and - through the command queue that
++        // `__scHandleRetrace` drains - the starting of the game's tasks. One
++        // retrace too many takes a task completion's place there.
++        //
++        // A first attempt refused to deposit a retrace until the previous one was
++        // delivered. It blocked the startup: our external queue is not drained at
++        // regular intervals but **opportunistically**, when a guest thread waits,
++        // and the flag stayed set. A policy that assumes periodic draining is
++        // wrong by construction here.
++        //
++        // So we look at the guest queue's real state at deposit time, holding
++        // nothing back between passes. On the hardware, a retrace raised while the
++        // queue is full is lost in the same way - `osSendMesg` is called there
++        // without blocking, from the interrupt.
++        if (to_send.source == ultramodern::EventMessageSource::Vi &&
++            to_send.mq != NULLPTR) {
++            const OSMesgQueue* q = TO_PTR(OSMesgQueue, to_send.mq);
++            if (q->msgCount > 2 && q->validCount >= q->msgCount - 2) {
++                complete_delivery(to_send.delivery);
++                continue;
++            }
++        }
+         const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
++        // **Count the deposits, not the requests.**
++        //
++        // The trace in `events.cpp` counts calls to `sp_complete`. It cannot see
++        // what happens here: a message that fails to land is requeued when its
++        // source allows retrying, and this is the only place a duplicate deposit
++        // could be born.
++        //
++        // A crash on Windows 95 finds `curRSPTask` null in `__scHandleRSP`, while
++        // a single task has been submitted and a single `sp_complete` called. If
++        // the count below exceeds that one, the question is settled.
++        if (std::getenv("DKR_TRACE_SP") != nullptr) {
++            static unsigned deposits = 0, refusals = 0, requeues = 0;
++            if (sent) { deposits++; } else if (to_send.requeue_if_blocked) { requeues++; }
++            else { refusals++; }
++            // **A single global cap lets the most frequent message devour the
++            // trace.** The first version stopped after forty events, and the
++            // retrace - sixty per second - had consumed them all before the SP
++            // edge arrived. One would have concluded the SP message was never
++            // deposited, when it had simply not been looked at yet.
++            //
++            // The cap is therefore **per message value**: the first occurrences of
++            // each, which keeps the rare ones visible.
++            static unsigned seen[8][2];
++            static unsigned n_seen = 0;
++            unsigned k = 0, count = 0;
++            const unsigned val = (unsigned)(uintptr_t)to_send.mesg;
++            for (k = 0; k < n_seen; k++) {
++                if (seen[k][0] == val) { count = ++seen[k][1]; break; }
++            }
++            if (k == n_seen && n_seen < 8u) {
++                seen[n_seen][0] = val; seen[n_seen][1] = 1; n_seen++; count = 1;
++            }
++            // **A cap answers the first seconds; a total answers the whole run.**
++            // The per-message cap showed that the SP edge was starved, then showed
++            // nothing more: the late refusals fell beyond it. But the remaining
++            // question bears precisely on the DP edge, which only fails after a
++            // hundred and seventy tasks.
++            //
++            // So we keep both: the first occurrences, which give the startup's
++            // chronology, and a periodic summary of the totals, which cannot be
++            // drowned.
++            static unsigned tot[8][3];
++            unsigned outcome = sent ? 0u : (to_send.requeue_if_blocked ? 2u : 1u);
++            if (k < 8u) { tot[k][outcome]++; }
++            if (count <= 4u) {
++                std::fprintf(stderr,
++                             "[trace][mq] mq=0x%08X msg=0x%08X %s"
++                             "  deposits=%u requeues=%u refusals=%u\n",
++                             (unsigned)to_send.mq, (unsigned)(uintptr_t)to_send.mesg,
++                             sent ? "deposited" : (to_send.requeue_if_blocked ? "requeued" : "refused"),
++                             deposits, requeues, refusals);
++            }
++            if ((deposits + refusals + requeues) % 250u == 0u) {
++                unsigned m;
++                for (m = 0; m < n_seen; m++) {
++                    std::fprintf(stderr,
++                                 "[trace][mq] total msg=0x%08X deposited=%u refused=%u requeued=%u\n",
++                                 seen[m][0], tot[m][0], tot[m][1], tot[m][2]);
++                }
++            }
++        }
+         if (!sent && to_send.requeue_if_blocked) {
+             requeued_messages.push_back(to_send);
+         } else if (sent) {

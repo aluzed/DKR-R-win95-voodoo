@@ -47,23 +47,36 @@ def source_files() -> list[pathlib.Path]:
     allowed_untracked_roots = (
         pathlib.PurePosixPath(".github"),
         pathlib.PurePosixPath("assets/filters"),
+        pathlib.PurePosixPath("assets/controllers"),
         pathlib.PurePosixPath("assets/ui/Icons"),
+        pathlib.PurePosixPath("assets/ui/Backgrounds"),
         pathlib.PurePosixPath("docs"),
         pathlib.PurePosixPath("packaging"),
+        pathlib.PurePosixPath("runtime-recomp/cmake"),
         pathlib.PurePosixPath("runtime-recomp/src/game"),
+        pathlib.PurePosixPath("runtime-recomp/src/input"),
         pathlib.PurePosixPath("runtime-recomp/tests"),
         pathlib.PurePosixPath("patches"),
         pathlib.PurePosixPath("scripts"),
     )
     allowed_untracked_suffixes = {
         ".c", ".cc", ".cpp", ".h", ".hpp", ".json", ".md", ".png",
-        ".ps1", ".py", ".sh", ".txt", ".patch", ".yaml", ".yml",
+        ".ps1", ".py", ".sh", ".txt", ".patch", ".yaml", ".yml", ".cmake",
     }
     selected = set(tracked)
     allowed_exact_untracked = {
+        pathlib.PurePosixPath("runtime-recomp/tests/live_lod_probe.hlsl"),
+        pathlib.PurePosixPath("runtime-recomp/tests/generated_mip_readback.hlsl"),
+        pathlib.PurePosixPath("runtime-recomp/tests/generated_mip_sampling.hlsl"),
         pathlib.PurePosixPath("RELEASE-VALIDATION.md"),
         pathlib.PurePosixPath("VERSION"),
-        pathlib.PurePosixPath("assets/ui/Icons/DKR-R8.bmp"),
+        pathlib.PurePosixPath("runtime-recomp/dkr.us.v80.recomp-policy.json"),
+        pathlib.PurePosixPath("runtime-recomp/legacy-mods.v77.recomp-fragment.json"),
+        pathlib.PurePosixPath("runtime-recomp/legacy-mods.v80.recomp-fragment.json"),
+        pathlib.PurePosixPath("assets/ui/Icons/DKR-R-Logo.bmp"),
+        pathlib.PurePosixPath("assets/ui/Icons/DKR-R-Icon.png"),
+        pathlib.PurePosixPath("assets/ui/Icons/DKR-R-Spinning-Icon.png"),
+        pathlib.PurePosixPath("assets/ui/Icons/DKR-R-Short-Logo.png"),
     }
     for path in untracked:
         pure = pathlib.PurePosixPath(path.as_posix())

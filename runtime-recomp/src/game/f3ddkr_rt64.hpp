@@ -1,7 +1,9 @@
 #pragma once
 
+#include "presentation_marker_policy.hpp"
 #include "ultramodern/ultra64.h"
 
+#include <array>
 #include <cstdint>
 
 namespace RT64 {
@@ -26,17 +28,41 @@ public:
     void process(RT64::Application& application, const OSTask& task);
 
 private:
+    using Handler = void (*)(RT64::State*, RT64::DisplayList**);
     struct StateData;
     RT64::GBI* gbi_;
     StateData* data_;
+    std::array<Handler, 256> original_handlers_{};
+    std::array<presentation::PresentationDiagnosticBudget, 8> diagnostic_budgets_{};
+
+    void ReportPresentationError(std::size_t index, const char* message,
+                                 presentation::PresentationMarkerKind kind =
+                                     presentation::PresentationMarkerKind::Geometry,
+                                 std::uint32_t mode = 0U,
+                                 std::uint8_t variant = 0U);
 
     static F3DDKRRT64Bridge* active_;
 
+    static void Dispatch(RT64::State* state,
+                         RT64::DisplayList** display_list);
+    static void ApplyPresentationMarkers(RT64::State* state,
+                                         RT64::DisplayList* display_list);
+    static void ApplyPresentationGroup(RT64::State* state,
+                                       std::uint32_t mode,
+                                       std::uint16_t token,
+                                       std::uint8_t variant,
+                                       presentation::PresentationMarkerKind kind);
+    static void FinishShadowScope(RT64::State* state);
+    static void AdjustSplitViewportCommand(RT64::State* state,
+                                           RT64::DisplayList* command,
+                                           std::uint8_t opcode);
+    static void RejectTask(RT64::DisplayList** display_list);
     static void PresentationGroup(RT64::State* state,
                                   RT64::DisplayList** display_list);
     static void MoveMem(RT64::State* state, RT64::DisplayList** display_list);
     static void Matrix(RT64::State* state, RT64::DisplayList** display_list);
     static void FillRect(RT64::State* state, RT64::DisplayList** display_list);
+    static void HudTextureRect(RT64::State* state, RT64::DisplayList** display_list);
     static void TextureOffset(RT64::State* state, RT64::DisplayList** display_list);
     static void Vertex(RT64::State* state, RT64::DisplayList** display_list);
     static void Triangle(RT64::State* state, RT64::DisplayList** display_list);

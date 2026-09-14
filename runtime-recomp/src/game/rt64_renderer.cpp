@@ -1,11 +1,16 @@
 #include "rt64_renderer.hpp"
+#include "render/rt64_generated_mip_config.h"
 
 #include "game_registration.hpp"
 #include "presentation_identity.hpp"
 #include "renderer_snapshot.hpp"
+#include "revision_addresses.hpp"
 #include "runtime_enhancements.hpp"
+#include "runtime_netplay.hpp"
+#include "netplay/failure_recorder.hpp"
 #include "runtime_telemetry.hpp"
 #include "runtime_texture_packs.hpp"
+#include "startup_performance.hpp"
 #include "vi_presentation_policy.hpp"
 #include "runtime_platform.hpp"
 #include "runtime_ui.hpp"
@@ -18,6 +23,7 @@
 #include "common/rt64_enhancement_configuration.h"
 #include "common/rt64_user_configuration.h"
 #include "hle/rt64_application.h"
+#include "runtime_mipmap_loading.hpp"
 #include "hle/rt64_state.h"
 #include "render/rt64_shader_library.h"
 #include "librecomp/game.hpp"
@@ -30,6 +36,8 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <mutex>
 #include <tuple>
 #include <utility>
 
@@ -96,6 +104,8 @@ std::array<std::uint8_t, 0x1000> g_dmem{};
 std::array<std::uint8_t, 0x1000> g_imem{};
 std::uint32_t g_mi_interrupt = 0;
 std::array<std::uint32_t, 8> g_dpc_registers{};
+std::mutex g_active_renderer_mutex;
+dkr::runtime::RT64Renderer* g_active_renderer = nullptr;
 int g_requested_refresh_target = 30;
 int g_effective_refresh_target = 30;
 int g_detected_display_rate = 60;
@@ -277,6 +287,19 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     std::uint8_t* rdram,
     ultramodern::renderer::WindowHandle window_handle,
     bool developer_mode) {
+    const auto renderer_started_at =
+        dkr::runtime::startup_performance::Clock::now();
+    // RT64Renderer can be created more than once while the DKR-R process and
+    // launcher window remain alive. These bridge buffers emulate N64 graphics
+    // hardware registers and therefore belong to a game session, even though
+    // their storage is process-static. Never let a stopped session seed the
+    // next renderer with stale display-list or interrupt state.
+    g_rom_header.fill(0);
+    g_dmem.fill(0);
+    g_imem.fill(0);
+    g_mi_interrupt = 0;
+    g_dpc_registers.fill(0);
+
     RT64::Application::Core core{};
 #if defined(_WIN32)
     core.window = window_handle.window;
@@ -325,7 +348,21 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     RT64::setDefaultSamplerAnisotropy(
         static_cast<std::uint32_t>(
             dkr::runtime::enhancements::anisotropy_level()));
+    const float texture_lod_bias =
+        dkr::runtime::enhancements::effective_texture_lod_bias();
+    RT64::setDefaultSamplerMipLODBias(texture_lod_bias);
+    RT64::beginGeneratedMipSession(dkr::runtime::enhancements::generated_mipmaps_requested());
+    RT64::setGeneratedMipSampling(dkr::runtime::enhancements::modern_presentation_enabled());
+    std::fprintf(stderr, "[boot][graphics] generated_texture_mipmaps=%s (sampling=%s)\n",
+        RT64::generatedMipSessionEnabled() ? "on" : "off",
+        RT64::generatedMipSamplingEnabled() ? "on" : "off");
+    std::fprintf(stderr,
+                 "[boot][graphics] texture_lod_bias=%+.2f anisotropy=%d\n",
+                 static_cast<double>(texture_lod_bias),
+                 dkr::runtime::enhancements::anisotropy_level());
     const auto create_application = [&] {
+        const auto application_started_at =
+            dkr::runtime::startup_performance::Clock::now();
         application_ = std::make_unique<RT64::Application>(core, application_config);
         ApplyConfig(*application_, config);
         application_->userConfig.developerMode = developer_mode;
@@ -344,6 +381,8 @@ dkr::runtime::RT64Renderer::RT64Renderer(
         // frame. PresentEarly follows the current VI buffer and remains valid both
         // before and after RT64 enables interpolation for that framebuffer.
         application_->enhancementConfig.presentation.mode = PresentationMode();
+        dkr::runtime::startup_performance::report(
+            "rt64-application-create", application_started_at);
     };
     create_application();
     // DKR presents directly from its alternating rendered color buffers.
@@ -355,7 +394,10 @@ dkr::runtime::RT64Renderer::RT64Renderer(
 #if defined(_WIN32)
     thread_id = window_handle.thread_id;
 #endif
+    auto setup_started_at = dkr::runtime::startup_performance::Clock::now();
     setup_result = MapSetupResult(application_->setup(thread_id));
+    dkr::runtime::startup_performance::report("rt64-setup",
+                                               setup_started_at);
     chosen_api = MapGraphicsAPI(application_->chosenGraphicsAPI);
     if (setup_result != ultramodern::renderer::SetupResult::Success &&
         config.api_option != ultramodern::renderer::GraphicsApi::Auto) {
@@ -370,7 +412,10 @@ dkr::runtime::RT64Renderer::RT64Renderer(
         application_.reset();
         config.api_option = ultramodern::renderer::GraphicsApi::Auto;
         create_application();
+        setup_started_at = dkr::runtime::startup_performance::Clock::now();
         setup_result = MapSetupResult(application_->setup(thread_id));
+        dkr::runtime::startup_performance::report("rt64-setup-fallback",
+                                                   setup_started_at);
         chosen_api = MapGraphicsAPI(application_->chosenGraphicsAPI);
         if (setup_result == ultramodern::renderer::SetupResult::Success) {
             dkr::runtime::ui::persist_graphics_api_fallback();
@@ -385,8 +430,9 @@ dkr::runtime::RT64Renderer::RT64Renderer(
         application_.reset();
         return;
     }
-    application_->setFullScreen(
-        config.wm_option == ultramodern::renderer::WindowMode::Fullscreen);
+    const bool fullscreen =
+        config.wm_option == ultramodern::renderer::WindowMode::Fullscreen;
+    application_->setFullScreen(fullscreen);
     std::fprintf(stderr,
                  "[boot][rt64] initialized api=%u profile=%s refresh-mode=%u "
                  "requested=%d effective=%d display=%d\n",
@@ -395,13 +441,17 @@ dkr::runtime::RT64Renderer::RT64Renderer(
                      ? "Modern" : "Accurate",
                  static_cast<unsigned>(application_->userConfig.refreshRate),
                  g_requested_refresh_target, g_effective_refresh_target,
-                 g_detected_display_rate);
+                  g_detected_display_rate);
+    {
+        std::scoped_lock lock(g_active_renderer_mutex);
+        g_active_renderer = this;
+    }
+    dkr::runtime::startup_performance::report("renderer-ready",
+                                               renderer_started_at);
 }
 
 dkr::runtime::RT64Renderer::~RT64Renderer() {
-    if (application_ != nullptr) {
-        dkr::runtime::ui::detach(*application_);
-    }
+    shutdown();
 }
 
 bool dkr::runtime::RT64Renderer::valid() {
@@ -411,12 +461,14 @@ bool dkr::runtime::RT64Renderer::valid() {
 bool dkr::runtime::RT64Renderer::update_config(
     const ultramodern::renderer::GraphicsConfig& old_config,
     const ultramodern::renderer::GraphicsConfig& new_config) {
+    std::scoped_lock presentation_lock(presentation_mutex_);
     if (application_ == nullptr || old_config == new_config) {
         return false;
     }
     if (old_config.wm_option != new_config.wm_option) {
-        application_->setFullScreen(
-            new_config.wm_option == ultramodern::renderer::WindowMode::Fullscreen);
+        const bool fullscreen = new_config.wm_option ==
+            ultramodern::renderer::WindowMode::Fullscreen;
+        application_->setFullScreen(fullscreen);
     }
     const bool resolution_or_aspect_changed =
         old_config.res_option != new_config.res_option ||
@@ -457,6 +509,7 @@ bool dkr::runtime::RT64Renderer::update_config(
 }
 
 void dkr::runtime::RT64Renderer::enable_instant_present() {
+    std::scoped_lock presentation_lock(presentation_mutex_);
     if (application_ != nullptr) {
         application_->enhancementConfig.presentation.mode = PresentationMode();
         application_->updateEnhancementConfig();
@@ -465,10 +518,12 @@ void dkr::runtime::RT64Renderer::enable_instant_present() {
 
 void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
                                          std::uint8_t* rdram_snapshot) {
+    std::scoped_lock presentation_lock(presentation_mutex_);
     if (application_ == nullptr || rdram_snapshot == nullptr) {
         return;
     }
     dkr::runtime::telemetry::record_graphics_task();
+    RT64::MipWaitFeedbackScope mipFeedback([this] { present_mipmap_loading(*application_); });
 
     // A real RSP DMAs task inputs before notifying the CPU that it may recycle
     // them. DKR relies on that during scene transitions and can free texture
@@ -478,7 +533,7 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
                                          application_->state->RDRAM,
                                          rdram_snapshot);
     dkr::runtime::presentation::TaskIdentityScope identity_scope(
-        task->t.data_ptr);
+        rdram_snapshot, task->t.data_ptr);
     // DKR authors a new visual state at 30 Hz. Deriving that source cadence
     // from delayed VI history creates a positive feedback loop under load:
     // one late workload is misread as 20/15 Hz, RT64 schedules three or four
@@ -489,15 +544,99 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
     if (ExperimentalInterpolationEnabled()) {
         application_->state->setRefreshRate(30);
     }
-    f3ddkr_.process(*application_, *task);
+    if (track_performance::enabled()) {
+        const auto start = track_performance::Clock::now();
+        f3ddkr_.process(*application_, *task);
+        record_track_performance(rdram_snapshot, start);
+    } else {
+        f3ddkr_.process(*application_, *task);
+    }
+}
+
+void dkr::runtime::RT64Renderer::record_track_performance(
+    std::uint8_t* snapshot, track_performance::Clock::time_point start) {
+    using namespace track_performance;
+    const auto now = Clock::now();
+    const auto read_word = [&](std::uint32_t address) {
+        std::uint32_t value = 0U;
+        // Submission snapshot uses host-endian aligned N64 words. Read only
+        // revision-mapped globals, never live simulation memory.
+        std::memcpy(&value, snapshot + (address & 0x007FFFFCU), sizeof(value));
+        return value;
+    };
+    const auto scene = presentation::task_scene_generation();
+    const auto map = read_word(revision_addresses::CurrentMapId);
+    const auto menu = read_word(revision_addresses::CurrentMenuId);
+    auto& capture = track_capture_;
+    if (capture.count == 0U || capture.scene != scene ||
+        capture.map != map || capture.menu != menu) {
+        capture.count = 0U;
+        capture.started = start;
+        capture.scene = scene;
+        capture.map = map;
+        capture.menu = menu;
+    }
+    capture.decode_ms[capture.count++] =
+        std::chrono::duration<double, std::milli>(now - start).count();
+    if (capture.count < kSamples) return;
+
+    std::array<Samples, 4> history{};
+    bool available = false;
+    if (application_->workloadQueue != nullptr) {
+        auto& queue = *application_->workloadQueue;
+        // Writers own this mutex during matching and rendering. Diagnostics
+        // must never wait for it, alter its timers or retain references after
+        // release. Copy only bounded history, then format/log outside it.
+        std::unique_lock lock(queue.threadMutex, std::try_to_lock);
+        if (lock.owns_lock()) {
+            const RT64::ProfilingTimer* timers[] = {
+                &queue.matchingProfiler, &queue.rendererCPUProfiler,
+                &queue.rendererGPUProfiler, &queue.workloadProfiler};
+            for (std::size_t i = 0U; i < history.size(); ++i) {
+                std::copy_n(timers[i]->data(),
+                    std::min(timers[i]->size(), kSamples), history[i].begin());
+            }
+            available = true;
+        }
+    }
+    if (!available) ++capture.unavailable_windows;
+    const auto decode = summarize(capture.decode_ms);
+    const double seconds = std::chrono::duration<double>(now - capture.started).count();
+    std::fprintf(stderr,
+        "[perf][track] scene=%u map=%u menu=%u tasks=%zu seconds=%.3f "
+        "task-hz=%.2f decode-ms(p50/p95/p99)=%.3f/%.3f/%.3f "
+        "renderer-history-available=%u unavailable-windows=%llu\n",
+        scene, map, menu, capture.count, seconds,
+        seconds > 0.0 ? static_cast<double>(capture.count - 1U) / seconds : 0.0,
+        decode.median, decode.p95, decode.p99, available ? 1U : 0U,
+        static_cast<unsigned long long>(capture.unavailable_windows));
+    const char* labels[] = {"matching", "render-cpu", "render-gpu", "workload"};
+    if (available) {
+        for (std::size_t i = 0U; i < history.size(); ++i) {
+            const auto result = summarize(history[i]);
+            std::fprintf(stderr,
+                "[perf][track-history] %s n=%zu ms(p50/p95/p99)=%.3f/%.3f/%.3f\n",
+                labels[i], result.count, result.median, result.p95, result.p99);
+        }
+    }
+    // These are rolling renderer timings, not presented-frame intervals.
+    // They can include the preceding scene until its history ages out.
+    capture.count = 0U;
 }
 
 void dkr::runtime::RT64Renderer::update_screen() {
+    std::scoped_lock presentation_lock(presentation_mutex_);
     if (application_ == nullptr) {
         return;
     }
     dkr::runtime::telemetry::record_vi_present();
+    RT64::MipWaitFeedbackScope mipFeedback([this] { present_mipmap_loading(*application_); });
     if (application_->sharedQueueResources != nullptr) {
+        const std::uint64_t completed = application_->sharedQueueResources->
+            totalPresentations.load(std::memory_order_relaxed);
+        dkr::runtime::telemetry::record_presented_frames(
+            dkr::runtime::presentation_counter::consume_delta(
+                completed, completed_presentations_));
         const std::uint64_t total = application_->sharedQueueResources->
             totalInterpolatedPresentations.load(std::memory_order_relaxed);
         std::uint64_t interpolated_delta = 0;
@@ -506,14 +645,13 @@ void dkr::runtime::RT64Renderer::update_screen() {
             dkr::runtime::telemetry::record_interpolated_presents(
                 interpolated_delta);
         }
-        dkr::runtime::telemetry::record_presented_frames(
-            1U + interpolated_delta);
         interpolated_present_count_ = total;
     } else {
         dkr::runtime::telemetry::record_presented_frames(1U);
     }
     ++present_count_;
     if (present_count_ == 1) {
+        dkr::runtime::startup_performance::mark("first-vi-received");
         std::fprintf(stderr, "[boot] VI initialized; starting recompiled DKR entrypoint\n");
         recomp::start_game(kGameId);
     }
@@ -526,16 +664,132 @@ void dkr::runtime::RT64Renderer::update_screen() {
         CanonicalViPresentationScope vi_scope(*application_);
         application_->updateScreen();
     }
+    if (present_count_ == 1) {
+        dkr::runtime::startup_performance::mark(
+            "first-game-frame-presented");
+    }
     // Preserve DKR's proven VI/DP scheduling path exactly; constructing the
     // next overlay frame after the game present keeps UI work out of the
     // original graphics-completion critical section.
     dkr::runtime::ui::draw(*application_);
+    last_wait_presentation_ = std::chrono::steady_clock::now();
+    observed_wait_generation_ =
+        dkr::runtime::netplay::online_wait_generation();
+    observed_overlay_visible_ = dkr::runtime::ui::overlay_visible();
+}
+
+void dkr::runtime::RT64Renderer::service_online_wait_presentation() {
+    constexpr auto kWaitPresentationInterval = std::chrono::milliseconds(33);
+    if (!dkr::runtime::netplay::online_wait_active()) {
+        wait_replay_deferred_logged_ = false;
+        return;
+    }
+
+    std::unique_lock presentation_lock(presentation_mutex_, std::try_to_lock);
+    if (!presentation_lock.owns_lock()) return;
+    const bool queue_ready = application_ != nullptr &&
+        application_->state != nullptr &&
+        application_->workloadQueue != nullptr &&
+        application_->presentQueue != nullptr &&
+        application_->framebufferGraphicsWorker != nullptr &&
+        application_->sharedQueueResources != nullptr;
+    const std::uint64_t completed_presentations = queue_ready
+        ? application_->sharedQueueResources->totalPresentations.load(
+              std::memory_order_acquire)
+        : 0U;
+    if (!dkr::runtime::presentation_counter::can_repeat_last_present(
+            present_count_, queue_ready, completed_presentations)) {
+        if (!wait_replay_deferred_logged_) {
+            std::fprintf(
+                stderr,
+                "[netplay][presentation] waiting for first completed frame "
+                "before replay (vi=%llu completed=%llu queue=%s)\n",
+                static_cast<unsigned long long>(present_count_),
+                static_cast<unsigned long long>(completed_presentations),
+                queue_ready ? "ready" : "not-ready");
+            wait_replay_deferred_logged_ = true;
+        }
+        return;
+    }
+    if (wait_replay_deferred_logged_) {
+        std::fprintf(
+            stderr,
+            "[netplay][presentation] completed frame available; wait replay "
+            "is now armed (completed=%llu)\n",
+            static_cast<unsigned long long>(completed_presentations));
+        wait_replay_deferred_logged_ = false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const std::uint64_t wait_generation =
+        dkr::runtime::netplay::online_wait_generation();
+    const bool overlay_visible = dkr::runtime::ui::overlay_visible();
+    const bool state_changed =
+        observed_wait_generation_ != wait_generation ||
+        observed_overlay_visible_ != overlay_visible;
+    if (!state_changed &&
+        last_wait_presentation_.time_since_epoch().count() != 0 &&
+        now - last_wait_presentation_ < kWaitPresentationInterval) {
+        return;
+    }
+
+    // Build only presentation-owned UI, then use RT64's synchronized paused
+    // update path to replay it. PresentQueue::repeatLastPresent() is only a
+    // cursor operation: calling it directly re-consumes a queue slot without
+    // cloning its matching workload/present IDs and without marking the slot
+    // paused. The present thread then advances the ring barrier a second time,
+    // eventually corrupting live queue ownership during ordinary gameplay.
+    //
+    // State::updateScreen() already owns the complete safe replay sequence
+    // used by RT64's debugger: wait for both queues, clone and advance the
+    // matching workload and present as paused entries, then submit both. Its
+    // paused branch returns before VI history or authored game state changes.
+    dkr::runtime::ui::draw(*application_);
+    bool has_inspector = false;
+    {
+        const std::unique_lock inspector_lock(
+            application_->presentQueue->inspectorMutex, std::try_to_lock);
+        if (!inspector_lock.owns_lock()) return;
+        has_inspector = application_->presentQueue->inspector != nullptr;
+    }
+    if (has_inspector) {
+        const bool previous_pause =
+            application_->state->debuggerInspector.paused;
+        application_->state->debuggerInspector.paused = true;
+        const auto replay_started = std::chrono::steady_clock::now();
+        application_->updateScreen();
+        application_->state->debuggerInspector.paused = previous_pause;
+        const auto replay_elapsed = std::chrono::duration_cast<
+            std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                      replay_started);
+        if (replay_elapsed >= std::chrono::milliseconds(50) &&
+            replay_elapsed > slowest_wait_replay_) {
+            slowest_wait_replay_ = replay_elapsed;
+            netplay::failure_recorder().record(
+                netplay::FailureEventKind::ProgressWatchdog, 0U,
+                static_cast<std::uint32_t>(replay_elapsed.count()), 0U,
+                "slow synchronized wait presentation (milliseconds)");
+        }
+    }
+    last_wait_presentation_ = now;
+    observed_wait_generation_ = wait_generation;
+    observed_overlay_visible_ = overlay_visible;
 }
 
 void dkr::runtime::RT64Renderer::shutdown() {
+    {
+        std::scoped_lock active_lock(g_active_renderer_mutex);
+        if (g_active_renderer == this) g_active_renderer = nullptr;
+    }
+    std::scoped_lock presentation_lock(presentation_mutex_);
     if (application_ != nullptr) {
         dkr::runtime::ui::detach(*application_);
         application_->end();
+        // end() releases RT64's backend resources but leaves the Application
+        // object alive. Destroy it here so the next in-process game session
+        // receives a genuinely fresh renderer and so the destructor cannot
+        // detach from an already-ended application a second time.
+        application_.reset();
     }
 }
 
@@ -568,4 +822,12 @@ dkr::runtime::CreateRT64Renderer(
     ultramodern::renderer::WindowHandle window_handle,
     bool developer_mode) {
     return std::make_unique<RT64Renderer>(rdram, window_handle, developer_mode);
+}
+
+void dkr::runtime::service_online_wait_presentation() {
+    std::unique_lock active_lock(g_active_renderer_mutex, std::try_to_lock);
+    if (!active_lock.owns_lock()) return;
+    if (g_active_renderer != nullptr) {
+        g_active_renderer->service_online_wait_presentation();
+    }
 }

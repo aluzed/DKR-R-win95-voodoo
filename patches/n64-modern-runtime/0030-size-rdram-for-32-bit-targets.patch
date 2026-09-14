@@ -1,0 +1,68 @@
+diff --git a/librecomp/include/librecomp/addresses.hpp b/librecomp/include/librecomp/addresses.hpp
+index b1b50cb..0372074 100644
+--- a/librecomp/include/librecomp/addresses.hpp
++++ b/librecomp/include/librecomp/addresses.hpp
+@@ -2,14 +2,62 @@
+ #define __RECOMP_ADDRESSES_HPP__
+ 
+ #include <cstdint>
++#include <cstddef>
+ #include "ultramodern/ultra64.h"
+ #include "recomp.h"
+ 
+ namespace recomp {
+-    // 512GB (kseg0 size)
++    // How much rdram is committed, and how much address space is reserved
++    // around it.
++    //
++    // The reservation exists so that an out-of-range guest address lands on
++    // protected pages and faults immediately, instead of quietly reading
++    // whatever happens to be mapped. The defaults are generous because a
++    // 64-bit host has address space to spare.
++    //
++    // A 32-bit host does not, and the defaults are worse than merely large
++    // there: size_t is 32 bits wide, so 4096 * 1024 * 1024 does not overflow
++    // into something big -- it evaluates to exactly zero. VirtualAlloc is then
++    // asked for a zero-byte reservation, fails, and the program stops at
++    // "Failed to allocate memory". The compiler does warn, but only with
++    // -Woverflow, and only as a warning.
++    //
++    // The sizes are therefore target-dependent. On a 32-bit target they are
++    // chosen to keep the mechanism intact rather than to disable it: 4 MiB
++    // committed, 8 MiB reserved, so 4 MiB of protected space still sits above
++    // the rdram and still traps.
++#if SIZE_MAX > 0xFFFFFFFFu
++    // 512MB (kseg0 size)
+     constexpr size_t mem_size = 512ULL * 1024ULL * 1024ULL;
+     // 4GB (the full address space)
+     constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;
++#else
++    // 4 MiB was sized against the *game's* rdram: DKR's pool stops at RAM_END,
++    // 0x80400000, and the decomp never uses the Expansion Pak. That reasoning
++    // was right about the game and wrong about librecomp, which places its own
++    // regions far above the game's:
++    //
++    //     0x80800000  PI handles          8 MiB in
++    //     0x80801000  patch region
++    //     0x81000000  mod region         16 MiB in
++    //
++    // and init_heap() puts the recompiled heap at mod_rdram_start. With 4 MiB
++    // committed and 8 MiB reserved, that write lands outside the reservation
++    // altogether. The observed failure on Windows 95 was an access violation in
++    // o1heapInit, inside the loop that clears the instance bins -- that is, on
++    // the very first byte of the heap.
++    //
++    // The layout is left alone and the sizes follow it instead: 20 MiB committed
++    // puts the heap 16 MiB in with 4 MiB of usable arena, and 24 MiB reserved
++    // keeps 4 MiB of protected space above so an out-of-range guest address
++    // still traps. The target has 47 MiB free (ADR 0003), so this is affordable.
++    constexpr size_t mem_size = 20ULL * 1024ULL * 1024ULL;
++    constexpr size_t allocation_size = 24ULL * 1024ULL * 1024ULL;
++    static_assert(allocation_size > mem_size,
++        "the reservation must exceed the committed rdram, or nothing traps");
++    static_assert(mem_size > 0x01000000ULL,
++        "the committed rdram must reach mod_rdram_start, where the heap begins");
++#endif
+     // We need a place in rdram to hold the PI handles, so pick an address in extended rdram
+     constexpr int32_t cart_handle = 0x80800000;
+     constexpr int32_t drive_handle = (int32_t)(cart_handle + sizeof(OSPiHandle));

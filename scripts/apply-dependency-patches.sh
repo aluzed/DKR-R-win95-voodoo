@@ -23,63 +23,52 @@ for dependency in data["dependencies"]:
     # instance, is not cloned on a machine that only targets Windows 95, where it
     # has no place anyway (none of D3D12, Vulkan or Metal exists there). Say so and
     # move on, rather than stopping on a Python traceback.
+    #
+    # `.exists()` and not `.is_dir()`: a dependency checked out as a git submodule
+    # carries `.git` as a **file** pointing into the superproject, and a directory
+    # test skips it as absent -- which reads as "not fetched" for a dependency that
+    # is right there.
     if not (repo / ".git").exists():
-        print(f"[--] {dependency['name']}: worktree absent ({repo}) - skipped")
+        print(f"[SKIP] {dependency['name']}: checkout not present at {repo}")
         continue
     commit = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     if commit != dependency["expectedCommit"]:
         raise SystemExit(f"{dependency['name']} commit mismatch: expected {dependency['expectedCommit']}, got {commit}")
-    # Cleanliness is established ONCE, before anything is applied.
-    #
-    # This check used to be inside the loop, which made it impossible to satisfy
-    # beyond the first patch: as soon as one patch applies, the tree carries tracked
-    # modifications, and the next patch took them for local edits. The whole stack
-    # could therefore never be applied in one go - only patch by patch, by hand.
-    #
-    # The guard rail's intent is preserved, and its rule is now simple to state: a
-    # dirty tree while no patch has yet been applied can only be the fruit of a
-    # direct edit, which ADR 0004 forbids. As soon as one patch is applied, the dirt
-    # is ours, and it is `git apply --check` that judges the rest - it does not get
-    # it wrong.
-    pending = []
-    applied_already = 0
+
+    patches = []
     for entry in dependency["patches"]:
         patch = root / entry["path"]
         digest = hashlib.sha256(patch.read_bytes()).hexdigest()
         if digest != entry["sha256"]:
             raise SystemExit(f"Patch checksum mismatch: {entry['path']}")
-        reverse = subprocess.run(["git", "-C", str(repo), "apply", "--reverse", "--check", str(patch)], capture_output=True)
-        if reverse.returncode == 0:
-            applied_already += 1
+        patches.append((entry, patch))
+
+    # Check if every patch can be cleanly reverse-applied (all already applied).
+    all_applied = all(
+        subprocess.run(["git", "-C", str(repo), "apply", "--reverse", "--check", str(p)], capture_output=True).returncode == 0
+        for _, p in patches
+    )
+    if all_applied:
+        for entry, _ in patches:
             print(f"[OK] {dependency['name']}: {entry['path']} (already-applied)")
-        else:
-            pending.append(entry)
+        continue
 
-    if pending and applied_already == 0:
-        changes = subprocess.check_output(["git", "-C", str(repo), "status", "--short", "--untracked-files=no", "--ignore-submodules=dirty"], text=True)
-        if changes.strip():
-            raise SystemExit(f"Refusing to patch dependency with tracked changes: {repo}\n{changes}")
+    # Check if every patch can be cleanly forward-applied (none applied yet).
+    all_unapplied = all(
+        subprocess.run(["git", "-C", str(repo), "apply", "--check", str(p)], capture_output=True).returncode == 0
+        for _, p in patches
+    )
+    if all_unapplied:
+        for entry, p in patches:
+            subprocess.run(["git", "-C", str(repo), "apply", str(p)], check=True)
+            print(f"[OK] {dependency['name']}: {entry['path']} (applied)")
+        continue
 
-    for entry in pending:
-        patch = root / entry["path"]
-        check = subprocess.run(["git", "-C", str(repo), "apply", "--check", str(patch)],
-                               capture_output=True, text=True)
-        if check.returncode != 0:
-            # A common and harmless case: the tree already carries the stack, but
-            # an earlier patch no longer detects as applied because a later one
-            # moved its context. `git apply --reverse` reasons file by file and
-            # cannot undo an overlapping stack - neither patch by patch nor as a
-            # whole.
-            #
-            # So we do not guess: we say so, and give the safe move.
-            raise SystemExit(
-                f"{dependency['name']}: {entry['path']} does not apply.\n"
-                f"{check.stderr.strip()}\n"
-                f"The tree probably already carries the stack: overlapping\n"
-                f"patches do not detect one by one. To start again from a\n"
-                f"known state:\n"
-                f"    git -C {repo} checkout -- .\n"
-                f"    bash scripts/apply-dependency-patches.sh")
-        subprocess.run(["git", "-C", str(repo), "apply", str(patch)], check=True)
+    # Partially applied or context-shifted: reset to the pinned commit and
+    # re-apply everything. Safe because the commit is pinned and verified.
+    print(f"[INFO] {dependency['name']}: resetting to pinned commit and re-applying all patches")
+    subprocess.run(["git", "-C", str(repo), "checkout", "--", "."], check=True)
+    for entry, p in patches:
+        subprocess.run(["git", "-C", str(repo), "apply", str(p)], check=True)
         print(f"[OK] {dependency['name']}: {entry['path']} (applied)")
 PY

@@ -14,6 +14,39 @@ namespace dkr::runtime::interpolation {
 inline constexpr std::size_t kMatrixSlotCount = 3U;
 inline constexpr std::size_t kMaxPresentationScopeDepth = 32U;
 inline constexpr std::uint32_t kTitleMenuId = 0U;
+inline constexpr std::uint8_t kShadowScopeMode = 2U;
+inline constexpr std::uint8_t kVehiclePartScopeMode = 4U;
+inline constexpr std::uint8_t kAspectAdjustScopeMode = 5U;
+inline constexpr std::uint8_t kBillboardScopeMode = 6U;
+inline constexpr std::uint8_t kSurfaceScopeMode = 7U;
+// Sidecar-only presentation mode. The legacy display-list marker reserves
+// bit 3 for its variant, so authored-aspect scopes are emitted only through
+// the host marker map and never encoded into a retail display-list word.
+inline constexpr std::uint8_t kAspectOriginalScopeMode = 8U;
+// Level geometry is submitted in BSP-dependent order. Give every segment/pass
+// a sidecar-only owner so a draw cannot be paired with whichever neighbouring
+// segment occupied the same linear position in the preceding authored frame.
+inline constexpr std::uint8_t kLevelSegmentScopeMode = 9U;
+
+constexpr bool is_aspect_policy_scope(std::uint8_t mode) {
+    return mode == kAspectAdjustScopeMode ||
+           mode == kAspectOriginalScopeMode;
+}
+
+// A projected shadow owns world-space geometry and must not inherit the
+// selected model matrix: its semantic owner remains stable while the ground
+// projection changes. Ordinary billboards are different. One scenery object
+// can draw the same sprite through several matrices, so its selected matrix is
+// required to distinguish those instances and to carry camera continuity.
+// Vehicle parts, animated surfaces and static level segments are likewise
+// matrix-relative. Static segment vertices do not deform; the selected world
+// matrix supplies the interpolated camera transform.
+constexpr bool scope_identity_uses_selected_matrix(std::uint8_t mode) {
+    return mode == kVehiclePartScopeMode ||
+           mode == kBillboardScopeMode ||
+           mode == kSurfaceScopeMode ||
+           mode == kLevelSegmentScopeMode;
+}
 
 // The title demo contains two water-heavy scripted shots. RT64's tile matcher
 // has no stable one-to-one pairing for their rapidly recycled procedural wave
@@ -36,6 +69,7 @@ struct Group {
 struct EndScopeResult {
     Group ended{};
     bool had_scope = false;
+    bool rejected_begin = false;
 };
 
 class GroupState {
@@ -46,6 +80,7 @@ public:
         selected_matrix_ = 0U;
         scope_depth_ = 0U;
         rejected_scope_begins_ = 0U;
+        rejected_scope_depth_ = 0U;
     }
 
     constexpr void load_matrix(std::size_t slot, std::uint32_t identity,
@@ -75,8 +110,9 @@ public:
                                              bool interpolate_vertices,
                                              bool interpolate_texcoords = false,
                                              bool interpolate_tiles = false) {
-        if (scope_depth_ >= scopes_.size()) {
+        if (rejected_scope_depth_ != 0U || scope_depth_ >= scopes_.size()) {
             ++rejected_scope_begins_;
+            ++rejected_scope_depth_;
             return false;
         }
         scopes_[scope_depth_++] = Group{
@@ -86,6 +122,12 @@ public:
     }
 
     [[nodiscard]] constexpr EndScopeResult end_scope() {
+        // A rejected nested begin still has a matching end command. Consume
+        // that end without popping a successfully recorded outer scope.
+        if (rejected_scope_depth_ != 0U) {
+            --rejected_scope_depth_;
+            return {{}, false, true};
+        }
         if (scope_depth_ == 0U) {
             return {};
         }
@@ -95,9 +137,14 @@ public:
     }
 
     [[nodiscard]] constexpr Group active_group() const {
-        return scope_depth_ != 0U
-            ? scopes_[scope_depth_ - 1U]
-            : matrix_groups_[selected_matrix_];
+        if (scope_depth_ == 0U ||
+            is_aspect_policy_scope(scopes_[scope_depth_ - 1U].mode)) {
+            // Aspect scopes carry only RT64 projection policy. They must not
+            // replace the selected matrix's interpolation identity, including
+            // when a new world matrix is loaded after the scope begins.
+            return matrix_groups_[selected_matrix_];
+        }
+        return scopes_[scope_depth_ - 1U];
     }
 
     [[nodiscard]] constexpr bool has_active_scope() const {
@@ -110,6 +157,10 @@ public:
 
     [[nodiscard]] constexpr std::uint32_t rejected_scope_begins() const {
         return rejected_scope_begins_;
+    }
+
+    [[nodiscard]] constexpr bool has_rejected_scope() const {
+        return rejected_scope_depth_ != 0U;
     }
 
     [[nodiscard]] constexpr bool contains_mode(std::uint8_t mode) const {
@@ -131,6 +182,7 @@ private:
     std::size_t selected_matrix_ = 0U;
     std::size_t scope_depth_ = 0U;
     std::uint32_t rejected_scope_begins_ = 0U;
+    std::uint32_t rejected_scope_depth_ = 0U;
 };
 
 } // namespace dkr::runtime::interpolation

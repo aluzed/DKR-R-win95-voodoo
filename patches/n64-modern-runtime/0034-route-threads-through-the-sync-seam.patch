@@ -1,0 +1,57 @@
+diff --git a/N64Recomp b/N64Recomp
+--- a/N64Recomp
++++ b/N64Recomp
+@@ -1 +1 @@
+-Subproject commit 81213c1831fab2521a6a5459c67b63437d67e253
++Subproject commit 81213c1831fab2521a6a5459c67b63437d67e253-dirty
+diff --git a/ultramodern/include/ultramodern/threading.hpp b/ultramodern/include/ultramodern/threading.hpp
+index 5bee13e..47a9f14 100644
+--- a/ultramodern/include/ultramodern/threading.hpp
++++ b/ultramodern/include/ultramodern/threading.hpp
+@@ -36,6 +36,10 @@
+ 
+ namespace ultramodern {
+     using thread             = ULTRAMODERN_PLATFORM_THREADING_NS::thread;
++    // Not `this_thread`: ultramodern already has a function by that name,
++    // returning the current OSThread. The collision is a compile error, which
++    // is how it was found.
++    namespace platform_thread = ULTRAMODERN_PLATFORM_THREADING_NS::this_thread;
+     using mutex              = ULTRAMODERN_PLATFORM_THREADING_NS::mutex;
+     using condition_variable = ULTRAMODERN_PLATFORM_THREADING_NS::condition_variable;
+     // Using-declarations rather than alias templates: they keep `lock_guard`
+@@ -59,10 +63,17 @@ namespace ultramodern {
+ #include <condition_variable>
+ 
+ namespace ultramodern {
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+     using std::thread;
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
++    namespace platform_thread = std::this_thread;
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+     using std::mutex;
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+     using std::condition_variable;
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+     using std::lock_guard;
++    // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+     using std::unique_lock;
+ }
+ 
+diff --git a/ultramodern/src/timer.cpp b/ultramodern/src/timer.cpp
+index 261dc6f..3a27e38 100644
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -249,11 +249,11 @@ void ultramodern::sleep_until(const std::chrono::high_resolution_clock::time_poi
+ #else
+ 
+ void ultramodern::sleep_milliseconds(uint32_t millis) {
+-    std::this_thread::sleep_for(std::chrono::milliseconds{millis});
++    ultramodern::platform_thread::sleep_for(std::chrono::milliseconds{millis});
+ }
+ 
+ void ultramodern::sleep_until(const std::chrono::high_resolution_clock::time_point& time_point) {
+-    std::this_thread::sleep_until(time_point);
++    ultramodern::platform_thread::sleep_until(time_point);
+ }
+ 
+ #endif

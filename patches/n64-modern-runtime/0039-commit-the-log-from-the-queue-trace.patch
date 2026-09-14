@@ -1,0 +1,29 @@
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index bf9d4ed..41aa9ac 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -15,6 +15,11 @@
+ #include "ultramodern/ultra64.h"
+ #include "ultramodern/ultramodern.hpp"
+ 
++// Defined by the game (game_main.cpp): flushes the log AND updates the directory
++// entry. Declared weak so that the trial binaries, which link ultramodern without
++// the game, still link.
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++
+ struct MessageDeliveryState {
+     ultramodern::mutex mutex;
+     ultramodern::condition_variable condition;
+@@ -359,6 +364,12 @@ void dequeue_external_messages(RDRAM_ARG1) {
+                                  "[trace][mq] total msg=0x%08X deposited=%u refused=%u requeued=%u\n",
+                                  seen[m][0], tot[m][0], tot[m][1], tot[m][2]);
+                 }
++                // Force the log onto the disk: Windows 95 only updates the size
++                // at close time, so a frozen program leaves a zero-byte file
++                // whatever it wrote. Without this call, "the program stopped
++                // early" and "the program is still running" give the same
++                // observation.
++                if (dkr_diag_commit) { dkr_diag_commit(); }
+             }
+         }
+         if (!sent && to_send.requeue_if_blocked) {
