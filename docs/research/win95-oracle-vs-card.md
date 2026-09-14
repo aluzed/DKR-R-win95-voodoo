@@ -121,3 +121,48 @@ nothing but its own indulgence.
 Textures — the TMU allocator is E05-S02 and the combiner translation E05-S03. The
 comparison today bears on geometry, iterated colour and depth, that is on
 everything both backends know how to do.
+
+## The card's divergence does not track the approximate share
+
+14 September 2026. Ten scenes replayed on the Voodoo with `REPLAY.EXE --both`,
+and `CAP0800` came out ten times worse than anything else: **40,224 divergent
+pixels per million**, against 3 for `CAP0160` and 286 for `CAP0400`.
+
+Two plausible causes were tested and both are out.
+
+**Not a missing second pass.** `CAP0800`'s report shows a second cycle changing
+38,492 ppm of the frame — near enough to the 40,224 measured to be tempting. The
+card's own counters refuse it: `second pass: drawn=594`. It is drawing them.
+
+Worth recording alongside: `--no-multipass` on the oracle changes **nothing**,
+zero pixels, on this scene. That switch governs the *card's* second pass; the
+oracle evaluates the real two-cycle combiner either way and has no single-cycle
+mode. It cannot be used to predict what a card without a second pass would draw,
+which is what it was reached for here.
+
+**And not the approximate share**, which is the measurement that settles it:
+
+| scene | approximate (ppm) | divergent (ppm) |
+|---|---|---|
+| CAP0160 | 6,574 | 3 |
+| CAP0150 | 6,574 | 48 |
+| CAP0050 | 0 | 78 |
+| CKEY0540 | 21,409 | 185 |
+| CAP0400 | **104,688** | **286** |
+| CG0060 | **0** | **3,206** |
+| CKEY1150 | **0** | **4,215** |
+| CAP0250 | **0** | **4,475** |
+| CKEY0951 | 16,270 | 5,885 |
+| CAP0800 | 82,503 | 40,224 |
+
+No relation. The scene with the largest approximate share by far diverges least
+of the ones that diverge at all, and the three cleanest scenes by that measure —
+zero approximate — sit in the middle of the divergence column. Whatever the card
+and the oracle disagree about, the combiner shorthand is not it.
+
+That leaves the per-pixel path: the Voodoo's dither, its 565 store, its texture
+filtering. `CAP0800` is the attract sequence, which is mostly large smooth
+gradients — the surface on which a dither differs from an undithered reference
+everywhere at once, and small per-pixel amounts over a large area is exactly the
+shape of 4 %. Testing it needs the card's image for that scene, which this run
+did not bring back.
