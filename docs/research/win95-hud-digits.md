@@ -741,3 +741,61 @@ What would settle it is a reference for what the RDP does with a 32-bit
 question about hardware, answerable from a specification or from another
 implementation, and not from this capture. It is the one thing this investigation
 has needed and not had.
+
+## Found: the RDP swaps every other row, and `dxt == 0` means nobody swapped it back
+
+14 September 2026. The missing reference was a hardware one, and it is one line of
+angrylion's `fetch_texel`:
+
+    taddr = (tbase << 2) + s;
+    taddr ^= ((t & 1) ? WORD_XOR_DWORD_SWAP : WORD_ADDR_XOR);
+
+**The RDP exchanges the two halves of a 64-bit word when it fetches from an odd
+row.** `LoadBlock` normally applies the matching exchange as it fills texture
+memory, and the two cancel: the texels lie in memory exactly as they are sampled,
+and reading straight through is right. The load only does it when `dxt` is
+non-zero — `dxt` is the row-advance that tells the load where the rows are. **With
+`dxt == 0` the load has no rows, nothing is swapped going in, and the fetch still
+swaps coming out.**
+
+So a texture loaded with `dxt == 0` has every odd row's texels exchanged in pairs.
+That is the interleave, and it is not a pitch at all.
+
+The exchange, in texels, is `4 / bytes-per-texel-in-a-bank`: **2** for 16- and
+32-bit texels, 4 for 8-bit, 8 for 4-bit. Applied at `s ^ 2` on odd rows, the
+16x15 tile at `0x32D9E0` becomes a clean, complete `0` at its **own declared
+size** — no doubled pitch, no spilling into the next allocation.
+
+On the vehicle-select screen: `00:27:36`, outlines intact, with `BEST LAP` and
+`DkR` beside it untouched.
+
+### Measured, not hoped
+
+Roughness of every converted texture, with the swap against without, over three
+scenes:
+
+| scene | textures | smoother | rougher | unchanged |
+|---|---|---|---|---|
+| CKEY0540 | 66 | **12** | 0 | 54 |
+| CG0060 | 151 | **13** | 1 | 137 |
+| CAP0250 | 80 | **1** | 0 | 79 |
+
+Twenty-six textures improved, one worsened, and the rest untouched — from a rule
+that comes from the hardware and not from the data it fixes.
+
+### What this retires
+
+- `--rgba32-pitch2` is **gone**. It was a probe that happened to undo the swap for
+  glyphs whose width made `16 x 2` land on the right texels, and it damaged every
+  sprite it touched. Leaving a misleading switch in the tree to commemorate a
+  wrong turn is how the next person gets misled; the wrong turn is recorded here
+  instead.
+- The long hunt for a field that declares the image width is over: there was
+  never a wider image. The tile always described its texture correctly. What it
+  could not describe was that the texels had been left in the order the load put
+  them, and the fetch expects a different one.
+
+`dkr_texture_convert_swapped` carries the rule, `--no-odd-row-swap` turns it off
+to measure what it is worth, and two tests pin it — one of which checks that the
+swap is applied to odd rows **and not to even ones**, because a swap applied to
+every row passes a test that only looks at one.

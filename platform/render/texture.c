@@ -123,25 +123,51 @@ int dkr_texture_convert(const unsigned char *rdram, unsigned int rdram_size,
    same thing whenever the tile is the whole image, which is nearly always: the
    equality is tested first so that the ordinary case costs one comparison and no
    division. */
-static unsigned int src_index(unsigned int i, int width, int src_row_texels)
+static unsigned int src_index(unsigned int i, int width, int src_row_texels,
+                              int swap_texels)
 {
-    if (width == src_row_texels || width <= 0) {
+    unsigned int row, col;
+    if (width <= 0) {
         return i;
     }
-    return (i / (unsigned int)width) * (unsigned int)src_row_texels
-         + (i % (unsigned int)width);
+    if (width == src_row_texels && swap_texels == 0) {
+        return i;
+    }
+    row = i / (unsigned int)width;
+    col = i % (unsigned int)width;
+    /* The odd-row exchange, applied inside the row and only where it stays
+       inside it: the hardware addresses a row of texture memory, and a column
+       that would leave this row has no source to come from. */
+    if (swap_texels > 0 && (row & 1u) != 0u) {
+        const unsigned int j = col ^ (unsigned int)swap_texels;
+        if (j < (unsigned int)width) { col = j; }
+    }
+    return row * (unsigned int)src_row_texels + col;
 }
 
 int dkr_texture_convert_strided(const unsigned char *rdram,
+                                unsigned int rdram_size, int native,
+                                unsigned int address,
+                                dkr_n64_format format, dkr_n64_size size,
+                                int width, int height, int src_row_texels,
+                                unsigned short *out, dkr_texture_stats *stats)
+{
+    return dkr_texture_convert_swapped(rdram, rdram_size, native, address,
+                                       format, size, width, height,
+                                       src_row_texels, 0, out, stats);
+}
+
+int dkr_texture_convert_swapped(const unsigned char *rdram,
                                 unsigned int rdram_size,
                         int native, unsigned int address,
                         dkr_n64_format format, dkr_n64_size size,
                         int width, int height, int src_row_texels,
+                        int swap_texels,
                         unsigned short *out, dkr_texture_stats *stats)
 {
     const unsigned int bytes = dkr_texture_bytes(size, width, height);
     unsigned int i, n;
-#define SI(k) src_index((k), width, src_row_texels)
+#define SI(k) src_index((k), width, src_row_texels, swap_texels)
 
     if (!rdram || !out || bytes == 0u) {
         return 0;

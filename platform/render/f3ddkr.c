@@ -1877,17 +1877,41 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
     }
     {
         int src_row = width;
-        if (c->rgba32_pitch2 &&
-            c->timg_format == DKR_N64_FMT_RGBA &&
-            c->timg_size == DKR_N64_SIZ_32 &&
-            c->block_row_bytes == 0u) {
-            src_row = width * 2;
+        /* **The RDP's odd-row swap, where the load did not already apply it.**
+         *
+         * `LoadBlock` swaps every other row as it fills texture memory, and the
+         * fetch swaps it back; the two cancel and the texels are read exactly as
+         * they lie. The load only does it when `dxt` is non-zero -- `dxt` is the
+         * row-advance that tells it where the rows are. With `dxt == 0` the block
+         * has no rows as far as the load is concerned, nothing is swapped going
+         * in, and the fetch still swaps coming out.
+         *
+         * The exchange is the two halves of a 64-bit word, in texels:
+         * `4 / bytes-per-texel-in-a-bank`. A 32-bit texel occupies two bytes in
+         * each of the two banks it is split across, so it is 2 -- the same as a
+         * 16-bit texel, which occupies two bytes in one bank.
+         *
+         * See `texture.h` and `docs/research/win95-hud-digits.md`: this is what
+         * shredded this game's timer digits, and the measurement that found it
+         * was a `0` appearing where a speckled blob had been. */
+        int swap = 0;
+        if (c->block_row_bytes == 0u) {
+            switch ((dkr_n64_size)c->timg_size) {
+            case DKR_N64_SIZ_4:  swap = 8; break;
+            case DKR_N64_SIZ_8:  swap = 4; break;
+            case DKR_N64_SIZ_16: swap = 2; break;
+            case DKR_N64_SIZ_32: swap = 2; break;
+            default: break;
+            }
         }
-        if (!dkr_texture_convert_strided(c->rdram, c->rdram_size,
+        if (c->no_odd_row_swap) { swap = 0; }
+        if (swap != 0) { c->state.odd_row_swapped++; }
+        if (!dkr_texture_convert_swapped(c->rdram, c->rdram_size,
                                          c->rdram_native, c->timg_address,
                                          (dkr_n64_format)c->timg_format,
                                          (dkr_n64_size)c->timg_size,
-                                         width, height, src_row, c->texels,
+                                         width, height, src_row, swap,
+                                         c->texels,
                                          &c->state.textures)) {
             /* Refused: we **unbind** rather than draw with the previous one. A
                stale texture on a surface is more confusing than a surface with

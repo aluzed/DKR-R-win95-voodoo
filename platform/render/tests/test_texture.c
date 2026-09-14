@@ -226,6 +226,32 @@ int main(void)
         }
         check("a 4-wide window into an 8-wide image skips the right texels",
               ok_window);
+
+        /* --- The RDP's odd-row swap ----------------------------------- *
+         *
+         * Rows 0, 2, 4 ... come through as they lie; rows 1, 3, 5 ... have
+         * their texels exchanged in pairs, which is the two halves of a 64-bit
+         * word for a 16-bit texel. The same 8x2 image serves: row 1 holds
+         * indices 8..15, so swapped by two it must read 10 11 8 9 14 15 12 13.
+         *
+         * It is checked in both directions, because a swap applied to every row
+         * and a swap applied to none both pass a test that only looks at one. */
+        {
+            int ok_swap = 1;
+            static const unsigned expect_odd[8] = {10, 11, 8, 9, 14, 15, 12, 13};
+            (void)dkr_texture_convert_swapped(g_ram, RAM, 0, 0x600u,
+                                              DKR_N64_FMT_RGBA,
+                                              DKR_N64_SIZ_16,
+                                              8, 2, 8, 2, g_out, &st);
+            for (i = 0; i < 8u; i++) {
+                if (((unsigned)(g_out[i] >> 10) & 0x1Fu) != i) { ok_swap = 0; }
+                if (((unsigned)(g_out[8u + i] >> 10) & 0x1Fu) != expect_odd[i]) {
+                    ok_swap = 0;
+                }
+            }
+            check("the odd-row swap exchanges texels in pairs, and only on odd"
+                  " rows", ok_swap);
+        }
     }
 
     printf("\n  converted=%lu refused=%lu out-of-rdram=%lu too-large=%lu\n",

@@ -97,6 +97,32 @@ int dkr_texture_convert_strided(const unsigned char *rdram,
                                 int width, int height, int src_row_texels,
                                 unsigned short *out, dkr_texture_stats *stats);
 
+/* **The RDP's odd-row swap, for blocks loaded with `dxt == 0`.**
+ *
+ * The RDP fetches a texel from texture memory at an address it exclusive-ors by
+ * a word-swap constant on **odd rows** -- angrylion's `fetch_texel` does
+ * `taddr ^= (t & 1) ? WORD_XOR_DWORD_SWAP : WORD_ADDR_XOR`. `LoadBlock` normally
+ * applies the matching swap as it fills, so the two cancel and the texels sit in
+ * memory exactly as they are sampled. **With `dxt == 0` the load does not swap**,
+ * and the fetch still does: every odd row comes out with its texels exchanged in
+ * pairs.
+ *
+ * `swap_texels` is that exchange in texels -- the two halves of a 64-bit word,
+ * so `4 / bytes-per-texel-in-a-bank`: 2 for 16- and 32-bit texels, 4 for 8-bit,
+ * 8 for 4-bit. Zero disables it, which is every texture loaded with a non-zero
+ * `dxt`.
+ *
+ * Measured, not assumed: with `swap_texels == 2` this game's timer digits come
+ * out as clean numerals at their declared 16x15, where reading them plainly gives
+ * a speckled blob. See `docs/research/win95-hud-digits.md`. */
+int dkr_texture_convert_swapped(const unsigned char *rdram,
+                                unsigned int rdram_size, int native,
+                                unsigned int address,
+                                dkr_n64_format format, dkr_n64_size size,
+                                int width, int height, int src_row_texels,
+                                int swap_texels,
+                                unsigned short *out, dkr_texture_stats *stats);
+
 /* The size in bytes of a texture of these dimensions in this format. Returns 0
    if the combination makes no sense. */
 unsigned int dkr_texture_bytes(dkr_n64_size size, int width, int height);

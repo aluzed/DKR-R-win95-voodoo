@@ -323,6 +323,9 @@ typedef struct {
     unsigned long     dxt_disagrees_texels;
     unsigned short    dxt_first[8][4];   /* dxt row bytes, assumed row bytes, w, h */
     unsigned int      dxt_first_n;
+    /* Conversions that applied the RDP's odd-row swap, because their block
+       was loaded with `dxt == 0`. See `f3ddkr.c`. */
+    unsigned long     odd_row_swapped;
     unsigned long     image_wider;
     unsigned long     image_wider_texels;
     unsigned short    image_wider_first[8][4];  /* image w, tile w, tile h, siz */
@@ -574,15 +577,8 @@ typedef struct {
        logo belongs, its texture painting exactly zero pixels. Whether the logo
        is being culled or was never asked for is one run apart with this, and
        unanswerable without it. */
-    /* **Diagnostic: read RGBA32 tiles loaded with `dxt == 0` at twice the
-       pitch.** The timer glyphs on the vehicle-select screen are two numerals
-       side by side in a 32-texel-wide buffer, drawn with a 16-texel tile; read
-       linearly they interleave. Doubling the pitch recovers all three glyphs of
-       `00:27:15` exactly. Kept behind a switch until the rule is checked against
-       the RDP's own 32-bit `LoadBlock` addressing, because a conversion that
-       doubles pitches on a guess would break every RGBA32 texture in the game to
-       fix three. See `docs/research/win95-hud-digits.md`. */
-    unsigned char        rgba32_pitch2;
+    /* Diagnostic: turn the odd-row swap off, to measure what it is worth. */
+    unsigned char        no_odd_row_swap;
     unsigned char        no_cull;
     /* `DKR_NO_ALPHA_TEST=1`: draw every texel, whatever its alpha.
      *
