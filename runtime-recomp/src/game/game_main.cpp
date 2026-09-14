@@ -109,6 +109,17 @@ bool ConfigurePersistentRuntimeLog(
         error.clear();
         dkr::fs::rename(current, previous, error);
     }
+    // **Say where the rest of the log went.**
+    //
+    // `RedirectDiagnosticsToFile` has already pointed stderr at `DKRR.LOG`, and
+    // this call takes it away. Without this line that file ends after the two
+    // startup marks, which is exactly what it looks like when the process dies
+    // at `support-configure` -- an instrument that stops recording and does not
+    // say so. Written before the handover, so it lands in the file being left.
+    std::fprintf(stderr,
+                 "[boot][log] diagnostics continue in %s\n",
+                 current.string().c_str());
+    std::fflush(stderr);
 #ifdef _WIN32
     FILE* stream = nullptr;
     if (_wfreopen_s(&stream, current.c_str(), L"w", stderr) != 0 ||
