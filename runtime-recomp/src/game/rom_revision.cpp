@@ -9,12 +9,12 @@
 #include <iomanip>
 #include <iterator>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <random>
 #include <sstream>
 #include <vector>
 #include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace dkr::runtime::rom {
 namespace {
@@ -34,7 +34,7 @@ struct CachedIdentity {
     Identity identity;
 };
 
-std::mutex g_identity_cache_mutex;
+dkr::sync::mutex g_identity_cache_mutex;
 std::map<std::string, CachedIdentity> g_identity_cache;
 std::filesystem::path g_identity_cache_path;
 
@@ -46,7 +46,7 @@ std::string PathUtf8(const std::filesystem::path& path) {
 std::string CacheKey(const std::filesystem::path& path) {
     std::error_code error;
     const std::filesystem::path absolute =
-        std::filesystem::absolute(path, error).lexically_normal();
+        dkr::fs::absolute(path, error).lexically_normal();
     return PathUtf8(error ? path.lexically_normal() : absolute);
 }
 
@@ -82,12 +82,12 @@ bool SameStamp(const FileStamp& left, const FileStamp& right) {
 void SaveIdentityCacheLocked() {
     if (g_identity_cache_path.empty()) return;
     std::error_code error;
-    std::filesystem::create_directories(g_identity_cache_path.parent_path(),
+    dkr::fs::create_directories(g_identity_cache_path.parent_path(),
                                         error);
     if (error) return;
     const std::filesystem::path temporary =
         std::filesystem::path(g_identity_cache_path.string() + ".tmp");
-    std::ofstream output(temporary, std::ios::trunc);
+    std::ofstream output(temporary.string(), std::ios::trunc);
     if (!output) return;
     output << "# DKR-R ROM identity cache v1\n";
     for (const auto& [key, entry] : g_identity_cache) {
@@ -103,23 +103,23 @@ void SaveIdentityCacheLocked() {
     }
     output.close();
     if (!output) {
-        std::filesystem::remove(temporary, error);
+        dkr::fs::remove(temporary, error);
         return;
     }
-    std::filesystem::rename(temporary, g_identity_cache_path, error);
+    dkr::fs::rename(temporary, g_identity_cache_path, error);
     if (!error) return;
     error.clear();
-    std::filesystem::remove(g_identity_cache_path, error);
+    dkr::fs::remove(g_identity_cache_path, error);
     error.clear();
-    std::filesystem::rename(temporary, g_identity_cache_path, error);
-    if (error) std::filesystem::remove(temporary, error);
+    dkr::fs::rename(temporary, g_identity_cache_path, error);
+    if (error) dkr::fs::remove(temporary, error);
 }
 
 std::optional<Identity> FindCachedIdentity(const std::filesystem::path& path,
                                            const FileStamp& stamp) {
     if (!stamp.valid) return std::nullopt;
     const std::string key = CacheKey(path);
-    std::scoped_lock lock(g_identity_cache_mutex);
+    dkr::sync::scoped_lock lock(g_identity_cache_mutex);
     const auto match = g_identity_cache.find(key);
     if (match == g_identity_cache.end() ||
         !SameStamp(match->second.stamp, stamp) ||
@@ -132,7 +132,7 @@ std::optional<Identity> FindCachedIdentity(const std::filesystem::path& path,
 void RememberIdentity(const std::filesystem::path& path,
                       const FileStamp& stamp, const Identity& identity) {
     if (!stamp.valid || !identity.supported()) return;
-    std::scoped_lock lock(g_identity_cache_mutex);
+    dkr::sync::scoped_lock lock(g_identity_cache_mutex);
     g_identity_cache[CacheKey(path)] = {stamp, identity};
     SaveIdentityCacheLocked();
 }
@@ -198,7 +198,7 @@ Identity inspect(const std::filesystem::path& path) {
             "rom-inspect-cache-hit", inspection_started_at);
         return *cached;
     }
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(path.string(), std::ios::binary);
     if (!input) {
         identity.error = InspectionError::FailedToOpen;
         dkr::runtime::startup_performance::report(
@@ -262,7 +262,7 @@ Identity inspect(const std::filesystem::path& path) {
 }
 
 void configure_identity_cache(const std::filesystem::path& config_directory) {
-    std::scoped_lock lock(g_identity_cache_mutex);
+    dkr::sync::scoped_lock lock(g_identity_cache_mutex);
     g_identity_cache.clear();
     g_identity_cache_path = config_directory / "rom-identities-v1.txt";
     std::ifstream input(g_identity_cache_path);
@@ -324,7 +324,7 @@ bool materialize_canonical(const std::filesystem::path& source,
     }
 
     std::error_code filesystem_error;
-    std::filesystem::create_directories(cache_directory, filesystem_error);
+    dkr::fs::create_directories(cache_directory, filesystem_error);
     if (filesystem_error) {
         error = "The local canonical ROM cache could not be created: " +
             filesystem_error.message();
@@ -342,7 +342,7 @@ bool materialize_canonical(const std::filesystem::path& source,
         return true;
     }
 
-    std::ifstream input(source, std::ios::binary);
+    std::ifstream input(source.string(), std::ios::binary);
     if (!input) {
         error = "The selected ROM could not be reopened for normalisation.";
         return false;
@@ -366,7 +366,7 @@ bool materialize_canonical(const std::filesystem::path& source,
     const std::filesystem::path temporary =
         destination.parent_path() / temporary_name.str();
     {
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        std::ofstream output(temporary.string(), std::ios::binary | std::ios::trunc);
         if (!output) {
             error = "The canonical ROM cache could not be written.";
             return false;
@@ -376,7 +376,7 @@ bool materialize_canonical(const std::filesystem::path& source,
         output.flush();
         if (!output) {
             output.close();
-            std::filesystem::remove(temporary, filesystem_error);
+            dkr::fs::remove(temporary, filesystem_error);
             error = "The canonical ROM cache write did not complete.";
             return false;
         }
@@ -386,12 +386,12 @@ bool materialize_canonical(const std::filesystem::path& source,
     // this process was writing. Prefer its verified result if the rename loses
     // that race.
     filesystem_error.clear();
-    std::filesystem::remove(destination, filesystem_error);
+    dkr::fs::remove(destination, filesystem_error);
     filesystem_error.clear();
-    std::filesystem::rename(temporary, destination, filesystem_error);
+    dkr::fs::rename(temporary, destination, filesystem_error);
     if (filesystem_error) {
         const auto raced_identity = inspect(destination);
-        std::filesystem::remove(temporary, filesystem_error);
+        dkr::fs::remove(temporary, filesystem_error);
         if (!raced_identity.supported() ||
             raced_identity.byte_order != ByteOrder::BigEndian ||
             raced_identity.canonical_xxh3 != identity.canonical_xxh3) {

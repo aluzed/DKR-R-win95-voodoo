@@ -45,7 +45,7 @@ std::vector<std::uint8_t> valid_pak() {
 
 void write_bytes(const std::filesystem::path& path,
                  const std::vector<std::uint8_t>& bytes) {
-    std::filesystem::create_directories(path.parent_path());
+    dkr::fs::create_directories(path.parent_path());
     std::ofstream output(path.string(), std::ios::binary | std::ios::trunc);
     output.write(reinterpret_cast<const char*>(bytes.data()),
                  static_cast<std::streamsize>(bytes.size()));
@@ -111,7 +111,7 @@ int main() {
     std::filesystem::path repair_backup;
     assert(dkr::runtime::saves::repair_adventure_checksums(
         repaired, repair_backup, error));
-    assert(repaired && std::filesystem::exists(repair_backup));
+    assert(repaired && dkr::fs::exists(repair_backup));
     assert(read_bytes(repair_backup) == corrupt_live);
     assert(dkr::runtime::saves::adventure_info().valid);
     std::vector<std::uint8_t> canonical_live;

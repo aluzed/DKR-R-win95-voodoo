@@ -445,15 +445,13 @@ std::vector<std::filesystem::path> dkr::runtime::saves::adventure_backups() {
     if (!dkr::fs::is_directory(directory, error)) {
         return result;
     }
-    for (const auto& entry : std::filesystem::directory_iterator(
-             directory, std::filesystem::directory_options::skip_permission_denied,
-             error)) {
-        if (entry.is_regular_file(error) &&
-            entry.path().filename().string().rfind("adventure-", 0) == 0 &&
-            entry.path().extension() == ".bin") {
+    for (const auto& entry : dkr::fs::list_directory(directory, error)) {
+        if (dkr::fs::is_regular_file(entry, error) &&
+            entry.filename().string().rfind("adventure-", 0) == 0 &&
+            entry.extension() == ".bin") {
             std::vector<std::uint8_t> bytes;
-            if (ReadAdventure(entry.path(), bytes)) {
-                result.push_back(entry.path());
+            if (ReadAdventure(entry, bytes)) {
+                result.push_back(entry);
             }
         }
         error.clear();
@@ -780,15 +778,13 @@ dkr::runtime::saves::controller_pak_backups(int channel) {
     }
     const std::string prefix =
         "controller-pak-" + std::to_string(channel + 1) + "-";
-    for (const auto& entry : std::filesystem::directory_iterator(
-             directory, std::filesystem::directory_options::skip_permission_denied,
-             error)) {
-        if (entry.is_regular_file(error) &&
-            entry.path().filename().string().rfind(prefix, 0) == 0 &&
-            entry.path().extension() == ".mpk") {
+    for (const auto& entry : dkr::fs::list_directory(directory, error)) {
+        if (dkr::fs::is_regular_file(entry, error) &&
+            entry.filename().string().rfind(prefix, 0) == 0 &&
+            entry.extension() == ".mpk") {
             std::vector<std::uint8_t> bytes;
-            if (ReadControllerPak(entry.path(), bytes)) {
-                result.push_back(entry.path());
+            if (ReadControllerPak(entry, bytes)) {
+                result.push_back(entry);
             }
         }
         error.clear();

@@ -101,6 +101,26 @@ std::string WideToUtf8(const wchar_t* text) {
 }
 
 std::string WindowsCpuName() {
+#if defined(DKR_TARGET_WIN95)
+    // The narrow registry API, because the wide one is one of Windows 95's
+    // exported-but-empty stubs: it returns 0 and sets
+    // ERROR_CALL_NOT_IMPLEMENTED, so the wide path would not fail loudly, it
+    // would silently report "Unknown CPU" for ever.
+    HKEY key = nullptr;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                      "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                      0, KEY_READ, &key) != ERROR_SUCCESS) {
+        return "Unknown CPU";
+    }
+    char value[256]{};
+    DWORD type = 0;
+    DWORD size = sizeof(value);
+    const LONG status = RegQueryValueExA(
+        key, "ProcessorNameString", nullptr, &type,
+        reinterpret_cast<LPBYTE>(value), &size);
+    RegCloseKey(key);
+    return status == ERROR_SUCCESS ? Trim(std::string(value)) : "Unknown CPU";
+#else
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                       L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
@@ -115,6 +135,7 @@ std::string WindowsCpuName() {
         reinterpret_cast<LPBYTE>(value), &size);
     RegCloseKey(key);
     return status == ERROR_SUCCESS ? Trim(WideToUtf8(value)) : "Unknown CPU";
+#endif
 }
 
 #if defined(DKR_TARGET_WIN95)
@@ -350,6 +371,26 @@ SystemSummary collect_system_summary() {
 #if defined(_WIN32)
     result.operating_system = "Windows";
     result.cpu = WindowsCpuName();
+#if defined(DKR_TARGET_WIN95)
+    // `GlobalMemoryStatusEx` is MISSING from this machine's KERNEL32 -- not a
+    // stub, absent -- and a missing import stops the process from loading. The
+    // one that is there is `GlobalMemoryStatus`, whose 32-bit counters saturate
+    // at 2 GiB; on a machine whose budget is eight mebibytes that is not a
+    // limitation one can reach.
+    MEMORYSTATUS memory{};
+    memory.dwLength = sizeof(memory);
+    GlobalMemoryStatus(&memory);
+    result.memory = FormatBytes(memory.dwTotalPhys);
+    result.gpu = WindowsGpuName();
+    char windows_directory[MAX_PATH]{};
+    GetWindowsDirectoryA(windows_directory,
+                         static_cast<UINT>(std::size(windows_directory)));
+    result.boot_drive = WindowsDriveKind(windows_directory);
+    char executable[MAX_PATH]{};
+    GetModuleFileNameA(nullptr, executable,
+                       static_cast<DWORD>(std::size(executable)));
+    result.application_drive = WindowsDriveKind(executable);
+#else
     MEMORYSTATUSEX memory{};
     memory.dwLength = sizeof(memory);
     result.memory = GlobalMemoryStatusEx(&memory)
@@ -363,6 +404,7 @@ SystemSummary collect_system_summary() {
     GetModuleFileNameW(nullptr, executable,
                        static_cast<DWORD>(std::size(executable)));
     result.application_drive = WindowsDriveKind(executable);
+#endif
 #else
     struct utsname system_name{};
     result.operating_system = uname(&system_name) == 0

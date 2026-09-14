@@ -105,6 +105,23 @@ inline bool create_directories(const std::filesystem::path &p, std::error_code &
     return dkr::fs::create_directories(p);
 }
 
+/* One level, and the return says whether *this call* created it -- the standard's
+   contract for `create_directory`, and what distinguishes it from the recursive
+   form above. */
+inline bool create_directory(const std::filesystem::path &p)
+{
+    if (dkr::fs::exists(p)) {
+        return false;
+    }
+    return dkr_file_create_directory(p.string().c_str()) == DKR_FILE_OK;
+}
+
+inline bool create_directory(const std::filesystem::path &p, std::error_code &ec)
+{
+    ec.clear();
+    return dkr::fs::create_directory(p);
+}
+
 /* Only the `overwrite_existing` form is used by the calling code, and it is the
    only one supplied: reproducing the other `copy_options` would be writing code
    nobody calls. */
@@ -180,6 +197,42 @@ inline std::uintmax_t file_size(const std::filesystem::path &p, std::error_code 
     }
     return n;
 }
+
+/* `std::filesystem::is_empty`: no entries for a directory, no bytes for a file.
+ *
+ * Built on `dkr_dir_open`/`dkr_dir_next`, which already skip "." and ".." the
+ * way `directory_iterator` does -- so "no entry" here means the same thing it
+ * means there, and not "only the two the standard hides".
+ *
+ * A path that does not exist is **not** empty: the standard reports an error
+ * for it, and reporting `true` would let a caller take the "nothing to do"
+ * branch for a directory that is missing rather than bare. */
+inline bool is_empty(const std::filesystem::path &p, std::error_code &ec)
+{
+    ec.clear();
+    if (!dkr::fs::exists(p)) {
+        ec = std::make_error_code(std::errc::no_such_file_or_directory);
+        return false;
+    }
+    if (!dkr::fs::is_directory(p)) {
+        return dkr::fs::file_size(p, ec) == 0u;
+    }
+    dkr_dir *d = dkr_dir_open(p.string().c_str());
+    if (!d) {
+        ec = std::make_error_code(std::errc::io_error);
+        return false;
+    }
+    const bool empty = dkr_dir_next(d) == 0;
+    dkr_dir_close(d);
+    return empty;
+}
+
+inline bool is_empty(const std::filesystem::path &p)
+{
+    std::error_code ec;
+    return dkr::fs::is_empty(p, ec);
+}
+
 
 inline void rename(const std::filesystem::path &from,
                    const std::filesystem::path &to)
@@ -353,6 +406,10 @@ using std::filesystem::is_directory;
 using std::filesystem::remove;
 // DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
 using std::filesystem::is_regular_file;
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+using std::filesystem::create_directory;
+// DKR-WIN95-ALLOW: modern-target branch, never compiled on Windows 95
+using std::filesystem::is_empty;
 
 /* These three are not taken over as they are, and the reason is worth stating:
  * `std::filesystem::file_size`, `rename` and `absolute` **throw** when they are

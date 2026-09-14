@@ -128,6 +128,13 @@ dkr_file_result dkr_file_remove(const char *path);
    success. */
 dkr_file_result dkr_file_create_directories(const char *path);
 
+/* Creates **one** level, and fails if the parent is absent. That is
+   `std::filesystem::create_directory` and not `create_directories`, and the
+   difference is the point of having both: a caller that wants to know whether
+   the parent existed cannot learn it from the recursive form.
+   An already present directory is a success, as the standard's has it. */
+dkr_file_result dkr_file_create_directory(const char *path);
+
 /* Copies, overwriting the destination if it exists - that is,
    `copy_options::overwrite_existing`, the only form in use. */
 dkr_file_result dkr_file_copy(const char *from, const char *to);

@@ -96,18 +96,18 @@ bool ConfigurePersistentRuntimeLog(
     std::error_code error;
     const std::filesystem::path& log_directory =
         dkr::runtime::support::log_directory();
-    std::filesystem::create_directories(log_directory, error);
+    dkr::fs::create_directories(log_directory, error);
     if (error) {
         return false;
     }
     const std::filesystem::path current = log_directory / "runtime.log";
     const std::filesystem::path previous =
         log_directory / "runtime-previous.log";
-    std::filesystem::remove(previous, error);
+    dkr::fs::remove(previous, error);
     error.clear();
-    if (std::filesystem::exists(current, error)) {
+    if (dkr::fs::exists(current, error)) {
         error.clear();
-        std::filesystem::rename(current, previous, error);
+        dkr::fs::rename(current, previous, error);
     }
 #ifdef _WIN32
     FILE* stream = nullptr;
@@ -680,7 +680,7 @@ int DkrMain(int argc, char** argv) {
         const std::filesystem::path test_directory = argc >= 3
             ? std::filesystem::u8path(argv[2])
             : DefaultConfigDirectory(argv[0]) / "input-switch-self-test";
-        std::filesystem::create_directories(test_directory);
+        dkr::fs::create_directories(test_directory);
         dkr::runtime::platform::configure_input(test_directory);
         dkr::runtime::platform::set_requested_input_backend(
             dkr::runtime::platform::InputBackend::SDL2Compatibility);

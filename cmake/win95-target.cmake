@@ -1122,7 +1122,8 @@ set(DKR_WIN95_GAME_SOURCES
     presentation_identity renderer_snapshot rev_a_asset_mutex rom_revision
     runtime_audio_controls runtime_enhancements runtime_hud_layout
     runtime_input runtime_magic_codes runtime_platform
-    runtime_quick_restart runtime_save_routing runtime_support
+    runtime_absent_hooks runtime_quick_restart runtime_save_routing
+    runtime_support
     save_manager runtime_stubs runtime_telemetry startup_performance
     virtual_pak)
 list(TRANSFORM DKR_WIN95_GAME_SOURCES

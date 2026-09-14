@@ -19,8 +19,9 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <mutex>
 #include <string>
+#include "win95/fileio.hpp"
+#include "win95/sync.hpp"
 
 namespace {
 
@@ -44,7 +45,7 @@ struct SavedElement {
     std::uint32_t scale = 0;
 };
 
-std::mutex g_mutex;
+dkr::sync::mutex g_mutex;
 std::filesystem::path g_config_directory;
 LayoutMode g_mode = LayoutMode::Original;
 float g_scale = 1.0F;
@@ -158,7 +159,7 @@ bool LoadFile(const std::filesystem::path& path) {
 bool SaveLocked() {
     if (g_config_directory.empty()) return false;
     std::error_code error;
-    std::filesystem::create_directories(g_config_directory, error);
+    dkr::fs::create_directories(g_config_directory, error);
     const auto target = g_config_directory / "hud-layouts-v2.json";
     const auto temporary = target.string() + ".tmp";
     const auto backup = g_config_directory / "hud-layouts-v2.json.bak";
@@ -172,22 +173,22 @@ bool SaveLocked() {
         output.flush();
         if (!output) return false;
     }
-    std::filesystem::remove(backup, error);
+    dkr::fs::remove(backup, error);
     error.clear();
-    if (std::filesystem::exists(target, error)) {
+    if (dkr::fs::exists(target, error)) {
         error.clear();
-        std::filesystem::rename(target, backup, error);
+        dkr::fs::rename(target, backup, error);
         if (error) {
-            std::filesystem::remove(temporary, error);
+            dkr::fs::remove(temporary, error);
             return false;
         }
     }
     error.clear();
-    std::filesystem::rename(temporary, target, error);
+    dkr::fs::rename(temporary, target, error);
     std::error_code backup_error;
-    if (error && std::filesystem::exists(backup, backup_error)) {
+    if (error && dkr::fs::exists(backup, backup_error)) {
         std::error_code restore_error;
-        std::filesystem::rename(backup, target, restore_error);
+        dkr::fs::rename(backup, target, restore_error);
     }
     return !error;
 }
@@ -201,7 +202,7 @@ void LoadLocked() {
     for (const auto* name : {"hud-layouts-v2.json", "hud-layouts-v2.json.bak"}) {
         const auto path = g_config_directory / name;
         std::error_code error;
-        if (std::filesystem::file_size(path, error) > 2*1024*1024 || error) continue;
+        if (dkr::fs::file_size(path, error) > 2*1024*1024 || error) continue;
         try {
             std::ifstream stream(path);
             const auto document = nlohmann::json::parse(stream);
@@ -445,20 +446,20 @@ void dkr::runtime::hud::begin_authored_frame(std::uint8_t* rdram) {
 
 void dkr::runtime::hud::configure(
     const std::filesystem::path& config_directory) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     g_config_directory = config_directory;
     LoadLocked();
     PublishLocked();
 }
 
 LayoutMode dkr::runtime::hud::mode() {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     return basic_mode(g_mode);
 }
 
 bool dkr::runtime::hud::apply_basic_mode(LayoutMode value) {
     if (value != LayoutMode::Original && value != LayoutMode::FitToViewport) return false;
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     const auto previous_mode = g_mode;
     const auto previous_scale = g_scale;
     g_mode = value;
@@ -479,9 +480,9 @@ bool dkr::runtime::hud::self_test_basic_settings(const std::filesystem::path& di
     // Explicit diagnostic route: reject non-empty targets; never touch a user's
     // configured profile. Exercise the same persistence/publication as the UI.
     std::error_code error;
-    if (directory.empty() || (std::filesystem::exists(directory,error) &&
-        !std::filesystem::is_empty(directory,error)) || error) return false;
-    std::filesystem::create_directories(directory,error);
+    if (directory.empty() || (dkr::fs::exists(directory,error) &&
+        !dkr::fs::is_empty(directory,error)) || error) return false;
+    dkr::fs::create_directories(directory,error);
     if(error) return false;
     configure(directory);
     for(int i=0;i<32;++i) {
@@ -512,7 +513,7 @@ bool dkr::runtime::hud::self_test_basic_settings(const std::filesystem::path& di
         saved["mode"]!="fill" || saved["scale"]!=1)return false;
 
     // A blocked temporary path forces the real save-failure branch.
-    std::filesystem::create_directory(directory/"hud-layouts-v2.json.tmp",error);
+    dkr::fs::create_directory(directory/"hud-layouts-v2.json.tmp",error);
     if(error || apply_basic_mode(LayoutMode::Original) || mode()!=LayoutMode::FitToViewport)return false;
     state=g_published.load();
     if(state->mode!=LayoutMode::FitToViewport || state->scale!=1)return false;
@@ -522,7 +523,7 @@ bool dkr::runtime::hud::self_test_basic_settings(const std::filesystem::path& di
 }
 
 void dkr::runtime::hud::set_mode(LayoutMode value) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     g_mode = static_cast<LayoutMode>(std::clamp(
         static_cast<int>(value), static_cast<int>(LayoutMode::Original),
         static_cast<int>(LayoutMode::Custom)));
@@ -535,7 +536,7 @@ float dkr::runtime::hud::global_scale() {
 }
 
 void dkr::runtime::hud::set_global_scale(float value) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     g_scale = hg::safe_scale(value);
     PublishLocked();
     SaveLocked();
@@ -543,7 +544,7 @@ void dkr::runtime::hud::set_global_scale(float value) {
 
 void dkr::runtime::hud::set_viewport_extent(int width, int height) {
     if (width <= 0 || height <= 0) return;
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     if (width == g_viewport_width && height == g_viewport_height) return;
     g_viewport_width = width;
     g_viewport_height = height;
@@ -551,13 +552,13 @@ void dkr::runtime::hud::set_viewport_extent(int width, int height) {
 }
 
 hg::Layout dkr::runtime::hud::layout() {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     return g_layout;
 }
 
 bool dkr::runtime::hud::apply_layout(const hg::Layout& value) {
     if (!hg::valid(value)) return false;
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     const auto previous=g_layout;
     g_layout = value;
     g_mode = value.mode;
@@ -570,13 +571,13 @@ bool dkr::runtime::hud::apply_layout(const hg::Layout& value) {
 
 void dkr::runtime::hud::preview_layout(const std::optional<hg::Layout>& value) {
     if (value && !hg::valid(*value)) return;
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     g_preview = value;
     PublishLocked(); // no disk writes while moving or previewing a slider
 }
 
 std::vector<std::string> dkr::runtime::hud::preset_names() {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     std::vector<std::string> names;
     for (auto it=g_presets.begin(); it!=g_presets.end(); ++it) names.push_back(it.key());
     return names;
@@ -584,7 +585,7 @@ std::vector<std::string> dkr::runtime::hud::preset_names() {
 bool dkr::runtime::hud::save_preset(const std::string& name, const hg::Layout& value) {
     if (name.empty() || name.size()>48 || !hg::valid(value) ||
         std::any_of(name.begin(), name.end(), [](unsigned char c){return c<32;})) return false;
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     if (!g_presets.contains(name) && g_presets.size()>=8) return false;
     const auto previous=g_presets;
     g_presets[name] = hg::encode(value);
@@ -592,12 +593,12 @@ bool dkr::runtime::hud::save_preset(const std::string& name, const hg::Layout& v
     return true;
 }
 std::optional<hg::Layout> dkr::runtime::hud::load_preset(const std::string& name) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     const auto it=g_presets.find(name);
     return it == g_presets.end() ? std::nullopt : hg::decode(*it);
 }
 bool dkr::runtime::hud::delete_preset(const std::string& name) {
-    std::scoped_lock lock(g_mutex);
+    dkr::sync::scoped_lock lock(g_mutex);
     const auto previous=g_presets;
     if (g_presets.erase(name)==0) return false;
     if(!SaveLocked()){g_presets=previous;return false;}return true;

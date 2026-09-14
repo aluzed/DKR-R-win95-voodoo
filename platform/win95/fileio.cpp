@@ -282,6 +282,23 @@ dkr_file_result dkr_file_remove(const char *path)
     return from_last_error();
 }
 
+dkr_file_result dkr_file_create_directory(const char *path)
+{
+    if (!path || !*path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (CreateDirectoryA(path, NULL)) {
+        return DKR_FILE_OK;
+    }
+    /* Already there: the caller wanted a directory at that path, and there is
+       one. `std::filesystem::create_directory` reports the same by returning
+       false with no error. */
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        return DKR_FILE_OK;
+    }
+    return from_last_error();
+}
+
 dkr_file_result dkr_file_create_directories(const char *path)
 {
     char work[MAX_PATH];
@@ -639,6 +656,17 @@ dkr_file_result dkr_file_remove(const char *path)
         return DKR_FILE_OK;
     }
     if (errno == EISDIR && rmdir(path) == 0) {
+        return DKR_FILE_OK;
+    }
+    return from_errno();
+}
+
+dkr_file_result dkr_file_create_directory(const char *path)
+{
+    if (!path || !*path) {
+        return DKR_FILE_ERR_PATH;
+    }
+    if (mkdir(path, 0777) == 0 || errno == EEXIST) {
         return DKR_FILE_OK;
     }
     return from_errno();
