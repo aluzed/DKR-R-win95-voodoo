@@ -326,6 +326,9 @@ typedef struct {
     /* Conversions that applied the RDP's odd-row swap, because their block
        was loaded with `dxt == 0`. See `f3ddkr.c`. */
     unsigned long     odd_row_swapped;
+    /* Conversions whose row length came from the tile's `line` rather than from
+       its width, because the two disagree. See `f3ddkr.c`. */
+    unsigned long     row_from_line;
     unsigned long     image_wider;
     unsigned long     image_wider_texels;
     unsigned short    image_wider_first[8][4];  /* image w, tile w, tile h, siz */
@@ -579,6 +582,9 @@ typedef struct {
        unanswerable without it. */
     /* Diagnostic: turn the odd-row swap off, to measure what it is worth. */
     unsigned char        no_odd_row_swap;
+    /* Take the source row length from the tile's `line` where it disagrees
+       with the tile width. Off by default: see `f3ddkr.c` for the score. */
+    unsigned char        row_from_line;
     unsigned char        no_cull;
     /* `DKR_NO_ALPHA_TEST=1`: draw every texel, whatever its alpha.
      *

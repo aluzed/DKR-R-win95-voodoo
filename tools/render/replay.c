@@ -150,6 +150,7 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
 
 static int g_want_trace;
 static int g_no_odd_row_swap;
+static int g_row_from_line;
 
 /* One line of the decoder's trace. Straight to standard output: the trace is
    thousands of lines and the point of it is to be piped into `grep`. */
@@ -274,6 +275,7 @@ static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
     g_ctx.no_cull       = (unsigned char)(no_cull ? 1 : 0);
     g_ctx.no_alpha_test = (unsigned char)(no_alpha ? 1 : 0);
     g_ctx.no_odd_row_swap = (unsigned char)(g_no_odd_row_swap ? 1 : 0);
+    g_ctx.row_from_line = (unsigned char)(g_row_from_line ? 1 : 0);
     /* **The command trace, on the bench.** The decoder has carried a trace hook
        since it was written and only the game ever wired it, behind
        `DKR_TRACE_LIST`. So a question about which `G_SETTILE` a conversion
@@ -576,7 +578,7 @@ static void usage(const char *me)
 {
     fprintf(stderr,
             "usage: %s [--card|--both] [--single-tmu] [--log file] [--trace]\n"
-            "          [--no-odd-row-swap]\n"
+            "          [--no-odd-row-swap] [--row-from-line]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
             "          [--recipe-map file] [--texel-factor-one] [--no-multipass]\n"
             "          capture.bin [out.bmp]\n"
@@ -606,6 +608,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--no-multipass") == 0) { no_multipass = 1; }
         else if (strcmp(argv[i], "--trace") == 0) { g_want_trace = 1; }
         else if (strcmp(argv[i], "--no-odd-row-swap") == 0) { g_no_odd_row_swap = 1; }
+        else if (strcmp(argv[i], "--row-from-line") == 0) { g_row_from_line = 1; }
         else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             log_path = argv[++i];
         }

@@ -1894,6 +1894,47 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
          * See `texture.h` and `docs/research/win95-hud-digits.md`: this is what
          * shredded this game's timer digits, and the measurement that found it
          * was a `0` appearing where a speckled blob had been. */
+        /* **The row length the tile declares, in texels.**
+         *
+         * `line` is in 64-bit words of *texture memory*, and the SDK's
+         * `siz_LINE_BYTES` says how many bytes of it a texel occupies: 1 for
+         * 8-bit, 2 for 16-bit, and 2 again for 32-bit -- a 32-bit texel is split
+         * across the two banks and takes two bytes in each. Divide and you have
+         * the texels in a row.
+         *
+         * Where that disagrees with the tile's width, the tile is not the shape
+         * of the image. The dialogue font's atlas says `line` = 248 bytes, which
+         * is 124 texels, while `SetTileSize` says 248 wide: read 248 to a row it
+         * comes out as two degraded copies of the alphabet, and read 124 it is
+         * one clean one.
+         *
+         * Taken only when it is smaller than the tile: a `line` larger than the
+         * width would read outside the rows the load brought in, and nothing in
+         * the corpus asks for that.
+         *
+         * **Off by default**, and that is a measurement and not caution for its
+         * own sake. Scored the way the odd-row swap was -- roughness of every
+         * converted texture, with against without -- it comes out 21 smoother
+         * and **3 rougher** over four scenes, where the swap was 26 and 1. And
+         * the dialogue text it was written for becomes far more solid without
+         * becoming readable. A rule that improves most things and worsens three
+         * for reasons nobody has looked into does not belong in the default
+         * path; `--row-from-line` turns it on to work on it. */
+        {
+            const unsigned long line_bytes = (unsigned long)c->tile_line * 8ul;
+            int per_row = 0;
+            switch ((dkr_n64_size)c->timg_size) {
+            case DKR_N64_SIZ_8:  per_row = (int)line_bytes; break;
+            case DKR_N64_SIZ_16: per_row = (int)(line_bytes / 2ul); break;
+            case DKR_N64_SIZ_32: per_row = (int)(line_bytes / 2ul); break;
+            case DKR_N64_SIZ_4:  per_row = (int)(line_bytes * 2ul); break;
+            default: break;
+            }
+            if (c->row_from_line && per_row > 0 && per_row < width) {
+                src_row = per_row;
+                c->state.row_from_line++;
+            }
+        }
         int swap = 0;
         if (c->block_row_bytes == 0u) {
             switch ((dkr_n64_size)c->timg_size) {

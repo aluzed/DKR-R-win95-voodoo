@@ -799,3 +799,37 @@ that comes from the hardware and not from the data it fixes.
 to measure what it is worth, and two tests pin it — one of which checks that the
 swap is applied to odd rows **and not to even ones**, because a swap applied to
 every row passes a test that only looks at one.
+
+## The dialogue text is a different defect, and a second rule only half-answers it
+
+The odd-row swap fixes the timers. It leaves the dialogue box exactly as it was —
+because that text comes from a font atlas loaded with `dxt = 0x43`, not zero, so
+the load did swap and the fetch swaps back. Correctly untouched.
+
+Its own disagreement is elsewhere. `SetTileSize` says the atlas is **248** texels
+wide; the tile's `line` says 248 *bytes*, which at `G_IM_SIZ_16b_LINE_BYTES = 2`
+is **124 texels**. Read at 124 the atlas is one clean alphabet,
+`@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^` with a lowercase row under it. Read at 248 it is
+two degraded copies — the "two copies, one thinner" this document spent an
+afternoon on, finally explained.
+
+So a second rule suggests itself: **take the source row length from `line`, not
+from the tile width, where they disagree.** `line` is the authoritative row length
+in texture memory; the tile width is the sampled width.
+
+**Scored the same way as the swap, it does not earn the default path:**
+
+| scene | textures | smoother | rougher | unchanged |
+|---|---|---|---|---|
+| CKEY1622 | 98 | 3 | **2** | 93 |
+| CAP0250 | 109 | 5 | 0 | 104 |
+| CG0060 | 166 | 9 | 0 | 157 |
+| CKEY1150 | 98 | 4 | **1** | 93 |
+
+21 smoother against **3 rougher**, where the swap was 26 against 1. And the
+dialogue text it was written for becomes markedly more solid without becoming
+readable — better, not right.
+
+It ships **off**, behind `--row-from-line`. A rule that improves most things and
+worsens three for reasons nobody has looked into does not belong in the default
+path, and the three are the next thing to look at.
