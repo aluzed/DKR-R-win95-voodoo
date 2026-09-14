@@ -1041,3 +1041,59 @@ Every one of them was going on the card at full alpha.
 Two checks pin it in `test_rdp_state.c`, and the second is what makes the first
 bear on anything: a second cycle that really does compute must still be the one
 read, or the rule would have traded one wrong answer for another.
+
+### Correction: the fix is real, and it cannot be what darkens the shadow
+
+The section above claims an alpha scale lost in cycle two puts DKR's shadows on
+the card at full strength. **The first half is right and the second does not
+follow**, and the corpus said so before any argument did.
+
+The card was measured twice, ten scenes each, with `REPLAY.EXE --both`: once
+before the rule and once after. The logs are **byte-identical**, all ten:
+
+| scene | before | after |
+|---|---|---|
+| CAP0160 | 3 ppm | 3 ppm |
+| CAP0150 | 48 | 48 |
+| CAP0050 | 78 | 78 |
+| CKEY0540 | 185 | 185 |
+| CAP0400 | 286 | 286 |
+| CG0060 | 3206 | 3206 |
+| CKEY1150 | 4215 | 4215 |
+| CAP0250 | 4475 | 4475 |
+| CKEY0951 | 5885 | 5885 |
+| CAP0800 | **40224** | 40224 |
+
+Not one pixel moved, so `alpha_scale` cannot reach these draws at all. And it
+does not. `glide_backend.c` chooses between two paths, and only one of them is
+handed the byte:
+
+    dkr_glide_backend_set_recipe(&e->setup, state->constant_color);   /* catalogued */
+    apply_combine(state->combine, state->texture,
+                  state->constant_color, state->alpha_scale);         /* fallback  */
+
+Recipe 8 is catalogued — `MULTIPASS` was deliberately joined to `EXACT` at that
+gate on 8 September — so the shadow takes `set_recipe`, which never sees
+`alpha_scale`. The byte governs the fallback's four hand-written modes and the
+oracle's rasteriser, and nothing else.
+
+**What stands.** `alpha_scale_of` really did read the wrong cycle, the value
+really was 255 where the mux says 0x2D, and the two checks in `test_rdp_state.c`
+keep it right. Any draw that takes the fallback path was wrong and is now right.
+
+**What is retracted.** The claim that this explains the black blob beside Taj's
+kart, and the figure of 144,781 pixels put behind it — that figure counts what
+the configuration *paints*, not what the fix *reaches*, and on the card it
+reaches none of it.
+
+**What the shadow still needs.** `set_recipe` passes `constant_color` whole, so
+the constant's alpha byte does arrive as 0x2D, and the catalogue's `ac=3/1/1/1`
+reads like `texel_alpha x constant_alpha`. On paper the card should already be at
+eighteen per cent. It is not, and the next measurement belongs there rather than
+in another argument.
+
+**The lesson is about the instrument, not the bug.** Every comparison in this
+document until now has been against the oracle, and the oracle does not read
+`alpha_scale`. A change to that byte is invisible to the whole host-side harness
+by construction — it can only be measured on the card, and it was, and the answer
+was no.
