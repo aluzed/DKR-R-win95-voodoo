@@ -267,3 +267,95 @@ GetTickCount64         : 123 ms elapsed        (for a 120 ms Sleep)
 TryEnterCriticalSection: free lock taken
 two threads, 4000 turns: counter = 4000 / 4000
 ```
+
+## What this build does not carry, and how it says so
+
+Three subsystems the mainstream targets build are absent here. Each is a build
+flag in `runtime-recomp/src/game/netplay_presence.hpp`, and all three **default
+to 1**: a target that says nothing keeps the feature, so one added upstream
+cannot lose it by omission. Windows 95 sets all three to 0 in
+`cmake/win95-target.cmake`.
+
+### `DKR_RUNTIME_HAS_NETPLAY` — a loader decision, not a scope one
+
+Online play is not switched off here because a Pentium II would be slow at it.
+It is off because **the binary would not start.** The netplay sources call
+`getaddrinfo`, `freeaddrinfo`, `inet_pton` and `inet_ntop`, and not one of the
+four is in the export table of this machine's `WSOCK32.DLL` — read off the
+machine, see [`tools/win95/exports/PROVENANCE.md`](../tools/win95/exports/PROVENANCE.md).
+By the rule at the top of this document, a missing import stops the process
+loading whether or not the function is ever called.
+
+Three further walls stand behind that one: `WSAStartup(MAKEWORD(2, 2))` asks for
+Winsock 2.2 where the machine carries 1.1 and has no `WS2_32` at all; two of the
+transports are built on libdatachannel, which is WebRTC with DTLS and ICE under
+it; and the netplay sources hold 189 `std::scoped_lock` and 3 `std::mutex`,
+which is precisely what E02-S02's seam exists to remove.
+
+Forty-three call sites are guarded across six files.
+
+### `DKR_RUNTIME_HAS_LEGACY_MODS` — a scope decision
+
+Thirty-five sources and five thousand lines of character and asset modding, for
+a launcher path this target never takes, against the eight mebibytes
+[ADR 0003](adr/0003-memory-budget.md) has to fit the whole game into. The mod
+system has been out of scope since E00-S01; the build now says so rather than
+carrying it unused.
+
+### `DKR_RUNTIME_HAS_PAYLOAD_V80` — one ROM revision
+
+This target recompiles US v1.0 only, so `game_payload.cpp`'s v1.1 arm has no
+entry point to link against.
+
+### The hooks all three still owe
+
+`dkr.us.v77.recomp-policy.json` is a property of the **ROM revision, not of the
+target**: the generated code calls every hook the policy names, on every build.
+A target without netplay is therefore still called at
+`dkr_netplay_gameplay_level_begin`, and one without RT64 at
+`dkr_custom_tracks_table_load_begin`.
+
+`runtime_absent_hooks.cpp` supplies all twenty-one, compiled only when the
+matching guard is off so it can never collide with a real definition. It is not
+a stub of either subsystem: each hook is what that hook does when the thing it
+hooks into is absent, and the two that return a value return the caller's own
+contract for "nothing happened" — `drive_authored_tick` returns 0 so the game
+runs its own loop, `presentation_random_range` returns 0 so the game keeps its
+own random.
+
+## A guard that reads includes cannot see a use
+
+Worth its own heading, because it has now cost two debugging sessions.
+
+`tools/win95/check-cpp-subset.py` scans `platform/win95` and
+`extern/n64-modern-runtime/ultramodern`. **It does not scan `librecomp`**, and it
+matches text: an `#include` line, or a use written out as `std::thread`. Neither
+catches a translation unit that reaches `std::thread` through a header it did not
+name — and `librecomp` never includes `<thread>` directly.
+
+The symptom is not a link error. It is a binary that loads, runs to
+`support-configure`, and dies:
+
+    terminate called after throwing an instance of 'std::system_error'
+      what():  Resource temporarily unavailable
+
+That is `pthread_create` failing behind libstdc++'s `std::thread`. The check that
+does catch it is a sweep for the primitives themselves, over both components:
+
+```sh
+grep -rnE '\bstd::(thread|mutex|lock_guard|scoped_lock|unique_lock|condition_variable|this_thread)\b' \
+  extern/n64-modern-runtime/librecomp/{src,include} \
+  extern/n64-modern-runtime/ultramodern/{src,include} \
+  | grep -v 'threading.hpp\|sync.hpp'
+```
+
+It must report nothing. And on the binary itself, which is the check no source
+sweep can be talked out of:
+
+```sh
+i686-w64-mingw32-nm -C build/win95/bin/DKRR.EXE | grep _M_start_thread
+```
+
+Run both after any dependency-patch rebase. Three separate hunks of the
+threading seam were lost to one three-way merge on 14 September 2026, and only
+these two checks found them.
