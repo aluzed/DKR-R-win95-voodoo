@@ -196,6 +196,18 @@ add_custom_target(dkr_win95_cpp_subset_ultramodern ALL
     COMMENT "Checking the C++ subset: ultramodern"
     VERBATIM)
 
+# **And librecomp, which it was not watching.** The omission cost a debugging
+# session on 14 September 2026: a dependency-patch rebase dropped five of the
+# seam's thread conversions there, nothing in the build said a word, and the
+# machine died at startup with `std::system_error`. librecomp is at zero
+# forbidden uses now, so there is no ratchet to set -- only the check that keeps
+# it there.
+add_custom_target(dkr_win95_cpp_subset_librecomp ALL
+    COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check-cpp-subset.py"
+            "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp"
+    COMMENT "Checking the C++ subset: librecomp"
+    VERBATIM)
+
 # --- librecomp (E01-S05) -----------------------------------------------------
 #
 # Patch 0016 lifts `librecomp`'s two 64-bit assumptions: `HookDefinition`'s hash,
@@ -291,6 +303,19 @@ function(dkr_win95_verify target)
         COMMAND "${Python3_EXECUTABLE}" "${DKR_WIN95_TOOLS}/check_imports.py"
                 --objects "${CMAKE_BINARY_DIR}" "$<TARGET_FILE:${target}>"
         COMMENT "Verifying the imports against Windows 95's exports: ${target}"
+        VERBATIM)
+
+    # The third guard rail, and it reads the link rather than the source. A
+    # `std::thread` imports nothing this machine lacks -- libstdc++ is static --
+    # so the two checks above pass and the binary dies at startup on
+    # `pthread_create`. The source checker cannot see it either: it matches text,
+    # and `librecomp` reaches `std::thread` through a header it never names.
+    #
+    # It has fired twice, and nothing else noticed either time. See
+    # `tools/win95/check-no-std-thread.sh`.
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND "${DKR_WIN95_TOOLS}/check-no-std-thread.sh" "$<TARGET_FILE:${target}>"
+        COMMENT "Verifying no std::thread survives the link: ${target}"
         VERBATIM)
 endfunction()
 
