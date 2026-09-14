@@ -231,3 +231,43 @@ shorthand lands from the combiner in that scene's context. Both scenes set
 similar environment colours, so the answer is not simply "a saturated
 environment". Finding it means sampling recipe-20 pixels in `CAP0400` the way
 this note sampled them in `CAP0800`, which five blind probes failed to hit.
+
+### The blender is programmed: 21 of 21 entry points resolve
+
+The obvious suspicion, once the combiner and the blend setup had both been read
+and both checked out on paper, was that neither was reaching the card at all —
+`dkr_glide_symbol` is `GetProcAddress`, and `apply_blend` opens with
+`if (!gs.blend_function) { return; }`. An export that is not there makes the call
+a no-op with no message, and an unprogrammed blender draws opaque, which is
+exactly the symptom.
+
+The report added for this says otherwise, on the machine, first line of the run:
+
+    card opened with 2 texture unit(s)
+    glide entry points: 21 of 21 resolved
+
+So the blender is programmed, the combiner is programmed, and the card still
+lands on the constant colour with the destination contributing nothing —
+`0x00FBFF` against a constant of `0x00FFFF`, where the oracle puts `0x7ACC84`.
+Source alpha reaching the blender is therefore ~255 where the combiner should be
+handing it 102.
+
+Three things are now excluded by measurement rather than by argument: the second
+pass (the card draws 594 of them), the entry points (all resolve), and the shape
+of the setup (`alpha = local_alpha x texel_alpha`, `SRC_ALPHA /
+ONE_MINUS_SRC_ALPHA`, both read out of the source).
+
+**The next measurement is a witness, not another reading.** `combiner_probe.c`
+already establishes the pattern and its output is the catalogue's own evidence —
+"measured on the card, no Glide factor delivers it" came from that family. What
+is wanted is the same thing for one setup: program
+
+    grConstantColorValue((102 << 24) | 0x00FFFF)
+    grColorCombine(SCALE_OTHER, FACTOR_LOCAL, LOCAL_CONSTANT, OTHER_TEXTURE)
+    grAlphaCombine(SCALE_OTHER, FACTOR_LOCAL, LOCAL_CONSTANT, OTHER_TEXTURE)
+    grAlphaBlendFunction(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ZERO)
+
+over a known destination with a known texture, and read the framebuffer back.
+Either the Voodoo's alpha unit does not take its local from the constant
+register, or `grConstantColorValue`'s alpha byte does not reach it. Both are
+answerable in one frame, and neither is answerable from the host.
