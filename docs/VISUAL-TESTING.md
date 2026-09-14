@@ -203,6 +203,36 @@ so a divergence can be pasted straight into `--probe`.
 The whole history and not merely the last writer: the first pixel this was pointed
 at had been painted seven times, and the answer was in the ramp across the seven.
 
+## Scoring a conversion rule over every texture
+
+    build/render-tools/replay capture.bin out.bmp --dump-textures dir-a
+    build/render-tools/replay capture.bin out.bmp --some-rule --dump-textures dir-b
+    build/render-tools/texscore dir-a dir-b
+
+Two directories of dumped textures, paired by the oracle's texture slot, and a
+count of how many the rule improved, how many it damaged, and which.
+
+**Roughness is the mean absolute difference between adjacent texels**, over the
+four channels, horizontally and vertically. A texture whose texels lie in the
+order they were meant to lie in is locally smooth; one read at the wrong pitch,
+or with every other row exchanged in pairs, is not.
+
+Pairing is by slot — `tex%03d_` in the name — and not by the key: a rule that
+changes the row length or the texel size changes the width, the width is in the
+key, and a texture would stop matching itself precisely when the rule did
+something. A slot present on one side only is reported rather than skipped: it
+means the two runs decoded different lists and no number after it is worth
+anything.
+
+**Read it as a detector, not as a score.** It finds layout errors that destroy
+local structure, which is what found the RDP's odd-row swap and what found the
+texel-size rule of 14 September. It cannot rank two readings that are both
+locally coherent, and it will mark the right answer *down* whenever the wrong one
+was a smear — the correct reading of a font atlas is crisp glyphs with hard
+edges, and the wrong one was a double exposure with none. Every table it produces
+needs an eye on the images before it decides anything. See
+`docs/research/win95-hud-digits.md`.
+
 ## The corpus, and checking it automatically
 
     tools/render/check-corpus.sh <corpus-dir>
