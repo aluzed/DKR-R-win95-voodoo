@@ -614,3 +614,39 @@ policy file already shows this port patching `load_texture`'s heap arithmetic in
 six places — which is the first place to look and was not, on inspection, an
 obvious cause: those patches move where a frame's data begins, not how far apart
 its rows are.
+
+## It is a font sheet, and nothing writes it wrong
+
+Read the same memory as a **32-texel-wide image over 120 rows** and the whole
+numeral font appears, stacked: `0`, `2`, `4`, `5`, `6`, `7`, `8`, `9`, clean and
+correctly proportioned, with more glyphs in the right-hand column.
+
+So `0x32D9E0` is not one glyph. It is **the digit font sheet**, 32 texels wide.
+The game points `G_SETTEXTUREIMAGE` at each numeral's position inside it and
+draws a 16-texel-wide tile — a window. Our conversion reads sixteen texels to a
+row from that address, which slices across the sheet and interleaves each glyph
+with whatever is beside it.
+
+**That corrects the previous section, and it corrects it the whole way.** I had
+concluded that "something writes those two glyph buffers at twice the row pitch
+its own display list declares", and that the next question was about the
+recompiled game code. Nothing writes anything wrong. The sheet is exactly as it
+should be, and it is this port that reads a window as if it were a whole image.
+
+It also explains what the doubled-pitch probe was really doing: not undoing a
+writer's error, but supplying the sheet's stride by accident — 16 x 2 happening to
+equal 32 for these glyphs. And it explains why the same probe destroys a sprite
+that is genuinely its own image: there the stride was right already.
+
+### What is left
+
+One question, and it is now a narrow one: **where does the sheet's width come
+from?** Every field in the display list has been decoded and printed —
+`G_SETTEXTUREIMAGE`'s width is 1, the tile's `line` is `w x 2` for every texture
+in the game, `LoadBlock`'s `dxt` is 0 here, `uls`/`ult` are 0. None of them says
+32.
+
+The answer is likely to be in how `LoadBlock` fills texture memory for a 32-bit
+texture — the split across the two banks that already explains why `line` is half
+the naive row. `dkr_texture_convert_strided` is the shape of the fix and is
+already written and tested; what it still needs is the number.
