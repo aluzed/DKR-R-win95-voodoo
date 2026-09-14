@@ -185,7 +185,24 @@ using ImageValidator = bool (*)(const std::filesystem::path&,
 bool ReplaceFileAtomic(const std::filesystem::path& temporary,
                        const std::filesystem::path& destination,
                        std::error_code& error) {
-#if defined(_WIN32)
+/* **Windows 95 is excluded, and the consequence of not excluding it is total.**
+ *
+ * `MoveFileExW` is one of this machine's exported-but-empty stubs: it returns 0
+ * and sets `ERROR_CALL_NOT_IMPLEMENTED`. There is no fallback below -- the
+ * function reports the failure and returns false -- so under this branch *every
+ * atomic save write on the target fails*, silently as far as the player is
+ * concerned.
+ *
+ * E02-S05 measured the stub and E02-S06 routed this very function through the
+ * seam. The 1.0.5b8 merge brought upstream's direct call back, and the import
+ * checker passed it because `exceptions.json` still tolerated the symbol on the
+ * strength of a justification that had gone stale. Found by auditing what
+ * actually references it, with `ld --cref`.
+ *
+ * `dkr::fs::rename` is the indirection point: on the target it is a
+ * delete-then-rename, which is not atomic and is the best this machine offers.
+ * See `platform/win95/fileio.h`. */
+#if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
     if (MoveFileExW(temporary.c_str(), destination.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
         error.clear();

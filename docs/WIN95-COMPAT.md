@@ -359,3 +359,52 @@ i686-w64-mingw32-nm -C build/win95/bin/DKRR.EXE | grep _M_start_thread
 Run both after any dependency-patch rebase. Three separate hunks of the
 threading seam were lost to one three-way merge on 14 September 2026, and only
 these two checks found them.
+
+## Auditing an import: `ld --cref`, not the justification
+
+14 September 2026. `exceptions.json` tolerated `MoveFileExW` on this reasoning:
+
+> "It is asked for by libstdc++'s fs_ops.o, that is, by `std::filesystem::rename`
+> — which this code does not call on this target ... The import is therefore
+> present and unreachable."
+
+That was true when it was written. It was not true afterwards, and **nothing in
+the build could tell the difference**, because a justification is prose and the
+checker only reads the symbol.
+
+The audit that settles provenance is one linker flag:
+
+```sh
+i686-w64-mingw32-g++ ... -Wl,--cref -o probe.exe
+```
+
+Its cross-reference table names every file that references a symbol. For this one
+it answered:
+
+    _imp__MoveFileExW@12    ...  save_manager.cpp.obj
+                                 runtime_magic_codes.cpp.obj
+
+Not libstdc++. **The project's own code**, under `#if defined(_WIN32)`, restored
+by the 1.0.5 beta 8 merge — reinstating the exact defect the justification
+recorded as fixed by E02-S06.
+
+What it cost while it stood: `MoveFileExW` is one of the exported-but-empty wide
+stubs, so it returned 0 and set `ERROR_CALL_NOT_IMPLEMENTED`, and neither call
+site has a fallback. **Every atomic save write and every one-shot magic-code
+queue replacement failed on the target**, reporting an error the player never
+sees.
+
+Both are excluded from the Win32 branch now, the symbol is gone from all
+thirty-eight binaries, and the exception has been **removed** rather than
+reworded — a tolerance whose reason has disappeared goes on passing an import
+nobody re-examines, which is precisely how this got in.
+
+Verified by putting the direct call back for one build: `check_imports.py` fails
+it and names the object,
+
+    STUB  KERNEL32.DLL:MoveFileExW  <- save_manager.cpp.obj
+
+so the attribution was there the whole time. The prose was what silenced it.
+
+**Read the other entries against this.** Each one asserts a provenance that no
+check verifies, and each was true when written.

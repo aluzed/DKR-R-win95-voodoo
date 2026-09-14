@@ -12,7 +12,17 @@
     "The optional 'binaries' field restricts the scope to certain",
     "executables. An API tolerated in a witness that exercises it on purpose",
     "must not be tolerated in the game: without this field, the exception",
-    "applies everywhere."
+    "applies everywhere.",
+    "",
+    "A tolerance whose reason has disappeared is worse than no tolerance: it goes",
+    "on passing an import nobody re-examined. MoveFileExW was removed from this",
+    "list on 14 September 2026 for exactly that. Its justification said the symbol",
+    "came from libstdc++'s fs_ops.o and that no project code called it any more -",
+    "true when written. The 1.0.5b8 merge brought a direct call back into",
+    "save_manager.cpp and runtime_magic_codes.cpp, the checker passed it on the",
+    "strength of the stale sentence, and every atomic save write on the target was",
+    "failing. `ld --cref` names who really references a symbol; a justification",
+    "does not. Re-read every entry below against that before trusting it."
   ],
   "exceptions": [
     {
@@ -53,16 +63,6 @@
     {
       "symbol": "GetSystemTimeAdjustment",
       "justification": "A Windows 95 stub (returns 0), asked for by libwinpthread_la-clock.o, which <chrono> brings in wholesale - the file carries clock_gettime and clock_getres together. The disassembly of clock.o says which serves what: clock_gettime calls QueryPerformanceCounter for CLOCK_MONOTONIC, and GetProcessTimes or GetThreadTimes only for the process-time clock ids; clock_getres calls GetSystemTimeAdjustment for CLOCK_REALTIME. std::chrono::steady_clock, the only clock this code uses, takes the QueryPerformanceCounter branch - the one E02-S03 measured on the machine. The process-time clock ids are asked for neither by libstdc++ nor by the project. The tolerance covers the test binaries, which use <chrono>; it does not extend to the game.",
-      "binaries": [
-        "SAVEMGR.EXE",
-        "SAVECDC.EXE",
-        "WPROBE.EXE",
-        "DKRR.EXE"
-      ]
-    },
-    {
-      "symbol": "MoveFileExW",
-      "justification": "Exported with real code, and it refuses all the same: E02-S05 measured it on the machine, MoveFileExA(REPLACE_EXISTING) returns ERROR_CALL_NOT_IMPLEMENTED. It is the third category of unavailable API, the one no static analysis sees. It is asked for by libstdc++'s fs_ops.o, that is, by std::filesystem::rename - which this code does not call on this target, E02-S05's indirection point going through dkr_file_rename and its delete-then-rename sequence. The import is therefore present and unreachable. The game is now linked, and the re-examination has taken place: save_manager called MoveFileExW directly under #if defined(_WIN32), which E02-S06 fixed by routing it through the indirection point. The import that remains comes from libstdc++'s fs_ops.o, reached only through std::filesystem::rename, which no project code calls any more on this target.",
       "binaries": [
         "SAVEMGR.EXE",
         "SAVECDC.EXE",

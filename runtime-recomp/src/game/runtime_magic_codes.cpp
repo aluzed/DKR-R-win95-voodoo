@@ -52,7 +52,10 @@ gpr RdramAddress(std::uint32_t address) {
 }
 bool ReplaceQueueFile(const std::filesystem::path& temporary,
                       const std::filesystem::path& destination) {
-#if defined(_WIN32)
+/* Windows 95 excluded: `MoveFileExW` is an exported-but-empty stub there, so
+   this branch would fail every replacement of the one-shot queue and there is
+   no fallback after it. See the note in `save_manager.cpp`. */
+#if defined(_WIN32) && !defined(DKR_TARGET_WIN95)
     return MoveFileExW(temporary.c_str(), destination.c_str(),
                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 #else
