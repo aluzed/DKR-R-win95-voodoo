@@ -1533,6 +1533,41 @@ static int dkr_glide_two_layer_unavailable(const dkr_f3d_context *c)
            (c->tmu_count < 2);
 }
 
+/* --- The format and size the texels are actually in ------------------------ *
+ *
+ * Two commands declare a format and a size, and they are allowed to disagree.
+ *
+ * `G_SETTEXTUREIMAGE` describes the *source of a transfer*: it tells `LoadBlock`
+ * where the bytes are and how wide a word is on the way in. `G_SETTILE`
+ * describes the *thing that gets sampled*: the texels in texture memory, at the
+ * size the fetch will read them.
+ *
+ * `gDPLoadTextureBlock` makes them disagree on purpose. For anything narrower
+ * than 16 bits it re-declares the image as 16-bit and halves the count, because
+ * a block load moves 64-bit words and does not care what a texel is; then it
+ * sets the render tile to the texel size that is really there. The SDK macro
+ * spells this out and this port had read only the first half of it.
+ *
+ * Our converter is on the sampling side of that line: it produces the texels a
+ * fetch would return. So the tile is the authority, and the image's size is the
+ * loader's business. Reading the image's size instead doubles the bytes consumed
+ * per texel, which puts half an image in a whole tile -- the "two degraded copies
+ * of the alphabet" that `docs/research/win95-hud-digits.md` spent an afternoon
+ * on, and which no row length could have fixed because the row length was never
+ * the thing that was wrong.
+ *
+ * Only where a `G_SETTILE` for the render tile has actually been seen: without
+ * one, `tile_size` is a zero that means "not set" and not `G_IM_SIZ_4b`. */
+static void dkr_texel_declaration(const dkr_f3d_context *c,
+                                  dkr_n64_format *fmt, dkr_n64_size *siz)
+{
+    *fmt = (dkr_n64_format)c->timg_format;
+    *siz = (dkr_n64_size)c->timg_size;
+    if (c->no_tile_texel_size || !c->tile_declared) { return; }
+    *fmt = (dkr_n64_format)c->tile_format;
+    *siz = (dkr_n64_size)c->tile_size;
+}
+
 static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     /* --- Which tile is being sized, and does a second one exist? ------------- *
@@ -1588,11 +1623,21 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         return;
     }
 
-    key = ((unsigned long long)c->timg_address << 24)
-        ^ ((unsigned long long)c->timg_format << 20)
-        ^ ((unsigned long long)c->timg_size   << 18)
-        ^ ((unsigned long long)width << 9)
-        ^ (unsigned long long)height;
+    /* The format and size in the key are the ones the texels will be *read* at,
+       which is `dkr_texel_declaration`'s answer and not always the image's. Two
+       textures at one address that differ only in the tile's declared size are
+       two different images, and a key built from the image's size would hand the
+       second one the first one's texels out of the cache. */
+    {
+        dkr_n64_format key_fmt;
+        dkr_n64_size   key_siz;
+        dkr_texel_declaration(c, &key_fmt, &key_siz);
+        key = ((unsigned long long)c->timg_address << 24)
+            ^ ((unsigned long long)key_fmt << 20)
+            ^ ((unsigned long long)key_siz << 18)
+            ^ ((unsigned long long)width << 9)
+            ^ (unsigned long long)height;
+    }
 
     /* The distinct set, kept before the one-entry cache answers: what is counted
        is what the *list* asks for, not what survives the cache. */
@@ -1877,6 +1922,18 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
     }
     {
         int src_row = width;
+        /* **The format and size the texels are read at.** The tile's, where it
+           declares any: see `dkr_texel_declaration`. Everything below that asks
+           how many bytes a texel is -- the row length from `line`, the width of
+           the odd-row exchange -- has to ask about *this* size and not the
+           image's, or it answers about a texel twice the size of the real one. */
+        dkr_n64_format tex_format;
+        dkr_n64_size   tex_size;
+        dkr_texel_declaration(c, &tex_format, &tex_size);
+        if ((unsigned)tex_size != (unsigned)c->timg_size ||
+            (unsigned)tex_format != (unsigned)c->timg_format) {
+            c->state.tile_texel_size_used++;
+        }
         /* **The RDP's odd-row swap, where the load did not already apply it.**
          *
          * `LoadBlock` swaps every other row as it fills texture memory, and the
@@ -1894,50 +1951,24 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
          * See `texture.h` and `docs/research/win95-hud-digits.md`: this is what
          * shredded this game's timer digits, and the measurement that found it
          * was a `0` appearing where a speckled blob had been. */
-        /* **The row length the tile declares, in texels.**
+        /* `src_row` stays the tile's width, and the reason is worth the line.
          *
-         * `line` is in 64-bit words of *texture memory*, and the SDK's
-         * `siz_LINE_BYTES` says how many bytes of it a texel occupies: 1 for
-         * 8-bit, 2 for 16-bit, and 2 again for 32-bit -- a 32-bit texel is split
-         * across the two banks and takes two bytes in each. Divide and you have
-         * the texels in a row.
+         * `--row-from-line` used to sit here: take the row length from the
+         * tile's `line` where it is smaller than the width. It was written for
+         * the dialogue font, whose atlas declares `line` = 248 bytes against a
+         * width of 248, and at the image's 16-bit size that arithmetic gave 124
+         * -- half the row, which is very nearly what the atlas needed. It was
+         * the right factor of two found at the wrong end.
          *
-         * Where that disagrees with the tile's width, the tile is not the shape
-         * of the image. The dialogue font's atlas says `line` = 248 bytes, which
-         * is 124 texels, while `SetTileSize` says 248 wide: read 248 to a row it
-         * comes out as two degraded copies of the alphabet, and read 124 it is
-         * one clean one.
-         *
-         * Taken only when it is smaller than the tile: a `line` larger than the
-         * width would read outside the rows the load brought in, and nothing in
-         * the corpus asks for that.
-         *
-         * **Off by default**, and that is a measurement and not caution for its
-         * own sake. Scored the way the odd-row swap was -- roughness of every
-         * converted texture, with against without -- it comes out 21 smoother
-         * and **3 rougher** over four scenes, where the swap was 26 and 1. And
-         * the dialogue text it was written for becomes far more solid without
-         * becoming readable. A rule that improves most things and worsens three
-         * for reasons nobody has looked into does not belong in the default
-         * path; `--row-from-line` turns it on to work on it. */
-        {
-            const unsigned long line_bytes = (unsigned long)c->tile_line * 8ul;
-            int per_row = 0;
-            switch ((dkr_n64_size)c->timg_size) {
-            case DKR_N64_SIZ_8:  per_row = (int)line_bytes; break;
-            case DKR_N64_SIZ_16: per_row = (int)(line_bytes / 2ul); break;
-            case DKR_N64_SIZ_32: per_row = (int)(line_bytes / 2ul); break;
-            case DKR_N64_SIZ_4:  per_row = (int)(line_bytes * 2ul); break;
-            default: break;
-            }
-            if (c->row_from_line && per_row > 0 && per_row < width) {
-                src_row = per_row;
-                c->state.row_from_line++;
-            }
-        }
+         * Read at the tile's own IA/8b, `line` is 248 bytes of one-byte texels,
+         * which is 248 texels, which is the width. The two never disagreed.
+         * Re-scored over the whole corpus with the size right, the rule changes
+         * **nothing at all** in twelve scenes, and it is gone rather than left in
+         * the tree for someone to switch on and be misled by -- the same
+         * disposal, for the same reason, as `--rgba32-pitch2` before it. */
         int swap = 0;
         if (c->block_row_bytes == 0u) {
-            switch ((dkr_n64_size)c->timg_size) {
+            switch (tex_size) {
             case DKR_N64_SIZ_4:  swap = 8; break;
             case DKR_N64_SIZ_8:  swap = 4; break;
             case DKR_N64_SIZ_16: swap = 2; break;
@@ -1949,8 +1980,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         if (swap != 0) { c->state.odd_row_swapped++; }
         if (!dkr_texture_convert_swapped(c->rdram, c->rdram_size,
                                          c->rdram_native, c->timg_address,
-                                         (dkr_n64_format)c->timg_format,
-                                         (dkr_n64_size)c->timg_size,
+                                         tex_format, tex_size,
                                          width, height, src_row, swap,
                                          c->texels,
                                          &c->state.textures)) {
@@ -3024,6 +3054,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                    first version of this check did. */
                 c->tile_size = (unsigned char)((w0 >> 19) & 0x03u);
                 c->tile_format = (unsigned char)((w0 >> 21) & 0x07u);
+                c->tile_declared = 1u;
                 const unsigned int cmt = (w1 >> 18) & 0x03u;
                 /* `G_TX_WRAP` 0, `G_TX_MIRROR` 1, `G_TX_CLAMP` 2. The Voodoo 2
                    has no mirroring, so it folds into repeat here and is noted

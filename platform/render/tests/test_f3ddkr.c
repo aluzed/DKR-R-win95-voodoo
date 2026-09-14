@@ -11,6 +11,7 @@
  * that accepts it in silence addresses host memory.
  */
 #include "render/f3ddkr.h"
+#include "render/texture.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -627,6 +628,79 @@ int main(void)
         check("DKR_NO_TEXCACHE converts even when the card holds it",
               g_look_n == 2 && g_up_n == 2 &&
               ctxr.state.conversion_texels > 0);
+    }
+
+    /* --- The tile's texel size wins over the texture image's ------------------- *
+     *
+     * `gDPLoadTextureBlock` re-declares the image as 16-bit for anything
+     * narrower, because a block load moves 64-bit words and has no opinion about
+     * texels; the render tile then declares what is really there. The converter
+     * followed the image and so read every such texture at twice the bytes a
+     * texel occupies -- half an image spread over a whole tile.
+     *
+     * One row, and that is deliberate: with no `LoadBlock` the odd-row swap
+     * applies, and a test with two rows would be measuring the swap and this rule
+     * at once. What is under test here is which of two declarations is believed.
+     *
+     * The reference is the converter called directly at IA/8b, rather than a
+     * transcription of the expected texels: writing 5551 by hand is how a test
+     * ends up pinning the encoding it was meant to be indifferent to. The second
+     * check is what makes the first bear on anything -- it asserts the two
+     * readings actually differ, so a converter that ignored the tile would fail
+     * rather than agree by coincidence. */
+    {
+        dkr_f3d_context ctxt;
+        unsigned short as_ia8[8], as_ia16[8];
+        unsigned int att = 0;
+        int same_as_ia8 = 1, same_as_ia16 = 1, k;
+
+        memset(g_ram, 0, sizeof(g_ram));
+        /* Eight bytes that read differently at the two sizes: as IA8 they
+           alternate opaque and transparent, as IA16 they pair up into four
+           texels and the alternation disappears. */
+        for (k = 0; k < 8; k++) {
+            g_ram[0x400 + k] = (unsigned char)((k & 1) ? 0x0Fu : 0xF0u);
+        }
+
+        /* SetTextureImage: IA, 16 bits -- what the load was told. */
+        att = put_cmd(att, 0xFD700000u, 0x00000400u);
+        /* SetTile for tile 0: IA, 8 bits, line = 1 word (8 texels of 1 byte). */
+        att = put_cmd(att, 0xF5680200u, 0x00000000u);
+        /* SetTileSize: lrs 7, lrt 0, in 10.2 -- an 8x1 tile. */
+        att = put_cmd(att, 0xF2000000u, ((7u << 2) << 12) | (0u << 2));
+        (void)put_cmd(att, 0xB8000000u, 0u);
+
+        dkr_f3d_init(&ctxt, g_ram, RAM_SIZE, NULL);
+        (void)dkr_f3d_run(&ctxt, 0);
+
+        (void)dkr_texture_convert(g_ram, RAM_SIZE, 0, 0x400u,
+                                  DKR_N64_FMT_IA, DKR_N64_SIZ_8,
+                                  8, 1, as_ia8, NULL);
+        (void)dkr_texture_convert(g_ram, RAM_SIZE, 0, 0x400u,
+                                  DKR_N64_FMT_IA, DKR_N64_SIZ_16,
+                                  8, 1, as_ia16, NULL);
+        for (k = 0; k < 8; k++) {
+            if (ctxt.texels[k] != as_ia8[k])  { same_as_ia8 = 0; }
+            if (ctxt.texels[k] != as_ia16[k]) { same_as_ia16 = 0; }
+        }
+        check("the texels are read at the size the tile declares, not the"
+              " image's", same_as_ia8);
+        check("and the two readings really do differ, so that could fail",
+              !same_as_ia16);
+        check("the disagreement is counted",
+              ctxt.state.tile_texel_size_used == 1);
+
+        /* And the switch that puts the old reading back, for the run that has to
+           show what the rule changed. */
+        dkr_f3d_init(&ctxt, g_ram, RAM_SIZE, NULL);
+        ctxt.no_tile_texel_size = 1;
+        (void)dkr_f3d_run(&ctxt, 0);
+        same_as_ia16 = 1;
+        for (k = 0; k < 8; k++) {
+            if (ctxt.texels[k] != as_ia16[k]) { same_as_ia16 = 0; }
+        }
+        check("--no-tile-texel-size reads the image's size again",
+              same_as_ia16 && ctxt.state.tile_texel_size_used == 0);
     }
 
     /* --- The return from a counted list ---------------------------------------- *

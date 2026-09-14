@@ -7,6 +7,7 @@
 #
 #   replay    renders a capture through E04-S08's software oracle
 #   compare   measures the gap between two BMPs and draws where it is
+#   texscore  scores a conversion rule over two directories of dumped textures
 #
 # **Why a script and not the CMake build.** `cmake/win95-target.cmake` builds for
 # the Windows 95 target through a cross toolchain; these two run on the
@@ -50,6 +51,10 @@ say "replay"
 
 say "compare"
 "$CC" "${FLAGS[@]}" -o "$OUT/compare" "$HERE/compare.c" \
+      "$ROOT/platform/render/imagecmp.c" -lm
+
+say "texscore"
+"$CC" "${FLAGS[@]}" -o "$OUT/texscore" "$HERE/texscore.c" \
       "$ROOT/platform/render/imagecmp.c" -lm
 
 say "built in $OUT"

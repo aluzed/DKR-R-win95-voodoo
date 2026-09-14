@@ -817,28 +817,20 @@ wide; the tile's `line` says 248 *bytes*, which at `G_IM_SIZ_16b_LINE_BYTES = 2`
 is **124 texels**. Read at 124 the atlas is one clean alphabet,
 `@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^` with a lowercase row under it. Read at 248 it is
 two degraded copies — the "two copies, one thinner" this document spent an
-afternoon on, finally explained.
+afternoon on.
 
-So a second rule suggests itself: **take the source row length from `line`, not
-from the tile width, where they disagree.** `line` is the authoritative row length
-in texture memory; the tile width is the sampled width.
+So a second rule suggested itself: **take the source row length from `line`, not
+from the tile width, where they disagree.** Scored the same way as the swap it
+came out 21 smoother against 3 rougher over four scenes, where the swap was 26
+against 1, and the dialogue text became markedly more solid without becoming
+readable — better, not right. It shipped **off**, behind `--row-from-line`, and
+the three it worsened were recorded as the next thing to look at.
 
-**Scored the same way as the swap, it does not earn the default path:**
-
-| scene | textures | smoother | rougher | unchanged |
-|---|---|---|---|---|
-| CKEY1622 | 98 | 3 | **2** | 93 |
-| CAP0250 | 109 | 5 | 0 | 104 |
-| CG0060 | 166 | 9 | 0 | 157 |
-| CKEY1150 | 98 | 4 | **1** | 93 |
-
-21 smoother against **3 rougher**, where the swap was 26 against 1. And the
-dialogue text it was written for becomes markedly more solid without becoming
-readable — better, not right.
-
-It ships **off**, behind `--row-from-line`. A rule that improves most things and
-worsens three for reasons nobody has looked into does not belong in the default
-path, and the three are the next thing to look at.
+**That rule is now retired.** It was the right factor of two found at the wrong
+end, and the section below says where the two really comes from. The reason it
+half-worked is exactly the reason it was wrong: `line` in *bytes* divided by the
+*image's* two bytes a texel gave 124, and 124 is very nearly the atlas's real row
+of 248 one-byte texels seen through a halved lens.
 
 ## Confirmed on the Voodoo
 
@@ -863,3 +855,110 @@ the 117 pixels that remain are on the `ANCIENT LAKE` title, not on the timers.
 menu failed or died; the replay needed no navigation at all, because the capture
 already *is* the screen. A harness that can re-run one frame on the card is worth
 more than the ability to reach it again.
+
+## The dialogue text, read: the tile declares the texel size and we believed the image
+
+14 September 2026. `I am here to HELP you!`
+
+Two commands declare a format and a size, and they are allowed to disagree.
+
+- `G_SETTEXTUREIMAGE` describes the **source of a transfer**. It tells
+  `LoadBlock` where the bytes are and how wide a word is on the way in.
+- `G_SETTILE` describes the **thing that gets sampled** — the texels in texture
+  memory, at the size the fetch will read them.
+
+`gDPLoadTextureBlock` makes them disagree on purpose. For anything narrower than
+16 bits it re-declares the image as 16-bit and halves the count, because a block
+load moves 64-bit words and has no opinion about what a texel is; then it sets
+the render tile to the size that is really there. The SDK macro spells it out.
+This port had read the first half of it and converted from `timg_size` since the
+converter was written.
+
+The decoder's own report had been saying so for days, in a counter added to
+measure something else:
+
+    texel size: 21 of 132 conversions read a size the tile does not declare
+      tile says IA/8b, the image says IA/16b, for 248x11
+      tile says IA/8b, the image says IA/16b, for 192x11
+      tile says IA/8b, the image says IA/16b, for 64x64
+
+Reading a one-byte texel as two bytes puts **half an image in a whole tile** —
+which is the "two degraded copies of the alphabet", and no row length could ever
+have fixed it, because the row length was never what was wrong.
+
+Believe the tile, and the three atlases of the dialogue box come out as three
+clean rows:
+
+    @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+    'abcdefghijklmnopqrstuvwxyz{|}~
+    !"#$%&'()*+,-./0123456789:;<=>?
+
+and the box reads `I am here to HELP you!`.
+
+### It was never only the font
+
+21 conversions a scene, not 3. The rule lands on every texture the game loads
+through the block path at a size under 16 bits — which on the hub is the sparkle
+over Pipsy's kart, a grey rectangle of noise the size of a character, and on the
+race the balloon and the shredded strips across the road. Those were being read
+as texture defects of their own.
+
+| scene | textures | smoother | rougher | unchanged |
+|---|---|---|---|---|
+| CAP0050 | 34 | 2 | 0 | 32 |
+| CAP0150 | 15 | 2 | 0 | 13 |
+| CAP0160 | 15 | 2 | 0 | 13 |
+| CAP0250 | 109 | **14** | 0 | 95 |
+| CAP0400 | 68 | 4 | 0 | 64 |
+| CAP0800 | 58 | 4 | 0 | 54 |
+| CG0060 | 166 | **11** | 0 | 155 |
+| CKEY0540 | 77 | 6 | 0 | 71 |
+| CKEY0951 | 98 | 7 | **1** | 90 |
+| CKEY1150 | 98 | 8 | 0 | 90 |
+| CKEY1622 | 98 | 7 | **1** | 90 |
+
+**67 smoother, 2 rougher** over twelve scenes.
+
+### The two "rougher" are the metric being wrong, and that is worth more than the rule
+
+Both are the same texture — the atlas at `0x1F54E0`, the punctuation and digits
+row — seen in the two dialogue captures. Its roughness goes **up** by 30 %, and
+it is the row that comes out most obviously correct of the three.
+
+Roughness rewards blur. The old reading was a double exposure of an alphabet over
+itself: low contrast everywhere, smooth by the only definition the metric has.
+The new one is crisp black-and-white glyphs with hard edges, which is exactly
+what a texture full of text should measure as.
+
+So the metric is a **detector of layout errors that destroy local structure**,
+and not a measure of correctness. It found the odd-row swap and it found this,
+because both scramble neighbours. It cannot rank two readings that are both
+locally coherent, and it will mark the right answer down whenever the wrong
+answer was a smear. Every table above needs an eye on the images before it
+decides anything, and this one got it.
+
+### The instrument is in the tree now
+
+`tools/render/texscore.c`, built by `build-host-tools.sh`. Two directories of
+`replay --dump-textures` output, paired by slot, and the table above comes out.
+
+The tables this document used to carry were produced by a script in a temporary
+directory that no longer exists. A measurement that decided what ships on the
+default path and that nobody can run again is an assertion, and two of them had
+already been quoted back as fact. It also gained the vertical term the earlier
+one lacked — the odd-row swap touches odd rows only, so it sets consecutive rows
+against each other far more than it disturbs neighbours within a row, and a
+horizontal-only score sees the defect it was built for at half strength.
+
+### What this retires
+
+`--row-from-line` is **gone**, and it changes nothing to remove it: re-scored
+over all twelve scenes with the texel size right, it moves not one texture. At
+IA/8b the atlas's `line` of 248 bytes is 248 one-byte texels, which is the width
+exactly. The two declarations never disagreed; we had been dividing the byte
+count by the wrong texel.
+
+`--no-tile-texel-size` replaces it — the old reading, kept so the change can be
+measured rather than asserted, and pinned by four checks in `test_f3ddkr.c`. One
+of them asserts the two readings actually differ, because a test that compares
+the converter against itself passes whatever the converter does.
