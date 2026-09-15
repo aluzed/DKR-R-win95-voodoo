@@ -1293,7 +1293,9 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
     const unsigned int ea  = (b.current.env_color >> 24) & 0xFFu;
     const unsigned int inv = 255u - ea;
     const unsigned int p   = (unsigned int)b.current.alpha_scale;
-    const int opaque_first = (b.current.blend == DKR_BLEND_OPAQUE);
+    /* Opaque writes over the destination, additive adds to it: neither weights
+       the source by `a`, so neither leaves an `a` for pass B to carry. */
+    const int opaque_first = (b.current.blend != DKR_BLEND_ALPHA);
     int i;
 
     if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
@@ -1559,7 +1561,16 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
          * unit passes the constant through, and the blender adds it with
          * `ONE / ONE` rather than scaling it by an alpha that is there for the
          * test. */
-        const int opaque_first = (b.current.blend == DKR_BLEND_OPAQUE);
+        /* **Anything that is not the alpha composite.** Opaque writes over the
+           destination and additive adds to it; neither weights the source by
+           `a`, so neither leaves an `a` for the second pass to carry.
+         *
+           Additive was missed when this was first written, and widening it
+           **changed nothing on any of the eight scenes** - no capture in the
+           corpus reaches a second pass from an additive state. It rests on the
+           derivation and not on a measurement, and that is said here rather than
+           left for someone to assume otherwise. */
+        const int opaque_first = (b.current.blend != DKR_BLEND_ALPHA);
         if (opaque_first) {
             const unsigned int r = (((b.current.env_color >> 16) & 0xFFu)
                                     * env_alpha) / 255u;
@@ -1611,7 +1622,7 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
        `ENV x e` in the constant, and the alpha carries coverage for the test, not
        a weight. */
     if (gs.blend_function) {
-        gs.blend_function((b.current.blend == DKR_BLEND_OPAQUE)
+        gs.blend_function((b.current.blend != DKR_BLEND_ALPHA)
                               ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
                           GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     }

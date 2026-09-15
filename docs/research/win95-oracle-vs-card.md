@@ -710,3 +710,29 @@ is no single pass to supply it to.
 
 `dkr_glide_backend_texel_factor_one` now selects the old one-stage form rather
 than a variant of it, so one boot can still measure both.
+
+## What is left in the attract sequence, and it is older than any of this
+
+`CAP0800`'s remaining 1,570 are not the caption. The worst of them lie along a
+diagonal at the top right — `(639,154)`, `(632,156)`, `(608,163)`, down to
+`(553,179)` — and the probe finds **one draw** on each: recipe 3, texture 4,
+`blend=additive`, `ascale=255`.
+
+    oracle   0x3163DE -> 0x8CFFFF        (49,99,222) + src
+    card      (132,77,0)
+
+The card's value is **lower than the destination** in green and blue. An additive
+blend cannot do that: `ONE / ONE` only ever adds. So whatever that draw was given
+on the card, it was not the additive blend the state asks for — and the pixels
+read the same in the baseline images from before any of this week's work, so it
+is older than the two pairs and untouched by them.
+
+Widening the second pass's "did the first one composite" test from opaque to
+*anything but the alpha composite* — which is right by the derivation, since
+additive weights the source by nothing either — left all eight scenes exactly
+where they were. No capture in the corpus reaches a second pass from an additive
+state. The change is kept on the arithmetic and is recorded as unmeasured.
+
+That leaves the sky edge as the next thing to chase, and it is a narrow one: a
+single draw, a known texture, and a blend that demonstrably is not the one the
+state names.
