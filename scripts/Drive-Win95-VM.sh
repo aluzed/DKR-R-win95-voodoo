@@ -212,6 +212,14 @@ case "${1:-}" in
     # This waits for the screen to go black, retries the launch if it does not -
     # clearing any window the failed attempt left open - and then waits for the
     # desktop to come back, so the caller knows the output file is this run's.
+    #
+    # **Only for a program that takes the screen at once.** `REPLAY.EXE --both`
+    # does not: it rasterises the whole scene in software first, minutes of it,
+    # with the desktop still showing, and only then opens the card. Watched from
+    # here that reads as a launch that never happened, and the retry fires while
+    # the program is working. For those, watch the artefact instead - poll the
+    # output file's directory entry until it changes - which is what
+    # `docs/TEST-ENVIRONMENT.md` shows and what the corpus sweep does.
     need_running; shift
     [[ $# -gt 0 ]] || die "usage: run-glide <command line> [seconds to wait]"
     cmd="$1"; budget="${2:-900}"

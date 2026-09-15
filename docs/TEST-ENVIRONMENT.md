@@ -172,6 +172,37 @@ runs each capture and copies `RPLCARD.BMP` / `RPLSOFT.BMP` aside under a name of
 its own turns eight fragile launches into one, and the host waits for the last
 file the batch writes.
 
+**And such a batch needs `START /W`.** A `.BAT` that names a Win32 program does
+not wait for it: `COMMAND.COM` hands it to the shell and runs the next line at
+once. Written the obvious way, an eight-scene sweep launches eight replays on top
+of each other, each copy takes whatever image happens to be on disk, and the
+first symptom is a directory with no copies in it at all.
+
+```dos
+START /W D:\REPLAY.EXE --both D:\CAP0050.BIN
+COPY D:\RPLCARD.BMP D:\KP0050.BMP
+```
+
+**`run-glide` is for a program that takes the screen at once**, and `REPLAY.EXE
+--both` is not one: it spends minutes in the software oracle with the desktop
+still showing, and only then opens the card. A screen watcher calls that a failed
+launch and retries on top of a program that is working perfectly. For those, watch
+the **artefact**: note the output file's directory entry, launch with `run`, and
+poll until the entry changes.
+
+```bash
+stamp() { mdir -i "$IMG" :: | grep '^RPLCARD'; }
+before="$(stamp)"; scripts/Drive-Win95-VM.sh run "D:\REPLAY.EXE --both D:\CAP0050.BIN"
+until [ "$(stamp)" != "$before" ]; do sleep 15; done
+```
+
+**Do not touch the emulator's window while a sweep runs.** `Alt+F4` and the other
+`Alt` combinations reach *86Box's own menu bar*, not the guest: one of them
+paused the machine mid-sweep on 15 September 2026, and from the host the pause
+looks exactly like a long render — a black screen, the guest's monitor gone to
+standby behind it, and nothing written for a quarter of an hour. Poll the disk
+instead; the screen says less than the directory does.
+
 Once Windows and the 3dfx drivers are installed, freeze the state:
 
 ```bash

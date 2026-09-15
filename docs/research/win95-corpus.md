@@ -217,3 +217,55 @@ into something reproducible on the development host.
     cmd=2430 tri=2864 emitted=1602 culled=593 clipped=719 rejects=0 textures=132
 
 Ten scenes now, all at 0 divergent pixels oracle-to-oracle.
+
+## The card against the oracle, scene by scene — 15 September 2026
+
+E09-S02's remaining line is "the corpus: one capture is not coverage". This is the
+first pass at the other half of it: every scene replayed through **both** backends
+on the machine, and the two images differenced the same way each time — pixels
+differing at all, and pixels at a gap of 32 or more, which is the threshold that
+separates the Voodoo's dither from a defect.
+
+| capture | scene | differ at all | gap ≥ 32 |
+|---|---|---|---|
+| `CAP0050` | the Nintendo 64 logo | 951,402 ppm | **100** (325 ppm) |
+| `CAP0150` | the copyright screen | 966,526 ppm | **36** (117 ppm) |
+| `CAP0160` | the same, logo turned | 870,654 ppm | **1,295** (4,215 ppm) |
+| `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
+| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
+
+`CAP0250`, `CG0060` and `CKEY1622` were still running when this was written; the
+three are the largest scenes in the corpus and each takes upwards of a quarter of
+an hour through the software oracle on the emulated Pentium II.
+
+Two readings. **The floor is the dither and it is everywhere**: nine tenths of
+every scene differs by a few levels, and no decoder work will move it — the
+Voodoo stores 565 and dithers into it, the oracle does neither. **Above the
+floor, the scenes are two orders of magnitude apart**: the copyright screen is
+clean at 36 pixels, and the attract sequence is at 12,141, of which 63 % sit in
+one band — the caption, whose cause is `prepass_draw_texel_alone` not carrying
+`alpha_scale` (see `win95-oracle-vs-card.md`).
+
+`CAP0160` at 1,295 is the number to watch next: the same scene as `CAP0150` ten
+lists later, thirty-six times worse, and nothing has yet looked at where those
+pixels are.
+
+### How to repeat it, and the three traps that cost a morning
+
+Run them **one at a time**, and judge completion by the **artefact**:
+
+    mdel  ::/RPLCARD.BMP ::/RPLSOFT.BMP        delete first
+    Drive-Win95-VM.sh run "D:\REPLAY.EXE --both D:\CAP0050.BIN"
+    poll until both reappear, then pull and compare
+
+- A `.BAT` looks like the obvious way to chain eight scenes and is not: a Win32
+  program launched from `COMMAND.COM` is not waited for without `START /W`, and
+  even with it the DOS session dies when the program takes the screen full
+  screen. Eight launches from the host beat one batch in the guest.
+- **Do not judge completion by the screen.** `--both` renders the whole scene in
+  software first, with the desktop still showing, and only opens the card at the
+  end: a screen watcher calls that a failed launch and retries on top of a
+  program that is working.
+- **Do not judge it by the directory timestamp either.** It has minute
+  granularity and says nothing about which run wrote the file; two scenes came
+  back with identical figures that way, which is how the mistake was caught.
