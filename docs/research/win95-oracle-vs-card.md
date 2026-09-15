@@ -426,3 +426,74 @@ That is a sharper statement than the one this note started with, and it moves th
 search. The next measurement is not about the factor at all — it is about what
 else changes when that branch is taken. The two witnesses are in the tree and the
 reproduction costs one run of each.
+
+## The variable nobody had varied: the blender
+
+The section above ends by saying the scene's 115 levels cannot come from the
+factor, because seven sweeps read it as one and the two settings differ by
+eight. Every one of those sweeps read the combiner the way a combiner is read —
+**with blending off**. That is the one case in which this factor is inert.
+
+The scene was reproduced outside itself first. The witness builds the copyright
+text's state — recipe 20, `TEXTURE_CONSTANT`, constant and environment white at
+full alpha, blending on — hands it to `gl_set_state`, and draws over a dark
+texel:
+
+    default  (BLEND_OTHER / 0x0B)    0xF7FBF7      the local, white
+    switched (SCALE_OTHER / ONE)     0x292829      the texel, dark
+
+206 levels apart, outside any scene. Re-issuing the same programming by hand over
+that state gives the same two numbers, so the difference is in the state and not
+in the draw. Varying the state one field at a time names it:
+
+    blend opaque    BLEND_OTHER / 0x0B -> 0x292C29     the texel
+    blend opaque    SCALE_OTHER / ONE  -> 0x292829     the texel
+    blend alpha     BLEND_OTHER / 0x0B -> 0xF7FBF7     the local
+    blend alpha     SCALE_OTHER / ONE  -> 0x292829     the texel
+
+**`GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA` is exactly what it is named — while
+the blender is on.** With `ONE / ONE` over black, a texel of 41 against a local
+of 255:
+
+    alpha   0 ->  41    the texel        (factor one)
+    alpha 128 -> 148    halfway          (the lerp)
+    alpha 255 -> 247    the local        (factor zero)
+
+`(T - L) x (1 - alpha) + L` matches every row. With the blender off it reads one
+and nothing moves it, which is what the seven sweeps saw.
+
+## And the alpha it reads is the alpha unit's output
+
+The sweep above moves the vertex alpha while the alpha unit is parked on it, so
+it cannot say which of the two the factor reads. Holding the vertex at 255 and
+making the alpha unit deliver something else separates them:
+
+    the alpha unit delivers   0   51  102  153  204  255
+    the colour comes back    41   82  123  165  206  247
+    predicted by the lerp    41   84  127  170  213  255
+
+It reads the **alpha combiner's output**. Three consequences, and they close
+three open questions at once.
+
+**The vertex route works.** `prepass_draw_texel_alone` really does compute the
+RDP's `(ENV - TEXEL0) * k + TEXEL0`, with `k` taken from the alpha unit. The
+comment saying the factor fetches `k` from the *iterated* alpha names the wrong
+register, and the note added on 14 September — "a constant 247/255, fetching
+nothing" — was read with the blender off and is wrong.
+
+**The copyright screen's 801 against 17 is explained.** On a glyph the texel
+alpha is 255, so the factor is zero and the card paints the environment — white,
+which is what the RDP paints at `k = 1`. `SCALE_OTHER / ONE` paints the texel
+instead, and the texel is not white.
+
+**And so is why supplying `alpha_scale` made the caption worse.** The value the
+alpha unit delivers is two things at once: the blend factor the frame buffer
+will use, and `k` in the colour unit's lerp. Scaling it to 102 to carry the RDP's
+alpha mux scales the lerp to 0.4 with it, the texel bleeds into what should be
+flat environment colour, and 7,657 pixels go wrong to buy 1,103 back. One
+register, two meanings — that is the whole of why this configuration is hard on
+this card, and it is a sharper statement than the catalogue's "approximate".
+
+Carrying both needs a second pass, measured four to eighteen times worse on an
+alpha-blended background, or the scale folded into the texture's own alpha, which
+nothing does yet.

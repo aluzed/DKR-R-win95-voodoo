@@ -1212,27 +1212,39 @@ static void pass2_geometry(const dkr_render_vertex *vertices, int count)
  *
  * What is known is the image, twice, and that every other setting tried is worse.
  *
- * **And what `0x0B` does is now measured, in this very configuration.**
- * `constant_alpha_probe.c` draws `(T - E) * f + E` with a white texel as `other`
- * and a cyan iterated colour as `local`, so that the red channel *is* `255 x f`,
- * and sweeps the three alphas that could be feeding it:
+ * **And what `0x0B` does is now measured — it is what it is named, under one
+ * condition nobody had varied.** `constant_alpha_probe.c`, 15 September 2026:
  *
- *     iterated alpha  0 .. 255   ->  factor 247, unchanged
- *     constant alpha  0 .. 255   ->  factor 247, unchanged
- *     texel alpha        136     ->  factor 247
+ *     blender off       the factor reads one, whatever any alpha is set to
+ *     blender on        the factor is `1 - alpha`, to the level
  *
- * It is a **constant 247/255**, and it fetches nothing. So the vertex route does
- * not work as written: this pass computes `(T - E) x 0.97 + E`, which is very
- * nearly the texel alone - the RDP's cycle at `k = 0` - and the name of this
- * function is the truest thing about it. That it still beats every alternative
- * tried says the alternatives are worse, not that this is right.
+ * With `GR_BLEND_ONE / ONE` over black, a texel of 41 against a local of 255:
  *
- * Two explanations were eliminated before; this one is measured. What remains
- * unexplained is narrower and sharper: why `SCALE_OTHER / ONE`, which computes
- * `other` and should therefore equal `BLEND_OTHER / 0x0B` at f = 0.97, gives 801
- * divergent pixels against 17. Two settings that compute almost the same thing
- * do not differ by forty-seven times, and one of those two images is telling us
- * something else entirely.
+ *     alpha    0 ->  41   (the texel: factor one)
+ *     alpha  128 -> 148   (the lerp, halfway)
+ *     alpha  255 -> 247   (the local: factor zero)
+ *
+ * and the arithmetic of `(T - L) x (1 - alpha) + L` matches every row. The first
+ * sweeps read a flat 247 because they ran with blending **off**, which is how a
+ * combiner is read directly - and that is exactly the case where this factor
+ * degenerates to one.
+ *
+ * **Which alpha, though, is the one that decides it.** Holding the vertex alpha
+ * at 255 and making the alpha unit deliver something else moves the colour with
+ * the unit's output and not with the vertex:
+ *
+ *     the alpha unit delivers  0  51 102 153 204 255
+ *     the colour comes back   41  82 123 165 206 247   (predicted 41..255)
+ *
+ * So the factor reads the **alpha combiner's output**. The vertex route works,
+ * and this pass does compute the RDP's lerp - with `k` equal to whatever the
+ * alpha unit hands over, which here is the texel's alpha.
+ *
+ * That also settles the copyright screen's 801 against 17, and it is not a
+ * three-per-cent difference after all: with the blender on, `BLEND_OTHER / 0x0B`
+ * puts the **environment** on a glyph whose texel alpha is 255 - which is what
+ * the RDP does at `k = 1` - while `SCALE_OTHER / ONE` puts the texel there. The
+ * text is white; the texel is not.
  *
  * **A two-pass decomposition would be exact and cannot be used here.** It needs
  * an opaque first pass to compose against, and this configuration's fill is 0 %
@@ -1300,18 +1312,23 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
      *     CAP0800, gap >= 32     12,141  ->  18,695
      *     of which newly wrong                7,657, all in the caption's band
      *
-     * Because the colour this pass computes is not the RDP's either, and scaling
-     * the alpha of a wrong colour composites it more visibly rather than less.
-     * See the note above: factor `0x0B` reads a constant 247/255 whatever alpha
-     * is put in front of it, so this pass draws very nearly the texel alone, at
-     * `k = 0`, where the RDP wants `(ENV - TEXEL0) * ENV_ALPHA + TEXEL0`.
+     * **And the reason is now measured, not guessed.** The colour combiner's
+     * factor above is `1 - alpha`, and the alpha it reads is *this unit's
+     * output* - the note before this function has the sweep. So the value
+     * programmed here is two things at once: the blend factor the frame buffer
+     * will use, and `k` in the lerp the colour unit computes. Scaling it to
+     * carry `alpha_scale` scales the lerp by the same amount, the texel bleeds
+     * into what should be flat environment colour, and 7,657 pixels of the
+     * caption's band go wrong to buy 1,103 back.
      *
-     * **The two have to be fixed together or not at all**, and neither the
-     * one-pass route (no Glide factor delivers a register's alpha) nor the
-     * two-pass decomposition (tried 9 September, four to eighteen times worse on
-     * an alpha-blended background) reaches it today. The scale is therefore left
-     * out on purpose, and the number it costs is written here so that the next
-     * attempt starts with it. */
+     * **One register, two meanings**: that is the whole of why this
+     * configuration is hard on this card, and it is sharper than the
+     * "approximate" the catalogue records. Carrying both needs either a second
+     * pass - measured four to eighteen times worse on an alpha-blended
+     * background, 9 September - or the scale folded into the texture's own
+     * alpha, which nothing here does yet. The scale is therefore left out on
+     * purpose, and the number it costs is written here so that the next attempt
+     * starts with it. */
     gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     apply_blend(b.current.blend);

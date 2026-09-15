@@ -16,6 +16,11 @@
 #                                                  several at once -- for driving
 #   scripts/Drive-Win95-VM.sh type "E:\WIN95\INSTALL.EXE"
 #   scripts/Drive-Win95-VM.sh run "D:\DKRR.EXE D:\DKR.Z64"   starts the game
+#   scripts/Drive-Win95-VM.sh run-glide "D:\REPLAY.EXE ..."  starts it, checks
+#                                                  that it really started, and
+#                                                  returns when it has finished --
+#                                                  use this whenever the output
+#                                                  file is read back afterwards
 #
 # The game **requires the ROM path as an argument**; without it, it stops on "The
 # diagnostic runtime requires a ROM path" and closes its window, which looks
@@ -73,6 +78,22 @@ pad_key() {
     r)     printf e ;;          # 'E' on both layouts
     *)     die "unknown control '$1'" ;;
   esac
+}
+
+# Is the captured screen the Glide one? Three points, so that a dialog in the
+# middle of a black desktop cannot pass for a full-screen program.
+screen_is() {
+  python3 - "$1" "$2" <<'PY'
+import sys
+try:
+    from PIL import Image
+except ImportError:
+    sys.exit(2)
+im = Image.open(sys.argv[1]).convert("RGB")
+pts = [(330, 300), (500, 200), (100, 450)]
+black = all(sum(im.getpixel(p)) < 24 for p in pts)
+sys.exit(0 if (black if sys.argv[2] == "black" else not black) else 1)
+PY
 }
 
 need_running() {
@@ -175,6 +196,54 @@ case "${1:-}" in
     "$0" type "$1" >/dev/null 2>&1; sleep 2
     "$0" key Return >/dev/null 2>&1
     say "launched: $1"
+    ;;
+  run-glide)
+    # Launches a Glide program and **checks that it started**, which `run` cannot.
+    #
+    # `run` walks the Start menu blind: Ctrl+Esc, three Ups, Return. That works
+    # until Ctrl+Esc opens the task list instead of the Start menu - which this
+    # guest does intermittently - and then the three Ups walk the task list and
+    # Return opens whatever was under them. The measurement that follows reads
+    # the *previous* run's output file and is wrong in a way nothing announces:
+    # it happened three times on 14 September 2026, once producing a figure that
+    # was briefly attributed to a code change that had in fact been reverted.
+    #
+    # A Glide program takes the whole screen, so "did it start" is one pixel.
+    # This waits for the screen to go black, retries the launch if it does not -
+    # clearing any window the failed attempt left open - and then waits for the
+    # desktop to come back, so the caller knows the output file is this run's.
+    need_running; shift
+    [[ $# -gt 0 ]] || die "usage: run-glide <command line> [seconds to wait]"
+    cmd="$1"; budget="${2:-900}"
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    started=0
+    for attempt in 1 2 3; do
+      "$0" run "$cmd" >/dev/null 2>&1
+      for _ in $(seq 1 12); do
+        sleep 5
+        "$0" shot "$tmp/s.png" >/dev/null 2>&1 || continue
+        if screen_is "$tmp/s.png" black; then started=1; break; fi
+      done
+      [[ $started -eq 1 ]] && break
+      say "attempt $attempt: the program did not take the screen - clearing and retrying"
+      # Escape closes a menu; Alt+F4 closes a window the stray keystrokes opened.
+      # The second Escape is for the shutdown box Alt+F4 raises on the desktop.
+      "$0" key Escape >/dev/null 2>&1
+      "$0" key alt+F4 >/dev/null 2>&1
+      "$0" key Escape >/dev/null 2>&1
+    done
+    [[ $started -eq 1 ]] || die "the program never took the screen: $cmd"
+    say "running: $cmd"
+    waited=0
+    while (( waited < budget )); do
+      sleep 10; waited=$((waited + 10))
+      "$0" shot "$tmp/s.png" >/dev/null 2>&1 || continue
+      if ! screen_is "$tmp/s.png" black; then
+        say "finished after about ${waited}s"
+        exit 0
+      fi
+    done
+    die "still running after ${budget}s: $cmd"
     ;;
   dismiss)
     # Closes a modal dialog by clicking its default button. Keystrokes are not

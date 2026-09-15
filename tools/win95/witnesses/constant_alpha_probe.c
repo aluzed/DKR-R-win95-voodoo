@@ -81,6 +81,7 @@ static void say(const char *fmt, ...)
 #define TH 32
 static unsigned short g_tex1555[TW * TH];   /* alpha 255, one bit, set */
 static unsigned short g_tex4444[TW * TH];   /* alpha 8/15 = 136 */
+static unsigned short g_texdark[TW * TH];   /* opaque, RGB 40,40,40 */
 
 static unsigned g_px[640 * 480];
 
@@ -93,6 +94,10 @@ static void build_textures(void)
     for (i = 0; i < TW * TH; i++) {
         g_tex1555[i] = (unsigned short)0xFFFFu;          /* a=1, 31,31,31 */
         g_tex4444[i] = (unsigned short)0x8FFFu;          /* a=8, 15,15,15 */
+        /* 40 >> 3 = 5 in each of the three 1555 fields: the texel the card
+           reads back is 41, and the sweep's expectations are computed from
+           that rather than from the 40 written. */
+        g_texdark[i] = (unsigned short)(0x8000u | (5u << 10) | (5u << 5) | 5u);
     }
 }
 
@@ -261,7 +266,7 @@ int main(void)
     dkr_render_backend bk;
     dkr_render_state   st;
     dkr_texture_desc   desc;
-    dkr_texture_handle tex1555, tex4444;
+    dkr_texture_handle tex1555, tex4444, texdark;
     dkr_cc_setup       r;
     const int W = 640, H = 480;
     int source = 0, i;
@@ -292,9 +297,14 @@ int main(void)
     desc.pixels = g_tex4444; desc.size_bytes = sizeof(g_tex4444);
     tex4444 = bk.texture_upload(bk.self, &desc);
 
-    if (!tex1555 || !tex4444) {
-        say("FAILED: a texture will not upload (1555 %s, 4444 %s)\n",
-            tex1555 ? "ok" : "no", tex4444 ? "ok" : "no");
+    desc.key = 0xA1FA03ull;
+    desc.format = DKR_TEXFMT_ARGB1555;
+    desc.pixels = g_texdark; desc.size_bytes = sizeof(g_texdark);
+    texdark = bk.texture_upload(bk.self, &desc);
+
+    if (!tex1555 || !tex4444 || !texdark) {
+        say("FAILED: a texture will not upload (1555 %s, 4444 %s, dark %s)\n",
+            tex1555 ? "ok" : "no", tex4444 ? "ok" : "no", texdark ? "ok" : "no");
         bk.close(bk.self);
         if (g_out) { fclose(g_out); }
         return 1;
@@ -636,6 +646,413 @@ int main(void)
             (red_scale > 235) ? "one" : "");
     }
 
+    /* --- And the function itself, which no sweep here could see -------------- *
+     *
+     * Every reading above puts a `local` whose red is zero against a white
+     * texel, so that the red channel reads `255 x factor`. That choice makes
+     * `SCALE_OTHER` and `BLEND_OTHER` **identical on that channel** - `f x other`
+     * and `(other - 0) x f + 0` are the same number - and the sweeps therefore
+     * say nothing at all about the function. The one reading on record comes
+     * from `combine_enum_probe.c`, with `other` driven from the *constant*
+     * register, and this file's own warning is that such a reading does not
+     * carry over to a texture.
+     *
+     * So: a dark texel against a mid-grey local, where the four candidates land
+     * far apart. `other` = 41 (what the card reads back from 40 in 1555),
+     * `local` = 100, factor 0x0B = 247/255:
+     *
+     *     LOCAL                       100
+     *     SCALE_OTHER   f x T          39
+     *     BLEND         (T-L) f + L     43
+     *     SCALE_OTHER_ADD_LOCAL  fT+L  139
+     *
+     * Forty units between the nearest pair. The copyright screen needs an
+     * answer this sweep can give: `BLEND` cannot put white where the texel is
+     * dark, and `ADD_LOCAL` can. */
+    say("\n-- the function, other = TEXTURE (41,41,41), local = (100,100,100)\n");
+    say("   candidates on red: LOCAL 100, SCALE 39, BLEND 43, ADD 139\n");
+    say("   %-4s %-8s %-8s %s\n", "fn", "0x0B", "0x08", "reading");
+    for (i = 0; i <= 15; i++) {
+        int red_b, red_8;
+        const char *reading;
+        setup_blend_other(&r);
+        r.cc_function = (unsigned char)i;
+        red_b = draw_and_read_red_local(&bk, &st, texdark, &r, 0xFF00FFFFu,
+                                        255.0f, 100.0f);
+        setup_blend_other(&r);
+        r.cc_function = (unsigned char)i; r.cc_factor = FAC_ONE;
+        red_8 = draw_and_read_red_local(&bk, &st, texdark, &r, 0xFF00FFFFu,
+                                        255.0f, 100.0f);
+        reading = (red_b > 120 && red_b < 160) ? "<- f x other + local"
+                : (red_b >  85 && red_b < 115) ? "local"
+                : (red_b >  30 && red_b <  50) ? "f x other, or the lerp"
+                : (red_b == 0)                 ? "zero" : "";
+        say("   %-4d %-8d %-8d %s\n", i, red_b, red_8, reading);
+    }
+    say("   the lerp and the scale are 4 apart here and the pair below\n"
+        "   separates them: local 200 puts BLEND at 161 and SCALE still at 39.\n");
+    {
+        int red_b;
+        setup_blend_other(&r);
+        r.cc_function = FN_BLEND_OTHER;
+        red_b = draw_and_read_red_local(&bk, &st, texdark, &r, 0xFF00FFFFu,
+                                        255.0f, 200.0f);
+        say("   function 7, local 200 -> %d  (LOCAL 200, SCALE 39, "
+            "BLEND 161, ADD 239)\n", red_b);
+    }
+
+    /* --- Does the colour unit's *function* move the alpha? ------------------- *
+     *
+     * Everything measured says the two settings of `prepass_draw_texel_alone`
+     * differ by eight levels of the texel, and the copyright screen says they
+     * differ by a hundred and fifteen. The colour side cannot produce that. The
+     * one thing not yet tried is whether programming the colour unit moves the
+     * *alpha* the blender receives - the two calls write the same path register
+     * on this hardware, and a field that belongs to one could be read by the
+     * other.
+     *
+     * Same reading as the first section: blending on, over black, so the stored
+     * pixel is `source x alpha`, divided by the source measured with blending
+     * off. The alpha unit is held at the game's setup throughout; only the
+     * colour unit changes. */
+    say("\n-- the alpha under each colour function, texel alpha 136\n");
+    {
+        int src, i2;
+        const int fns[2] = { FN_SCALE_OTHER, FN_BLEND_OTHER };
+        const int facs[2] = { FAC_ONE, FAC_ONE_MINUS_LOCAL_ALPHA };
+        const char *names[2] = { "SCALE_OTHER / ONE (the switch on)",
+                                 "BLEND_OTHER / 0x0B (the default)" };
+        st.blend = DKR_BLEND_OPAQUE;
+        setup_alpha(&r, FN_LOCAL, FAC_ONE, LOCAL_ITERATED, OTHER_ITERATED, 1);
+        src = draw_and_read(&bk, &st, tex4444, &r, 0xFFFFFFFFu, 255.0f);
+        say("   the 4444 texel with blending off: green = %d\n", src);
+        st.blend = DKR_BLEND_ALPHA;
+        for (i2 = 0; i2 < 2; i2++) {
+            int got, a;
+            memset(&r, 0, sizeof(r));
+            r.cc_function = (unsigned char)fns[i2];
+            r.cc_factor   = (unsigned char)facs[i2];
+            r.cc_local = LOCAL_ITERATED; r.cc_other = OTHER_TEXTURE;
+            /* the game's alpha side, unchanged between the two rows */
+            r.ac_function = FN_SCALE_OTHER; r.ac_factor = FAC_ONE;
+            r.ac_local = LOCAL_ITERATED;    r.ac_other = OTHER_TEXTURE;
+            r.tc_function = TEXCOMB_DECAL;  r.tc_factor = 0;
+            r.uses_texture = 1;
+            got = draw_and_read(&bk, &st, tex4444, &r, 0xFFFFFFFFu, 255.0f);
+            a = alpha_from(got, src);
+            say("   %-34s read %3d -> alpha %3d\n", names[i2], got, a);
+        }
+        st.blend = DKR_BLEND_OPAQUE;
+    }
+
+    /* --- The same pass, drawn by the engine rather than by hand -------------- *
+     *
+     * Everything above programs the card directly. The copyright screen does not:
+     * it goes through `gl_set_state`, which for recipe 20 programs
+     * `apply_combine`, then `apply_texture_modes`, then `apply_blend`, and only
+     * then does `gl_draw_triangles` find the shape and call
+     * `prepass_draw_texel_alone` over the top of it. If the two settings differ
+     * by a hundred and fifteen levels there and by eight here, the difference is
+     * in what that path leaves programmed - so the path is what this section
+     * exercises.
+     *
+     * The state is the copyright text's, read off `replay --probe 369,421`:
+     * recipe 20, TEXTURE_CONSTANT, constant and environment both white at full
+     * alpha, `alpha_scale` 255, blending on. The texel is the dark one, standing
+     * in for a glyph. */
+    say("\n-- the same two settings, drawn through gl_set_state (recipe 20)\n");
+    {
+        dkr_render_state gs_state;
+        int k;
+        const char *names[2] = { "default  (BLEND_OTHER / 0x0B)",
+                                 "switched (SCALE_OTHER / ONE)" };
+        for (k = 0; k < 2; k++) {
+            int rw = 0, rh = 0;
+            unsigned c;
+            dkr_glide_backend_texel_factor_one(k);
+            memset(&gs_state, 0, sizeof(gs_state));
+            gs_state.combine = DKR_COMBINE_TEXTURE_CONSTANT;
+            gs_state.constant_color = 0xFFFFFFFFu;
+            gs_state.env_color = 0xFFFFFFFFu;
+            gs_state.prim_color = 0xFFFFFFFFu;
+            gs_state.blend = DKR_BLEND_ALPHA;
+            gs_state.depth = DKR_DEPTH_DISABLED;
+            gs_state.cull = DKR_CULL_NONE;
+            gs_state.filter = DKR_FILTER_POINT;
+            gs_state.wrap_s = gs_state.wrap_t = DKR_WRAP_CLAMP;
+            gs_state.alpha_scale = 255;
+            gs_state.recipe = 20;
+            gs_state.texture = texdark;
+            bk.begin_frame(bk.self, 0x000000);
+            /* Invalidated between the two, or the second `set_state` sees an
+               identical block and returns without programming anything - which
+               would make this section compare a setting with itself. */
+            bk.invalidate(bk.self);
+            bk.set_state(bk.self, &gs_state);
+            quad(&bk, W, H, 255.0f);
+            bk.present(bk.self);
+            c = 0;
+            if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+            }
+            say("   %-32s 0x%06lX\n", names[k],
+                (unsigned long)(c & 0x00FFFFFFu));
+        }
+        dkr_glide_backend_texel_factor_one(0);
+    }
+
+    /* --- State, or the draw? One row each ------------------------------------ *
+     *
+     * The section above reproduces the scene outside it: the same two settings,
+     * 247 against 41, where programming the card by hand gives 33 against 41.
+     * The two differ in two ways at once - what `gl_set_state` leaves programmed
+     * before the pass, and the fact that the pass itself tints the vertices and
+     * draws them. These rows separate the two.
+     *
+     * Row A lets the engine program everything, then re-issues by hand exactly
+     * what the pass programs, and draws the quad directly. If the engine's
+     * reading survives that, it is in the state; if it falls back to the hand
+     * reading, it is in the draw. */
+    say("\n-- state or draw: the engine's state, then a hand draw over it\n");
+    {
+        dkr_render_state gs_state;
+        dkr_cc_setup hand;
+        int k;
+        for (k = 0; k < 2; k++) {
+            int rw = 0, rh = 0;
+            unsigned c;
+            memset(&gs_state, 0, sizeof(gs_state));
+            gs_state.combine = DKR_COMBINE_TEXTURE_CONSTANT;
+            gs_state.constant_color = 0xFFFFFFFFu;
+            gs_state.env_color = 0xFFFFFFFFu;
+            gs_state.prim_color = 0xFFFFFFFFu;
+            gs_state.blend = DKR_BLEND_ALPHA;
+            gs_state.depth = DKR_DEPTH_DISABLED;
+            gs_state.cull = DKR_CULL_NONE;
+            gs_state.filter = DKR_FILTER_POINT;
+            gs_state.wrap_s = gs_state.wrap_t = DKR_WRAP_CLAMP;
+            gs_state.alpha_scale = 255;
+            gs_state.recipe = 0;          /* no prepass: the ordinary draw */
+            gs_state.texture = texdark;
+            bk.begin_frame(bk.self, 0x000000);
+            bk.invalidate(bk.self);
+            bk.set_state(bk.self, &gs_state);
+            /* exactly what `prepass_draw_texel_alone` programs, by hand */
+            memset(&hand, 0, sizeof(hand));
+            hand.cc_function = (unsigned char)(k ? FN_SCALE_OTHER
+                                                 : FN_BLEND_OTHER);
+            hand.cc_factor   = (unsigned char)(k ? FAC_ONE
+                                                 : FAC_ONE_MINUS_LOCAL_ALPHA);
+            hand.cc_local = LOCAL_ITERATED; hand.cc_other = OTHER_TEXTURE;
+            hand.ac_function = FN_SCALE_OTHER; hand.ac_factor = FAC_ONE;
+            hand.ac_local = LOCAL_ITERATED;    hand.ac_other = OTHER_TEXTURE;
+            hand.tc_function = TEXCOMB_DECAL;  hand.tc_factor = 0;
+            hand.uses_texture = 1;
+            dkr_glide_backend_bind(texdark);
+            dkr_glide_backend_set_recipe(&hand, 0xFFFFFFFFu);
+            quad(&bk, W, H, 255.0f);      /* white vertices, like the tint */
+            bk.present(bk.self);
+            c = 0;
+            if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+            }
+            say("   %-32s 0x%06lX\n",
+                k ? "SCALE_OTHER / ONE, by hand" : "BLEND_OTHER / 0x0B, by hand",
+                (unsigned long)(c & 0x00FFFFFFu));
+        }
+    }
+
+    /* --- Which field of the state, then ------------------------------------- *
+     *
+     * The draw is exonerated: the same hand programming reads 247 after the
+     * engine's state and 33 after the sweeps' own. Everything the recipe
+     * programs is re-issued in both, so the difference is in a field
+     * `set_recipe` does not touch. Blending is the one that changed between the
+     * two - the sweeps read the combiner with it off, the engine's state has it
+     * on - and the rest of the block is equal. One row each way. */
+    say("\n-- the engine's state with blending on and off\n");
+    {
+        dkr_render_state gs_state;
+        dkr_cc_setup hand;
+        int k, bl;
+        for (bl = 0; bl < 2; bl++) {
+            for (k = 0; k < 2; k++) {
+                int rw = 0, rh = 0;
+                unsigned c;
+                memset(&gs_state, 0, sizeof(gs_state));
+                gs_state.combine = DKR_COMBINE_TEXTURE_CONSTANT;
+                gs_state.constant_color = 0xFFFFFFFFu;
+                gs_state.env_color = 0xFFFFFFFFu;
+                gs_state.prim_color = 0xFFFFFFFFu;
+                gs_state.blend = bl ? DKR_BLEND_ALPHA : DKR_BLEND_OPAQUE;
+                gs_state.depth = DKR_DEPTH_DISABLED;
+                gs_state.cull = DKR_CULL_NONE;
+                gs_state.filter = DKR_FILTER_POINT;
+                gs_state.wrap_s = gs_state.wrap_t = DKR_WRAP_CLAMP;
+                gs_state.alpha_scale = 255;
+                gs_state.recipe = 0;
+                gs_state.texture = texdark;
+                bk.begin_frame(bk.self, 0x000000);
+                bk.invalidate(bk.self);
+                bk.set_state(bk.self, &gs_state);
+                memset(&hand, 0, sizeof(hand));
+                hand.cc_function = (unsigned char)(k ? FN_SCALE_OTHER
+                                                     : FN_BLEND_OTHER);
+                hand.cc_factor   = (unsigned char)(k ? FAC_ONE
+                                                     : FAC_ONE_MINUS_LOCAL_ALPHA);
+                hand.cc_local = LOCAL_ITERATED; hand.cc_other = OTHER_TEXTURE;
+                hand.ac_function = FN_SCALE_OTHER; hand.ac_factor = FAC_ONE;
+                hand.ac_local = LOCAL_ITERATED;    hand.ac_other = OTHER_TEXTURE;
+                hand.tc_function = TEXCOMB_DECAL;  hand.tc_factor = 0;
+                hand.uses_texture = 1;
+                dkr_glide_backend_bind(texdark);
+                dkr_glide_backend_set_recipe(&hand, 0xFFFFFFFFu);
+                quad(&bk, W, H, 255.0f);
+                bk.present(bk.self);
+                c = 0;
+                if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                    c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+                }
+                say("   blend %-7s %-22s 0x%06lX\n",
+                    bl ? "alpha" : "opaque",
+                    k ? "SCALE_OTHER / ONE" : "BLEND_OTHER / 0x0B",
+                    (unsigned long)(c & 0x00FFFFFFu));
+            }
+        }
+    }
+
+    /* --- What exactly does blending change ----------------------------------- *
+     *
+     * Blending off, `BLEND_OTHER / 0x0B` delivers the texel; blending on, it
+     * delivers the local. Two questions follow, and one run answers both.
+     *
+     * Additive blending uses `ONE / ONE` and never fetches a source alpha. If
+     * the factor comes back to the texel there, what matters is the *source
+     * alpha factor* in the blender, not blending as such.
+     *
+     * And under alpha blending the iterated alpha is swept again. If the factor
+     * now tracks `1 - iterated alpha`, then 0x0B is the `ONE_MINUS_LOCAL_ALPHA`
+     * it is named after all along, and its local alpha only reaches the colour
+     * unit when the blender asks the alpha path for something. */
+    say("\n-- what blending changes: texel 41, local white\n");
+    {
+        dkr_render_state gs_state;
+        dkr_cc_setup hand;
+        const int blends[3] = { DKR_BLEND_OPAQUE, DKR_BLEND_ALPHA,
+                                DKR_BLEND_ADDITIVE };
+        const char *bn[3] = { "opaque", "alpha", "additive" };
+        const int alphas[3] = { 0, 128, 255 };
+        int bi, ai;
+        for (bi = 0; bi < 3; bi++) {
+            for (ai = 0; ai < 3; ai++) {
+                int rw = 0, rh = 0;
+                unsigned c;
+                memset(&gs_state, 0, sizeof(gs_state));
+                gs_state.combine = DKR_COMBINE_TEXTURE_CONSTANT;
+                gs_state.constant_color = 0xFFFFFFFFu;
+                gs_state.env_color = 0xFFFFFFFFu;
+                gs_state.prim_color = 0xFFFFFFFFu;
+                gs_state.blend = (dkr_blend_mode)blends[bi];
+                gs_state.depth = DKR_DEPTH_DISABLED;
+                gs_state.cull = DKR_CULL_NONE;
+                gs_state.filter = DKR_FILTER_POINT;
+                gs_state.wrap_s = gs_state.wrap_t = DKR_WRAP_CLAMP;
+                gs_state.alpha_scale = 255;
+                gs_state.recipe = 0;
+                gs_state.texture = texdark;
+                bk.begin_frame(bk.self, 0x000000);
+                bk.invalidate(bk.self);
+                bk.set_state(bk.self, &gs_state);
+                memset(&hand, 0, sizeof(hand));
+                hand.cc_function = FN_BLEND_OTHER;
+                hand.cc_factor   = FAC_ONE_MINUS_LOCAL_ALPHA;
+                hand.cc_local = LOCAL_ITERATED; hand.cc_other = OTHER_TEXTURE;
+                /* the alpha the blender will use is the iterated one here, so
+                   that sweeping the vertex sweeps both at once */
+                hand.ac_function = FN_LOCAL;    hand.ac_factor = FAC_ONE;
+                hand.ac_local = LOCAL_ITERATED; hand.ac_other = OTHER_ITERATED;
+                hand.tc_function = TEXCOMB_DECAL; hand.tc_factor = 0;
+                hand.uses_texture = 1;
+                dkr_glide_backend_bind(texdark);
+                dkr_glide_backend_set_recipe(&hand, 0xFFFFFFFFu);
+                quad(&bk, W, H, (float)alphas[ai]);
+                bk.present(bk.self);
+                c = 0;
+                if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                    c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+                }
+                say("   blend %-9s iterated alpha %3d -> 0x%06lX\n",
+                    bn[bi], alphas[ai], (unsigned long)(c & 0x00FFFFFFu));
+            }
+        }
+        say("   (over black: with alpha blending the stored pixel is "
+            "source x alpha,\n"
+            "    so read the ratio between the rows, not the absolute value)\n");
+    }
+
+    /* --- The iterated alpha, or the alpha unit's output? --------------------- *
+     *
+     * The sweep above moves both at once: the alpha combiner was parked on the
+     * iterated alpha, so sweeping the vertex swept the factor's input whichever
+     * of the two it reads. The distinction decides whether this pass's colour
+     * and its alpha can be fixed separately - and on 14 September an attempt to
+     * give it `alpha_scale` through the alpha unit made the image worse for
+     * reasons nobody could name.
+     *
+     * Here the vertex alpha is held at 255 and the alpha unit is made to deliver
+     * something else - the constant's alpha, swept. If the colour follows, the
+     * factor reads the unit's output, and touching the alpha moves the colour. */
+    say("\n-- vertex alpha held at 255, the alpha unit's output swept\n");
+    {
+        dkr_render_state gs_state;
+        dkr_cc_setup hand;
+        int k2;
+        for (k2 = 0; k2 < 6; k2++) {
+            int rw = 0, rh = 0;
+            unsigned c;
+            memset(&gs_state, 0, sizeof(gs_state));
+            gs_state.combine = DKR_COMBINE_TEXTURE_CONSTANT;
+            gs_state.constant_color = 0xFFFFFFFFu;
+            gs_state.env_color = 0xFFFFFFFFu;
+            gs_state.prim_color = 0xFFFFFFFFu;
+            gs_state.blend = DKR_BLEND_ADDITIVE;   /* ONE/ONE: the stored pixel
+                                                      is the combiner's own */
+            gs_state.depth = DKR_DEPTH_DISABLED;
+            gs_state.cull = DKR_CULL_NONE;
+            gs_state.filter = DKR_FILTER_POINT;
+            gs_state.wrap_s = gs_state.wrap_t = DKR_WRAP_CLAMP;
+            gs_state.alpha_scale = 255;
+            gs_state.recipe = 0;
+            gs_state.texture = texdark;
+            bk.begin_frame(bk.self, 0x000000);
+            bk.invalidate(bk.self);
+            bk.set_state(bk.self, &gs_state);
+            memset(&hand, 0, sizeof(hand));
+            hand.cc_function = FN_BLEND_OTHER;
+            hand.cc_factor   = FAC_ONE_MINUS_LOCAL_ALPHA;
+            hand.cc_local = LOCAL_ITERATED; hand.cc_other = OTHER_TEXTURE;
+            /* alpha = the constant's, and nothing of the vertex's */
+            hand.ac_function = FN_LOCAL;     hand.ac_factor = FAC_ONE;
+            hand.ac_local = LOCAL_CONSTANT;  hand.ac_other = OTHER_TEXTURE;
+            hand.tc_function = TEXCOMB_DECAL; hand.tc_factor = 0;
+            hand.uses_texture = 1;
+            dkr_glide_backend_bind(texdark);
+            dkr_glide_backend_set_recipe(&hand,
+                ((unsigned)SWEEP[k2] << 24) | 0x00FFFFFFu);
+            quad(&bk, W, H, 255.0f);
+            bk.present(bk.self);
+            c = 0;
+            if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+            }
+            say("   alpha unit delivers %3d -> 0x%06lX   (texel 41, local 255:\n"
+                "        reading the unit gives %3d, reading the vertex gives "
+                "247)\n",
+                SWEEP[k2], (unsigned long)(c & 0x00FFFFFFu),
+                ((41 - 255) * (255 - SWEEP[k2])) / 255 + 255);
+        }
+    }
+
     /* --- What the numbers say ------------------------------------------------- */
     say("\n-- reading\n");
     {
@@ -683,15 +1100,24 @@ int main(void)
         if (factor_texel < factor_iter[0] - 8 ||
             factor_texel > factor_iter[0] + 8) { moved = 1; }
         if (!moved) {
-            say("\n   factor 0x0B fetched nothing: %d out of 255 whichever alpha\n"
-                "   was swept. `prepass_draw_texel_alone` therefore draws very\n"
-                "   nearly the texel alone - the RDP's cycle at k = 0 - and not\n"
-                "   the lerp it says it draws.\n", factor_iter[0]);
+            say("\n   factor 0x0B read %d out of 255 whichever alpha was swept -\n"
+                "   **with the blender off**, which is how those sweeps run. It\n"
+                "   is not inert: the blended sections below show it reading the\n"
+                "   alpha unit's output exactly, and degenerating to one only\n"
+                "   when nothing asks the alpha path for anything.\n",
+                factor_iter[0]);
         } else {
             say("\n   factor 0x0B moved with one of the three alphas: the table\n"
-                "   above says which, and the vertex route can be written from\n"
-                "   it.\n");
+                "   above says which.\n");
         }
+        say("\n   Read the last three sections together. Under blending,\n"
+            "   ONE_MINUS_LOCAL_ALPHA is exactly that, and its local alpha is\n"
+            "   the **alpha combiner's output** - not the iterated alpha, which\n"
+            "   the vertex-alpha sweep alone could not separate from it.\n"
+            "   `prepass_draw_texel_alone` therefore does compute the RDP's\n"
+            "   lerp, with k = whatever the alpha unit delivers, and its blend\n"
+            "   factor is that same value. One register serves both: scaling the\n"
+            "   alpha to carry `alpha_scale` scales the lerp with it.\n");
     }
 
     bk.close(bk.self);
