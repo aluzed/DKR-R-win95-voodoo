@@ -599,9 +599,25 @@ Measured over the whole corpus, each scene verified against a host render first:
 
 The three scenes that paint this configuration in quantity fall by 30 to 63 %,
 1,992 pixels in all; the four that do not are unchanged to within a pixel. The
-exception is `CAP0800` at +30, whose own blob is recipe 20 and a different
-mechanism entirely: thirty pixels elsewhere in that frame got slightly worse and
-nothing here explains them. It is recorded rather than explained.
+exception is `CAP0800` at +30, and it is worth what it says.
+
+Thirty-five pixels newly beyond the threshold, five brought under it, and
+twenty-nine of the thirty-five in **one 40x40 block** at x 280-320, y 280-320.
+The probe finds two recipe-8 draws there, one opaque and one alpha-blended, over
+four earlier ones. Their after-values carry the oracle's **red to the level** -
+66 against 66 - and fall about thirty short in blue: 74 where the oracle puts
+106.
+
+The first reading was that an opaque first pass composites no `a`, so the term to
+add should be `ENV e` and not `ENV a e`. It is a distinction without a
+difference: those draws carry `alpha_scale` 255, the two expressions are the same
+number, and writing the branch changed nothing on any scene - `CAP0800` 12,171,
+`CAP0250` 573, `CKEY1622` 557, all unmoved. The branch was removed again, with
+the reason left where the next hand will reach for it.
+
+So the thirty-five are **not** the opaque case, not the alpha, and not the
+environment's own colour, whose red they reproduce exactly. One channel that
+lands and one that does not, inside a single block, is a narrow thing to chase.
 
 `CKEY1622` is the one to notice: recipe 8 is what DKR draws its **shadows** with,
 and the dialogue scene's shadow is what E09-S02 spent two days on in September.
