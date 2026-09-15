@@ -231,16 +231,19 @@ held against a host render of the same capture first, and every one of the five
 came back at zero sampled pixels beyond 8 levels. How, and why that matters, is
 the section after the table.
 
-| capture | scene | differ at all | gap ≥ 32 | after the exact pair |
+| capture | scene | differ at all | gap ≥ 32 | after both pairs |
 |---|---|---|---|---|
 | `CAP0050` | the Nintendo 64 logo | 958,844 ppm | 107 | **106** |
 | `CAP0150` | the copyright screen | 966,526 ppm | 36 | **36** |
 | `CAP0160` | the same, logo turned | 951,402 ppm | 100 | **100** |
 | `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | 1,540 | **450** |
-| `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | 489 | **489** |
-| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | 12,141 | **12,099** |
+| `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | 489 | **492** |
+| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | 12,141 | **1,570** |
 | `CG0060` | Ancient Lake, the start line, in play | 959,762 ppm | 1,071 | **753** |
 | `CKEY1622` | the dialogue box, Taj's kart | 870,654 ppm | 1,295 | **557** |
+
+16,779 pixels to 4,064: three quarters of the corpus's tail, from writing two
+two-cycle configurations as the pairs of blends their arithmetic asks for.
 
 The last column is the second pass rewritten as the exact pair the arithmetic
 asks for — see `win95-oracle-vs-card.md`. It is the current state of the tree;

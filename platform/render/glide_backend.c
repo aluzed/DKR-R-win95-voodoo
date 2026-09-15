@@ -1290,96 +1290,142 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                                      int count)
 {
     static dkr_render_vertex tinted[PREPASS_BATCH * 3];
-    const float er = (float)((b.current.env_color >> 16) & 0xFFu);
-    const float eg = (float)((b.current.env_color >>  8) & 0xFFu);
-    const float eb = (float)( b.current.env_color        & 0xFFu);
-    const float ea = (float)((b.current.env_color >> 24) & 0xFFu);
-    int done;
+    const unsigned int ea  = (b.current.env_color >> 24) & 0xFFu;
+    const unsigned int inv = 255u - ea;
+    const unsigned int p   = (unsigned int)b.current.alpha_scale;
+    const int opaque_first = (b.current.blend == DKR_BLEND_OPAQUE);
+    int i;
 
     if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
 
-    /* --- The switch that exists to settle a contradiction --------------------- *
+    /* --- The pair, which is exact, and the single pass it replaces ----------- *
      *
-     * Replacing the pair below with `SCALE_OTHER / FACTOR_ONE` -- which the factor
-     * sweep says computes almost the same thing, 1.00 against 0.97 -- was measured
-     * once and put the copyright screen back from 17 divergent pixels to 801.
-     * That was a whole rebuild ago, with the counter for this pass not yet
-     * printed, so "the alternative is worse" and "the alternative never ran" were
-     * indistinguishable.
+     * `(ENVIRONMENT - TEXEL0) * ENV_ALPHA + TEXEL0`, composited by the frame
+     * buffer with the mux's own alpha, expands into two terms and a destination:
      *
-     * `dkr_glide_backend_texel_factor_one` selects between them at run time, so
-     * that one boot can measure both with the pass counter visible. A
-     * contradiction between two settings of the same renderer is not something to
-     * leave in a comment. */
-    if (g_texel_factor_one) {
-        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
-                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    } else {
+     *     out = [ T (1 - e) + ENV e ] a  +  dst (1 - a)      a = t p
+     *         = T (1 - e) a  +  ENV e a  +  dst (1 - a)
+     *
+     * and each term is a pass the card can draw, with the CPU supplying the two
+     * scalars it knows and the card has no factor for:
+     *
+     *     pass A   src = T (1 - e),  alpha = t p      the state's own blend
+     *     pass B   src = ENV e,      alpha = t p      SRC_ALPHA / ONE
+     *
+     * One constant serves each pass whole: `(1 - e)` as a grey in pass A's
+     * colour and `p` in its alpha, then `ENV x e` in pass B's colour and `p`
+     * again in its alpha. Nothing is read from the vertex, so nothing is tinted.
+     *
+     * **When the first pass is opaque** it replaces rather than composites, no
+     * `a` takes part, and pass B adds `ENV e` alone: `ONE / ONE`, with the alpha
+     * left carrying the texel's coverage for the alpha test and nothing else.
+     * That is the same distinction `pass2_draw` makes, and it was worth 72 pixels
+     * of `CAP0800` there.
+     *
+     * ## What this replaces, and why the old form was wrong twice
+     *
+     * The single pass carried the environment in the *vertex* and let
+     * `BLEND_OTHER / ONE_MINUS_LOCAL_ALPHA` fetch the lerp factor from the alpha
+     * unit's output. `constant_alpha_probe.c` measured that the factor does read
+     * the alpha unit - exactly - so the lerp was real. But the alpha unit was
+     * delivering the **texel's** alpha, not the environment's, so the factor was
+     * `1 - t` where the RDP wants `1 - e`; and the blender got `t` where the mux
+     * says `t p`. One register, two meanings: no programming of that pass can
+     * carry both, which is why supplying `alpha_scale` to it made `CAP0800`
+     * worse - 12,141 to 18,695 - on 14 September.
+     *
+     * The decomposition was tried on 9 September too, and measured four to
+     * eighteen times worse. That attempt laid the texel down **opaque** under a
+     * blended state; this one gives pass A the state's own blend and pass B an
+     * additive one, which is what makes the three terms sum instead of
+     * compositing over each other. */
+    if (!g_texel_factor_one) {
+        /* --- Pass A: the texel, scaled by `1 - e`, at the mux's alpha -------- */
+        if (gs.constant_color) {
+            gs.constant_color((p << 24) | (inv << 16) | (inv << 8) | inv);
+        }
+        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        apply_blend(b.current.blend);
+        apply_depth(b.current.depth);
+        for (i = 0; i + 2 < count * 3; i += 3) {
+            dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+        }
+
+        /* --- Pass B: the environment, already scaled by `e`, added ------------ */
+        if (gs.constant_color) {
+            const unsigned int r  = (((b.current.env_color >> 16) & 0xFFu) * ea)
+                                    / 255u;
+            const unsigned int g  = (((b.current.env_color >>  8) & 0xFFu) * ea)
+                                    / 255u;
+            const unsigned int bl = (( b.current.env_color        & 0xFFu) * ea)
+                                    / 255u;
+            gs.constant_color(((opaque_first ? 255u : p) << 24)
+                              | (r << 16) | (g << 8) | bl);
+        }
+        gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                         GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+        gs.blend_function(opaque_first ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
+                          GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
+        if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
+            gs.depth_function(GR_CMP_LEQUAL);
+        }
+        if (gs.depth_mask) { gs.depth_mask(0); }
+        for (i = 0; i + 2 < count * 3; i += 3) {
+            dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+        }
+        b.prepass_in_vertex++;
+        /* The pass left the registers where it put them, and left the depth
+           function and mask changed. The caller restores neither for this shape:
+           it counts `prepass_in_vertex` and not `prepass_drawn`. So restore here,
+           through the path that programmed it in the first place. */
+        {
+            const dkr_render_state saved = b.current;
+            b.has_state = 0;
+            gl_set_state(0, &saved);
+        }
+        return;
+    }
+
+    /* --- The single pass, kept behind the switch for comparison -------------- *
+     *
+     * The environment in the vertex and one stage: wrong in the two ways the note
+     * above records, and still the form every measurement before 15 September was
+     * made against. `dkr_glide_backend_texel_factor_one` selects it so that one
+     * boot can measure both. */
+    {
+        const float er = (float)((b.current.env_color >> 16) & 0xFFu);
+        const float eg = (float)((b.current.env_color >>  8) & 0xFFu);
+        const float eb = (float)( b.current.env_color        & 0xFFu);
+        const float eaf = (float)ea;
+        int done;
         gs.color_combine(GR_COMBINE_FUNCTION_BLEND_OTHER,
                          GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    }
-    /* --- The alpha stays the texel's, and that is measured, not chosen ------- *
-     *
-     * The iterated alpha now carries the lerp factor and is no longer the
-     * vertex's own, so leaving the alpha combiner to read it would put that
-     * factor into the alpha test.
-     *
-     * **What is missing here, and what putting it in cost.** This pass replaces
-     * the ordinary draw, and the ordinary draw applies `alpha_scale` - the RDP's
-     * alpha mux, `TEXEL0_ALPHA x PRIMITIVE_ALPHA` for this configuration. Taking
-     * the texel's alpha alone hands the blender 255 where the mux says 102, and
-     * the attract sequence's caption comes out opaque: 12,141 pixels of
-     * `CAP0800` at a gap of 32 or more, 63 % of them in one band, the largest
-     * disagreement E09-S02 has outside the dither floor.
-     *
-     * Supplying it was written and measured on 14 September 2026 - the constant
-     * register is free here, and `constant_alpha_probe.c` had just shown the card
-     * delivers `texel x constant_alpha` through `FACTOR_LOCAL / LOCAL_CONSTANT`.
-     * The caption stopped being opaque and the scene got **worse**:
-     *
-     *     CAP0800, gap >= 32     12,141  ->  18,695
-     *     of which newly wrong                7,657, all in the caption's band
-     *
-     * **And the reason is now measured, not guessed.** The colour combiner's
-     * factor above is `1 - alpha`, and the alpha it reads is *this unit's
-     * output* - the note before this function has the sweep. So the value
-     * programmed here is two things at once: the blend factor the frame buffer
-     * will use, and `k` in the lerp the colour unit computes. Scaling it to
-     * carry `alpha_scale` scales the lerp by the same amount, the texel bleeds
-     * into what should be flat environment colour, and 7,657 pixels of the
-     * caption's band go wrong to buy 1,103 back.
-     *
-     * **One register, two meanings**: that is the whole of why this
-     * configuration is hard on this card, and it is sharper than the
-     * "approximate" the catalogue records. Carrying both needs either a second
-     * pass - measured four to eighteen times worse on an alpha-blended
-     * background, 9 September - or the scale folded into the texture's own
-     * alpha, which nothing here does yet. The scale is therefore left out on
-     * purpose, and the number it costs is written here so that the next attempt
-     * starts with it. */
-    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
-                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    apply_blend(b.current.blend);
-    apply_depth(b.current.depth);
-
-    /* Copied in chunks rather than all at once: a batch is unbounded and this
-       buffer is not, and a silent truncation would drop geometry. */
-    for (done = 0; done < count; ) {
-        const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
-                                                     : (count - done);
-        int i;
-        for (i = 0; i < n * 3; i++) {
-            tinted[i] = vertices[(done * 3) + i];
-            tinted[i].r = er; tinted[i].g = eg; tinted[i].b = eb;
-            tinted[i].a = ea;
+        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+                         GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+        apply_blend(b.current.blend);
+        apply_depth(b.current.depth);
+        for (done = 0; done < count; ) {
+            const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
+                                                         : (count - done);
+            int k;
+            for (k = 0; k < n * 3; k++) {
+                tinted[k] = vertices[(done * 3) + k];
+                tinted[k].r = er; tinted[k].g = eg; tinted[k].b = eb;
+                tinted[k].a = eaf;
+            }
+            for (k = 0; k + 2 < n * 3; k += 3) {
+                dkr_glide_draw_raw(&tinted[k], &tinted[k + 1], &tinted[k + 2]);
+            }
+            done += n;
         }
-        for (i = 0; i + 2 < n * 3; i += 3) {
-            dkr_glide_draw_raw(&tinted[i], &tinted[i + 1], &tinted[i + 2]);
-        }
-        done += n;
+        b.prepass_in_vertex++;
     }
-    b.prepass_in_vertex++;
 }
 
 static void prepass_draw(const dkr_render_vertex *vertices, int count)

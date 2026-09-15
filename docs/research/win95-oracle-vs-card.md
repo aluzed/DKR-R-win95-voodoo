@@ -659,3 +659,54 @@ environment is where this scene keeps its blue.
 `CKEY1622` is the one to notice: recipe 8 is what DKR draws its **shadows** with,
 and the dialogue scene's shadow is what E09-S02 spent two days on in September.
 More than half of what was left of it was this.
+
+
+## The caption, finished: the same pair, and 12,141 becomes 1,570
+
+`prepass_draw_texel_alone` drew `(ENV - TEXEL0) x ENV_ALPHA + TEXEL0` in one
+stage, with the environment carried in the vertex and the lerp factor fetched
+from the alpha unit. The measurements above established what that really did:
+the factor **is** `1 - alpha` and it **does** read the alpha unit's output - but
+the alpha unit was delivering the texel's alpha, so the pass computed `1 - t`
+where the RDP wants `1 - e`, and handed the blender `t` where the mux says
+`t p`. One register, two meanings; no programming of one pass can carry both.
+
+The same expansion that fixed `pass2_draw` fixes this, and for the same reason:
+
+    out = [ T (1 - e) + ENV e ] a + dst (1 - a)          a = t p
+        = T (1 - e) a  +  ENV e a  +  dst (1 - a)
+
+    pass A   src = T (1 - e),  alpha = t p      the state's own blend
+    pass B   src = ENV e,      alpha = t p      SRC_ALPHA / ONE
+
+One constant serves each pass whole — `(1 - e)` as a grey in A's colour and `p`
+in its alpha, `ENV x e` in B's colour and `p` again in its alpha — so the CPU
+supplies both scalars the card has no factor for, and nothing is read from the
+vertex. An opaque first pass takes `ONE / ONE` and `ENV e` alone, as in
+`pass2_draw`.
+
+| capture | baseline | before | **after** |
+|---|---|---|---|
+| `CAP0050` | 107 | 106 | 106 |
+| `CAP0150` | 36 | 36 | 36 |
+| `CAP0160` | 100 | 100 | 100 |
+| `CAP0250` | 1,540 | 450 | 450 |
+| `CAP0400` | 489 | 489 | 492 |
+| `CAP0800` | 12,141 | 12,099 | **1,570** |
+| `CG0060` | 1,071 | 753 | 753 |
+| `CKEY1622` | 1,295 | 557 | 557 |
+
+**16,779 → 4,064 over the corpus, 75 % of the tail gone**, and the attract
+sequence alone falls from 12,141 to 1,570. Nothing regressed but `CAP0400`, by
+three pixels.
+
+Two earlier readings are corrected by this. The decomposition tried on 9
+September was measured four to eighteen times worse and rejected: it laid the
+texel down **opaque** under states that blend, which is composition rather than
+summation - pass A here takes the state's own blend and pass B adds. And the
+note of 14 September, that supplying `alpha_scale` to the single pass made
+`CAP0800` worse, was true of the single pass and is now beside the point: there
+is no single pass to supply it to.
+
+`dkr_glide_backend_texel_factor_one` now selects the old one-stage form rather
+than a variant of it, so one boot can still measure both.
