@@ -544,8 +544,25 @@ Both come of the same structural fact: **a two-cycle combiner decomposed into tw
 frame-buffer blends is not the same arithmetic**, and only the first pass can be
 made exact by programming.
 
-What would settle it is a measurement rather than another reading: the same scene
-with the second pass suppressed (`--no-multipass`), against the same reference.
-If the blob shrinks, the decomposition is worse than doing nothing there, and the
-gate that decides which configurations get a second pass has a number to work
-with. That run has not been made.
+### And the measurement says keep it
+
+The same scene with the second pass suppressed, against the same reference,
+verified the same way:
+
+    CAP0250, gap >= 32     with the second pass   1,540
+                           with --no-multipass   12,624
+
+**Eight times worse without it.** Pixel by pixel the second pass fixes 11,504 and
+breaks 420 — twenty-seven to one — and what it fixes is not the foam at all but
+the water and the beach down the right of the screen, three whole blocks of it.
+The decomposition is a large net gain and it stays; the 1,540 is its residue, and
+420 of those are pixels it actively breaks.
+
+So the gate has its number, and it is not the one the reading above suggested.
+The wrong-order composition is real arithmetic, and it is still far better than
+leaving the environment out of the frame entirely — which is what the first pass
+alone does. What the residue is worth fixing *with* is the open question, and
+`pass2_draw_by_shade` already shows the shape of an answer for the per-channel
+case: two blends, `dst *= 1 - k` then `dst += ENV * k`, which composes on the
+colour rather than over it. Whether the same split can carry `a = t p` as well is
+the next thing to work out on paper, and then to measure here.
