@@ -1493,14 +1493,39 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
         const unsigned int env_alpha = (b.current.env_color >> 24) & 0xFFu;
         const unsigned int pe = ((unsigned int)b.current.alpha_scale
                                  * env_alpha) / 255u;
-        /* The 35 pixels of `CAP0800` that this pair made worse were looked for
-           here first, on the reading that an opaque first pass composites no
-           `a` and so should add `ENV e` rather than `ENV a e`. It is a
-           distinction without a difference: those draws carry `alpha_scale`
-           255, so the two expressions are the same number, and writing the
-           branch changed nothing on any scene. The thirty-five are still
-           unexplained; they are not this. */
-        gs.constant_color((pe << 24) | (b.current.env_color & 0x00FFFFFFu));
+        /* --- An opaque first pass adds `ENV e`, with no coverage in it -------- *
+         *
+         * The pair above carries `a = t p` because the first pass wrote
+         * `C a + dst (1 - a)`. An **opaque** first pass writes `C (1 - e)` over
+         * the destination instead: no `a` took part, and the term to add is
+         * `ENV e` alone. Adding `ENV t p e` there loses `ENV e (1 - t)` on every
+         * pixel whose texel alpha is not full - a sprite's soft edge - and the
+         * environment is where this scene keeps its blue.
+         *
+         * The first attempt at this dropped `p` and kept `t`, which changed
+         * nothing: these draws carry `alpha_scale` 255, so `p` was already one.
+         * It is `t` that does not belong, and `t` cannot simply be taken out of
+         * the alpha unit, because the **alpha test** reads the same value and it
+         * is what keeps this pass inside the cutout the first one applied.
+         *
+         * So the coverage stays in the alpha and `e` moves into the colour,
+         * where the CPU can apply it: the constant carries `ENV x e`, the colour
+         * unit passes the constant through, and the blender adds it with
+         * `ONE / ONE` rather than scaling it by an alpha that is there for the
+         * test. */
+        const int opaque_first = (b.current.blend == DKR_BLEND_OPAQUE);
+        if (opaque_first) {
+            const unsigned int r = (((b.current.env_color >> 16) & 0xFFu)
+                                    * env_alpha) / 255u;
+            const unsigned int g = (((b.current.env_color >> 8) & 0xFFu)
+                                    * env_alpha) / 255u;
+            const unsigned int bl = ((b.current.env_color & 0xFFu)
+                                     * env_alpha) / 255u;
+            gs.constant_color(0xFF000000u | (r << 16) | (g << 8) | bl);
+        } else {
+            gs.constant_color((pe << 24)
+                              | (b.current.env_color & 0x00FFFFFFu));
+        }
     }
     /* Colour: the constant alone. `FUNCTION_LOCAL` outputs `local` and ignores
        `other` entirely, so `other` is given the value this file already uses and
@@ -1534,10 +1559,15 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
     }
     /* **`ONE` on the destination, not `ONE_MINUS_SRC_ALPHA`.** This pass adds a
        term; it does not composite over what is there. The old factor is what made
-       the pair wrong: it scaled the first pass's own result down again. */
+       the pair wrong: it scaled the first pass's own result down again.
+     *
+       And `ONE` on the source when the first pass was opaque: the term is already
+       `ENV x e` in the constant, and the alpha carries coverage for the test, not
+       a weight. */
     if (gs.blend_function) {
-        gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
-                          GR_BLEND_ONE, GR_BLEND_ZERO);
+        gs.blend_function((b.current.blend == DKR_BLEND_OPAQUE)
+                              ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
+                          GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     }
     /* `LEQUAL` and no write: the second pass sits at exactly the depth the first
        one left, and `LESS` -- which is what everything else uses -- would reject

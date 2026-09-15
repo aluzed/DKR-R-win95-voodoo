@@ -599,7 +599,8 @@ Measured over the whole corpus, each scene verified against a host render first:
 
 The three scenes that paint this configuration in quantity fall by 30 to 63 %,
 1,992 pixels in all; the four that do not are unchanged to within a pixel. The
-exception is `CAP0800` at +30, and it is worth what it says.
+exception was `CAP0800` at +30, and chasing it found the other half of the
+derivation — the section below. The column above is superseded by the one there.
 
 Thirty-five pixels newly beyond the threshold, five brought under it, and
 twenty-nine of the thirty-five in **one 40x40 block** at x 280-320, y 280-320.
@@ -615,9 +616,45 @@ number, and writing the branch changed nothing on any scene - `CAP0800` 12,171,
 `CAP0250` 573, `CKEY1622` 557, all unmoved. The branch was removed again, with
 the reason left where the next hand will reach for it.
 
-So the thirty-five are **not** the opaque case, not the alpha, and not the
-environment's own colour, whose red they reproduce exactly. One channel that
-lands and one that does not, inside a single block, is a narrow thing to chase.
+So the thirty-five are not the alpha and not the environment's own colour, whose
+red they reproduce exactly. One channel that lands and one that does not, inside
+a single block: narrow enough to chase, and the chase found it.
+
+### An opaque first pass adds `ENV e`, and no coverage with it
+
+The probe at `(287,292)` shows two recipe-8 draws over five earlier ones, and the
+first of the two is **opaque** with an alpha test. That changes the arithmetic,
+and the earlier attempt had the right suspicion and the wrong factor.
+
+An opaque first pass does not composite: it writes `C (1 - e)` **over** the
+destination, no `a` takes part, and the term to add is `ENV e` alone. The pair as
+written added `ENV t p e`. Dropping `p` changed nothing because `p` was already
+255 — that is the branch that was written and removed. It is **`t`** that does
+not belong, and `t` cannot simply be taken out of the alpha unit: the **alpha
+test** reads the same value, and it is what keeps the second pass inside the
+cutout the first one applied.
+
+So the coverage stays in the alpha and `e` moves into the colour, where the CPU
+can apply it. The constant carries `ENV x e`, the colour unit passes it through,
+and the blender adds it with `ONE / ONE` instead of scaling it by an alpha that
+is there for the test:
+
+| capture | baseline | the exact pair | with the opaque term |
+|---|---|---|---|
+| `CAP0050` | 107 | 108 | **106** |
+| `CAP0150` | 36 | 36 | 36 |
+| `CAP0160` | 100 | 100 | 100 |
+| `CAP0250` | 1,540 | 573 | **450** |
+| `CAP0400` | 489 | 489 | 489 |
+| `CAP0800` | 12,141 | 12,171 | **12,099** |
+| `CG0060` | 1,071 | 753 | 753 |
+| `CKEY1622` | 1,295 | 557 | 557 |
+
+16,779 → 14,490 over the corpus, and **every scene is now at or below its
+baseline**: the regression is gone, `CAP0800` is 42 below where it started, and
+the hub takes another 123 off. The soft edge of a sprite is where it showed —
+`ENV e (1 - t)` lost on every pixel whose texel alpha is not full, and the
+environment is where this scene keeps its blue.
 
 `CKEY1622` is the one to notice: recipe 8 is what DKR draws its **shadows** with,
 and the dialogue scene's shadow is what E09-S02 spent two days on in September.

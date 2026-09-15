@@ -233,12 +233,12 @@ the section after the table.
 
 | capture | scene | differ at all | gap ≥ 32 | after the exact pair |
 |---|---|---|---|---|
-| `CAP0050` | the Nintendo 64 logo | 958,844 ppm | 107 | **108** |
+| `CAP0050` | the Nintendo 64 logo | 958,844 ppm | 107 | **106** |
 | `CAP0150` | the copyright screen | 966,526 ppm | 36 | **36** |
 | `CAP0160` | the same, logo turned | 951,402 ppm | 100 | **100** |
-| `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | 1,540 | **573** |
+| `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | 1,540 | **450** |
 | `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | 489 | **489** |
-| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | 12,141 | **12,171** |
+| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | 12,141 | **12,099** |
 | `CG0060` | Ancient Lake, the start line, in play | 959,762 ppm | 1,071 | **753** |
 | `CKEY1622` | the dialogue box, Taj's kart | 870,654 ppm | 1,295 | **557** |
 
