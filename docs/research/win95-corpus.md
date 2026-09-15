@@ -236,13 +236,20 @@ the section after the table.
 | `CAP0050` | the Nintendo 64 logo | 958,844 ppm | **107** (348 ppm) |
 | `CAP0150` | the copyright screen | 966,526 ppm | **36** (117 ppm) |
 | `CAP0160` | the same, logo turned | 951,402 ppm | **100** (325 ppm) |
+| `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | **1,540** (5,013 ppm) |
 | `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
 | `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
 
-`CAP0250`, `CG0060` and `CKEY1622` are not measured: they are the largest scenes
-in the corpus, each takes upwards of a quarter of an hour through the software
-oracle on the emulated Pentium II, and the runs meant to produce them did not
-finish.
+`CG0060` and `CKEY1622` are not measured yet: with `CAP0250` they are the largest
+scenes in the corpus, and each takes upwards of a quarter of an hour through the
+software oracle on the emulated Pentium II.
+
+`CAP0250` is worth a second look on its own account — 1,540 pixels is the second
+worst in the corpus, and its 190 textures and open scenery share nothing with the
+attract sequence's caption. Nobody has asked yet where those pixels are.
+
+It also settles what the broken sweep was doing: 1,540 at 972,360 ppm is exactly
+the figure that sweep reported for `CAP0160`, one scene early.
 
 Two readings. **The floor is the dither and it is everywhere**: nine tenths of
 every scene differs by a few levels, and no decoder work will move it — the
