@@ -239,11 +239,13 @@ the section after the table.
 | `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | **1,540** (5,013 ppm) |
 | `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
 | `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
+| `CG0060` | Ancient Lake, the start line, in play | 959,762 ppm | **1,071** (3,486 ppm) |
 | `CKEY1622` | the dialogue box, Taj's kart | 870,654 ppm | **1,295** (4,215 ppm) |
 
-`CG0060` is the one scene left: the densest in the corpus, 4,644 commands and 290
-textures, and upwards of a quarter of an hour through the software oracle on the
-emulated Pentium II.
+**All eight scenes of the corpus now carry a figure, and every one of them was
+verified before it was written down.** That is the card-side baseline E09-S02 had
+been missing: a number per scene, obtained the same way, that a later run can be
+held against.
 
 **`CKEY1622` is also the cross-check this whole chain needed.** `win95-oracle-vs-card.md`
 counted 1,293 pixels at a gap of 32 or more on that scene on 14 September, by a
@@ -257,6 +259,10 @@ attract sequence's caption. Nobody has asked yet where those pixels are.
 
 It also settles what the broken sweep was doing: 1,540 at 972,360 ppm is exactly
 the figure that sweep reported for `CAP0160`, one scene early.
+
+`CG0060` is the densest scene in the corpus — 4,644 commands, 1,412 triangles
+emitted, 290 textures, a race in play with the HUD up — and at 1,071 it sits in
+the same band as the hub and the dialogue box. Density is not what costs.
 
 Two readings. **The floor is the dither and it is everywhere**: nine tenths of
 every scene differs by a few levels, and no decoder work will move it — the
