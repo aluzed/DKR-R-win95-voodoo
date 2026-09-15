@@ -497,3 +497,55 @@ this card, and it is a sharper statement than the catalogue's "approximate".
 Carrying both needs a second pass, measured four to eighteen times worse on an
 alpha-blended background, or the scale folded into the texture's own alpha, which
 nothing does yet.
+
+## The hub's 1,540: a two-pass decomposition that composites in the wrong order
+
+`CAP0250` is the corpus's second worst scene, and its divergence is not spread:
+66 % of the 1,540 pixels at a gap of 32 or more sit in three adjacent 40×40
+blocks, a single compact blob beside Pipsy's kart where the sea foam is drawn.
+The probe says what paints it — a stack of translucent sprites, one draw each:
+
+     1  0x3163DE -> 0x4A90FF  TEX*SHADE+A const=0x00FFFFFF ascale=255 recipe=3
+     2  0x4A90FF -> 0x7AACE9  TEX*CONST   const=0x45FFFFFF ascale=69  recipe=8
+     3  0x7AACE9 -> 0x97B9D0  TEX*CONST   const=0x55FFFFFF ascale=85  recipe=8
+     4  0x97B9D0 -> 0xB3CAC6  TEX*CONST   const=0x45FFFFFF ascale=69  recipe=8
+     5  0xB3CAC6 -> 0xB3CAC6  TEX*CONST   const=0x62FFFFFF ascale=98  recipe=8
+
+Recipe 8 is `G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2`, which is also **what
+DKR draws its shadows with**:
+
+    cycle 1  rgb = TEXEL0 x PRIMITIVE          alpha = TEXEL0_A x PRIMITIVE_A
+    cycle 2  rgb = (ENV - COMBINED) x ENV_A + COMBINED    alpha = COMBINED_A
+
+The alpha is right on the card — `constant_color` carries the primitive's alpha,
+which is what `alpha_scale` reads, and the recipe's setup multiplies the texel by
+it. The **colour** is where the two part company, and it is the decomposition
+rather than any single register.
+
+The RDP composites the finished cycle-2 colour once, with the cycle-1 alpha:
+
+    out = [ C + (ENV - C) e ] a + dst (1 - a)        a = t p,  C = cycle 1
+
+The card draws it as two blended passes, `pass2_draw` over the recipe's own:
+
+    dst1 = C a + dst (1 - a)                        the first pass, correct
+    out  = ENV (t e) + dst1 (1 - t e)               the second, over the result
+
+The second pass does not add the environment to the *colour*; it lays the
+environment over the **already composited frame buffer**, and darkens what is
+behind it by `1 - t e` into the bargain. The two agree when `t e` is small or when
+the destination happens to equal `C`, and the sea foam is neither: a dozen sprites
+stacked at alphas from 19 to 176, each one compounding the previous one's error.
+
+That makes this the second known cause in the corpus, and the two together are
+its whole tail. `CAP0800`'s caption is `prepass_draw_texel_alone` dropping
+`alpha_scale`; `CAP0250`'s foam is `pass2_draw` compositing in the wrong order.
+Both come of the same structural fact: **a two-cycle combiner decomposed into two
+frame-buffer blends is not the same arithmetic**, and only the first pass can be
+made exact by programming.
+
+What would settle it is a measurement rather than another reading: the same scene
+with the second pass suppressed (`--no-multipass`), against the same reference.
+If the blob shrinks, the decomposition is worse than doing nothing there, and the
+gate that decides which configurations get a second pass has a number to work
+with. That run has not been made.
