@@ -135,6 +135,43 @@ Diagnosis by screenshot is what allowed the wait on `Press F1` to be found: from
 the outside, a machine stuck at the BIOS and a machine that does not boot are
 indistinguishable.
 
+### `run-glide`, and why `run` alone is not enough
+
+`run` walks the Start menu blind — `Ctrl+Esc`, three `Up`s, `Return`. That works
+until `Ctrl+Esc` raises the **task list** instead of the Start menu, which this
+guest does intermittently: the three `Up`s then walk the task list and `Return`
+opens whatever sits under them, leaving a window open and the program unstarted.
+
+Nothing announces it. The measurement that follows reads the *previous* run's
+output file and produces a number that looks perfectly reasonable. On 14
+September 2026 that happened three times in one session, and once the stale
+number was briefly attributed to a code change that had in fact been reverted.
+
+```bash
+scripts/Drive-Win95-VM.sh run-glide "D:\REPLAY.EXE --both D:\CAP0800.BIN" 800
+```
+
+A Glide program takes the whole screen, so "did it start" is one pixel.
+`run-glide` waits for the screen to go black, retries the launch up to four times
+if it does not, and returns only when the desktop is back. Use it for **anything
+whose output file is read back afterwards**; `run` remains right for the game,
+which is not expected to exit.
+
+**The recovery between attempts sends `Escape` and nothing else, and that is a
+rule.** The first version pressed `Return` "in case it was swallowed" and
+`Alt+F4` to clear a stray window. On the desktop `Alt+F4` raises the shutdown
+box, `Return` takes its default — and on 15 September 2026 the pair switched the
+machine off in the middle of a corpus sweep. Escape closes a menu, dismisses a
+dialog, and does nothing anywhere else: a recovery should not be able to do more
+than that.
+
+**For a sweep, do not launch eight times.** The Start menu is the unreliable part
+— under load the `Up` keys are dropped and the menu stays open with nothing
+selected — so the launch is what fails, not the program. A `.BAT` on `D:` that
+runs each capture and copies `RPLCARD.BMP` / `RPLSOFT.BMP` aside under a name of
+its own turns eight fragile launches into one, and the host waits for the last
+file the batch writes.
+
 Once Windows and the 3dfx drivers are installed, freeze the state:
 
 ```bash

@@ -216,8 +216,32 @@ case "${1:-}" in
     [[ $# -gt 0 ]] || die "usage: run-glide <command line> [seconds to wait]"
     cmd="$1"; budget="${2:-900}"
     tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    # **Back to a bare desktop first, and between attempts.**
+    #
+    # The failure this guards against leaves the Start menu *open*, and `run`
+    # begins with Ctrl+Esc - which closes an open menu instead of opening one, so
+    # the three Ups and the Return then go nowhere and the next attempt opens it
+    # again. Retrying without clearing oscillates for as many attempts as it is
+    # given, which is what it did on 15 September 2026. Escape closes a menu;
+    # Alt+F4 closes a window the stray keystrokes opened, and raises the shutdown
+    # box when there is none, which the last Escape dismisses.
+    # **Escape only, and never a blind Return.**
+    #
+    # The first version of this recovery pressed Return "in case it was
+    # swallowed", and on 15 September 2026 it found the shutdown box with
+    # "Arreter l'ordinateur" selected and switched the machine off in the middle
+    # of a corpus sweep. Alt+F4 raises that box whenever the desktop has the
+    # focus, so the two together are a power switch. Escape closes a menu and
+    # dismisses a dialog, and does nothing anywhere else - which is the whole of
+    # what a recovery should be allowed to do.
+    clear_desktop() {
+      "$0" key Escape >/dev/null 2>&1
+      "$0" key Escape >/dev/null 2>&1
+      "$0" key Escape >/dev/null 2>&1
+    }
     started=0
-    for attempt in 1 2 3; do
+    for attempt in 1 2 3 4; do
+      clear_desktop
       "$0" run "$cmd" >/dev/null 2>&1
       for _ in $(seq 1 12); do
         sleep 5
@@ -226,11 +250,6 @@ case "${1:-}" in
       done
       [[ $started -eq 1 ]] && break
       say "attempt $attempt: the program did not take the screen - clearing and retrying"
-      # Escape closes a menu; Alt+F4 closes a window the stray keystrokes opened.
-      # The second Escape is for the shutdown box Alt+F4 raises on the desktop.
-      "$0" key Escape >/dev/null 2>&1
-      "$0" key alt+F4 >/dev/null 2>&1
-      "$0" key Escape >/dev/null 2>&1
     done
     [[ $started -eq 1 ]] || die "the program never took the screen: $cmd"
     say "running: $cmd"
