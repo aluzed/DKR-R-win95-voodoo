@@ -226,18 +226,23 @@ on the machine, and the two images differenced the same way each time — pixels
 differing at all, and pixels at a gap of 32 or more, which is the threshold that
 separates the Voodoo's dither from a defect.
 
+Every row below is **verified**: the oracle image the target brought back was
+held against a host render of the same capture first, and every one of the five
+came back at zero sampled pixels beyond 8 levels. How, and why that matters, is
+the section after the table.
+
 | capture | scene | differ at all | gap ≥ 32 |
 |---|---|---|---|
+| `CAP0050` | the Nintendo 64 logo | 958,844 ppm | **107** (348 ppm) |
 | `CAP0150` | the copyright screen | 966,526 ppm | **36** (117 ppm) |
+| `CAP0160` | the same, logo turned | 951,402 ppm | **100** (325 ppm) |
 | `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
 | `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
 
-Three scenes, not five. **`CAP0050` and `CAP0160` were published here with
-figures of 100 and 1,295 and both were wrong**; they are withdrawn below, with
-the check that caught them. `CAP0250`, `CG0060` and `CKEY1622` have not been
-measured: they are the largest scenes in the corpus, each takes upwards of a
-quarter of an hour through the software oracle on the emulated Pentium II, and
-the runs that were meant to produce them did not finish.
+`CAP0250`, `CG0060` and `CKEY1622` are not measured: they are the largest scenes
+in the corpus, each takes upwards of a quarter of an hour through the software
+oracle on the emulated Pentium II, and the runs meant to produce them did not
+finish.
 
 Two readings. **The floor is the dither and it is everywhere**: nine tenths of
 every scene differs by a few levels, and no decoder work will move it — the
@@ -249,9 +254,13 @@ one band — the caption, whose cause is `prepass_draw_texel_alone` not carrying
 
 ## The check that has to come first: is it even the same scene?
 
-`CAP0160` at 1,295 looked like the next thing to investigate — the same screen as
-`CAP0150` ten display lists later, thirty-six times worse. It was not a defect. It
-was two different scenes differenced against each other.
+This note carried `CAP0050` at 100 and `CAP0160` at 1,295 for an hour, and said
+of the second that it was "the number to watch next — the same screen as
+`CAP0150` ten display lists later, thirty-six times worse". It was not a defect.
+It was two different scenes differenced against each other: a sweep that had gone
+one iteration out of step, so that each card image met the previous scene's
+oracle. Measured properly the two are 107 and **100**, and the copyright screen is
+clean in both captures.
 
 The oracle renders the same image on the host and on the target: that is E09-S02's
 own finding, and it is what makes the check cheap. Render the capture through
@@ -261,8 +270,10 @@ the target run brought back:
     CAP0150      0 of 76,800 sampled pixels differ by more than 8 levels
     CAP0400      0
     CAP0800      0
-    CAP0050 74,918      <- not this scene
-    CAP0160 76,622      <- not this scene
+    CAP0050 74,918      <- not this scene, as first measured
+    CAP0160 76,622      <- not this scene, as first measured
+
+and after the two were re-run, one scene at a time, both at zero.
 
 **Compare with a tolerance, not for equality.** The two builds agree to within one
 level on about a tenth of the pixels — different compilers, different

@@ -80,6 +80,20 @@ pad_key() {
   esac
 }
 
+# Is 86Box itself paused? Read from its toolbar button: a green play triangle
+# when paused, near-white pause bars when running.
+paused() {
+  python3 - "$1" <<'PY'
+import sys
+try:
+    from PIL import Image
+except ImportError:
+    sys.exit(1)
+r, g, b = Image.open(sys.argv[1]).convert("RGB").getpixel((16, 39))
+sys.exit(0 if (g > 120 and r < 80 and b < 80) else 1)
+PY
+}
+
 # Is the captured screen the Glide one? Three points, so that a dialog in the
 # middle of a black desktop cannot pass for a full-screen program.
 screen_is() {
@@ -196,6 +210,36 @@ case "${1:-}" in
     "$0" type "$1" >/dev/null 2>&1; sleep 2
     "$0" key Return >/dev/null 2>&1
     say "launched: $1"
+    ;;
+  resume)
+    # **The emulator pauses itself, and it is our own doing.**
+    #
+    # 86Box's toolbar carries a play/pause button, and a click on it leaves that
+    # button with the keyboard focus. Every `Return` sent afterwards - and `run`
+    # sends two - presses it again. One click to resume a paused machine, and the
+    # next launch pauses it back, which reads from the host exactly like a long
+    # render: a black screen, the guest's monitor gone to standby, and nothing
+    # written for half an hour. It cost two of those on 15 September 2026.
+    #
+    # So resuming is two clicks: the button, then the guest, to take the focus
+    # off the button. The guest click is the same one `start` performs, and is
+    # safe at the desktop - never while the game holds the Voodoo full screen.
+    #
+    # The state is read from the button itself: green play triangle when paused,
+    # near-white pause bars when running.
+    need_running; W="$(window)"
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    "$0" shot "$tmp/s.png" >/dev/null 2>&1 || die "cannot read the screen"
+    if paused "$tmp/s.png"; then
+      say "the machine is paused - resuming"
+      DISPLAY="$DISP" "$XDO" windowactivate "$W" 2>/dev/null || true
+      DISPLAY="$DISP" "$XDO" mousemove 16 39 click 1 2>/dev/null || true
+      sleep 1
+      DISPLAY="$DISP" "$XDO" mousemove --window "$W" 300 250 click 1 2>/dev/null || true
+      say "resumed, and the focus is off the button"
+    else
+      say "the machine is running"
+    fi
     ;;
   run-glide)
     # Launches a Glide program and **checks that it started**, which `run` cannot.
