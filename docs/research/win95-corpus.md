@@ -239,10 +239,17 @@ the section after the table.
 | `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | **1,540** (5,013 ppm) |
 | `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
 | `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
+| `CKEY1622` | the dialogue box, Taj's kart | 870,654 ppm | **1,295** (4,215 ppm) |
 
-`CG0060` and `CKEY1622` are not measured yet: with `CAP0250` they are the largest
-scenes in the corpus, and each takes upwards of a quarter of an hour through the
-software oracle on the emulated Pentium II.
+`CG0060` is the one scene left: the densest in the corpus, 4,644 commands and 290
+textures, and upwards of a quarter of an hour through the software oracle on the
+emulated Pentium II.
+
+**`CKEY1622` is also the cross-check this whole chain needed.** `win95-oracle-vs-card.md`
+counted 1,293 pixels at a gap of 32 or more on that scene on 14 September, by a
+different route — images fetched by hand, compared by a different script. Today's
+run, verified against a host render first, says 1,295. Two pixels apart, through
+two independent paths.
 
 `CAP0250` is worth a second look on its own account — 1,540 pixels is the second
 worst in the corpus, and its 190 textures and open scenery share nothing with the
