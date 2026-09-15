@@ -231,16 +231,21 @@ held against a host render of the same capture first, and every one of the five
 came back at zero sampled pixels beyond 8 levels. How, and why that matters, is
 the section after the table.
 
-| capture | scene | differ at all | gap ≥ 32 |
-|---|---|---|---|
-| `CAP0050` | the Nintendo 64 logo | 958,844 ppm | **107** (348 ppm) |
-| `CAP0150` | the copyright screen | 966,526 ppm | **36** (117 ppm) |
-| `CAP0160` | the same, logo turned | 951,402 ppm | **100** (325 ppm) |
-| `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | **1,540** (5,013 ppm) |
-| `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
-| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
-| `CG0060` | Ancient Lake, the start line, in play | 959,762 ppm | **1,071** (3,486 ppm) |
-| `CKEY1622` | the dialogue box, Taj's kart | 870,654 ppm | **1,295** (4,215 ppm) |
+| capture | scene | differ at all | gap ≥ 32 | after the exact pair |
+|---|---|---|---|---|
+| `CAP0050` | the Nintendo 64 logo | 958,844 ppm | 107 | **108** |
+| `CAP0150` | the copyright screen | 966,526 ppm | 36 | **36** |
+| `CAP0160` | the same, logo turned | 951,402 ppm | 100 | **100** |
+| `CAP0250` | the hub, Pipsy on the beach | 972,360 ppm | 1,540 | **573** |
+| `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | 489 | **489** |
+| `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | 12,141 | **12,171** |
+| `CG0060` | Ancient Lake, the start line, in play | 959,762 ppm | 1,071 | **753** |
+| `CKEY1622` | the dialogue box, Taj's kart | 870,654 ppm | 1,295 | **557** |
+
+The last column is the second pass rewritten as the exact pair the arithmetic
+asks for — see `win95-oracle-vs-card.md`. It is the current state of the tree;
+the column before it is what this baseline was first measured at, kept because a
+baseline one cannot compare against is not a baseline.
 
 **All eight scenes of the corpus now carry a figure, and every one of them was
 verified before it was written down.** That is the card-side baseline E09-S02 had

@@ -561,8 +561,48 @@ The decomposition is a large net gain and it stays; the 1,540 is its residue, an
 So the gate has its number, and it is not the one the reading above suggested.
 The wrong-order composition is real arithmetic, and it is still far better than
 leaving the environment out of the frame entirely — which is what the first pass
-alone does. What the residue is worth fixing *with* is the open question, and
-`pass2_draw_by_shade` already shows the shape of an answer for the per-channel
-case: two blends, `dst *= 1 - k` then `dst += ENV * k`, which composes on the
-colour rather than over it. Whether the same split can carry `a = t p` as well is
-the next thing to work out on paper, and then to measure here.
+alone does.
+
+### The pair that is exact, and what it recovered
+
+The residue has a fix, and it needs no new capability — only the right constant
+in each pass. Expand what the RDP computes:
+
+    out = [ C + (ENV - C) e ] a + dst (1 - a)
+        = C a (1 - e)  +  ENV a e  +  dst (1 - a)
+
+Three terms, and the last two lines are two frame-buffer blends with no negative
+source anywhere:
+
+    pass 1   src = C (1 - e),  alpha = a      SRC_ALPHA / ONE_MINUS_SRC_ALPHA
+    pass 2   src = ENV,        alpha = a e    SRC_ALPHA / **ONE**
+
+Pass 1's `(1 - e)` goes into the constant's colour, folded in by `gl_set_state`
+where the CPU knows `e` and the card has no factor that would deliver it; its
+alpha byte still carries `p`. Pass 2's constant keeps the environment's colour
+and takes `p x e` for its alpha, so the alpha unit's `texel x constant` hands the
+blender `t p e` — and `ONE` on the destination **adds** the term instead of
+compositing over the finished frame buffer and darkening it by `1 - t e`.
+
+Measured over the whole corpus, each scene verified against a host render first:
+
+| capture | before | after |
+|---|---|---|
+| `CAP0050` | 107 | 108 |
+| `CAP0150` | 36 | 36 |
+| `CAP0160` | 100 | 100 |
+| `CAP0250` | 1,540 | **573** |
+| `CAP0400` | 489 | 489 |
+| `CAP0800` | 12,141 | 12,171 |
+| `CG0060` | 1,071 | **753** |
+| `CKEY1622` | 1,295 | **557** |
+
+The three scenes that paint this configuration in quantity fall by 30 to 63 %,
+1,992 pixels in all; the four that do not are unchanged to within a pixel. The
+exception is `CAP0800` at +30, whose own blob is recipe 20 and a different
+mechanism entirely: thirty pixels elsewhere in that frame got slightly worse and
+nothing here explains them. It is recorded rather than explained.
+
+`CKEY1622` is the one to notice: recipe 8 is what DKR draws its **shadows** with,
+and the dialogue scene's shadow is what E09-S02 spent two days on in September.
+More than half of what was left of it was this.

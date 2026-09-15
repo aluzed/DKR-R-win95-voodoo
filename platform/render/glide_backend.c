@@ -329,6 +329,14 @@ static struct {
 static void bind_texture(dkr_texture_handle handle);
 static void gl_invalidate(void *self);
 
+/* Which second pass a configuration needs, if any. Declared here rather than
+   only beside the passes themselves: `gl_set_state` has to know whether one is
+   coming before it programs the first pass's constant. */
+#define PASS2_NONE        0
+#define PASS2_BY_ENV_ALPHA 1   /* factor = the environment's alpha, a scalar */
+#define PASS2_BY_SHADE     2   /* factor = the vertex colour, per channel */
+static int pass2_wanted(const dkr_render_state *st);
+
 static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
                           unsigned int constant, unsigned char alpha_scale)
 {
@@ -861,7 +869,29 @@ static void gl_set_state(void *self, const dkr_render_state *state)
              * spent on the second cycle of that configuration; the first was
              * what was wrong. */
             if (e->setup.uses_texture) { bind_texture(state->texture); }
-            dkr_glide_backend_set_recipe(&e->setup, state->constant_color);
+            /* --- The first half of an exact pair ------------------------------ *
+             *
+             * When a second pass by the environment's alpha is coming, this pass
+             * is not the configuration's first cycle but `C (1 - e)` - see the
+             * derivation over `pass2_draw`. The `(1 - e)` is folded into the
+             * constant's **colour** here, where the CPU knows `e` and the card
+             * has no factor that would deliver it; the alpha byte is left alone,
+             * since it still carries `p`.
+             *
+             * `FUNCTION_LOCAL` configurations ignore the constant's colour
+             * entirely, so scaling it costs them nothing. */
+            {
+                unsigned int c1 = state->constant_color;
+                if (pass2_wanted(state) == PASS2_BY_ENV_ALPHA) {
+                    const unsigned int inv =
+                        255u - ((state->env_color >> 24) & 0xFFu);
+                    c1 = (c1 & 0xFF000000u)
+                       | (((((c1 >> 16) & 0xFFu) * inv) / 255u) << 16)
+                       | (((((c1 >>  8) & 0xFFu) * inv) / 255u) <<  8)
+                       |  ((( c1         & 0xFFu) * inv) / 255u);
+                }
+                dkr_glide_backend_set_recipe(&e->setup, c1);
+            }
             if (e->category == DKR_CC_MULTIPASS) { b.recipe_multipass++; }
         } else {
             apply_combine(state->combine, state->texture, state->constant_color,
@@ -927,9 +957,8 @@ static void gl_set_scissor(void *self, int x0, int y0, int x1, int y1)
 
    Recognised by the mux fields and not by the entry's name: names are the
    generator's, fields are the hardware's. */
-#define PASS2_NONE        0
-#define PASS2_BY_ENV_ALPHA 1   /* factor = the environment's alpha, a scalar */
-#define PASS2_BY_SHADE     2   /* factor = the vertex colour, per channel */
+/* The three names are defined beside `gl_set_state`'s forward declaration, which
+   needs them earlier in the file. */
 
 static int pass2_kind(const dkr_cc_entry *e)
 {
@@ -1438,7 +1467,34 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
 {
     int i;
 
-    if (gs.constant_color) { gs.constant_color(b.current.env_color); }
+    /* --- The constant carries `p x e`, and that is what makes the pair exact --- *
+     *
+     * The RDP computes, for this class of configuration,
+     *
+     *     out = [ C + (ENV - C) e ] a + dst (1 - a)
+     *         = C a (1 - e)  +  ENV a e  +  dst (1 - a)
+     *
+     * with `C` the first cycle's colour, `a = t p` its alpha, `e` the
+     * environment's alpha. The second line is two frame-buffer blends, and
+     * neither needs a negative source:
+     *
+     *     pass 1   src = C (1 - e), alpha = a        SRC_ALPHA / ONE_MINUS_SRC_ALPHA
+     *     pass 2   src = ENV,       alpha = a e      SRC_ALPHA / ONE
+     *
+     * Pass 1's `(1 - e)` is folded into the constant by `gl_set_state`, where the
+     * CPU knows `e`; here the constant's alpha becomes `p x e`, so that the alpha
+     * unit's `texel x constant` delivers `t p e` and the blender's `SRC_ALPHA /
+     * ONE` **adds** `ENV (t p e)` to what is already there.
+     *
+     * What it replaces: `ENV (t e)` laid over the finished frame buffer with
+     * `ONE_MINUS_SRC_ALPHA`, which darkened everything behind it by `1 - t e` and
+     * cost the hub's sea foam 1,540 pixels - the corpus's second worst blob. */
+    if (gs.constant_color) {
+        const unsigned int env_alpha = (b.current.env_color >> 24) & 0xFFu;
+        const unsigned int pe = ((unsigned int)b.current.alpha_scale * env_alpha)
+                                / 255u;
+        gs.constant_color((pe << 24) | (b.current.env_color & 0x00FFFFFFu));
+    }
     /* Colour: the constant alone. `FUNCTION_LOCAL` outputs `local` and ignores
        `other` entirely, so `other` is given the value this file already uses and
        has seen work rather than `GR_COMBINE_OTHER_NONE`, whose numeric value
@@ -1469,8 +1525,11 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
                              0);
         }
     }
+    /* **`ONE` on the destination, not `ONE_MINUS_SRC_ALPHA`.** This pass adds a
+       term; it does not composite over what is there. The old factor is what made
+       the pair wrong: it scaled the first pass's own result down again. */
     if (gs.blend_function) {
-        gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+        gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
                           GR_BLEND_ONE, GR_BLEND_ZERO);
     }
     /* `LEQUAL` and no write: the second pass sits at exactly the depth the first
