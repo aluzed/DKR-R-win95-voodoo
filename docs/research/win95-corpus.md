@@ -228,15 +228,16 @@ separates the Voodoo's dither from a defect.
 
 | capture | scene | differ at all | gap ≥ 32 |
 |---|---|---|---|
-| `CAP0050` | the Nintendo 64 logo | 951,402 ppm | **100** (325 ppm) |
 | `CAP0150` | the copyright screen | 966,526 ppm | **36** (117 ppm) |
-| `CAP0160` | the same, logo turned | 870,654 ppm | **1,295** (4,215 ppm) |
 | `CAP0400` | Ancient Lake, Bumper racing | 915,325 ppm | **489** (1,591 ppm) |
 | `CAP0800` | Wizpig and Diddy, attract | 912,893 ppm | **12,141** (39,521 ppm) |
 
-`CAP0250`, `CG0060` and `CKEY1622` were still running when this was written; the
-three are the largest scenes in the corpus and each takes upwards of a quarter of
-an hour through the software oracle on the emulated Pentium II.
+Three scenes, not five. **`CAP0050` and `CAP0160` were published here with
+figures of 100 and 1,295 and both were wrong**; they are withdrawn below, with
+the check that caught them. `CAP0250`, `CG0060` and `CKEY1622` have not been
+measured: they are the largest scenes in the corpus, each takes upwards of a
+quarter of an hour through the software oracle on the emulated Pentium II, and
+the runs that were meant to produce them did not finish.
 
 Two readings. **The floor is the dither and it is everywhere**: nine tenths of
 every scene differs by a few levels, and no decoder work will move it — the
@@ -246,9 +247,35 @@ clean at 36 pixels, and the attract sequence is at 12,141, of which 63 % sit in
 one band — the caption, whose cause is `prepass_draw_texel_alone` not carrying
 `alpha_scale` (see `win95-oracle-vs-card.md`).
 
-`CAP0160` at 1,295 is the number to watch next: the same scene as `CAP0150` ten
-lists later, thirty-six times worse, and nothing has yet looked at where those
-pixels are.
+## The check that has to come first: is it even the same scene?
+
+`CAP0160` at 1,295 looked like the next thing to investigate — the same screen as
+`CAP0150` ten display lists later, thirty-six times worse. It was not a defect. It
+was two different scenes differenced against each other.
+
+The oracle renders the same image on the host and on the target: that is E09-S02's
+own finding, and it is what makes the check cheap. Render the capture through
+`build/render-tools/replay` on the host, and compare it with the `RPLSOFT.BMP`
+the target run brought back:
+
+    CAP0150      0 of 76,800 sampled pixels differ by more than 8 levels
+    CAP0400      0
+    CAP0800      0
+    CAP0050 74,918      <- not this scene
+    CAP0160 76,622      <- not this scene
+
+**Compare with a tolerance, not for equality.** The two builds agree to within one
+level on about a tenth of the pixels — different compilers, different
+architectures, the same arithmetic rounded differently — so an equality test calls
+every pair a mismatch and says nothing. At a gap of more than 8 the answer is
+binary: zero, or three quarters of the image.
+
+The two bad pairs came from sweeps that overlapped: a stale run still writing
+`RPLSOFT.BMP` while the next one was starting. Deleting the images before each run
+was supposed to prevent exactly that and did not, because a second sweep was alive
+that the first one knew nothing about. The lesson is not about sweeps: **a number
+measured against an image nobody verified is not a measurement**, and this one
+survived into a commit message and a table before the check was run.
 
 ### How to repeat it, and the three traps that cost a morning
 
