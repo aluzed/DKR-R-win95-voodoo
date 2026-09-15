@@ -1491,8 +1491,15 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
      * cost the hub's sea foam 1,540 pixels - the corpus's second worst blob. */
     if (gs.constant_color) {
         const unsigned int env_alpha = (b.current.env_color >> 24) & 0xFFu;
-        const unsigned int pe = ((unsigned int)b.current.alpha_scale * env_alpha)
-                                / 255u;
+        const unsigned int pe = ((unsigned int)b.current.alpha_scale
+                                 * env_alpha) / 255u;
+        /* The 35 pixels of `CAP0800` that this pair made worse were looked for
+           here first, on the reading that an opaque first pass composites no
+           `a` and so should add `ENV e` rather than `ENV a e`. It is a
+           distinction without a difference: those draws carry `alpha_scale`
+           255, so the two expressions are the same number, and writing the
+           branch changed nothing on any scene. The thirty-five are still
+           unexplained; they are not this. */
         gs.constant_color((pe << 24) | (b.current.env_color & 0x00FFFFFFu));
     }
     /* Colour: the constant alone. `FUNCTION_LOCAL` outputs `local` and ignores
