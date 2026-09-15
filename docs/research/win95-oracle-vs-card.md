@@ -650,8 +650,8 @@ is there for the test:
 | `CG0060` | 1,071 | 753 | 753 |
 | `CKEY1622` | 1,295 | 557 | 557 |
 
-16,779 → 14,490 over the corpus, and **every scene is now at or below its
-baseline**: the regression is gone, `CAP0800` is 42 below where it started, and
+16,779 → **14,590** over the corpus — 2,189 pixels — and **every scene is now at
+or below its baseline**: the regression is gone, `CAP0800` is 42 below where it started, and
 the hub takes another 123 off. The soft edge of a sprite is where it showed —
 `ENV e (1 - t)` lost on every pixel whose texel alpha is not full, and the
 environment is where this scene keeps its blue.
