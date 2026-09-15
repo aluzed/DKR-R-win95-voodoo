@@ -899,19 +899,61 @@ de `SURFACE_UNK0B` (é `WATER_CALM`), o 14 de `SURFACE_UNK0E` (é `WATER_WAVY`) 
 - Cores de `gVehicleTrackMarkColors` assumidas como RGBA na ordem declarada; grama dá 192,8,64
   (magenta), o que sugere que a ordem dos campos do union pode não ser essa.
 
-## Correções pendentes no addon
+## Addon corrections: the seven, and where each one landed
 
-1. `ai_graph.py:36` — `MAX_NODES` deve ser 128, não 255; e `validate.py:133` precisa da mensagem
-   correspondente.
-2. `validate.py:206` — não emitir warning de conectividade para nós com `elevation == -1` e sem
-   vizinhos; são marcadores inertes, não grafo quebrado.
-3. `ai_graph.py` docstring e `docs/BLENDER_ADDON_PLAN.md` — AI node **não** é a linha de corrida.
-4. `operators/ai.py:223` — `attach_branch` grava `unk8 = 0` fixo, impedindo branches de serem
-   destino.
-5. `catalog.json` — renomear os campos de checkpoint `unkB`–`unk16` para os três grupos de 4 por
-   faixa da IA.
-6. `level_model_encoder.py` — verificar se o byte `surfaceType` (offset `0x07` de cada entrada de 8
-   bytes da tabela de texturas) é escrito de volta. Sem ele toda pista customizada é `DEFAULT`:
-   sem grama, sem água, sem parede invisível.
-7. Expor `surface_type` como propriedade do material do Blender — o material já mapeia 1:1 com o
-   batch, que é exatamente a granularidade do campo.
+Checked against the tree on 15 September 2026, one by one. **All seven are
+applied**, two of them differently from what the list proposed, and one turned
+out to need no change at all. The list is replaced by this record rather than
+left standing: a to-do that has been done is a trap for whoever reads it next,
+and this repository has already paid for one of those in `exceptions.json`.
+
+1. **`MAX_NODES` is 128** — `ai_graph.py:59`, enforced at `ai_graph.py:101`,
+   `192` and `217`. `validate.py:262` carries the matching message, and it says
+   what the limit costs: the game "drops any id from 128 up at load, along with
+   every link pointing at one - the track would lose them in silence".
+
+2. **Isolated markers no longer warn** — `validate.py:342-349`. A node with no
+   neighbours *and* `elevation == -1` is filtered out of the stranded list, with
+   the retail count beside it: of the 27 isolated nodes, 26 carry -1, and all
+   181 connected ones carry 0 or more.
+
+3. **The docstring says what an AI node is not** — `ai_graph.py:3`, "**An AI node
+   graph is not the racing line**", and `docs/BLENDER_ADDON_PLAN.md:118` repeats
+   it in the asset table.
+
+4. **The destination class is settable** — `operators/ai.py:209` exposes it as
+   `unk8`, "Destination Class", documented value by value (0 an ordinary node, 1
+   a weapon balloon, 3 a re-entry point, 4 to 7 the base of player 0 to 3), and
+   `operators/ai.py:240` records why it is not zero unconditionally. A branch can
+   be a destination.
+
+5. **The checkpoint fields are labelled, not renamed** — and that is the better
+   answer. `data/catalog.json` gives `unkB`..`unkE` the label "Lateral offset,
+   lane N", `unkF`..`unk12` "Vertical offset, lane N", `unk13`..`unk16` "Route
+   flag, lane N". The *names* stay as the decomp writes them
+   (`level_object_entries.h:134-146`), so the two can still be read against each
+   other; the meaning goes in the label, where an author sees it.
+
+   The grouping is confirmed at the source, which the note had only inferred.
+   `objects.c:5676-5687` deals the twelve bytes into three arrays of four —
+   `unk2E[i]` from `unkB..unkE`, `unk32[i]` from `unkF..unk12`, `unk36[i]` from
+   `unk13..unk16` — and `racer.c:1416-1420` reads them at `racer->unk1CA`, the
+   racer's lane: `unk2E` enters `splineX` and `splineZ` through the gate's
+   `scale` and its Z/X rotation fractions, `unk32` enters `splineY` through the
+   scale alone, and `unk36` is compared against constants (`racer.c:4463-4471`,
+   `vehicle_bluey.c:120`). Lateral, vertical, and a flag — one of each per lane.
+
+6. **The `surfaceType` byte was already written** — the note asked for a check
+   and the answer is yes. `level_model_encoder.py:241-248` writes offsets 4..7
+   of each 8-byte entry as width, height, format, surface type, which is what
+   `level_model.py:104-115` reads back. `test_textures.py:236-240` carries it
+   through encode and decode. Custom tracks are not all `DEFAULT`.
+
+7. **The surface type is exposed** — `props.py:394` is a `texture_surface`
+   enumeration built from the model's own table (`props.py:88-103`), and
+   `level_model_edit.py:233` applies it. The note's own idea, a material-level
+   property, is what the enumeration is built against.
+
+`python3 tools/blender/run_tests.py`: sixteen suites pass. Two skip, both of them
+the ones that need Blender itself to be importable (`test_blender_roundtrip.py`,
+`test_blender_operators.py`).
