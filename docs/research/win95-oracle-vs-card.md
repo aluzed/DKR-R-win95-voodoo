@@ -921,3 +921,71 @@ is the better one — the vertex alpha is closer to the mux's answer there than
 So the two blocks of near black are still unexplained, and the list of what they
 are not is now: not a missing draw, not a missing upload, not a missing texture,
 not the alpha source, not the second pass's composition order.
+
+## The oracle's probe now records what it refused, and the card's blend factor is not the fault
+
+Two instruments, one afternoon, and both were built because the list of what the
+980 pixels *are not* had stopped growing.
+
+**The probe recorded only the draws that painted.** A pixel the card leaves
+alone and a pixel the card paints wrongly look the same from the oracle's side
+unless the oracle also says which fragments it turned away and why, so
+`put_pixel` now logs the scissor, the alpha test and the depth test as entries of
+the same log, with the fragment's `z` and the buffer value it was tested
+against. The probe also printed `constant_color` and not `env_color`, which for
+this configuration is the register the second pass loads - reading
+`const=0xFF000000` as "the environment is black" was available and wrong.
+
+At the two pixels that carry the blocks, with both corrections:
+
+    228,167  painted z=-0.000096 buf=1.000000  recipe=3   additive depth=0
+             painted z=-0.000113 buf=1.000000  recipe=3   alpha    depth=1
+             painted z=-0.002753 buf=1.000000  recipe=10  alpha    depth=1
+    304,323  painted z=-0.000106 buf=1.000000  recipe=3   additive depth=0
+             painted z=-0.000667 buf=1.000000  recipe=3   opaque   depth=2
+             painted z=-0.002881 buf=-0.000667 recipe=10  opaque   depth=2
+
+    env  = 0x96504105  (80,65,5)      prim = 0xFF000000  (0,0,0)
+
+The oracle refuses nothing at either pixel. Its depth is `-oow`
+(`software.c:749`), so the two draws that matter at (304,323) sit at w = 1499 and
+w = 347 - a separation no sixteen-bit W buffer collapses, and the nearer one is
+the later, which is the one that has to win under `LESS` on both sides.
+
+**And the card's value at (304,323) is the oracle's value after the second of the
+three draws.** (132,73,0) against (128,72,0), where the oracle's third draw takes
+the pixel to (2,7,39). The third draw is recipe 10, and on the card that whole
+logical draw is `prepass_draw` - whose first pass writes the *primitive*, which
+here is black, opaque, whatever the state's blend - followed by
+`pass2_draw_by_shade`. Not one of those four physical passes left a mark.
+
+### The one thing in that path nothing had ever measured
+
+`pass2_draw_by_shade`'s first pass is `dst *= 1 - shade`, and it rests entirely
+on `GR_BLEND_ONE_MINUS_SRC_COLOR` being 0x6 in the destination position. The
+comment beside the define said, since the day it was written, that the value came
+from the canonical table because its four neighbours were right there and that it
+had never been seen to work on this card. The four blends `set_state` can express
+do not include it, so there was no way to put the question to the hardware at
+all.
+
+`dkr_glide_backend_set_blend` is that way, and the witness asks in two draws: a
+known D = (204,136,68) laid down opaque from the constant, then a second quad
+whose source is the iterated colour S with the blend at `ZERO / factor`, so the
+source contributes nothing of itself and is there only to be the factor. D is not
+a grey, so a factor reading one channel and broadcasting it could not hide.
+
+    factor   S=0             S=102           S=255
+    0x06     (198,134, 66)   (115, 77, 33)   (  0,  0,  0)     1 - S
+    0x02     (  0,  0,  0)   ( 74, 52, 24)   (198,134, 66)     S
+    0x00     (  0,  0,  0)   (  0,  0,  0)   (  0,  0,  0)     zero
+
+Both factors are what the table says. The hypothesis is dead and the hole in the
+table is closed: every enumeration value this backend uses has now been read back
+from the card.
+
+So the list of what the two blocks are not gains a sixth entry - not the
+per-colour blend factors - and the shape of the remaining question is sharper
+than it was: at (304,323) the card keeps nothing at all of a draw the oracle
+paints, and its own triangle counter, which nothing printed until today, is the
+figure that says whether the card was asked.

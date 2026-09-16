@@ -100,12 +100,19 @@ typedef int           FxBool;
    source. Only the destination forms are used here, and they are named for what
    they are in the position they are used in.
 
-   These two are the only values in this file not yet seen to work on the card.
-   The four that were -- ZERO 0x0, SRC_ALPHA 0x1, ONE 0x4, ONE_MINUS_SRC_ALPHA
-   0x5 -- match the canonical table position for position, which is why these are
-   taken from the same table rather than guessed; it is not the same as having
-   measured them, and this comment is here so that a wrong image is diagnosed
-   from here first. */
+   **Measured, 16 September 2026**, and this comment read the other way until
+   then: they were the only two values in this file taken from the canonical
+   table and never read back. `constant_alpha_probe.c` puts a known
+   D = (204,136,68) down, draws a second quad with the blend at `ZERO / factor`
+   so the source is there only to *be* the factor, and sweeps it:
+
+       factor   S=0             S=102           S=255
+       0x06     (198,134, 66)   (115, 77, 33)   (  0,  0,  0)   1 - S
+       0x02     (  0,  0,  0)   ( 74, 52, 24)   (198,134, 66)   S
+       0x00     (  0,  0,  0)   (  0,  0,  0)   (  0,  0,  0)   zero
+
+   So `pass2_draw_by_shade`'s first pass computes what it says it computes, and
+   the class of defect this comment was left here to catch is not this one. */
 #define GR_BLEND_ONE_MINUS_SRC_COLOR      0x6   /* destination factor only */
 
 /* Comparisons — shared by the depth test and the alpha test. */
