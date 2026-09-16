@@ -354,18 +354,21 @@ triangle there.
 So the tail is counted again with a neighbour test: a pixel is **forgiven** when
 the card's value matches some oracle pixel among its eight neighbours.
 
+All eight measured on 16 September 2026, on one build, against a host render of
+the same capture:
+
 | capture | tail | edge | real |
 |---|---|---|---|
 | `CAP0050` | 106 | 99 (93 %) | 7 |
 | `CAP0150` | 36 | 29 (80 %) | 7 |
 | `CAP0160` | 100 | 100 (100 %) | **0** |
 | `CAP0250` | 451 | 407 (90 %) | 44 |
-| `CAP0400` | 492 | 476 (96 %) | 16 |
+| `CAP0400` | 494 | 478 (97 %) | 16 |
 | `CAP0800` | 967 | 476 (49 %) | **491** |
 | `CG0060` | 753 | 699 (92 %) | 54 |
-| `CKEY1622` | 557 | 519 (93 %) | 38 |
+| `CKEY1622` | 554 | 515 (93 %) | 39 |
 
-**657 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 75 %
+**658 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 75 %
 of them are still in one scene. Seven of the eight are at 54 or fewer; `CAP0160`
 is at zero.
 
@@ -420,3 +423,30 @@ The lesson is about the instrument, not the scene: a single radius turns a curve
 into a number and then the number gets argued about. 491 is the lower bound at
 the radius the table uses, 35 is the lower bound at a radius no fill rule
 survives, and both belong in the record.
+
+## The harness has a repeatability floor, and it is about three pixels
+
+`prepass_shade_exact` was written for one configuration and fires on six draws of
+one scene. The counter says so per scene, and across the other seven it reads
+`drawn=0`. So on those seven the code path is **provably not taken**, and any
+difference between their figures before and after it is not caused by it.
+
+There is some, and it is the useful part of the measurement:
+
+    CAP0050    106 -> 106      CAP0400    492 -> 494
+    CAP0150     36 ->  36      CKEY1622   557 -> 554   (real 38 -> 39)
+    CAP0160    100 -> 100      CAP0250    450 -> 451
+
+Three scenes to the pixel, three others moving by one to three. Nothing in the
+renderer changed for any of them, so **that is the floor**: a difference of three
+pixels on a scene of five hundred says nothing, and a regression has to clear it
+before it is a regression. Naming the floor is what keeps a real one from being
+argued away and a phantom one from being chased - this file spent an afternoon on
+14 September comparing two figures that differed for exactly this reason.
+
+Where it comes from is not diagnosed. The replay is deterministic on the host -
+five captures at zero divergent pixels, checked rather than assumed - so the
+variation is on the card or in the readback, and the candidates are the ones this
+file already knows about: a 565 frame buffer read back and expanded, a card whose
+sub-pixel arithmetic need not be bit-stable between runs, and a comparison at a
+threshold that some pixels sit exactly on.
