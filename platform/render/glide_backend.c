@@ -350,6 +350,7 @@ static struct {
     unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
     unsigned long    shade_exact;       /* whole two-cycle result in three blends */
     unsigned long    shade_exact_prim;  /* refused it: the primitive is not black */
+    unsigned long    iterated_scaled;   /* alpha scale folded into the vertex */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -2016,6 +2017,74 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
     }
 }
 
+/* --- The alpha scale the catalogue path has no room for, and when to apply it -- *
+ *
+ * `alpha_scale` carries the factor the RDP's alpha mux applies where the
+ * generated `ac` setup has no operand left for it. It reaches the card through
+ * `apply_combine`, which puts it in the constant's alpha byte; the **catalogue**
+ * path hands `set_recipe` the colour register whole, and a setup whose alpha
+ * reads `LOCAL_ITERATED` never looks at the constant. The scale is dropped.
+ *
+ * The CPU can put it where that setup does look - the vertex alpha - and the
+ * first attempt did, for every such draw. It won eight pixels on the attract
+ * sequence and lost thirty-three on the hub, because **on the hub the vertex was
+ * already carrying it**:
+ *
+ *     CAP0250 (336,235)  oracle prim = 0x39FFFFFF, primitive alpha 57
+ *                        card   batch 171, vertex rgba 255,255,255,58
+ *
+ * 58 x 57 / 255 = 13 where the mux wants 57.
+ *
+ * ## What separates the two, and it is in the mux and not in the numbers
+ *
+ * Comparing the vertex alpha with the byte and skipping when they are close would
+ * be a heuristic on a float, and this file has no other. The distinction is
+ * structural:
+ *
+ *     CAP0250  G_CC_MODULATEIDECALA + ...  alpha = TEXEL0_ALPHA x PRIMITIVE_ALPHA
+ *     CAP0800  G_CC_MODULATERGBA + ...     alpha = TEXEL0_ALPHA x SHADE_ALPHA
+ *                                                              x PRIMITIVE_ALPHA
+ *
+ * The first never names `SHADE_ALPHA`, so the vertex alpha is **unspoken for** by
+ * the mux - and a configuration whose mux does not want the vertex alpha is
+ * exactly where the primitive's can be carried in it instead. The second names
+ * it, so the vertex alpha is the shade term and cannot be doubling for anything.
+ *
+ * So the scale is folded in only where the mux reads the shade's alpha. That is a
+ * property of the configuration, decidable from the catalogue, and it needs no
+ * comparison of values at all. */
+static int alpha_mux_reads_shade(const dkr_cc_entry *e)
+{
+    int c;
+    for (c = 0; c < 2; c++) {
+        const dkr_cc_stage *st = &e->alpha[c];
+        if (st->a == (unsigned char)DKR_CC_SHADE ||
+            st->b == (unsigned char)DKR_CC_SHADE ||
+            st->c == (unsigned char)DKR_CC_SHADE ||
+            st->d == (unsigned char)DKR_CC_SHADE) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static unsigned char iterated_scale_wanted(const dkr_render_state *st)
+{
+    const dkr_cc_entry *e;
+    if (st->alpha_scale == 255u) { return 255u; }
+    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 255u; }
+    e = dkr_cc_table_at(st->recipe - 1);
+    if (e == 0 || !e->setup.uses_texture) { return 255u; }
+    if (e->setup.ac_local != GR_COMBINE_LOCAL_ITERATED) { return 255u; }
+    /* The vertex alpha has to be the mux's own shade term, or it may be carrying
+       the very factor this byte holds. */
+    if (!alpha_mux_reads_shade(e)) { return 255u; }
+    /* The second-pass paths build their alpha out of this same byte; scaling the
+       vertex under them would apply it twice by another route. */
+    if (pass2_wanted(st) != PASS2_NONE) { return 255u; }
+    return st->alpha_scale;
+}
+
 static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                               int count)
 {
@@ -2058,9 +2127,31 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
         } else if (shape == PREPASS_TEXEL_ALONE) {
             prepass_draw_texel_alone(vertices, count);
         } else {
-            for (i = 0; i + 2 < count * 3; i += 3) {
-                dkr_glide_draw_raw(&vertices[i], &vertices[i + 1],
-                                   &vertices[i + 2]);
+            const unsigned char scale =
+                b.has_state ? iterated_scale_wanted(&b.current) : 255u;
+            if (scale != 255u) {
+                static dkr_render_vertex tinted[PREPASS_BATCH * 3];
+                int done = 0;
+                b.iterated_scaled++;
+                while (done < count) {
+                    const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
+                                                                 : count - done;
+                    const int v = n * 3;
+                    for (i = 0; i < v; i++) {
+                        tinted[i] = vertices[done * 3 + i];
+                        tinted[i].a = tinted[i].a * (float)scale / 255.0f;
+                    }
+                    for (i = 0; i + 2 < v; i += 3) {
+                        dkr_glide_draw_raw(&tinted[i], &tinted[i + 1],
+                                           &tinted[i + 2]);
+                    }
+                    done += n;
+                }
+            } else {
+                for (i = 0; i + 2 < count * 3; i += 3) {
+                    dkr_glide_draw_raw(&vertices[i], &vertices[i + 1],
+                                       &vertices[i + 2]);
+                }
             }
         }
     }
@@ -2510,6 +2601,11 @@ unsigned long dkr_glide_backend_shade_exact(void)
 unsigned long dkr_glide_backend_shade_exact_prim(void)
 {
     return b.shade_exact_prim;
+}
+
+unsigned long dkr_glide_backend_iterated_scaled(void)
+{
+    return b.iterated_scaled;
 }
 
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,
