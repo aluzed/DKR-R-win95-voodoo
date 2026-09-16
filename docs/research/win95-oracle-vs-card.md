@@ -1071,3 +1071,45 @@ as `SCALE_OTHER / FACTOR_LOCAL` over `LOCAL_CONSTANT` and `OTHER_TEXTURE` - the
 same shape `prepass_draw_texel_alone` already uses. That derivation is the next
 piece of work, and it is a derivation rather than a guess, which is what the two
 fixes that worked had and the six that failed did not.
+
+## Three blends instead of four, and 489 of the 980 go
+
+The derivation is in `prepass_shade_exact` and in the commit; the numbers are
+these, predicted in writing before the run and matched by it:
+
+    CAP0800   1,570 / 980  ->  967 / 491
+    CAP0250     451 /  44  ->  451 /  44      unchanged
+    CG0060      753 /  54  ->  753 /  54      unchanged
+
+    whole cycle in three blends: drawn=6  (CAP0800), 0 and 0 elsewhere
+
+**Six draws.** Six, out of the seven hundred and fifty-five the attract sequence
+emits, carried 603 divergent pixels and 489 of the 980 that the neighbour test
+calls real. That is what the two blocks were: not a class of configuration drawn
+wrongly everywhere, but a handful of draws of one configuration that happened to
+be alpha-blended where the rest of its fill is opaque - the three per cent this
+file has been calling tolerable since 12 September.
+
+The other two scenes are untouched **because the path never fires in them**,
+which the counter says outright rather than leaving to inference. That is the
+difference between a change that is safe and a change that has not been tried:
+the first is a measurement, the second is a hope.
+
+### What is left, and what it would take
+
+`CAP0800` keeps 491 real pixels and the corpus 657, down from 1,146. The first
+thing to do with the card probe is to point it at one of the survivors, which
+costs a run and no longer costs a hypothesis.
+
+Two pieces of groundwork are named and not done:
+
+* **`GR_COMBINE_OTHER_CONSTANT`** is the last enumeration value this backend
+  would use and has never read back from the card. It is what the fourth pass
+  needs - `P x (1 - k)`, for a primitive that is not black - and until it is
+  measured the exact path is confined to the case where that term is zero. One
+  run of the witness settles it, exactly as the two destination blend factors
+  were settled.
+* **The same treatment for `pass2_draw_by_shade`'s opaque case** is not needed -
+  it is exact there - but the *other* multipass classes have not been put through
+  this derivation at all, and the card probe now makes each one a measurement
+  rather than an argument.

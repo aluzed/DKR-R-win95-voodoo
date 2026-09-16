@@ -359,15 +359,28 @@ the card's value matches some oracle pixel among its eight neighbours.
 | `CAP0050` | 106 | 99 (93 %) | 7 |
 | `CAP0150` | 36 | 29 (80 %) | 7 |
 | `CAP0160` | 100 | 100 (100 %) | **0** |
-| `CAP0250` | 450 | 406 (90 %) | 44 |
+| `CAP0250` | 451 | 407 (90 %) | 44 |
 | `CAP0400` | 492 | 476 (96 %) | 16 |
-| `CAP0800` | 1,570 | 590 (37 %) | **980** |
+| `CAP0800` | 967 | 476 (49 %) | **491** |
 | `CG0060` | 753 | 699 (92 %) | 54 |
 | `CKEY1622` | 557 | 519 (93 %) | 38 |
 
-**1,146 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 85 %
-of them are in one scene. Seven of the eight are at 54 or fewer; `CAP0160` is at
-zero.
+**657 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 75 %
+of them are still in one scene. Seven of the eight are at 54 or fewer; `CAP0160`
+is at zero.
+
+`CAP0800` stood at 1,570 and 980 until 16 September 2026, when six of its draws -
+six, out of seven hundred and fifty-five - stopped destroying a destination they
+were meant to blend with. `prepass_shade_exact` computes that whole two-cycle
+configuration in three frame-buffer blends instead of a pre-pass and a second
+pass that between them never weight the result by the mux's alpha. See
+`win95-oracle-vs-card.md`; the derivation is in the commit and in the function's
+own comment.
+
+`CAP0250` reads 451 here and 450 in the table above, measured a day apart on
+different builds. One pixel, recorded rather than reconciled: neither figure has
+been shown to be the wrong one, and pretending to a precision the harness does
+not have is how a real regression gets lost in the rounding.
 
 And the same test on the images from before this week's two pairs says they
 removed disagreement rather than noise:
