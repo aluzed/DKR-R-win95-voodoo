@@ -1480,6 +1480,46 @@ static int g_texel_factor_one;
 
 void dkr_glide_backend_texel_factor_one(int on) { g_texel_factor_one = on; }
 
+/* --- Depth for one physical pass of a decomposition --------------------------- *
+ *
+ * Every pass of a decomposition has to reach the same verdict the ordinary draw
+ * would have reached, and the way to guarantee that is to leave the buffer alone
+ * until the last of them: all of them then test the state's own comparison
+ * against the same value, and all of them agree.
+ *
+ * **What it replaces, and why that was wrong.** The first pass used to write, and
+ * the passes after it were given `LEQUAL` because, against the depth the first
+ * one had just written, `LESS` rejects everything. That works when the first pass
+ * passes - and inverts when it does not. A draw the RDP discards wholesale,
+ * because some earlier draw already wrote exactly its depth, has its first pass
+ * rejected by `LESS` and its remaining passes **accepted** by `LEQUAL`: the card
+ * then paints three quarters of a draw that should not exist.
+ *
+ * Measured on the attract sequence at (296,355), one of the twenty-seven pixels
+ * that no fill rule explains. The oracle's probe:
+ *
+ *     4  painted  0xE18E00 -> 0x610128  z=-0.002991 buf=-0.001235 recipe=10
+ *     5  depth    0x610128 -> 0x610128  z=-0.002991 buf=-0.002991 recipe=10
+ *
+ * Two triangles of one mesh at identical depth; the oracle keeps the first and
+ * discards the second. The card keeps the first and then adds the second's pre-B,
+ * shade-A and shade-B on top, and comes out at (148,8,57) against (97,1,40).
+ *
+ * So: mask closed on every pass but the last, comparison untouched throughout.
+ * The depth still ends up written exactly once, with the same value, by whichever
+ * pass is last. */
+static void pass_depth(int last)
+{
+    if (!gs.depth_mode || !gs.depth_function || !gs.depth_mask) { return; }
+    apply_depth(b.current.depth);
+    if (!last) { gs.depth_mask(0); }
+}
+
+/* Whether a second pass will follow the pre-pass, so that the pre-pass knows it
+   is not the last one and leaves the depth to it. Set by `gl_draw_triangles`
+   before it chooses a shape. */
+static int g_pass2_follows;
+
 static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                                      int count)
 {
@@ -1545,7 +1585,7 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
         gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         apply_blend(b.current.blend);
-        apply_depth(b.current.depth);
+        pass_depth(0);
         for (i = 0; i + 2 < count * 3; i += 3) {
             dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
         }
@@ -1567,10 +1607,7 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         gs.blend_function(opaque_first ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
                           GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
-        if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
-            gs.depth_function(GR_CMP_LEQUAL);
-        }
-        if (gs.depth_mask) { gs.depth_mask(0); }
+        pass_depth(1);
         for (i = 0; i + 2 < count * 3; i += 3) {
             dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
         }
@@ -1636,9 +1673,9 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
     gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
-    /* Depth as the state asks: this pass stands in for the ordinary draw, so it
-       is the one that may write. */
-    apply_depth(b.current.depth);
+    /* This pass stands in for the ordinary draw, and it still does not write: see
+       `pass_depth`. The last pass of the whole logical draw does. */
+    pass_depth(0);
     pass2_geometry(vertices, count);
     watch_pass(DKR_CARD_PASS_PRE_A);
 
@@ -1649,10 +1686,7 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
-    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
-        gs.depth_function(GR_CMP_LEQUAL);
-    }
-    if (gs.depth_mask) { gs.depth_mask(0); }
+    pass_depth(!g_pass2_follows);
     pass2_geometry(vertices, count);
     watch_pass(DKR_CARD_PASS_PRE_B);
 
@@ -1675,10 +1709,7 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
        the whole pass. Measured on 8 September 2026: the second pass drawn on 162
        batches and the character still black to the pixel.
      */
-    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
-        gs.depth_function(GR_CMP_LEQUAL);
-    }
-    if (gs.depth_mask) { gs.depth_mask(0); }
+    pass_depth(0);
 
     /* A: dst *= 1 - shade. The source is the iterated colour and contributes
        nothing of itself -- `ZERO` -- it is there to *be* the factor. */
@@ -1702,6 +1733,8 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
     gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
     gs.blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
+    /* The last pass of the logical draw, so this is the one that writes. */
+    pass_depth(1);
     pass2_geometry(vertices, count);
     watch_pass(DKR_CARD_PASS_SHADE_B);
 
@@ -1806,16 +1839,13 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     /* This pass stands in for the ordinary draw, so it is the one that may write
        depth; the two after it revisit the same fragments. */
-    apply_depth(b.current.depth);
+    pass_depth(0);
     for (i = 0; i + 2 < count * 3; i += 3) {
         dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
     }
     watch_pass(DKR_CARD_PASS_EXACT_A);
 
-    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
-        gs.depth_function(GR_CMP_LEQUAL);
-    }
-    if (gs.depth_mask) { gs.depth_mask(0); }
+    pass_depth(0);
 
     /* --- B: the texel, scaled by `1 - k`, at `t sa p` ------------------------ *
      *
@@ -1852,6 +1882,8 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
+    /* The last of the three, so this is the one that writes. */
+    pass_depth(1);
     for (i = 0; i + 2 < count * 3; i += 3) {
         dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
     }
@@ -2097,6 +2129,9 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
         g_watch_batch++;
         g_watch_covered = watch_covers(vertices, count);
     }
+    /* The pre-pass needs to know whether anything comes after it, because the
+       last pass of the logical draw is the one that writes depth. */
+    g_pass2_follows = b.has_state && (pass2_wanted(&b.current) != PASS2_NONE);
     /* `dkr_render_vertex` has `GrVertex`'s layout, field for field —
        `backend_layout_check.c` checks it at compile time. The hand-off therefore
        needs no conversion and no copy, which was the whole point of this
