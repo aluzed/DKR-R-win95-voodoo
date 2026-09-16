@@ -357,12 +357,13 @@ static void say_probe(int x, int y)
     for (i = 0; i < kept; i++) {
         const dkr_render_state *st = &log[i].state;
         say("    %2d  %-7s 0x%06X -> 0x%06X  z=%.6f buf=%.6f  %-11s"
-            " const=0x%08X ascale=%-3u recipe=%d"
+            " const=0x%08X env=0x%08X prim=0x%08X ascale=%-3u recipe=%d"
             "  blend=%-8s tex=%lu/%lu  alpha=%u/%u fog=%u depth=%u\n",
             i + 1, reject_name(log[i].rejected),
             log[i].before & 0x00FFFFFFu, log[i].after & 0x00FFFFFFu,
             log[i].z, log[i].depth,
             combine_name((int)st->combine), st->constant_color,
+            st->env_color, st->prim_color,
             (unsigned)st->alpha_scale,
             (int)st->recipe, blend_name((int)st->blend),
             (unsigned long)st->texture, (unsigned long)st->texture1,
@@ -851,6 +852,14 @@ int main(int argc, char **argv)
                     " unsupported=%lu\n", d, sh, bl, id, un);
                 say("  first cycle in two blends: drawn=%lu refused"
                     " (alpha test)=%lu | texel-alone: drawn=%lu\n", pd, pa, ta);
+                /* **What the card was actually asked to draw.** Every other
+                   count on this line comes from the decoder, which is the same
+                   code in both backends and therefore cannot disagree; this one
+                   is the backend's own, and it is the only number that separates
+                   "the draw was not made" from "the draw was made and the card
+                   kept none of it". It existed and nothing printed it. */
+                say("  triangles reaching the card: %lu\n",
+                    dkr_glide_backend_triangle_count());
             }
             /* --- Why a texture did not make it ------------------------------- *
              *
