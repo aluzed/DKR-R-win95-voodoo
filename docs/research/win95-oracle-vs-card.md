@@ -1238,4 +1238,6 @@ are real, and there is a version of it that would win them without touching the
 hub: one that asks whether the vertex already carries the factor rather than
 assuming it does not. Nothing measures that yet, and the honest place to stop is
 with the defect diagnosed, the trap recorded, and the tree at the best figure
-measured - 3,454 divergent and 651 genuinely so.
+measured - **3,461 divergent and 658 genuinely so**, which is the reverted state,
+not the folded one. (This paragraph first said 3,454 and 651: those are the
+totals with the fold's eight pixels counted in, and the fold is out.)
