@@ -769,3 +769,38 @@ black — `(41,24,41)` — and the oracle paints white. They read identically in
 images from before any of this week's work. Three recipe-3 draws touch them, two
 of which the oracle uses to build that white. That is the next thing, and it is
 not a combiner arithmetic problem: it is a draw that is not arriving.
+
+## What the two backends agree on, and the one count that differs
+
+`CAP0800`'s 980 real pixels are in two blocks where the card paints near black
+and the oracle white. "A draw that is not arriving" was the guess; the log says
+otherwise. Run with `--log`, the two backends report:
+
+    oracle   cmd=1427 tri=1397 emitted=755 culled=385 clipped=275 rejects=0 lost=0 textures=85
+    card     cmd=1427 tri=1397 emitted=755 culled=385 clipped=275 rejects=0 lost=0 textures=58
+
+**Every geometry count is identical** — the same commands, the same triangles
+emitted, the same culled, the same clipped, nothing rejected and nothing lost. So
+no draw is missing, and the difference is not in the decoder's arithmetic either,
+since both ran the same code to produce those numbers.
+
+The one count that differs is `textures`, 58 against 85. That is the decoder's
+count of conversions, not of uploads, and the obvious suspicion — that the card
+refused twenty-seven textures and drew with whatever the unit held — is now
+answerable, because `replay` prints the four causes the backend has always kept
+apart:
+
+    uploads refused: none
+
+Nothing was refused for its aspect ratio, its size, a full descriptor table or
+exhausted TMU memory, and no slot was reclaimed. Why the card converts 58 where
+the oracle converts 85 is **not established here**; what is established is that
+it is not a refusal, and that no geometry went missing.
+
+So the 980 are neither a missing draw nor a missing upload. That is two whole
+classes excluded, and the instrument that excluded them is in the tree: the four
+causes cost four lines to print and had never been printed.
+
+The card's own comparison, in the same log, reads 1,730 frankly different of
+which 832 on an edge — against 1,570 and 590 by the neighbour test used in
+`win95-corpus.md`. Two metrics, two thresholds, the same shape.

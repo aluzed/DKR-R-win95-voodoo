@@ -834,6 +834,28 @@ int main(int argc, char **argv)
                 say("  first cycle in two blends: drawn=%lu refused"
                     " (alpha test)=%lu | texel-alone: drawn=%lu\n", pd, pa, ta);
             }
+            /* --- Why a texture did not make it ------------------------------- *
+             *
+             * The counts above say the two backends decoded a different number
+             * of textures - 58 against 85 on the attract sequence - and a draw
+             * whose texture is missing samples whatever the unit holds, which is
+             * a wrong image with no message. Four causes end in the same
+             * returned zero, and the backend has kept them apart all along; only
+             * nothing printed them. */
+            {
+                const unsigned long aspect = dkr_glide_backend_upload_failure(0);
+                const unsigned long zero   = dkr_glide_backend_upload_failure(1);
+                const unsigned long table  = dkr_glide_backend_upload_failure(2);
+                const unsigned long memory = dkr_glide_backend_upload_failure(3);
+                const unsigned long back   = dkr_glide_backend_slots_reclaimed();
+                if (aspect | zero | table | memory | back) {
+                    say("  uploads refused: aspect=%lu zero=%lu table full=%lu"
+                        " TMU memory=%lu | slots reclaimed=%lu\n",
+                        aspect, zero, table, memory, back);
+                } else {
+                    say("  uploads refused: none\n");
+                }
+            }
 
             if (dkr_glide_read_framebuffer(card_pixels,
                                            (int)(h.screen_w * h.screen_h),

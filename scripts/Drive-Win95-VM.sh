@@ -53,7 +53,18 @@ BOX="$PREFIX/opt/86box/squashfs-root/AppRun"
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-box_pids() { ps -eo pid,args | grep -F 'local/bin/86Box' | grep -v grep | awk '{print $1}'; }
+# **Both names.** The emulator is started through the AppImage's `AppRun`, which
+# execs `.../squashfs-root/usr/local/bin/86Box`. Matching only the inner name
+# leaves a window - between the fork and the exec - in which `start` sees no
+# instance and launches a second one onto the same disk images. That is how two
+# were found running on 16 September 2026, with the keystrokes going to whichever
+# window `xdotool` listed last and nothing reaching the guest at all; the file's
+# own record of thirty-one instances came of the same blind spot.
+box_pids() {
+  ps -eo pid,args \
+    | grep -E 'local/bin/86Box|squashfs-root/AppRun' \
+    | grep -v grep | awk '{print $1}'
+}
 window() { DISPLAY="$DISP" "$XDO" search --name "86Box" 2>/dev/null | tail -1; }
 
 # **The one mapping**, used by `pad` and by `pad-hold`. It was written out twice
