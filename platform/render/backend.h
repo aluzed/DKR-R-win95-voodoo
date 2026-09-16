@@ -527,6 +527,29 @@ struct dkr_cc_setup;
 void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
                                   unsigned constant_argb);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
+/* --- The card's own probe ---------------------------------------------------- *
+ *
+ * The mirror of `dkr_software_probe`. `dkr_glide_backend_watch(x, y)` arms it;
+ * the backend then reads that pixel out of the back buffer after each logical
+ * draw - after every physical pass of it, so a multipass configuration is one
+ * entry - and keeps the draws that changed it. `x` or `y` negative disarms.
+ *
+ * It answers the half of a divergent pixel the oracle's probe cannot: whether
+ * the card refused a draw or drew it to a different colour. */
+#define DKR_CARD_WATCH_MAX 64
+
+typedef struct {
+    unsigned long batch;    /* which logical draw of the frame */
+    unsigned      before;
+    unsigned      after;
+    unsigned char recipe;
+    unsigned char passes;   /* bit 0 pre-pass, bit 1 second pass */
+} dkr_card_watch_entry;
+
+void dkr_glide_backend_watch(int x, int y);
+/* The **total** number of draws that changed the pixel, with `kept` set to how
+   many the log holds. The two differ when more than `DKR_CARD_WATCH_MAX` did. */
+int  dkr_glide_backend_watch_result(const dkr_card_watch_entry **log, int *kept);
 /* Programs the frame-buffer blend directly, in Glide's own enumeration, after
    `set_state` has programmed the state's own. For the measurement harness only:
    two of the per-colour destination factors this backend relies on have never

@@ -714,8 +714,79 @@ static void gl_close(void *self)
     b.open = 0;
 }
 
+/* --- The card's own probe: what one pixel held after each draw --------------- *
+ *
+ * The oracle has had `dkr_software_probe` for a fortnight, and every hypothesis
+ * about a divergent pixel since has been half-answered: it says which draws
+ * painted it on the *host*, and nothing says what the card did with the same
+ * three draws. The difference between "the card refused this draw" and "the card
+ * drew it and got a different colour" is one read-back, and there was no way to
+ * take it.
+ *
+ * So the same instrument, on the other side. `gl_draw_triangles` reads the one
+ * watched pixel out of the **back** buffer after each logical draw - after every
+ * physical pass of it, so a multipass configuration is one entry, as it is in the
+ * oracle's log - and keeps the value with the batch number and the recipe.
+ *
+ * `before` is the previous reading rather than a second lock: nothing else writes
+ * the buffer between two draws, and halving the number of `grSstIdle` calls is
+ * worth more than the redundancy. The first entry's `before` is what
+ * `gl_begin_frame` left, which is the clear colour. */
+static int                  g_watch_armed;
+static int                  g_watch_x, g_watch_y;
+static unsigned long        g_watch_batch;
+static unsigned             g_watch_last;
+static int                  g_watch_kept;
+static int                  g_watch_seen;
+static dkr_card_watch_entry g_watch_log[DKR_CARD_WATCH_MAX];
+
+void dkr_glide_backend_watch(int x, int y)
+{
+    g_watch_armed = (x >= 0 && y >= 0);
+    g_watch_x = x;
+    g_watch_y = y;
+    g_watch_batch = 0;
+    g_watch_kept = 0;
+    g_watch_seen = 0;
+    g_watch_last = 0;
+    memset(g_watch_log, 0, sizeof(g_watch_log));
+}
+
+int dkr_glide_backend_watch_result(const dkr_card_watch_entry **log, int *kept)
+{
+    if (log)  { *log  = g_watch_log; }
+    if (kept) { *kept = g_watch_kept; }
+    return g_watch_seen;
+}
+
+/* Only the draws that *changed* the pixel are kept, and the batch number says
+   which they were. A scene paints seven hundred and fifty times and touches one
+   pixel three times; a log of every batch would be a log of the clear colour. */
+static void watch_after_draw(unsigned char recipe, unsigned char passes)
+{
+    unsigned now = 0;
+    if (!g_watch_armed) { return; }
+    g_watch_batch++;
+    if (!dkr_glide_read_pixel(g_watch_x, g_watch_y, &now)) { return; }
+    if ((now & 0x00FFFFFFu) != (g_watch_last & 0x00FFFFFFu)) {
+        g_watch_seen++;
+        if (g_watch_kept < DKR_CARD_WATCH_MAX) {
+            dkr_card_watch_entry *e = &g_watch_log[g_watch_kept++];
+            e->batch  = g_watch_batch;
+            e->before = g_watch_last;
+            e->after  = now;
+            e->recipe = recipe;
+            e->passes = passes;
+        }
+        g_watch_last = now;
+    }
+}
+
 static void gl_begin_frame(void *self, unsigned clear_argb)
 {
+    /* The clear resets what the watch remembers: otherwise the first draw of a
+       frame reads as a change against the last pixel of the previous one. */
+    if (g_watch_armed) { g_watch_last = clear_argb & 0x00FFFFFFu; }
     (void)self;
     b.triangles = 0;
     {
@@ -1685,6 +1756,7 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                               int count)
 {
     const unsigned long prepass_before = b.prepass_drawn;
+    const unsigned long pass2_before = b.pass2_drawn;
     int i;
     (void)self;
     if (!vertices || count <= 0) { return; }
@@ -1731,6 +1803,13 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
             b.has_state = 0;
             gl_set_state(0, &saved);
         }
+    }
+    if (g_watch_armed) {
+        watch_after_draw((unsigned char)b.current.recipe,
+                         (unsigned char)(((b.prepass_drawn != prepass_before)
+                                            ? 1u : 0u) |
+                                         ((b.pass2_drawn != pass2_before)
+                                            ? 2u : 0u)));
     }
 }
 

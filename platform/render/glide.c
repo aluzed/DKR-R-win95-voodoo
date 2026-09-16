@@ -486,6 +486,50 @@ int dkr_glide_read_backbuffer(unsigned *out, int max_pixels,
     return read_buffer(GR_BUFFER_BACKBUFFER, out, max_pixels, width, height);
 }
 
+/* One pixel of the buffer being drawn into, for a witness that reads between
+   draws.
+ *
+ * `read_buffer` walks the whole frame, which is right when the frame is the
+ * answer and ruinous when it is asked after every draw of a scene: seven hundred
+ * and fifty reads of three hundred thousand pixels each, to keep seven hundred
+ * and fifty values. This locks, converts one, and unlocks.
+ *
+ * The **back** buffer, always: the witness reads before presenting, so what it
+ * wants is the buffer the card is drawing into, and reading the front one would
+ * answer about the previous frame. */
+int dkr_glide_read_pixel(int x, int y, unsigned *out)
+{
+    GrLfbInfo_t info;
+    const unsigned short *row;
+    unsigned short p;
+    unsigned r, gg, b;
+
+    if (!g.context_open || !g.lfb_lock || !g.lfb_unlock || !out) { return 0; }
+    if (x < 0 || y < 0 || x >= g.ctx.width || y >= g.ctx.height) { return 0; }
+    if (g.idle) { g.idle(); }
+
+    memset(&info, 0, sizeof(info));
+    info.size = (int)sizeof(info);
+    if (!g.lfb_lock(GR_LFB_READ_ONLY, GR_BUFFER_BACKBUFFER,
+                    GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, 0, &info) ||
+        !info.lfbPtr) {
+        return 0;
+    }
+    row = (const unsigned short *)((const unsigned char *)info.lfbPtr +
+                                   (size_t)y * info.strideInBytes);
+    p = row[x];
+    g.lfb_unlock(GR_LFB_READ_ONLY, GR_BUFFER_BACKBUFFER);
+
+    r  = (unsigned)((p >> 11) & 0x1F);
+    gg = (unsigned)((p >>  5) & 0x3F);
+    b  = (unsigned)( p        & 0x1F);
+    *out = 0xFF000000u |
+           (((r << 3) | (r >> 2)) << 16) |
+           (((gg << 2) | (gg >> 4)) <<  8) |
+            ((b << 3) | (b >> 2));
+    return 1;
+}
+
 /* --- Hooks for the backend layer --------------------------------------------- */
 
 void *dkr_glide_symbol(const char *decorated_name)

@@ -342,6 +342,33 @@ static const char *reject_name(unsigned char why)
     }
 }
 
+#ifdef DKR_HAVE_GLIDE
+/* The card's half of the same question. Printed in the same shape as
+   `say_probe`, so that the two logs read side by side: which draw changed the
+   pixel, from what to what, and whether the configuration's extra passes ran. */
+static void say_card_watch(int x, int y)
+{
+    const dkr_card_watch_entry *log = 0;
+    int kept = 0, i;
+    const int seen = dkr_glide_backend_watch_result(&log, &kept);
+
+    if (seen == 0) {
+        say("  card probe (%d,%d): no draw changed this pixel\n", x, y);
+        return;
+    }
+    say("  card probe (%d,%d): %d draw(s) changed it%s\n", x, y, seen,
+        (kept < seen) ? ", the first few:" : ":");
+    for (i = 0; i < kept; i++) {
+        say("    batch %-5lu 0x%06X -> 0x%06X  recipe=%-3u%s%s\n",
+            log[i].batch,
+            log[i].before & 0x00FFFFFFu, log[i].after & 0x00FFFFFFu,
+            (unsigned)log[i].recipe,
+            (log[i].passes & 1u) ? "  pre-pass" : "",
+            (log[i].passes & 2u) ? "  second pass" : "");
+    }
+}
+#endif /* DKR_HAVE_GLIDE */
+
 static void say_probe(int x, int y)
 {
     const dkr_probe_write *log = 0;
@@ -840,8 +867,10 @@ int main(int argc, char **argv)
                 }
             }
 
+            if (probe_on) { dkr_glide_backend_watch(probe_x, probe_y); }
             run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha, &cc);
             say_counts("card", &cc);
+            if (probe_on) { say_card_watch(probe_x, probe_y); }
             {
                 unsigned long d = 0, id = 0, un = 0, bl = 0, sh = 0;
                 dkr_glide_backend_pass2_stats(&d, &id, &un, &bl, &sh);

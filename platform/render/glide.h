@@ -160,6 +160,9 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
  * timing out. Keep preferring it for measurement all the same -- it answers "what
  * did the card draw" without depending on when the flip happens -- and keep the
  * front-buffer read for "what is the player being shown". */
+/* One pixel of the back buffer, converted like the rest. For a witness that
+   reads between draws, where walking the whole frame each time is ruinous. */
+int dkr_glide_read_pixel(int x, int y, unsigned *out);
 int dkr_glide_read_backbuffer(unsigned *out, int max_pixels,
                               int *width, int *height);
 
