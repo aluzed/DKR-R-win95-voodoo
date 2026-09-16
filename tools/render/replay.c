@@ -920,8 +920,10 @@ int main(int argc, char **argv)
                     " unsupported=%lu\n", d, sh, bl, id, un);
                 say("  first cycle in two blends: drawn=%lu refused"
                     " (alpha test)=%lu | texel-alone: drawn=%lu"
-                    " | whole cycle in three: drawn=%lu\n", pd, pa, ta,
-                    dkr_glide_backend_shade_exact());
+                    " | whole cycle in three: drawn=%lu refused"
+                    " (primitive not black)=%lu\n", pd, pa, ta,
+                    dkr_glide_backend_shade_exact(),
+                    dkr_glide_backend_shade_exact_prim());
                 /* **What the card was actually asked to draw.** Every other
                    count on this line comes from the decoder, which is the same
                    code in both backends and therefore cannot disagree; this one

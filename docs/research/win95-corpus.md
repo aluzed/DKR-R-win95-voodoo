@@ -393,3 +393,30 @@ neighbour will forgive a genuine one-pixel error as readily as a fill-rule
 difference, so `real` is a *lower bound* on what is wrong and `tail` an upper one.
 The truth is between them, and both are worth keeping: the tail is what a
 regression moves first, and the real column is what is worth chasing.
+
+## The real column is a lower bound, and the honest answer is a curve
+
+The neighbour test forgives a divergent pixel when the card's value matches some
+oracle pixel among its **eight** neighbours, and that radius is a choice. Widening
+it on what `CAP0800` has left, after the three-blend expansion of 16 September:
+
+    tail                967
+    forgiven within  1 px   real 491     <- the "real" column
+                     2 px        346
+                     3 px        249
+                     4 px        161
+                     6 px         79
+                     8 px         45
+                    12 px         35
+
+Two things fall out of that shape. Not one of the 967 has a wholly divergent
+three-by-three neighbourhood any more - before the expansion, 221 did - so every
+survivor is a thin structure rather than a filled area, which is what a boundary
+that falls a pixel or two out of place looks like. And the curve does not reach
+zero: **thirty-five pixels have no matching oracle value anywhere within twelve**,
+and those are the ones that cannot be explained by where an edge fell.
+
+The lesson is about the instrument, not the scene: a single radius turns a curve
+into a number and then the number gets argued about. 491 is the lower bound at
+the radius the table uses, 35 is the lower bound at a radius no fill rule
+survives, and both belong in the record.

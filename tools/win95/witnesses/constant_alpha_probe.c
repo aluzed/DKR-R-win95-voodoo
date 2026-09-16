@@ -1367,6 +1367,63 @@ int main(void)
         dkr_glide_backend_depth_mode(1);
     }
 
+    /* --- `OTHER_CONSTANT`, the last value in the backend never read back ------- *
+     *
+     * `prepass_shade_exact` computes a whole two-cycle configuration in three
+     * frame-buffer blends, and it is confined to a black primitive because the
+     * fourth pass the general case needs has the colour `P x (1 - k)` - the
+     * constant scaled by one minus the iterated colour, per channel. That wants
+     * `other` to be the constant register, and `GR_COMBINE_OTHER_CONSTANT` is the
+     * one enumeration value this backend would program and has never exercised.
+     * `pass2_draw_by_shade` says so in a comment and arranges its product the
+     * other way round to avoid it.
+     *
+     * The same shape as the factor sweep above: the local is the iterated colour
+     * with its red swept, `other` is the constant, and `SCALE_OTHER` makes the
+     * red channel the product and nothing else.
+     *
+     *     factor            expected red, constant red = 204
+     *     LOCAL             204 L / 255
+     *     ONE_MINUS_LOCAL   204 (255 - L) / 255
+     *     ONE               204
+     *
+     * A flat 0 or a flat 255 says the value is not what the table says, and the
+     * fourth pass would have to be built another way.
+     */
+    say("\n-- OTHER_CONSTANT: the constant as the combiner's `other` input\n");
+    say("   %-6s %s\n", "factor", "L=0  51 102 153 204 255   (constant red 204)");
+    {
+        const int cands[3] = { 0x01, 0x09, 0x08 };
+        int ci;
+        st.blend = DKR_BLEND_OPAQUE;
+        st.texture = tex1555;
+        for (ci = 0; ci < 3; ci++) {
+            int reds[6], k2;
+            for (k2 = 0; k2 < 6; k2++) {
+                memset(&r, 0, sizeof(r));
+                r.cc_function = FN_SCALE_OTHER;
+                r.cc_factor   = (unsigned char)cands[ci];
+                r.cc_local    = LOCAL_ITERATED;
+                r.cc_other    = 2;          /* GR_COMBINE_OTHER_CONSTANT */
+                r.ac_function = FN_LOCAL;   r.ac_factor = FAC_ONE;
+                r.ac_local    = LOCAL_ITERATED; r.ac_other = OTHER_ITERATED;
+                r.tc_function = TEXCOMB_DECAL;  r.tc_factor = 0;
+                r.uses_texture = 0;
+                reds[k2] = draw_and_read_red_local(&bk, &st, tex1555, &r,
+                                                   0xFFCC8844u, 255.0f,
+                                                   (float)SWEEP[k2]);
+            }
+            say("   0x%02X   %3d %3d %3d %3d %3d %3d   %s\n", cands[ci],
+                reds[0], reds[1], reds[2], reds[3], reds[4], reds[5],
+                (reds[0] < 20 && reds[5] > 185 && reds[5] < 225)
+                    ? "the constant x the local" :
+                (reds[0] > 185 && reds[0] < 225 && reds[5] < 20)
+                    ? "the constant x one minus the local" :
+                (reds[0] > 185 && reds[0] < 225 && reds[5] > 185 && reds[5] < 225)
+                    ? "the constant, whole" : "** not the constant **");
+        }
+    }
+
     /* --- What the numbers say ------------------------------------------------- */
     say("\n-- reading\n");
     {

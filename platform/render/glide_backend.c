@@ -338,6 +338,7 @@ static struct {
     unsigned long    prepass_alpha_test;/* refused: a cutout is in force */
     unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
     unsigned long    shade_exact;       /* whole two-cycle result in three blends */
+    unsigned long    shade_exact_prim;  /* refused it: the primitive is not black */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -1756,8 +1757,12 @@ static int shade_exact_wanted(const dkr_render_state *st)
     if (prepass_shape(e) != PREPASS_PRIM_TO_TEXEL) { return 0; }
     if (pass2_wanted(st) != PASS2_BY_SHADE) { return 0; }
     /* The primitive has to be black, or the term the card cannot form yet is not
-       zero. */
-    if ((st->constant_color & 0x00FFFFFFu) != 0u) { return 0; }
+       zero. Counted, because "the general case is not built" and "the general
+       case never arises" are different facts and only a number separates them. */
+    if ((st->constant_color & 0x00FFFFFFu) != 0u) {
+        b.shade_exact_prim++;
+        return 0;
+    }
     return 1;
 }
 
@@ -2483,6 +2488,11 @@ void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity
 unsigned long dkr_glide_backend_shade_exact(void)
 {
     return b.shade_exact;
+}
+
+unsigned long dkr_glide_backend_shade_exact_prim(void)
+{
+    return b.shade_exact_prim;
 }
 
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,

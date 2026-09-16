@@ -530,6 +530,9 @@ void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
    two-cycle configuration under the state's own blend. See
    `prepass_shade_exact`. */
 unsigned long dkr_glide_backend_shade_exact(void);
+/* How many draws wanted that path and were refused it because the primitive is
+   not black - which is what says whether the general case is worth building. */
+unsigned long dkr_glide_backend_shade_exact_prim(void);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
 /* --- The card's own probe ---------------------------------------------------- *
  *
