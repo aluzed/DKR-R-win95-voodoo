@@ -794,17 +794,21 @@ static int watch_covers(const dkr_render_vertex *v, int count)
    not. A scene paints seven hundred and fifty times and covers any one pixel a
    handful of them; a log of every batch would be a log of the clear colour, and
    a log of only the changes is what left the last run without its answer. */
-static void watch_after_draw(unsigned char recipe, unsigned char passes,
-                             const dkr_render_vertex *vertices, int count)
+/* Whether the batch being drawn covers the point. Set once, at the top of
+   `gl_draw_triangles`, so that each physical pass can record without repeating
+   the geometry test - and so that a pass which draws nothing still leaves a
+   line, which is the whole point of reading between them. */
+static int g_watch_covered;
+
+static void watch_record(unsigned char recipe, unsigned char passes,
+                         unsigned char pass)
 {
     unsigned now = 0;
-    int covered, changed;
+    int changed;
     if (!g_watch_armed) { return; }
-    g_watch_batch++;
-    covered = watch_covers(vertices, count);
     if (!dkr_glide_read_pixel(g_watch_x, g_watch_y, &now)) { return; }
     changed = (now & 0x00FFFFFFu) != (g_watch_last & 0x00FFFFFFu);
-    if (!changed && !covered) { return; }
+    if (!changed && !g_watch_covered) { return; }
     g_watch_seen++;
     if (g_watch_kept < DKR_CARD_WATCH_MAX) {
         dkr_card_watch_entry *e = &g_watch_log[g_watch_kept++];
@@ -813,12 +817,28 @@ static void watch_after_draw(unsigned char recipe, unsigned char passes,
         e->after      = now;
         e->recipe     = recipe;
         e->passes     = passes;
-        e->covered    = (unsigned char)covered;
+        e->covered    = (unsigned char)g_watch_covered;
+        e->pass       = pass;
         e->blend      = (unsigned char)b.current.blend;
         e->depth      = (unsigned char)b.current.depth;
         e->alpha_test = (unsigned char)b.current.alpha_test;
     }
     g_watch_last = now;
+}
+
+/* Called from inside a multipass configuration, after each physical pass. */
+static void watch_pass(unsigned char pass)
+{
+    if (!g_watch_armed || !g_watch_covered) { return; }
+    watch_record((unsigned char)b.current.recipe, 0, pass);
+}
+
+static void watch_after_draw(unsigned char recipe, unsigned char passes,
+                             const dkr_render_vertex *vertices, int count)
+{
+    (void)vertices; (void)count;
+    if (!g_watch_armed) { return; }
+    watch_record(recipe, passes, DKR_CARD_PASS_DRAW);
 }
 
 static void gl_begin_frame(void *self, unsigned clear_argb)
@@ -1577,6 +1597,7 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
        is the one that may write. */
     apply_depth(b.current.depth);
     pass2_geometry(vertices, count);
+    watch_pass(DKR_CARD_PASS_PRE_A);
 
     /* B: the texel over it, by the vertex alpha. */
     gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
@@ -1590,6 +1611,7 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
     }
     if (gs.depth_mask) { gs.depth_mask(0); }
     pass2_geometry(vertices, count);
+    watch_pass(DKR_CARD_PASS_PRE_B);
 
     b.prepass_drawn++;
 }
@@ -1622,6 +1644,7 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
     gs.blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_COLOR,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     pass2_geometry(vertices, count);
+    watch_pass(DKR_CARD_PASS_SHADE_A);
 
     /* B: dst += ENV * shade.
      *
@@ -1637,6 +1660,7 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
     gs.blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     pass2_geometry(vertices, count);
+    watch_pass(DKR_CARD_PASS_SHADE_B);
 
     b.pass2_drawn++;
     b.pass2_by_shade++;
@@ -1799,6 +1823,10 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     int i;
     (void)self;
     if (!vertices || count <= 0) { return; }
+    if (g_watch_armed) {
+        g_watch_batch++;
+        g_watch_covered = watch_covers(vertices, count);
+    }
     /* `dkr_render_vertex` has `GrVertex`'s layout, field for field —
        `backend_layout_check.c` checks it at compile time. The hand-off therefore
        needs no conversion and no copy, which was the whole point of this

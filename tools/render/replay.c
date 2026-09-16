@@ -343,6 +343,23 @@ static const char *reject_name(unsigned char why)
 }
 
 #ifdef DKR_HAVE_GLIDE
+/* Which physical pass a reading was taken after. A multipass configuration is
+   four draws on the card and one in the oracle. */
+static const char *card_pass_name(unsigned char p)
+{
+    switch (p) {
+    case DKR_CARD_PASS_DRAW:    return "draw";
+    case DKR_CARD_PASS_PRE_A:   return "pre-A";
+    case DKR_CARD_PASS_PRE_B:   return "pre-B";
+    case DKR_CARD_PASS_SHADE_A: return "shade-A";
+    case DKR_CARD_PASS_SHADE_B: return "shade-B";
+    case DKR_CARD_PASS_TEXEL_A: return "texel-A";
+    case DKR_CARD_PASS_TEXEL_B: return "texel-B";
+    case DKR_CARD_PASS_ENV:     return "env";
+    default:                    return "?";
+    }
+}
+
 /* The card's half of the same question. Printed in the same shape as
    `say_probe`, so that the two logs read side by side: which draw changed the
    pixel, from what to what, and whether the configuration's extra passes ran. */
@@ -359,10 +376,11 @@ static void say_card_watch(int x, int y)
     say("  card probe (%d,%d): %d draw(s) changed it%s\n", x, y, seen,
         (kept < seen) ? ", the first few:" : ":");
     for (i = 0; i < kept; i++) {
-        say("    batch %-5lu %-9s 0x%06X -> 0x%06X  recipe=%-3u"
+        say("    batch %-5lu %-9s %-9s 0x%06X -> 0x%06X  recipe=%-3u"
             " blend=%u depth=%u alpha=%u%s%s\n",
             log[i].batch,
             log[i].covered ? "covers" : "elsewhere",
+            card_pass_name(log[i].pass),
             log[i].before & 0x00FFFFFFu, log[i].after & 0x00FFFFFFu,
             (unsigned)log[i].recipe,
             (unsigned)log[i].blend, (unsigned)log[i].depth,

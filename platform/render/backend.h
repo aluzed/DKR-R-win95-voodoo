@@ -538,6 +538,18 @@ void dkr_glide_backend_bind(dkr_texture_handle handle);
  * the card refused a draw or drew it to a different colour. */
 #define DKR_CARD_WATCH_MAX 64
 
+/* Which physical pass the reading was taken after. A multipass configuration is
+   four draws on the card and one in the oracle, and "the card kept nothing of
+   this draw" says nothing about which of the four kept nothing. */
+#define DKR_CARD_PASS_DRAW       0   /* the ordinary draw, or the end of a batch */
+#define DKR_CARD_PASS_PRE_A      1   /* prepass_draw: the constant, opaque */
+#define DKR_CARD_PASS_PRE_B      2   /* prepass_draw: the texel over it */
+#define DKR_CARD_PASS_SHADE_A    3   /* pass2_draw_by_shade: dst *= 1 - shade */
+#define DKR_CARD_PASS_SHADE_B    4   /* pass2_draw_by_shade: dst += ENV x shade */
+#define DKR_CARD_PASS_TEXEL_A    5   /* prepass_draw_texel_alone, first */
+#define DKR_CARD_PASS_TEXEL_B    6   /* prepass_draw_texel_alone, second */
+#define DKR_CARD_PASS_ENV        7   /* pass2_draw */
+
 typedef struct {
     unsigned long batch;    /* which logical draw of the frame */
     unsigned      before;
@@ -545,6 +557,7 @@ typedef struct {
     unsigned char recipe;
     unsigned char passes;   /* bit 0 pre-pass, bit 1 second pass */
     unsigned char covered;  /* the point lies inside a triangle of this batch */
+    unsigned char pass;     /* DKR_CARD_PASS_*: which physical pass wrote this */
     unsigned char blend;
     unsigned char depth;
     unsigned char alpha_test;
