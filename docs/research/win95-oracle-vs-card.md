@@ -889,3 +889,35 @@ The expected payoff has not moved: three per cent of one configuration's fill,
 in a scene whose whole remaining tail is 980 real pixels. The measurement is
 worth more than the fix it enables — it closes a hole in the table every
 generated setup is built on.
+## Taking the alpha from the mux instead of the vertex: measured, and worse
+
+`G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2` takes its alpha from
+`TEXEL0_ALPHA` and multiplies by `PRIMITIVE_ALPHA`; its generated setup takes
+`texel x iterated alpha` instead, because the one constant register was spoken
+for by the environment. Where the vertex alpha is low and the primitive's is
+full, the card would blend away a sprite the RDP paints solid — which is the
+shape of the two blocks left in `CAP0800`.
+
+The register is not always spoken for: this configuration's *colour* reads
+`LOCAL_ITERATED` over `OTHER_TEXTURE` and never touches the constant, so its
+alpha byte is free for `alpha_scale`. That was written — the setup copied, its
+`ac_local` moved to `LOCAL_CONSTANT`, the constant's alpha replaced — and
+measured:
+
+    CAP0800   1,570 -> 1,570      unchanged
+    CAP0150      36 ->    36      unchanged
+    CG0060      753 ->   753      unchanged
+    CAP0250     450 ->   562      **worse by 112**
+
+Reverted. Two readings, and the second is the useful one.
+
+The change is inert on `CAP0800` because those draws carry `alpha_scale` 255:
+`texel x 255` is `texel`, which is what the vertex path already delivered there,
+so the vertex alpha was **not** low at those pixels and the hypothesis about them
+is dead. And where the change does act, on the hub, the generated setup's choice
+is the better one — the vertex alpha is closer to the mux's answer there than
+`alpha_scale` is.
+
+So the two blocks of near black are still unexplained, and the list of what they
+are not is now: not a missing draw, not a missing upload, not a missing texture,
+not the alpha source, not the second pass's composition order.
