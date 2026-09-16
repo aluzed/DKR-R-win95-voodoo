@@ -337,6 +337,8 @@ static struct {
     unsigned long    prepass_drawn;     /* first cycles done in two blends */
     unsigned long    prepass_alpha_test;/* refused: a cutout is in force */
     unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
+    unsigned long    prepass_blended;   /* refused: the state blends, and this
+                                           shape's first pass replaces */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -1332,6 +1334,36 @@ static int prepass_wanted(const dkr_render_state *st)
         b.prepass_alpha_test++;
         return 0;
     }
+    /* **Not over a destination this draw is supposed to blend with.**
+     *
+     * `prepass_draw`'s first pass lays the constant down with `ONE / ZERO` - an
+     * opaque replacement - whatever the state's blend says, and the three passes
+     * after it work on what that left. Where the state blends, the destination is
+     * gone before anything can blend with it: the pair computes
+     * `(C a + dst(1-a))(1-k) + E k` at best, and in this first pass it does not
+     * even do that - it computes `C`, full stop.
+     *
+     * The same objection is recorded a few lines above against
+     * `PREPASS_TEXEL_ALONE`, which was measured four to eighteen times worse for
+     * exactly this reason and left out. That note ends "it could be gated on an
+     * opaque first pass, where the two do agree. That was not measured, so it is
+     * not written." It is measured now, and on the shape that *was* written.
+     *
+     * The card's own probe, at (268,172) of the attract sequence, where the
+     * oracle leaves white and the card paints (41,24,41):
+     *
+     *     batch 558  pre-A    0xFFFFFF -> 0x000000   blend=alpha, vertex a ~ 35%
+     *                pre-B    0x000000 -> 0x392039
+     *                shade-A  0x392039 -> 0x311C31
+     *                shade-B  0x311C31 -> 0x291829
+     *
+     * The white is destroyed by the first pass and never comes back. Refused and
+     * counted; the ordinary draw then applies, which is approximate but does at
+     * least blend. */
+    if (shape == PREPASS_PRIM_TO_TEXEL && st->blend != DKR_BLEND_OPAQUE) {
+        b.prepass_blended++;
+        return 0;
+    }
     return shape;
 }
 
@@ -2315,6 +2347,11 @@ void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity
     if (unsupported) { *unsupported = b.pass2_unsupported; }
     if (blend)       { *blend       = b.pass2_blend; }
     if (by_shade)    { *by_shade    = b.pass2_by_shade; }
+}
+
+unsigned long dkr_glide_backend_prepass_blended(void)
+{
+    return b.prepass_blended;
 }
 
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,
