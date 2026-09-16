@@ -46,14 +46,34 @@
 
 static FILE *g_out;
 
+/* --- Bounded, and wide enough for a paragraph -------------------------------- *
+ *
+ * This wrote through `vsprintf` into 320 bytes. The readings at the end of this
+ * file grew past that - one of them is 505 characters - and the overflow smashed
+ * the stack after every measurement had been taken and before the file was
+ * closed. Windows 95 leaves an unclosed file's directory entry at zero length,
+ * so from the host the run read as an empty file with no output at all, three
+ * times over on 16 September 2026, while the console window on the screen held
+ * the whole thing.
+ *
+ * `vsnprintf` cannot do that, whatever anyone writes here next. */
 static void say(const char *fmt, ...)
 {
-    char line[320];
+    char line[1024];
     va_list ap;
     va_start(ap, fmt);
-    vsprintf(line, fmt, ap);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    line[sizeof(line) - 1] = '\0';
     va_end(ap);
     if (g_out) { fputs(line, g_out); fflush(g_out); }
+    /* **And to the console, which survives a fault.** Windows 95 leaves a file's
+       directory entry at zero length until it is closed, so a run that faults
+       reads back from the host as an empty file however carefully it flushed -
+       measured three times over on 16 September 2026. The console window is
+       still on the screen when the fault box appears, and a screenshot reads
+       it. */
+    fputs(line, stdout);
+    fflush(stdout);
 }
 
 /* --- The Glide values, as `glide_backend.c` holds them ----------------------- *
@@ -275,6 +295,14 @@ int main(void)
     int fails = 0;
 
     g_out = fopen("D:\\CONSTA.TXT", "w");
+    /* **Unbuffered, so that a fault still says how far it got.**
+     *
+     * `say` flushes each line, but the C library's flush leaves the data in the
+     * file system's cache and the directory entry's size at zero until the file
+     * is closed - so a run that faults reads back as an empty file from the
+     * host, which is the one case where its output matters most. Measured on 16
+     * September 2026: three faulting runs in a row, each of them silent. */
+    if (g_out) { setvbuf(g_out, 0, _IONBF, 0); }
     say("the source alpha, when the local is the constant register\n\n");
 
     build_textures();
@@ -1120,8 +1148,19 @@ int main(void)
             "   alpha to carry `alpha_scale` scales the lerp with it.\n");
     }
 
-    bk.close(bk.self);
+    /* **The file is closed before the card is.**
+     *
+     * Windows 95 leaves a directory entry at zero length until the file is
+     * closed, so anything that faults between the last measurement and
+     * `fclose` takes the whole run's output with it - and on 16 September 2026
+     * something in `bk.close` did exactly that, three runs in a row, each of
+     * which had in fact measured everything. The console still had the text; the
+     * host read an empty file.
+     *
+     * Closing first costs nothing and makes the instrument survive the
+     * instrument's own exit. */
     say("\n%d control failure(s)\n", fails);
-    if (g_out) { fclose(g_out); }
+    if (g_out) { fclose(g_out); g_out = 0; }
+    bk.close(bk.self);
     return fails != 0;
 }
