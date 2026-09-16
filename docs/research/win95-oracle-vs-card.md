@@ -860,3 +860,32 @@ Expected payoff, stated before the work rather than after: small. The whole
 remaining tail of that scene is 1,570 pixels of which 980 are real, and this
 configuration's error is confined to the three per cent of its fill that is not
 opaque.
+
+
+## `ONE_MINUS_LOCAL` exists, and it is 0x09
+
+The by-shade note above ends on a question the witness could not answer: whether
+any factor delivers `1 - local` per channel, which is what a first pass would
+need to carry `1 - shade` when its colour comes from the vertex. The sweep that
+read five values as "one" could not have answered it — it used a cyan local,
+whose red is zero, and `1 - local` is one there as well.
+
+With the local's red swept instead, and `other` still the white texel:
+
+    factor   L=0  51 102 153 204 255
+    0x01       0  49  99 148 198 255    the local, per channel
+    0x09     255 198 148  99  49   0    one minus the local, per channel
+    0x05, 0x08, 0x0E, 0x0F              one
+
+So the factor exists, at the value Glide's canonical table gives it, and the
+by-shade pair is implementable: `SCALE_OTHER / ONE_MINUS_LOCAL / LOCAL_ITERATED /
+OTHER_TEXTURE` computes `T x (1 - shade)` in one stage. What remains before
+writing it is the other half — the first pass of that class is itself a
+decomposition (`prepass_draw`, the `PRIMITIVE` to `TEXEL0` lerp), so the scalar
+has to reach a pair rather than a single stage, and the alpha test still reads
+the value the second pass would want to change.
+
+The expected payoff has not moved: three per cent of one configuration's fill,
+in a scene whose whole remaining tail is 980 real pixels. The measurement is
+worth more than the fix it enables — it closes a hole in the table every
+generated setup is built on.

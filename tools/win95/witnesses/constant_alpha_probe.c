@@ -1081,6 +1081,48 @@ int main(void)
         }
     }
 
+    /* --- `ONE` against `ONE_MINUS_LOCAL`, which the first sweep could not tell - *
+     *
+     * That sweep read 0x05, 0x08, 0x09, 0x0E and 0x0F all as **one**, and could
+     * not have read them otherwise: it used a cyan local, whose red is zero, and
+     * `1 - local` is one there too. Any factor reading the local's colour per
+     * channel hides behind that choice.
+     *
+     * A mid-range local separates them in a single column. `other` is the white
+     * texel, `local` the iterated colour whose red is swept, the function is
+     * `SCALE_OTHER`, so the red channel is `255 x factor` and nothing else:
+     *
+     *     ONE               255 whatever the local is
+     *     ONE_MINUS_LOCAL   255 - L
+     *     LOCAL             L
+     *
+     * It decides something concrete: `pass2_draw_by_shade` wants the first
+     * pass's colour scaled by `1 - shade` per channel, and whether any factor
+     * delivers that says whether the by-shade pair can be made exact. */
+    say("\n-- ONE against ONE_MINUS_LOCAL: local red swept, texel white\n");
+    say("   %-6s %s\n", "factor", "L=0  51 102 153 204 255");
+    {
+        const int cands[6] = { 0x01, 0x05, 0x08, 0x09, 0x0E, 0x0F };
+        int ci;
+        st.blend = DKR_BLEND_OPAQUE;
+        for (ci = 0; ci < 6; ci++) {
+            int reds[6], k2;
+            for (k2 = 0; k2 < 6; k2++) {
+                setup_blend_other(&r);
+                r.cc_function = FN_SCALE_OTHER;
+                r.cc_factor   = (unsigned char)cands[ci];
+                reds[k2] = draw_and_read_red_local(&bk, &st, tex1555, &r,
+                                                   0xFF00FFFFu, 255.0f,
+                                                   (float)SWEEP[k2]);
+            }
+            say("   0x%02X   %3d %3d %3d %3d %3d %3d   %s\n", cands[ci],
+                reds[0], reds[1], reds[2], reds[3], reds[4], reds[5],
+                (reds[0] > 235 && reds[5] > 235) ? "one" :
+                (reds[0] > 235 && reds[5] < 20) ? "<- one minus the local" :
+                (reds[0] < 20 && reds[5] > 235) ? "the local" : "");
+        }
+    }
+
     /* --- What the numbers say ------------------------------------------------- */
     say("\n-- reading\n");
     {

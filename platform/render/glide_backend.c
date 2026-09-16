@@ -67,6 +67,20 @@ typedef int           FxBool;
    a measurement that did not cover the case. */
 #define GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA 0xB
 
+/* Measured 16 September 2026 by `constant_alpha_probe.c`, with `other` driven
+   from the **texture** and the local's red swept - the configuration the game
+   draws in, and the one the earlier sweeps could not read because they used a
+   local whose red was zero, where `local` and `1 - local` are both one:
+
+       0x01   0  49  99 148 198 255    the local, per channel
+       0x09 255 198 148  99  49   0    one minus the local, per channel
+       0x05, 0x08, 0x0E, 0x0F          one
+
+   `ONE_MINUS_LOCAL` is what a first pass needs to carry `1 - shade` when its
+   colour comes from the vertex - see the by-shade note in the research file. */
+#define GR_COMBINE_FACTOR_LOCAL_COLOUR          0x1
+#define GR_COMBINE_FACTOR_ONE_MINUS_LOCAL       0x9
+
 #define GR_COMBINE_LOCAL_ITERATED         0x0
 #define GR_COMBINE_LOCAL_CONSTANT         0x1
 
