@@ -456,3 +456,44 @@ one-pixel difference is a difference**, and the 492 -> 494 of `CAP0400` and the
 What is measured, then: the host replay is deterministic to the pixel - five
 captures at zero divergence, checked rather than assumed - and so, on this
 evidence, is the card.
+
+## No whole-pixel offset, and a hard core of forty-one
+
+Two questions about what the tail *is*, both answered by measurement rather than
+by argument.
+
+**Is the card's image shifted?** A rasteriser that sampled at pixel corners where
+the other samples at centres would displace every boundary and produce exactly
+this shape - many divergent pixels, all of them next to a matching one. Comparing
+each card image against the oracle's shifted by one pixel in each of the eight
+directions:
+
+    CAP0800   +0+0: 959    +0+1: 7951   -1+0: 8735   +1+0: 9224
+    CAP0250   +0+0: 449    +1+0: 12102  -1+0: 12601  +0+1: 12808
+    CG0060    +0+0: 751    +1+0: 12634  -1+0: 13523  +0+1: 17258
+
+Zero wins by a factor of ten. The two rasterisers are aligned, and whatever is
+left is **sub-pixel**.
+
+**How much of it is not that?** The neighbour test again, at a radius no fill rule
+survives - twelve pixels, where the tail's own curve has flattened:
+
+| capture | tail | no match within 12 px |
+|---|---|---|
+| `CAP0050` | 106 | 1 |
+| `CAP0150` | 36 | 0 |
+| `CAP0160` | 100 | 0 |
+| `CAP0250` | 451 | 2 |
+| `CAP0400` | 265 | 1 |
+| `CAP0800` | 960 | **27** |
+| `CG0060` | 753 | 4 |
+| `CKEY1622` | 554 | 6 |
+
+**Forty-one pixels in 2.46 million**, and two thirds of them in one scene.
+
+That is the honest shape of what is left, and it changes what is worth doing. The
+3,225 are not 3,225 defects: they are boundaries that fall a fraction of a pixel
+differently on a card with four bits of sub-pixel precision and its own fill rule,
+and no amount of combiner work will move them. The forty-one are the ones that
+cannot be explained that way, and they are what the card probe should be pointed
+at - one run each, and there are not many of them.
