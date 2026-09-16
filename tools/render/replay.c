@@ -394,6 +394,16 @@ static void say_card_watch(int x, int y)
              y >= (int)log[i].clip[1] && y < (int)log[i].clip[3])
                 ? "the point is inside it"
                 : "** the point is OUTSIDE it **");
+        if (log[i].covered && log[i].pass == DKR_CARD_PASS_DRAW) {
+            int k;
+            for (k = 0; k < 3; k++) {
+                say("                    v%d  x=%.2f y=%.2f oow=%.6f"
+                    "  rgba=%.0f,%.0f,%.0f,%.0f\n", k,
+                    log[i].tri[k][0], log[i].tri[k][1], log[i].tri[k][2],
+                    log[i].tri[k][3], log[i].tri[k][4],
+                    log[i].tri[k][5], log[i].tri[k][6]);
+            }
+        }
     }
 }
 #endif /* DKR_HAVE_GLIDE */

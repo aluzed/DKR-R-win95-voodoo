@@ -783,6 +783,8 @@ int dkr_glide_backend_watch_result(const dkr_card_watch_entry **log, int *kept)
  *
  * The test is a point in a triangle, not a bounding box: a bounding box over a
  * batch of a hundred triangles says "covered" for most of the screen. */
+static float g_watch_tri[3][7];
+
 static int watch_covers(const dkr_render_vertex *v, int count)
 {
     int t;
@@ -795,6 +797,18 @@ static int watch_covers(const dkr_render_vertex *v, int count)
         const float e2 = (a->x  - c->x)  * (py - c->y)  - (a->y  - c->y)  * (px - c->x);
         if ((e0 >= 0.0f && e1 >= 0.0f && e2 >= 0.0f) ||
             (e0 <= 0.0f && e1 <= 0.0f && e2 <= 0.0f)) {
+            const dkr_render_vertex *tri[3];
+            int k;
+            tri[0] = a; tri[1] = bv; tri[2] = c;
+            for (k = 0; k < 3; k++) {
+                g_watch_tri[k][0] = tri[k]->x;
+                g_watch_tri[k][1] = tri[k]->y;
+                g_watch_tri[k][2] = tri[k]->oow;
+                g_watch_tri[k][3] = tri[k]->r;
+                g_watch_tri[k][4] = tri[k]->g;
+                g_watch_tri[k][5] = tri[k]->b;
+                g_watch_tri[k][6] = tri[k]->a;
+            }
             return 1;
         }
     }
@@ -832,6 +846,7 @@ static void watch_record(unsigned char recipe, unsigned char passes,
         e->pass       = pass;
         e->clip[0]    = (short)g_clip[0]; e->clip[1] = (short)g_clip[1];
         e->clip[2]    = (short)g_clip[2]; e->clip[3] = (short)g_clip[3];
+        if (g_watch_covered) { memcpy(e->tri, g_watch_tri, sizeof(e->tri)); }
         e->blend      = (unsigned char)b.current.blend;
         e->depth      = (unsigned char)b.current.depth;
         e->alpha_test = (unsigned char)b.current.alpha_test;

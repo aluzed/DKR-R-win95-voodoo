@@ -559,6 +559,12 @@ typedef struct {
     unsigned char covered;  /* the point lies inside a triangle of this batch */
     unsigned char pass;     /* DKR_CARD_PASS_*: which physical pass wrote this */
     short         clip[4];  /* the clip window in force: x0 y0 x1 y1 */
+    /* The triangle of the batch that covers the point, as the card was handed
+       it: x, y, oow, r, g, b, a for each of its three vertices. Only filled when
+       `covered`. It is the last thing left to look at when a covered pixel,
+       inside the clip window, with no alpha test and an opaque blend, comes back
+       from four passes exactly as it went in. */
+    float         tri[3][7];
     unsigned char blend;
     unsigned char depth;
     unsigned char alpha_test;
