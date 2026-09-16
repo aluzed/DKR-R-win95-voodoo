@@ -736,3 +736,36 @@ state. The change is kept on the arithmetic and is recorded as unmeasured.
 That leaves the sky edge as the next thing to chase, and it is a narrow one: a
 single draw, a known texture, and a blend that demonstrably is not the one the
 state names.
+## How far the `(1 - e)` fold reaches, and why it does not matter
+
+`gl_set_state` folds `1 - e` into the **constant's** colour, which reaches every
+configuration whose first pass reads `LOCAL_CONSTANT`. `G_CC_MODULATEIDECALA`
+does not: its setup is `SCALE_OTHER / FACTOR_LOCAL / LOCAL_ITERATED /
+OTHER_TEXTURE`, the texel by the iterated colour, so the constant it never reads
+can be scaled to no effect. And that configuration paints **826,644 ppm of the
+attract sequence**, more than any other — which made this look like the next
+thing to fix.
+
+It was written: the vertex colours scaled by `1 - e` into a batch buffer, in the
+draw path, for exactly the states where the first pass reads the iterated colour
+and a second pass by the environment's alpha is coming. Measured on four scenes,
+it changed **nothing at all** — `CAP0800` 1,570, `CAP0150` 36, `CAP0250` 450,
+`CG0060` 753, every one identical.
+
+The reason is in the probe and is worth keeping. Those draws carry
+`const=0x00FFFFFF`: the environment register's **alpha is zero**, so the second
+cycle `(ENV - COMBINED) x ENV_ALPHA + COMBINED` is the identity, `pass2_wanted`
+refuses it by the guard that exists for precisely that, and no second pass is
+drawn — so there is no `1 - e` to fold. The configuration that paints most of the
+scene asks nothing of this machinery.
+
+The code was removed again rather than kept on the argument. A branch in the draw
+path and a static buffer, to serve a case no capture reaches, is the shape of
+something that rots unverified — and this repository has a file of them.
+
+What the corpus does still hold is `CAP0800`'s 980 real pixels, in two blocks
+(`x 200-240, y 160-200` and `x 280-320, y 320-360`), where the card paints near
+black — `(41,24,41)` — and the oracle paints white. They read identically in the
+images from before any of this week's work. Three recipe-3 draws touch them, two
+of which the oracle uses to build that white. That is the next thing, and it is
+not a combiner arithmetic problem: it is a draw that is not arriving.
