@@ -359,10 +359,14 @@ static void say_card_watch(int x, int y)
     say("  card probe (%d,%d): %d draw(s) changed it%s\n", x, y, seen,
         (kept < seen) ? ", the first few:" : ":");
     for (i = 0; i < kept; i++) {
-        say("    batch %-5lu 0x%06X -> 0x%06X  recipe=%-3u%s%s\n",
+        say("    batch %-5lu %-9s 0x%06X -> 0x%06X  recipe=%-3u"
+            " blend=%u depth=%u alpha=%u%s%s\n",
             log[i].batch,
+            log[i].covered ? "covers" : "elsewhere",
             log[i].before & 0x00FFFFFFu, log[i].after & 0x00FFFFFFu,
             (unsigned)log[i].recipe,
+            (unsigned)log[i].blend, (unsigned)log[i].depth,
+            (unsigned)log[i].alpha_test,
             (log[i].passes & 1u) ? "  pre-pass" : "",
             (log[i].passes & 2u) ? "  second pass" : "");
     }

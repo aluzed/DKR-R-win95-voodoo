@@ -759,27 +759,66 @@ int dkr_glide_backend_watch_result(const dkr_card_watch_entry **log, int *kept)
     return g_watch_seen;
 }
 
-/* Only the draws that *changed* the pixel are kept, and the batch number says
-   which they were. A scene paints seven hundred and fifty times and touches one
-   pixel three times; a log of every batch would be a log of the clear colour. */
-static void watch_after_draw(unsigned char recipe, unsigned char passes)
+/* **Whether the batch covers the watched point**, by the same edge functions the
+   rasteriser would use.
+ *
+ * Without it the log answers only half the question. A draw that leaves the pixel
+ * alone did one of two things - it never reached it, or it reached it and the
+ * card kept nothing - and the first reading blames the geometry while the second
+ * blames the depth test, the alpha test or the blend. The first run of this
+ * instrument ran straight into that: at (304,323) of the attract sequence the
+ * card's log stopped three draws in, and the entry that would have said which of
+ * the two was missing.
+ *
+ * The test is a point in a triangle, not a bounding box: a bounding box over a
+ * batch of a hundred triangles says "covered" for most of the screen. */
+static int watch_covers(const dkr_render_vertex *v, int count)
+{
+    int t;
+    const float px = (float)g_watch_x + 0.5f;
+    const float py = (float)g_watch_y + 0.5f;
+    for (t = 0; t + 2 < count * 3; t += 3) {
+        const dkr_render_vertex *a = &v[t], *bv = &v[t + 1], *c = &v[t + 2];
+        const float e0 = (bv->x - a->x)  * (py - a->y)  - (bv->y - a->y)  * (px - a->x);
+        const float e1 = (c->x  - bv->x) * (py - bv->y) - (c->y  - bv->y) * (px - bv->x);
+        const float e2 = (a->x  - c->x)  * (py - c->y)  - (a->y  - c->y)  * (px - c->x);
+        if ((e0 >= 0.0f && e1 >= 0.0f && e2 >= 0.0f) ||
+            (e0 <= 0.0f && e1 <= 0.0f && e2 <= 0.0f)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A draw is kept when it changed the pixel **or** when it covered it and did
+   not. A scene paints seven hundred and fifty times and covers any one pixel a
+   handful of them; a log of every batch would be a log of the clear colour, and
+   a log of only the changes is what left the last run without its answer. */
+static void watch_after_draw(unsigned char recipe, unsigned char passes,
+                             const dkr_render_vertex *vertices, int count)
 {
     unsigned now = 0;
+    int covered, changed;
     if (!g_watch_armed) { return; }
     g_watch_batch++;
+    covered = watch_covers(vertices, count);
     if (!dkr_glide_read_pixel(g_watch_x, g_watch_y, &now)) { return; }
-    if ((now & 0x00FFFFFFu) != (g_watch_last & 0x00FFFFFFu)) {
-        g_watch_seen++;
-        if (g_watch_kept < DKR_CARD_WATCH_MAX) {
-            dkr_card_watch_entry *e = &g_watch_log[g_watch_kept++];
-            e->batch  = g_watch_batch;
-            e->before = g_watch_last;
-            e->after  = now;
-            e->recipe = recipe;
-            e->passes = passes;
-        }
-        g_watch_last = now;
+    changed = (now & 0x00FFFFFFu) != (g_watch_last & 0x00FFFFFFu);
+    if (!changed && !covered) { return; }
+    g_watch_seen++;
+    if (g_watch_kept < DKR_CARD_WATCH_MAX) {
+        dkr_card_watch_entry *e = &g_watch_log[g_watch_kept++];
+        e->batch      = g_watch_batch;
+        e->before     = g_watch_last;
+        e->after      = now;
+        e->recipe     = recipe;
+        e->passes     = passes;
+        e->covered    = (unsigned char)covered;
+        e->blend      = (unsigned char)b.current.blend;
+        e->depth      = (unsigned char)b.current.depth;
+        e->alpha_test = (unsigned char)b.current.alpha_test;
     }
+    g_watch_last = now;
 }
 
 static void gl_begin_frame(void *self, unsigned clear_argb)
@@ -1809,7 +1848,8 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                          (unsigned char)(((b.prepass_drawn != prepass_before)
                                             ? 1u : 0u) |
                                          ((b.pass2_drawn != pass2_before)
-                                            ? 2u : 0u)));
+                                            ? 2u : 0u)),
+                         vertices, count);
     }
 }
 

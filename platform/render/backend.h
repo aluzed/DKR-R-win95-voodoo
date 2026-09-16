@@ -544,6 +544,10 @@ typedef struct {
     unsigned      after;
     unsigned char recipe;
     unsigned char passes;   /* bit 0 pre-pass, bit 1 second pass */
+    unsigned char covered;  /* the point lies inside a triangle of this batch */
+    unsigned char blend;
+    unsigned char depth;
+    unsigned char alpha_test;
 } dkr_card_watch_entry;
 
 void dkr_glide_backend_watch(int x, int y);
