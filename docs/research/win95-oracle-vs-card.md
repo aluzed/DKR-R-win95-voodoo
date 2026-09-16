@@ -820,3 +820,43 @@ the same textures and the same decode behind them.
 The card's own comparison, in the same log, reads 1,730 frankly different of
 which 832 on an edge — against 1,570 and 590 by the neighbour test used in
 `win95-corpus.md`. Two metrics, two thresholds, the same shape.
+
+## The by-shade second pass carries the same two errors, and 97 % of its fill hides them
+
+`G_CC_BLEND_SHADEALPHA + G_CC_BLENDI_SHADE` is the biggest second-cycle
+contributor in the attract sequence — 25,134 pixels changed by its second cycle,
+against 1,511 for the next one — and `pass2_draw_by_shade` decomposes it the way
+`pass2_draw` used to:
+
+    A:  dst *= 1 - k          src = shade,  ZERO / ONE_MINUS_SRC_COLOR
+    B:  dst += ENV x k        src = ENV x shade,  ONE / ONE
+
+with `k` the vertex colour, per channel. The RDP computes
+
+    out = [ C + (ENV - C) k ] a + dst (1 - a)
+        = C a (1 - k)  +  ENV k a  +  dst (1 - a)
+
+so the pair is wrong twice, and in the two ways already met here: the destination
+is scaled by `1 - k` where the RDP leaves it at `1 - a`, and the environment term
+is not weighted by `a` at all.
+
+**Both vanish when `a = 1`**, and that is why this has been tolerable: the fill
+report says this configuration is drawn *97 % opaque* in `CAP0800`. On an opaque
+surface `dst (1 - a)` is zero and `ENV k a` is `ENV k`, and the card's pair is
+exactly the RDP's. The error lives in the other three per cent.
+
+Fixing the second term is the smaller half: pass B needs `SRC_ALPHA / ONE` with
+the alpha unit delivering `t p`, as `pass2_draw` now does. The obstacle is the
+alpha *test*, which reads that same value and which `pass2_draw_by_shade`
+deliberately leaves as the first pass set it — a note in the file records what
+touching it cost on 8 September. Fixing the first term is harder: it wants the
+first pass's colour scaled by `1 - k` per channel, and the only factor that could
+deliver it is `GR_COMBINE_FACTOR_ONE_MINUS_LOCAL`, whose value the sweep in
+`constant_alpha_probe.c` **could not identify** — it read `0x09` as one, with a
+local whose red was zero, where `1 - local` is also one. A sweep with a mid-range
+local would separate them, and that is one run of the witness.
+
+Expected payoff, stated before the work rather than after: small. The whole
+remaining tail of that scene is 1,570 pixels of which 980 are real, and this
+configuration's error is confined to the three per cent of its fill that is not
+opaque.
