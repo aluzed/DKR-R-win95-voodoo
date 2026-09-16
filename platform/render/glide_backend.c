@@ -350,7 +350,6 @@ static struct {
     unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
     unsigned long    shade_exact;       /* whole two-cycle result in three blends */
     unsigned long    shade_exact_prim;  /* refused it: the primitive is not black */
-    unsigned long    iterated_scaled;   /* alpha scale folded into the vertex */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -2017,43 +2016,6 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
     }
 }
 
-/* --- The alpha scale the catalogue path has no room for ----------------------- *
- *
- * `alpha_scale` carries the factor the RDP's alpha mux applies and the generated
- * `ac` setup cannot express - a third operand where a stage has two. It reaches
- * the card through `apply_combine`, which puts it in the constant's alpha byte
- * and reads that byte with `LOCAL_CONSTANT`. The **catalogue** path does not: it
- * hands `set_recipe` the colour register whole, alpha byte and all, and a setup
- * whose alpha reads `LOCAL_ITERATED` never looks at the constant at all. The
- * scale is then simply dropped.
- *
- * Measured at (226,295) of the attract sequence, on both probes at once.
- * `G_CC_MODULATERGBA + G_CC_BLENDI_ENV_ALPHA_PRIM2`: cycle one is
- * `TEXEL0_ALPHA x SHADE_ALPHA`, cycle two multiplies by `PRIMITIVE_ALPHA`, which
- * is 106 of 255. The oracle blends to (173,103,136); the card takes the vertex at
- * 255 and paints (239,239,239), near white.
- *
- * The CPU puts it in the vertex alpha, which that setup does read - the same
- * division of labour as `prepass_shade_exact`'s second pass and `pass2_draw`'s
- * constant: the card multiplies what varies across the triangle, the CPU what
- * does not.
- *
- * **Narrow, and on purpose.** Only an ordinary draw, only where the setup's alpha
- * takes its local from the vertex, and only where no second pass follows - the
- * second-pass paths build their own alpha out of this same byte, and scaling the
- * vertex under them would apply it twice. */
-static unsigned char iterated_scale_wanted(const dkr_render_state *st)
-{
-    const dkr_cc_entry *e;
-    if (st->alpha_scale == 255u) { return 255u; }
-    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 255u; }
-    e = dkr_cc_table_at(st->recipe - 1);
-    if (e == 0 || !e->setup.uses_texture) { return 255u; }
-    if (e->setup.ac_local != GR_COMBINE_LOCAL_ITERATED) { return 255u; }
-    if (pass2_wanted(st) != PASS2_NONE) { return 255u; }
-    return st->alpha_scale;
-}
-
 static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
                               int count)
 {
@@ -2096,31 +2058,9 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
         } else if (shape == PREPASS_TEXEL_ALONE) {
             prepass_draw_texel_alone(vertices, count);
         } else {
-            const unsigned char scale =
-                b.has_state ? iterated_scale_wanted(&b.current) : 255u;
-            if (scale != 255u) {
-                static dkr_render_vertex tinted[PREPASS_BATCH * 3];
-                int done = 0;
-                b.iterated_scaled++;
-                while (done < count) {
-                    const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
-                                                                 : count - done;
-                    const int v = n * 3;
-                    for (i = 0; i < v; i++) {
-                        tinted[i] = vertices[done * 3 + i];
-                        tinted[i].a = tinted[i].a * (float)scale / 255.0f;
-                    }
-                    for (i = 0; i + 2 < v; i += 3) {
-                        dkr_glide_draw_raw(&tinted[i], &tinted[i + 1],
-                                           &tinted[i + 2]);
-                    }
-                    done += n;
-                }
-            } else {
-                for (i = 0; i + 2 < count * 3; i += 3) {
-                    dkr_glide_draw_raw(&vertices[i], &vertices[i + 1],
-                                       &vertices[i + 2]);
-                }
+            for (i = 0; i + 2 < count * 3; i += 3) {
+                dkr_glide_draw_raw(&vertices[i], &vertices[i + 1],
+                                   &vertices[i + 2]);
             }
         }
     }
@@ -2570,11 +2510,6 @@ unsigned long dkr_glide_backend_shade_exact(void)
 unsigned long dkr_glide_backend_shade_exact_prim(void)
 {
     return b.shade_exact_prim;
-}
-
-unsigned long dkr_glide_backend_iterated_scaled(void)
-{
-    return b.iterated_scaled;
 }
 
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,

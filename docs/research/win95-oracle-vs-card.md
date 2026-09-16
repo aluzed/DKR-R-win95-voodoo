@@ -1145,3 +1145,57 @@ finds is the shape of something that rots unverified - the argument this file
 already made when it took out the addressing widening and the env-in-vertex
 buffer. The guard stays, the counter stays, and the day a capture makes it fire
 the pass can be written against a number instead of against an argument.
+
+## The dropped alpha scale: diagnosed on both probes, and the remedy regresses the hub
+
+At (226,295) of the attract sequence - one of the thirty-five pixels no fill rule
+explains - the two probes answer the same question from both sides:
+
+    oracle  draw 6    0x800741 -> 0xAD6788  recipe=13  prim=0x6AFFFFFF ascale=255
+    card    batch 753 0x840842 -> 0xEFEFEF  recipe=13  vertex rgba 255,255,255,255
+
+`G_CC_MODULATERGBA + G_CC_BLENDI_ENV_ALPHA_PRIM2` builds its alpha in two steps:
+cycle one is `TEXEL0_ALPHA x SHADE_ALPHA`, cycle two multiplies by
+`PRIMITIVE_ALPHA`, here 106 of 255. The card draws at full strength - near white
+against the oracle's mauve.
+
+**Two things were wrong, one after the other, and the second is the interesting
+one.**
+
+`alpha_scale_of` read only `(TEXEL0 - 0) * C + 0` and answered 255 for this shape.
+Widened to take `(COMBINED - 0) * C + 0` as well, guarded against counting a
+register cycle one already reads, with two cases in `test_rdp_state.c`. The
+oracle is unmoved - all eight captures re-rendered and compared at zero divergent
+pixels - because it evaluates the real combiner and never consults the byte.
+
+And the card did not move either. **On all eight scenes, to the pixel.** The byte
+was right and nothing read it: `alpha_scale` reaches the card only through
+`apply_combine`, which puts it in the constant's alpha and reads it back with
+`LOCAL_CONSTANT`; the catalogue path hands `set_recipe` the colour register whole,
+and a setup whose alpha reads `LOCAL_ITERATED` never looks at the constant.
+
+### Folding it into the vertex: measured, and reverted
+
+The CPU can put it where that setup does look - the vertex alpha - as
+`prepass_shade_exact`'s second pass already does. Confined to an ordinary draw,
+to a setup whose alpha takes its local from the vertex, and to draws with no
+second pass behind them:
+
+    CAP0800    967 / 491  ->  960 / 483     8 draws folded
+    CKEY1622   554 /  39  ->  554 /  39     0 draws
+    CG0060     753 /  54  ->  753 /  54    18 draws, not one moved a pixel
+    CAP0250    451 /  44  ->  542 /  77    28 draws, and a clear regression
+
+Net worse, so it is out. The eight pixels it was built for are real and it wins
+them; the hub loses thirty-three.
+
+What the hub's twenty-eight draws are doing is **not diagnosed**, and the honest
+reading is that one of the two changes is wrong there and the measurement cannot
+yet say which: the widened rule may be handing those draws a scale they should not
+have, or the fold may be applying a correct scale in a place that already carries
+it by another route. Both are answerable with the card probe pointed at one of
+the hub's newly divergent pixels, which is one run and no hypothesis.
+
+The widening stays. It is correct on its own terms, it is tested, it moves neither
+backend, and it is what a correct consumer would need. An unread correct value
+costs nothing; a wrong one that something reads costs a scene.
