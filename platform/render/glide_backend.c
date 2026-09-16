@@ -337,6 +337,7 @@ static struct {
     unsigned long    prepass_drawn;     /* first cycles done in two blends */
     unsigned long    prepass_alpha_test;/* refused: a cutout is in force */
     unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
+    unsigned long    shade_exact;       /* whole two-cycle result in three blends */
     unsigned long    binds_changed;
     unsigned int     last_bound_address;
 } b;
@@ -1695,6 +1696,155 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
     b.pass2_by_shade++;
 }
 
+/* --- The whole two-cycle result, composed under the state's own blend --------- *
+ *
+ * `prepass_draw` followed by `pass2_draw_by_shade` computes the RDP's bracket
+ * and never weights it by `a`, and its first pass replaces the destination
+ * outright. Over an opaque state that is exactly right - `a` is one and there is
+ * no destination to keep - and over a blended one it destroys what it was meant
+ * to blend with. Measured, on the card's own probe, at (268,172) of the attract
+ * sequence: white to black in the first of four passes, and the three after it
+ * working on a destination that was already gone.
+ *
+ * ## The derivation
+ *
+ * For `G_CC_BLEND_SHADEALPHA + G_CC_BLENDI_SHADE` the mux computes
+ *
+ *     C   = P + (T - P) sa                  first cycle, sa = SHADE_ALPHA
+ *     a   = t p                             first cycle's alpha
+ *     out = [ C (1 - k) + ENV k ] a  +  dst (1 - a)         k = SHADE, per channel
+ *
+ * and the bracket expands into terms that are each non-negative - which matters,
+ * because a frame-buffer blend can add and cannot subtract:
+ *
+ *     out = P (1 - sa) a (1 - k)  +  T sa a (1 - k)  +  ENV k a  +  dst (1 - a)
+ *
+ * **When the primitive is black the first term vanishes**, and what is left is
+ * three passes and no enumeration value this file has not read back from the
+ * card:
+ *
+ *     A   dst *= 1 - a            ZERO / ONE_MINUS_SRC_ALPHA, alpha = t p
+ *     B   dst += T (1 - k) sa a   SRC_ALPHA / ONE
+ *     C   dst += ENV k a          SRC_ALPHA / ONE
+ *
+ * Pass B wants the product of three scalars in one alpha stage - `t`, `sa` and
+ * `p` - and a stage delivers two. `p` is a constant of the draw, so the CPU folds
+ * it into the vertex alpha and the stage computes `t x (sa p)`. That is the same
+ * division of labour as everywhere else here: the card multiplies what varies
+ * across the triangle, the CPU multiplies what does not.
+ *
+ * **The general case needs one more pass and one more measurement.** With a
+ * primitive that is not black, term one is `P p (1 - sa) (1 - k) t`, whose colour
+ * is `P x (1 - k)` - `SCALE_OTHER / ONE_MINUS_LOCAL` over `LOCAL_ITERATED` and
+ * `OTHER_CONSTANT` - and `GR_COMBINE_OTHER_CONSTANT` is the last value in this
+ * file never exercised on the card. Rather than spend an unmeasured enumeration
+ * on it, this path is taken only where the term is provably zero, and the pair
+ * keeps the rest. Every recipe-10 draw of the attract sequence has a black
+ * primitive, which is why the case is worth writing before the measurement.
+ */
+static int shade_exact_wanted(const dkr_render_state *st)
+{
+    const dkr_cc_entry *e;
+    if (!g_extra_passes) { return 0; }
+    /* Only where the pair is wrong. An opaque state has `a = 1`, the destination
+       plays no part, and the existing two passes are exact - 97 % of this
+       configuration's fill, which there is no reason to disturb. */
+    if (st->blend != DKR_BLEND_ALPHA) { return 0; }
+    if (st->alpha_test) { return 0; }
+    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
+    e = dkr_cc_table_at(st->recipe - 1);
+    if (prepass_shape(e) != PREPASS_PRIM_TO_TEXEL) { return 0; }
+    if (pass2_wanted(st) != PASS2_BY_SHADE) { return 0; }
+    /* The primitive has to be black, or the term the card cannot form yet is not
+       zero. */
+    if ((st->constant_color & 0x00FFFFFFu) != 0u) { return 0; }
+    return 1;
+}
+
+static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
+{
+    static dkr_render_vertex scaled[PREPASS_BATCH * 3];
+    const unsigned int p = (unsigned int)b.current.alpha_scale;
+    const unsigned int env = b.current.env_color & 0x00FFFFFFu;
+    int i, done = 0;
+
+    if (!gs.color_combine || !gs.alpha_combine || !gs.blend_function) { return; }
+
+    /* One constant serves all three passes: the environment in its colour, which
+       only pass C reads, and `p` in its alpha, which passes A and C read. */
+    if (gs.constant_color) { gs.constant_color((p << 24) | env); }
+
+    /* --- A: the destination, kept in the proportion the mux leaves it -------- */
+    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                     GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+                      GR_BLEND_ONE, GR_BLEND_ZERO);
+    /* This pass stands in for the ordinary draw, so it is the one that may write
+       depth; the two after it revisit the same fragments. */
+    apply_depth(b.current.depth);
+    for (i = 0; i + 2 < count * 3; i += 3) {
+        dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+    }
+    watch_pass(DKR_CARD_PASS_EXACT_A);
+
+    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
+        gs.depth_function(GR_CMP_LEQUAL);
+    }
+    if (gs.depth_mask) { gs.depth_mask(0); }
+
+    /* --- B: the texel, scaled by `1 - k`, at `t sa p` ------------------------ *
+     *
+     * The vertex alpha carries `sa p`, because one alpha stage multiplies two
+     * things and this term needs three. The batching is `prepass_draw`'s: a
+     * fixed buffer, filled in slices, so that a long list does not want a
+     * variable-length array on a machine with a 64 KiB stack. */
+    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER,
+                     GR_COMBINE_FACTOR_ONE_MINUS_LOCAL,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                     GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
+                      GR_BLEND_ONE, GR_BLEND_ZERO);
+    while (done < count) {
+        const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
+                                                     : count - done;
+        const int v = n * 3;
+        for (i = 0; i < v; i++) {
+            scaled[i] = vertices[done * 3 + i];
+            scaled[i].a = scaled[i].a * (float)p / 255.0f;
+        }
+        for (i = 0; i + 2 < v; i += 3) {
+            dkr_glide_draw_raw(&scaled[i], &scaled[i + 1], &scaled[i + 2]);
+        }
+        done += n;
+    }
+    watch_pass(DKR_CARD_PASS_EXACT_B);
+
+    /* --- C: the environment, weighted by the shade and by `a` ---------------- */
+    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                     GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
+    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                     GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
+    gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
+                      GR_BLEND_ONE, GR_BLEND_ZERO);
+    for (i = 0; i + 2 < count * 3; i += 3) {
+        dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
+    }
+    watch_pass(DKR_CARD_PASS_EXACT_C);
+
+    b.shade_exact++;
+    /* The three passes left the combiner, the blend, the depth function and the
+       mask where they put them, and the caller restores none of it for this
+       path. Restore through the door that programmed it. */
+    {
+        const dkr_render_state saved = b.current;
+        b.has_state = 0;
+        gl_set_state(0, &saved);
+    }
+}
+
 static void pass2_draw(const dkr_render_vertex *vertices, int count)
 {
     int i;
@@ -1849,7 +1999,7 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
 {
     const unsigned long prepass_before = b.prepass_drawn;
     const unsigned long pass2_before = b.pass2_drawn;
-    int i;
+    int i, exact;
     (void)self;
     if (!vertices || count <= 0) { return; }
     if (g_watch_armed) {
@@ -1863,6 +2013,19 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     /* The pre-pass **replaces** the ordinary draw: it is the first cycle, done in
        two blends because one stage cannot hold it. Drawing both would lay the
        constant over the result and waste the fill doing it. */
+    /* **The whole two-cycle result in three blends**, where the pair below would
+       destroy a destination it is meant to blend with. It subsumes both the
+       pre-pass and the second pass, so neither runs after it. */
+    exact = b.has_state ? shade_exact_wanted(&b.current) : 0;
+    if (exact) {
+        prepass_shade_exact(vertices, count);
+        b.triangles += (unsigned long)count;
+        if (g_watch_armed) {
+            watch_after_draw((unsigned char)b.current.recipe, 3u,
+                             vertices, count);
+        }
+        return;
+    }
     {
         /* Asked **once**: the guard counts its refusals, and calling it twice
            would count them twice. A counter that inflates with the shape of the
@@ -2315,6 +2478,11 @@ void dkr_glide_backend_pass2_stats(unsigned long *drawn, unsigned long *identity
     if (unsupported) { *unsupported = b.pass2_unsupported; }
     if (blend)       { *blend       = b.pass2_blend; }
     if (by_shade)    { *by_shade    = b.pass2_by_shade; }
+}
+
+unsigned long dkr_glide_backend_shade_exact(void)
+{
+    return b.shade_exact;
 }
 
 void dkr_glide_backend_prepass_stats(unsigned long *drawn,

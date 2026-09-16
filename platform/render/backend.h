@@ -526,6 +526,10 @@ const struct dkr_tmu *dkr_glide_backend_tmu(int index);
 struct dkr_cc_setup;
 void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
                                   unsigned constant_argb);
+/* How many draws took the three-blend exact path, which computes a whole
+   two-cycle configuration under the state's own blend. See
+   `prepass_shade_exact`. */
+unsigned long dkr_glide_backend_shade_exact(void);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
 /* --- The card's own probe ---------------------------------------------------- *
  *
@@ -549,6 +553,9 @@ void dkr_glide_backend_bind(dkr_texture_handle handle);
 #define DKR_CARD_PASS_TEXEL_A    5   /* prepass_draw_texel_alone, first */
 #define DKR_CARD_PASS_TEXEL_B    6   /* prepass_draw_texel_alone, second */
 #define DKR_CARD_PASS_ENV        7   /* pass2_draw */
+#define DKR_CARD_PASS_EXACT_A    8   /* prepass_shade_exact: dst *= 1 - a */
+#define DKR_CARD_PASS_EXACT_B    9   /* prepass_shade_exact: += T (1-k) sa a */
+#define DKR_CARD_PASS_EXACT_C   10   /* prepass_shade_exact: += ENV k a */
 
 typedef struct {
     unsigned long batch;    /* which logical draw of the frame */
