@@ -79,7 +79,19 @@ typedef struct {
     dkr_render_state state;
     unsigned         before;   /* what was in the buffer */
     unsigned         after;    /* what this draw left */
+    float            z;        /* the fragment's depth, as the test saw it */
+    float            depth;    /* what the depth buffer held before the test */
+    unsigned char    rejected; /* one of DKR_PROBE_KEPT..DKR_PROBE_DEPTH */
 } dkr_probe_write;
+
+/* Why a draw that reached the pixel left no colour. A rejection is recorded like
+   a write, because "the oracle painted three times" and "the oracle was offered
+   five and refused two" are different facts, and only the second one can be held
+   against a card that refuses a different number. */
+#define DKR_PROBE_KEPT     0
+#define DKR_PROBE_SCISSOR  1
+#define DKR_PROBE_ALPHA    2
+#define DKR_PROBE_DEPTH    3
 
 void dkr_software_probe(int x, int y);
 int  dkr_software_probe_result(const dkr_probe_write **log, int *kept);

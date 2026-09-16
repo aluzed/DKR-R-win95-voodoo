@@ -496,22 +496,47 @@ int dkr_software_probe_result(const dkr_probe_write **log, int *kept)
     return g_probe_writes;
 }
 
+/* One entry of the probe log, written from wherever the pixel was decided. Kept
+   in one place so that a rejection and a write record the same fields: the point
+   of the log is that the two are comparable. */
+static void probe_record(int x, int y, float z, float depth_was,
+                         unsigned before, unsigned after, unsigned char why)
+{
+    if (!g_probe_armed || x != g_probe_x || y != g_probe_y) { return; }
+    if (g_probe_writes < DKR_PROBE_WRITES) {
+        dkr_probe_write *w = &g_probe_log[g_probe_writes];
+        w->state    = g_sw.state;
+        w->before   = before;
+        w->after    = after;
+        w->z        = z;
+        w->depth    = depth_was;
+        w->rejected = why;
+    }
+    g_probe_writes++;
+}
+
 static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
 {
     const dkr_render_state *st = &g_sw.state;
     const size_t index = (size_t)y * (size_t)g_sw.width + (size_t)x;
+    const float depth_was = g_sw.depth ? g_sw.depth[index] : 1.0f;
     unsigned dst;
     float dr, dg, db;
 
     if (x < g_sw.scissor_x0 || x >= g_sw.scissor_x1 ||
         y < g_sw.scissor_y0 || y >= g_sw.scissor_y1) {
+        probe_record(x, y, z, 0.0f, 0u, 0u, DKR_PROBE_SCISSOR);
         return;
     }
     if (st->alpha_test && a < (float)st->alpha_reference) {
+        probe_record(x, y, z, g_sw.depth[index], g_sw.color[index],
+                     g_sw.color[index], DKR_PROBE_ALPHA);
         return;
     }
     if (st->depth != DKR_DEPTH_DISABLED) {
         if (z >= g_sw.depth[index]) {
+            probe_record(x, y, z, g_sw.depth[index], g_sw.color[index],
+                         g_sw.color[index], DKR_PROBE_DEPTH);
             return;
         }
         if (st->depth == DKR_DEPTH_TEST_AND_WRITE) {
@@ -583,15 +608,7 @@ static void put_pixel(int x, int y, float z, float r, float g, float b, float a)
         }
     }
 
-    if (g_probe_armed && x == g_probe_x && y == g_probe_y) {
-        if (g_probe_writes < DKR_PROBE_WRITES) {
-            dkr_probe_write *w = &g_probe_log[g_probe_writes];
-            w->state  = *st;
-            w->before = dst;
-            w->after  = g_sw.color[index];
-        }
-        g_probe_writes++;
-    }
+    probe_record(x, y, z, depth_was, dst, g_sw.color[index], DKR_PROBE_KEPT);
 }
 
 /* --- Rasterisation --------------------------------------------------------- *
