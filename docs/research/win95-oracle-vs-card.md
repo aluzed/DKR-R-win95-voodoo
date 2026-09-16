@@ -793,13 +793,29 @@ apart:
     uploads refused: none
 
 Nothing was refused for its aspect ratio, its size, a full descriptor table or
-exhausted TMU memory, and no slot was reclaimed. Why the card converts 58 where
-the oracle converts 85 is **not established here**; what is established is that
-it is not a refusal, and that no geometry went missing.
+exhausted TMU memory, and no slot was reclaimed.
 
-So the 980 are neither a missing draw nor a missing upload. That is two whole
-classes excluded, and the instrument that excluded them is in the tree: the four
-causes cost four lines to print and had never been printed.
+And the reason the card converts 58 where the oracle converts 85 is the decoder's
+own fast path, which the same report now counts:
+
+    oracle   textures=85 (resident=0  reused=0)
+    card     textures=58 (resident=27 reused=0)
+
+`f3ddkr.c` asks the backend `texture_lookup` before converting anything, and
+skips the conversion when the answer is a handle — counting `textures_resident`
+instead of `textures_loaded`. The software rasteriser offers no such service and
+converts all eighty-five; the card finds twenty-seven of them already in its
+memory. **58 + 27 = 85**: the same textures, one of the two backends simply
+doing less work for them.
+
+So the 980 are neither a missing draw, nor a missing upload, nor a missing
+texture. Three classes excluded, and the instruments that excluded them are in
+the tree: the four refusal causes and the two residency counters, each of which
+existed and none of which was ever printed.
+
+What is left to look at is narrow and stated: two blocks of the attract sequence
+where the card paints near black and the oracle white, with the same geometry,
+the same textures and the same decode behind them.
 
 The card's own comparison, in the same log, reads 1,730 frankly different of
 which 832 on an edge — against 1,570 and 590 by the neighbour test used in

@@ -96,6 +96,7 @@ typedef struct {
     unsigned long culled;
     unsigned long clipped;
     unsigned long textures;
+    unsigned long resident, reused;
     /* The stride check: see `stride_mismatch` in `f3ddkr.h`. */
     unsigned long dxt_disagrees, dxt_disagrees_texels;
     unsigned short dxt_first[8][4];
@@ -125,6 +126,8 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->culled    = ctx->state.culled;
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
+    c->resident  = ctx->state.textures_resident;
+    c->reused    = ctx->state.textures_reused;
     c->dxt_disagrees         = ctx->state.dxt_disagrees;
     c->dxt_disagrees_texels  = ctx->state.dxt_disagrees_texels;
     c->dxt_first_n           = ctx->state.dxt_first_n;
@@ -173,9 +176,9 @@ static void say_counts(const char *who, const replay_counts *c)
     const unsigned long lost = (c->triangles > accounted)
                                  ? c->triangles - accounted : 0UL;
     say("  %-8s cmd=%lu tri=%lu emitted=%lu culled=%lu clipped=%lu rejects=%lu"
-        " lost=%lu textures=%lu\n",
+        " lost=%lu textures=%lu (resident=%lu reused=%lu)\n",
         who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
-        c->rejects, lost, c->textures);
+        c->rejects, lost, c->textures, c->resident, c->reused);
     /* **The tile's row stride against the one the conversion assumes.** Printed
        beside the counts and not behind a switch: a texture read at the wrong
        stride comes out sheared, and this is the number that says whether any
