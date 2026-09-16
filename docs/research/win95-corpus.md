@@ -357,19 +357,21 @@ the card's value matches some oracle pixel among its eight neighbours.
 All eight measured on 16 September 2026, on one build, against a host render of
 the same capture:
 
-| capture | tail | edge | real |
-|---|---|---|---|
-| `CAP0050` | 106 | 99 (93 %) | 7 |
-| `CAP0150` | 36 | 29 (80 %) | 7 |
-| `CAP0160` | 100 | 100 (100 %) | **0** |
-| `CAP0250` | 451 | 407 (90 %) | 44 |
-| `CAP0400` | 265 | 252 (95 %) | 13 |
-| `CAP0800` | 960 | 477 (50 %) | **483** |
-| `CG0060` | 753 | 699 (92 %) | 54 |
-| `CKEY1622` | 554 | 515 (93 %) | 39 |
+| capture | tail | edge | real | no match within 12 px |
+|---|---|---|---|---|
+| `CAP0050` | 105 | 98 (93 %) | 7 | 1 |
+| `CAP0150` | 36 | 29 (80 %) | 7 | 0 |
+| `CAP0160` | 100 | 100 (100 %) | **0** | 0 |
+| `CAP0250` | 452 | 409 (90 %) | 43 | 2 |
+| `CAP0400` | 265 | 252 (95 %) | 13 | 1 |
+| `CAP0800` | 293 | 280 (96 %) | 13 | 2 |
+| `CG0060` | 753 | 699 (92 %) | 54 | 4 |
+| `CKEY1622` | 551 | 518 (94 %) | 33 | 5 |
 
-**647 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 75 %
-of them are still in one scene. Seven of the eight are at 54 or fewer; `CAP0160`
+**170 genuinely divergent pixels in the whole corpus**, of 2.46 million, and a
+hard core of **fifteen** that no displaced boundary explains. No scene is an
+outlier any more: the attract sequence, which carried three quarters of the
+corpus's divergence that morning, carries thirteen. Seven of the eight are at 54 or fewer; `CAP0160`
 is at zero.
 
 `CAP0800` stood at 1,570 and 980 until 16 September 2026, when six of its draws -

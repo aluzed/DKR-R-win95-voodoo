@@ -1279,3 +1279,54 @@ scene was never one scene's - and it is also a reminder that "this change is
 confined to X" is a claim about what was measured, not about what was changed.
 `CAP0050` folds eight draws too and does not move at all, which is the same
 lesson from the other side.
+
+## The last pass writes the depth, and the attract sequence stops being an outlier
+
+The twenty-seven pixels of `CAP0800` that no fill rule explained were mostly one
+cluster, and every pixel in it had an **even x and an odd y**. A lattice is not a
+shape, and the first guess - the N64's dithered coverage resolved by a hard alpha
+test, which this repository already has a switch for - died for free: the oracle's
+probe says no alpha test is in force at any draw touching those pixels.
+
+What it says instead:
+
+    4  painted  0xE18E00 -> 0x610128  z=-0.002991 buf=-0.001235  recipe=10
+    5  depth    0x610128 -> 0x610128  z=-0.002991 buf=-0.002991  recipe=10
+
+Two triangles of one mesh at identical depth. The oracle keeps the first and
+**discards the second entirely**, on `z >= buf`. The card keeps the first and then
+paints the second's pre-B, shade-A and shade-B on top of it.
+
+Because the first pass of every decomposition wrote depth, and the passes after
+it were given `LEQUAL` - against the depth the first one had just written, `LESS`
+rejects everything. That is right when the first pass passes, and it **inverts**
+when it does not: a draw the RDP discards wholesale has its first pass rejected by
+`LESS` and its remaining passes accepted by `LEQUAL`. Three quarters of a draw
+that should not exist.
+
+The fix follows from stating it: **no pass writes until the last one**, and the
+comparison is left alone throughout. Every pass then tests the state's own `LESS`
+against the same unchanged buffer, reaches the same verdict as the ordinary draw
+would have, and the depth is still written exactly once with the same value.
+
+    capture     before        after
+    CAP0050    106 /   7   105 /   7
+    CAP0150     36 /   7    36 /   7
+    CAP0160    100 /   0   100 /   0
+    CAP0250    451 /  44   452 /  43
+    CAP0400    265 /  13   265 /  13
+    CAP0800    960 / 483   **293 /  13**
+    CG0060     753 /  54   753 /  54
+    CKEY1622   554 /  39   551 /  33
+
+The corpus goes from 3,225 divergent to **2,555**, from 647 genuinely divergent to
+**170**, and its hard core from forty-one pixels to **fifteen**. `CAP0800` goes
+from 483 to 13 and stops being the scene that carries everything.
+
+Two notes for whoever comes next. `pass2_draw` still has the old shape - it
+follows an *ordinary* draw that has already written depth, which is a different
+arrangement and wants its own derivation rather than the same patch applied on
+faith. And the lattice that started this was never dithering at all: it was two
+coplanar triangles and a comparison that inverted, and the even-x/odd-y pattern
+was the shape of their overlap. A regular pattern is evidence of a regular cause,
+not of a dither.
