@@ -989,3 +989,85 @@ per-colour blend factors - and the shape of the remaining question is sharper
 than it was: at (304,323) the card keeps nothing at all of a draw the oracle
 paints, and its own triangle counter, which nothing printed until today, is the
 figure that says whether the card was asked.
+
+## The card gets a probe, and it names the cause on the fourth reading
+
+Six hypotheses about `CAP0800`'s two blocks had been written, measured and
+refuted, and every one of them cost a run because the card could not be asked
+anything. The oracle has had `dkr_software_probe` since the beginning; the card
+had nothing. So it was built, in four passes over an afternoon, each one added
+because the reading before it answered half a question.
+
+**One. Which draws changed the pixel.** `dkr_glide_backend_watch(x, y)` and a
+single-pixel back-buffer read between draws. At (304,323) the log stopped three
+draws in, where the oracle has four.
+
+**Two. Which draws *covered* it.** A draw that leaves a pixel alone either never
+reached it or reached it and was discarded, and only the second blames the depth
+test, the alpha test or the blend. A point-in-triangle test over the batch, by
+the same edge functions a rasteriser uses. It said: batch 537 covers the pixel,
+blends opaque, carries no alpha test, runs both its extra passes - and changes
+nothing.
+
+**Three. Which of the four physical passes.** A multipass configuration is four
+draws on the card and one in the oracle. All four handed the pixel back as they
+found it, `pre-A` included - an opaque replacement, which a covered fragment
+cannot survive.
+
+**Four. The clip window and the geometry.** Nothing in this backend had ever
+recorded what the card was clipping to. It was the whole buffer. The covering
+triangle, printed as the card was handed it, put the pixel 0.03 of a pixel inside
+its right edge: (304,323) is a fill-rule pixel, and it had been chosen out of a
+**stale** card image. The current one - measured, 1,570 tail and 980 real,
+reproducing the corpus table exactly - has 221 pixels whose whole eight-fold
+neighbourhood is also divergent, and those are the ones worth probing.
+
+### What the probe says at a pixel that is not on an edge
+
+(268,172), where the card paints (41,24,41) and the oracle white:
+
+    batch 558  pre-A    0xFFFFFF -> 0x000000   recipe=10, blend=alpha
+               pre-B    0x000000 -> 0x392039   vertex alpha 88, 102, 92 of 255
+               shade-A  0x392039 -> 0x311C31
+               shade-B  0x311C31 -> 0x291829
+
+`prepass_draw`'s first pass lays the constant down with `ONE / ZERO` - an opaque
+replacement - whatever the state's blend says. Here the state blends and the
+triangle is about a third opaque, so the RDP keeps almost all of the white. The
+card destroys it in the first of four passes and the three after it work on a
+destination that is already gone.
+
+**That is the cause of the blocks**, and the objection is written in
+`glide_backend.c` a few lines above the code that commits it, against the *other*
+prepass shape - `PREPASS_TEXEL_ALONE`, measured four to eighteen times worse and
+left out for exactly this reason, with the note "it could be gated on an opaque
+first pass, where the two do agree. That was not measured, so it is not written."
+
+### The obvious remedy is worse, measured
+
+Refusing `PRIM_TO_TEXEL` when the state blends, so that the ordinary draw applies
+instead:
+
+    CAP0800   1,570 / 980  ->  2,087 / 1,617    worse
+    CAP0250     450 /  44  ->    451 /   44     unchanged
+    CG0060      753 /  54  ->    753 /   54     unchanged
+
+Reverted. The gate is right about the defect and wrong about the cure: the
+ordinary draw for this configuration is `cc = 7/1/1/1`, which computes
+`(T - P) x P + P` where the RDP computes `(T - P) x SHADE_ALPHA + P`, and being
+approximate in the colour costs more than being wrong about the destination.
+Predicted before the run and contradicted by it, which is the point of writing
+the prediction down.
+
+So the cure is not to refuse the decomposition but to make it compose under a
+blend, the way `pass2_draw` and `prepass_draw_texel_alone` were made to. The RDP
+computes
+
+    out = [ C (1 - k) + ENV k ] a + dst (1 - a),    C = P + (T - P) sa
+
+and the card's four passes compute the bracket and then fail to weight it by `a`
+at all. `a` is `TEXEL0_ALPHA x PRIMITIVE_ALPHA`, which one alpha stage delivers
+as `SCALE_OTHER / FACTOR_LOCAL` over `LOCAL_CONSTANT` and `OTHER_TEXTURE` - the
+same shape `prepass_draw_texel_alone` already uses. That derivation is the next
+piece of work, and it is a derivation rather than a guess, which is what the two
+fixes that worked had and the six that failed did not.

@@ -526,9 +526,6 @@ const struct dkr_tmu *dkr_glide_backend_tmu(int index);
 struct dkr_cc_setup;
 void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
                                   unsigned constant_argb);
-/* How many draws of the `PRIM_TO_TEXEL` shape were refused the two-blend first
-   cycle because the state blends. See `prepass_wanted`. */
-unsigned long dkr_glide_backend_prepass_blended(void);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
 /* --- The card's own probe ---------------------------------------------------- *
  *

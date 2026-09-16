@@ -919,9 +919,7 @@ int main(int argc, char **argv)
                     " blended first pass=%lu) skipped: identity=%lu"
                     " unsupported=%lu\n", d, sh, bl, id, un);
                 say("  first cycle in two blends: drawn=%lu refused"
-                    " (alpha test)=%lu (state blends)=%lu | texel-alone:"
-                    " drawn=%lu\n", pd, pa,
-                    dkr_glide_backend_prepass_blended(), ta);
+                    " (alpha test)=%lu | texel-alone: drawn=%lu\n", pd, pa, ta);
                 /* **What the card was actually asked to draw.** Every other
                    count on this line comes from the decoder, which is the same
                    code in both backends and therefore cannot disagree; this one
