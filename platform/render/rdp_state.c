@@ -338,7 +338,28 @@ static unsigned char alpha_scale_of(const dkr_rdp_state *rdp)
      * The rule is as narrow as the two above it, and for the same reason: this
      * byte is read by the card and not by the oracle, so widening it moves one
      * backend and not the other, and every widening has to be measured on the
-     * card before it is believed. */
+     * card before it is believed.
+     *
+     * ## And whoever reads this byte must read the warning on it first
+     *
+     * A correct value here is **not** a licence to apply it. On the catalogue
+     * path the same factor often arrives at the card already, in the *vertex
+     * alpha*, and applying the byte on top of it multiplies it in twice.
+     *
+     * Measured, 16 September 2026, on both probes at once. `CAP0250` at
+     * (336,235), `G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2`, whose
+     * alpha is `TEXEL0_ALPHA x PRIMITIVE_ALPHA`:
+     *
+     *     oracle   prim = 0x39FFFFFF, so the primitive's alpha is 57
+     *     card     batch 171, vertex rgba 255,255,255,**58** on all three
+     *
+     * The vertex carries it. Folding `alpha_scale` into that vertex - which was
+     * written, measured and reverted the same evening - gives 58 x 57 / 255 = 13
+     * where the mux wants 57, and the hub went from 451 divergent pixels to 542.
+     *
+     * So the byte says what the mux computes, and says nothing about what the
+     * card already holds. Those are two different questions and only the second
+     * decides whether to apply it. */
     if (s->a == (unsigned char)DKR_CC_COMBINED && s->b == A_ZERO &&
         s->d == A_ZERO && rdp->cycle == DKR_CYCLE_2) {
         const dkr_cc_stage *first = &rdp->combiner.alpha[0];

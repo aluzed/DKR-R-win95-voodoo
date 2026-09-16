@@ -1199,3 +1199,43 @@ the hub's newly divergent pixels, which is one run and no hypothesis.
 The widening stays. It is correct on its own terms, it is tested, it moves neither
 backend, and it is what a correct consumer would need. An unread correct value
 costs nothing; a wrong one that something reads costs a scene.
+
+## Why the hub regressed: the vertex was already carrying it
+
+The previous section left the question open and said the card probe would answer
+it in one run and no hypothesis. It did.
+
+The 91 pixels the fold made worse sit in two adjacent tiles of `CAP0250`, and the
+card is *brighter* there than it was, where the oracle is darker than either:
+
+    (336,235)   folded (214,162,0)   unfolded (181,134,0)   oracle (159,129,0)
+
+Brighter means less of the source, which means an alpha that has become too
+small. The two probes, pointed at that pixel:
+
+    oracle  draw 2    recipe=3  blend=alpha  prim=0x39FFFFFF  ascale=57
+    card    batch 171 recipe=3  blend=alpha  vertex rgba 255,255,255,**58**
+
+`G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2` has the alpha
+`TEXEL0_ALPHA x PRIMITIVE_ALPHA`, the primitive's alpha is 57, and **the vertex
+arrives at 58** - all three of them. The card already had the factor. Folding
+`alpha_scale` into that vertex gives `58 x 57 / 255 = 13` where the mux wants 57,
+and the hub went from 451 to 542.
+
+So the answer is the second of the two branches that were named and not chosen
+between: the fold applied a correct scale where something already carried it. The
+widened rule is not wrong - `alpha_scale` does say what the mux computes - and
+that is precisely the trap. **The byte says what the mux computes and says
+nothing about what the card already holds**, and only the second question decides
+whether to apply it.
+
+That is now written where someone about to consume it will read it: beside the
+field in `backend.h` and at the end of `alpha_scale_of`. It is the sort of fact
+that is otherwise rediscovered by regression, which is how it was found here.
+
+What it leaves. The eight pixels of the attract sequence that the fold does win
+are real, and there is a version of it that would win them without touching the
+hub: one that asks whether the vertex already carries the factor rather than
+assuming it does not. Nothing measures that yet, and the honest place to stop is
+with the defect diagnosed, the trap recorded, and the tree at the best figure
+measured - 3,454 divergent and 651 genuinely so.

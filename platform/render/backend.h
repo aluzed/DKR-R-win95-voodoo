@@ -278,6 +278,15 @@ typedef struct {
      * reached that case yet, and a blind substitution there would be wrong for
      * every entry whose alpha shape this byte cannot carry. Left as it is, and
      * written down. */
+    /* The factor the RDP's alpha mux applies, 0..255, where 255 means none. Read
+       by the Glide backend and not by the oracle, which evaluates the real
+       combiner - so a wrong value here shows on one backend only.
+
+       **A correct value is not a licence to apply it.** On the catalogue path the
+       same factor often reaches the card already, in the vertex alpha; applying
+       this byte as well multiplies it in twice. Measured on the hub at (336,235),
+       where the primitive's alpha is 57 and the vertex arrives at 58. See
+       `alpha_scale_of` in `rdp_state.c` for the whole of it. */
     unsigned char      alpha_scale;
     unsigned int       fog_color;         /* 0x00RRGGBB */
 
