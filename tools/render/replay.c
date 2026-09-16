@@ -924,6 +924,8 @@ int main(int argc, char **argv)
                     " (primitive not black)=%lu\n", pd, pa, ta,
                     dkr_glide_backend_shade_exact(),
                     dkr_glide_backend_shade_exact_prim());
+                say("  alpha scale folded into the vertex: %lu draw(s)\n",
+                    dkr_glide_backend_iterated_scaled());
                 /* **What the card was actually asked to draw.** Every other
                    count on this line comes from the decoder, which is the same
                    code in both backends and therefore cannot disagree; this one

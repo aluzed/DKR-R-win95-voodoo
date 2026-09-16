@@ -533,6 +533,9 @@ unsigned long dkr_glide_backend_shade_exact(void);
 /* How many draws wanted that path and were refused it because the primitive is
    not black - which is what says whether the general case is worth building. */
 unsigned long dkr_glide_backend_shade_exact_prim(void);
+/* How many ordinary draws had `alpha_scale` folded into their vertex alpha,
+   because the catalogue setup's alpha reads the vertex and not the constant. */
+unsigned long dkr_glide_backend_iterated_scaled(void);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
 /* --- The card's own probe ---------------------------------------------------- *
  *

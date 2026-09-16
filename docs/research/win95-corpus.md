@@ -424,7 +424,7 @@ into a number and then the number gets argued about. 491 is the lower bound at
 the radius the table uses, 35 is the lower bound at a radius no fill rule
 survives, and both belong in the record.
 
-## The harness has a repeatability floor, and it is about three pixels
+## Two sweeps of eight, and a floor that turned out not to exist
 
 `prepass_shade_exact` was written for one configuration and fires on six draws of
 one scene. The counter says so per scene, and across the other seven it reads
@@ -437,16 +437,22 @@ There is some, and it is the useful part of the measurement:
     CAP0150     36 ->  36      CKEY1622   557 -> 554   (real 38 -> 39)
     CAP0160    100 -> 100      CAP0250    450 -> 451
 
-Three scenes to the pixel, three others moving by one to three. Nothing in the
-renderer changed for any of them, so **that is the floor**: a difference of three
-pixels on a scene of five hundred says nothing, and a regression has to clear it
-before it is a regression. Naming the floor is what keeps a real one from being
-argued away and a phantom one from being chased - this file spent an afternoon on
-14 September comparing two figures that differed for exactly this reason.
+Three scenes to the pixel, three others moving by one to three.
 
-Where it comes from is not diagnosed. The replay is deterministic on the host -
-five captures at zero divergent pixels, checked rather than assumed - so the
-variation is on the card or in the readback, and the candidates are the ones this
-file already knows about: a 565 frame buffer read back and expanded, a card whose
-sub-pixel arithmetic need not be bit-stable between runs, and a comparison at a
-threshold that some pixels sit exactly on.
+**And "that is the floor" was the wrong conclusion**, retracted the same evening.
+A second sweep of all eight, on a later build whose one change provably does not
+reach seven of them, came back **identical on every scene** - 106, 36, 100, 451,
+494, 967, 753, 554, to the pixel. So the card and the readback are repeatable, and
+the one-to-three-pixel movements were not noise: they are a real difference
+between the 15 September figures and the 16 September ones, made by some change
+between those builds that nobody attributed at the time.
+
+The retraction is the useful part. "Differences under three pixels mean nothing"
+is exactly the kind of rule that lets a small real regression through, and it was
+adopted here on one sweep's worth of evidence. Two sweeps say the opposite: **a
+one-pixel difference is a difference**, and the 492 -> 494 of `CAP0400` and the
+557 -> 554 of `CKEY1622` are unexplained rather than excusable.
+
+What is measured, then: the host replay is deterministic to the pixel - five
+captures at zero divergence, checked rather than assumed - and so, on this
+evidence, is the card.
