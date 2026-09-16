@@ -335,3 +335,48 @@ Run them **one at a time**, and judge completion by the **artefact**:
 - **Do not judge it by the directory timestamp either.** It has minute
   granularity and says nothing about which run wrote the file; two scenes came
   back with identical figures that way, which is how the mistake was caught.
+
+## How much of the tail is an edge, and how much is a disagreement
+
+The diagonal that holds `CAP0800`'s worst remaining pixels turned out not to be a
+rendering defect at all. Read down one column of it:
+
+    y=162  card (140,255,255)   oracle (142,255,255)     sky
+    y=163  card (132, 77,  0)   oracle (140,255,255)  <- the card is already ground
+    y=164  card (123, 69,  0)   oracle (127, 71,  0)     ground
+
+The sky/ground boundary falls one row higher on the card than in the software
+rasteriser. That is a fill rule, not a renderer: the same colour, one step away.
+It also explains a value that looked impossible — the card sitting *below* its
+destination on an additive draw — because the pixel belongs to a different
+triangle there.
+
+So the tail is counted again with a neighbour test: a pixel is **forgiven** when
+the card's value matches some oracle pixel among its eight neighbours.
+
+| capture | tail | edge | real |
+|---|---|---|---|
+| `CAP0050` | 106 | 99 (93 %) | 7 |
+| `CAP0150` | 36 | 29 (80 %) | 7 |
+| `CAP0160` | 100 | 100 (100 %) | **0** |
+| `CAP0250` | 450 | 406 (90 %) | 44 |
+| `CAP0400` | 492 | 476 (96 %) | 16 |
+| `CAP0800` | 1,570 | 590 (37 %) | **980** |
+| `CG0060` | 753 | 699 (92 %) | 54 |
+| `CKEY1622` | 557 | 519 (93 %) | 38 |
+
+**1,146 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 85 %
+of them are in one scene. Seven of the eight are at 54 or fewer; `CAP0160` is at
+zero.
+
+And the same test on the images from before this week's two pairs says they
+removed disagreement rather than noise:
+
+    CAP0800   real 11,105 -> 980      CKEY1622  real 749 -> 38
+    CAP0250   real    896 ->  44      CG0060    real 238 -> 54
+
+**The test is generous and deliberately so.** Forgiving any pixel that matches a
+neighbour will forgive a genuine one-pixel error as readily as a fill-rule
+difference, so `real` is a *lower bound* on what is wrong and `tail` an upper one.
+The truth is between them, and both are worth keeping: the tail is what a
+regression moves first, and the real column is what is worth chasing.
