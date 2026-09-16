@@ -589,6 +589,13 @@ static int hw_tmu_count(void)
     return hw.tmu_count;
 }
 
+/* **The window the card is actually clipping to.** `gl_set_scissor` refuses two
+   kinds of rectangle and leaves the previous window standing for both, which is
+   the right behaviour and an invisible one: nothing anywhere recorded what the
+   card was clipping to, so a draw that vanished could not be told from a draw
+   that was clipped away. The probe prints it now. */
+static int g_clip[4] = { 0, 0, 0, 0 };
+
 static int gl_open(void *self, int width, int height)
 {
     dkr_glide_context ctx;
@@ -606,6 +613,10 @@ static int gl_open(void *self, int width, int height)
     b.open   = 1;
     b.width  = ctx.width;
     b.height = ctx.height;
+    /* Until the decoder asks for one, the window is the whole buffer - which is
+       what Glide itself starts with. Leaving this at zero would make the probe
+       report every point outside a window nobody had set. */
+    g_clip[0] = 0; g_clip[1] = 0; g_clip[2] = b.width; g_clip[3] = b.height;
 
     if (!gs.ready) {
         gs.color_combine        = (pfn_5)dkr_glide_symbol("_grColorCombine@20");
@@ -819,6 +830,8 @@ static void watch_record(unsigned char recipe, unsigned char passes,
         e->passes     = passes;
         e->covered    = (unsigned char)g_watch_covered;
         e->pass       = pass;
+        e->clip[0]    = (short)g_clip[0]; e->clip[1] = (short)g_clip[1];
+        e->clip[2]    = (short)g_clip[2]; e->clip[3] = (short)g_clip[3];
         e->blend      = (unsigned char)b.current.blend;
         e->depth      = (unsigned char)b.current.depth;
         e->alpha_test = (unsigned char)b.current.alpha_test;
@@ -1073,6 +1086,7 @@ static void gl_set_scissor(void *self, int x0, int y0, int x1, int y1)
     if (y1 > b.height) { y1 = b.height; }
     if (x1 <= x0 || y1 <= y0) { return; }
     gs.clip_window((FxU32)x0, (FxU32)y0, (FxU32)x1, (FxU32)y1);
+    g_clip[0] = x0; g_clip[1] = y0; g_clip[2] = x1; g_clip[3] = y1;
 }
 
 /* --- E05-S03's second pass ---------------------------------------------------- *

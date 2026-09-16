@@ -558,6 +558,7 @@ typedef struct {
     unsigned char passes;   /* bit 0 pre-pass, bit 1 second pass */
     unsigned char covered;  /* the point lies inside a triangle of this batch */
     unsigned char pass;     /* DKR_CARD_PASS_*: which physical pass wrote this */
+    short         clip[4];  /* the clip window in force: x0 y0 x1 y1 */
     unsigned char blend;
     unsigned char depth;
     unsigned char alpha_test;
