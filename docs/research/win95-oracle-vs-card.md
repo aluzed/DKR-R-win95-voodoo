@@ -1241,3 +1241,41 @@ with the defect diagnosed, the trap recorded, and the tree at the best figure
 measured - **3,461 divergent and 658 genuinely so**, which is the reverted state,
 not the folded one. (This paragraph first said 3,454 and 651: those are the
 totals with the fold's eight pixels counted in, and the fold is out.)
+
+## Asking the mux instead of comparing the numbers, and a scene nobody was watching
+
+The fold was rewritten to ask the catalogue a structural question rather than
+compare two values: **does this configuration's alpha mux name `SHADE_ALPHA`?**
+If it does, the vertex alpha is the shade term and cannot be doubling for
+anything, so `alpha_scale` is the missing factor and belongs in it. If it does
+not, the mux has no use for the vertex alpha - and that is exactly the case where
+the primitive's can be travelling in it.
+
+Swept over all eight, with the prediction written first:
+
+    capture     before        after       folded   predicted
+    CAP0050    106 /   7   106 /   7     8 draws   not foreseen, and it does not move
+    CAP0150     36 /   7    36 /   7     0
+    CAP0160    100 /   0   100 /   0     0
+    CAP0250    451 /  44   451 /  44     0         yes - the hub does not move
+    CAP0400    494 /  16   **265 /  13** 8 draws   **not foreseen at all**
+    CAP0800    967 / 491   **960 / 483** 8 draws   yes, to the pixel
+    CG0060     753 /  54   753 /  54     0
+    CKEY1622   554 /  39   554 /  39     0
+
+The corpus goes from 3,461 divergent to **3,225**, and from 658 genuinely
+divergent to **647**.
+
+Two things are worth separating there. The prediction was right where it was
+made: the attract sequence took its eight pixels and the hub folded nothing and
+did not move, which is what the mux-reads-the-shade rule said would happen and
+the reason for writing it down beforehand.
+
+**And `CAP0400` fell by 229 pixels, which nothing foresaw.** Ancient Lake with
+Bumper racing had been sitting at 492-494 since the baseline and had never been
+the subject of anything; it draws the same configuration, eight times, and nobody
+looked. That is the corpus doing the job it exists for - the defect found in one
+scene was never one scene's - and it is also a reminder that "this change is
+confined to X" is a claim about what was measured, not about what was changed.
+`CAP0050` folds eight draws too and does not move at all, which is the same
+lesson from the other side.

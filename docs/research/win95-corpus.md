@@ -363,12 +363,12 @@ the same capture:
 | `CAP0150` | 36 | 29 (80 %) | 7 |
 | `CAP0160` | 100 | 100 (100 %) | **0** |
 | `CAP0250` | 451 | 407 (90 %) | 44 |
-| `CAP0400` | 494 | 478 (97 %) | 16 |
-| `CAP0800` | 967 | 476 (49 %) | **491** |
+| `CAP0400` | 265 | 252 (95 %) | 13 |
+| `CAP0800` | 960 | 477 (50 %) | **483** |
 | `CG0060` | 753 | 699 (92 %) | 54 |
 | `CKEY1622` | 554 | 515 (93 %) | 39 |
 
-**658 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 75 %
+**647 genuinely divergent pixels in the whole corpus**, of 2.46 million, and 75 %
 of them are still in one scene. Seven of the eight are at 54 or fewer; `CAP0160`
 is at zero.
 
