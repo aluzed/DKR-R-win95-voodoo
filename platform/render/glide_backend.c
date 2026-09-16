@@ -2210,6 +2210,25 @@ void dkr_glide_backend_bind(dkr_texture_handle handle)
     bind_texture(handle);
 }
 
+/* The frame-buffer blend, in Glide's enumeration, programmed over whatever
+   `set_state` left.
+ *
+ * `pass2_draw_by_shade` rests on `GR_BLEND_ONE_MINUS_SRC_COLOR` being 0x6 in the
+ * destination position, and the comment beside that define says plainly that the
+ * value is taken from the canonical table and has never been seen to work on the
+ * card. The four blends the state machine can express do not include it, so
+ * there is no way to put the question to the hardware through `set_state`. This
+ * is that way, and it exists for the witness. */
+void dkr_glide_backend_set_blend(int rgb_src, int rgb_dst,
+                                 int alpha_src, int alpha_dst)
+{
+    if (!gs.blend_function) { return; }
+    gs.blend_function((FxU32)rgb_src, (FxU32)rgb_dst,
+                      (FxU32)alpha_src, (FxU32)alpha_dst);
+    /* The card no longer holds the block the cache believes it does. */
+    b.has_state = 0;
+}
+
 /* Chains the two units: TMU 1 samples, its output becomes TMU 0's "other"
  * input, and TMU 0's output feeds the colour combiner.
  *

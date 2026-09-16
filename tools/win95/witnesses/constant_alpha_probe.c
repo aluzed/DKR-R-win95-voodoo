@@ -121,6 +121,27 @@ static void build_textures(void)
     }
 }
 
+static void quad_rgba(dkr_render_backend *bk, int w, int h,
+                      float vr, float vg, float vb, float va)
+{
+    dkr_render_vertex v[6];
+    const float xs[6] = { 0.0f, (float)w, (float)w, 0.0f, (float)w, 0.0f };
+    const float ys[6] = { 0.0f, 0.0f, (float)h, 0.0f, (float)h, (float)h };
+    const float ss[6] = { 0.0f, 128.0f, 128.0f, 0.0f, 128.0f, 0.0f };
+    const float ts[6] = { 0.0f, 0.0f, 128.0f, 0.0f, 128.0f, 128.0f };
+    int i;
+    memset(v, 0, sizeof(v));
+    for (i = 0; i < 6; i++) {
+        v[i].x = xs[i]; v[i].y = ys[i];
+        v[i].r = vr; v[i].g = vg; v[i].b = vb; v[i].a = va;
+        v[i].oow = 1.0f;
+        v[i].tmu[0][DKR_TMU_SOW] = ss[i];
+        v[i].tmu[0][DKR_TMU_TOW] = ts[i];
+        v[i].tmu[0][DKR_TMU_OOW] = 1.0f;
+    }
+    bk->draw_triangles(bk->self, v, 2);
+}
+
 static void quad(dkr_render_backend *bk, int w, int h, float vertex_alpha)
 {
     dkr_render_vertex v[6];
@@ -1120,6 +1141,116 @@ int main(void)
                 (reds[0] > 235 && reds[5] > 235) ? "one" :
                 (reds[0] > 235 && reds[5] < 20) ? "<- one minus the local" :
                 (reds[0] < 20 && reds[5] > 235) ? "the local" : "");
+        }
+    }
+
+    /* --- The two per-colour destination factors, which nothing has measured --- *
+     *
+     * `pass2_draw_by_shade`'s first pass is `dst *= 1 - shade`, and the whole of
+     * it rests on `GR_BLEND_ONE_MINUS_SRC_COLOR` being 0x6 in the *destination*
+     * position. The comment beside that define in `glide_backend.c` says what it
+     * is: a value taken from the canonical table because the four neighbours it
+     * sits among were right there, and never once read back from this card.
+     *
+     * The measurement needs two draws, because a blend factor is a statement
+     * about a destination that has to exist first:
+     *
+     *   1. a full-screen quad of a known colour D, opaque, from the constant;
+     *   2. a second quad whose source is the iterated colour S, with the blend
+     *      set to `ZERO / factor` so that the source contributes nothing of
+     *      itself and is there only to *be* the factor.
+     *
+     * Then the pixel reads `D x f(S)`, and the sweep over S says which f:
+     *
+     *     0x6 = ONE_MINUS_SRC_COLOR   D (1 - S)   falls to nothing at S=255
+     *     0x2 = SRC_COLOR             D S         rises to D at S=255
+     *     ignored / illegal           D           flat
+     *
+     * D is (204,136,68) rather than a grey: a factor that reads one channel and
+     * broadcasts it is a real possibility, and three equal channels could not
+     * show it.
+     */
+    say("\n-- the per-colour destination factors, measured rather than assumed\n");
+    say("   destination D = (204,136,68), source swept, blend ZERO / factor\n");
+    {
+        const int dst_probe[3] = { 0x6, 0x2, 0x0 };
+        int di;
+        for (di = 0; di < 3; di++) {
+            int got[6][3], k2;
+            for (k2 = 0; k2 < 6; k2++) {
+                int rw = 0, rh = 0;
+                unsigned c = 0;
+                dkr_cc_setup lay;
+                memset(&st, 0, sizeof(st));
+                st.combine = DKR_COMBINE_TEXTURE_CONSTANT;
+                st.constant_color = 0xFFCC8844u;
+                st.env_color = 0xFFCC8844u;
+                st.prim_color = 0xFFFFFFFFu;
+                st.blend = DKR_BLEND_OPAQUE;
+                st.depth = DKR_DEPTH_DISABLED;
+                st.cull = DKR_CULL_NONE;
+                st.filter = DKR_FILTER_POINT;
+                st.wrap_s = st.wrap_t = DKR_WRAP_CLAMP;
+                st.alpha_scale = 255;
+                st.recipe = 0;
+                st.texture = tex1555;
+
+                bk.begin_frame(bk.self, 0x000000);
+                bk.invalidate(bk.self);
+                bk.set_state(bk.self, &st);
+
+                /* 1. the destination, straight out of the constant register */
+                memset(&lay, 0, sizeof(lay));
+                lay.cc_function = FN_LOCAL;   lay.cc_factor = FAC_ONE;
+                lay.cc_local = LOCAL_CONSTANT; lay.cc_other = OTHER_ITERATED;
+                lay.ac_function = FN_LOCAL;   lay.ac_factor = FAC_ONE;
+                lay.ac_local = LOCAL_CONSTANT; lay.ac_other = OTHER_ITERATED;
+                lay.tc_function = TEXCOMB_DECAL; lay.tc_factor = 0;
+                lay.uses_texture = 0;
+                dkr_glide_backend_set_recipe(&lay, 0xFFCC8844u);
+                /* ONE / ZERO: the first quad replaces, it does not blend. */
+                dkr_glide_backend_set_blend(0x4, 0x0, 0x4, 0x0);
+                quad_rgba(&bk, W, H, 255.0f, 255.0f, 255.0f, 255.0f);
+
+                /* 2. the source, contributing nothing but its own value as the
+                      factor */
+                lay.cc_local = LOCAL_ITERATED;
+                lay.ac_local = LOCAL_ITERATED;
+                dkr_glide_backend_set_recipe(&lay, 0xFFCC8844u);
+                dkr_glide_backend_set_blend(0x0 /* ZERO */,
+                                            dst_probe[di], 0x4, 0x0);
+                quad_rgba(&bk, W, H, (float)SWEEP[k2], (float)SWEEP[k2],
+                          (float)SWEEP[k2], 255.0f);
+                bk.present(bk.self);
+                if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                    c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+                }
+                got[k2][0] = (int)((c >> 16) & 0xFFu);
+                got[k2][1] = (int)((c >>  8) & 0xFFu);
+                got[k2][2] = (int)( c        & 0xFFu);
+            }
+            say("   0x%02X  S=0 (%3d,%3d,%3d)  S=102 (%3d,%3d,%3d)  "
+                "S=255 (%3d,%3d,%3d)\n", dst_probe[di],
+                got[0][0], got[0][1], got[0][2],
+                got[2][0], got[2][1], got[2][2],
+                got[5][0], got[5][1], got[5][2]);
+            if (di == 0) {
+                const int falls = (got[0][0] > 180 && got[5][0] < 30);
+                const int flat  = (got[5][0] > got[0][0] - 20 &&
+                                   got[5][0] < got[0][0] + 20);
+                if (falls) {
+                    say("        0x06 is ONE_MINUS_SRC_COLOR on this card, and\n"
+                        "        `pass2_draw_by_shade`'s first pass stands.\n");
+                } else if (flat) {
+                    say("        0x06 leaves the destination alone: the by-shade\n"
+                        "        pair's first pass is a no-op on this card, and\n"
+                        "        every draw of that class is missing its `1 - k`.\n");
+                    fails++;
+                } else {
+                    say("        0x06 is neither: read the row, not this line.\n");
+                    fails++;
+                }
+            }
         }
     }
 

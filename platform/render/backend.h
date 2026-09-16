@@ -527,6 +527,13 @@ struct dkr_cc_setup;
 void dkr_glide_backend_set_recipe(const struct dkr_cc_setup *r,
                                   unsigned constant_argb);
 void dkr_glide_backend_bind(dkr_texture_handle handle);
+/* Programs the frame-buffer blend directly, in Glide's own enumeration, after
+   `set_state` has programmed the state's own. For the measurement harness only:
+   two of the per-colour destination factors this backend relies on have never
+   been read back from a card, and a factor cannot be measured through an
+   enumeration that does not name it. */
+void dkr_glide_backend_set_blend(int rgb_src, int rgb_dst,
+                                 int alpha_src, int alpha_dst);
 /* Chains the two texture units (E05-S04). No effect on a single-TMU card, where
    the multipass fallback applies. */
 void dkr_glide_backend_chain(dkr_texture_handle tmu0, dkr_texture_handle tmu1,
