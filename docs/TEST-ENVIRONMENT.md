@@ -183,12 +183,16 @@ START /W D:\REPLAY.EXE --both D:\CAP0050.BIN
 COPY D:\RPLCARD.BMP D:\KP0050.BMP
 ```
 
-**`run-glide` is for a program that takes the screen at once**, and `REPLAY.EXE
---both` is not one: it spends minutes in the software oracle with the desktop
-still showing, and only then opens the card. A screen watcher calls that a failed
-launch and retries on top of a program that is working perfectly. For those, watch
-the **artefact**: note the output file's directory entry, launch with `run`, and
-poll until the entry changes.
+**`run-glide` is for a program that takes the screen at once**, and *no* form of
+`REPLAY.EXE` is one. `--both` spends minutes in the software oracle with the
+desktop still showing and only then opens the card; `--card` was tried on
+16 September 2026 on the assumption that it would take the screen straight away,
+and the watcher reported "the program never took the screen" for a run that had
+already written both its log and its image. A screen watcher calls those a failed
+launch and retries on top of a program that is working perfectly - four times, so
+the scene is replayed four times over. For any of them, watch the **artefact**:
+note the output file's directory entry, launch with `run`, and poll until the
+entry changes.
 
 ```bash
 stamp() { mdir -i "$IMG" :: | grep '^RPLCARD'; }

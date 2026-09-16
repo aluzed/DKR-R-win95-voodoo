@@ -142,6 +142,28 @@ static void quad_rgba(dkr_render_backend *bk, int w, int h,
     bk->draw_triangles(bk->self, v, 2);
 }
 
+/* The same quad at a chosen `oow`, for the depth sections: `oow` is `1/w`, so a
+   large one is near and a small one far. */
+static void quad_at_depth(dkr_render_backend *bk, int w, int h,
+                          float vr, float vg, float vb, float oow)
+{
+    dkr_render_vertex v[6];
+    const float xs[6] = { 0.0f, (float)w, (float)w, 0.0f, (float)w, 0.0f };
+    const float ys[6] = { 0.0f, 0.0f, (float)h, 0.0f, (float)h, (float)h };
+    int i;
+    memset(v, 0, sizeof(v));
+    for (i = 0; i < 6; i++) {
+        v[i].x = xs[i]; v[i].y = ys[i];
+        v[i].r = vr; v[i].g = vg; v[i].b = vb; v[i].a = 255.0f;
+        v[i].oow = oow;
+        v[i].ooz = 0.0f;
+        v[i].tmu[0][DKR_TMU_SOW] = 0.0f;
+        v[i].tmu[0][DKR_TMU_TOW] = 0.0f;
+        v[i].tmu[0][DKR_TMU_OOW] = oow;
+    }
+    bk->draw_triangles(bk->self, v, 2);
+}
+
 static void quad(dkr_render_backend *bk, int w, int h, float vertex_alpha)
 {
     dkr_render_vertex v[6];
@@ -1252,6 +1274,97 @@ int main(void)
                 }
             }
         }
+    }
+
+    /* --- Which fragment the depth test keeps, and it is not obviously the near -- *
+     *
+     * `apply_depth` puts the card in W mode and compares `LESS`, on this
+     * reasoning, recorded in the file: the vertex carries `oow = 1/w`, but Glide
+     * does not *store* `1/w` - it stores an encoded `w` that grows with distance,
+     * cleared to `GR_WDEPTHVALUE_FARTHEST` - so `LESS` keeps the near fragment,
+     * and `GREATER` was tried first and left the screen entirely black.
+     *
+     * **The black screen does not decide it.** If the card stored `oow` itself,
+     * cleared to the maximum, then `GREATER` would reject every fragment - since
+     * nothing exceeds the maximum - and `LESS` would accept every one of them
+     * against the clear. The same two observations, the opposite conclusion. What
+     * the argument never had was a *second* fragment: everything measured in
+     * August was one draw against an empty buffer, and an empty buffer cannot
+     * tell the two stories apart.
+     *
+     * Two draws can. A far quad and a near quad, both writing, in both orders:
+     *
+     *     stores w, LESS   ->  the near one is on top whichever order they came
+     *     stores oow, LESS ->  the far one is on top whichever order they came
+     *
+     * It decides something concrete. At (304,323) of the attract sequence the
+     * card's own probe says batch 537 covers the pixel, has no alpha test, blends
+     * opaque, ran both its passes - and left the pixel exactly as batch 90 had
+     * it. Batch 537 is the nearer of the two.
+     */
+    say("\n-- which fragment the depth test keeps, near or far\n");
+    {
+        const float FAR_OOW  = 0.000667f;   /* w = 1499, the attract sequence's */
+        const float NEAR_OOW = 0.002881f;   /* w =  347, and the draw it drops  */
+        int mode;
+        for (mode = 1; mode >= 0; mode--) {
+            int order;
+            dkr_glide_backend_depth_mode(mode);
+            for (order = 0; order < 2; order++) {
+                int rw = 0, rh = 0;
+                unsigned c = 0;
+                dkr_cc_setup lay;
+                memset(&st, 0, sizeof(st));
+                st.combine = DKR_COMBINE_SHADE;
+                st.constant_color = 0xFFFFFFFFu;
+                st.env_color = 0xFFFFFFFFu;
+                st.prim_color = 0xFFFFFFFFu;
+                st.blend = DKR_BLEND_OPAQUE;
+                st.depth = DKR_DEPTH_TEST_AND_WRITE;
+                st.cull = DKR_CULL_NONE;
+                st.filter = DKR_FILTER_POINT;
+                st.wrap_s = st.wrap_t = DKR_WRAP_CLAMP;
+                st.alpha_scale = 255;
+                st.recipe = 0;
+                st.texture = 0;
+
+                memset(&lay, 0, sizeof(lay));
+                lay.cc_function = FN_LOCAL;    lay.cc_factor = FAC_ONE;
+                lay.cc_local = LOCAL_ITERATED; lay.cc_other = OTHER_ITERATED;
+                lay.ac_function = FN_LOCAL;    lay.ac_factor = FAC_ONE;
+                lay.ac_local = LOCAL_ITERATED; lay.ac_other = OTHER_ITERATED;
+                lay.tc_function = TEXCOMB_DECAL; lay.tc_factor = 0;
+                lay.uses_texture = 0;
+
+                bk.begin_frame(bk.self, 0x000000);
+                bk.invalidate(bk.self);
+                bk.set_state(bk.self, &st);
+                dkr_glide_backend_set_recipe(&lay, 0xFFFFFFFFu);
+                if (order == 0) {
+                    /* far first, in red; then near, in green */
+                    quad_at_depth(&bk, W, H, 255.0f, 0.0f, 0.0f, FAR_OOW);
+                    dkr_glide_backend_set_recipe(&lay, 0xFFFFFFFFu);
+                    quad_at_depth(&bk, W, H, 0.0f, 255.0f, 0.0f, NEAR_OOW);
+                } else {
+                    quad_at_depth(&bk, W, H, 0.0f, 255.0f, 0.0f, NEAR_OOW);
+                    dkr_glide_backend_set_recipe(&lay, 0xFFFFFFFFu);
+                    quad_at_depth(&bk, W, H, 255.0f, 0.0f, 0.0f, FAR_OOW);
+                }
+                bk.present(bk.self);
+                if (dkr_glide_read_framebuffer(g_px, 640 * 480, &rw, &rh) > 0) {
+                    c = g_px[(size_t)(rh / 2) * (size_t)rw + (size_t)(rw / 2)];
+                }
+                say("   %s buffer, %-10s -> 0x%06lX  %s\n",
+                    mode ? "W" : "Z",
+                    order == 0 ? "far first" : "near first",
+                    (unsigned long)(c & 0x00FFFFFFu),
+                    (((c >> 8) & 0xFFu) > 128 && ((c >> 16) & 0xFFu) < 128)
+                        ? "the near one is on top" :
+                    (((c >> 16) & 0xFFu) > 128 && ((c >> 8) & 0xFFu) < 128)
+                        ? "** the FAR one is on top **" : "neither");
+            }
+        }
+        dkr_glide_backend_depth_mode(1);
     }
 
     /* --- What the numbers say ------------------------------------------------- */
