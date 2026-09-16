@@ -468,6 +468,53 @@ int main(void)
               r.alpha_scale == 0xFFu);
     }
 
+    /* --- A second cycle that *scales* the first one's alpha ----------------- *
+     *
+     * `(COMBINED - 0) * PRIMITIVE + 0`, where cycle one already used both of the
+     * generated setup's two operands. The constant then has nowhere to go and the
+     * card draws at full strength where the RDP draws at a fraction.
+     *
+     * The shape is `G_CC_MODULATERGBA + G_CC_BLENDI_ENV_ALPHA_PRIM2`, measured on
+     * the attract sequence at (226,295): the primitive's alpha is 106 of 255, the
+     * vertex reaches the card at 255, and the card paints near white where the
+     * oracle paints mauve.
+     *
+     * The control is the guard: where cycle one reads the same register, the
+     * setup may already carry it, and applying the scale on top would count it
+     * twice. */
+    {
+        dkr_rdp_state s;
+        dkr_render_state r;
+        int exact = 0;
+
+        memset(&s, 0, sizeof(s));
+        s.cycle = DKR_CYCLE_2;
+        s.prim_color = 0x0000006Au;     /* alpha 106, forty-two per cent */
+        s.env_color  = 0x000000FFu;
+
+        /* Cycle one: (TEXEL0_ALPHA - 0) * SHADE_ALPHA + 0. */
+        s.combiner.alpha[0].a = DKR_CC_TEXEL0;
+        s.combiner.alpha[0].b = 7;
+        s.combiner.alpha[0].c = DKR_CC_SHADE;
+        s.combiner.alpha[0].d = 7;
+        /* Cycle two: (COMBINED - 0) * PRIMITIVE_ALPHA + 0. */
+        s.combiner.alpha[1].a = DKR_CC_COMBINED;
+        s.combiner.alpha[1].b = 7;
+        s.combiner.alpha[1].c = DKR_CC_PRIMITIVE;
+        s.combiner.alpha[1].d = 7;
+
+        dkr_rdp_to_render_state(&s, &r, &exact);
+        check("a second cycle that scales the first carries its constant",
+              r.alpha_scale == 0x6Au);
+
+        /* The guard: cycle one already reads the primitive, so the scale is not
+           taken a second time. */
+        s.combiner.alpha[0].c = DKR_CC_PRIMITIVE;
+        dkr_rdp_to_render_state(&s, &r, &exact);
+        check("and not when the first cycle already read that register",
+              r.alpha_scale == 0xFFu);
+    }
+
     /* --- Fog, deduced from the blender -------------------------------------- *
      *
      * `G_RM_FOG_SHADE_A` is `GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, ...)`, that is,

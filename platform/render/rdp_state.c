@@ -318,6 +318,40 @@ static unsigned char alpha_scale_of(const dkr_rdp_state *rdp)
         s = &rdp->combiner.alpha[0];
     }
 
+    /* --- A second cycle that scales the first one's alpha ------------------- *
+     *
+     * `(COMBINED - 0) * C + 0`, where cycle one already produced everything but
+     * the constant. The generated `ac` setup has two operands and cycle one uses
+     * both of them, so the constant has nowhere to go and the card draws without
+     * it - at full strength where the RDP draws at a fraction.
+     *
+     * `G_CC_MODULATERGBA + G_CC_BLENDI_ENV_ALPHA_PRIM2` is exactly that: cycle
+     * one is `TEXEL0_ALPHA x SHADE_ALPHA`, cycle two multiplies by
+     * `PRIMITIVE_ALPHA`. Measured on the attract sequence at (226,295), where the
+     * primitive's alpha is 106 of 255 and the vertex reaches the card at 255: the
+     * oracle blends to (173,103,136) and the card to (239,239,239), near white.
+     *
+     * **Guarded against counting it twice.** If cycle one reads the same register,
+     * the setup may already carry it, and the scale would be applied on top of
+     * itself. Then the byte stays at 255, which is what it has always been.
+     *
+     * The rule is as narrow as the two above it, and for the same reason: this
+     * byte is read by the card and not by the oracle, so widening it moves one
+     * backend and not the other, and every widening has to be measured on the
+     * card before it is believed. */
+    if (s->a == (unsigned char)DKR_CC_COMBINED && s->b == A_ZERO &&
+        s->d == A_ZERO && rdp->cycle == DKR_CYCLE_2) {
+        const dkr_cc_stage *first = &rdp->combiner.alpha[0];
+        if (s->c == (unsigned char)DKR_CC_PRIMITIVE &&
+            !stage_reads(first, DKR_CC_PRIMITIVE)) {
+            return (unsigned char)(rdp->prim_color & 0xFFu);
+        }
+        if (s->c == (unsigned char)DKR_CC_ENVIRONMENT &&
+            !stage_reads(first, DKR_CC_ENVIRONMENT)) {
+            return (unsigned char)(rdp->env_color & 0xFFu);
+        }
+    }
+
     if (s->a == (unsigned char)DKR_CC_TEXEL0 && s->b == A_ZERO &&
         s->d == A_ZERO) {
         if (s->c == (unsigned char)DKR_CC_PRIMITIVE) {
