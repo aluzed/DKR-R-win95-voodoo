@@ -86,6 +86,17 @@ typedef int           FxBool;
 
 #define GR_COMBINE_OTHER_ITERATED         0x0
 #define GR_COMBINE_OTHER_TEXTURE          0x1
+/* **Measured, 16 September 2026**, and it was the last value in this file taken
+   on the canonical table's word. The iterated colour as the local with its red
+   swept, the constant as `other`, `SCALE_OTHER`, constant red 204:
+
+       factor   L=0  51 102 153 204 255
+       0x01       0  41  74 115 156 198    the constant x the local
+       0x09     198 156 115  74  41   0    the constant x one minus the local
+       0x08     198 198 198 198 198 198    the constant, whole
+
+   Every enumeration value this backend programs has now been read back from the
+   card. */
 #define GR_COMBINE_OTHER_CONSTANT         0x2
 
 /* Blending. */
@@ -1683,9 +1694,9 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
        the iterated colour as **other**, rather than the other way round. It is
        the same product, and it uses only `GR_COMBINE_LOCAL_CONSTANT` and
        `GR_COMBINE_OTHER_ITERATED`, both of which this file already programs and
-       has seen work. `GR_COMBINE_OTHER_CONSTANT` would do as well and has never
-       been exercised on the card; there is no reason to spend an unverified
-       enumeration value on a choice that is free. */
+       has seen work. `GR_COMBINE_OTHER_CONSTANT` would do as well - it is
+       measured now, and correct - but a choice that was free either way is not
+       worth revisiting. */
     if (gs.constant_color) { gs.constant_color(b.current.env_color); }
     gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
@@ -1734,14 +1745,20 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
  * division of labour as everywhere else here: the card multiplies what varies
  * across the triangle, the CPU multiplies what does not.
  *
- * **The general case needs one more pass and one more measurement.** With a
- * primitive that is not black, term one is `P p (1 - sa) (1 - k) t`, whose colour
- * is `P x (1 - k)` - `SCALE_OTHER / ONE_MINUS_LOCAL` over `LOCAL_ITERATED` and
- * `OTHER_CONSTANT` - and `GR_COMBINE_OTHER_CONSTANT` is the last value in this
- * file never exercised on the card. Rather than spend an unmeasured enumeration
- * on it, this path is taken only where the term is provably zero, and the pair
- * keeps the rest. Every recipe-10 draw of the attract sequence has a black
- * primitive, which is why the case is worth writing before the measurement.
+ * **The general case is buildable and has nothing to serve.** With a primitive
+ * that is not black, term one is `P p (1 - sa) (1 - k) t`, whose colour is
+ * `P x (1 - k)` - `SCALE_OTHER / ONE_MINUS_LOCAL` over `LOCAL_ITERATED` and
+ * `OTHER_CONSTANT`. That last value was the one thing in this file never read
+ * back from the card, and on 16 September it was: 0x2, behaving exactly as the
+ * table says, including the `C x (1 - L)` this pass would need.
+ *
+ * The fourth pass is still not written, and the counter below is why. Across the
+ * corpus **no draw is refused this path for a primitive that is not black** -
+ * zero on the attract sequence, zero on the hub - so it would serve nothing any
+ * capture reaches. A branch in the draw path to serve a case no measurement
+ * finds is the shape of something that rots unverified, and this repository
+ * keeps a file of those. The guard stays, the counter stays, and the day a
+ * capture makes it fire the pass can be written against a number.
  */
 static int shade_exact_wanted(const dkr_render_state *st)
 {

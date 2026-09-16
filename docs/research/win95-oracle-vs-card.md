@@ -1113,3 +1113,35 @@ Two pieces of groundwork are named and not done:
   it is exact there - but the *other* multipass classes have not been put through
   this derivation at all, and the card probe now makes each one a measurement
   rather than an argument.
+
+## The last unmeasured value, and a fourth pass that will not be written
+
+`GR_COMBINE_OTHER_CONSTANT` was the one enumeration value this backend would
+program and had never read back from a card. `pass2_draw_by_shade` says so in a
+comment and arranges its product the other way round to avoid it; the fourth pass
+the general case of `prepass_shade_exact` needs cannot avoid it. Measured the same
+way as the two destination blend factors this morning - the iterated colour as
+the local with its red swept, the constant as `other`, `SCALE_OTHER`, constant
+red 204:
+
+    factor   L=0  51 102 153 204 255
+    0x01       0  41  74 115 156 198    the constant x the local
+    0x09     198 156 115  74  41   0    the constant x one minus the local
+    0x08     198 198 198 198 198 198    the constant, whole
+
+It is 0x2 and it behaves as the table says, `C x (1 - L)` included. **Every value
+this backend programs has now been read back from the card**, which is the end of
+a class of defect this file has paid for twice.
+
+And the fourth pass is still not written, because the counter added with it says
+it would serve nothing:
+
+    whole cycle in three: drawn=6 refused (primitive not black)=0   CAP0800
+    whole cycle in three: drawn=0 refused (primitive not black)=0   CAP0250
+
+Zero refusals on both. The restriction to a black primitive costs nothing any
+capture reaches, and a branch in the draw path to serve a case no measurement
+finds is the shape of something that rots unverified - the argument this file
+already made when it took out the addressing widening and the env-in-vertex
+buffer. The guard stays, the counter stays, and the day a capture makes it fire
+the pass can be written against a number instead of against an argument.
