@@ -152,13 +152,35 @@ aligned region free. `round_up_pow2` turns anything above 512 K into a 1,024 K
 request. That is a hypothesis with a shape, and it is one line of instrument away
 from being measured: the requested `want` beside the granted address.
 
-**The zero hits are untouched by all this** and are the larger question. Not memory,
-not fragmentation, not the slot table, not a dead counter, not an unstable key by
-construction. What is left is whether the keys actually repeat: the distinct-key set
-caps at 64 and reported 82 overflows, so the game used at least 146 and the true
-count is unknown. Raising that cap, or simply logging one key twice, would say
-whether the cache is failing to serve repeats or whether there are no repeats to
-serve. That is the next instrument, and it is smaller than this one.
+### The keys repeat, so the zero hits are a defect
+
+The last cheap explanation was that there might be nothing to serve. The set that
+would have said so was capped at 64 and reported 82 overflows, which made its
+"64 distinct keys" a floor wearing the look of a total. Raised to 1024 and given a
+repeat counter — the linear scan that computes it was already running, only the
+counter was missing — it answers on the captures already in hand, with no machine
+needed:
+
+    capture              distinct   repeats   overflow
+    CAP2600, a race          128       153          0
+    CAP0420, a menu           28        33          0
+
+**Two hundred and eighty-one asks for a hundred and twenty-eight textures**, and
+`overflow=0` means 128 is a true total this time rather than a floor. More than half
+of what the list asks for is something it has asked for before.
+
+So the residency cache has plenty to serve and serves none of it. Every cheap
+explanation is now spent — not memory, not fragmentation, not the slot table, not a
+dead counter, not an unstable key, and not an absence of repeats — which makes
+`hits=0` a defect in the residency path rather than a property of the workload.
+
+**One caveat, stated because the two numbers come from different runs.** The
+`hits=0/560` is a live session's TMU counter; the repeats are a capture replayed
+through the decoder, where the software oracle never touches a TMU at all. The
+decoder's own one-entry cache absorbs a few (`reused=5`), so roughly 148 of the 153
+repeats reach the upload path. Confirming both on the *same* run needs a live
+session with the new counter, which the built binary now carries and which is the
+next step rather than a further argument.
 
 ### The question this left, and which the instrument has now narrowed
 

@@ -125,6 +125,11 @@ typedef struct {
        black in the game is either being handed different depths or it is not,
        and until both sides report the number that is a guess. */
     float oow_min, oow_max;
+    /* See `distinct_repeats` in `f3ddkr.h`: asks = repeats + distinct, and the
+       pair is what says whether a residency cache reporting no hits is broken or
+       simply has nothing to serve. */
+    unsigned      distinct_keys;
+    unsigned long distinct_repeats, distinct_overflow;
 } replay_counts;
 
 static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
@@ -141,6 +146,9 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->fogged    = ctx->state.emitted_fogged;
     c->oow_min   = ctx->state.oow_min;
     c->oow_max   = ctx->state.oow_max;
+    c->distinct_keys     = ctx->state.distinct_keys;
+    c->distinct_repeats  = ctx->state.distinct_repeats;
+    c->distinct_overflow = ctx->state.distinct_overflow;
     c->secondary = ctx->state.emitted_secondary;
     c->geom_batches         = ctx->state.geom_batches;
     c->geom_depth_disagrees = ctx->state.geom_depth_disagrees;
@@ -206,6 +214,10 @@ static void say_counts(const char *who, const replay_counts *c)
     if (c->secondary) {
         say("           draws aimed at a second render target: %lu\n",
             c->secondary);
+    }
+    if (c->distinct_keys || c->distinct_repeats) {
+        say("           texture keys: distinct=%u repeats=%lu overflow=%lu\n",
+            c->distinct_keys, c->distinct_repeats, c->distinct_overflow);
     }
     if (c->oow_max > c->oow_min) {
         say("           oow=[%d..%d]/1000000\n",

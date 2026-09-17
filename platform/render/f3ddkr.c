@@ -1795,12 +1795,12 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         for (i = 0; i < c->state.distinct_keys; i++) {
             if (c->state.distinct_key_set[i] == key) { seen = 1; break; }
         }
-        if (!seen) {
-            if (c->state.distinct_keys < 64u) {
-                c->state.distinct_key_set[c->state.distinct_keys++] = key;
-            } else {
-                c->state.distinct_overflow++;
-            }
+        if (seen) {
+            c->state.distinct_repeats++;
+        } else if (c->state.distinct_keys < DKR_DISTINCT_KEY_MAX) {
+            c->state.distinct_key_set[c->state.distinct_keys++] = key;
+        } else {
+            c->state.distinct_overflow++;
         }
     }
 

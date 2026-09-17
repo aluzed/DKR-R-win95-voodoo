@@ -1343,10 +1343,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // would have to be; the distinct count does.
         std::fprintf(stderr,
                      "[gfx]   conversions: texels=%lu distinct-keys=%u"
-                     " overflow=%lu\n",
+                     " overflow=%lu repeats=%lu\n",
                      context_.state.conversion_texels,
                      context_.state.distinct_keys,
-                     context_.state.distinct_overflow);
+                     context_.state.distinct_overflow,
+                     context_.state.distinct_repeats);
         // --- What the card was actually asked to swallow --------------------
         //
         // Everything above counts what the *decoder* did: `uploaded` is the

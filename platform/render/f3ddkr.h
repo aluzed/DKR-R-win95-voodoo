@@ -255,9 +255,24 @@ typedef struct {
      * than guessed. `distinct_overflow` says when the set could not hold them
      * all, so the figure is never read as complete when it is not. */
     unsigned long     conversion_texels;
-    unsigned long long distinct_key_set[64];
+    /* **Sized to hold a session, not a list.** The set was 64 entries and
+       reported 82 overflows in one race, so the figure it produced -- "64
+       distinct keys" -- was a floor wearing the look of a total, and the
+       question it was asked next could not be answered with it: the TMU
+       residency cache reports `hits=0/560`, and whether that is a broken cache
+       or simply 560 textures that never repeat depends entirely on the true
+       distinct count. 1024 entries is 8 KB and covers every capture measured. */
+#define DKR_DISTINCT_KEY_MAX 1024u
+    unsigned long long distinct_key_set[DKR_DISTINCT_KEY_MAX];
     unsigned          distinct_keys;
     unsigned long     distinct_overflow;
+    /* **How often the list asks again for a key it has already asked for.**
+       The decisive number beside `distinct_keys`: asks = repeats + distinct. If
+       repeats is near zero the residency cache has nothing to serve and its
+       zero hits accuse nothing; if repeats is large, the zero is a defect. The
+       linear scan that computes it already ran -- only the counter was
+       missing. */
+    unsigned long     distinct_repeats;
     unsigned long     textures_refused;   /* texture memory full */
     /* Padded up to the next power of two, which the Voodoo requires and the N64
        does not. */
