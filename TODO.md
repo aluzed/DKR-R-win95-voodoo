@@ -284,10 +284,18 @@ only ever blocked on it.
    of a capture. Both backends render it cleanly, so that hypothesis is much weaker
    than it was.
 
-   **Where the navigation stalls:** after the file choice the game puts up that
-   caution screen and waits. My press sequence ran out there. One more hold gets
-   past it, and the route to the vehicle-select screen - where the original digits
-   defect was reported - is open from there.
+   **Where the navigation stalls, measured twice:** after the file choice the game
+   puts up the caution screen and waits (`CAP0700`). Adding ten more A presses did
+   not get further - `CAP0900` has the *same fill profile as `CAP0420`*, meaning
+   the sequence went round GAME SELECT and came back.
+
+   **Mashing A plateaus**, and the reason is in the harness note already: DKR's
+   menus are chosen with the **stick**, not confirmed with A alone. Going deeper
+   needs a real sequence - holds on `left`/`right`/`up`/`down` between the A
+   presses - worked out against screenshots rather than guessed. Three runs were
+   spent learning that, at about ten minutes each, and the value per run is falling:
+   the next attempt should shoot the screen after every press and build the
+   sequence from what it sees, instead of sending a batch and inspecting the end.
 
    Ten scenes now: 2,609 divergent pixels, 178 real, of 3.07 million.
 
