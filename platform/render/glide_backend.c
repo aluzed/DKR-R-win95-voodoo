@@ -2015,14 +2015,21 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
                               ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
                           GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     }
-    /* `LEQUAL` and no write: the second pass sits at exactly the depth the first
-       one left, and `LESS` -- which is what everything else uses -- would reject
-       every pixel of it. Writing again would be harmless and is skipped because
-       it is a write. */
-    if (gs.depth_function && b.current.depth != DKR_DEPTH_DISABLED) {
-        gs.depth_function(GR_CMP_LEQUAL);
-    }
-    if (gs.depth_mask) { gs.depth_mask(0); }
+    /* **The write belongs to this pass, and the comparison is left alone.**
+     *
+     * This used to be `LEQUAL` and no write, on the reasoning that the second
+     * pass sits at exactly the depth the first one left and `LESS` would reject
+     * every pixel of it. True - and only because the first pass had *written*
+     * that depth. The consequence was the one `pass_depth` records: where the
+     * ordinary draw is itself rejected, because an earlier draw already wrote
+     * this very depth, `LESS` turns the first pass away and `LEQUAL` lets the
+     * second one through. The card then paints the second half of a draw the RDP
+     * discarded whole.
+     *
+     * So `gl_draw_triangles` closes the mask before the ordinary draw whenever a
+     * second pass follows, and the second pass writes. Both then test the state's
+     * own `LESS` against the same unchanged buffer and agree. */
+    pass_depth(1);
 
     for (i = 0; i + 2 < count * 3; i += 3) {
         dkr_glide_draw_raw(&vertices[i], &vertices[i + 1], &vertices[i + 2]);
@@ -2164,6 +2171,9 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
         } else {
             const unsigned char scale =
                 b.has_state ? iterated_scale_wanted(&b.current) : 255u;
+            /* The ordinary draw yields the depth write to whatever follows it, so
+               that the two reach the same verdict. See `pass_depth`. */
+            if (g_pass2_follows) { pass_depth(0); }
             if (scale != 255u) {
                 static dkr_render_vertex tinted[PREPASS_BATCH * 3];
                 int done = 0;
