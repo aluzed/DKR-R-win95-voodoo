@@ -495,3 +495,36 @@ verifiable rather than guessed.
 Note the second signal, found by accident and worth keeping: the level pointer in
 the same log line changes a full report before the mode does, so it sees a level
 load that `gGameMode` has not caught up with yet.
+
+### Item 9, third sitting: the route is reproducible, and neither button confirms
+
+The route was walked again on a restarted machine with a reloaded game, and every
+step landed on the same screen as before, within the animation variation:
+
+    step                    brightness   colours   first walk
+    PLAYER SELECT              48.5 %      90499      90621
+      a  (choose)              50.5 %      93163      90709
+      a  (confirm)             64.2 %      70066      69945   -> CAUTION
+      start                    61.1 %      40554      40224   -> GAME SELECT
+      down, a  (TRACKS)        59.9 %     105590     105590   -> level loaded
+      start                    47.1 %     150590          -   -> a load frame
+
+So the route is **reproducible**, which was not established before: the
+fingerprints identify screens across a reboot.
+
+Past that point the sequence cycles - 96091, 85402, 120078, then 76512, 99512,
+69025 distinct colours - and `gGameMode` stays at MENU through six readings taken
+over about a hundred seconds, far past the one-report lag. `a` was tried and
+`start` was tried; neither leaves MENU. `gCurrentLevelHeader` holds at 0x8023E7C0
+throughout, so a level stays loaded the whole time.
+
+**The next hypothesis, and why.** A colour count that keeps moving between six
+readings without a press is a screen animating on its own, and one that swings
+between 69k and 120k is a large part of the frame changing - which is what a
+carousel of track previews would do. A carousel needs a *direction* before a
+confirmation, and only `a`, `start` and one `down` have been sent so far. Try
+`left`/`right` to settle a selection, then confirm.
+
+Recorded rather than attempted a fourth time in one sitting: the previous three
+each cost a boot, and the question is now specific enough that one run should
+answer it.
