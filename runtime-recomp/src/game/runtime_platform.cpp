@@ -2303,13 +2303,91 @@ void dkr::runtime::platform::poll_input() {
         }
     }
 #else
-    for (std::size_t player = 0; player < kControllerCount; ++player) {
-        g_buttons[player].store(0, std::memory_order_release);
-        g_stick_x[player].store(0.0F, std::memory_order_release);
-        g_stick_y[player].store(0.0F, std::memory_order_release);
-        g_physical_buttons[player].store(0, std::memory_order_release);
-        g_physical_stick_x[player].store(0.0F, std::memory_order_release);
-        g_physical_stick_y[player].store(0.0F, std::memory_order_release);
+    /* --- Input on a target without RT64, read straight from Win32 ----------- *
+     *
+     * This branch used to zero every controller every frame. Not an oversight - a
+     * deliberate stub - but on the Windows 95 target it is the whole of
+     * `poll_input`, so **the game could not be played at all**: the boot line
+     * announces a keyboard mapping and nothing ever read a key.
+     *
+     * Found on 17 September 2026 by putting an *unconditional* line in the RT64
+     * branch and watching it never print - three runs after a conditional one
+     * whose silence was ambiguous, a poll that never runs saying exactly as
+     * little as a poll whose flags are both true.
+     *
+     * **Not SDL.** The first attempt reached for `dkr::runtime::input::poll` and
+     * did not compile: the SDL window, the overlay and the device layer are
+     * themselves compiled out on this target, so there is no window to ask about
+     * focus and no device to refresh. `GetAsyncKeyState` needs neither - it reads
+     * the global key state - which is exactly right for a game that holds the
+     * Voodoo full screen and owns no focusable window of its own.
+     *
+     * The mapping is the one the boot line has always announced. Only player one
+     * has a keyboard; the other ports stay quiet rather than mirroring it. */
+    {
+        /* **Unconditional, once.** The press log below is conditional and its
+           silence is ambiguous in exactly the way that cost three runs already:
+           a `poll_input` that is never called says as little as one that is
+           called and sees no key. This line separates them. */
+        static int ran = 0;
+        if (ran < 2) {
+            ++ran;
+            std::fprintf(stderr, "[input] win95 poll_input called\n");
+        }
+        const struct { int vk; std::uint16_t mask; } kKeys[] = {
+            { VK_SPACE,  0x8000U },   /* A     */
+            { VK_SHIFT,  0x4000U },   /* B     */
+            { 'Z',       0x2000U },   /* Z     */
+            { VK_RETURN, 0x1000U },   /* Start */
+            { VK_UP,     0x0800U },   /* D-pad */
+            { VK_DOWN,   0x0400U },
+            { VK_LEFT,   0x0200U },
+            { VK_RIGHT,  0x0100U },
+            { 'Q',       0x0020U },   /* L     */
+            { 'E',       0x0010U },   /* R     */
+            { 'I',       0x0008U },   /* C     */
+            { 'K',       0x0004U },
+            { 'J',       0x0002U },
+            { 'L',       0x0001U },
+        };
+        std::uint16_t buttons = 0U;
+        for (std::size_t k = 0; k < sizeof(kKeys) / sizeof(kKeys[0]); ++k) {
+            if ((GetAsyncKeyState(kKeys[k].vk) & 0x8000) != 0) {
+                buttons |= kKeys[k].mask;
+            }
+        }
+        const float stick_x =
+            ((GetAsyncKeyState('D') & 0x8000) != 0 ? 1.0F : 0.0F) -
+            ((GetAsyncKeyState('A') & 0x8000) != 0 ? 1.0F : 0.0F);
+        const float stick_y =
+            ((GetAsyncKeyState('W') & 0x8000) != 0 ? 1.0F : 0.0F) -
+            ((GetAsyncKeyState('S') & 0x8000) != 0 ? 1.0F : 0.0F);
+        {
+            /* One line per transition into a press, capped: the question this
+               whole branch exists to answer is whether a key ever arrives. */
+            static std::uint16_t last = 0U;
+            static int logged = 0;
+            if (buttons != 0U && last == 0U && logged < 20) {
+                ++logged;
+                std::fprintf(stderr, "[input] win95 buttons=0x%04X\n",
+                             static_cast<unsigned>(buttons));
+            }
+            last = buttons;
+        }
+        g_physical_buttons[0].store(buttons, std::memory_order_release);
+        g_physical_stick_x[0].store(stick_x, std::memory_order_release);
+        g_physical_stick_y[0].store(stick_y, std::memory_order_release);
+        g_buttons[0].store(buttons, std::memory_order_release);
+        g_stick_x[0].store(stick_x, std::memory_order_release);
+        g_stick_y[0].store(stick_y, std::memory_order_release);
+        for (std::size_t player = 1; player < kControllerCount; ++player) {
+            g_buttons[player].store(0, std::memory_order_release);
+            g_stick_x[player].store(0.0F, std::memory_order_release);
+            g_stick_y[player].store(0.0F, std::memory_order_release);
+            g_physical_buttons[player].store(0, std::memory_order_release);
+            g_physical_stick_x[player].store(0.0F, std::memory_order_release);
+            g_physical_stick_y[player].store(0.0F, std::memory_order_release);
+        }
     }
 #endif
 }

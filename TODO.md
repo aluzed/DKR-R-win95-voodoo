@@ -121,34 +121,44 @@ order in this item was "record, compare, then decide".
 
 ---
 
-## 5. Nobody has driven the game into a race — PENDING (cause found in the code)
+## 5. Nobody has driven the game into a race — PENDING (port side implemented)
 
-**The Windows 95 build has no input at all.** `poll_input()`'s entire body is
-inside `#if DKR_RUNTIME_HAS_RT64` (`runtime_platform.cpp:2204`), and the target
-compiles with `-DDKR_RUNTIME_HAS_RT64=0` — confirmed in `build/win95/build.ninja`,
-not inferred. The function is empty, nothing is ever sampled, and the game cannot
-be played by anyone on this target.
+**Two separate faults, one fixed, one still open.**
 
-How it was found, in three runs, each narrowing by one conditional line:
+### Fixed: the Windows 95 build had no input at all
 
-1. `runtime_input.cpp` logs a line per transition from no buttons to some.
-   A run with twelve Start and A presses: **zero lines**. So nothing arrives.
-2. A line when `owns_keyboard && window_focused` is false — the expression that
-   gates the keyboard. **Zero lines**, so those flags were never the problem.
-3. The same line made **unconditional**. Still zero — and that is the one that
-   settles it, because a poll that never runs says exactly as little as a poll
-   whose flags are both true. The first version's silence was ambiguous and the
-   second version's was not.
+`poll_input()`'s body sat inside `#if DKR_RUNTIME_HAS_RT64` and this target
+compiles with `-DDKR_RUNTIME_HAS_RT64=0` (confirmed in `build/win95/build.ninja`).
+The `#else` branch **zeroed every controller every frame** - a deliberate stub, and
+the whole of input on this target.
 
-The `[gfx]` lines in the same log are per-frame and use the same `fprintf(stderr)`,
-so the absence is the code path's, not the logging's.
+The first replacement reached for `dkr::runtime::input::poll` and did not compile:
+the SDL window, the overlay and the device layer are compiled out here too. So the
+branch now reads Win32 directly with `GetAsyncKeyState`, which needs no window and
+no focus - right for a game holding the Voodoo full screen and owning no focusable
+window. Mapping as the boot line has always announced it.
 
-**Next step.** Move the polling out from behind the RT64 guard, or give the
-target its own path. Not trivial: the body also calls netplay, which this target
-compiles out too (`DKR_RUNTIME_HAS_NETPLAY=0`), so the guards have to be
-untangled rather than deleted.
+### Open: no key reaches the guest while the game holds the screen
 
-**Cost so far:** seven VM runs.
+Measured, with an unconditional witness in the new branch:
+
+    [input] win95 poll_input called      x2       the poll runs
+    [input] win95 buttons=...            none     no key is ever down
+
+So `GetAsyncKeyState` sees nothing for any of fourteen keys across three Start and
+A presses. The loss is **below the game** - in 86Box, or in how `xdotool` delivers
+keys once the Voodoo is full screen. `grab` sets X focus and 86Box reports the
+input captured, and it still arrives nowhere.
+
+**Next step.** A harness question, not a port one. Send a key and check the
+*guest's* state independently of the game - a tiny Win32 witness that logs
+`GetAsyncKeyState` and nothing else, run while the desktop is up rather than the
+game, to find whether keys arrive at all and whether the full-screen transition is
+what breaks it.
+
+**Cost so far:** ten VM runs. Four of them narrowed by one conditional line each,
+and three of those were spent because a *conditional* witness's silence is
+ambiguous. **Make the first witness unconditional.**
 
 ---
 
