@@ -578,3 +578,32 @@ So the next capture is worth choosing by what it would *exercise* rather than by
 which level it is. A scene that fills in three of the ten unverified two-cycle
 configurations is worth more than a lap of a track that fills in none, and the
 fill report of any candidate says which it is before anyone looks at an image.
+
+
+## A ninth configuration, from a state that was unreachable yesterday
+
+`CAP0420.BIN`, taken 17 September 2026 inside the menus - the first capture of this
+corpus taken from a game state reached by **driving the game**, which became
+possible the same day when the Windows 95 build got an input path and the harness
+learned to hold a key rather than tap it.
+
+Its fill:
+
+       309071  655902 ppm  opaque  99%  G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2
+        85024  180435 ppm  opaque   0%  G_CC_BLENDT_ENV_ALPHA_A_TxP
+        67776  143832 ppm  opaque   0%  **G_CC_MODULATEIA**
+         9344   19829 ppm  opaque   0%  G_CC_PRIMITIVE
+
+`G_CC_MODULATEIA` is number 23 of the catalogue and **no capture had ever
+exercised it**. It paints 67,776 pixels here, none of them opaque, so it is a real
+share of the screen rather than a stray draw.
+
+Coverage goes from eight configurations of twenty-nine to **nine**, and the method
+is now proven rather than proposed: the way to widen it is to drive the game to a
+state the corpus has not seen and capture there. Arming the capture at a list
+number the run reaches *after* the menus is what makes it land in the right place -
+the list index is not a stable coordinate, but "high enough that the menus are up"
+is a weak enough condition to hold across runs.
+
+This capture is not yet part of the checked corpus: it has no card render beside
+it, so it contributes coverage and not a divergence figure. That is one run.

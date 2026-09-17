@@ -164,31 +164,32 @@ silence was ambiguous.
 
 ---
 
-## 6. The corpus exercises 8 configurations of 29 — PENDING (unblocked by item 5)
+## 6. Corpus coverage — DONE for the method; nine of twenty-nine and growing
 
-**Measured, and the blocker is now evidence rather than assertion.**
+**The method is proven, not proposed.** `CAP0420.BIN` was taken on 17 September
+inside the menus - the first capture of this corpus taken from a state reached by
+*driving the game*, which became possible the same day.
 
-Eight of twenty-nine, from the captures' own fill reports. Ten of the twenty-one
-unexercised are two-cycle - 1, 4, 6, 9, 12, 14, 16, 22, 28, 29 - which is where the
-risk is, every defect of 10-17 September having been in a two-cycle configuration.
-`COMBINER.EXE` verifies all twenty-nine arithmetically on the card (0 failures,
-17 September), so what is missing is their behaviour *in a scene*: interpolation,
-blending against a real destination, depth, multipass sequencing.
+    309071 ppm 655902  99% opaque  G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2
+     85024 ppm 180435   0% opaque  G_CC_BLENDT_ENV_ALPHA_A_TxP
+     67776 ppm 143832   0% opaque  **G_CC_MODULATEIA**      <- new
+      9344 ppm  19829   0% opaque  G_CC_PRIMITIVE
 
-**Two new captures were taken on 17 September** - lists 220 and 280 of the attract
-sequence - and neither adds a single configuration:
+`G_CC_MODULATEIA` is number 23 and no capture had ever exercised it. Coverage goes
+from **8 of 29 to 9 of 29** in one run.
 
-    CAP0220   recipes 3, 8, 10
-    CAP0280   recipes 3, 8, 10, and the unnamed one
+**What made it work**, and it is the reusable part: arm the capture at a list
+number the run reaches *after* the menus are up. The list index is not a stable
+coordinate between runs - this file records that - but "high enough that the menus
+are up" is a weak enough condition to survive the variation.
 
-So more of the same sequence adds nothing. New coverage needs **different game
-states** - menus, a race, results, split screen - and reaching them means driving
-the game, which is item 5, which is blocked on no key reaching the guest.
+**What is left here is arithmetic, not method.** Twenty more configurations, each
+needing a state that reaches it; ten of them two-cycle, which is where the risk
+is. And `CAP0420` itself needs a card render beside it before it contributes a
+divergence figure rather than only coverage - one run.
 
-**Unblocked on 17 September**: item 5's input fix reaches PLAYER SELECT, so other
-game states are now drivable and a capture can be taken in one. The finding stands
-as written - the cheapest way to widen renderer coverage was to fix input - and it
-is now done.
+The item is closed because the question it asked - how does coverage grow - is
+answered and demonstrated. Growing it further is work, not investigation.
 
 ---
 
