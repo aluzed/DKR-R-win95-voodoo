@@ -21,6 +21,35 @@ it fails in the running game and not in the replay is the next question, and it 
 a narrow one: the replay clears once and draws one list, the live game clears every
 frame.
 
+### The clear looks correct, and the presents outnumber the lists eight to one
+
+Reading the clear path rather than guessing at it: `gl_begin_frame` sets
+`grDepthBufferMode` back to the W buffer *and* opens the mask before clearing -
+that fix is there, dated 24 August, with the measurement that motivated it in the
+comment - and `dkr_glide_clear` passes `GR_WDEPTHVALUE_FARTHEST`. Mode, mask and
+value are all right, and `begin_frame` is called once per graphics task in the live
+renderer, so the clear happens every frame.
+
+So the obvious mechanism is already handled, and the counters carry an anomaly I
+had not looked at:
+
+    list=420  ...  present=3600
+
+**About eight presents for every list decoded.** Each present swaps the buffers,
+and only one of the two carries what the list drew. A frame presented repeatedly
+without being redrawn alternates between the drawn face and whatever the other one
+holds, which is neither cleared nor drawn in that interval.
+
+That is a lead and not a diagnosis - it does not by itself explain why the title
+survives the alternation and the scene does not - but it is a measured asymmetry in
+exactly the part of the pipeline the replay never exercises: `REPLAY.EXE` decodes
+one list, presents once, and reads back.
+
+**The next measurement** is whether the depth buffer is per-buffer on this card. If
+each of the two colour buffers has its own aux buffer, a clear that reaches one and
+a scene drawn into the other is the whole story, and it would be invisible to any
+single-frame test.
+
 36 % rather than 98 % is expected and not a second defect: with depth off entirely
 the draw order is wrong and surfaces overdraw each other. The measurement asks
 whether the scene is there at all, and it is.
