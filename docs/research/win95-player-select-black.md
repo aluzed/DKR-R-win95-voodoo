@@ -76,6 +76,34 @@ it, as `dkr_glide_backend_*_stats` already do for the pass counters. That is a
 small design rather than a patch, and it is where this stops rather than
 compromising a file that has kept itself clean.
 
+## The sampler is in place, reads black everywhere, and cannot yet be believed
+
+`glide_renderer.cpp` samples one pixel of the back buffer immediately before
+`backend_.present`, using the already-public `dkr_glide_read_pixel`, and logs it.
+Every sample comes back `0x000000`.
+
+**That is not yet evidence**, for two reasons, and both are worth more than the
+reading:
+
+* the first version logged the **first twelve presents**, which all happen during
+  boot where the screen is legitimately black - it sampled the wrong window
+  entirely, which is the same mistake as timing a witness badly and was caught the
+  same way, by asking what moment the numbers belong to;
+* the second version spreads the samples and still reads black - but there is **no
+  positive control**. If this read returns black whatever the screen holds, in the
+  live game, then "always black" says nothing at all. Nothing has yet shown the
+  sampler returning a colour when a colour is on screen.
+
+The control is cheap and must come first: sample a pixel that is *known* non-black
+on a screen that is *known* correct - inside the title text on PLAYER SELECT, or
+anywhere on GAME SELECT, which the running game draws properly. A sampler that
+reads the title's yellow and the scene's black in the same frame settles the
+question in one run. One that reads black for both is broken and its earlier
+readings are void.
+
+Recorded here rather than acted on, because acting on an uncontrolled instrument is
+how the four wrong conclusions of 17 September happened.
+
 ## Why it matters beyond this screen
 
 `win95-corpus.md` says the corpus measures agreement between two backends and not
