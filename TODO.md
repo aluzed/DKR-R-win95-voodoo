@@ -265,12 +265,23 @@ only ever blocked on it.
 
 ### The follow-on work, and two of the three are done
 
-1. ~~PLAYER SELECT draws its title and leaves the rest black.~~ **Very probably not
-   a defect.** `CAP0420`, taken from the same driving session a few presses later,
-   shows GAME SELECT rendered completely - sky, title, three panels, both footer
-   labels. A decoder that renders one menu whole does not lose the body of the
-   previous one; the black frame was almost certainly caught mid-transition. The
-   same trap as item 1, on the same day. Not chased.
+1. **PLAYER SELECT draws its title and leaves the rest black — IT IS A DEFECT**,
+   and my first reading of it was wrong.
+
+   I wrote it off as a transition frame, reasoning that a decoder rendering GAME
+   SELECT whole would not lose PLAYER SELECT's body. Sound reasoning, wrong
+   conclusion. Driving the game one press at a time and taking a **second
+   screenshot twelve seconds later with no press between** shows it unchanged -
+   the title's colours shift, so the frame is live, and the blackness is stable.
+
+   And the capture says the opposite of the screen: the oracle draws the scene
+   whole, 380,294 pixels of recipe 3 alone, and the card measures `tail 800,
+   real 77` against it. **The list has the content and the backend renders it.**
+
+   So the fault is between rendering and presenting in the live game, which
+   `REPLAY.EXE` does not exercise - it decodes one list into one buffer and reads
+   it back. **The first defect here the capture harness cannot reproduce.** See
+   `docs/research/win95-player-select-black.md`.
 2. ~~A card render beside `CAP0420`.~~ **Done.** `tail 46 real 6` - the cleanest
    scene in the corpus, and the one carrying `G_CC_MODULATEIA`. The ninth
    configuration is exercised *and* verified, which is what makes it a corpus entry

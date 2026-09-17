@@ -755,3 +755,22 @@ corpus has, and the divergence has not been located yet. The card probe and the
 oracle probe both work on it, and that is one run each.
 
 Eleven scenes: **3,069 divergent pixels and 261 genuinely so**, of 3.38 million.
+
+
+## A twelfth scene, and the first defect this harness cannot see
+
+`CAP_PS` - PLAYER SELECT, captured while the running game was showing that screen
+**black except for its title**. Replayed, the oracle draws the scene whole and the
+card measures `tail 800, real 77` against it.
+
+So the scene is a normal corpus entry - twelve scenes now, **3,869 divergent
+pixels and 338 genuinely so**, of 3.69 million - and at the same time the proof
+that the live defect is outside everything this corpus measures. The list has the
+content; the backend renders it; the running game does not show it. See
+`win95-player-select-black.md`.
+
+Worth stating beside the tables, because the tables invite the opposite reading:
+**a clean figure here means the two backends agree on a display list, and nothing
+more.** It does not mean the screen looks right in the game. Two different
+limitations now have a named instance each - the hub's grey rectangles for
+"both wrong together", and this for "wrong outside the list".
