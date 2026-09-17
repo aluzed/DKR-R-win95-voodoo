@@ -64,6 +64,8 @@ const char *dkr_f3d_reject_text(dkr_f3d_reject r);
 #define DKR_G_ZBUFFER 0x00000001u
 #define DKR_G_SHADE   0x00000004u
 #define DKR_G_FOG     0x00010000u
+#define DKR_G_CULL_FRONT 0x00001000u
+#define DKR_G_CULL_BACK  0x00002000u
 
 typedef struct {
     /* Addressing bases from `DMAOffsets` — the central mechanism of Rare's
@@ -130,6 +132,16 @@ typedef struct {
     /* How many `G_MW_FOG` words the list carried. Non-zero means the game is
        asking for fog and this port is not computing its coefficient. */
     unsigned long fog_words;
+
+    /* --- Two sources for one fact, counted against each other ---------------- *
+     *
+     * Depth and culling are *derived* - from the blender and from the winding -
+     * and the geometry mode *states* them. Both are now available, and nothing
+     * had ever confronted them. Wherever they disagree there is a class of error,
+     * and a count is the cheapest way to know whether the class is empty. */
+    unsigned long geom_batches;
+    unsigned long geom_depth_disagrees;
+    unsigned long geom_cull_disagrees;
 
     unsigned int  geometry_mode;
     unsigned long geometry_mode_writes;

@@ -1368,6 +1368,19 @@ static void apply_state(dkr_f3d_context *c)
     if (c->no_depth) {
         c->render_state.depth = DKR_DEPTH_DISABLED;
     }
+    /* The geometry mode's claim against the derived state. Counted, never
+       applied: this says whether the two sources agree, which is a fact worth
+       having before either is trusted over the other. */
+    {
+        const int mode_z = (c->state.geometry_mode & DKR_G_ZBUFFER) != 0u;
+        const int used_z = (c->render_state.depth != DKR_DEPTH_DISABLED);
+        const int mode_cull =
+            (c->state.geometry_mode & (DKR_G_CULL_FRONT | DKR_G_CULL_BACK)) != 0u;
+        const int used_cull = (c->render_state.cull != DKR_CULL_NONE);
+        c->state.geom_batches++;
+        if (mode_z != used_z)       { c->state.geom_depth_disagrees++; }
+        if (mode_cull != used_cull) { c->state.geom_cull_disagrees++; }
+    }
     /* --- Fog off, and it is fog that was blanking the 3D layer -------------- *
      *
      * Measured on 22 August 2026. Neutralising this one field -- everything else

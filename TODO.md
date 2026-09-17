@@ -72,17 +72,26 @@ That is item 7 in miniature.
 
 ---
 
-## 3. The rest of the geometry mode is read and unused — PENDING
+## 3. The rest of the geometry mode is read and unused — DONE (class is empty)
 
-**What.** `G_ZBUFFER` and `G_CULL_FRONT`/`G_CULL_BACK` are decoded now and nothing
-reads them. Depth mode and culling are derived elsewhere, by other means.
+**Resolved 17 September 2026 by measurement: the two sources never disagree.**
 
-**Why it matters.** Two independent sources for the same fact. Wherever they
-disagree there is a class of error, and nobody has confronted them.
+Depth and culling are *derived* - from the blender and from the winding - and the
+geometry mode *states* them. Both were available and nothing had confronted them,
+so wherever they disagreed there would be a class of error. Counted per batch:
 
-**Next step.** For each batch, compare the geometry mode's claim against the
-derived `dkr_depth_mode` and cull mode, and count the disagreements. A counter and
-one replay. **No machine.**
+    CG0060    agrees on all 300 batches
+    CAP0250   agrees on all 209 batches
+    CAP0800   agrees on all  93 batches
+    CKEY1622  agrees on all 231 batches
+
+833 batches, zero disagreements. The class is empty, and the counters stay in the
+report - silent while they agree, so that the day one disagrees it says so instead
+of nobody asking again.
+
+`G_SHADE` is still read and unused, which is deliberate: nothing derives shading
+from anywhere else, so there is no second source to confront it with and no defect
+to suspect.
 
 ---
 

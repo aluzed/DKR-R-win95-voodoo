@@ -114,6 +114,7 @@ typedef struct {
        and nothing printed it - so "fog is off" and "fog is on and does nothing"
        were indistinguishable from the report. */
     unsigned long fogged;
+    unsigned long geom_batches, geom_depth_disagrees, geom_cull_disagrees;
     unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
     unsigned short stride_first[8][4];
     unsigned int  stride_first_n;
@@ -131,6 +132,9 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
     c->fogged    = ctx->state.emitted_fogged;
+    c->geom_batches         = ctx->state.geom_batches;
+    c->geom_depth_disagrees = ctx->state.geom_depth_disagrees;
+    c->geom_cull_disagrees  = ctx->state.geom_cull_disagrees;
     c->resident  = ctx->state.textures_resident;
     c->reused    = ctx->state.textures_reused;
     c->dxt_disagrees         = ctx->state.dxt_disagrees;
@@ -184,6 +188,16 @@ static void say_counts(const char *who, const replay_counts *c)
         " lost=%lu textures=%lu (resident=%lu reused=%lu) fogged=%lu\n",
         who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
         c->rejects, lost, c->textures, c->resident, c->reused, c->fogged);
+    /* Two sources for one fact. Silent when they agree, because a line of zeroes
+       on every run is a line nobody reads. */
+    if (c->geom_depth_disagrees || c->geom_cull_disagrees) {
+        say("           geometry mode disagrees with the derived state:"
+            " depth on %lu of %lu batches, cull on %lu\n",
+            c->geom_depth_disagrees, c->geom_batches, c->geom_cull_disagrees);
+    } else {
+        say("           geometry mode agrees with the derived state on all %lu"
+            " batches\n", c->geom_batches);
+    }
     /* **The tile's row stride against the one the conversion assumes.** Printed
        beside the counts and not behind a switch: a texture read at the wrong
        stride comes out sheared, and this is the number that says whether any
