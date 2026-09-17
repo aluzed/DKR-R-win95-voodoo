@@ -79,6 +79,38 @@ does not reach the depth buffer in the running game, while the path is correct o
 every line - mode restored, mask opened, `GR_WDEPTHVALUE_FARTHEST`, once per
 graphics task.
 
+### RETRACTED: the clear does take, and the buffer is not stale
+
+`DKR_CLEAR_NEAREST=1` clears the depth to nearest instead of farthest. Against
+`DKR_FLATTEN_W`, which puts every triangle at the nearest depth and paints the
+scene at 53 %:
+
+    switch                       title   scene
+    (none)                        51 %     0 %
+    DKR_NO_DEPTH=1                54 %    36 %
+    DKR_FLATTEN_W=1               54 %    53 %
+    DKR_FLATTEN_W + CLEAR_NEAREST 51 %     2 %
+
+**53 % to 2 %.** Clearing to nearest destroys what clearing to farthest allows, so
+the depth argument of `grBufferClear` takes effect and the buffer *is* cleared
+every frame. The section above - "the buffer holds the previous frame's depths" -
+is **wrong and withdrawn**. Its three readings were sound; the conclusion drawn
+from them was not, because they never tested whether the clear did anything.
+
+### What the four readings do say
+
+Against a buffer cleared to farthest, a fragment can only fail `LESS` if its depth
+is **at or beyond farthest**. The scene fails; a triangle forced to the nearest
+depth passes. So the scene's depths are arriving at the far end of the encoded
+range - saturated, or close enough that strict `LESS` rejects them at equality.
+
+That is a different defect from a stale buffer and it points somewhere specific:
+the W encoding of the scene's `oow`, not the clear, not the mask, not the mode.
+It also explains the replay's success without contradiction, the replay drawing
+into the same cleared buffer from the same list - which makes the next question
+what differs about the live vertices, and that is answerable with the card probe's
+vertex dump.
+
 ### And the allocation is right too, which exhausts inspection
 
 One more candidate died on reading: the context is opened with

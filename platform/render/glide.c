@@ -2,6 +2,7 @@
 #include "glide.h"
 
 #include <windows.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "win95/startup.h"
@@ -352,7 +353,32 @@ dkr_glide_result dkr_glide_open(dkr_glide_resolution wanted,
 void dkr_glide_clear(unsigned argb)
 {
     if (g.context_open) {
-        g.clear(argb, 0, GR_WDEPTHVALUE_FARTHEST);
+        /* --- `DKR_CLEAR_NEAREST=1`: does the depth argument do anything? ----- *
+         *
+         * PLAYER SELECT is black in the running game because every depth-tested
+         * draw fails, and three switches place the buffer's contents between
+         * nearest and farthest - the previous frame's depths. Every line of the
+         * clear path reads correctly, so what is left is whether the call reaches
+         * the aux buffer at all, and nothing can read that buffer back live.
+         *
+         * This makes it observable through what survives. Clearing to **nearest**
+         * inverts the expected outcome of `DKR_FLATTEN_W`, which puts every
+         * triangle at the nearest depth and today paints the scene at 53 %:
+         *
+         *   the clear works   -> flattened triangles are no longer strictly
+         *                        nearer than the buffer, `LESS` rejects them,
+         *                        and the scene goes back to nothing
+         *   the clear is inert -> nothing changes, and the depth argument has
+         *                        been doing nothing all along
+         *
+         * A diagnostic, not a setting. It belongs with the other `DKR_` switches
+         * that answer one question in one run. */
+        static int nearest = -1;
+        if (nearest < 0) {
+            const char *env = getenv("DKR_CLEAR_NEAREST");
+            nearest = (env != 0 && env[0] != '0') ? 1 : 0;
+        }
+        g.clear(argb, 0, nearest ? 0u : (unsigned)GR_WDEPTHVALUE_FARTHEST);
     }
 }
 
