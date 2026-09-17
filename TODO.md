@@ -760,3 +760,34 @@ something to sort.
 So the item's purpose is served without its stated hope being met: the corpus now
 holds a scene that exercises the two-cycle path and a real depth spread, and the
 configuration count is unchanged. Both halves of that are measured.
+
+### The race scene renders, and the fog fix holds on real 3D geometry
+
+`CAP2600` put on the card beside the oracle - the first time the two backends have
+been compared on anything but a flat menu:
+
+    painted surface         oracle 307047   card 307049    two pixels apart
+    frankly different       211 of 307200   686 ppm
+    on an edge, separate    785
+    worst gap off-edge      231 at (382,107)   0x84FFFF against 0x217518
+
+Two hundred and eleven real differences on a scene carrying 2,335 emitted
+triangles, 2,062 fogged draws, 5,450 pixels where the second cycle changes the
+colour, and a depth spread of a factor of 423. For scale, the corpus's cleanest
+menu sits at 9 divergent and 5 real, and its worst at 460 and 83.
+
+Three things are validated here that had never been tested on 3D geometry:
+
+* **the fog fix** - 88 % of this scene's draws are fogged, against 59 % in a menu,
+  and the card matches the oracle's coverage to two pixels;
+* **the two-cycle path**, whose second half had never changed a pixel in any
+  capture until this one, and whose 5,450 pixels are blended at 44 % opacity;
+* **the depth test**, on a range it can finally sort - the subsystem I spent a day
+  wrongly suspecting.
+
+The distinct-colour gap (116,334 against 14,367) is the card's 16-bit output and
+not a defect.
+
+One divergence is named for whoever looks next: (382,107), a bright cyan in the
+oracle against a dark green on the card. A single worst pixel among 211 is not a
+pattern, and it is written down rather than explained.
