@@ -150,11 +150,20 @@ A presses. The loss is **below the game** - in 86Box, or in how `xdotool` delive
 keys once the Voodoo is full screen. `grab` sets X focus and 86Box reports the
 input captured, and it still arrives nowhere.
 
-**Next step.** A harness question, not a port one. Send a key and check the
-*guest's* state independently of the game - a tiny Win32 witness that logs
-`GetAsyncKeyState` and nothing else, run while the desktop is up rather than the
-game, to find whether keys arrive at all and whether the full-screen transition is
-what breaks it.
+**Next step.** A harness question, not a port one: do keys reach a program that
+holds the Voodoo full screen? Keys reach the guest perfectly well on the desktop -
+that is how every program here is launched - so the full-screen transition is the
+difference under test.
+
+**Tried and withdrawn:** bolting a ten-second key poll onto `constant_alpha_probe`,
+which already takes the screen. It came back as a **zero-byte file**, which is the
+failure this repository has recorded before - Windows 95 leaves the directory entry
+at zero until `fclose`, so anything that faults before it takes the whole run's
+output. The section was added *before* the close, proved nothing, and destroyed the
+rest of the report. It is removed.
+
+Whatever asks this question needs to be **its own small witness that closes its
+file first**, not a section appended to one whose output is fragile.
 
 **Cost so far:** ten VM runs. Four of them narrowed by one conditional line each,
 and three of those were spent because a *conditional* witness's silence is
