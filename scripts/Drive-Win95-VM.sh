@@ -584,12 +584,23 @@ case "${1:-}" in
     mode_img="$VM/transfer.img@@$((63 * 512))"
     mode_log="$(mktemp)"
     trap 'rm -f "$mode_log"' EXIT
-    MTOOLS_SKIP_CHECK=1 mcopy -o -i "$mode_img" \
-      ::/dkr-runtime-data/logs/runtime.log "$mode_log" 2>/dev/null \
-      || die "the guest has written no runtime log yet"
-    mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1)"
+    # **Three tries, because the read races the writer.** The guest reopens this
+    # log every few seconds and a copy taken across that moment comes back short
+    # or empty - observed on 17 September 2026, on round twelve of a route, where
+    # a single attempt returned nothing and the caller had no way to tell "the
+    # game stopped" from "the file was busy". A transient empty answer that looks
+    # like a verdict is the failure this whole session has been paying for.
+    mode_line=""
+    for mode_try in 1 2 3; do
+      if MTOOLS_SKIP_CHECK=1 mcopy -o -i "$mode_img" \
+           ::/dkr-runtime-data/logs/runtime.log "$mode_log" 2>/dev/null; then
+        mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1)"
+        [[ -n "$mode_line" ]] && break
+      fi
+      sleep 2
+    done
     if [[ -z "$mode_line" ]]; then
-      die "the log is there but carries no game mode line yet"
+      die "no game mode line after three reads - the guest may not be running it"
     fi
     say "$mode_line"
     ;;
