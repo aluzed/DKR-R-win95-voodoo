@@ -79,6 +79,27 @@ does not reach the depth buffer in the running game, while the path is correct o
 every line - mode restored, mask opened, `GR_WDEPTHVALUE_FARTHEST`, once per
 graphics task.
 
+### And the allocation is right too, which exhausts inspection
+
+One more candidate died on reading: the context is opened with
+`grSstWinOpen(..., 2, 1)` - **two colour buffers and one aux**. The depth buffer is
+shared between the two faces, so there is no second aux going uncleared, and one
+clear per frame is the right number.
+
+That closes the last thing inspection can reach. Every part of the path is correct:
+
+* the mode is put back to the W buffer before the clear (August's fix, with its
+  measurement in the comment);
+* the mask is opened for the clear;
+* the value is `GR_WDEPTHVALUE_FARTHEST`;
+* `begin_frame` runs once per graphics task;
+* the aux buffer exists and there is exactly one.
+
+**So the next step is an experiment in the running game, not more reading.** The
+shape of it: make the clear observable - a draw immediately after it at a known
+depth, whose survival says whether the buffer took the value - since nothing can
+read the buffer back live, which is itself a measured limit of this harness.
+
 What is left is why that call does not take, which is now a question about the card
 and `grBufferClear` rather than about this port's logic.
 
