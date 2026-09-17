@@ -472,3 +472,86 @@ card stored for each. That settles whether larger `w` encodes larger or smaller,
 and whether a clear to `GR_WDEPTHVALUE_FARTHEST` really sits beyond the scene's
 depths - neither of which any reading of the code can settle, and both of which the
 card will answer in one run.
+
+## The defect is reproducible in the replay harness, and the call stream is innocent
+
+The frame count was the last structural difference between the replay and the
+running game, so `replay --frames N` was built to vary it. It settles nothing and
+something at once.
+
+**On the card, 1, 2 and 8 frames give the same image** - 29.87 % painted, 4590
+distinct colours, identical across all three. The clear, the buffers and the
+decoder all survive repetition. The oracle agrees with itself the same way at 1, 2
+and 5 frames, at 99.18 %.
+
+Which is the finding: replaying `CAP0420` on the card **paints 29.87 % where the
+oracle paints 99.18 %**. `compare` puts it plainly - the card is missing 69 % of the
+painted surface, and the worst pixel is a light blue sky at the top of the screen,
+`0x84AEFF` in the oracle and black on the card. That is the live symptom - the
+interface survives, the scene does not - **reproduced in the harness**, where the
+pixel probe, the card probe and the log all work and a run costs no driving.
+
+The probe names the failing draw at once:
+
+    card probe (429,0): 2 draw(s) changed it:
+      batch 1   covers  draw  0x000000 -> 0x000000  recipe=0  blend=0 depth=0 alpha=0
+      batch 10  covers  draw  0x000000 -> 0x000000  recipe=3  blend=0 depth=2 alpha=0
+                    v0  x=99.58  y=-38.67   oow=0.001549  rgba=255,255,255,255
+
+Batch 10 is opaque, depth-tested-and-written, white-shaded, covers the pixel - and
+leaves it black. It is rejected, silently.
+
+### And the same call stream produced the right image five hours earlier
+
+`MC_CAP0420.BMP`, written at 08:46 by the same `--card` invocation on the same
+capture, is **99.18 % painted**. Its log is still on `D:` and can be put beside
+today's line for line:
+
+                                        08:46        now
+    cmd / tri / emitted                1078/110/73  1078/110/73
+    culled / clipped / rejects          20/25/0      20/25/0
+    triangles reaching the card             213          213
+    texel-alone drawn                        53           53
+    second pass skipped (identity)           97           97
+    uploads refused                        none         none
+    painted                              99.18 %      29.87 %
+
+Every counter agrees. The decoder took the same decisions, the decomposer took the
+same decisions, and the same number of triangles went over the bus - and the pixels
+differ by two thirds of the screen. **The Glide call stream is identical and the
+result is not.**
+
+Three things were checked before that was written down, because each would have
+been a cheaper explanation:
+
+* *the invocation* - `--both` and `--card` were run on the same binary minutes
+  apart and gave the same 29.87 %, so the argument form is not it;
+* *the capture* - `CAP0420.BIN` was copied off the disk before and after the
+  ScanDisk that ran between the two measurements, and the two copies have the same
+  MD5, so the eight mebibytes are intact;
+* *the source* - only three commits touched `platform/` between the good image and
+  the bad one, and all three are inert: two counters added to the decoder, a
+  `getenv` switch that reads `FARTHEST` when it is unset, and a deleted `(void)self`.
+  `pass_depth`, the one change that could plausibly reject a depth-tested draw,
+  landed at 05:37 and is on the *good* side of the measurement.
+
+### What this narrows it to, and what it does not
+
+The fault is **not in the decoder and not in the call stream**. What is left is the
+card's side of the depth test: the aux buffer, its allocation, and its contents.
+That is consistent with every reading gathered so far - the title survives because
+it is drawn with the test disabled, `DKR_NO_DEPTH` restores the scene, the depths
+handed over are the same ones the oracle sorts correctly, and an opaque draw with
+`depth=2` is rejected over a clear it should pass.
+
+**What is not established is why it changed between 08:46 and 12:25.** No commit in
+the window can do it, the capture is byte-identical, and the invocation is the
+same. Saying "a regression at commit X" would be inventing the part that is
+missing. What can be said is that the same program, on the same card, with the same
+calls, produced two different images five hours apart - which makes the card's
+state, not this repository's logic, the thing to measure next.
+
+The first question to put to it: `grSstWinOpen` asks for two colour buffers and one
+aux at 640x480, and nothing yet has checked that it **got** the aux buffer. A
+context that opened without one would reject every depth-tested fragment and accept
+every other - which is exactly the image on disk.
