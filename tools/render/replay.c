@@ -118,6 +118,13 @@ typedef struct {
     unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
     unsigned short stride_first[8][4];
     unsigned int  stride_first_n;
+    /* **The range of depths the decoder hands the backend.**
+       The running game prints exactly this, every few hundred frames, from the
+       same two fields of the same decoder state. Printing it here too is what
+       makes the two comparable: a screen that renders on the card in replay and
+       black in the game is either being handed different depths or it is not,
+       and until both sides report the number that is a guess. */
+    float oow_min, oow_max;
 } replay_counts;
 
 static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
@@ -132,6 +139,8 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
     c->fogged    = ctx->state.emitted_fogged;
+    c->oow_min   = ctx->state.oow_min;
+    c->oow_max   = ctx->state.oow_max;
     c->secondary = ctx->state.emitted_secondary;
     c->geom_batches         = ctx->state.geom_batches;
     c->geom_depth_disagrees = ctx->state.geom_depth_disagrees;
@@ -197,6 +206,10 @@ static void say_counts(const char *who, const replay_counts *c)
     if (c->secondary) {
         say("           draws aimed at a second render target: %lu\n",
             c->secondary);
+    }
+    if (c->oow_max > c->oow_min) {
+        say("           oow=[%d..%d]/1000000\n",
+            (int)(c->oow_min * 1000000.0f), (int)(c->oow_max * 1000000.0f));
     }
     if (c->geom_depth_disagrees || c->geom_cull_disagrees) {
         say("           geometry mode disagrees with the derived state:"

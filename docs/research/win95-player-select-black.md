@@ -1,4 +1,4 @@
-# SOLVED: PLAYER SELECT is black because every depth-tested draw fails
+# OPEN: PLAYER SELECT is black, and the depth test is where it fails
 
 **Diagnosis, 17 September 2026.** Running the game with `DKR_NO_DEPTH=1` brings the
 scene back:
@@ -409,3 +409,66 @@ It also corrects a conclusion from earlier the same day. The black body was firs
 written down as "very probably not a defect", reasoning that a decoder rendering
 GAME SELECT whole would not lose PLAYER SELECT's. That reasoning was sound and the
 conclusion was wrong, because the fault is not in the decoder at all.
+
+## RETRACTED: the depths are not saturated, they are identical to the capture's
+
+The previous entry closed with an inference and called it a finding:
+
+> *"the scene's depths are arriving at the far end of the encoded range -
+> saturated, or close enough that strict `LESS` rejects them at equality [...] it
+> points somewhere specific: the W encoding of the scene's `oow`."*
+
+That is measurable, and it is wrong.
+
+The decoder has carried `oow_min`/`oow_max` for weeks, and the running game prints
+them to `runtime.log` every few hundred frames. The replay tool did not print them,
+which is the only reason the two were never compared; it does now, from the same
+two fields of the same decoder state, so the numbers are the same measurement on
+both sides:
+
+    same screen (MENU)          oow, in millionths
+    CAP0420 replayed on host      [1146 .. 6250]
+    the running game              [ 946 .. 7372]
+
+The live range is the wider of the two only because it accumulates over three
+hundred lists where the capture is one. They are the same depths. `w = 1/oow` runs
+from about 135 to 1050 - nowhere near the ends of what Glide encodes, and not
+saturated by any reading.
+
+So the decoder hands the backend the **same depths** in both. The capture renders
+correctly on the card in replay and black in the game with those depths. The depth
+*values* are not what separates the two cases, and the W encoding of `oow` is not
+the place to look.
+
+### A second lead, opened and closed in the same reading
+
+The log shows 300 display lists against 2400 VI presents - exactly eight to one,
+and with two colour buffers an even ratio would mean the game always redraws the
+same buffer while the other keeps whatever it held at boot. That would explain a
+black screen precisely.
+
+It is not what the counter counts. `update_screen` increments `present_count_` and
+presents nothing; `backend_.present` is called once per display list, from the list
+path. Three hundred lists, three hundred swaps, alternating properly. The eight to
+one is the game rendering at one VI refresh in eight - the 5.88 fps already
+measured in `cpu-budget.md` - and nothing more.
+
+Worth recording because the arithmetic was suggestive enough to have cost a VM run
+had it not been checked against the code that produces the number.
+
+### What is left, and the instrument it needs
+
+Five things are now measured rather than supposed: the clear writes, the depths are
+identical, the buffers alternate, the list is the same, the backend is the same
+file. What remains between them is the **direction and encoding of the depth test
+on this card** - which is exactly the class of question this port has answered
+correctly before, by measuring the card instead of reading the specification. Every
+combiner and blend enum in `glide_backend.c` was read back from the Voodoo for that
+reason.
+
+The witness to write is the same shape as those: draw two triangles at known,
+different `oow`, read the depth buffer back through `grLfbLock`, and print what the
+card stored for each. That settles whether larger `w` encodes larger or smaller,
+and whether a clear to `GR_WDEPTHVALUE_FARTHEST` really sits beyond the scene's
+depths - neither of which any reading of the code can settle, and both of which the
+card will answer in one run.
