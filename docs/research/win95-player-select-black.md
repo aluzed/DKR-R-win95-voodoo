@@ -163,6 +163,23 @@ own to produce the blackness - something about the live run must make the same
 collapse lose the scene where the replay's does not. What that is, is the next
 question, and it now has a mechanism to hang on rather than a shrug.
 
+### One comparison that does not work, recorded so it is not repeated
+
+The obvious test of the candidate is whether the live game switches target more
+often than the capture does - if it does, and nothing consumes the switch, content
+could be overwritten repeatedly. The counts look damning at first glance:
+
+    live run's log   4 SetColorImage lines in total
+    one capture      5 SetColorImage lines in one display list
+
+**They are not comparable.** The live trace is throttled to the first few lists, so
+its four lines are an early sample and not a per-frame rate; the capture's five are
+one list in full. Nothing follows from the comparison in either direction.
+
+Measuring the real rate needs the live trace unthrottled for this command, which is
+a change to make deliberately rather than a number to read off what is already
+there.
+
 ## Where the defect stands
 
 Established: the screen is black live and correct in its own capture; the list
