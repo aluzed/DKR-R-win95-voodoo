@@ -1097,3 +1097,33 @@ document until now has been against the oracle, and the oracle does not read
 `alpha_scale`. A change to that byte is invisible to the whole host-side harness
 by construction — it can only be measured on the card, and it was, and the answer
 was no.
+
+
+## A capture of that font at last, and the card renders it cleanly
+
+This note ends by saying the question cannot be settled because **there is no
+capture of that screen** - "every image of it is the card's own output with nothing
+to compare against, which is the exact condition E09-S02 exists to remove."
+
+`CAP0700.BIN`, taken 17 September 2026, is a capture of a screen that is almost
+entirely the small proportional face: the controller-pak caution that follows the
+file choice, twelve lines of running text and a title. It exists because the
+Windows 95 build got an input path the same day and the game could be driven to it.
+
+    CAP0700   tail 9   real 5
+
+Nine divergent pixels of 307,200, five of them real. **The best figure in the
+corpus**, on the screen with the most of that font on it.
+
+So the card does not shred this face, and neither does the oracle. What that does
+and does not settle:
+
+* it settles that the font, the decoder's handling of it and the card's rendering
+  of it are sound **on this screen**;
+* it does **not** settle the original report, which was about the best-time digits
+  on the vehicle-select screen - a different screen, still uncaptured, and reached
+  by going further into the menus than anything has yet.
+
+The hypothesis "something is wrong with that font" is much weaker than it was. The
+next capture to take is the vehicle-select screen itself, and the route to it is
+now open.

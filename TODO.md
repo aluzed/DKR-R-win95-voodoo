@@ -276,10 +276,20 @@ only ever blocked on it.
    configuration is exercised *and* verified, which is what makes it a corpus entry
    rather than a screenshot. Nine scenes: 2,600 divergent, 173 real, of 2.76
    million.
-3. **Drive further** - a track, a race, the results screen - and capture in each.
-   Still open, and now routine: hold a key, arm a capture at a list the run reaches
-   once the screen is up, measure both backends. That is how the remaining twenty
-   configurations arrive, one state at a time.
+3. **Drive further** - partly done, and it answered an older question on the way.
+   `CAP0700` is the controller-pak caution screen, three menus deep: **tail 9,
+   real 5**, the best figure in the corpus. It adds no new configuration (recipes 3
+   and 20) but it is almost entirely the small proportional font that
+   `win95-hud-digits.md` reported as shredded on menus and could not test for want
+   of a capture. Both backends render it cleanly, so that hypothesis is much weaker
+   than it was.
+
+   **Where the navigation stalls:** after the file choice the game puts up that
+   caution screen and waits. My press sequence ran out there. One more hold gets
+   past it, and the route to the vehicle-select screen - where the original digits
+   defect was reported - is open from there.
+
+   Ten scenes now: 2,609 divergent pixels, 178 real, of 3.07 million.
 
 ### Three method notes this round paid for
 

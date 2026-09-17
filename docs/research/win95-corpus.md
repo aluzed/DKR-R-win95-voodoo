@@ -630,3 +630,19 @@ whole does not lose the body of PLAYER SELECT.
 Almost certainly a transition frame caught before the panels arrived, which is
 exactly the trap the logo cost an afternoon to relearn the same day. Recorded
 here rather than in a research note, because one screenshot is not a finding.
+
+
+## A tenth scene, and the font question answered
+
+`CAP0700.BIN` - the controller-pak caution screen, reached by driving three menus
+deep - measures **tail 9, real 5**. The best figure in the corpus, and it matters
+beyond its size: that screen is almost entirely the small proportional face which
+`win95-hud-digits.md` reported as shredded on menu screens, and which that note
+could not test because no capture of such a screen existed. Now one does, and both
+backends render it cleanly.
+
+Its fill adds no new configuration - recipes 3 and 20 - so it is coverage of a
+*screen* rather than of the catalogue. Both kinds are worth having, and the
+distinction is worth keeping in mind when choosing the next one.
+
+Ten scenes: **2,609 divergent pixels and 178 genuinely so**, of 3.07 million.
