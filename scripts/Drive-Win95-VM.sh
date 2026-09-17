@@ -150,6 +150,24 @@ screen_colours() {
   convert "$1" -crop 667x500+0+55 -format "%k" info: 2>/dev/null || printf 0
 }
 
+# **Mean brightness in tenths of a per cent**, the second half of a fingerprint.
+#
+# The colour count alone is not enough, and one measurement settles it:
+#
+#     CAUTION                          63.9 %   70446
+#     another screen on the same route 52.1 %   70314
+#
+# A hundred and thirty-two colours apart, twelve points of brightness apart. A
+# route matching on colours alone announced "arrived at CAUTION, 391 off" while
+# standing somewhere else entirely, and every step after it was condemned - ten
+# presses of `start` hunting a screen it could no longer reach.
+#
+# Integer tenths, so shell arithmetic can compare them.
+screen_brightness() {
+  convert "$1" -crop 667x500+0+55 -format "%[fx:int(mean*1000)]" info: 2>/dev/null \
+    || printf 0
+}
+
 # **How much the screen moved between two captures**, on a scale of 0 to 255.
 #
 # Printed rather than judged, because the threshold belongs to the caller: a menu
@@ -672,7 +690,17 @@ case "${1:-}" in
     # the printed gap rather than trust the arrival.
     need_running; shift
     [[ $# -ge 2 ]] || die "usage: pad-until-screen <control> <colours> [tolerance]"
-    ps_control="$1"; ps_target="$2"; ps_tol="${3:-2000}"
+    # The fingerprint is `<colours>` or `<colours>:<brightness in tenths>`. The
+    # second half is optional so that every existing caller keeps working, and it
+    # is what stops a match on a screen that merely holds a similar number of
+    # colours - see `screen_brightness`. Its window is 30 tenths, three points,
+    # comfortably inside the twelve that separated the two screens which collided.
+    ps_control="$1"
+    ps_target="${2%%:*}"
+    ps_bright="${2#*:}"
+    if [[ "$ps_bright" == "$2" ]]; then ps_bright=""; fi
+    ps_tol="${3:-2000}"
+    ps_btol="${4:-30}"
     command -v import >/dev/null || die "ImageMagick (import) is required"
     ps_shot="$(mktemp --suffix=.png)"
     trap 'rm -f "$ps_shot"' EXIT
@@ -681,15 +709,20 @@ case "${1:-}" in
         || die "cannot read the screen"
       ps_k="$(screen_colours "$ps_shot")"
       ps_gap=$(( ps_k > ps_target ? ps_k - ps_target : ps_target - ps_k ))
-      if [[ "$ps_gap" -le "$ps_tol" ]]; then
-        say "pad-until-screen: arrived after $((ps_try - 1)) press(es) ($ps_k colours, $ps_gap off)"
+      ps_bgap=0
+      if [[ -n "$ps_bright" ]]; then
+        ps_b="$(screen_brightness "$ps_shot")"
+        ps_bgap=$(( ps_b > ps_bright ? ps_b - ps_bright : ps_bright - ps_b ))
+      fi
+      if [[ "$ps_gap" -le "$ps_tol" && "$ps_bgap" -le "$ps_btol" ]]; then
+        say "pad-until-screen: arrived after $((ps_try - 1)) press(es) ($ps_k colours, $ps_gap off; brightness $ps_bgap off)"
         exit 0
       fi
-      say "pad-until-screen: $ps_k colours, $ps_gap off - pressing $ps_control"
+      say "pad-until-screen: $ps_k colours, $ps_gap off, brightness $ps_bgap off - pressing $ps_control"
       "$0" pad-hold 1400 "$ps_control" >/dev/null 2>&1
       sleep 5
     done
-    die "pad-until-screen: ten presses and never within $ps_tol of $ps_target"
+    die "pad-until-screen: ten presses and never within $ps_tol of $ps_target${ps_bright:+ (brightness $ps_bright)}"
     ;;
   hold)
     # Presses a key, waits, releases it. `key` above sends a press and a release

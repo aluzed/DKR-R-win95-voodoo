@@ -672,3 +672,34 @@ and not somewhere easier in the menus.
 So the open work is unchanged and now precisely bounded: reach the rich screen with
 the chained route, arm a capture there, and read its fill. The chain reaches GAME
 SELECT reliably; what it has never reached twice is the screen after `down, a`.
+
+### Item 9, eighth sitting: the fingerprint needed a second dimension
+
+The tightened window did its job - it rejected the neighbour a 3500 window had
+accepted - and that moved the failure one link upstream, where it was visible for
+the first time.
+
+    screen                            brightness   colours
+    CAUTION, the reference                 63.9 %    70446
+    where the chain actually stopped       52.1 %    70314
+
+**A hundred and thirty-two colours apart and twelve points of brightness apart.**
+The chain announced "arrived at CAUTION, 391 off" while standing somewhere else,
+and then spent ten presses of `start` hunting a screen it could no longer reach.
+The colour count is a good discriminator and not a sufficient one.
+
+`pad-until-screen` now takes `<colours>` or `<colours>:<brightness in tenths>`, and
+matches both when the second is given - window 30 tenths, three points, well inside
+the twelve that separated the pair that collided. Old callers are unaffected.
+
+**Two smaller things this sitting cost, both worth writing down.**
+
+A chain whose links do not short-circuit keeps walking after a refusal. The tool
+said `ten presses and never within 2000 of 40554` and my inline route ran the next
+link anyway, on a screen already known to be wrong. A route must stop at its first
+refusal - `&&` between links, or a shell that exits on error.
+
+And a guard that greps the process table can match **itself**: `pgrep -f "bash
+scripts/Drive..."` matched its own wrapper's command line, so an edit that was safe
+to make was refused six times running. Filter the wrapper out, or the guard reports
+busy forever.
