@@ -171,22 +171,30 @@ ambiguous. **Make the first witness unconditional.**
 
 ---
 
-## 6. The corpus exercises 8 configurations of 29 — PENDING
+## 6. The corpus exercises 8 configurations of 29 — PENDING (blocked on item 5)
 
-**What.** Measured from the captures' own fill reports. Ten of the twenty-one
-unexercised are two-cycle — 1, 4, 6, 9, 12, 14, 16, 22, 28, 29 — which is where
-the risk is: every defect of the week of 10–17 September was in a two-cycle
-configuration.
+**Measured, and the blocker is now evidence rather than assertion.**
 
-**What is already covered.** `COMBINER.EXE` puts all twenty-nine on the card and
-compares against the closed form: **0 failures**, measured 17 September. So the
-combiner *arithmetic* is verified for all of them. What is not exercised is their
-behaviour in a scene — interpolation, blending against a real destination, depth,
-multipass sequencing.
+Eight of twenty-nine, from the captures' own fill reports. Ten of the twenty-one
+unexercised are two-cycle - 1, 4, 6, 9, 12, 14, 16, 22, 28, 29 - which is where the
+risk is, every defect of 10-17 September having been in a two-cycle configuration.
+`COMBINER.EXE` verifies all twenty-nine arithmetically on the card (0 failures,
+17 September), so what is missing is their behaviour *in a scene*: interpolation,
+blending against a real destination, depth, multipass sequencing.
 
-**Next step.** Choose the next capture by which configurations it would exercise,
-not by which level it is. The fill report of a candidate answers that before
-anyone looks at an image.
+**Two new captures were taken on 17 September** - lists 220 and 280 of the attract
+sequence - and neither adds a single configuration:
+
+    CAP0220   recipes 3, 8, 10
+    CAP0280   recipes 3, 8, 10, and the unnamed one
+
+So more of the same sequence adds nothing. New coverage needs **different game
+states** - menus, a race, results, split screen - and reaching them means driving
+the game, which is item 5, which is blocked on no key reaching the guest.
+
+**This item cannot advance until item 5 does.** That is the finding, and it is
+worth one line in a tracker: the cheapest way to widen renderer coverage is to fix
+input.
 
 ---
 
