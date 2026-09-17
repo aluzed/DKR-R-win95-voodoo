@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E00 — Scoping, measurements and decisions |
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Priority** | P0 |
 | **Estimate** | L |
 | **Depends on** | E00-S02 |
@@ -91,6 +91,41 @@ unwritten. A frame that already costs 5.1× its budget has no room for it.
 Usable straight away: the **38×** factor transposes onto the target any measurement
 made on the development machine.
 
+## The verdict — NO-GO on the stated floor, 17 September 2026
+
+Written in full, with the arithmetic, in
+[`docs/research/cpu-budget.md`](../../research/cpu-budget.md).
+
+**It did not need the decision this ticket was waiting for.** The question "what
+does playable mean for this port" turns out not to arise, because the split decides
+it: 125 ms of the 170 ms frame is recompiled MIPS code — 73.5 %, measured — and that
+share caps every optimisation.
+
+    recompiled code reduced to zero   ->  45 ms per frame  =  22.2 fps
+
+Twenty-two frames per second is the **ceiling of a perfect optimisation**. Thirty is
+therefore unreachable on a Pentium II 400 whatever E08-S02 achieves, and so is
+twenty-five. Twenty and fifteen are arithmetically reachable and ask the recompiled
+part to fall by 98 % and 85 % respectively, which a recompiler does not give back. A
+realistic E08-S02 at 1.3× to 1.5× lands the frame at 130 ms — **7.7 fps**.
+
+The audio is in none of these numbers: E00-S04 measured the microcode path at 3.9 %
+of the throughput it needs, and its replacement is unwritten.
+
+**The threshold that would flip it**, stated as the acceptance criteria require:
+
+* a raised floor of **a Pentium III around 1.4 GHz**, and only if E08-S02 delivers
+  about 1.5× - three steps beyond ADR 0002;
+* or a measurement **on silicon** ([E09-S04](../E09-qa/E09-S04-real-hardware-validation.md)),
+  since all of this is 86Box's timing model and that is the largest single
+  uncertainty here;
+* or the documented fallback, the neighbouring decomp's native port, which carries
+  no translation overhead.
+
+**What it does not condemn:** nothing built so far. The renderer is 13.6 % of the
+frame, and the decoder, the Glide backend, the system layers and the test harness
+all transfer unchanged to a raised floor or to the native port.
+
 ## Context
 
 This is the ticket that decides whether this project is feasible.
@@ -148,15 +183,15 @@ audio.
 
 ## Acceptance criteria
 
-- [ ] The 64 → 32 bit slowdown factor without SSE is measured on at least two
+- [x] The 64 → 32 bit slowdown factor without SSE is measured on at least two
       distinct play sequences.
-- [ ] The per-frame budget is broken down: the game's CPU, the audio microcode (the
+- [x] The per-frame budget is broken down: the game's CPU, the audio microcode (the
       figure taken from E00-S04), vertex transformation, remaining margin.
-- [ ] The minimum CPU frequency is stated in MHz, with the margin hypothesis made
+- [x] The minimum CPU frequency is stated in MHz, with the margin hypothesis made
       explicit.
-- [ ] A **go / no-go** conclusion is written in black and white, with the threshold
+- [x] A **go / no-go** conclusion is written in black and white, with the threshold
       that would trigger it the other way.
-- [ ] If the verdict is no-go on a Pentium II, the document states what would change
+- [x] If the verdict is no-go on a Pentium II, the document states what would change
       the picture: a raised hardware floor (Pentium III), or a switch to the
       neighbouring decomp's native port.
 

@@ -14,8 +14,8 @@ OSR2.5 — settled by
 [E00-S05](E00-scoping/E00-S05-adr-hardware-target-glide.md) and
 [ADR 0002](../adr/0002-hardware-target.md). The **hardware** floor is fixed and the
 test machine is now aligned with it: Voodoo 2, 2 MB of frame buffer, 2 MB per TMU.
-Only the **CPU** floor stays provisional, E00-S03's go/no-go awaiting a real play
-session.
+The **CPU** floor does not hold: E00-S03's go/no-go is pronounced on
+17 September 2026 and it is a **no-go on a Pentium II 400**. See the verdict below.
 
 ## What is kept, what falls
 
@@ -81,7 +81,7 @@ provably stale, with the evidence:
 | [E02-S03](E02-system/E02-S03-clock-timers-and-pacing.md) | `IN_PROGRESS` — the time base is delivered and measured: `QueryPerformanceCounter` at **1,193,180 Hz, that is the 8254 PIT**, 4.19 µs, 200,000 reads without a single step backwards, and a **drift of −0.0000 % over 300 s** on the target. Two of the ticket's assumptions are disproved (`GetTickCount` is at 9 ms and a hundred times cheaper; `timeBeginPeriod(1)` changes nothing here). A defect found along the way: `ultramodern` derives `osGetCount` from `high_resolution_clock`, which is **the wall clock** on this toolchain — wiring it onto this base is therefore justified by measurement. |
 | [E02-S02](E02-system/E02-S02-ultramodern-scheduler.md) | `IN_PROGRESS` — patch 0015: `ultramodern`'s five primitives go through a seam that the target fills with E02-S01's layer. **`ultramodern` compiles for Windows 95, 15 files out of 15**, the modern targets unchanged, forbidden includes down from **9 to 1**. `thread_local` works on the target, measured. Points 5 to 7 stay blocked by E01-S05, E02-S05 and E07-S03. |
 | [E02-S01](E02-system/E02-S01-threading-and-synchronisation-layer.md) | `REVIEW` — the threading layer is complete: threads, locks, semaphore, **condition variable**, events, TLS. **48 checks without a failure under emulated Windows 95**, a 600 s endurance run (8,437 rounds). Two invisible blockers found: `CreateSemaphoreW` and `GetHandleInformation` are exported by Windows 95 but **empty**, which breaks moodycamel's semaphore and `std::thread::join()`; the import guard rail now checks the empty exports too. The initial survey, made on a worktree that a broken `apply-dependency-patches.sh` left without its first thirteen patches, had wrongly concluded that no condition variable was needed. |
-| [E00-S03](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) | Both factors are measured: **2.16×** for the 64 → 32 bit move without SSE, **17.7×** for the normalisation towards the 400 MHz Pentium II — that is **≈ 38×** between the development machine and the target. Go/no-go not pronounced: what is now missing is the CPU cost of a game frame, which requires [E02-S06](E02-system/E02-S06-game-bring-up.md). |
+| [E00-S03](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) | `DONE` — **go/no-go pronounced 17 September 2026: no-go on a Pentium II 400.** 125 ms of the 170 ms frame is recompiled MIPS code, so reducing that code to *zero* still leaves 45 ms — **22.2 fps is the ceiling of a perfect optimisation**, and 30 fps is unreachable whatever E08-S02 achieves. The audio is in none of these numbers. What would flip it: a ~1.4 GHz Pentium III *and* a 1.5× optimisation, a measurement on silicon ([E09-S04](E09-qa/E09-S04-real-hardware-validation.md)) since this is 86Box's timing model, or the native-port fallback. |
 
 ### Gained along the way
 
@@ -114,9 +114,15 @@ without a Windows 95 machine restorable in a few seconds, everything else is
 developed blind. It even conditions E00-S02.
 
 [**E00-S03**](E00-scoping/E00-S03-spike-recompilation-cpu-budget.md) — the CPU
-budget. It decides whether the project is feasible on this class of machine, and it
-carries an explicit **go / no-go**. Discovering it now costs a week; discovering it
-after E04 and E05 costs three months.
+budget. It decided whether the project is feasible on this class of machine, and
+**it has decided: no-go on a Pentium II 400**, 17 September 2026.
+
+The order below is kept as written because it is still the right order, and because
+nothing it produced is lost: the renderer is 13.6 % of the frame, and the decoder,
+the Glide backend, the system layers and the test harness all transfer unchanged to
+a raised floor or to the native port. What the verdict changes is the destination,
+not the road already travelled. E08-S02 is no longer an optimisation ticket but the
+measurement that would say how far a raised floor has to be raised.
 
 ```
 E09-S01 (test machine)

@@ -426,3 +426,79 @@ Written down because the pattern is the report's subject as much as the number i
 > this report keeps meeting: an absence of output read as evidence about the thing
 > being measured. The fix that generalises is the cheap one in fault 2 — a line at
 > the first event, so that "switched off" and "nothing to say" stop looking alike.
+
+## The go/no-go, pronounced — 17 September 2026
+
+The verdict this report was opened to deliver. It waited for a denominator, got one
+on 28 August, and then waited on a judgement that turns out not to be needed: the
+arithmetic decides it without anyone having to define "playable" first.
+
+### It is a no-go on the stated floor, and Amdahl says so rather than an estimate
+
+The frame is 170 ms and **125 ms of it is recompiled MIPS code** — 73.5 %, measured
+on 30 August by timing every guest thread between leaving and re-entering its
+semaphore. The rest is 22 ms of renderer and ~26 ms that is neither.
+
+That share is the whole answer, because it caps what optimisation can do:
+
+    recompiled code reduced to zero   ->  45 ms per frame  =  22.2 fps
+
+**Twenty-two frames per second is the ceiling of a perfect optimisation**, not a
+plausible outcome of one. E08-S02 could succeed beyond anyone's hope and 30 fps
+would still be out of reach on a Pentium II 400:
+
+    target      whole-frame speedup   the recompiled part must fall by
+    30 fps            5.10x           100 %  - impossible at recomp = 0
+    25 fps            4.25x           100 %  - impossible at recomp = 0
+    20 fps            3.40x            98.4 %
+    15 fps            2.55x            85.1 %
+    12 fps            2.04x            71.7 %
+
+Twenty and fifteen are arithmetically reachable and practically not: a recompiler
+does not give back 85 % of its output's cost. A realistic E08-S02 — better codegen
+flags, the hot paths tidied — is worth something like 1.3× to 1.5× on that 125 ms,
+which lands the frame at 130 ms, or **7.7 fps**.
+
+**And the audio is not in any of these numbers.** E00-S04 measured the microcode
+path at 3.9 % of the throughput it needs, and E03-S03, which replaces it, is
+unwritten. Whatever it costs, it is added to a frame that is already 5.1× over.
+
+### The minimum frequency, with its hypothesis written out
+
+Scaling by clock alone, which this report elsewhere warns is optimistic for old
+cores:
+
+| hypothesis | needed | nearest real part |
+|---|---|---|
+| no optimisation, 30 fps | 2.04 GHz of Pentium II-equivalent throughput | none exists |
+| E08-S02 delivers 1.5×, 30 fps | 1.57 GHz of Pentium II-equivalent | a 1.4 GHz Pentium III (Tualatin), whose better IPC puts it near 1.6-1.75 GHz PII-equivalent |
+
+So the raised floor that reaches 30 fps is **a Pentium III around 1.4 GHz, and only
+if E08-S02 delivers about 1.5×** — with the audio still unaccounted for. That is
+three steps beyond ADR 0002's Pentium II / Voodoo 2, and it pairs a late Socket 370
+part with a Voodoo, which is buildable but not the machine the project set out to
+serve.
+
+### What would flip this verdict
+
+* **A measurement on silicon.** Everything above is 86Box's timing model. E09-S04
+  is the only instrument that closes it, and emulator timing models are not
+  reliable to a factor of five in either direction. This is the single largest
+  uncertainty and it is not small.
+* **A different reading of "playable".** At 12 fps the requirement is 2.04× and the
+  recompiled part must fall 72 % - still out of reach, but it is the first row that
+  an unusually good optimisation plus a modest clock bump could meet.
+* **A change of approach.** The fallback is documented and unchanged: the
+  neighbouring decomp's native port compiles the original C and carries none of
+  this translation overhead, at the cost of far heavier work everywhere else.
+
+### What this does not condemn
+
+Nothing built so far. The renderer is 13.6 % of the frame and is not the problem;
+the Glide backend, the F3DDKR decoder, the threading and clock layers, the save
+codec and the test harness are all independent of which CPU the game ends up on,
+and all of them transfer unchanged to a raised floor or to the native port.
+
+The risk section of E00-S03 said this outcome was acceptable and was the ticket's
+reason for being. It cost six weeks rather than the three months it would have cost
+after E04 and E05, which is what the ordering was for.
