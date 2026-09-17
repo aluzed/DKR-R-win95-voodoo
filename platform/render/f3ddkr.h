@@ -760,6 +760,11 @@ typedef struct {
        which draws are fogged reached a built binary. This makes the difference
        measurable in one run instead of argued from counts. */
     unsigned char        fog_disabled;
+    /* What the list asked for, kept apart from what is programmed. The gate below
+       closes fog before it reaches a backend, and `emitted_fogged` would then
+       count zero and stop being a diagnostic - so the request is recorded here
+       and the counter reads this instead. */
+    unsigned char        fog_asked;
 
     /* --- A textured rectangle in flight ------------------------------------ *
      *

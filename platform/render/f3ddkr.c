@@ -693,7 +693,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * The canary escapes it because its state block is memset, so its
              * `fog_enabled` is zero. That is why it paints and the game's
              * geometry does not. */
-            if (c->render_state.fog_enabled) { c->state.emitted_fogged++; }
+            if (c->fog_asked) { c->state.emitted_fogged++; }
             /* The first colour image the list names is taken as the primary; any
                draw aimed elsewhere is one the port silently redirects. */
             if (c->state.first_color_image == 0u) {
@@ -1465,10 +1465,37 @@ static void apply_state(dkr_f3d_context *c)
         (c->state.geometry_mode & DKR_G_FOG) == 0u) {
         c->render_state.fog_enabled = 0;
     }
-    /* Last word, and deliberately after the override: the question this answers
-       is what the card draws with no fog at all, and an override that put it back
-       would make the answer unreadable. */
-    if (c->fog_disabled) { c->render_state.fog_enabled = 0; }
+    /* --- Fog is off unless it is asked for, and that is measured ----------- *
+     *
+     * What the list asks for is settled above and kept in `fog_asked`, so the
+     * report still says how many draws wanted fog. What reaches a backend is
+     * another matter: the software oracle's fog is inert - `k = clamp(z)` with
+     * `z = -oow`, never positive - while `glide_backend.c` programs Glide's
+     * hardware fog with `GR_FOG_WITH_ITERATED_ALPHA` and whatever colour it has.
+     *
+     * Two things are missing for that to be right. `G_SETFOGCOLOR` is never
+     * decoded, so the colour is zero; and Glide takes its coefficient from the
+     * vertex alpha, which in this game carries opacity. An opaque fogged draw is
+     * therefore **black fog at full strength**, which the comment at
+     * `emitted_fogged` already described and nothing had measured.
+     *
+     * Measured on 17 September 2026, on `CAP0420` on the card:
+     *
+     *     fog programmed   29.87 % of the screen painted, 4590 colours
+     *     fog off          99.18 % of the screen painted, 5013 colours
+     *
+     * The second is the image the same capture produced that morning, colour
+     * count included, from a binary built before the `G_FOG` gate landed. The
+     * oracle is the control: its image is identical to the MD5 either way.
+     *
+     * So fog is off by default - which is what `glide_renderer.cpp` has said in
+     * a comment all along - and `DKR_FOG=1` still turns it on for whoever
+     * implements it. `5c61602` closed fog as derived and deliberately not
+     * implemented; this is the line that makes the code agree with it. */
+    c->fog_asked = c->render_state.fog_enabled;
+    if (!c->fog_enabled_override || c->fog_disabled) {
+        c->render_state.fog_enabled = 0;
+    }
     /* The same reasoning one step further along the pipeline. `no_depth`
        separates sorting from drawing; this separates the texel from the shade.
        Both are kept: on a target where a run costs four minutes, a switch that
