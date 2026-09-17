@@ -121,40 +121,34 @@ order in this item was "record, compare, then decide".
 
 ---
 
-## 5. Nobody has driven the game into a race — PENDING (blocker identified)
+## 5. Nobody has driven the game into a race — PENDING (cause found in the code)
 
-**The blocker is found and instrumented: no keypress ever reaches the game.**
+**The Windows 95 build has no input at all.** `poll_input()`'s entire body is
+inside `#if DKR_RUNTIME_HAS_RT64` (`runtime_platform.cpp:2204`), and the target
+compiles with `-DDKR_RUNTIME_HAS_RT64=0` — confirmed in `build/win95/build.ninja`,
+not inferred. The function is empty, nothing is ever sampled, and the game cannot
+be played by anyone on this target.
 
-Driving the port from the host, Start and A produce no transition out of the
-attract sequence. Nothing anywhere could say whether the keystrokes were arriving
-- the boot line lists the mapping and the subject is never mentioned again - so
-"the keys do not arrive" and "the attract sequence ignores them" were
-indistinguishable. `runtime_input.cpp` now logs one line per transition from no
-buttons to some, capped at twenty.
+How it was found, in three runs, each narrowing by one conditional line:
 
-    [input] buttons=...      **zero lines in a run with twelve Start and A presses**
+1. `runtime_input.cpp` logs a line per transition from no buttons to some.
+   A run with twelve Start and A presses: **zero lines**. So nothing arrives.
+2. A line when `owns_keyboard && window_focused` is false — the expression that
+   gates the keyboard. **Zero lines**, so those flags were never the problem.
+3. The same line made **unconditional**. Still zero — and that is the one that
+   settles it, because a poll that never runs says exactly as little as a poll
+   whose flags are both true. The first version's silence was ambiguous and the
+   second version's was not.
 
-So the input layer never sees a button. The attract sequence is not ignoring
-anything; nothing is arriving.
+The `[gfx]` lines in the same log are per-frame and use the same `fprintf(stderr)`,
+so the absence is the code path's, not the logging's.
 
-**What is measured:** the mapping is configured at boot (`WASD=stick … Enter=Start`),
-86Box reports the input captured, `grab` sets X focus, and the game's input layer
-assembles a button word that is never non-zero.
+**Next step.** Move the polling out from behind the RT64 guard, or give the
+target its own path. Not trivial: the body also calls netplay, which this target
+compiles out too (`DKR_RUNTIME_HAS_NETPLAY=0`), so the guards have to be
+untangled rather than deleted.
 
-**What is not measured:** where it is lost. Three candidates, in order of
-suspicion:
-
-1. the game takes the Voodoo full screen and its Win32 window never takes
-   **keyboard focus**, so SDL is delivered nothing — which would mean the port
-   cannot be played at all, by anyone, not just from this harness;
-2. 86Box routes the keyboard somewhere other than the guest after the
-   full-screen transition;
-3. the port polls a device that is not the keyboard.
-
-Candidate 1 is the one worth testing first and the one that would matter most.
-A cheap test exists: log whether the window has focus, in the same place.
-
-**Cost so far:** four VM runs. Each is about seven minutes.
+**Cost so far:** seven VM runs.
 
 ---
 

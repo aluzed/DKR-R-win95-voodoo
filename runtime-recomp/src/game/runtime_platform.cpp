@@ -2240,6 +2240,28 @@ void dkr::runtime::platform::poll_input() {
             dkr::runtime::input::background_input_enabled(player);
         const bool gameplay_blocked = blocked ||
             (!window_focused && !allow_background_controller);
+        /* --- Why no keypress reaches the game --------------------------- *
+         *
+         * The keyboard is read only when `owns_keyboard && window_focused`, and
+         * on 17 September 2026 a run with twelve Start and A presses produced not
+         * one button. Whether the window is focused while the Voodoo holds the
+         * screen full-screen is the question that decides it, and nothing said.
+         *
+         * One line when either flag is false, capped, so a run answers it. */
+        {
+            /* **Unconditional**, once. The first version logged only when a
+               flag was false, and its silence was ambiguous: a poll that never
+               runs says exactly as little as a poll whose flags are both true.
+               One line either way settles which. */
+            static int logged_focus = 0;
+            if (logged_focus < 3) {
+                ++logged_focus;
+                std::fprintf(stderr,
+                             "[input] poll owns=%d focused=%d blocked=%d\n",
+                             owns_keyboard ? 1 : 0, window_focused ? 1 : 0,
+                             gameplay_blocked ? 1 : 0);
+            }
+        }
         dkr::runtime::input::State state{};
         if (sdl3_native) {
             const auto* controller = Sdl3DeviceForInstance(
