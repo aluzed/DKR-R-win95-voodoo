@@ -176,9 +176,20 @@ could be overwritten repeatedly. The counts look damning at first glance:
 its four lines are an early sample and not a per-frame rate; the capture's five are
 one list in full. Nothing follows from the comparison in either direction.
 
-Measuring the real rate needs the live trace unthrottled for this command, which is
-a change to make deliberately rather than a number to read off what is already
-there.
+Measured properly, by exempting that one command from the trace budget for a single
+run and then taking the exemption back out:
+
+    2,433 SetColorImage in one run
+    1,945 to 0x01000000
+      488 to 0x02000000
+
+**The second target is used constantly** - roughly one switch in five - so the gap
+is structural rather than marginal. The game renders to two colour images as a
+matter of course, and the port has never looked at which one.
+
+That still does not prove it causes the blackness, for the reason already given:
+the oracle ignores the switch identically and renders this capture correctly. What
+it does establish is the size of what is being ignored, which was worth one run.
 
 ## Where the defect stands
 
