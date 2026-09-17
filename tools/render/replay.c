@@ -422,12 +422,13 @@ static void say_probe(int x, int y)
         (kept < writes) ? ", the first few:" : ":");
     for (i = 0; i < kept; i++) {
         const dkr_render_state *st = &log[i].state;
-        say("    %2d  %-7s 0x%06X -> 0x%06X  z=%.6f buf=%.6f  %-11s"
+        say("    %2d  %-7s 0x%06X -> 0x%06X  z=%.6f buf=%.6f  st=%.3f,%.3f  %-11s"
             " const=0x%08X env=0x%08X prim=0x%08X ascale=%-3u recipe=%d"
             "  blend=%-8s tex=%lu/%lu  alpha=%u/%u fog=%u depth=%u\n",
             i + 1, reject_name(log[i].rejected),
             log[i].before & 0x00FFFFFFu, log[i].after & 0x00FFFFFFu,
             log[i].z, log[i].depth,
+            log[i].s, log[i].t,
             combine_name((int)st->combine), st->constant_color,
             st->env_color, st->prim_color,
             (unsigned)st->alpha_scale,

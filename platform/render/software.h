@@ -79,6 +79,7 @@ typedef struct {
     dkr_render_state state;
     unsigned         before;   /* what was in the buffer */
     unsigned         after;    /* what this draw left */
+    float            s, t;     /* the texture coordinates it sampled at */
     float            z;        /* the fragment's depth, as the test saw it */
     float            depth;    /* what the depth buffer held before the test */
     unsigned char    rejected; /* one of DKR_PROBE_KEPT..DKR_PROBE_DEPTH */

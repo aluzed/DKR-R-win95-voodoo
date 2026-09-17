@@ -112,3 +112,36 @@ quad into one patch of its texture - which is what is on the screen.
 texture has 117 colours and renders flat, the scale is derived rather than read,
 and the command that states it is dropped. What is not measured: that decoding
 0xBB changes this pixel. That is one run once it is written.
+
+## The inference was wrong, and the probe says why
+
+The probe was taught to record the texture coordinates it sampled at - it could
+say which draws painted a pixel and never **where in a texture** they read, which
+is the whole difference between "the texture is wrong" and "the coordinates are".
+
+Three pixels spread across the quad, on the same draw:
+
+    (300,200)   st = 0.974, 0.451
+    (320,235)   st = 0.974, 0.451
+    (345,270)   st = 0.974, 0.451
+
+**Identical.** The coordinates do not vary across the polygon at all, and a wrong
+scale cannot do that - a scale multiplies, it does not flatten. `G_TEXTURE` is
+exonerated, and the derived `1/(32*big)` is exonerated with it: that expression is
+the S10.5-to-normalised conversion Glide wants, not a stand-in for the microcode's
+scale, which was the misreading behind the guess.
+
+What is left is upstream of any scale. `f3ddkr.c:497` reads s and t **per corner**
+from the triangle command itself - `read_s16(c, a + 4 + corner * 4)` and the two
+bytes after - so they should differ between corners by construction. Texture 1 is
+sampled by 82 triangles over 19,091 pixels, which is 233 pixels a triangle: a
+constant coordinate over that area means the three corners carry the same pair.
+
+So the display list is being read as giving every corner of this object the same
+texture coordinates, for artwork that has 117 colours to map. Either those bytes
+really are identical - which would make the mapping come from somewhere this
+decoder does not look - or this object uses a vertex format whose s and t are not
+at that offset.
+
+**The next step is one trace and no run**: print the raw per-corner `s16` pairs
+for the triangles that sample texture 1, and the list itself will say which.

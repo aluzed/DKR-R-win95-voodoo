@@ -472,6 +472,15 @@ unsigned long dkr_software_texture_triangles(int slot)
     return g_tex_tris[slot];
 }
 
+/* The coordinates the rasteriser last interpolated, for the probe.
+ *
+ * `put_pixel` decides the pixel and never sees them, and the probe has therefore
+ * never been able to say **where in a texture** a divergent pixel landed - which
+ * is the difference between "the texture is wrong" and "the coordinates are". The
+ * copyright screen's logo needed exactly that question answered: 117 distinct
+ * colours in the texture and one flat gold on the screen. */
+static float            g_probe_s, g_probe_t;
+
 static int              g_probe_armed;
 static int              g_probe_x, g_probe_y;
 static int              g_probe_writes;
@@ -508,6 +517,8 @@ static void probe_record(int x, int y, float z, float depth_was,
         w->state    = g_sw.state;
         w->before   = before;
         w->after    = after;
+        w->s        = g_probe_s;
+        w->t        = g_probe_t;
         w->z        = z;
         w->depth    = depth_was;
         w->rejected = why;
@@ -758,6 +769,7 @@ static void raster_triangle(const dkr_render_vertex *v0,
                      w2 * v2->tmu[0][DKR_TMU_SOW]) * w * unscale_s;
                 t = (w0 * v0->tmu[0][DKR_TMU_TOW] + w1 * v1->tmu[0][DKR_TMU_TOW] +
                      w2 * v2->tmu[0][DKR_TMU_TOW]) * w * unscale_t;
+                if (g_probe_armed) { g_probe_s = s; g_probe_t = t; }
                 texel = sample_texture(tex, s, t, st);
             }
 
