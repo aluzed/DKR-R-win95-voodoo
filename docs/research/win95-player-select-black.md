@@ -120,6 +120,36 @@ attempt needs a way to see the live frame that does not go through an LFB lock -
 a screenshot compared against a capture replayed at the same moment, most likely,
 since that is already known to work on both sides.
 
+## Texture memory is not it either
+
+The difference between the live game and the replay is *accumulated state*: the
+running game has been uploading textures for minutes where `REPLAY.EXE` starts
+clean. If the texture units were full and uploads refused, the scene would draw
+without what it needs.
+
+The game already logs those counters, so the question cost one `grep` of the
+black-screen run's own log:
+
+    refused-tmu=0      refused-aspect=0      reclaimed=0      (thirteen times)
+    resident=4714, 9937, 44305, 55765, 67225, 78685           (climbing normally)
+
+**Nothing refused, nothing reclaimed**, residency growing as it should. That branch
+is closed too.
+
+## Where the defect stands
+
+Established: the screen is black live and correct in its own capture; the list
+carries the scene and the backend renders it on replay; lists, triangles and
+presents all advance while the screen is black; no texture upload is refused.
+
+Refuted: a transition frame (a second screenshot twelve seconds later is
+identical); a frame that never reaches the screen (presents climb); the back-buffer
+sampler (its own control failed); texture memory (counters clean).
+
+Unmeasured: where, between the draw and the display, the content is lost. Four
+branches are closed and that one is untouched, because every instrument that could
+see it either does not work live or does not exist yet.
+
 ## Why it matters beyond this screen
 
 `win95-corpus.md` says the corpus measures agreement between two backends and not
