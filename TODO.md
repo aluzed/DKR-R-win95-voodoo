@@ -295,9 +295,20 @@ only ever blocked on it.
    sequences built there go round and return. The title screen (START / OPTIONS)
    is the real entry point, and that is now in `docs/TEST-ENVIRONMENT.md`.
 
-   Five runs were spent on this at about ten minutes each. The one that taught
-   something was the one that screenshotted after **every** press; the batches that
-   inspected only the end could not tell "went deeper" from "went round".
+   Six runs at about ten minutes each. The ones that taught something screenshotted
+   after **every** press; the batches that inspected only the end could not tell
+   "went deeper" from "went round".
+
+   **The path is now mapped** and is in `docs/TEST-ENVIRONMENT.md`: four holds on
+   `start` reach the title, then `start`, `a`, `a` reach the caution screen - three
+   presses where seven from the attract loop got nowhere. Past the caution needs
+   stick movement, since `a` confirms without moving the cursor.
+
+   **One thing seen and deliberately not concluded:** the caution screen rendered
+   live has a black background where `CAP0700`'s oracle render has a blue sky.
+   That is very likely another transition frame - the same trap as items 1 and the
+   PLAYER SELECT body, twice already today - and it is written here as something to
+   check against a second frame rather than as a defect.
 
    Ten scenes now: 2,609 divergent pixels, 178 real, of 3.07 million.
 
