@@ -3265,6 +3265,37 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             trace(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
             break;
 
+        /* --- The geometry mode, and the fog colour ------------------------- *
+         *
+         * Three commands lifted out of the skipped families. They change no
+         * pixel yet: this decoder has never known whether the game asks for
+         * `G_FOG`, and the first thing to do about that is to be able to say.
+         *
+         * From the decompilation's `gbi.h`: `G_SETGEOMETRYMODE` is
+         * `G_IMMFIRST - 8` and `G_CLEARGEOMETRYMODE` is `G_IMMFIRST - 9`, with
+         * `G_IMMFIRST = -65`, so 0xB7 and 0xB6 - which is what the captures
+         * carry, four to eight of the first and three or four of the second.
+         * Both encode `w0 = opcode << 24` and `w1 = the mode word`, the clear
+         * naming the bits to remove rather than their complement.
+         *
+         * The fog *colour* needed nothing: `OP_SETFOGCOLOR` has been decoded
+         * since the deferred-command audit, and the note beside it says the
+         * blocker is the coefficient and not the colour. This is the
+         * coefficient's half. */
+        case 0xB7u:
+            c->state.geometry_mode |= w1;
+            c->state.geometry_mode_writes++;
+            trace(c, "SetGeometryMode +0x%08X -> 0x%08X", w1,
+                  c->state.geometry_mode);
+            break;
+
+        case 0xB6u:
+            c->state.geometry_mode &= ~w1;
+            c->state.geometry_mode_writes++;
+            trace(c, "ClearGeometryMode -0x%08X -> 0x%08X", w1,
+                  c->state.geometry_mode);
+            break;
+
         default: {
             char d[48];
             if (opcode_effect_deferred(opcode)) {

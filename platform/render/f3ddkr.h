@@ -97,6 +97,32 @@ typedef struct {
        absent. */
     unsigned long deferred;
 
+    /* --- The geometry mode, read at last -------------------------------------- *
+     *
+     * `G_SETGEOMETRYMODE` (0xB7) and `G_CLEARGEOMETRYMODE` (0xB6) sit inside the
+     * skipped `0xB0..0xBF` family, and every capture of the corpus carries a
+     * handful of each - four to eight sets, three or four clears. Until now they
+     * were counted as `deferred` and dropped, which means this decoder has never
+     * known whether the game asks for `G_FOG`, `G_ZBUFFER` or a cull direction.
+     *
+     * That is what keeps fog switched off. The note beside `OP_SETFOGCOLOR`
+     * says it exactly: the colour has been decoded since the deferred-command
+     * audit, and "fog is off because the coefficient is wrong, not because the
+     * colour was missing". The coefficient is the vertex alpha, and the vertex
+     * alpha is a fog coefficient **only where the geometry mode says `G_FOG`** -
+     * which nothing here could say. This is that half.
+     *
+     * The encodings are read from the decompilation's `gbi.h`, not recited:
+     * `w0 = opcode << 24`, `w1 = the mode word` for both, the clear naming the
+     * bits to remove rather than their complement. The bit values come from the
+     * same header.
+     *
+     * **Recorded before it is used.** This field changes no pixel on its own; the
+     * counts and the value are reported so that the question "does this game set
+     * G_FOG at all, and where" has an answer before anything is wired to it. */
+    unsigned int  geometry_mode;
+    unsigned long geometry_mode_writes;
+
     /* --- The 2D state, the one the startup sequence exercises ---------------- *
      *
      * Measured before being written: across the 47,000 commands of startup, the
