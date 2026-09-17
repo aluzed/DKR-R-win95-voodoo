@@ -959,7 +959,6 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
 
 static void gl_present(void *self)
 {
-    (void)self;
     dkr_glide_swap();
 }
 

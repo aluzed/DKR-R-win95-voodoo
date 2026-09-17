@@ -58,6 +58,24 @@ narrower: the geometry is drawn somewhere that is not what the display shows - t
 wrong buffer, a surface cleared after the draw, or coordinates that put it off
 screen - and the title survives because whatever draws it takes a different route.
 
+## The next instrument, and why it is not a one-line patch
+
+The question left is whether the pixels are in the back buffer **at the moment of
+the swap**: non-black there means the draw works live and the swap loses it, black
+means the draw never lands, and the two want opposite investigations.
+`dkr_glide_read_pixel` already samples one pixel of the back buffer, so the
+measurement itself is one call.
+
+Putting it in `gl_present` was tried and withdrawn: **`glide_backend.c` contains no
+logging at all** - not one `printf` - and that is deliberate, the file being a
+library shared between the host replay and the Windows 95 target. Bolting a
+logging dependency onto it to carry one diagnostic is a poor trade.
+
+So the shape is an accessor - the backend exposes the sampled value, the game logs
+it, as `dkr_glide_backend_*_stats` already do for the pass counters. That is a
+small design rather than a patch, and it is where this stops rather than
+compromising a file that has kept itself clean.
+
 ## Why it matters beyond this screen
 
 `win95-corpus.md` says the corpus measures agreement between two backends and not
