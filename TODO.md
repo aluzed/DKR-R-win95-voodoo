@@ -313,8 +313,17 @@ only ever blocked on it.
    live 3D preview, taken by the mapped route with a screenshot confirming every
    press. Six configurations where the flat menus have three or four, and
    `G_CC_MODULATEIDECALA` - number 2 - had **never been exercised**: 307,200
-   pixels, a full screen's worth. Coverage is **ten of twenty-nine**. It still
-   needs a card render to contribute a divergence figure.
+   pixels, a full screen's worth. Coverage is **ten of twenty-nine**.
+
+   **And it measures at `tail 460, real 83` - the worst real divergence in the
+   corpus**, the next being the race at 54. A new configuration exercised for the
+   first time surfaced a divergence no existing scene could show, which is exactly
+   what the coverage work was for. `G_CC_MODULATEIDECALA` is the obvious suspect
+   and not yet the diagnosis: the screen also mixes a live 3D preview with menu
+   furniture, which nothing else in the corpus does. Both probes work on it, one
+   run each.
+
+   Eleven scenes: 3,069 divergent pixels, 261 real, of 3.38 million.
 
    **How the next attempt can miss**, met on 17 September: sending the sequence
    with different press counts desynchronises the whole route. `CAP1100` was meant

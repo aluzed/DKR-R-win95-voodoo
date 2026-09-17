@@ -673,5 +673,19 @@ opaque. Coverage goes from nine of twenty-nine to **ten**.
 It is also the first capture of a screen that draws real geometry *and* menu
 furniture together, which is a different mix from both the flat menus and the race.
 
-No card render beside it yet, so it contributes coverage and not a divergence
-figure - one run.
+And measured the same hour:
+
+    CAP0600   tail 460   real 83
+
+**The worst real divergence in the corpus** - the next is the race at 54 - on the
+scene that carries the configuration nothing had ever exercised. That is precisely
+what the coverage work was for: a new configuration, exercised for the first time,
+surfacing a divergence no existing scene could show.
+
+`G_CC_MODULATEIDECALA` is the obvious suspect and is **not yet the diagnosis**. It
+paints 307,200 pixels here, none opaque, so it has the reach; but the screen also
+carries a live 3D preview inside menu furniture, which is a mix nothing else in the
+corpus has, and the divergence has not been located yet. The card probe and the
+oracle probe both work on it, and that is one run each.
+
+Eleven scenes: **3,069 divergent pixels and 261 genuinely so**, of 3.38 million.
