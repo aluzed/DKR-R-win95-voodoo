@@ -1345,7 +1345,27 @@ static void apply_state(dkr_f3d_context *c)
      * returned -- so it changed the decoder's copy of the block and never
      * reached the card. It reported "fog is innocent" and was believed for a
      * day. A switch that cannot act is worse than no switch: it answers. */
-    if (!c->fog_enabled_override) {
+    /* --- Fog, with the coefficient's condition at last ----------------------- *
+     *
+     * The note above is kept because it is still the reason this took a month:
+     * `GR_FOG_WITH_ITERATED_ALPHA` takes the vertex alpha as its coefficient,
+     * DKR's vertices carry opacity, and an opaque surface therefore asked for
+     * maximum fog - which, with a fog colour of zero, was black.
+     *
+     * Both halves of that are now answered. The colour has been decoded since
+     * the deferred-command audit. And the alpha is a fog coefficient **only
+     * where the geometry mode says `G_FOG`**, which the decoder could not read
+     * until 0xB6 and 0xB7 were lifted out of the skipped family: the microcode
+     * overwrites the alpha with the coefficient exactly there and nowhere else.
+     *
+     * So fog needs both conditions and not one. `rdp_state.c` deduces the first
+     * from the blender - the pipeline is set up to mix a fog colour in - and the
+     * geometry mode supplies the second. Either alone is what was wrong before:
+     * the blender alone put fog on surfaces whose alpha meant opacity.
+     *
+     * `DKR_FOG=1` still forces it on regardless, which is what it was for. */
+    if (!c->fog_enabled_override &&
+        (c->state.geometry_mode & DKR_G_FOG) == 0u) {
         c->render_state.fog_enabled = 0;
     }
     /* The same reasoning one step further along the pipeline. `no_depth`

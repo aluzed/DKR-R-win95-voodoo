@@ -58,6 +58,13 @@ typedef enum {
 const char *dkr_f3d_reject_text(dkr_f3d_reject r);
 
 /* --- The decoder's state --------------------------------------------------- */
+/* The geometry-mode bits this decoder reads, from the decompilation's `gbi.h`
+   rather than from memory. Only the ones something acts on are named: a define
+   nobody reads is a claim nobody checks. */
+#define DKR_G_ZBUFFER 0x00000001u
+#define DKR_G_SHADE   0x00000004u
+#define DKR_G_FOG     0x00010000u
+
 typedef struct {
     /* Addressing bases from `DMAOffsets` — the central mechanism of Rare's
        microcode. A wrong base does not crash: it produces entirely absurd
