@@ -131,7 +131,36 @@ image's address and its shape, stable from one frame to the next.
 search at `glide_backend.c` matches on `g_tex[i].key == desc->key` before anything
 else.
 
-### The question this leaves, stated precisely
+### Fragmentation was the candidate, and the instrument refutes it
+
+`dkr_tmu_free_shape` walks the buddy tree and reports what a total cannot. Measured
+the same day, in the menus:
+
+    tmu0: hits=0/560 downloads=560 bytes=1215760 evict=48 fail=0 peak=1136K
+    tmu0: free=933K largest=512K blocks=29
+
+**933 K free and a whole 512 K block inside it.** That is not a shattered heap: an
+ordinary texture here is a few kilobytes and finds room at once. So fragmentation
+*at the scale of the textures this game uses* is refuted, and the paragraph below
+that named it as the candidate was wrong to expect it.
+
+What the numbers do leave is sharper than what they took away. `fail=0` means every
+eviction eventually succeeded, so the 48 evictions were driven by allocations the
+tree could not serve whole — and with 1,136 K committed of 2,048 K, no 1,024 K block
+can exist, because a buddy block of that order needs both halves of a megabyte-
+aligned region free. `round_up_pow2` turns anything above 512 K into a 1,024 K
+request. That is a hypothesis with a shape, and it is one line of instrument away
+from being measured: the requested `want` beside the granted address.
+
+**The zero hits are untouched by all this** and are the larger question. Not memory,
+not fragmentation, not the slot table, not a dead counter, not an unstable key by
+construction. What is left is whether the keys actually repeat: the distinct-key set
+caps at 64 and reported 82 overflows, so the game used at least 146 and the true
+count is unknown. Raising that cap, or simply logging one key twice, would say
+whether the cache is failing to serve repeats or whether there are no repeats to
+serve. That is the next instrument, and it is smaller than this one.
+
+### The question this left, and which the instrument has now narrowed
 
 **Why does `dkr_tmu_alloc` fail often enough to force 1,040 evictions when the unit
 is 57 % full?** Fragmentation is the obvious candidate and it is a candidate, not a
