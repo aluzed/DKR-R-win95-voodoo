@@ -94,15 +94,31 @@ reading:
   live game, then "always black" says nothing at all. Nothing has yet shown the
   sampler returning a colour when a colour is on screen.
 
-The control is cheap and must come first: sample a pixel that is *known* non-black
-on a screen that is *known* correct - inside the title text on PLAYER SELECT, or
-anywhere on GAME SELECT, which the running game draws properly. A sampler that
-reads the title's yellow and the scene's black in the same frame settles the
-question in one run. One that reads black for both is broken and its earlier
-readings are void.
+The control was added - a second pixel inside the title text, which the running
+game draws in bright yellow on this very screen - and it **failed**:
 
-Recorded here rather than acted on, because acting on an uncontrolled instrument is
-how the four wrong conclusions of 17 September happened.
+    [gfx] before swap #200 title=0x000000 scene=0x000000
+    [gfx] before swap #400 title=0x000000 scene=0x000000
+    [gfx] before swap #600 title=0x000000 scene=0x000000
+
+The title is visibly yellow while these are logged. So the sampler returns black
+for a pixel that is demonstrably not black, **it does not work in the running
+game**, and every reading it produced is void - including the ones that seemed to
+say the draw never lands.
+
+`dkr_glide_read_pixel` is sound in the replay harness; three witnesses depend on it
+and `REPLAY.EXE` writes its images through the same path. What this shows is that
+the back buffer is **not readable that way in the live game** - at that moment, in
+that thread, with the Voodoo holding the screen. Bounding where that instrument can
+be trusted is the one thing this attempt established, and it is worth having.
+
+The sampler has been removed rather than left in place: an instrument known to be
+broken, still logging numbers someone might read, is worse than no instrument.
+
+So the buffer question is **unmeasured**, exactly as it was before, and the next
+attempt needs a way to see the live frame that does not go through an LFB lock -
+a screenshot compared against a capture replayed at the same moment, most likely,
+since that is already known to work on both sides.
 
 ## Why it matters beyond this screen
 

@@ -1136,42 +1136,6 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         }
     }
 
-    /* --- Is the scene in the buffer at the moment of the swap? -------------- *
-     *
-     * PLAYER SELECT is black in the running game and correct in its own capture:
-     * the list carries the scene, the backend draws it when replayed, and lists,
-     * triangles and presents all advance while the screen stays black. What is
-     * left to know is whether the pixels are in the back buffer when it is shown -
-     * non-black means the draw works live and the swap loses it, black means the
-     * draw never lands, and the two want opposite investigations.
-     *
-     * Sampled here rather than inside `gl_present`, because `glide_backend.c`
-     * carries no logging at all and that is worth keeping. `dkr_glide_read_pixel`
-     * is already public; this only has to call it and say what it saw.
-     *
-     * See `docs/research/win95-player-select-black.md`. */
-    {
-        /* **Spread across the run, not bunched at its start.** The first version
-           logged the first twelve presents, which all happen during boot - the
-           screen is legitimately black there, so the readings said nothing about
-           the screen under investigation. Sampling every two hundredth present
-           puts readings in the attract sequence, the title and the menus alike. */
-        static unsigned long presents = 0;
-        static int sampled = 0;
-        ++presents;
-        if (sampled < 12 && (presents % 200UL) == 0UL) {
-            unsigned centre = 0;
-            ++sampled;
-            if (dkr_glide_read_pixel(320, 300, &centre)) {
-                std::fprintf(stderr,
-                             "[gfx] before swap #%lu (320,300) = 0x%06X\n",
-                             presents, centre & 0x00FFFFFFu);
-            } else {
-                std::fprintf(stderr, "[gfx] before swap: read refused\n");
-            }
-        }
-    }
-
     backend_.present(backend_.self);
 
     if (clock_ready) {
