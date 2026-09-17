@@ -198,22 +198,42 @@ input.
 
 ---
 
-## 7. The corpus measures agreement, not correctness — PENDING
+## 7. The corpus measures agreement, not correctness — PENDING (scoped)
 
-**What.** Every figure in `win95-corpus.md` compares the card against the oracle,
-and both are fed by the same decoder. A configuration the decoder resolves wrongly
-is rendered wrongly and **identically** by both, and the comparison reports perfect
-agreement.
+**Not one problem. A question to ask per stage, and two stages already have an
+answer.**
 
-**Known instances.** The hub's grey rectangles (recorded) and the flat logo of
-item 1 — which sits in the corpus at 36 divergent pixels, one of its best scores.
+Every figure in `win95-corpus.md` compares the card against the oracle, and both
+are fed by the same decoder, so a stage that resolves something wrongly renders it
+wrongly and *identically* in both and the comparison reports perfect agreement.
+The known instance is the hub's grey rectangles, where the two agree to 165 pixels
+of 307,200 and are both wrong.
 
-**Why it conditions everything else.** The corpus cannot find this class at all.
-The only instrument for it today is running the game and looking, which is item 5.
+Stage by stage, does a reference exist that depends on neither backend?
 
-**Next step.** None obvious that is cheap. Worth thinking about whether a third
-reference exists — a frame from the console, a known-good emulator image — that
-could turn agreement into correctness for even a handful of scenes.
+| stage | third reference | state |
+|---|---|---|
+| combiner arithmetic | the closed form `(a-b)*c+d`, on the card via `COMBINER.EXE` | **covered** - 0 failures, 17 September |
+| combiner table and state derivation | vectors generated from the decompilation's headers (63 macros) into `combiner_vectors.inc`, used by `test_rdp_state.c` | **covered** |
+| geometry and transform | none - both backends share the decoder | **blind** |
+| texture decode | none - both share the converter | **blind** |
+| the whole frame | none - would need a console capture or a trusted emulator frame | **blind** |
+
+So the blindness is narrower than the item claimed: it is geometry, texture decode,
+and the frame as a whole.
+
+**And one cheap signal already exists for part of it.** The decoder's own fill
+report says how many pixels each configuration painted *and how it was classified*
+- `approximate` and `multipass` counts. Those do not depend on either backend's
+output: they are the decoder declaring where it knows it is not exact. The grey
+rectangles were found that way. Reading that report is the closest thing to a
+correctness check the project has, and nothing currently watches it for growth.
+
+**Next step, cheapest first:** have `check-corpus.sh` record the approximate and
+multipass pixel counts per scene alongside the divergence counts, so that a
+configuration quietly becoming approximate shows up as a number that moved. It
+does not make the corpus measure correctness - nothing here can - but it watches
+the one honest signal that is not a comparison of two things that share a decoder.
 
 ---
 
