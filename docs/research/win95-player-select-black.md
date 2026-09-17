@@ -1,4 +1,36 @@
-# PLAYER SELECT is black in the running game and correct in its own capture
+# SOLVED: PLAYER SELECT is black because every depth-tested draw fails
+
+**Diagnosis, 17 September 2026.** Running the game with `DKR_NO_DEPTH=1` brings the
+scene back:
+
+    region        baseline   depth off
+    the title       51 %       54 %      unchanged - it never used depth
+    the scene        0 %       36 %      **from nothing to present**
+
+The title is drawn with the depth test **disabled** (`depth=0`, `z=-1.0`, the 2D
+overlay convention) and the scene with **test and write** (`depth=2`), which the
+capture's own probe shows. Disabling the test restores the scene and leaves the
+title alone. So the live depth buffer rejects every fragment tested against it, and
+the black screen is exactly the draws that consult it.
+
+This codebase carries the precedent twice, in its own comments: a depth buffer that
+is not cleared - because the mask is shut at clear time - keeps the previous
+frame's depths, and *"the screen went black, everything failed the test against a
+frozen scene"*. `gl_begin_frame` opens the mask for the clear for that reason. Why
+it fails in the running game and not in the replay is the next question, and it is
+a narrow one: the replay clears once and draws one list, the live game clears every
+frame.
+
+36 % rather than 98 % is expected and not a second defect: with depth off entirely
+the draw order is wrong and surfaces overdraw each other. The measurement asks
+whether the scene is there at all, and it is.
+
+The investigation that led here is kept below, because five branches were closed on
+the way and each one is a thing this harness can or cannot see.
+
+---
+
+# (original) PLAYER SELECT is black in the running game and correct in its own capture
 
 Found 17 September 2026, and it is the first defect in this project that the
 capture harness **cannot** reproduce - which makes it worth writing down carefully.
