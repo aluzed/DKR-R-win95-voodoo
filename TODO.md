@@ -566,3 +566,43 @@ fingerprints instead of press counts:
     start                            -> GAME SELECT  (expect 40554)
     down, a                          -> TRACKS, a level loads
     then the experiment
+
+### Item 9, fifth sitting: the carousel is refuted, and the goal may be reachable without a race
+
+The route ran on fingerprints this time and every step landed where it should,
+a third reproduction across a third boot:
+
+    step        colours   reference   off
+    climb        91574      90621     953
+    a            91852      91700     ~150
+    a            70216      70446     230
+    start        39625      40554     929
+    down         38074          -       -
+    a            70698          -       -   (the log had not caught up)
+    start        95723          -       -   level -> 0x8023E7C0
+
+Every gap is under 1000 where the smallest gap *between* two screens is 14,115 -
+an order of magnitude of margin, which is what the window criterion is for. The
+floor it replaced had been wrong by 37,167.
+
+**The carousel hypothesis is refuted.** `right`, then `a`, then `a`, with
+seventeen seconds after each - past the one-report lag - and `gGameMode` stays
+MENU throughout. A direction before a confirmation does not start a race.
+
+**But the readings answer the question item 9 was actually asked.** This item
+exists to exercise the nineteen combiner configurations the flat menus never
+reach. One of the pre-race screens measures **155,343 distinct colours** - the
+richest frame in the whole session, above even a load frame at 150,590, and three
+times a flat menu. A screen that rich is a textured 3D scene, and it is reachable
+by a route that now reproduces across boots.
+
+So the next step is not another hunt for INGAME. It is to **capture there** -
+`DKR_CAPTURE_LIST` armed at a list number this route reaches - and read the fill
+report. If those 155k colours carry configurations the corpus has never seen, the
+item's purpose is served whether or not a race ever starts.
+
+One more note for whoever continues. The log lag produced a *fourth* apparent
+divergence here: the `a` at 70,698 looked like the route had gone wrong, and the
+next step showed the level had loaded all along. Three times today two
+instruments disagreed on the same instant and three times the screen was right
+and the reading was stale. Wait fifteen seconds before believing a mode.
