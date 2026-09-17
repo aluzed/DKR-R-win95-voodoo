@@ -499,6 +499,12 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 const float tb = (float)read_s16(c, a + 6 + corner * 4);
                 tri[corner].s = sb * c->tex_scale_s;
                 tri[corner].t = tb * c->tex_scale_t;
+                /* The raw pair, per corner, as the list gives it. A quad whose
+                   three corners carry the same pair renders flat whatever the
+                   scale does afterwards, and nothing printed these until the
+                   copyright screen's logo came out as one colour. */
+                trace(c, "vtx corner=%d raw s=%d t=%d", corner,
+                      (int)sb, (int)tb);
                 /* The measurement that can refute the interpretation above: if
                    10.5 is the right format and the width the right one, the
                    extremes must stay in the neighbourhood of [0,1]. Thousands

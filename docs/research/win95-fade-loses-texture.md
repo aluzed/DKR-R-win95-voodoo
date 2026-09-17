@@ -145,3 +145,33 @@ at that offset.
 
 **The next step is one trace and no run**: print the raw per-corner `s16` pairs
 for the triangles that sample texture 1, and the list itself will say which.
+
+## The list really does give every corner the same pair, and only here
+
+The trace prints the raw `s16` pair per corner, as the list gives it, before any
+scale. For the logo's triangles:
+
+    corner=0 raw s=997 t=462
+    corner=1 raw s=997 t=462
+    corner=2 raw s=997 t=462     ... and the same for every one of them
+
+997 / 1024 = 0.974 and 462 / 1024 = 0.451, which is exactly the `st` the probe
+reported, so the chain from the list to the sample is consistent end to end.
+
+**And the decoder is not broken in general**, which is the check that stopped this
+note concluding the opposite: counting the distinct pairs it reads over a whole
+capture gives **102** on this screen and **1,867** on the race. Coordinates vary
+everywhere else. It is this object, and only this object, whose corners all carry
+the same pair.
+
+So the remaining possibilities are narrow and neither is yet measured:
+
+* the logo's triangles genuinely carry one coordinate each, and its mapping comes
+  from something this decoder does not follow - a matrix, a tile shift, a second
+  command;
+* or this object is drawn by a triangle command variant whose s and t are not at
+  `a + 4 + corner * 4`, and the bytes read there happen to repeat.
+
+Distinguishing them means reading the bytes of one of those commands against the
+decompilation's F3DDKR layout. That is the next step, it needs no machine, and it
+is where this note stops rather than guessing a third time.
