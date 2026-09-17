@@ -606,3 +606,40 @@ divergence here: the `a` at 70,698 looked like the route had gone wrong, and the
 next step showed the level had loaded all along. Three times today two
 instruments disagreed on the same instant and three times the screen was right
 and the reading was stale. Wait fifteen seconds before believing a mode.
+
+### Item 9, sixth sitting: a variable climb cannot be followed by a fixed sequence
+
+The capture run misaligned, and the cause is structural rather than accidental.
+
+`pad-until-screen` presses as many times as it needs - one on one boot, two on
+the next - and the route that follows it presses a fixed number of times. Adding a
+variable-length prefix to a fixed-length sequence displaces every step after it.
+Measured on this run:
+
+    climb    two presses, arrived at 92582 (1961 off PLAYER SELECT)
+    a        70320   CAUTION          -- the validated route expects the "OK?" prompt
+    a        39592   GAME SELECT      -- the validated route expects CAUTION
+
+Everything after that lands one screen early: `start` at GAME SELECT takes
+ADVENTURE, not TRACKS, which is the branch to the initials entry rather than to a
+loaded level.
+
+**The fix is to stop mixing the two styles.** A route should be a chain of
+`pad-until-screen` calls, one per expected screen, each naming its own fingerprint,
+so that no step depends on how many presses the previous one needed:
+
+    pad-until-screen start 90621    PLAYER SELECT
+    pad-until-screen a    70446     CAUTION        (through the "OK?" prompt)
+    pad-until-screen start 40554    GAME SELECT
+    down                            the one press with no screen change of its own
+    pad-until-screen a    105590    TRACKS chosen, a level loads
+
+`down` stays a bare press because it moves a highlight within one screen - a
+change of about 1500 colours, below the 5000 bound by design, so there is no
+fingerprint to wait for. That is the exception, and it is worth naming: this
+technique confirms *arrivals*, never *selections*.
+
+Recorded before the run finished, because the misalignment was visible in the
+second reading and the remaining steps could only make it worse. Reading the nine
+readings afterwards and explaining them is exactly the mistake this file already
+records once, two sittings ago.
