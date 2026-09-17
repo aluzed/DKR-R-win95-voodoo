@@ -132,6 +132,7 @@ typedef struct {
     /* How many `G_MW_FOG` words the list carried. Non-zero means the game is
        asking for fog and this port is not computing its coefficient. */
     unsigned long fog_words;
+    unsigned long texture_cmds;
 
     /* --- Two sources for one fact, counted against each other ---------------- *
      *
@@ -786,6 +787,8 @@ typedef struct {
        applied - see the long note in `cmd_move_word` for what is measured and
        what is refuted. */
     short                fog_multiplier, fog_offset;
+    /* `G_TEXTURE`'s two 0.16 factors, 0xFFFF being one. Recorded, not applied. */
+    unsigned short       texture_scale_s, texture_scale_t;
 
     /* Trace mode. Without this tool, every graphics diagnosis on the target
        machine is made blind — the screen belongs to the 3dfx card and one sees

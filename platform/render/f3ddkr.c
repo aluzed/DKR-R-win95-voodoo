@@ -3371,6 +3371,27 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
          * since the deferred-command audit, and the note beside it says the
          * blocker is the coefficient and not the colour. This is the
          * coefficient's half. */
+        /* --- `G_TEXTURE`, the microcode's own texture scale ---------------- *
+         *
+         * `G_IMMFIRST - 4` is 0xBB, and `gSPTexture` in the decompilation's
+         * `gbi.h` packs `w1 = s << 16 | t` - two unsigned 0.16 factors, 0xFFFF
+         * being one - with the mip level at bits 11..13, the tile at 8..10 and
+         * the enable in the low byte of `w0`.
+         *
+         * Recorded and **not applied**, in that order deliberately. This port's
+         * `tex_scale_s` is the S10.5-to-normalised conversion Glide wants, and a
+         * microcode scale would multiply it; whether that multiplication is ever
+         * anything but one is a measurement, and it is the measurement that
+         * decides whether this command matters at all. */
+        case 0xBBu:
+            c->state.texture_cmds++;
+            c->texture_scale_s = (unsigned short)((w1 >> 16) & 0xFFFFu);
+            c->texture_scale_t = (unsigned short)(w1 & 0xFFFFu);
+            trace(c, "SPTexture s=0x%04X t=0x%04X level=%u tile=%u on=%u",
+                  (unsigned)c->texture_scale_s, (unsigned)c->texture_scale_t,
+                  (w0 >> 11) & 7u, (w0 >> 8) & 7u, w0 & 0xFFu);
+            break;
+
         case 0xB7u:
             c->state.geometry_mode |= w1;
             c->state.geometry_mode_writes++;

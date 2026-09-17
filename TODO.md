@@ -95,18 +95,29 @@ to suspect.
 
 ---
 
-## 4. `G_TEXTURE` (0xBB) is still dropped — PENDING
+## 4. `G_TEXTURE` (0xBB) — DONE (decoded; it carries no scale to miss)
 
-**What.** One per capture, counted as `deferred`. It carries the microcode's s and
-t scale factors.
+**Resolved 17 September 2026.** Decoded, recorded, compared - in that order, which
+was the point of the item. `gSPTexture` packs `w1 = s << 16 | t`, two unsigned
+0.16 factors with 0xFFFF meaning one, the mip level at bits 11..13, the tile at
+8..10 and the enable in the low byte of `w0`.
 
-**Where it stands.** Exonerated for the flat logo — that was guess one, refuted.
-But it is still a command with a rendering effect that is thrown away, and the
-scale it states is currently *derived* from the tile size instead.
+What the game actually sends, every occurrence in four captures:
 
-**Next step.** Decode it, record it, compare with the derived scale, and only then
-decide whether to apply it. The order matters: the same mistake as fog is to wire
-something before knowing what it says.
+    CG0060    2x   s=0x0000 t=0x0000 level=0 tile=0 on=0
+    CAP0250   1x   s=0x0000 t=0x0000 level=0 tile=0 on=0
+    CAP0800   1x   s=0x0000 t=0x0000 level=0 tile=0 on=0
+    CAP0150   1x   s=0x0000 t=0x0000 level=0 tile=0 on=0
+
+Always the disable form, never a scale. So there is nothing here the port was
+losing: `tex_scale_s` is the S10.5-to-normalised conversion Glide wants, a
+microcode scale would multiply it, and the multiplier is never sent. The enable
+bit is redundant too - texturing is already decided per batch by bit 16 of the
+polygon command, which is the finer source.
+
+Decoded and left unapplied, with the counter in place. Applying a scale of zero
+would erase every texture in the scene, which is a good illustration of why the
+order in this item was "record, compare, then decide".
 
 ---
 
