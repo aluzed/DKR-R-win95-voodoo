@@ -53,3 +53,62 @@ a capture at any list number, and one taken there would put the fade in front of
 both backends and in front of `--probe`.
 
 Until then this is a screenshot and an inference, and it is recorded as such.
+
+## It is already in the corpus, and the bisection was unnecessary
+
+Two runs were spent capturing at lists 280 and 220 to put the fade in front of
+both backends. Both landed past the screen, and the second one should not have
+been attempted: this repository already records that **the list index is not a
+stable coordinate** for a timed animation - it is why `CG0060` was anchored by
+game mode and landed at list 1717, "a number no run could have been asked for in
+advance". Bisecting an animation by absolute list number across runs is measuring
+against a moving mark.
+
+And it was unnecessary twice over, because `CAP0150` **is** the screen. Rendered
+through the oracle it shows the same flat quad: the logo as one rounded rectangle
+of flat gold, over the right sky, with the copyright line in place.
+
+So the corpus has carried this defect for a fortnight under the heading "the
+copyright screen looked broken and is not". That conclusion was reached because
+two captures ten lists apart showed the shape turning, and because both backends
+agree on it to 36 pixels. Turning or not, agreed or not, it is a flat quad where
+there is a picture.
+
+## What the probe says, host-side and free
+
+At the centre of the quad:
+
+    1  painted 0x000000 -> 0x000000  SHADE        recipe=18 blend=additive tex=0  depth=0
+    2  painted 0x000000 -> 0xFEDD59  TEX*SHADE+A  recipe=3  blend=opaque   tex=1  depth=2
+    3  depth   0xFEDD59 -> 0xFEDD59  TEX*SHADE+A  recipe=3  blend=opaque   tex=6  depth=2
+    4  painted 0xFEDD59 -> 0xFEDD59  SHADE        recipe=18 blend=alpha    tex=0  depth=0
+
+Draw 2 paints the flat gold from texture 1. Draw 3 is depth-rejected, being
+farther than what draw 2 wrote.
+
+**Texture 1 is not flat.** Dumped, it is 32x32 with **117 distinct colours**, and
+its most common are (255,222,82), (255,239,99), (255,214,82) - the same gold
+family as the 0xFEDD59 that reaches the screen. It is sampled: 82 triangles,
+19,091 pixels painted, which is about the area of the quad. So the texture
+arrives, is read, and the whole quad lands inside a tiny patch of it.
+
+That is degenerate texture coordinates, not a missing texture and not a combiner.
+
+## The named suspect, and it is inference
+
+`tex_scale_s` and `tex_scale_t` scale every emitted vertex's coordinates
+(`f3ddkr.c:500`). They are **derived from the tile's own size** -
+`1.0f / (32.0f * big)` - and never read from the command that states them.
+`G_TEXTURE` (0xBB) is that command, it carries the microcode's s and t scale
+factors, and it sits in the `0xB0..0xBF` family the decoder drops: exactly one per
+capture, counted as `deferred`.
+
+Inferring the scale from the tile is right whenever the list uses the default
+scale and wrong whenever it does not. A model that sets its own would have its
+coordinates multiplied by the wrong constant, and a scale too small collapses a
+quad into one patch of its texture - which is what is on the screen.
+
+**This last step is inference and is marked as such.** What is measured: the
+texture has 117 colours and renders flat, the scale is derived rather than read,
+and the command that states it is dropped. What is not measured: that decoding
+0xBB changes this pixel. That is one run once it is written.
