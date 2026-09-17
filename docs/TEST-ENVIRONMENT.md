@@ -233,6 +233,19 @@ attract loop got nowhere at all. `CAP0420` was captured at GAME SELECT and
 Every press is `pad-hold 1200` (or 900 for a direction). A tap is too brief - see
 below.
 
+**Send that sequence exactly.** Changing the press counts desynchronises the whole
+route: on 17 September a run that sent five `start` then three `a`, instead of four
+`start` then `start a a a down a`, ended on GAME SELECT with the cursor on GAME A
+rather than at track select.
+
+**And arm a capture for a list the run reaches *while the screen is still up*.**
+The menus idle back on their own. A capture armed at list 1100, fired long after
+the presses, found the game back on GAME SELECT - its fill identical to `CAP0420`'s
+to within forty pixels - even though the screenshot taken right after the presses
+showed the route had worked. The screenshot and the capture were of different
+screens, minutes apart. Arm low enough that the capture fires while the target is
+on screen, or drive the game to hold the screen.
+
 **Drive from the title screen, not from the attract loop.** The game opens on an
 attract sequence - a character carousel, then the copyright logo, then a flyover -
 and presses sent into it do not navigate: mapping them one at a time on

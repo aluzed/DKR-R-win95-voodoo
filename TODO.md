@@ -309,6 +309,14 @@ only ever blocked on it.
    Track select is **one press from a race**, which is where the remaining
    configurations are - the HUD, the racers, the track itself.
 
+   **Two ways the next attempt can still miss**, both met on 17 September and both
+   now in the harness notes: sending the sequence with different press counts
+   desynchronises the whole route, and a capture armed at a list the run reaches
+   *after* the presses finds the game back on a menu, because the menus idle back
+   on their own. `CAP1100` was armed that way and came back with `CAP0420`'s fill
+   while the screenshot taken right after the presses showed the route had worked -
+   two different screens, minutes apart, from one run.
+
    **One thing seen and deliberately not concluded:** the caution screen rendered
    live has a black background where `CAP0700`'s oracle render has a blue sky.
    That is very likely another transition frame - the same trap as items 1 and the
