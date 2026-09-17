@@ -438,3 +438,28 @@ reader against the clear before reporting anything.
 * **Reproduce a live defect in the harness before chasing it live.** The black
   scene turned out to be one `--card` replay away, where the pixel probe, the card
   probe and the log all work and a run needs no driving.
+
+| # | Item | Status |
+|---|------|--------|
+| 9 | Drive the game into a race, to exercise the remaining configurations | PENDING |
+
+**9 — the instruments are built, the route is not.** `game-mode` gives the arrival
+signal a route needs: the game logs `gGameMode` and a race is the one that reads
+INGAME, readable from the host while the guest runs. `pad-until` removes the timing
+drift that made fixed press counts unreliable.
+
+What is missing is the route itself, and two attempts said so rather than one.
+Alternating A and Start for twelve presses stays in MENU: that path creates a new
+save file and stops at the initials entry, where A appends a letter and never
+confirms. Backing out and taking TRACKS instead, for six more presses, also stays
+in MENU.
+
+So this is menu-structure knowledge, not tooling - which choice on which screen,
+and which control reaches "Ok" in a letter grid. Written down as PENDING rather
+than attempted again by mashing buttons, because three blind routes would say no
+more than two did.
+
+Anything learnt on the way belongs here: the mode is coarse (every menu screen
+reads MENU, so only arrival at a race is detectable, not progress through the
+menus), and the two black screens met on the way were both transitions, confirmed
+against the next frame before anything was concluded.
