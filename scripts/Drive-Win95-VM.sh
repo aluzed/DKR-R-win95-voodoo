@@ -491,25 +491,44 @@ case "${1:-}" in
     #   pad-until 1500 a           press A until the screen advances
     #   pad-until 1200 start       the same for Start
     #
-    # **The threshold is measured, not guessed.** It was first written as 10,
-    # which is wrong, and four captures already on disk said so before a single
-    # press was sent:
+    # **What this fixes, and what it does not.**
     #
-    #     the same screen, two captures                    0
-    #     the highlight moved and an "OK?" prompt appeared 34
-    #     PLAYER SELECT -> CAUTION                         55
-    #     a black transition frame -> PLAYER SELECT       134
+    # It removes *timing* drift: a press that landed while a menu was still
+    # fading is retried instead of counted. Five screens were walked that way on
+    # 17 September 2026 with two such presses correctly rejected, where a fixed
+    # count would have gone one screen too far.
     #
-    # At 10 a route would stop on its own cursor moving. The default sits at 45,
-    # above the largest change measured within one screen and below the smallest
-    # measured between two. That is four samples and no more, so the bound is one
-    # to revisit rather than trust: `DKR_DRIVE_DELTA` moves it, and the delta is
-    # printed on every press so a wrong bound is visible instead of silent.
+    # It does **not** decide what is on the screen, and no bound on an image
+    # difference can, because this game's menus animate continuously. Measured on
+    # captures already on disk:
+    #
+    #     pair                                   mean   cells moved
+    #     the same screen, two captures             0            0 %
+    #     a cursor moved and an "OK?" appeared     34           92 %
+    #     CAUTION -> GAME SELECT                   35           72 %
+    #     PLAYER SELECT -> CAUTION                 56           83 %
+    #     a black transition -> PLAYER SELECT     134          100 %
+    #
+    # The change *within* one screen is as large as the change *between* two, on
+    # either metric - butterflies and a highlight move nearly every cell a little.
+    # So the bound separates "nothing happened" from "something did", and nothing
+    # finer. A route still needs its screenshots read.
+    #
+    # The default is 20: above the zero that two captures of a still screen give,
+    # below every advance measured. It errs towards retrying, and a retry is loud
+    # - six of them abort the route rather than continue one that has already
+    # gone wrong. `DKR_DRIVE_DELTA` moves it and the delta is printed every time.
+    #
+    # What would answer properly is the game's own `gGameMode`, which it already
+    # logs. It is not reachable while the guest runs - Windows 95 holds the write
+    # behind its cache and the volume reads dirty - so it would need the game to
+    # publish the mode somewhere the host can see, which is a change to the game
+    # and not to this script.
     need_running; shift
     [[ $# -ge 2 ]] || die "usage: pad-until <milliseconds> <control> [control...]"
     command -v import >/dev/null || die "ImageMagick (import) is required"
     until_ms="$1"; shift
-    threshold="${DKR_DRIVE_DELTA:-45}"
+    threshold="${DKR_DRIVE_DELTA:-20}"
     tmp_dir="$(mktemp -d)"
     trap 'rm -rf "$tmp_dir"' EXIT
     import -display "$DISP" -window root "$tmp_dir/before.png" 2>/dev/null \

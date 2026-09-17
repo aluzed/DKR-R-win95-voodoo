@@ -200,6 +200,27 @@ before="$(stamp)"; scripts/Drive-Win95-VM.sh run "D:\REPLAY.EXE --both D:\CAP005
 until [ "$(stamp)" != "$before" ]; do sleep 15; done
 ```
 
+**`pad-until` confirms a press; it does not identify a screen.** `pad-hold` sends
+input and returns, and a route built on a fixed number of presses drifts, because
+each screen takes a different time to become responsive. `pad-until <ms>
+<control...>` captures, presses, captures again, and presses again only if the
+screen did not move - which removes that drift, and five screens were walked with
+it on 17 September with two mid-fade presses correctly retried.
+
+What it cannot do is tell you *which* screen you are on, and no bound on an image
+difference can, because these menus animate continuously. Measured:
+
+    the same screen, two captures             mean   0    cells moved   0 %
+    a cursor moved and an "OK?" appeared      mean  34    cells moved  92 %
+    CAUTION -> GAME SELECT                    mean  35    cells moved  72 %
+    PLAYER SELECT -> CAUTION                  mean  56    cells moved  83 %
+
+The change within one screen is as large as the change between two. So the bound
+separates "nothing happened" from "something did" and nothing finer, and a route
+still needs its screenshots read. The default is 20 and `DKR_DRIVE_DELTA` moves it.
+What would answer properly is the `gGameMode` the game already logs, which Windows
+95 holds behind its write cache while the guest runs.
+
 **Use `pad-hold`, not `pad`, against the game.** `pad` presses and releases in a
 few milliseconds; this target presents about **twelve frames a second**, and the
 game samples input once a frame, so a keystroke falls between two polls and is
