@@ -56,6 +56,32 @@ recorded as an oddity worth knowing rather than as the cause. The depth reading
 stands on its own measurement - `DKR_NO_DEPTH=1` brings the scene back - and why a
 clear that looks correct on every line does not take is the question left.
 
+### Three switches, and the buffer holds the previous frame
+
+    switch                  title   scene
+    (none)                   51 %     0 %
+    DKR_NO_DEPTH=1           54 %    36 %
+    DKR_FLATTEN_W=1          54 %    53 %
+
+`DKR_FLATTEN_W` puts every triangle at `oow = 1`, the **nearest** depth there is,
+and the scene comes back. The three readings exclude each other's explanations:
+
+* the buffer is **not cleared to farthest** - if it were, the scene's own depths
+  would pass and there would be no defect;
+* it is **not stamped at nearest** - if it were, `FLATTEN_W` would be rejected
+  too, and it is not;
+* so it holds values **between** the two, which on a buffer written every frame
+  and cleared by a call that does not take means **the previous frame's depths**.
+
+That is the stale-depth signature this file already carries twice from August,
+measured this time from three switches rather than inferred from one. The clear
+does not reach the depth buffer in the running game, while the path is correct on
+every line - mode restored, mask opened, `GR_WDEPTHVALUE_FARTHEST`, once per
+graphics task.
+
+What is left is why that call does not take, which is now a question about the card
+and `grBufferClear` rather than about this port's logic.
+
 36 % rather than 98 % is expected and not a second defect: with depth off entirely
 the draw order is wrong and surfaces overdraw each other. The measurement asks
 whether the scene is there at all, and it is.
