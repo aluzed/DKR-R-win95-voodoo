@@ -7,29 +7,28 @@ Ordered by usefulness to the port, not by difficulty.
 
 ---
 
-## 1. The copyright logo renders as a flat quad — PENDING
+## 1. The copyright logo renders as a flat quad — DONE (not a defect)
 
-**What.** The Rare logo comes out as one flat gold shape where it should have a
-gold border and a dark navy interior. Live and in `CAP0150`, which has carried it
-for a fortnight under the heading "looked broken and is not".
+**Resolved 17 September 2026: there is no defect.** The logo is **rotating**, and
+`CAP0150` catches it showing a plain gold face. Counting colours in the logo's
+area of the two captures ten lists apart:
 
-**Where it stands.** Cornered. Three guesses were made and two were refuted by
-measurement: `G_TEXTURE` (a wrong scale multiplies, it cannot flatten) and the
-coordinate offsets (confirmed against `include/structs.h` — flags, three vertex
-indices, three coordinate pairs at 0x04/0x08/0x0C, sixteen bytes). The uniform
-coordinate per triangle is **real data**, and the object is drawn in flat colours
-with the texture supplying shade rather than pattern.
+    CAP0150   (255,222,90) 10388   (255,222,89) 2873   (254,221,89) 2762
+    CAP0160   (255,222,89)  1933   (254,221,88) 1111   (0,2,60) 1078   (0,1,59) 859
 
-**The question now.** Why do the triangles that should be dark come out gold?
-Candidates, none measured: vertex colours ignored where they should modulate; a
-separate batch not drawn; drawn and lost to the depth test, as draw 3 of the probe
-is.
+The dark navy is present at 160 and absent at 150. The two live screenshots show
+the same rotation at two angles, which I read backwards as a fade destroying a
+texture.
 
-**Next step.** Probe a pixel inside the dark region of `CAP0150` and compare it
-with a gold one. The probe now reports which draws, at what depth, with which
-coordinates and which registers. **No machine, under an hour.**
+`win95-corpus.md` already said "the copyright screen looked broken and is not",
+and said why it is easy to get wrong. It was right.
 
-See `docs/research/win95-fade-loses-texture.md`.
+What the investigation left behind, all of it still true and useful: the probe now
+records **where in a texture** it sampled; the trace prints the raw per-corner
+coordinates and vertex colours; and the polygon record's layout is confirmed
+against `include/structs.h`. See `docs/research/win95-fade-loses-texture.md`,
+which is kept with a retraction on top because how it went wrong is worth more
+than what it concluded.
 
 ---
 

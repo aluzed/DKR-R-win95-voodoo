@@ -1,4 +1,12 @@
-# The logo loses its texture during a fade, and the corpus cannot see it
+# RETRACTED: the logo does not lose its texture, it turns
+
+**This note is wrong from its title down, and it is kept because the way it went
+wrong is worth more than the conclusion it reached.** Read the retraction at the
+end first.
+
+---
+
+# (original) The logo loses its texture during a fade, and the corpus cannot see it
 
 Found on 17 September 2026 by driving the game rather than by replaying a
 capture, which is the whole of why it had not been found before.
@@ -214,3 +222,55 @@ This note has now been wrong twice - once about `G_TEXTURE`, once about the
 offsets - and both times the measurement that refuted it was cheaper than the
 change it would have justified. The pattern is worth naming: **every guess here
 was about the mechanism, and every refutation came from looking at the data.**
+
+
+---
+
+# Retraction, same day
+
+The logo is not losing anything. **It is rotating**, and `CAP0150` catches it
+showing a plain gold face.
+
+The measurement, which took one command and should have been the first thing
+tried: count the colours in the logo's area of both captures.
+
+    CAP0150   (255,222,90) 10388   (255,222,89) 2873   (254,221,89) 2762   (66,123,231) 916
+    CAP0160   (255,222,89)  1933   (254,221,88) 1111   **(0,2,60) 1078**   **(0,1,59) 859**
+
+The dark navy is **present at list 160 and absent at list 150**. Ten display lists
+apart, one object, turning. The two live screenshots say the same thing and I read
+them backwards: the decorated face, then six seconds later the gold face as the
+screen fades - a rotation caught at two angles, not a texture lost during a fade.
+
+So `win95-corpus.md` was right when it said "the copyright screen looked broken and
+is not", and it even recorded why this is easy to get wrong: *"it took two captures
+ten display lists apart to establish that, and the first one on its own said the
+opposite."* That sentence is in the file. I read it, quoted the surrounding section
+in an earlier commit, and then spent an afternoon doing exactly what it warns
+against.
+
+## What the afternoon was worth anyway
+
+Every measurement in the body above stands; only the conclusion drawn from them
+was wrong. And three of them stand as *evidence that there is no defect*:
+
+* the coordinates are uniform per triangle **because the object is drawn in flat
+  colours**, one tone per face, with the texture supplying shade - which is what a
+  gold-and-navy logo with a relief would be;
+* the vertex colours carry exactly two tones, white and grey 119 - a lit face and a
+  shaded one, which is relief, not damage;
+* the offsets, the stride and the address are confirmed correct against
+  `include/structs.h`, which is worth having written down whatever prompted it.
+
+## The lesson, which is the reason this file is not deleted
+
+Three guesses, three refutations, and **every refutation came from looking at the
+data rather than at the mechanism**: a scale multiplies and cannot flatten; the
+struct says the offsets are right; the neighbouring capture has the missing
+colour. The third one was available from the first minute and cost one command.
+
+The rule that would have saved the afternoon is not "be more careful". It is:
+**when a single frame looks wrong, compare it with the next frame before
+comparing it with anything else.** An animation is the cheapest explanation for a
+frame that disagrees with expectation, and this repository had already paid for
+that lesson once and written it down.

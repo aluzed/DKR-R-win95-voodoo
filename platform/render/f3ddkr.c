@@ -503,8 +503,10 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                    three corners carry the same pair renders flat whatever the
                    scale does afterwards, and nothing printed these until the
                    copyright screen's logo came out as one colour. */
-                trace(c, "vtx corner=%d raw s=%d t=%d", corner,
-                      (int)sb, (int)tb);
+                trace(c, "vtx corner=%d raw s=%d t=%d rgba=%d,%d,%d,%d",
+                      corner, (int)sb, (int)tb,
+                      (int)tri[corner].r, (int)tri[corner].g,
+                      (int)tri[corner].b, (int)tri[corner].a);
                 /* The measurement that can refute the interpretation above: if
                    10.5 is the right format and the width the right one, the
                    extremes must stay in the neighbourhood of [0,1]. Thousands
