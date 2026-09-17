@@ -1183,7 +1183,33 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
          *
          *     race and hub   w1 = 0x64009867
          *     attract        w1 = 0x0F26F127
-         */
+         *
+         * ## What those constants mean, inverted from the macro that makes them
+         *
+         * `gSPFogPosition(min, max)` in the decompilation's `gbi.h` builds them as
+         * `fm = 128000 / (max - min)` and `fo = (500 - min) * 256 / (max - min)`,
+         * so the pair can be read back as a depth range on the 0..1023 scale:
+         *
+         *     race and hub   fm 25600, fo -26521  ->  near 1018, far 1023
+         *     attract        fm  3878, fo  -3801  ->  near  990, far 1023
+         *
+         * **DKR asks for fog over the last half a per cent to three per cent of
+         * the depth range.** A thin haze against the far plane, not a wash over
+         * the scene - which is worth knowing before anyone spends a day on it,
+         * and which is exactly why feeding the vertex alpha in as the coefficient
+         * turned the screen black: full-strength fog everywhere, where the game
+         * asked for a sliver at the horizon.
+         *
+         * The coefficient itself follows from the same two lines. Writing `d` for
+         * the depth on that 0..1023 scale, the intended map is linear from `min`
+         * to `max`, which in terms of the constants sent is
+         *
+         *     k = d * fm / 128000  -  (fm - fo) / 256,   clamped to [0,1]
+         *
+         * and that is a derivation from the macro rather than a recitation of a
+         * convention. What is still missing to apply it is a normalised screen
+         * depth: this rasteriser's `z` is `-oow` and its `ooz` is a depth-buffer
+         * value, neither of which is `d`. */
         c->fog_multiplier = (short)((w1 >> 16) & 0xFFFFu);
         c->fog_offset     = (short)(w1 & 0xFFFFu);
         c->state.fog_words++;

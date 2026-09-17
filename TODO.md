@@ -32,43 +32,50 @@ than what it concluded.
 
 ---
 
-## 2. Fog: the blocker is found and named, fog still does not render — PENDING
+## 2. Fog — DONE as an investigation; deliberately not implemented
 
-**The question this item asked is answered, and it was the wrong question.** It
-read "why does the blender half never fire". It does fire, and my "zero draws
-fogged" was a bad measurement - a `grep` over a log that never printed the
-counter. With the counter printed:
+**Every question this item asked is answered, and the answer changes its
+priority.**
 
-    CG0060    emitted=1412  fogged=1390     (98 %)
-    CAP0250   emitted= 904  fogged= 739
-    CAP0800   emitted= 755  fogged= 147
+*Does the blender half fire?* Yes. My "zero draws fogged" was a bad measurement -
+a `grep` over a log that never printed the counter. Printed:
 
-**Fog is enabled on most draws and moves the image by not one pixel**, because the
-oracle's coefficient is `clampf(z, 0, 1)` with `z = -oow` - negative for every real
-fragment, so `k` is zero at every pixel. That is a genuine latent bug and it is
-why "fog is off" and "fog is on and does nothing" were indistinguishable for a
-month.
+    CG0060  emitted=1412 fogged=1390 (98%)   CAP0250 739/904   CAP0800 147/755
 
-**Refuted the same hour:** using the vertex alpha as the coefficient. With
-`k = sa/255` the race collapses to 167 distinct colours and 89 % pure black -
-August's black-screen disaster reproduced. DKR's vertices carry opacity in alpha
-whatever the geometry mode says, so gating on `G_FOG` does not make the alpha a
-coefficient.
+*Then why does nothing change?* The oracle's coefficient was `clampf(z, 0, 1)` with
+`z = -oow`, negative for every real fragment, so `k` was zero at every pixel. Fog
+could be on for 98 % of a scene's draws and move nothing.
 
-**Found by measurement:** the lists *do* carry `G_MW_FOG` - `MOVEWORD` type
-0x08, twice per capture, ignored by the decoder until now. It is decoded and
-recorded (not applied):
+*Is the vertex alpha the coefficient?* **No** - refuted by measurement. `k = sa/255`
+collapses the race to 167 colours and 89 % pure black, August's disaster
+reproduced. DKR's vertices carry opacity there whatever the geometry mode says.
 
-    race and hub   w1 = 0x64009867     attract   w1 = 0x0F26F127
+*Then where does it come from?* `G_MW_FOG` - `MOVEWORD` type 0x08, twice per
+capture, ignored until now. Decoded and recorded.
 
-packing a signed multiplier in the high half and a signed offset in the low.
+*And what does it ask for?* Inverting `gSPFogPosition`'s own arithmetic:
 
-**What remains.** Compute the coefficient from depth with those two constants,
-since this port does its own vertex transform and nothing else writes it. Two
-things make that more than an afternoon: the convention has to be derived rather
-than recited, and **validating it is the hard part** - both backends move
-together, so the corpus can only check that they agree, not that they are right.
-That is item 7 in miniature.
+    race and hub   fm 25600, fo -26521  ->  near 1018, far 1023
+    attract        fm  3878, fo  -3801  ->  near  990, far 1023
+
+**The game asks for fog over the last half a per cent to three per cent of the
+depth range** - a thin haze on the far plane, not a wash over the scene.
+
+### Why it is closed without being implemented
+
+Three reasons, in order of weight:
+
+1. **The measured payoff is small.** A sliver at the horizon, on scenes the corpus
+   already matches to 167 pixels in 2.46 million.
+2. **There is no validation path.** Both backends would move together, so the
+   corpus can only check that they agree - item 7's blindness exactly, and this is
+   the case that falls in it.
+3. **It needs a quantity neither backend keeps**: a normalised screen depth. `z` is
+   `-oow` and `ooz` is a depth-buffer value; neither is the `d` the formula wants.
+
+The derivation is written down in `cmd_move_word` so that whoever implements it
+starts from `k = d*fm/128000 - (fm-fo)/256` and two decoded ranges rather than from
+a convention half-remembered. That is worth more than a guess applied today.
 
 ---
 
