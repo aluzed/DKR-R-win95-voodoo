@@ -162,6 +162,23 @@ unsigned int dkr_tmu_acquire(dkr_tmu *t, unsigned long long key,
    pin. */
 void dkr_tmu_begin_frame(dkr_tmu *t);
 
+/* **The shape of what is free, not just how much of it there is.**
+ *
+ * A race was measured on 17 September 2026 at `hits=0/1552 evict=1040` with a peak
+ * occupancy of 1,165 K in a 2,048 K unit. Every cheap explanation was ruled out —
+ * the counter is live, the key is stable, `tmu-memory` refusals are zero, the slot
+ * table finds the key — which leaves one candidate and no measurement of it: a
+ * buddy allocator refuses an order it has no whole block for, however much total
+ * room remains. `used_bytes` cannot tell that apart, because it is a total.
+ *
+ * So the three numbers that can: how much is free, the **largest single free
+ * block**, and how many blocks the free space is broken into. A largest block far
+ * below the total is fragmentation, stated rather than inferred.
+ *
+ * All three are in bytes. Any pointer may be null. */
+void dkr_tmu_free_shape(const dkr_tmu *t, unsigned int *total_free,
+                        unsigned int *largest_free, unsigned int *free_blocks);
+
 /* Protects a texture from eviction until the end of the frame. Without this, a
    frame asking for more textures than the TMU holds would evict the ones it has
    just downloaded — the worst possible case, where a lot is transferred to

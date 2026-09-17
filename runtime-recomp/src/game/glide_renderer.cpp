@@ -1375,6 +1375,24 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                              t->stats.downloads, t->stats.download_bytes,
                              t->stats.evictions, t->stats.failures,
                              t->stats.peak_bytes / 1024u);
+                // **The shape of what is free, beside how much of it there is.**
+                //
+                // `peak` is a total and a total cannot tell a full unit from a
+                // broken one. The race measured on 17 September evicted 1,040
+                // times at 57 % occupancy with zero memory refusals, which is
+                // what a buddy allocator does when it holds plenty of room in
+                // pieces smaller than the order being asked for. `largest` far
+                // below `free` says that outright; `largest` close to `free`
+                // says the fragmentation theory is wrong and the search must
+                // move on.
+                {
+                    unsigned int total = 0u, largest = 0u, blocks = 0u;
+                    dkr_tmu_free_shape(t, &total, &largest, &blocks);
+                    std::fprintf(stderr,
+                                 "[gfx]   tmu%d: free=%uK largest=%uK "
+                                 "blocks=%u\n",
+                                 u, total / 1024u, largest / 1024u, blocks);
+                }
             }
         }
         std::fprintf(stderr,

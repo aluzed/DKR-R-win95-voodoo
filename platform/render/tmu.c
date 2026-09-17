@@ -305,6 +305,43 @@ void dkr_tmu_begin_frame(dkr_tmu *t)
     }
 }
 
+/* Walks the buddy tree once. A `FREE` node is whole by definition, so it is
+   counted and not descended into; a `SPLIT` node carries nothing itself and its
+   children carry everything. `USED` and `RESERVED` contribute nothing. Depth is
+   log2(16384) = 14, so the recursion is bounded and shallow. */
+static void walk_free(const dkr_tmu *t, unsigned int index,
+                      unsigned int *total, unsigned int *largest,
+                      unsigned int *blocks)
+{
+    unsigned int size;
+
+    if (index >= DKR_TMU_NODES) { return; }
+    size = node_size(index);
+
+    if (t->node[index] == DKR_TMU_FREE) {
+        *total += size;
+        *blocks += 1u;
+        if (size > *largest) { *largest = size; }
+        return;
+    }
+    if (t->node[index] != DKR_TMU_SPLIT) { return; }
+    if (size <= DKR_TMU_MIN_BLOCK) { return; }
+    walk_free(t, index * 2u + 1u, total, largest, blocks);
+    walk_free(t, index * 2u + 2u, total, largest, blocks);
+}
+
+void dkr_tmu_free_shape(const dkr_tmu *t, unsigned int *total_free,
+                        unsigned int *largest_free, unsigned int *free_blocks)
+{
+    unsigned int total = 0u, largest = 0u, blocks = 0u;
+
+    if (t) { walk_free(t, 0u, &total, &largest, &blocks); }
+
+    if (total_free)   { *total_free   = total; }
+    if (largest_free) { *largest_free = largest; }
+    if (free_blocks)  { *free_blocks  = blocks; }
+}
+
 unsigned int dkr_tmu_touch(dkr_tmu *t, unsigned long long key)
 {
     dkr_tmu_resident *r;
