@@ -128,6 +128,23 @@ sys.exit(0 if (black if sys.argv[2] == "black" else not black) else 1)
 PY
 }
 
+# **How many distinct colours the guest's screen holds.**
+#
+# This is the number that tells one screen from another, and `screen_delta` is
+# not. Measured on captures taken across an afternoon:
+#
+#     within one screen, two captures     0   +1485   +1172
+#     between two screens                     -20175  -14115
+#
+# An order of magnitude apart, where the mean pixel difference gave 34 for a
+# prompt appearing and 35 for a whole screen changing - indistinguishable. The
+# reason is that these menus animate by *moving* things, which shifts many pixels
+# and introduces almost no colour, while arriving somewhere else replaces the
+# palette.
+screen_colours() {
+  convert "$1" -crop 667x500+0+55 -format "%k" info: 2>/dev/null || printf 0
+}
+
 # **How much the screen moved between two captures**, on a scale of 0 to 255.
 #
 # Printed rather than judged, because the threshold belongs to the caller: a menu
@@ -497,41 +514,37 @@ case "${1:-}" in
     # **What this fixes, and what it does not.**
     #
     # It removes *timing* drift: a press that landed while a menu was still
-    # fading is retried instead of counted. Five screens were walked that way on
-    # 17 September 2026 with two such presses correctly rejected, where a fixed
-    # count would have gone one screen too far.
+    # fading is retried instead of counted.
     #
-    # It does **not** decide what is on the screen, and no bound on an image
-    # difference can, because this game's menus animate continuously. Measured on
-    # captures already on disk:
+    # **It measures the colour count, and an earlier version of this comment was
+    # wrong about why.** That version said no bound on an image difference could
+    # separate "the screen advanced" from "the menu animated", having tried the
+    # mean pixel difference and the count of moved cells. Both do fail:
     #
     #     pair                                   mean   cells moved
     #     the same screen, two captures             0            0 %
     #     a cursor moved and an "OK?" appeared     34           92 %
     #     CAUTION -> GAME SELECT                   35           72 %
-    #     PLAYER SELECT -> CAUTION                 56           83 %
-    #     a black transition -> PLAYER SELECT     134          100 %
     #
-    # The change *within* one screen is as large as the change *between* two, on
-    # either metric - butterflies and a highlight move nearly every cell a little.
-    # So the bound separates "nothing happened" from "something did", and nothing
-    # finer. A route still needs its screenshots read.
+    # 34 against 35 is not a discriminator. But the *number of distinct colours*
+    # is, and it was not tried before the claim was written:
     #
-    # The default is 20: above the zero that two captures of a still screen give,
-    # below every advance measured. It errs towards retrying, and a retry is loud
-    # - six of them abort the route rather than continue one that has already
-    # gone wrong. `DKR_DRIVE_DELTA` moves it and the delta is printed every time.
+    #     within one screen, two captures     0   +1485   +1172
+    #     between two screens                     -20175  -14115
     #
-    # What would answer properly is the game's own `gGameMode`, which it already
-    # logs. It is not reachable while the guest runs - Windows 95 holds the write
-    # behind its cache and the volume reads dirty - so it would need the game to
-    # publish the mode somewhere the host can see, which is a change to the game
-    # and not to this script.
+    # An order of magnitude, because these menus animate by moving things -- many
+    # pixels, almost no new colour -- while arriving somewhere else replaces the
+    # palette. The default bound is 5000: three times the largest change measured
+    # within a screen, and a third of the smallest measured between two.
+    #
+    # It still does not say *which* screen you are on. `game-mode` answers that
+    # coarsely, and the fingerprints in `docs/TEST-ENVIRONMENT.md` more finely.
+    # `DKR_DRIVE_DELTA` moves the bound and the figure is printed on every press.
     need_running; shift
     [[ $# -ge 2 ]] || die "usage: pad-until <milliseconds> <control> [control...]"
     command -v import >/dev/null || die "ImageMagick (import) is required"
     until_ms="$1"; shift
-    threshold="${DKR_DRIVE_DELTA:-20}"
+    threshold="${DKR_DRIVE_DELTA:-5000}"
     tmp_dir="$(mktemp -d)"
     trap 'rm -rf "$tmp_dir"' EXIT
     import -display "$DISP" -window root "$tmp_dir/before.png" 2>/dev/null \
@@ -547,7 +560,9 @@ case "${1:-}" in
       # through a transition and calls it unchanged.
       sleep 3
       import -display "$DISP" -window root "$tmp_dir/after.png" 2>/dev/null || continue
-      delta="$(screen_delta "$tmp_dir/before.png" "$tmp_dir/after.png")"
+      before_k="$(screen_colours "$tmp_dir/before.png")"
+      after_k="$(screen_colours "$tmp_dir/after.png")"
+      delta=$(( before_k > after_k ? before_k - after_k : after_k - before_k ))
       if [[ "$delta" -ge "$threshold" ]]; then
         say "pad-until: $* advanced the screen on press $attempt (delta $delta)"
         exit 0

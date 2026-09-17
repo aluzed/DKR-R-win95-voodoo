@@ -217,26 +217,50 @@ tell PLAYER SELECT from GAME SELECT - and it **lags**, being printed once in six
 display lists. And the read races the writer: it retries three times, because a
 single empty answer looks exactly like a stopped game and is usually a busy file.
 
-**`pad-until` confirms a press; it does not identify a screen.** `pad-hold` sends
-input and returns, and a route built on a fixed number of presses drifts, because
-each screen takes a different time to become responsive. `pad-until <ms>
-<control...>` captures, presses, captures again, and presses again only if the
-screen did not move - which removes that drift, and five screens were walked with
-it on 17 September with two mid-fade presses correctly retried.
+**`pad-until` confirms a press by counting colours, not by differencing pixels.**
+`pad-hold` sends input and returns, and a route built on a fixed number of presses
+drifts, because each screen takes a different time to become responsive.
+`pad-until <ms> <control...>` captures, presses, captures again, and presses again
+only if the screen did not move.
 
-What it cannot do is tell you *which* screen you are on, and no bound on an image
-difference can, because these menus animate continuously. Measured:
+**What it compares was wrong at first, and the correction is the useful part.**
+The first two attempts differenced the image - the mean per-pixel change, then the
+proportion of cells that moved - and neither works:
 
-    the same screen, two captures             mean   0    cells moved   0 %
-    a cursor moved and an "OK?" appeared      mean  34    cells moved  92 %
-    CAUTION -> GAME SELECT                    mean  35    cells moved  72 %
-    PLAYER SELECT -> CAUTION                  mean  56    cells moved  83 %
+    pair                                   mean   cells moved
+    the same screen, two captures             0            0 %
+    a cursor moved and an "OK?" appeared     34           92 %
+    CAUTION -> GAME SELECT                   35           72 %
 
-The change within one screen is as large as the change between two. So the bound
-separates "nothing happened" from "something did" and nothing finer, and a route
-still needs its screenshots read. The default is 20 and `DKR_DRIVE_DELTA` moves it.
-What would answer properly is the `gGameMode` the game already logs, which Windows
-95 holds behind its write cache while the guest runs.
+34 against 35 decides nothing, and a comment was written here saying that no bound
+on an image difference could. That was a claim about two metrics stated as a claim
+about all of them. The **number of distinct colours** separates the same cases by
+an order of magnitude:
+
+    within one screen, two captures     0   +1485   +1172
+    between two screens                     -20175  -14115
+
+These menus animate by *moving* things, which shifts many pixels and introduces
+almost no colour; arriving somewhere else replaces the palette. The bound is 5000 -
+three times the largest change measured within a screen, a third of the smallest
+between two - and `DKR_DRIVE_DELTA` moves it. Measured live afterwards, one
+genuine advance read 73,470.
+
+**Screen fingerprints, for identifying where a route has got to.** Mean brightness
+and distinct colours over the guest's area, `-crop 667x500+0+55`. Text, so they can
+live here; the captures they came from cannot:
+
+    screen                     brightness   colours
+    N64 logo                       72.5 %      6334
+    Rare copyright                 64.0 %     11995
+    PLAYER SELECT                  48.6 %     90621
+    CAUTION                        63.9 %     70446
+    GAME SELECT, initials entry    63.7 %     56331
+    a transition frame              0.0 %         1
+
+Brightness alone does not separate CAUTION from the initials entry - 63.9 against
+63.7 - and the colour count does, 70,446 against 56,331. A transition frame is
+unmistakable: one colour.
 
 **Use `pad-hold`, not `pad`, against the game.** `pad` presses and releases in a
 few milliseconds; this target presents about **twelve frames a second**, and the
