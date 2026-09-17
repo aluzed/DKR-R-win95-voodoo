@@ -609,7 +609,15 @@ case "${1:-}" in
     for mode_try in 1 2 3; do
       if MTOOLS_SKIP_CHECK=1 mcopy -o -i "$mode_img" \
            ::/dkr-runtime-data/logs/runtime.log "$mode_log" 2>/dev/null; then
-        mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1)"
+        # `|| true` is load-bearing. Under `set -o pipefail` a `grep` that matches
+        # nothing returns 1, the pipeline returns 1, the assignment inherits it
+        # and `set -e` ends the script - exit 1, not a word printed. Which is the
+        # *normal* case here: the log exists from the first second and the first
+        # mode line arrives sixty display lists later, so every call during boot
+        # killed the script instead of retrying. The previous fix corrected the
+        # same mistake one line below and left this one, because it was found by
+        # reading rather than by running.
+        mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1 || true)"
         # `[[ ... ]] && break` would be wrong here and was: when the test fails it
         # returns 1, that becomes the `if` block's status, and `set -e` ends the
         # script with no message at all. Caught by running the command against a
