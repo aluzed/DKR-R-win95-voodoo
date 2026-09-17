@@ -703,3 +703,24 @@ And a guard that greps the process table can match **itself**: `pgrep -f "bash
 scripts/Drive..."` matched its own wrapper's command line, so an edit that was safe
 to make was refused six times running. Filter the wrapper out, or the guard reports
 busy forever.
+
+### Item 9: the game reaches a race
+
+    read 1 : 599 tenths, 129141 colours | gGameMode=0 (INGAME)
+    read 2 : 599 tenths, 129183 colours | gGameMode=0 (INGAME)
+    read 3 : 599 tenths, 128854 colours | gGameMode=0 (INGAME)
+
+Three consecutive readings, a stable ~129,000 colours at 59.9 % - a full-frame
+textured 3D scene, and the first INGAME of the session.
+
+**It was reached by the link that failed**, and that is worth saying plainly. The
+chain was hunting a 105,590-colour screen, never found it, and its ten presses of
+`a` started a race instead. Not the route that was designed.
+
+It also corrects a refutation recorded two sittings ago. "A direction before a
+confirmation does not start a race" was concluded from `right` then two presses of
+`a`. True of what was tested, and stated too broadly: **more presses were needed,
+not a different control.** Ten did it where two did not.
+
+So the route to a race, as now known: reach the pre-race sequence, then press `a`
+repeatedly - up to ten times - rather than twice.
