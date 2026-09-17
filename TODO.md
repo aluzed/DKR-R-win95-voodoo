@@ -330,6 +330,12 @@ only ever blocked on it.
    arriving in larger numbers because this is the first captured screen with a
    dense 3D mesh.
 
+   **And the class is measured, not assumed:** the neighbour test at widening
+   radius gives 460 -> 83 -> 49 -> 35 -> 15 -> **9 at twelve pixels**, the same
+   shape as the corpus-wide residue. A displaced boundary is forgiven as the radius
+   grows and a wrong colour is not, so nine is what this scene really adds to the
+   hard core.
+
    It also exposed a limit of the instrument: `covers` is the watch's opinion, not
    the card's, and where they disagree the watch is wrong by construction. That is
    now written beside the measurement.

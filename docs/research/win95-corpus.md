@@ -728,9 +728,19 @@ outside for another's. The watch samples the pixel centre with exact float edge
 functions; the card has four bits of sub-pixel precision and its own rule.
 
 So the most likely class for this scene's 83 is **coverage at mesh junctions**,
-not a combiner or a texture - which is the same class the whole corpus's residue
-was traced to this morning, arriving in larger numbers because this is the first
-captured screen with a dense 3D mesh in it.
+not a combiner or a texture - and the neighbour test at widening radius turns that
+from likely into measured:
+
+    tail 460   ->  83 at 1 px  ->  49 at 2  ->  35 at 3  ->  15 at 6  ->  **9 at 12**
+
+The same shape as the corpus-wide residue, which runs 967 -> 483 -> 338 -> 241 ->
+79 -> 35 on the attract sequence. A displaced boundary is forgiven as the radius
+grows; a wrong colour is not. Nine pixels survive twelve, and those nine are all
+this scene actually contributes to the hard core.
+
+It arrives in larger numbers at radius 1 than the flat menus do because this is
+the first captured screen with a dense 3D mesh in it - more edges, more junctions,
+more pixels sitting on one.
 
 **And a limit of the instrument, worth stating where it will be read:** `covers`
 and `elsewhere` are the watch's opinion, not the card's. Where they disagree the
