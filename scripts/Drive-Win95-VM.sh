@@ -536,6 +536,10 @@ case "${1:-}" in
     trap 'rm -rf "$tmp_dir"' EXIT
     import -display "$DISP" -window root "$tmp_dir/before.png" 2>/dev/null \
       || die "cannot read the screen"
+    # `before.png` is captured once and never refreshed between attempts, which
+    # reads like an oversight and is not: the question is "have we left the screen
+    # we started on", not "did the last press change anything". Refreshing it
+    # would make a route that advances in two small steps look like two failures.
     for attempt in 1 2 3 4 5 6; do
       "$0" pad-hold "$until_ms" "$@" >/dev/null 2>&1
       # The game presents about six frames a second and a menu fades in over
