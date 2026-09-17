@@ -136,6 +136,33 @@ black-screen run's own log:
 **Nothing refused, nothing reclaimed**, residency growing as it should. That branch
 is closed too.
 
+## The screen switches render target, and nothing in the port knows
+
+This screen sets the colour image **twice**, to two different addresses:
+
+    SetColorImage width=320 address=0x01000000     (four draws in the capture)
+    SetColorImage width=320 address=0x02000000     (one)
+
+and the live run's log carries the same pair. So the game is switching render
+target on PLAYER SELECT, and asking for a 320-wide image where the frame buffer is
+640.
+
+`color_image_address` is decoded and stored - `f3ddkr.h:162`, four uses in the
+decoder - and **nothing outside the decoder reads it**. Neither backend sees it.
+The port has no concept of a render target at all: every draw lands in the one
+frame buffer, whichever colour image the list selected.
+
+That is a real architectural gap, measured rather than supposed, and it is the
+first concrete mechanism that matches "drawn somewhere that is not what the display
+shows".
+
+**It is a candidate and not the diagnosis**, and the reason to be careful is on the
+record already: the *oracle* ignores the switch in exactly the same way and renders
+this capture correctly. So collapsing two targets into one is not sufficient on its
+own to produce the blackness - something about the live run must make the same
+collapse lose the scene where the replay's does not. What that is, is the next
+question, and it now has a mechanism to hang on rather than a shrug.
+
 ## Where the defect stands
 
 Established: the screen is black live and correct in its own capture; the list
@@ -146,9 +173,9 @@ Refuted: a transition frame (a second screenshot twelve seconds later is
 identical); a frame that never reaches the screen (presents climb); the back-buffer
 sampler (its own control failed); texture memory (counters clean).
 
-Unmeasured: where, between the draw and the display, the content is lost. Four
-branches are closed and that one is untouched, because every instrument that could
-see it either does not work live or does not exist yet.
+Unmeasured: where, between the draw and the display, the content is lost - though
+it now has a candidate, above, in a render-target switch no part of the port
+consumes. Four branches are closed; this one has a mechanism and no measurement.
 
 ## Why it matters beyond this screen
 
