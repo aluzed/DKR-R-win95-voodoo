@@ -175,3 +175,42 @@ So the remaining possibilities are narrow and neither is yet measured:
 Distinguishing them means reading the bytes of one of those commands against the
 decompilation's F3DDKR layout. That is the next step, it needs no machine, and it
 is where this note stops rather than guessing a third time.
+
+## The offsets are right, checked against the decompilation's own structure
+
+`include/structs.h` defines the record the polygon command points at: a byte of
+flags and three vertex indices, then three four-byte texture-coordinate pairs at
+0x04, 0x08 and 0x0C. Sixteen bytes, which is what `gSPPolygon` announces
+(`numTris * 16`) and what `TRIANGLE_STRIDE` already is.
+
+So `a + 4 + corner * 4` is the right offset, and the second of the two remaining
+possibilities is dead.
+
+**And the address and stride are right too**, by an argument that needs no further
+reading: the vertex indices come out of the *same* sixteen-byte records, and the
+logo's geometry is correct on screen - the outline, the rounded corners, the
+rotation. A wrong `source` or a wrong stride would wreck the shape before it
+touched the texture. It does not.
+
+So the uniform pair is real data: this object's triangles each carry one texture
+coordinate, in the list, as shipped.
+
+## Which moves the question again
+
+The screen is not uniformly gold when it is right. The live capture of the correct
+frame shows the logo with a gold border and a dark navy interior; the flat frame
+is gold everywhere. So what is lost is the **dark part**, not the pattern - and an
+object whose triangles each carry a single coordinate is exactly how one would
+draw a shape in flat colours, one colour per triangle, with the texture supplying
+the shade rather than a pattern.
+
+That reframes it: the question is no longer "why is the texture not mapped" but
+"why do the triangles that should be dark come out gold". Candidates, none
+measured: the vertex colours are being ignored where they should modulate; or the
+dark triangles are a separate batch that is not drawn; or they are drawn and lost
+to the depth test, as draw 3 of the probe is.
+
+This note has now been wrong twice - once about `G_TEXTURE`, once about the
+offsets - and both times the measurement that refuted it was cheaper than the
+change it would have justified. The pattern is worth naming: **every guess here
+was about the mechanism, and every refutation came from looking at the data.**
