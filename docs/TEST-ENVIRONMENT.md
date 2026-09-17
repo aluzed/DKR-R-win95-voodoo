@@ -200,6 +200,21 @@ before="$(stamp)"; scripts/Drive-Win95-VM.sh run "D:\REPLAY.EXE --both D:\CAP005
 until [ "$(stamp)" != "$before" ]; do sleep 15; done
 ```
 
+**Use `pad-hold`, not `pad`, against the game.** `pad` presses and releases in a
+few milliseconds; this target presents about **twelve frames a second**, and the
+game samples input once a frame, so a keystroke falls between two polls and is
+never seen. Measured on 17 September 2026: three `pad start` presses produced
+nothing at all, and `pad-hold 1200 start` landed three times out of three -
+
+    [input] win95 buttons=0x1000     one line per press
+
+taking the game out of its attract sequence and into PLAYER SELECT. The same
+brevity is harmless on the desktop, where Windows queues the keystroke; the game
+polls a level rather than a queue, so only the hold works.
+
+This cost three VM runs and very nearly a wrong conclusion: with `pad`, the port
+looks as though it has no input at all.
+
 **Do not touch the emulator's window while a sweep runs.** `Alt+F4` and the other
 `Alt` combinations reach *86Box's own menu bar*, not the guest: one of them
 paused the machine mid-sweep on 15 September 2026, and from the host the pause
