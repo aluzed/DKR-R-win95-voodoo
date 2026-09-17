@@ -724,3 +724,39 @@ not a different control.** Ten did it where two did not.
 
 So the route to a race, as now known: reach the pre-race sequence, then press `a`
 repeatedly - up to ten times - rather than twice.
+
+### Item 9 DONE in part: a race is captured, and it exercises what no menu did
+
+`CAP2600.BIN` was taken with `gGameMode=0 (INGAME)` - the first capture in this
+corpus that is not a menu. Beside `CAP0420`:
+
+                              CAP0420 (menu)   CAP2600 (race)
+    commands                        1078            4220
+    triangles                        110            3927
+    emitted                           73            2335
+    textures                          63             276
+    fogged draws                      43            2062
+    oow range (millionths)      1094..6250      103..43570
+
+**It adds no new combiner configuration.** `G_CC_MODULATEIA_PRIM` and
+`G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2` are both already in the corpus, so
+coverage stays at **nine of twenty-nine**. That is worth stating plainly, because
+the hope this item was opened on was that a race would widen it.
+
+**What it does exercise, for the first time, is the second cycle.**
+
+        5450   10487 ppm  of which the second cycle changes the colour
+
+Every capture in this corpus until now reported `the second cycle changes the
+colour: 0`. Two-cycle combining has been decoded, decomposed and rendered for
+weeks with nothing ever depending on its second half. Five thousand four hundred
+and fifty pixels here do, and they are 44 % opaque - so the second cycle's result
+is blended, not merely written.
+
+The depth range is the other first: `oow` spans 103 to 43,570 millionths, a factor
+of 423, against a menu's 1094 to 6250, a factor of six. The depth test finally has
+something to sort.
+
+So the item's purpose is served without its stated hope being met: the corpus now
+holds a scene that exercises the two-cycle path and a real depth spread, and the
+configuration count is unchanged. Both halves of that are measured.
