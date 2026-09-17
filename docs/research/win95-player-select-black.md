@@ -45,10 +45,16 @@ survives the alternation and the scene does not - but it is a measured asymmetry
 exactly the part of the pipeline the replay never exercises: `REPLAY.EXE` decodes
 one list, presents once, and reads back.
 
-**The next measurement** is whether the depth buffer is per-buffer on this card. If
-each of the two colour buffers has its own aux buffer, a clear that reaches one and
-a scene drawn into the other is the whole story, and it would be invisible to any
-single-frame test.
+**And the lead is weakened by evidence already in hand**, before it cost a run. If
+the display alternated between a drawn face and an empty one at eight presents per
+list, the screen would *flicker*: roughly one screenshot in two would catch the
+scene. Two screenshots twelve seconds apart are both black, and the title is
+steady in both. Whatever is happening is stable, not alternating.
+
+So buffer alternation does not explain it either, and the eight-to-one ratio is
+recorded as an oddity worth knowing rather than as the cause. The depth reading
+stands on its own measurement - `DKR_NO_DEPTH=1` brings the scene back - and why a
+clear that looks correct on every line does not take is the question left.
 
 36 % rather than 98 % is expected and not a second defect: with depth off entirely
 the draw order is wrong and surfaces overdraw each other. The measurement asks
