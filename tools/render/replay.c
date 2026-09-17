@@ -707,6 +707,7 @@ static void usage(const char *me)
             "usage: %s [--card|--both] [--single-tmu] [--log file] [--trace]\n"
             "          [--no-odd-row-swap] [--no-tile-texel-size]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
+            "          [--frames N]\n"
             "          [--recipe-map file] [--texel-factor-one] [--no-multipass]\n"
             "          capture.bin [out.bmp]\n"
             "       %s --recipe N          print one catalogue entry and stop\n",
@@ -721,6 +722,7 @@ int main(int argc, char **argv)
     const char *dump_dir = 0, *map_path = 0;
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
+    int frames = 1;
     int no_cull = 0, factor_one = 0, no_alpha = 0, no_multipass = 0;
     int oracle_tmus = 1;
     int i, status = 0;
@@ -734,6 +736,17 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
         else if (strcmp(argv[i], "--no-multipass") == 0) { no_multipass = 1; }
         else if (strcmp(argv[i], "--trace") == 0) { g_want_trace = 1; }
+        /* **Drawing the same capture more than once**, which is the one axis
+           that separates the replay from the running game. The game renders the
+           same screen three hundred times and shows black; this program renders
+           it once and shows it correctly. Everything else has been measured
+           equal between the two - the display list, the decoder state, the
+           depths handed over, the backend, the card. The frame count had not
+           been, because the harness could not vary it. */
+        else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            frames = atoi(argv[++i]);
+            if (frames < 1) { frames = 1; }
+        }
         else if (strcmp(argv[i], "--no-odd-row-swap") == 0) { g_no_odd_row_swap = 1; }
         else if (strcmp(argv[i], "--no-tile-texel-size") == 0) {
             g_no_tile_texel_size = 1;
@@ -817,6 +830,7 @@ int main(int argc, char **argv)
     {
         dkr_render_backend soft;
         replay_counts sc;
+        memset(&sc, 0, sizeof(sc));
         unsigned *soft_pixels = 0;
         int sw = 0, sh = 0;
 
@@ -833,7 +847,13 @@ int main(int argc, char **argv)
                 free(rdram);
                 return 1;
             }
-            run_capture(&soft, &h, rdram, oracle_tmus, no_cull, no_alpha, &sc);
+            {
+                int f;
+                for (f = 0; f < frames; f++) {
+                    run_capture(&soft, &h, rdram, oracle_tmus, no_cull, no_alpha,
+                                &sc);
+                }
+            }
             say_counts("oracle", &sc);
             if (probe_on) { say_probe(probe_x, probe_y); }
             say_categories();
@@ -899,6 +919,7 @@ int main(int argc, char **argv)
         {
             dkr_render_backend card;
             replay_counts cc;
+            memset(&cc, 0, sizeof(cc));
             unsigned *card_pixels;
             int cw = 0, ch = 0;
             int card_tmus;
@@ -948,7 +969,14 @@ int main(int argc, char **argv)
             }
 
             if (probe_on) { dkr_glide_backend_watch(probe_x, probe_y); }
-            run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha, &cc);
+            {
+                int f;
+                for (f = 0; f < frames; f++) {
+                    if (frames > 1) { say("  --- frame %d of %d\n", f + 1, frames); }
+                    run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha,
+                                &cc);
+                }
+            }
             say_counts("card", &cc);
             if (probe_on) { say_card_watch(probe_x, probe_y); }
             {
