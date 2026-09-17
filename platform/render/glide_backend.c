@@ -2129,7 +2129,7 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
 {
     const unsigned long prepass_before = b.prepass_drawn;
     const unsigned long pass2_before = b.pass2_drawn;
-    int i, exact;
+    int i, exact, mask_yielded = 0;
     (void)self;
     if (!vertices || count <= 0) { return; }
     if (g_watch_armed) {
@@ -2172,8 +2172,18 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
             const unsigned char scale =
                 b.has_state ? iterated_scale_wanted(&b.current) : 255u;
             /* The ordinary draw yields the depth write to whatever follows it, so
-               that the two reach the same verdict. See `pass_depth`. */
-            if (g_pass2_follows) { pass_depth(0); }
+               that the two reach the same verdict. See `pass_depth`.
+             *
+               **And it is put back whatever happens.** Closing the mask leaves
+               the card out of step with the block `b.current` claims is loaded,
+               and the second pass is what puts it back - unless the second pass
+               returns early, which `pass2_draw_by_shade` does when a Glide entry
+               point is missing. The mask would then stay shut for every draw that
+               followed, and the next `set_state` with an identical block would
+               short-circuit rather than repair it: a whole frame with no depth
+               written, from a symbol that failed to resolve. `mask_yielded` is
+               the flag that makes the repair unconditional. */
+            if (g_pass2_follows) { pass_depth(0); mask_yielded = 1; }
             if (scale != 255u) {
                 static dkr_render_vertex tinted[PREPASS_BATCH * 3];
                 int done = 0;
@@ -2220,6 +2230,13 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
             b.has_state = 0;
             gl_set_state(0, &saved);
         }
+    }
+    /* Whatever ran or did not run above, the card must not be left with a mask
+       this draw closed and nobody opened. */
+    if (mask_yielded && b.pass2_drawn == pass2_before) {
+        const dkr_render_state saved = b.current;
+        b.has_state = 0;
+        gl_set_state(0, &saved);
     }
     if (g_watch_armed) {
         watch_after_draw((unsigned char)b.current.recipe,
