@@ -113,7 +113,7 @@ typedef struct {
     /* Draws emitted with fog in force. Zero for the whole of this port's life,
        and nothing printed it - so "fog is off" and "fog is on and does nothing"
        were indistinguishable from the report. */
-    unsigned long fogged;
+    unsigned long fogged, secondary;
     unsigned long geom_batches, geom_depth_disagrees, geom_cull_disagrees;
     unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
     unsigned short stride_first[8][4];
@@ -132,6 +132,7 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
     c->fogged    = ctx->state.emitted_fogged;
+    c->secondary = ctx->state.emitted_secondary;
     c->geom_batches         = ctx->state.geom_batches;
     c->geom_depth_disagrees = ctx->state.geom_depth_disagrees;
     c->geom_cull_disagrees  = ctx->state.geom_cull_disagrees;
@@ -190,6 +191,13 @@ static void say_counts(const char *who, const replay_counts *c)
         c->rejects, lost, c->textures, c->resident, c->reused, c->fogged);
     /* Two sources for one fact. Silent when they agree, because a line of zeroes
        on every run is a line nobody reads. */
+    /* Draws aimed at a colour image other than the first one named. The port
+       redirects them all into the one frame buffer, having no render target;
+       silent when the list only ever names one, as most do. */
+    if (c->secondary) {
+        say("           draws aimed at a second render target: %lu\n",
+            c->secondary);
+    }
     if (c->geom_depth_disagrees || c->geom_cull_disagrees) {
         say("           geometry mode disagrees with the derived state:"
             " depth on %lu of %lu batches, cull on %lu\n",

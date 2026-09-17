@@ -191,6 +191,25 @@ That still does not prove it causes the blackness, for the reason already given:
 the oracle ignores the switch identically and renders this capture correctly. What
 it does establish is the size of what is being ignored, which was worth one run.
 
+### And what it costs, which is nothing the corpus can see
+
+Switching target often is not the same as *drawing* to the second one. The decoder
+now counts draws whose colour image is not the first the list named, and across
+every capture - `CAP_PS` included, the black screen's own - the count is **zero**.
+
+Every draw goes to the first colour image. The second is selected and left again
+without geometry in between, at least within a single display list.
+
+So the gap costs nothing the corpus can measure, and the candidate is much weaker
+than the 488 switches made it look. It is not dead: the 488 were counted across a
+whole run of hundreds of lists, and a capture is one list, so a draw to the second
+target in some *other* list remains possible. But the obvious version of the
+story - "the scene is drawn to a target nobody shows" - is refuted for every list
+this project can inspect.
+
+The counter stays, silent unless a list ever does it, so that the day one does the
+report says so.
+
 ## Where the defect stands
 
 Established: the screen is black live and correct in its own capture; the list

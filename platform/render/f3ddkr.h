@@ -132,6 +132,20 @@ typedef struct {
     /* How many `G_MW_FOG` words the list carried. Non-zero means the game is
        asking for fog and this port is not computing its coefficient. */
     unsigned long fog_words;
+
+    /* --- Draws aimed at a render target nothing reads ------------------------ *
+     *
+     * `color_image_address` is decoded, stored, and consumed by no backend: the
+     * port has no concept of a render target and every draw lands in the one
+     * frame buffer, whichever colour image the list selected. The running game
+     * switches target constantly - 2,433 `SetColorImage` in one run, 488 of them
+     * to a second address - so the gap is structural.
+     *
+     * What that costs is a different question from how often it happens, and it
+     * is this: how many *draws* are aimed somewhere other than the first colour
+     * image the list named. Counted, not acted on. */
+    unsigned int  first_color_image;
+    unsigned long emitted_secondary;
     unsigned long texture_cmds;
 
     /* --- Two sources for one fact, counted against each other ---------------- *

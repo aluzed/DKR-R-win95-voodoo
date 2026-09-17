@@ -694,6 +694,14 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              * `fog_enabled` is zero. That is why it paints and the game's
              * geometry does not. */
             if (c->render_state.fog_enabled) { c->state.emitted_fogged++; }
+            /* The first colour image the list names is taken as the primary; any
+               draw aimed elsewhere is one the port silently redirects. */
+            if (c->state.first_color_image == 0u) {
+                c->state.first_color_image = c->state.color_image_address;
+            }
+            if (c->state.color_image_address != c->state.first_color_image) {
+                c->state.emitted_secondary++;
+            }
             /* **The size of the triangles on screen.**
              *
              * 490 triangles per frame are emitted, and the screen shows only
