@@ -441,7 +441,7 @@ reader against the clear before reporting anything.
 
 | # | Item | Status |
 |---|------|--------|
-| 9 | Drive the game into a race, to exercise the remaining configurations | RUNNING |
+| 9 | Drive the game into a race, to exercise the remaining configurations | DONE - race driven and captured; coverage unchanged, and that is the result |
 
 **9 — the instruments are built, the route is not.** `game-mode` gives the arrival
 signal a route needs: the game logs `gGameMode` and a race is the one that reads
