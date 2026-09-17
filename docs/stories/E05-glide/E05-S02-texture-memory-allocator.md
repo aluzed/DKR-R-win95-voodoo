@@ -174,13 +174,32 @@ explanation is now spent — not memory, not fragmentation, not the slot table, 
 dead counter, not an unstable key, and not an absence of repeats — which makes
 `hits=0` a defect in the residency path rather than a property of the workload.
 
-**One caveat, stated because the two numbers come from different runs.** The
-`hits=0/560` is a live session's TMU counter; the repeats are a capture replayed
-through the decoder, where the software oracle never touches a TMU at all. The
-decoder's own one-entry cache absorbs a few (`reused=5`), so roughly 148 of the 153
-repeats reach the upload path. Confirming both on the *same* run needs a live
-session with the new counter, which the built binary now carries and which is the
-next step rather than a further argument.
+### Both counters on one run, 18 September 2026 — and it is worse than suspected
+
+The caveat above was that `hits=0` and the repeat count came from different runs.
+They no longer do. One report, one session, one frame window:
+
+    conversions: texels=0 distinct-keys=88 overflow=0 repeats=64
+    tmu0: hits=0/210 downloads=210 bytes=506112 evict=0 fail=0 peak=494K
+    tmu0: free=1553K largest=1024K blocks=6
+
+**Zero evictions.** Nothing was ever thrown out, so everything acquired is still
+resident. And 210 acquisitions against 88 distinct keys in the same report: at least
+**122 acquisitions were for a key that was still resident**, and not one of them
+hit.
+
+Memory is not even under pressure — 494 K used of 2,048 K, 1,553 K free, and a whole
+1,024 K block inside it. The allocator never had to refuse anything and never did.
+
+So the residency lookup does not work. Not "is defeated by pressure", not "thrashes
+under load": `find_resident` fails to match a key that is present and was never
+evicted. Everything else in this path — the allocator, the buddy tree, the slot
+table, the eviction policy — is exonerated by the same six numbers.
+
+**What to look at first**, in the order the evidence suggests: `find_resident`'s
+comparison and the `live` flag it tests, then whether `dkr_tmu_acquire` is reached
+with the same key the slot table matched on, which is the one link this report has
+not instrumented.
 
 ### The question this left, and which the instrument has now narrowed
 
