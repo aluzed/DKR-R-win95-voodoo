@@ -559,8 +559,20 @@ also carries the two-layer path, whose single-TMU fallback has a switch precisel
 because it is easy never to exercise.
 
 **And one configuration reaching the screen has no catalogue entry at all**: 45
-pixels of the hub, 84 ppm, opaque. Small enough to have gone unmentioned and
-large enough to be real. What it is has not been looked at.
+pixels of the hub, 84 ppm, opaque. It was looked at the same afternoon, and it is
+benign. `--recipe-map` marks 42 pixels - the ones a draw actually changed - in a
+block at x 234-241, y 276-288, and the probe names the draw:
+
+    2  painted 0x0C0C0C -> 0xFEFEFE  SHADE  const=0xFFFFFFFF  tex=0  recipe=0
+
+Untextured, shade only, opaque. The catalogue does not recognise its mux, so the
+backend falls through to the four-mode shorthand - and for a shade-only draw the
+shorthand is exact, not approximate. **Not one of the 42 diverges.**
+
+Recorded rather than fixed: a table entry for it would change no pixel, and the
+value of knowing is that the next unnamed configuration cannot be assumed to be
+this harmless. The probe at that pixel also shows the hub drawing it **27 times
+over**, most of them turned away by depth, which is its own fact about the scene.
 
 So the next capture is worth choosing by what it would *exercise* rather than by
 which level it is. A scene that fills in three of the ten unverified two-cycle
