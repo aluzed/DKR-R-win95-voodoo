@@ -238,13 +238,16 @@ route: on 17 September a run that sent five `start` then three `a`, instead of f
 `start` then `start a a a down a`, ended on GAME SELECT with the cursor on GAME A
 rather than at track select.
 
-**And arm a capture for a list the run reaches *while the screen is still up*.**
-The menus idle back on their own. A capture armed at list 1100, fired long after
-the presses, found the game back on GAME SELECT - its fill identical to `CAP0420`'s
-to within forty pixels - even though the screenshot taken right after the presses
-showed the route had worked. The screenshot and the capture were of different
-screens, minutes apart. Arm low enough that the capture fires while the target is
-on screen, or drive the game to hold the screen.
+**A capture fires wherever the game is, so check the screen before trusting it.**
+`CAP1100` was armed for a vehicle-select screen and came back with GAME SELECT's
+fill. The screenshot taken right after the presses shows GAME SELECT too, so the
+capture is *consistent* - the route simply never got there, for the reason above.
+
+There is **no evidence here that the menus idle back**: this note claimed that for
+one commit and the claim was withdrawn, because the screenshot and the capture show
+the same screen. Whether a menu left alone returns anywhere is unmeasured. Take a
+screenshot near the capture's moment when it matters, rather than assuming either
+way.
 
 **Drive from the title screen, not from the attract loop.** The game opens on an
 attract sequence - a character carousel, then the copyright logo, then a flyover -
