@@ -643,3 +643,32 @@ Recorded before the run finished, because the misalignment was visible in the
 second reading and the remaining steps could only make it worse. Reading the nine
 readings afterwards and explaining them is exactly the mistake this file already
 records once, two sittings ago.
+
+### Item 9, seventh sitting: the chain fails loudly, and a flat menu adds nothing
+
+Two results, one from the tool and one from the capture.
+
+**The chained route works where a fixed sequence could not, and it fails out loud.**
+Starting from a state the fingerprint table did not know - 53,295 colours, a
+leftover of the save-file branch after four cancels - the chain pressed four times
+and reached GAME SELECT at 3,016 off a 3,500 window. A fixed press count would have
+drifted from that unplanned start, exactly as the previous run did. Its last link
+then gave up after ten presses with `never within 6000 of 105590` rather than
+walking on. That refusal is the point: every earlier run half-realigned and
+produced readings that were plausible and wrong.
+
+**The capture landed on a flat menu and adds no coverage.** `CAP2000.BIN` replays
+cleanly and carries the same four configurations `CAP0420` already had:
+
+        308951  672722 ppm  opaque  99%  G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2
+         73184  159353 ppm  opaque   0%  G_CC_BLENDT_ENV_ALPHA_A_TxP
+         67776  147578 ppm  opaque   0%  G_CC_MODULATEIA
+          9344   20345 ppm  opaque   0%  G_CC_PRIMITIVE
+
+Same family, same coverage - nine of twenty-nine, unchanged. Worth having measured
+rather than assumed: it confirms the value is on the 155k-colour screen specifically
+and not somewhere easier in the menus.
+
+So the open work is unchanged and now precisely bounded: reach the rich screen with
+the chained route, arm a capture there, and read its fill. The chain reaches GAME
+SELECT reliably; what it has never reached twice is the screen after `down, a`.
