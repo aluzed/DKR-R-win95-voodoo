@@ -289,13 +289,15 @@ only ever blocked on it.
    not get further - `CAP0900` has the *same fill profile as `CAP0420`*, meaning
    the sequence went round GAME SELECT and came back.
 
-   **Mashing A plateaus**, and the reason is in the harness note already: DKR's
-   menus are chosen with the **stick**, not confirmed with A alone. Going deeper
-   needs a real sequence - holds on `left`/`right`/`up`/`down` between the A
-   presses - worked out against screenshots rather than guessed. Three runs were
-   spent learning that, at about ten minutes each, and the value per run is falling:
-   the next attempt should shoot the screen after every press and build the
-   sequence from what it sees, instead of sending a batch and inspecting the end.
+   **Mashing A plateaus**, and mapping the presses one at a time said why: four
+   holds from the attract loop land back on the **title screen**, not deeper. The
+   game opens on an attract sequence and presses sent into it do not navigate -
+   sequences built there go round and return. The title screen (START / OPTIONS)
+   is the real entry point, and that is now in `docs/TEST-ENVIRONMENT.md`.
+
+   Five runs were spent on this at about ten minutes each. The one that taught
+   something was the one that screenshotted after **every** press; the batches that
+   inspected only the end could not tell "went deeper" from "went round".
 
    Ten scenes now: 2,609 divergent pixels, 178 real, of 3.07 million.
 

@@ -215,6 +215,17 @@ polls a level rather than a queue, so only the hold works.
 This cost three VM runs and very nearly a wrong conclusion: with `pad`, the port
 looks as though it has no input at all.
 
+**Drive from the title screen, not from the attract loop.** The game opens on an
+attract sequence - a character carousel, then the copyright logo, then a flyover -
+and presses sent into it do not navigate: mapping them one at a time on
+17 September 2026, four holds landed back on the **title screen** (START /
+OPTIONS) rather than deeper in. Sequences built from the attract loop go round and
+return, which is why batches of `a` presses plateau at GAME SELECT.
+
+The title screen is the real entry point. Screenshot after **every** press when
+building a sequence; sending a batch and inspecting only the end cannot tell
+"went deeper" from "went round".
+
 **Never start a machine run while another is still in flight**, and check the
 *previous* task rather than the new one. On 17 September 2026 a screenshot-mapping
 run produced no screenshots at all and exited cleanly: the run before it was still
