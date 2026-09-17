@@ -646,3 +646,32 @@ Its fill adds no new configuration - recipes 3 and 20 - so it is coverage of a
 distinction is worth keeping in mind when choosing the next one.
 
 Ten scenes: **2,609 divergent pixels and 178 genuinely so**, of 3.07 million.
+
+
+## Track select: a tenth configuration, and the first captured 3D menu
+
+`CAP0600.BIN`, 17 September 2026 - **DINO DOMAIN / ANCIENT LAKE**, the track-select
+screen, with a live three-dimensional preview of the circuit inside its wooden
+frame. Reached by the mapped route with a screenshot confirming every press, which
+is what makes the route reproducible; the same seven presses fired blind landed one
+screen short.
+
+Its fill is unlike anything else in the corpus - six configurations where the flat
+menus have three or four:
+
+      422715  443643 ppm  65% opaque  G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2
+      307200  322409 ppm   0% opaque  **G_CC_MODULATEIDECALA**
+       77926   81784 ppm   0% opaque  G_CC_PRIMITIVE
+       76800   80602 ppm   0% opaque  G_CC_MODULATERGBA + G_CC_BLENDI_ENV_ALPHA_PRIM2
+       61608   64658 ppm   0% opaque  G_CC_BLENDT_ENV_ALPHA_A_TxP
+        6144    6448 ppm   0% opaque  G_CC_MODULATEIA_PRIM
+
+`G_CC_MODULATEIDECALA` is number 2 of the catalogue and **no capture had ever
+exercised it** - here it paints a full screen's worth, 307,200 pixels, none of them
+opaque. Coverage goes from nine of twenty-nine to **ten**.
+
+It is also the first capture of a screen that draws real geometry *and* menu
+furniture together, which is a different mix from both the flat menus and the race.
+
+No card render beside it yet, so it contributes coverage and not a divergence
+figure - one run.

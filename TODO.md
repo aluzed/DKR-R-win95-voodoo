@@ -309,6 +309,13 @@ only ever blocked on it.
    Track select is **one press from a race**, which is where the remaining
    configurations are - the HUD, the racers, the track itself.
 
+   **And it is captured.** `CAP0600.BIN` is DINO DOMAIN / ANCIENT LAKE with its
+   live 3D preview, taken by the mapped route with a screenshot confirming every
+   press. Six configurations where the flat menus have three or four, and
+   `G_CC_MODULATEIDECALA` - number 2 - had **never been exercised**: 307,200
+   pixels, a full screen's worth. Coverage is **ten of twenty-nine**. It still
+   needs a card render to contribute a divergence figure.
+
    **How the next attempt can miss**, met on 17 September: sending the sequence
    with different press counts desynchronises the whole route. `CAP1100` was meant
    to be vehicle select and came back with GAME SELECT's fill, because five
