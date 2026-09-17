@@ -707,7 +707,7 @@ static void usage(const char *me)
             "usage: %s [--card|--both] [--single-tmu] [--log file] [--trace]\n"
             "          [--no-odd-row-swap] [--no-tile-texel-size]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
-            "          [--frames N]\n"
+            "          [--frames N] [--probe-depth X,Y]\n"
             "          [--recipe-map file] [--texel-factor-one] [--no-multipass]\n"
             "          capture.bin [out.bmp]\n"
             "       %s --recipe N          print one catalogue entry and stop\n",
@@ -723,6 +723,7 @@ int main(int argc, char **argv)
     int want_card = 0, want_both = 0, single_tmu = 0;
     int probe_on = 0, probe_x = -1, probe_y = -1;
     int frames = 1;
+    int want_depth = 0, depth_x = 0, depth_y = 0;
     int no_cull = 0, factor_one = 0, no_alpha = 0, no_multipass = 0;
     int oracle_tmus = 1;
     int i, status = 0;
@@ -743,6 +744,17 @@ int main(int argc, char **argv)
            equal between the two - the display list, the decoder state, the
            depths handed over, the backend, the card. The frame count had not
            been, because the harness could not vary it. */
+        /* **What the card has in its depth buffer**, which nothing in this port
+           has ever read. The scene is rejected by the depth test on a card whose
+           call stream is identical to one that draws it correctly, so the buffer's
+           contents are the next thing worth a number. */
+        else if (strcmp(argv[i], "--probe-depth") == 0 && i + 1 < argc) {
+            if (sscanf(argv[++i], "%d,%d", &depth_x, &depth_y) != 2) {
+                usage(argv[0]);
+                return 2;
+            }
+            want_depth = 1;
+        }
         else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             frames = atoi(argv[++i]);
             if (frames < 1) { frames = 1; }
@@ -786,6 +798,15 @@ int main(int argc, char **argv)
         else if (!out_path) { out_path = argv[i]; }
         else { usage(argv[0]); return 2; }
     }
+#ifndef DKR_HAVE_GLIDE
+    /* The host build has no card to read a depth buffer out of. The option is
+       still parsed, so that a command line written for the target does not fail
+       here for a reason that has nothing to do with what it asks. */
+    if (want_depth) {
+        say("  --probe-depth needs a card; this build has none, ignoring it\n");
+    }
+    (void)depth_x; (void)depth_y;
+#endif
     if (!cap_path || (!want_both && !out_path)) { usage(argv[0]); return 2; }
 
     if (log_path) {
@@ -971,10 +992,58 @@ int main(int argc, char **argv)
             if (probe_on) { dkr_glide_backend_watch(probe_x, probe_y); }
             {
                 int f;
+                /* **The control comes first, and it is unconditional.**
+                 *
+                 * `begin_frame` clears the depth buffer to the farthest value, so
+                 * a reader that works must come back holding it. Whichever of the
+                 * two candidate identifiers does is the depth buffer; if neither
+                 * does, the reader is void and every figure below it with it -
+                 * which is said in as many words rather than left to be inferred
+                 * from a plausible-looking number. That is the lesson the live
+                 * back-buffer sampler taught, at the cost of three runs. */
+                int aux_id = 0, depth_id = 0;
+                unsigned a0 = 0, d0 = 0;
+                int a_ok = 0, d_ok = 0;
+                if (want_depth) {
+                    dkr_glide_depth_buffer_ids(&aux_id, &depth_id);
+                    card.begin_frame(card.self, 0x000000u);
+                    a_ok = dkr_glide_read_depth(aux_id, depth_x, depth_y, &a0);
+                    d_ok = dkr_glide_read_depth(depth_id, depth_x, depth_y, &d0);
+                    say("  depth probe (%d,%d), after a clear to farthest"
+                        " (0x%04X):\n", depth_x, depth_y,
+                        (unsigned)GR_WDEPTHVALUE_FARTHEST);
+                    say("    buffer %d (aux)   %s 0x%04X\n", aux_id,
+                        a_ok ? "reads" : "REFUSED THE LOCK -", a0);
+                    say("    buffer %d (depth) %s 0x%04X\n", depth_id,
+                        d_ok ? "reads" : "REFUSED THE LOCK -", d0);
+                    if ((!a_ok || a0 != (unsigned)GR_WDEPTHVALUE_FARTHEST) &&
+                        (!d_ok || d0 != (unsigned)GR_WDEPTHVALUE_FARTHEST)) {
+                        say("    ** neither holds the cleared value: this reader"
+                            " is not measuring the depth buffer, and the\n"
+                            "       figures below it say nothing **\n");
+                    }
+                }
                 for (f = 0; f < frames; f++) {
                     if (frames > 1) { say("  --- frame %d of %d\n", f + 1, frames); }
                     run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha,
                                 &cc);
+                }
+                if (want_depth) {
+                    unsigned a1 = 0, d1 = 0;
+                    const int a1_ok =
+                        dkr_glide_read_depth(aux_id, depth_x, depth_y, &a1);
+                    const int d1_ok =
+                        dkr_glide_read_depth(depth_id, depth_x, depth_y, &d1);
+                    say("  depth probe (%d,%d), after the scene:\n",
+                        depth_x, depth_y);
+                    say("    buffer %d (aux)   %s 0x%04X\n", aux_id,
+                        a1_ok ? "reads" : "REFUSED THE LOCK -", a1);
+                    say("    buffer %d (depth) %s 0x%04X\n", depth_id,
+                        d1_ok ? "reads" : "REFUSED THE LOCK -", d1);
+                    say("    a value still at the clear means nothing was written"
+                        " there; a value below it means a\n"
+                        "    fragment passed and wrote, which the pixel then has"
+                        " to account for.\n");
                 }
             }
             say_counts("card", &cc);

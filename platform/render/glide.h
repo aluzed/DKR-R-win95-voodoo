@@ -162,7 +162,21 @@ int dkr_glide_read_framebuffer(unsigned *out, int max_pixels,
  * front-buffer read for "what is the player being shown". */
 /* One pixel of the back buffer, converted like the rest. For a witness that
    reads between draws, where walking the whole frame each time is ruinous. */
+/* The depth a cleared buffer holds. In the header because a caller that reads the
+   buffer back has to know what "cleared" looks like in order to tell a buffer that
+   was never written from one that was. */
+#ifndef GR_WDEPTHVALUE_FARTHEST
+#define GR_WDEPTHVALUE_FARTHEST 0xFFFF
+#endif
+
 int dkr_glide_read_pixel(int x, int y, unsigned *out);
+
+/* One raw depth value out of buffer `which`, in the card's own encoding. The
+   identifier is a parameter because it is a constant this port has no measurement
+   for yet; `dkr_glide_depth_buffer_ids` hands out the two candidates Glide 2.x
+   names, and the caller tells them apart by clearing to a known depth first. */
+int dkr_glide_read_depth(int which, int x, int y, unsigned *out);
+int dkr_glide_depth_buffer_ids(int *aux, int *depth);
 int dkr_glide_read_backbuffer(unsigned *out, int max_pixels,
                               int *width, int *height);
 

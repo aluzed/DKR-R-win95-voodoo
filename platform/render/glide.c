@@ -26,7 +26,15 @@ typedef int           FxBool;
 #define GR_COLORFORMAT_ARGB     0x0
 #define GR_ORIGIN_UPPER_LEFT    0x0
 #define GR_BUFFER_BACKBUFFER    0x1
+/* Glide 2.x names the aux buffer 2 and the depth buffer 3, and this file does not
+   take that on trust: `dkr_glide_read_depth` reads whichever it is handed and the
+   caller decides which one answered, by clearing to a known value first. Every
+   other enum in this port was read back from the card for the same reason. */
+#define GR_BUFFER_AUXBUFFER     0x2
+#define GR_BUFFER_DEPTHBUFFER   0x3
+#ifndef GR_WDEPTHVALUE_FARTHEST
 #define GR_WDEPTHVALUE_FARTHEST 0xFFFF
+#endif
 
 /* Glide 2.x's `GrVertex`. The order is not intuitive — `ooz` and `a` sit between
    the colours and `oow` — and a "logical" layout compiles perfectly while
@@ -553,6 +561,52 @@ int dkr_glide_read_pixel(int x, int y, unsigned *out)
            (((r << 3) | (r >> 2)) << 16) |
            (((gg << 2) | (gg >> 4)) <<  8) |
             ((b << 3) | (b >> 2));
+    return 1;
+}
+
+/* **One depth value, out of whichever buffer holds it.**
+ *
+ * The scene is rejected by the depth test on a card whose call stream is
+ * identical to one that draws it correctly, so the next thing worth knowing is
+ * what the card actually has in its depth buffer - a number nothing in this port
+ * has ever read.
+ *
+ * `which` is passed in rather than fixed because the identifier is exactly the
+ * kind of constant this project has been wrong about before. The caller clears to
+ * a known depth and reads both candidates: the one that comes back holding the
+ * cleared value is the depth buffer, and the reader is proven in the same breath.
+ * A reading with no control is what the back-buffer sampler produced in the live
+ * game, and every figure it gave had to be thrown away.
+ *
+ * The value is the card's own encoding, returned raw. Converting it here would
+ * bury the one thing being asked about. */
+int dkr_glide_read_depth(int which, int x, int y, unsigned *out)
+{
+    GrLfbInfo_t info;
+    const unsigned short *row;
+
+    if (!g.context_open || !g.lfb_lock || !g.lfb_unlock || !out) { return 0; }
+    if (x < 0 || y < 0 || x >= g.ctx.width || y >= g.ctx.height) { return 0; }
+    if (g.idle) { g.idle(); }
+
+    memset(&info, 0, sizeof(info));
+    info.size = (int)sizeof(info);
+    if (!g.lfb_lock(GR_LFB_READ_ONLY, (FxU32)which,
+                    GR_LFBWRITEMODE_ANY, GR_ORIGIN_UPPER_LEFT, 0, &info) ||
+        !info.lfbPtr) {
+        return 0;
+    }
+    row = (const unsigned short *)((const unsigned char *)info.lfbPtr +
+                                   (size_t)y * info.strideInBytes);
+    *out = (unsigned)row[x];
+    g.lfb_unlock(GR_LFB_READ_ONLY, (FxU32)which);
+    return 1;
+}
+
+int dkr_glide_depth_buffer_ids(int *aux, int *depth)
+{
+    if (aux)   { *aux   = GR_BUFFER_AUXBUFFER; }
+    if (depth) { *depth = GR_BUFFER_DEPTHBUFFER; }
     return 1;
 }
 
