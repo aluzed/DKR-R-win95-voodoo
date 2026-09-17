@@ -625,6 +625,15 @@ the documented one - hold each press, confirm each screen before the next.
     PLAYER SELECT     sky, trees, grass, flowers, the eight characters and the
                       title, all of it
 
-The caution/copyright screen is the one `TODO.md` recorded as "a black background
-where `CAP0700`'s oracle render has a blue sky", written down as something to check
-rather than concluded. It was the same defect and it is gone with it.
+Driving on from there, three more screens render in full: CAUTION with its blue
+sky, GAME SELECT with ADVENTURE and TRACKS on their wood panels, and the
+three-slot game-file select. Six distinct screens, two of which were black before.
+
+CAUTION is the one `TODO.md` recorded as "a black background where `CAP0700`'s
+oracle render has a blue sky", written down as something to check rather than
+concluded. It was the same defect and it is gone with it.
+
+The drive stalled at the game-file select, on the drift that
+`docs/TEST-ENVIRONMENT.md` already names - each screen takes a variable time to
+become responsive and a fixed press count walks past its target. Reaching a race
+is still open, and it is a driving problem rather than a rendering one.
