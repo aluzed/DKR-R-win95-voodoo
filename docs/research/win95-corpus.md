@@ -528,3 +528,41 @@ The lesson is the cheap one. This check costs four minutes and was not run once
 between 10 and 17 September, across two rewrites of the second pass, an exact
 three-blend expansion, and four changes to how depth is written. Running it after
 each would have cost less than the one regression it would have caught.
+
+## What the corpus covers, which is eight configurations of twenty-nine
+
+E09-S02 asks for coverage and says it in terms of scenes - a lap of each level.
+This file has argued since it was written that the useful notion is coverage of
+the *decoder's paths*, not of the game, and the paths are the combiner catalogue.
+So here is that measured, from the eight captures' own fill reports:
+
+| exercised | configuration | scenes |
+|---|---|---|
+| 3 | `G_CC_MODULATEIDECALA + G_CC_BLENDI_ENV_ALPHA_PRIM2` | 8 |
+| 8 | `G_CC_MODULATEIA_PRIM + G_CC_BLEND_ENV_ALPHA2` | 6 |
+| 20 | `G_CC_BLENDT_ENV_ALPHA_A_TxP` | 5 |
+| 10 | `G_CC_BLEND_SHADEALPHA + G_CC_BLENDI_SHADE` | 4 |
+| 18 | `G_CC_PRIMITIVE` | 3 |
+| 13 | `G_CC_MODULATERGBA + G_CC_BLENDI_ENV_ALPHA_PRIM2` | 2 |
+| 5 | `G_CC_MODULATEIA_PRIM` | 1 |
+| 21 | `G_CC_ENVIRONMENT` | 1 |
+
+**Eight of twenty-nine**, and every defect found and fixed this week was in one of
+those eight. Twenty-one are implemented or approximated in `glide_backend.c` and
+have never once been put in front of a measurement.
+
+Ten of the twenty-one are **two-cycle**: 1, 4, 6, 9, 12, 14, 16, 22, 28 and 29.
+That is where the risk is concentrated, because every defect of this week was in a
+two-cycle configuration - the second cycle is the part Glide has no stage for, and
+it is where a decomposition has to be derived rather than translated. Number 22
+also carries the two-layer path, whose single-TMU fallback has a switch precisely
+because it is easy never to exercise.
+
+**And one configuration reaching the screen has no catalogue entry at all**: 45
+pixels of the hub, 84 ppm, opaque. Small enough to have gone unmentioned and
+large enough to be real. What it is has not been looked at.
+
+So the next capture is worth choosing by what it would *exercise* rather than by
+which level it is. A scene that fills in three of the ten unverified two-cycle
+configurations is worth more than a lap of a track that fills in none, and the
+fill report of any candidate says which it is before anyone looks at an image.
