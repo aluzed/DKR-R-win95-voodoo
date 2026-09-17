@@ -491,15 +491,25 @@ case "${1:-}" in
     #   pad-until 1500 a           press A until the screen advances
     #   pad-until 1200 start       the same for Start
     #
-    # The threshold is deliberately high. A menu with butterflies on it, or a
-    # highlight moving from one character to the next, changes a few of the 768
-    # cells by a little; arriving on a new screen changes most of them by a lot.
-    # `DKR_DRIVE_DELTA` moves it for a caller who knows better.
+    # **The threshold is measured, not guessed.** It was first written as 10,
+    # which is wrong, and four captures already on disk said so before a single
+    # press was sent:
+    #
+    #     the same screen, two captures                    0
+    #     the highlight moved and an "OK?" prompt appeared 34
+    #     PLAYER SELECT -> CAUTION                         55
+    #     a black transition frame -> PLAYER SELECT       134
+    #
+    # At 10 a route would stop on its own cursor moving. The default sits at 45,
+    # above the largest change measured within one screen and below the smallest
+    # measured between two. That is four samples and no more, so the bound is one
+    # to revisit rather than trust: `DKR_DRIVE_DELTA` moves it, and the delta is
+    # printed on every press so a wrong bound is visible instead of silent.
     need_running; shift
     [[ $# -ge 2 ]] || die "usage: pad-until <milliseconds> <control> [control...]"
     command -v import >/dev/null || die "ImageMagick (import) is required"
     until_ms="$1"; shift
-    threshold="${DKR_DRIVE_DELTA:-10}"
+    threshold="${DKR_DRIVE_DELTA:-45}"
     tmp_dir="$(mktemp -d)"
     trap 'rm -rf "$tmp_dir"' EXIT
     import -display "$DISP" -window root "$tmp_dir/before.png" 2>/dev/null \
