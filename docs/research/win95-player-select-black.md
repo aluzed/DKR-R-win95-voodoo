@@ -40,6 +40,24 @@ The title survives while the scene does not, which is a clue and not yet an
 explanation: whatever draws the title reaches the screen by a path the rest does
 not.
 
+## The pipeline is not stalled, which removes half the candidates
+
+Sitting on the black screen with the runtime log running:
+
+    list=240  tri= 83723  emitted= 45803        present=3000
+    list=300  tri=152767  emitted= 92372        present=3300
+    list=360  tri=270129  emitted=170795        present=3600
+    list=420  tri=350839  emitted=225999
+
+Lists advance, triangles are emitted by the hundred thousand, and presents climb
+steadily. **Nothing is stalled and nothing is skipped.** So the frame is being
+built and shown; the content simply is not visible in it.
+
+That removes the "a frame never reaches the screen" branch. What is left is
+narrower: the geometry is drawn somewhere that is not what the display shows - the
+wrong buffer, a surface cleared after the draw, or coordinates that put it off
+screen - and the title survives because whatever draws it takes a different route.
+
 ## Why it matters beyond this screen
 
 `win95-corpus.md` says the corpus measures agreement between two backends and not
