@@ -121,57 +121,50 @@ order in this item was "record, compare, then decide".
 
 ---
 
-## 5. Nobody has driven the game into a race — PENDING (port side implemented)
+## 5. Driving the game — DONE for input; the menus are now reachable
 
-**Two separate faults, one fixed, one still open.**
+**The Windows 95 build responds to a keypress for the first time.** Two faults,
+both found and both fixed.
 
-### Fixed: the Windows 95 build had no input at all
+### The port had no input at all
 
-`poll_input()`'s body sat inside `#if DKR_RUNTIME_HAS_RT64` and this target
-compiles with `-DDKR_RUNTIME_HAS_RT64=0` (confirmed in `build/win95/build.ninja`).
-The `#else` branch **zeroed every controller every frame** - a deliberate stub, and
-the whole of input on this target.
+`poll_input()`'s body sat inside `#if DKR_RUNTIME_HAS_RT64`, this target compiles
+with that at 0, and the `#else` branch **zeroed every controller every frame** - a
+deliberate stub, and the whole of input here. The first replacement reached for
+`dkr::runtime::input::poll` and did not compile: the SDL window, the overlay and
+the device layer are compiled out on this target too. So the branch reads Win32
+directly through `GetAsyncKeyState`, which needs neither a window nor focus -
+right for a game holding the Voodoo full screen and owning no focusable window.
 
-The first replacement reached for `dkr::runtime::input::poll` and did not compile:
-the SDL window, the overlay and the device layer are compiled out here too. So the
-branch now reads Win32 directly with `GetAsyncKeyState`, which needs no window and
-no focus - right for a game holding the Voodoo full screen and owning no focusable
-window. Mapping as the boot line has always announced it.
+### The harness pressed too briefly
 
-### Open: no key reaches the guest while the game holds the screen
+Even with the path in place, nothing arrived. `pad` presses and releases in
+milliseconds; this target presents about twelve frames a second, so a keystroke
+falls between two polls. `pad-hold 1200 start` lands every time:
 
-Measured, with an unconditional witness in the new branch:
+    [input] win95 buttons=0x1000     x3, one per press     (0x1000 is Start)
 
-    [input] win95 poll_input called      x2       the poll runs
-    [input] win95 buttons=...            none     no key is ever down
+and the game leaves the attract sequence for **PLAYER SELECT**.
 
-So `GetAsyncKeyState` sees nothing for any of fourteen keys across three Start and
-A presses. The loss is **below the game** - in 86Box, or in how `xdotool` delivers
-keys once the Voodoo is full screen. `grab` sets X focus and 86Box reports the
-input captured, and it still arrives nowhere.
+**Use `pad-hold`, not `pad`, against this target.** Worth a line in
+`docs/TEST-ENVIRONMENT.md` beside the other harness traps.
 
-**Next step.** A harness question, not a port one: do keys reach a program that
-holds the Voodoo full screen? Keys reach the guest perfectly well on the desktop -
-that is how every program here is launched - so the full-screen transition is the
-difference under test.
+### What it opens, and the next thing seen
 
-**Tried and withdrawn:** bolting a ten-second key poll onto `constant_alpha_probe`,
-which already takes the screen. It came back as a **zero-byte file**, which is the
-failure this repository has recorded before - Windows 95 leaves the directory entry
-at zero until `fclose`, so anything that faults before it takes the whole run's
-output. The section was added *before* the close, proved nothing, and destroyed the
-rest of the report. It is removed.
+A race is not reached yet - that is navigation, not a blocker - and the first
+screen already shows the next defect: **PLAYER SELECT draws its title correctly
+and leaves the rest of the screen black**, where the file panels belong. That was
+not reachable before today.
 
-Whatever asks this question needs to be **its own small witness that closes its
-file first**, not a section appended to one whose output is fragile.
+It also unblocks item 6: new configurations need different game states, and the
+states are now reachable.
 
-**Cost so far:** ten VM runs. Four of them narrowed by one conditional line each,
-and three of those were spent because a *conditional* witness's silence is
-ambiguous. **Make the first witness unconditional.**
+**Cost:** twelve VM runs, three of them wasted on conditional witnesses whose
+silence was ambiguous.
 
 ---
 
-## 6. The corpus exercises 8 configurations of 29 — PENDING (blocked on item 5)
+## 6. The corpus exercises 8 configurations of 29 — PENDING (unblocked by item 5)
 
 **Measured, and the blocker is now evidence rather than assertion.**
 
@@ -192,9 +185,10 @@ So more of the same sequence adds nothing. New coverage needs **different game
 states** - menus, a race, results, split screen - and reaching them means driving
 the game, which is item 5, which is blocked on no key reaching the guest.
 
-**This item cannot advance until item 5 does.** That is the finding, and it is
-worth one line in a tracker: the cheapest way to widen renderer coverage is to fix
-input.
+**Unblocked on 17 September**: item 5's input fix reaches PLAYER SELECT, so other
+game states are now drivable and a capture can be taken in one. The finding stands
+as written - the cheapest way to widen renderer coverage was to fix input - and it
+is now done.
 
 ---
 
