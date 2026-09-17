@@ -198,7 +198,7 @@ input.
 
 ---
 
-## 7. The corpus measures agreement, not correctness — PENDING (scoped)
+## 7. The corpus measures agreement, not correctness — DONE (scoped; watcher built)
 
 **Not one problem. A question to ask per stage, and two stages already have an
 answer.**
@@ -229,11 +229,17 @@ output: they are the decoder declaring where it knows it is not exact. The grey
 rectangles were found that way. Reading that report is the closest thing to a
 correctness check the project has, and nothing currently watches it for growth.
 
-**Next step, cheapest first:** have `check-corpus.sh` record the approximate and
-multipass pixel counts per scene alongside the divergence counts, so that a
-configuration quietly becoming approximate shows up as a number that moved. It
-does not make the corpus measure correctness - nothing here can - but it watches
-the one honest signal that is not a comparison of two things that share a decoder.
+**Done 17 September 2026:** `check-corpus.sh` now records the approximate and
+multipass pixel counts per scene, as `<name>.fill`, and fails the scene when they
+move - the same discipline it already applied to the decoder's counts. Verified
+extracting `multipass 599091 approximate 53872` from a real run.
+
+**What remains true and cannot be fixed here:** the divergence figures still
+measure agreement. Making them measure correctness needs a reference this project
+does not have - a console frame, or a trusted emulator's. The item is closed
+because its actionable content is done and its scope is now written down, not
+because the condition went away. Any future reading of "this scene is clean"
+should still be read as "the two backends agree".
 
 ---
 

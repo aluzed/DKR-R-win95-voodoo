@@ -111,6 +111,42 @@ for cap in "${captures[@]}"; do
     [[ $accept -eq 1 ]] && printf '%s\n' "$counts" >"$ref_counts"
   fi
 
+  # --- 1b. The decoder's own honesty -----------------------------------------
+  #
+  # The image check below compares the card against the oracle, and both are fed
+  # by this same decoder: a configuration it resolves wrongly is rendered wrongly
+  # and *identically* by both, and the comparison reports perfect agreement. The
+  # hub's grey rectangles sat in the corpus that way, at 165 divergent pixels of
+  # 307,200, with both backends wrong in the same place.
+  #
+  # These two numbers do not depend on either backend's output. They are the
+  # decoder saying how many pixels it painted through a configuration it knows it
+  # does not implement exactly - `approximate` - and through one it splits into
+  # passes. A configuration quietly becoming approximate moves them, and nothing
+  # watched them until now.
+  #
+  # It does not make this harness measure correctness. Nothing here can. It
+  # watches the one honest signal that is not two things sharing a decoder.
+  fill="$(grep -oE '(approximate|multipass) +[0-9]+' "$log" | tr '\n' ' ' | sed 's/ *$//')"
+  ref_fill="$corpus/$name.fill"
+  if [[ -n "$fill" ]]; then
+    if [[ -f "$ref_fill" ]]; then
+      if [[ "$fill" == "$(cat "$ref_fill")" ]]; then
+        pass "fill: $fill"
+      else
+        fail "the decoder's approximate/multipass fill changed"
+        printf '       was  %s\n' "$(cat "$ref_fill")"
+        printf '       now  %s\n' "$fill"
+        fails=$((fails + 1))
+        [[ $accept -eq 1 ]] && printf '%s\n' "$fill" >"$ref_fill"
+      fi
+    else
+      note "fill: $fill"
+      news=$((news + 1))
+      [[ $accept -eq 1 ]] && printf '%s\n' "$fill" >"$ref_fill"
+    fi
+  fi
+
   # --- 2. The image ----------------------------------------------------------
   ref_img="$corpus/$name.bmp"
   if [[ ! -f "$ref_img" ]]; then
