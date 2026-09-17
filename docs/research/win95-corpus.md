@@ -703,6 +703,14 @@ would differ by exactly the fog term. **Refuted by counting**, at no cost:
 
 A scene that is 100 % fogged is the cleanest one there is. Fog is not it.
 
+> **RETRACTED, same day.** The counts above are fresh and the divergence figures
+> beside them were measured at 08:51, before the `G_FOG` gate reached a built
+> binary - so the table weighs new counts against old images and settles nothing.
+> Measured properly on the card, `CAP0420` paints 29.87 % of the screen with fog
+> programmed and 99.18 % with it off, and the second matches the 08:46 render to
+> the colour count. Fog *was* it. See `win95-player-select-black.md`. A comparison
+> is only as good as the oldest number in it.
+
 What distinguishes `CAP0600` is that it draws **real 3D geometry with a depth test**
 where the other menus are flat, and the divergence is exactly in that region. The
 texture coordinate of 11.178 on the winning draw is worth noticing too - the ground

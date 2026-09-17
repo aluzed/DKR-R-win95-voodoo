@@ -394,3 +394,38 @@ only ever blocked on it.
 * **Measure the mechanism's premise, not the mechanism.** Every guess made this
   round was about how something worked; every refutation came from looking at what
   the data actually was.
+
+## Follow-on, 17 September 2026
+
+| # | Item | Status |
+|---|------|--------|
+| 8 | PLAYER SELECT / menus black on the card | DONE |
+
+**8 — the card's hardware fog painted the scene black.** Forty-three of seventy-three
+draws reached the card with fog programmed, a fog colour of zero because
+`G_SETFOGCOLOR` is never decoded, and a coefficient taken from the vertex alpha,
+which this game uses for opacity. On the card, `CAP0420` went from 29.87 % of the
+screen painted to 99.18 % with fog off - matching the 08:46 render to the colour
+count - and `CAP0600`, 440 fogged draws of 464, comes back at 99.01 %. Fog is off
+unless `DKR_FOG=1` asks for it, which is what the port's own comments have said
+since the switch existed.
+
+Two instruments were built on the way and both stay useful: `replay --frames N`,
+which replays a capture through the same backend N times, and
+`replay --probe-depth X,Y`, which reads the card's depth buffer and proves its own
+reader against the clear before reporting anything.
+
+### The method notes this one paid for
+
+* **Build the instrument that answers directly before the ones that answer by
+  elimination.** The depth test was suspected for a day and the depth buffer was
+  never read. Seven diagnostic switches inferred its contents from what survived;
+  one `grLfbLock` said it outright, in forty lines.
+* **A comparison is only as good as the oldest number in it.** The fog hypothesis
+  was refuted at 10:34 by setting fresh counts against divergence figures measured
+  at 08:51, before the gate being counted reached a built binary. Nothing in the
+  table said how old its columns were. That refutation cost two hours and sent the
+  search back to depth.
+* **Reproduce a live defect in the harness before chasing it live.** The black
+  scene turned out to be one `--card` replay away, where the pixel probe, the card
+  probe and the log all work and a run needs no driving.

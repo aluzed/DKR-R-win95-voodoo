@@ -1,4 +1,4 @@
-# OPEN: PLAYER SELECT is black, and the depth test is where it fails
+# SOLVED: the card's hardware fog paints the scene black
 
 **Diagnosis, 17 September 2026.** Running the game with `DKR_NO_DEPTH=1` brings the
 scene back:
@@ -555,3 +555,59 @@ The first question to put to it: `grSstWinOpen` asks for two colour buffers and 
 aux at 640x480, and nothing yet has checked that it **got** the aux buffer. A
 context that opened without one would reject every depth-tested fragment and accept
 every other - which is exactly the image on disk.
+
+## SOLVED: it is the card's fog, and the depth test was never the fault
+
+The depth buffer had never been read. Reading it ends the investigation in one
+line. At the black pixel, with the reader proved against the clear in the same run:
+
+    after a clear to farthest (0xFFFF):   buffer 2 (aux) reads 0xFFFF
+    after the scene:                      buffer 2 (aux) reads 0x9756
+
+`0x9756` is far below the cleared value, so **a fragment passed the depth test and
+wrote depth at that pixel**. The draw was never rejected. It passed, and the colour
+it wrote was black.
+
+Which puts the question back where the comment beside `emitted_fogged` had already
+put it and nobody had measured: forty-three of the seventy-three emitted draws
+reach the card with fog programmed, `G_SETFOGCOLOR` is never decoded so the fog
+colour is zero, and `apply_fog` asks for `GR_FOG_WITH_ITERATED_ALPHA` while this
+game's vertex alpha carries opacity - 255 on the failing draw. Black fog at full
+strength over a fragment that passed.
+
+    CAP0420 on the card       painted    colours
+      fog programmed          29.87 %      4590
+      fog off                 99.18 %      5013
+      the 08:46 image         99.18 %      5013
+
+The fog-off image reproduces the morning's good render exactly, colour count
+included, and the fixed default path reproduces it again. `CAP0600`, the most
+fogged scene in the corpus at 440 draws of 464, comes back at 99.01 %. The oracle
+is the control throughout: with and without the switch its image is identical to
+the MD5, because its own fog is inert.
+
+Fog is now off unless `DKR_FOG=1` asks for it, which is what `glide_renderer.cpp`
+has said in a comment since the switch existed, and what `5c61602` concluded when
+it closed fog as derived and deliberately not implemented.
+
+### What this cost, and the method note that is worth more than the fix
+
+Every hypothesis in this document above this section was wrong, and each was
+refuted by a measurement rather than abandoned - the transition frame, the
+unpresented frame, the back-buffer sampler, texture memory, render targets, buffer
+alternation, the stale depth buffer, saturated depths, the frame count. That is the
+part that worked.
+
+What did not work was the order. **The depth test was suspected for a day and the
+depth buffer was never read.** Seven switches were built to infer its contents from
+what survived, and one lock would have said. The instrument that answers directly
+is worth building before the ones that answer by elimination, even when it looks
+like more work - it was forty lines.
+
+And one reasoning error is worth naming because it is subtle. The fog hypothesis
+was raised at 10:34 and refuted by counting fogged draws per scene against each
+scene's divergence figures. The counts were fresh; the figures were measured at
+08:51, before the gate that decides which draws are fogged reached a built binary.
+**A comparison is only as good as the oldest number in it**, and nothing in the
+table said how old its columns were. The refutation was published, believed for two
+hours, and sent the search back to depth.
