@@ -611,3 +611,20 @@ scene's divergence figures. The counts were fresh; the figures were measured at
 **A comparison is only as good as the oldest number in it**, and nothing in the
 table said how old its columns were. The refutation was published, believed for two
 hours, and sent the search back to depth.
+
+## Confirmed in the running game
+
+Built, pushed and driven on 17 September 2026 with the fix in place. The route is
+the documented one - hold each press, confirm each screen before the next.
+
+    N64 logo          full sky gradient, Diddy in front of it
+    Rare copyright    full sky, the yellow line legible
+    a black frame     one, and the next two are identical at 48.6 % mean
+                      brightness - a transition, compared with the frame after it
+                      rather than reported as a defect
+    PLAYER SELECT     sky, trees, grass, flowers, the eight characters and the
+                      title, all of it
+
+The caution/copyright screen is the one `TODO.md` recorded as "a black background
+where `CAP0700`'s oracle render has a blue sky", written down as something to check
+rather than concluded. It was the same defect and it is gone with it.

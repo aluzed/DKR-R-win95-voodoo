@@ -399,7 +399,7 @@ only ever blocked on it.
 
 | # | Item | Status |
 |---|------|--------|
-| 8 | PLAYER SELECT / menus black on the card | DONE |
+| 8 | PLAYER SELECT / menus black on the card | DONE - confirmed in the running game |
 
 **8 — the card's hardware fog painted the scene black.** Forty-three of seventy-three
 draws reached the card with fog programmed, a fog colour of zero because
@@ -409,6 +409,15 @@ screen painted to 99.18 % with fog off - matching the 08:46 render to the colour
 count - and `CAP0600`, 440 fogged draws of 464, comes back at 99.01 %. Fog is off
 unless `DKR_FOG=1` asks for it, which is what the port's own comments have said
 since the switch existed.
+
+Confirmed in the running game the same evening: the N64 logo and the Rare
+copyright screen both carry their sky gradient, and PLAYER SELECT draws its sky,
+trees, grass, flowers, eight characters and title. The caution screen's black
+background - recorded in item 5 as something to check rather than concluded - was
+the same defect and went with it. One black frame appeared between the copyright
+screen and the menu; the two frames after it are identical at 48.6 % mean
+brightness, so it was a transition, compared against the next frame rather than
+reported.
 
 Two instruments were built on the way and both stay useful: `replay --frames N`,
 which replays a capture through the same backend N times, and
