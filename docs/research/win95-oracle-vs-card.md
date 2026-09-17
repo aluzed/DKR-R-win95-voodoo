@@ -1330,3 +1330,30 @@ faith. And the lattice that started this was never dithering at all: it was two
 coplanar triangles and a comparison that inverted, and the even-x/odd-y pattern
 was the shape of their overlap. A regular pattern is evidence of a regular cause,
 not of a dither.
+
+## And the last one, which moved one scene by three pixels
+
+`pass2_draw` had the same inverted comparison for the same reason and was left
+for its own derivation rather than the same patch by analogy. The derivation is
+two lines and it agrees: the ordinary draw writes, the second pass was given
+`LEQUAL` because against that write `LESS` rejects everything, and that holds only
+while the ordinary draw *passes*. Where it is itself rejected, the second pass is
+let through alone.
+
+    CAP0250   452 / 43  ->  451 / 40
+    everything else unchanged, to the pixel
+
+167 genuinely divergent pixels in the corpus, and `GR_CMP_LEQUAL` is now a define
+that nothing programs.
+
+Three pixels is a small return for a run, and it is the right sort of small. The
+prediction named the dialogue capture as a candidate and the dialogue capture did
+not move at all; the hub did, by three. Writing the candidates down beforehand is
+what makes that readable as "the class is nearly exhausted" rather than as "the
+change did nothing".
+
+What the corpus looks like now, against where the week started: 16,779 divergent
+pixels to 2,554, and the part of that which is not a boundary falling a fraction
+of a pixel differently - 1,146 when it was first separated out - to 167, of which
+fifteen have no matching oracle value anywhere within twelve pixels. There is no
+outlier scene left, and no configuration class carries more than a few dozen.

@@ -362,13 +362,13 @@ the same capture:
 | `CAP0050` | 105 | 98 (93 %) | 7 | 1 |
 | `CAP0150` | 36 | 29 (80 %) | 7 | 0 |
 | `CAP0160` | 100 | 100 (100 %) | **0** | 0 |
-| `CAP0250` | 452 | 409 (90 %) | 43 | 2 |
+| `CAP0250` | 451 | 411 (91 %) | 40 | 2 |
 | `CAP0400` | 265 | 252 (95 %) | 13 | 1 |
 | `CAP0800` | 293 | 280 (96 %) | 13 | 2 |
 | `CG0060` | 753 | 699 (92 %) | 54 | 4 |
 | `CKEY1622` | 551 | 518 (94 %) | 33 | 5 |
 
-**170 genuinely divergent pixels in the whole corpus**, of 2.46 million, and a
+**167 genuinely divergent pixels in the whole corpus**, of 2.46 million, and a
 hard core of **fifteen** that no displaced boundary explains. No scene is an
 outlier any more: the attract sequence, which carried three quarters of the
 corpus's divergence that morning, carries thirteen. Seven of the eight are at 54 or fewer; `CAP0160`
