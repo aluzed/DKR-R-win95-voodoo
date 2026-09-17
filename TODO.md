@@ -299,10 +299,15 @@ only ever blocked on it.
    after **every** press; the batches that inspected only the end could not tell
    "went deeper" from "went round".
 
-   **The path is now mapped** and is in `docs/TEST-ENVIRONMENT.md`: four holds on
-   `start` reach the title, then `start`, `a`, `a` reach the caution screen - three
-   presses where seven from the attract loop got nowhere. Past the caution needs
-   stick movement, since `a` confirms without moving the cursor.
+   **The path is now mapped as far as track select** and is in
+   `docs/TEST-ENVIRONMENT.md`: four holds on `start` reach the title, then
+   `start`, `a`, `a`, `a`, `down`, `a` reach **DINO DOMAIN / ANCIENT LAKE** with
+   its preview - seven presses from a cold start, where seven sent into the attract
+   loop got nowhere at all. The `down` is what the earlier batches were missing:
+   `a` confirms whatever the cursor is on and never moves it.
+
+   Track select is **one press from a race**, which is where the remaining
+   configurations are - the HUD, the racers, the track itself.
 
    **One thing seen and deliberately not concluded:** the caution screen rendered
    live has a black background where `CAP0700`'s oracle render has a blue sky.

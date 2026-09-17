@@ -222,12 +222,16 @@ start, with `pad-hold 1200` for every press - a tap is too brief, see below:
     start       PLAYER SELECT
     a           GAME SELECT
     a           CAUTION (the controller-pak notice), which waits for a press
+    a           dismisses it, into the mode choice
+    down        moves the cursor - `a` alone confirms and never moves it
+    a           TRACK SELECT: DINO DOMAIN / ANCIENT LAKE, with its preview
 
-Three presses from the title, where seven from the attract loop got no further.
-`CAP0420` was captured at GAME SELECT and `CAP0700` at the caution screen.
+Seven presses from a cold start reach track select, where seven sent into the
+attract loop got nowhere at all. `CAP0420` was captured at GAME SELECT and
+`CAP0700` at the caution screen; track select is one press from a race.
 
-Not yet mapped past the caution: what follows needs stick movement to choose,
-since `a` alone confirms whatever the cursor is on and never moves it.
+Every press is `pad-hold 1200` (or 900 for a direction). A tap is too brief - see
+below.
 
 **Drive from the title screen, not from the attract loop.** The game opens on an
 attract sequence - a character carousel, then the copyright logo, then a flyover -
