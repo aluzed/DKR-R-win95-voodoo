@@ -250,13 +250,28 @@ genuine advance read 73,470.
 and distinct colours over the guest's area, `-crop 667x500+0+55`. Text, so they can
 live here; the captures they came from cannot:
 
-    screen                     brightness   colours
-    N64 logo                       72.5 %      6334
-    Rare copyright                 64.0 %     11995
-    PLAYER SELECT                  48.6 %     90621
-    CAUTION                        63.9 %     70446
-    GAME SELECT, initials entry    63.7 %     56331
-    a transition frame              0.0 %         1
+    screen                          brightness   colours
+    N64 logo                            72.5 %      6334
+    Rare copyright                      64.0 %     11995
+    PLAYER SELECT                       48.6 %     90621
+    PLAYER SELECT, "OK?" up             50.5 %     93163
+    CAUTION                             63.9 %     70446
+    GAME SELECT, ADVENTURE/TRACKS       61.1 %     40554
+    GAME SELECT, initials entry         63.7 %     56331
+    after TRACKS, a level loaded        59.9 %    105590
+    a load frame                        47.1 %    150590
+    the pre-race sequence, cycling   47 - 74 %   69k-120k
+    a transition frame                   0.0 %         1
+
+Two of these are measured twice, on separate boots, and agree: PLAYER SELECT at
+90,621 and 90,499, the track choice at 105,590 both times. So a fingerprint
+identifies a screen across a restart, which is what makes an automated route
+possible - walk until the colour count reaches the expected one, rather than
+pressing a fixed number of times.
+
+The pre-race sequence is the exception and is listed as a range on purpose: it
+animates by itself, swinging between 69k and 120k with no input at all, so no
+single value identifies it. That swing is itself the signature.
 
 Brightness alone does not separate CAUTION from the initials entry - 63.9 against
 63.7 - and the colour count does, 70,446 against 56,331. A transition frame is
