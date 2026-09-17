@@ -682,6 +682,32 @@ scene that carries the configuration nothing had ever exercised. That is precise
 what the coverage work was for: a new configuration, exercised for the first time,
 surfacing a divergence no existing scene could show.
 
+### Where it is, and one hypothesis already refuted
+
+The 460 sit in the **middle of the screen** - the tiles from x 240 to 480, y 160 to
+320 - which is the live 3D preview inside the frame, not the menu furniture around
+it. At (379,249), gap 190, the card paints (206,195,0) where the oracle paints
+(16,225,54): yellow against green.
+
+The oracle's probe there shows four draws. The third is the one that wins - recipe
+3, opaque, a ground texture at `st = 11.178, 0.700`, and **`fog=1`**. The card
+keeps something much closer to the second draw's yellow.
+
+`fog=1` looked like the answer, since the oracle's fog is inert (`k = clamp(z)`,
+always zero) while the card programs Glide's hardware fog - so every fogged draw
+would differ by exactly the fog term. **Refuted by counting**, at no cost:
+
+    CAP0600  440 of 464 draws fogged  ->  460 / 83    worst in the corpus
+    CAP0700   48 of  48 draws fogged  ->    9 /  5    best in the corpus
+    CAP0420   43 of  73 draws fogged  ->   46 /  6
+
+A scene that is 100 % fogged is the cleanest one there is. Fog is not it.
+
+What distinguishes `CAP0600` is that it draws **real 3D geometry with a depth test**
+where the other menus are flat, and the divergence is exactly in that region. The
+texture coordinate of 11.178 on the winning draw is worth noticing too - the ground
+repeats eleven times across it, so wrapping is in play.
+
 `G_CC_MODULATEIDECALA` is the obvious suspect and is **not yet the diagnosis**. It
 paints 307,200 pixels here, none opaque, so it has the reach; but the screen also
 carries a live 3D preview inside menu furniture, which is a mix nothing else in the
