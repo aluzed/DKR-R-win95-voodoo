@@ -14,6 +14,10 @@
 #                                                  they do -- use this one
 #   scripts/Drive-Win95-VM.sh pad-hold 1200 a right   the same names, held down,
 #                                                  several at once -- for driving
+#   scripts/Drive-Win95-VM.sh pad-until 1500 a     presses until the screen
+#                                                  actually moves -- walk a menu
+#                                                  route with this, never with a
+#                                                  fixed number of presses
 #   scripts/Drive-Win95-VM.sh type "E:\WIN95\INSTALL.EXE"
 #   scripts/Drive-Win95-VM.sh run "D:\DKRR.EXE D:\DKR.Z64"   starts the game
 #   scripts/Drive-Win95-VM.sh run-glide "D:\REPLAY.EXE ..."  starts it, checks
@@ -119,6 +123,33 @@ pts = [(330, 300), (500, 200), (100, 450)]
 black = all(sum(im.getpixel(p)) < 24 for p in pts)
 sys.exit(0 if (black if sys.argv[2] == "black" else not black) else 1)
 PY
+}
+
+# **How much the screen moved between two captures**, on a scale of 0 to 255.
+#
+# Printed rather than judged, because the threshold belongs to the caller: a menu
+# with butterflies on it is never twice identical, so "did the screen change" and
+# "did the screen *advance*" are different questions with different bounds.
+#
+# The comparison is on a coarse greyscale reduction of the guest's area alone.
+# The emulator's own chrome - the toolbar, the status line, the clock - changes
+# every second and would answer yes to everything.
+screen_delta() {
+  python3 - "$1" "$2" <<'DELTA'
+import sys
+try:
+    from PIL import Image
+except ImportError:
+    print("0")
+    sys.exit(0)
+
+def sig(path):
+    im = Image.open(path).convert("L").crop((0, 55, 667, 555))
+    return list(im.resize((32, 24)).getdata())
+
+a, b = sig(sys.argv[1]), sig(sys.argv[2])
+print(int(sum(abs(x - y) for x, y in zip(a, b)) / len(a)))
+DELTA
 }
 
 need_running() {
@@ -440,6 +471,54 @@ case "${1:-}" in
     release
     trap - EXIT INT TERM
     say "pad-hold: $* for ${hold_ms} ms"
+    ;;
+  pad-until)
+    # **A press that is confirmed rather than counted.**
+    #
+    # `pad-hold` sends input and returns; whether the game took it is the
+    # caller's problem, and the caller has always solved it by pressing a fixed
+    # number of times with fixed waits. That drifts. Each screen of this game
+    # takes a different time to become responsive, so a route that worked once
+    # lands a screen short the next time - which happened twice on 17 September
+    # 2026 on the way to a race, and which `docs/TEST-ENVIRONMENT.md` already
+    # records as the standing rule: confirm each step by a screenshot before the
+    # next press.
+    #
+    # This is that rule, mechanised. It captures, presses, captures again, and
+    # presses again only if the screen did not move. The answer is the artefact,
+    # not the elapsed time.
+    #
+    #   pad-until 1500 a           press A until the screen advances
+    #   pad-until 1200 start       the same for Start
+    #
+    # The threshold is deliberately high. A menu with butterflies on it, or a
+    # highlight moving from one character to the next, changes a few of the 768
+    # cells by a little; arriving on a new screen changes most of them by a lot.
+    # `DKR_DRIVE_DELTA` moves it for a caller who knows better.
+    need_running; shift
+    [[ $# -ge 2 ]] || die "usage: pad-until <milliseconds> <control> [control...]"
+    command -v import >/dev/null || die "ImageMagick (import) is required"
+    until_ms="$1"; shift
+    threshold="${DKR_DRIVE_DELTA:-10}"
+    tmp_dir="$(mktemp -d)"
+    trap 'rm -rf "$tmp_dir"' EXIT
+    import -display "$DISP" -window root "$tmp_dir/before.png" 2>/dev/null \
+      || die "cannot read the screen"
+    for attempt in 1 2 3 4 5 6; do
+      "$0" pad-hold "$until_ms" "$@" >/dev/null 2>&1
+      # The game presents about six frames a second and a menu fades in over
+      # rather more than one, so a capture taken at once reads the old screen
+      # through a transition and calls it unchanged.
+      sleep 3
+      import -display "$DISP" -window root "$tmp_dir/after.png" 2>/dev/null || continue
+      delta="$(screen_delta "$tmp_dir/before.png" "$tmp_dir/after.png")"
+      if [[ "$delta" -ge "$threshold" ]]; then
+        say "pad-until: $* advanced the screen on press $attempt (delta $delta)"
+        exit 0
+      fi
+      say "pad-until: press $attempt left the screen where it was (delta $delta)"
+    done
+    die "pad-until: six presses of '$*' and the screen never moved"
     ;;
   hold)
     # Presses a key, waits, releases it. `key` above sends a press and a release
