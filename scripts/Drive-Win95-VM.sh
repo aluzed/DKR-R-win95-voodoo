@@ -595,7 +595,12 @@ case "${1:-}" in
       if MTOOLS_SKIP_CHECK=1 mcopy -o -i "$mode_img" \
            ::/dkr-runtime-data/logs/runtime.log "$mode_log" 2>/dev/null; then
         mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1)"
-        [[ -n "$mode_line" ]] && break
+        # `[[ ... ]] && break` would be wrong here and was: when the test fails it
+        # returns 1, that becomes the `if` block's status, and `set -e` ends the
+        # script with no message at all. Caught by running the command against a
+        # guest that had not written its log yet - exit 1, nothing printed, which
+        # is the silent failure this file spends its comments warning about.
+        if [[ -n "$mode_line" ]]; then break; fi
       fi
       sleep 2
     done
