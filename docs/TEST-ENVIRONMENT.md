@@ -215,6 +215,19 @@ polls a level rather than a queue, so only the hold works.
 This cost three VM runs and very nearly a wrong conclusion: with `pad`, the port
 looks as though it has no input at all.
 
+**Never start a machine run while another is still in flight**, and check the
+*previous* task rather than the new one. On 17 September 2026 a screenshot-mapping
+run produced no screenshots at all and exited cleanly: the run before it was still
+finishing, so two sequences drove one machine and the second one's `start` found an
+instance already up. The output said nothing because every step had been redirected
+away.
+
+Two symptoms worth recognising, because they look like a broken script rather than
+a collision: **a run that exits 0 having produced none of its artefacts**, and a
+guest that is on a screen no press in the current sequence could have reached.
+
+The waiting loop has to watch the task that is running, not the one just launched.
+
 **Do not touch the emulator's window while a sweep runs.** `Alt+F4` and the other
 `Alt` combinations reach *86Box's own menu bar*, not the guest: one of them
 paused the machine mid-sweep on 15 September 2026, and from the host the pause
