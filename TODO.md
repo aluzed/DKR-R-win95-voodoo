@@ -245,7 +245,40 @@ should still be read as "the two backends agree".
 
 ---
 
-## Recommended order
+## Where this leaves the project, 17 September 2026
 
-**1** first: nearly finished, needs no machine. Then **5**, because it is the only
-thing that attacks **7**. The rest can wait.
+All seven are closed, and **closed means the question each one asked is answered**
+- not that no work remains behind it. Two carry follow-on work that is work rather
+than investigation, and both say so in their own section:
+
+* **item 2** — fog is derived and quantified, deliberately not implemented: the
+  payoff is a sliver at the far plane, there is no validation path, and it needs a
+  normalised depth neither backend keeps;
+* **item 6** — coverage went 8 of 29 to 9 of 29 and the method is proven; the
+  remaining twenty are arithmetic, one game state at a time.
+
+The one that changed the project is **item 5**. The Windows 95 build had no input
+at all - `poll_input()` was a stub that zeroed every controller - and it now reads
+Win32 directly and reaches PLAYER SELECT. Everything downstream of "can the game
+be driven" was blocked on that and is not any more, including item 6, which was
+only ever blocked on it.
+
+### What the next session should pick up
+
+1. **PLAYER SELECT draws its title and leaves the rest of the screen black.** Seen
+   the moment input worked, never seen before, and not yet looked at.
+2. **A card render beside `CAP0420`**, so the menus contribute a divergence figure
+   and not only coverage. One run.
+3. **Drive further** - GAME SELECT, a track, a race - and capture in each. That is
+   how the remaining twenty configurations arrive.
+
+### Three method notes this round paid for
+
+* **Make the first witness unconditional.** A conditional witness's silence is
+  ambiguous - a poll that never runs says exactly as little as a poll that sees no
+  key - and that cost three VM runs of the twelve spent on item 5.
+* **When a single frame looks wrong, compare it with the next frame first.** Item 1
+  was an animation, and this file had already recorded that trap once.
+* **Measure the mechanism's premise, not the mechanism.** Every guess made this
+  round was about how something worked; every refutation came from looking at what
+  the data actually was.
