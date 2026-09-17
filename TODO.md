@@ -528,3 +528,41 @@ confirmation, and only `a`, `start` and one `down` have been sent so far. Try
 Recorded rather than attempted a fourth time in one sitting: the previous three
 each cost a boot, and the question is now specific enough that one run should
 answer it.
+
+### Item 9, fourth sitting: the run was spoiled by my own criterion, and the fix is in the driver
+
+The carousel hypothesis was **not** tested. The run that was meant to test it
+climbed to PLAYER SELECT with `colours > 85000` - a floor, not a window - and
+stopped on a screen holding 127,788. Every richer screen passes a floor, and this
+game has them up to 150,590.
+
+The route then ran six presses against screens it had misidentified. It partly
+realigned by accident, which is worse than failing outright: `start` from GAME
+SELECT took ADVENTURE rather than TRACKS, so the two experiment presses landed on
+the initials entry, where `right` moves a cursor in a letter grid. The readings
+look plausible and mean nothing.
+
+    climb stop     49.0 %   127788   not PLAYER SELECT (90,500)
+    a              17.7 %    60961
+    a              48.7 %    91654   PLAYER SELECT, reached by accident
+    start          64.7 %    70437   CAUTION
+    down           65.0 %    70630   no effect, CAUTION has no menu
+    a              60.6 %    39516   GAME SELECT
+    start          63.2 %    50610   ADVENTURE, not TRACKS
+    right          64.3 %    49866   a cursor in a letter grid
+    a              65.5 %    56159   the initials entry
+
+`pad-until-screen <control> <colours> [tolerance]` now does this properly, in the
+driver rather than in a throwaway inline loop: it presses until the colour count
+is **within a window** of a named fingerprint, tolerance 3000 by default - twice
+the largest drift measured within one screen, well inside the smallest gap between
+two. Tested against a screen it was already on: arrived after 0 presses, 464 off.
+
+So the carousel question is still open and the next run can be written against
+fingerprints instead of press counts:
+
+    pad-until-screen start 90621     -> PLAYER SELECT
+    a, a                             -> CAUTION      (expect 70446)
+    start                            -> GAME SELECT  (expect 40554)
+    down, a                          -> TRACKS, a level loads
+    then the experiment

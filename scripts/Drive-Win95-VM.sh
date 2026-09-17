@@ -18,6 +18,11 @@
 #                                                  actually moves -- walk a menu
 #                                                  route with this, never with a
 #                                                  fixed number of presses
+#   scripts/Drive-Win95-VM.sh pad-until-screen start 90621
+#                                                  presses until the screen's
+#                                                  colour count matches a known
+#                                                  fingerprint -- a window, never
+#                                                  a floor
 #   scripts/Drive-Win95-VM.sh game-mode            what the running game says it
 #                                                  is doing: INTRO, MENU, INGAME.
 #                                                  INGAME is a race
@@ -631,6 +636,45 @@ case "${1:-}" in
       die "no game mode line after three reads - the guest may not be running it"
     fi
     say "$mode_line"
+    ;;
+  pad-until-screen)
+    # **Press until the screen is the one named, by fingerprint.**
+    #
+    #   pad-until-screen start 90621        walk to PLAYER SELECT
+    #   pad-until-screen start 90621 4000   ... with a wider window
+    #
+    # The colour counts in `docs/TEST-ENVIRONMENT.md` identify a screen across a
+    # reboot, so a route can walk to one instead of pressing a fixed number of
+    # times. What it must not do is test a *floor*.
+    #
+    # An inline version of this used `-gt 85000` to find PLAYER SELECT, which
+    # holds about 90,500 - and stopped on a screen holding 127,788 on
+    # 17 September 2026, because every richer screen passes a floor and this game
+    # has them up to 150,590. The route that followed ran six presses against the
+    # wrong screens and its measurement had to be thrown away. A window is the
+    # whole fix: the target, plus or minus a tolerance that defaults to 3000 -
+    # twice the largest drift measured within one screen, and well inside the
+    # smallest gap measured between two.
+    need_running; shift
+    [[ $# -ge 2 ]] || die "usage: pad-until-screen <control> <colours> [tolerance]"
+    ps_control="$1"; ps_target="$2"; ps_tol="${3:-3000}"
+    command -v import >/dev/null || die "ImageMagick (import) is required"
+    ps_shot="$(mktemp --suffix=.png)"
+    trap 'rm -f "$ps_shot"' EXIT
+    for ps_try in 1 2 3 4 5 6 7 8 9 10; do
+      import -display "$DISP" -window root "$ps_shot" 2>/dev/null \
+        || die "cannot read the screen"
+      ps_k="$(screen_colours "$ps_shot")"
+      ps_gap=$(( ps_k > ps_target ? ps_k - ps_target : ps_target - ps_k ))
+      if [[ "$ps_gap" -le "$ps_tol" ]]; then
+        say "pad-until-screen: arrived after $((ps_try - 1)) press(es) ($ps_k colours, $ps_gap off)"
+        exit 0
+      fi
+      say "pad-until-screen: $ps_k colours, $ps_gap off - pressing $ps_control"
+      "$0" pad-hold 1400 "$ps_control" >/dev/null 2>&1
+      sleep 5
+    done
+    die "pad-until-screen: ten presses and never within $ps_tol of $ps_target"
     ;;
   hold)
     # Presses a key, waits, releases it. `key` above sends a press and a release
