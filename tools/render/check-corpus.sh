@@ -9,8 +9,23 @@
 # RDRAM, eight mebibytes, and it has to be: the decoder reads at addresses the
 # list itself computes, so there is no knowing in advance which bytes matter. A
 # dozen scenes is a hundred megabytes, which does not belong in git. The captures
-# and their reference images sit in a directory the user keeps; what is versioned
-# is this script and the counts, which are text.
+# and their reference images sit in a directory the user keeps.
+#
+# **The counts are not versioned, and this comment used to say they were.** They
+# are written to `<corpus>/<name>.counts` beside the capture, outside the
+# repository, so a decoder change that moves them is caught by the next run of
+# this script and by nothing in review. `git ls-files` finds no `.counts` at all;
+# checked on 17 September 2026. Saying otherwise advertised a safety net that is
+# not there, which is worse than not having it.
+#
+# **What `--accept` rewrites, and what it never touches.** It rewrites
+# `<name>.counts` and `<name>.fill`, both of which describe decisions the decoder
+# took. It never writes `<name>.bmp`. That matters after a rendering defect: the
+# fog defect of 17 September blacked out most of the card's image for a day, and
+# the question it raises - "has an accept baked the broken render into a
+# reference?" - is answered no by this file rather than by a comparison. The
+# reference images are blessed by hand or come from the oracle, and an accept
+# cannot overwrite one.
 #
 # ## What it checks, and in which order
 #
