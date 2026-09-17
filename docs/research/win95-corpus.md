@@ -499,3 +499,32 @@ differently on a card with four bits of sub-pixel precision and its own fill rul
 and no amount of combiner work will move them. The forty-one are the ones that
 cannot be explained that way, and they are what the card probe should be pointed
 at - one run each, and there are not many of them.
+
+## The game itself, which nothing in this week had checked
+
+Every figure above comes from `REPLAY` on a frozen capture. That is the right
+instrument - it is deterministic, it isolates the renderer from the game, and it
+is why a week of changes could be measured at all - and it shares a blind spot
+with every harness of its kind: a capture is one display list, replayed into a
+clean context, and it exercises none of what happens *between* frames. A state
+cache that goes out of step, a depth mask left closed, a register restored in the
+wrong order: all of them can be invisible to eight captures and fatal to a run.
+
+So the game was run, on 17 September 2026, after the week's changes. It reaches
+the character-select carousel and animates through it: sky, terrain, a character
+model on its craft, the balloon, and the five-pass name plate - which is the
+configuration this file has spent the most words on. Three screens a minute apart
+show three different characters and three different backdrops, so lists and
+presents are both advancing.
+
+What that does and does not establish. It establishes that nothing in the week's
+work stops the renderer running for minutes on live, varying geometry - which is
+exactly the class the capture harness cannot see, and the class the depth-mask
+yield of 17 September could plausibly have broken. It does not establish that a
+race renders correctly, that the hub is right, or anything at all about a
+number: the corpus is still where the numbers come from.
+
+The lesson is the cheap one. This check costs four minutes and was not run once
+between 10 and 17 September, across two rewrites of the second pass, an exact
+three-blend expansion, and four changes to how depth is written. Running it after
+each would have cost less than the one regression it would have caught.
