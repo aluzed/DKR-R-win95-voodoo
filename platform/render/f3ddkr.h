@@ -127,6 +127,10 @@ typedef struct {
      * **Recorded before it is used.** This field changes no pixel on its own; the
      * counts and the value are reported so that the question "does this game set
      * G_FOG at all, and where" has an answer before anything is wired to it. */
+    /* How many `G_MW_FOG` words the list carried. Non-zero means the game is
+       asking for fog and this port is not computing its coefficient. */
+    unsigned long fog_words;
+
     unsigned int  geometry_mode;
     unsigned long geometry_mode_writes;
 
@@ -766,6 +770,10 @@ typedef struct {
     /* The factor that carries the microcode's 10.5 into the projection's [0,1],
        padding width included. */
     float                tex_scale_s, tex_scale_t;
+    /* The fog coefficient's two constants, from `G_MW_FOG`. Decoded and not yet
+       applied - see the long note in `cmd_move_word` for what is measured and
+       what is refuted. */
+    short                fog_multiplier, fog_offset;
 
     /* Trace mode. Without this tool, every graphics diagnosis on the target
        machine is made blind — the screen belongs to the 3dfx card and one sees

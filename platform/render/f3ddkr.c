@@ -45,6 +45,11 @@
 
 #define MOVEWORD_BILLBOARD   0x02
 #define MOVEWORD_MVPMATRIX   0x0A
+/* `G_MW_FOG` on stock F3D, and the lists carry it: twice per capture, `w1`
+   packing the fog multiplier in the high half and the offset in the low one.
+   Nothing read it, which is the whole of why this port has no fog - see
+   `cmd_move_word`. */
+#define MOVEWORD_FOG         0x08
 #define MOVEWORD_PRESENT     0xFE
 #define PRESENT_MAGIC        0x444B5200u
 #define PRESENT_META_MASK    0xFFu
@@ -1149,6 +1154,43 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     const unsigned char type = (unsigned char)(w0 & 0xFFu);
+    /* Which `MOVEWORD` types the lists actually carry. On stock F3D the fog
+       multiplier and offset arrive by this command, and the fog coefficient this
+       port cannot find would have to come from somewhere like it. */
+    trace(c, "MoveWord type=0x%02X w0=0x%08X w1=0x%08X", type, w0, w1);
+    if (type == MOVEWORD_FOG) {
+        /* --- The fog coefficient's two constants ------------------------- *
+         *
+         * `w1` packs the multiplier in the high half and the offset in the low,
+         * both signed. Recorded and **not applied**, deliberately.
+         *
+         * What is established by measurement: the blender does ask for fog
+         * (`m1a=3 m1b=2` appears in the race), the geometry mode does set
+         * `G_FOG` on most 3D batches, 1,390 of the race's 1,412 draws now carry
+         * `fog_enabled`, and the image still moves by not one pixel because the
+         * oracle's coefficient is `clamp(z)` with `z = -oow`, always negative.
+         *
+         * What is refuted by measurement: using the vertex alpha as the
+         * coefficient, which collapses the race to 167 colours and 89 % black.
+         * DKR's vertices carry opacity in alpha whatever the geometry mode says.
+         *
+         * So the coefficient has to be computed from depth with these two
+         * constants, this port doing its own vertex transform and nothing else
+         * writing it. That is a derivation and a validation problem - both
+         * backends move together, so the corpus can only check that they agree -
+         * and it is not guessed here. The values are put in front of whoever
+         * does it:
+         *
+         *     race and hub   w1 = 0x64009867
+         *     attract        w1 = 0x0F26F127
+         */
+        c->fog_multiplier = (short)((w1 >> 16) & 0xFFFFu);
+        c->fog_offset     = (short)(w1 & 0xFFFFu);
+        c->state.fog_words++;
+        trace(c, "FogPosition multiplier=%d offset=%d",
+              (int)c->fog_multiplier, (int)c->fog_offset);
+        return;
+    }
     if (type == MOVEWORD_PRESENT &&
         (w1 & ~PRESENT_META_MASK) == PRESENT_MAGIC) {
         /* An extension of the port, not of the original microcode: the magic
@@ -3006,6 +3048,12 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         case OP_SETOTHERMODE_L:
             write_othermode(&c->mode_l, w0, w1);
+            /* The blender's first-cycle pair, which is the whole of how fog is
+               deduced: `m1a == 3 && m1b == 2` is `G_RM_FOG_SHADE_A`. Traced
+               because the gate built on it never fires, and the first question
+               is what the lists actually carry. */
+            trace(c, "othermode_l=0x%08X m1a=%u m1b=%u", c->mode_l,
+                  (c->mode_l >> 30) & 3u, (c->mode_l >> 26) & 3u);
             c->state_dirty = 1;
             break;
 

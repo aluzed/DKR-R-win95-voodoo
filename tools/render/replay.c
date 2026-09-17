@@ -110,6 +110,10 @@ typedef struct {
     unsigned long tile_origin_nonzero;
     unsigned short tile_origin_first[8][4];
     unsigned int  tile_origin_first_n;
+    /* Draws emitted with fog in force. Zero for the whole of this port's life,
+       and nothing printed it - so "fog is off" and "fog is on and does nothing"
+       were indistinguishable from the report. */
+    unsigned long fogged;
     unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
     unsigned short stride_first[8][4];
     unsigned int  stride_first_n;
@@ -126,6 +130,7 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->culled    = ctx->state.culled;
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
+    c->fogged    = ctx->state.emitted_fogged;
     c->resident  = ctx->state.textures_resident;
     c->reused    = ctx->state.textures_reused;
     c->dxt_disagrees         = ctx->state.dxt_disagrees;
@@ -176,9 +181,9 @@ static void say_counts(const char *who, const replay_counts *c)
     const unsigned long lost = (c->triangles > accounted)
                                  ? c->triangles - accounted : 0UL;
     say("  %-8s cmd=%lu tri=%lu emitted=%lu culled=%lu clipped=%lu rejects=%lu"
-        " lost=%lu textures=%lu (resident=%lu reused=%lu)\n",
+        " lost=%lu textures=%lu (resident=%lu reused=%lu) fogged=%lu\n",
         who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
-        c->rejects, lost, c->textures, c->resident, c->reused);
+        c->rejects, lost, c->textures, c->resident, c->reused, c->fogged);
     /* **The tile's row stride against the one the conversion assumes.** Printed
        beside the counts and not behind a switch: a texture read at the wrong
        stride comes out sheared, and this is the number that says whether any

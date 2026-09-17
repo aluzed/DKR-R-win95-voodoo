@@ -776,9 +776,29 @@ static void raster_triangle(const dkr_render_vertex *v0,
             combine(st, texel, sr, sg, sb, sa, &r, &g, &b, &a);
 
             if (st->fog_enabled) {
-                /* Linear fog over depth. Glide uses a table; the gap between
-                   the two is measurable, and that is this backend's reason to
-                   exist. */
+                /* --- Linear fog over depth, and it is inert -------------- *
+                 *
+                 * `z` here is `-oow` (see the depth note above), so it is
+                 * negative for every real fragment and this clamp makes `k` zero
+                 * at every pixel. Fog can be enabled on 1,390 of a scene's 1,412
+                 * draws and move the image by not one pixel - measured on
+                 * 17 September 2026, and it is what made "fog is off" and "fog is
+                 * on and does nothing" indistinguishable for a month.
+                 *
+                 * **The iterated alpha is not the fix**, tried the same hour: with
+                 * `k = sa / 255` the race collapses to 167 colours and 89 % pure
+                 * black, which is August's black-screen disaster reproduced. On
+                 * stock microcode `G_FOG` makes the transform overwrite the vertex
+                 * alpha with the coefficient; DKR's vertices carry opacity there
+                 * regardless, so the alpha is 255 on opaque geometry and asks for
+                 * maximum fog. Gating on `G_FOG` does not change that.
+                 *
+                 * What is left - and what `docs/research/win95-fog.md` should get
+                 * - is that the coefficient has to be **computed** from depth with
+                 * the fog multiplier and offset the list supplies, since this port
+                 * does its own vertex transform and nothing is writing that
+                 * coefficient for it. Until that is found, the clamp stays and fog
+                 * stays visibly absent rather than visibly wrong. */
                 const float k = clampf(z, 0.0f, 1.0f);
                 const float fr = (float)((st->fog_color >> 16) & 0xFF);
                 const float fg = (float)((st->fog_color >>  8) & 0xFF);
