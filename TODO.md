@@ -121,19 +121,40 @@ order in this item was "record, compare, then decide".
 
 ---
 
-## 5. Nobody has driven the game into a race — PENDING
+## 5. Nobody has driven the game into a race — PENDING (blocker identified)
 
-**What.** The largest gap. The game reaches the character-select carousel and the
-copyright sequence. Menus, track select, a race, the results screen and split
-screen are **entirely unverified**.
+**The blocker is found and instrumented: no keypress ever reaches the game.**
 
-**Where it stands.** Input reaches the guest only after `grab` (X focus without a
-click — clicking drops the Voodoo full screen). With that, Start works and the
-menus respond.
+Driving the port from the host, Start and A produce no transition out of the
+attract sequence. Nothing anywhere could say whether the keystrokes were arriving
+- the boot line lists the mapping and the subject is never mentioned again - so
+"the keys do not arrive" and "the attract sequence ignores them" were
+indistinguishable. `runtime_input.cpp` now logs one line per transition from no
+buttons to some, capped at twenty.
 
-**Cost.** About seven minutes a run, and the path is several screens deep.
+    [input] buttons=...      **zero lines in a run with twelve Start and A presses**
 
-**Why it matters.** It is the only thing that attacks item 7.
+So the input layer never sees a button. The attract sequence is not ignoring
+anything; nothing is arriving.
+
+**What is measured:** the mapping is configured at boot (`WASD=stick … Enter=Start`),
+86Box reports the input captured, `grab` sets X focus, and the game's input layer
+assembles a button word that is never non-zero.
+
+**What is not measured:** where it is lost. Three candidates, in order of
+suspicion:
+
+1. the game takes the Voodoo full screen and its Win32 window never takes
+   **keyboard focus**, so SDL is delivered nothing — which would mean the port
+   cannot be played at all, by anyone, not just from this harness;
+2. 86Box routes the keyboard somewhere other than the guest after the
+   full-screen transition;
+3. the port polls a device that is not the keyboard.
+
+Candidate 1 is the one worth testing first and the one that would matter most.
+A cheap test exists: log whether the window has focus, in the same place.
+
+**Cost so far:** four VM runs. Each is about seven minutes.
 
 ---
 

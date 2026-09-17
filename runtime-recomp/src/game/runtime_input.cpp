@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <optional>
 #include "win95/sync.hpp"
 
@@ -1030,6 +1031,26 @@ dkr::runtime::input::State dkr::runtime::input::poll(
     press(Action::CDown, kCDown);
     press(Action::CLeft, kCLeft);
     press(Action::CRight, kCRight);
+    /* --- Does a keypress reach the game at all? ---------------------------- *
+     *
+     * Driving the port from the host on 17 September 2026, Start and A produced
+     * no transition out of the attract sequence, and nothing anywhere could say
+     * whether the keystrokes were arriving. The boot line lists the mapping and
+     * then the subject is never mentioned again, so "the keys do not arrive" and
+     * "the attract sequence ignores them" were indistinguishable.
+     *
+     * One line per transition from no buttons to some, capped, so that a run
+     * answers it and a session of play does not drown in it. */
+    {
+        static std::uint16_t last_buttons = 0U;
+        static int logged = 0;
+        if (state.buttons != 0U && last_buttons == 0U && logged < 20) {
+            ++logged;
+            std::fprintf(stderr, "[input] buttons=0x%04X\n",
+                         static_cast<unsigned>(state.buttons));
+        }
+        last_buttons = state.buttons;
+    }
     state.stick_x = std::clamp(value(Action::StickRight) - value(Action::StickLeft), -1.0F, 1.0F);
     state.stick_y = std::clamp(value(Action::StickUp) - value(Action::StickDown), -1.0F, 1.0F);
     if (dkr::runtime::enhancements::modern_presentation_enabled()) {
