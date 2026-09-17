@@ -200,6 +200,23 @@ before="$(stamp)"; scripts/Drive-Win95-VM.sh run "D:\REPLAY.EXE --both D:\CAP005
 until [ "$(stamp)" != "$before" ]; do sleep 15; done
 ```
 
+**`game-mode` says what the game is doing, and it works while the guest runs.**
+`scripts/Drive-Win95-VM.sh game-mode` copies the guest's `runtime.log` off the
+transfer disk and prints its last `gGameMode` line: -1 INTRO, 0 INGAME, 1 MENU,
+5 LOCKUP. A race is the one that reads INGAME, which is the only reliable way to
+know a route has arrived.
+
+This was set aside once as needing a change to the game, because Windows 95 holds
+a write behind its cache. That is the wrong half of the truth: `dkr_diag_commit`
+closes and reopens the log every few seconds precisely so a program killed rather
+than closed leaves a readable tail, so the directory entry is current and `mtools`
+reads it with the dirty flag skipped.
+
+Two limits. The mode is **coarse** - every menu screen reads MENU, so it cannot
+tell PLAYER SELECT from GAME SELECT - and it **lags**, being printed once in sixty
+display lists. And the read races the writer: it retries three times, because a
+single empty answer looks exactly like a stopped game and is usually a busy file.
+
 **`pad-until` confirms a press; it does not identify a screen.** `pad-hold` sends
 input and returns, and a route built on a fixed number of presses drifts, because
 each screen takes a different time to become responsive. `pad-until <ms>
