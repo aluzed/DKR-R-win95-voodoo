@@ -320,8 +320,19 @@ only ever blocked on it.
    first time surfaced a divergence no existing scene could show, which is exactly
    what the coverage work was for. `G_CC_MODULATEIDECALA` is the obvious suspect
    and not yet the diagnosis: the screen also mixes a live 3D preview with menu
-   furniture, which nothing else in the corpus does. Both probes work on it, one
-   run each.
+   furniture, which nothing else in the corpus does.
+
+   **Probed, and the likely class is coverage at mesh junctions.** The card's
+   probe shows a batch marked `elsewhere` changing the pixel, and the neighbouring
+   batches explain it: one of them has a vertex at (379.25, 250.01) - the probed
+   pixel - so several triangles meet there. A point on a shared edge is inside for
+   one fill rule and outside for another. Same class as the corpus-wide residue,
+   arriving in larger numbers because this is the first captured screen with a
+   dense 3D mesh.
+
+   It also exposed a limit of the instrument: `covers` is the watch's opinion, not
+   the card's, and where they disagree the watch is wrong by construction. That is
+   now written beside the measurement.
 
    Eleven scenes: 3,069 divergent pixels, 261 real, of 3.38 million.
 

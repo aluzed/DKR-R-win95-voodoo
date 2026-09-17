@@ -708,6 +708,36 @@ where the other menus are flat, and the divergence is exactly in that region. Th
 texture coordinate of 11.178 on the winning draw is worth noticing too - the ground
 repeats eleven times across it, so wrapping is in play.
 
+### What the card's probe says, and what it says about the probe
+
+    batch 9     covers     0x000000 -> 0xFFD339  recipe=2
+    batch 25    covers     0xFFD339 -> 0xFFFF52  recipe=18
+    batch 94    elsewhere  0xFFFF52 -> 0xCEC300  recipe=3   <- paints without covering
+    batch 210   covers     0xCEC300 -> 0xCEC300
+    batch 268   covers     0xCEC300 -> 0xCEC300
+
+Batch 94 is marked **elsewhere** - the point lies in none of its triangles by the
+watch's own edge test - and it changes the pixel anyway, to the value the card
+finishes on.
+
+The neighbouring batches say why. Batch 268's second vertex is at
+**(379.25, 250.01)**, which is the probed pixel, and batch 210's three vertices
+sit within three pixels of it. This is a **mesh junction**: several triangles meet
+here, and a point on a shared edge is inside for one rasteriser's fill rule and
+outside for another's. The watch samples the pixel centre with exact float edge
+functions; the card has four bits of sub-pixel precision and its own rule.
+
+So the most likely class for this scene's 83 is **coverage at mesh junctions**,
+not a combiner or a texture - which is the same class the whole corpus's residue
+was traced to this morning, arriving in larger numbers because this is the first
+captured screen with a dense 3D mesh in it.
+
+**And a limit of the instrument, worth stating where it will be read:** `covers`
+and `elsewhere` are the watch's opinion, not the card's. Where they disagree the
+watch is wrong by construction, and a line marked `elsewhere` that changes the
+pixel is the signature of exactly that - useful, but not evidence that the card
+painted outside its geometry.
+
 `G_CC_MODULATEIDECALA` is the obvious suspect and is **not yet the diagnosis**. It
 paints 307,200 pixels here, none opaque, so it has the reach; but the screen also
 carries a live 3D preview inside menu furniture, which is a mix nothing else in the
