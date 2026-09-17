@@ -224,6 +224,33 @@ Unmeasured: where, between the draw and the display, the content is lost - thoug
 it now has a candidate, above, in a render-target switch no part of the port
 consumes. Four branches are closed; this one has a mechanism and no measurement.
 
+## The comparison that works, and it carries its own control
+
+The route that does not need an LFB lock: hold the live screenshot against the
+capture taken at that same moment, replayed through the oracle. Both already
+existed; what was missing was a number rather than a description.
+
+Exact pixels cannot be compared - the emulator window scales the 640x480 frame -
+but region coverage can. Sampling the fraction of pixels above a dark threshold in
+two regions, expressed relative to the frame in both images:
+
+    region        capture    live
+    the title       94 %      51 %
+    the scene       98 %       0 %
+
+**The scene is at zero.** Not dim, not partial - not one sampled pixel above the
+threshold, where the capture has ninety-eight per cent of them.
+
+And the title is the control, built into the comparison rather than bolted on: it
+reads 51 % live, so the regions are aligned and the sampler works. Had the
+alignment been wrong, the title would have read zero as well and the measurement
+would have said nothing - which is precisely how the back-buffer sampler failed,
+and why this one was arranged to fail loudly instead.
+
+So the defect is total rather than partial, and it spares whatever draws the title.
+That is the sharpest statement of it so far, and it cost no run: both images were
+already on disk from earlier the same day.
+
 ## Why it matters beyond this screen
 
 `win95-corpus.md` says the corpus measures agreement between two backends and not
