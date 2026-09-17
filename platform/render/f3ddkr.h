@@ -753,6 +753,13 @@ typedef struct {
     /* `DKR_NEUTRAL=<mask>`: which fields of the render state to neutralise
        before each triangle. See the note at the emission in `f3ddkr.c`. */
     unsigned char        neutral_mask;
+    /* Forces fog off for every draw, the mirror of `fog_enabled_override`.
+       The card programs Glide's hardware fog and the software oracle's fog is
+       inert, so a fogged draw is the one place the two backends cannot be
+       compared - and every corpus figure was taken before the gate that decides
+       which draws are fogged reached a built binary. This makes the difference
+       measurable in one run instead of argued from counts. */
+    unsigned char        fog_disabled;
 
     /* --- A textured rectangle in flight ------------------------------------ *
      *

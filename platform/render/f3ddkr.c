@@ -1465,6 +1465,10 @@ static void apply_state(dkr_f3d_context *c)
         (c->state.geometry_mode & DKR_G_FOG) == 0u) {
         c->render_state.fog_enabled = 0;
     }
+    /* Last word, and deliberately after the override: the question this answers
+       is what the card draws with no fog at all, and an override that put it back
+       would make the answer unreadable. */
+    if (c->fog_disabled) { c->render_state.fog_enabled = 0; }
     /* The same reasoning one step further along the pipeline. `no_depth`
        separates sorting from drawing; this separates the texel from the shade.
        Both are kept: on a target where a run costs four minutes, a switch that
