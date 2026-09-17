@@ -277,6 +277,11 @@ only ever blocked on it.
    rather than a screenshot. Nine scenes: 2,600 divergent, 173 real, of 2.76
    million.
 3. **Drive further** - partly done, and it answered an older question on the way.
+   **Reaching vehicle select needs an interactive sequence**: screenshots between
+   presses record but do not confirm, the run still advances on a fixed sleep, and
+   it drifts - measured twice, landing at track select once and two screens short
+   the next time. The next attempt has to send one press per step and read the
+   screen before the next. See `docs/TEST-ENVIRONMENT.md`.
    `CAP0700` is the controller-pak caution screen, three menus deep: **tail 9,
    real 5**, the best figure in the corpus. It adds no new configuration (recipes 3
    and 20) but it is almost entirely the small proportional font that

@@ -242,11 +242,19 @@ presses that reached track select when each was screenshotted landed on the caut
 screen on the next run, with the same waits. Each screen takes a variable time to
 become responsive, so fixed sleeps drift.
 
-**The route is reliable only when each step is confirmed.** Screenshot between
-presses and advance when the expected screen is on, rather than sending the batch
-and hoping. That costs a screenshot per press and it is the difference between a
-run that lands and a ten-minute run that captures a screen you already have - which
-happened three times on 17 September.
+**The route is reliable only when each step is confirmed - and a screenshot is not
+a confirmation.** Adding a shot between presses only *records* where the run went;
+the sequence still advances on a fixed sleep and still drifts. Measured twice on
+17 September: the same seven presses with a screenshot after each reached track
+select once and ended on GAME SELECT the next time, two screens short.
+
+Confirming means **reading** the screen and only then sending the next press, which
+a single shell command cannot do. It needs one press per step with the screen
+examined in between. That is slower in turns and it is the only thing that has
+worked reliably.
+
+Five ten-minute runs on 17 September captured a screen the corpus already had,
+every one of them because a batch was fired and inspected only at the end.
 
 **A capture fires wherever the game is, so check the screen before trusting it.**
 `CAP1100` was armed for a vehicle-select screen and came back with GAME SELECT's
