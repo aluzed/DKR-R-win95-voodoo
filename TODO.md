@@ -319,6 +319,14 @@ only ever blocked on it.
    shows GAME SELECT as well, so the capture agrees with the screen and there is no
    evidence of idling at all. The only fault was my own press count.
 
+   **And the exact sequence fired blind is not reliable either.** `CAP0600` sent
+   all seven correct presses with the same waits and landed on the *caution*
+   screen - one step short - because each screen takes a variable time to become
+   responsive and fixed sleeps drift. The route holds only when each step is
+   confirmed by a screenshot before the next press. That is now the standing
+   instruction in `docs/TEST-ENVIRONMENT.md`, and it is why three ten-minute runs
+   on 17 September captured screens the corpus already had.
+
    **One thing seen and deliberately not concluded:** the caution screen rendered
    live has a black background where `CAP0700`'s oracle render has a blue sky.
    That is very likely another transition frame - the same trap as items 1 and the

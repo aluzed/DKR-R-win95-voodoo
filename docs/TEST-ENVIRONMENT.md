@@ -233,10 +233,20 @@ attract loop got nowhere at all. `CAP0420` was captured at GAME SELECT and
 Every press is `pad-hold 1200` (or 900 for a direction). A tap is too brief - see
 below.
 
-**Send that sequence exactly.** Changing the press counts desynchronises the whole
-route: on 17 September a run that sent five `start` then three `a`, instead of four
-`start` then `start a a a down a`, ended on GAME SELECT with the cursor on GAME A
-rather than at track select.
+**Send that sequence exactly** - and even then, do not fire it blind. Changing the
+press counts desynchronises the route: five `start` then three `a`, instead of four
+`start` then `start a a a down a`, ends on GAME SELECT rather than at track select.
+
+But the exact sequence fired blind is **not reliable either**. The same seven
+presses that reached track select when each was screenshotted landed on the caution
+screen on the next run, with the same waits. Each screen takes a variable time to
+become responsive, so fixed sleeps drift.
+
+**The route is reliable only when each step is confirmed.** Screenshot between
+presses and advance when the expected screen is on, rather than sending the batch
+and hoping. That costs a screenshot per press and it is the difference between a
+run that lands and a ten-minute run that captures a screen you already have - which
+happened three times on 17 September.
 
 **A capture fires wherever the game is, so check the screen before trusting it.**
 `CAP1100` was armed for a vehicle-select screen and came back with GAME SELECT's
@@ -259,6 +269,21 @@ return, which is why batches of `a` presses plateau at GAME SELECT.
 The title screen is the real entry point. Screenshot after **every** press when
 building a sequence; sending a batch and inspecting only the end cannot tell
 "went deeper" from "went round".
+
+**"No directory slots" means the root directory is full, not that anything is
+wrong.** D: is FAT16 and its *root* holds a fixed number of entries - a few hundred
+- regardless of how many megabytes are free. A session that captures a dozen eight
+-megabyte scenes, a log beside each and an image or two per run reaches it, and the
+push then fails with that message while `mdir` still reports hundreds of megabytes
+free.
+
+Met on 17 September 2026 with 249 MB free and no slots left. The fix is to delete
+what has already been pulled to the host:
+
+    mdel -i "$IMG" ::CAP0220.BIN
+
+Worth knowing because the message names neither the cause nor the remedy, and the
+obvious reading - a full or corrupt disk - is wrong on both counts.
 
 **Never start a machine run while another is still in flight**, and check the
 *previous* task rather than the new one. On 17 September 2026 a screenshot-mapping
