@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E05 — Glide backend |
-| **Status** | IN_PROGRESS |
+| **Status** | DONE |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E05-S02, E04-S07 |
