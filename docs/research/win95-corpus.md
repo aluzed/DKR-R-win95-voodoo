@@ -605,5 +605,28 @@ number the run reaches *after* the menus is what makes it land in the right plac
 the list index is not a stable coordinate, but "high enough that the menus are up"
 is a weak enough condition to hold across runs.
 
-This capture is not yet part of the checked corpus: it has no card render beside
-it, so it contributes coverage and not a divergence figure. That is one run.
+And it was measured the same evening. The card render beside it:
+
+    CAP0420   tail 46   real 6
+
+Forty-six divergent pixels of 307,200, six of them real - **the cleanest scene in
+the corpus**, and it is the one carrying the configuration nothing had ever
+exercised. `G_CC_MODULATEIA` paints 67,776 pixels here, none of them opaque, and
+the two backends agree on it.
+
+So the ninth configuration arrives exercised *and* verified, which is the whole
+point of a corpus entry rather than a screenshot. Nine scenes now, 2,600 divergent
+pixels and 173 genuinely so, of 2.76 million.
+
+### And a frame that was nearly reported as a defect
+
+The screen reached one press earlier - PLAYER SELECT - drew its title correctly
+and left the rest of the screen black, and that was written down as the next
+defect to chase. It is very probably not one: this capture, taken from the same
+driving session a few presses later, shows the *next* menu rendered completely -
+sky, title, three panels, both footer labels. A decoder that renders GAME SELECT
+whole does not lose the body of PLAYER SELECT.
+
+Almost certainly a transition frame caught before the panels arrived, which is
+exactly the trap the logo cost an afternoon to relearn the same day. Recorded
+here rather than in a research note, because one screenshot is not a finding.

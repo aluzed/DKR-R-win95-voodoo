@@ -263,14 +263,23 @@ Win32 directly and reaches PLAYER SELECT. Everything downstream of "can the game
 be driven" was blocked on that and is not any more, including item 6, which was
 only ever blocked on it.
 
-### What the next session should pick up
+### The follow-on work, and two of the three are done
 
-1. **PLAYER SELECT draws its title and leaves the rest of the screen black.** Seen
-   the moment input worked, never seen before, and not yet looked at.
-2. **A card render beside `CAP0420`**, so the menus contribute a divergence figure
-   and not only coverage. One run.
-3. **Drive further** - GAME SELECT, a track, a race - and capture in each. That is
-   how the remaining twenty configurations arrive.
+1. ~~PLAYER SELECT draws its title and leaves the rest black.~~ **Very probably not
+   a defect.** `CAP0420`, taken from the same driving session a few presses later,
+   shows GAME SELECT rendered completely - sky, title, three panels, both footer
+   labels. A decoder that renders one menu whole does not lose the body of the
+   previous one; the black frame was almost certainly caught mid-transition. The
+   same trap as item 1, on the same day. Not chased.
+2. ~~A card render beside `CAP0420`.~~ **Done.** `tail 46 real 6` - the cleanest
+   scene in the corpus, and the one carrying `G_CC_MODULATEIA`. The ninth
+   configuration is exercised *and* verified, which is what makes it a corpus entry
+   rather than a screenshot. Nine scenes: 2,600 divergent, 173 real, of 2.76
+   million.
+3. **Drive further** - a track, a race, the results screen - and capture in each.
+   Still open, and now routine: hold a key, arm a capture at a list the run reaches
+   once the screen is up, measure both backends. That is how the remaining twenty
+   configurations arrive, one state at a time.
 
 ### Three method notes this round paid for
 
