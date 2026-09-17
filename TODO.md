@@ -441,7 +441,7 @@ reader against the clear before reporting anything.
 
 | # | Item | Status |
 |---|------|--------|
-| 9 | Drive the game into a race, to exercise the remaining configurations | PENDING |
+| 9 | Drive the game into a race, to exercise the remaining configurations | RUNNING |
 
 **9 — the instruments are built, the route is not.** `game-mode` gives the arrival
 signal a route needs: the game logs `gGameMode` and a race is the one that reads
@@ -463,3 +463,35 @@ Anything learnt on the way belongs here: the mode is coarse (every menu screen
 reads MENU, so only arrival at a race is detectable, not progress through the
 menus), and the two black screens met on the way were both transitions, confirmed
 against the next frame before anything was concluded.
+
+### Item 9, second sitting: the tooling was the problem, and the route is now half written
+
+The blocker was not menu knowledge after all - it was that nothing could tell a
+screen change from a menu animating, so every route was walked blind. The
+distinct-colour count separates them by an order of magnitude where the two image
+differences tried before gave 34 against 35. With `pad-until` comparing that
+instead, and screens identified by their fingerprint, the route walks and every
+step is checked:
+
+    step                       brightness   colours   gGameMode   level
+    PLAYER SELECT                  51.7 %     89831   MENU        0x801FB780
+      a  (choose)                  52.3 %     90709   MENU        0x801FB780
+      a  (confirm "OK?")           64.0 %     69945   MENU        0x801FB780
+    CAUTION
+      start                        59.8 %     40224   MENU        0x801FB780
+    GAME SELECT
+      down, a  (TRACKS)            59.9 %    105590   MENU    **0x8023E7C0**
+      a                            65.0 %    110279   MENU        0x8023E7C0
+      a                            72.6 %     76813   MENU        0x8023E7C0
+      a                            73.6 %     69747   MENU        0x8023E7C0
+
+`gCurrentLevelHeader` moves from `0x801FB780` to `0x8023E7C0` on the TRACKS
+choice: **a level is loaded**, which no previous attempt ever achieved. What
+follows is a pre-race sequence of three or more screens that keeps `gGameMode` at
+MENU, so the remaining work is which control each of those wants - a shorter
+question than the one this item started with, and every step of the answer is now
+verifiable rather than guessed.
+
+Note the second signal, found by accident and worth keeping: the level pointer in
+the same log line changes a full report before the mode does, so it sees a level
+load that `gGameMode` has not caught up with yet.
