@@ -652,12 +652,27 @@ case "${1:-}" in
     # 17 September 2026, because every richer screen passes a floor and this game
     # has them up to 150,590. The route that followed ran six presses against the
     # wrong screens and its measurement had to be thrown away. A window is the
-    # whole fix: the target, plus or minus a tolerance that defaults to 3000 -
-    # twice the largest drift measured within one screen, and well inside the
-    # smallest gap measured between two.
+    # fix.
+    #
+    # **How wide, and why it is not a global constant.** The menus are not spread
+    # evenly. Above 70,000 they are far apart and any sane window works. Between
+    # 37,000 and 56,000 they are crowded - GAME SELECT, three save-file screens
+    # and the initials entry all live there - and a window sized for the sparse
+    # part accepts the wrong one. Measured the same day:
+    #
+    #     GAME SELECT, three sightings   39592  39625  40554   drift 962
+    #     what a 3500 window accepted    43570   -> 3016 above every sighting
+    #     a save-file screen             49755 / 49987
+    #     another                        53295
+    #     the initials entry             56331
+    #
+    # So the default is 2000, twice the drift actually observed within a screen
+    # and tight enough to reject that impostor. A caller walking the sparse part
+    # can pass more; a caller walking the crowded part should not, and should read
+    # the printed gap rather than trust the arrival.
     need_running; shift
     [[ $# -ge 2 ]] || die "usage: pad-until-screen <control> <colours> [tolerance]"
-    ps_control="$1"; ps_target="$2"; ps_tol="${3:-3000}"
+    ps_control="$1"; ps_target="$2"; ps_tol="${3:-2000}"
     command -v import >/dev/null || die "ImageMagick (import) is required"
     ps_shot="$(mktemp --suffix=.png)"
     trap 'rm -f "$ps_shot"' EXIT

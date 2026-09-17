@@ -246,6 +246,23 @@ three times the largest change measured within a screen, a third of the smallest
 between two - and `DKR_DRIVE_DELTA` moves it. Measured live afterwards, one
 genuine advance read 73,470.
 
+**The menu band between 37,000 and 56,000 colours is crowded, and a fingerprint
+is weak there.** Above 70,000 the screens are far apart and any sane window works.
+Below it they are not:
+
+    GAME SELECT, three sightings    39592  39625  40554   drift 962
+    what a 3500 window accepted     43570   -> 3016 above every sighting
+    a save-file screen              49755 / 49987
+    another                         53295
+    the initials entry              56331
+
+A window sized for the sparse part accepts the wrong screen in the crowded one -
+which is how a route reached "GAME SELECT" at 43,570 on 17 September, pressed
+`down` and `a` on something else, and then spent ten presses looking for a screen
+it could no longer reach. `pad-until-screen` now defaults to 2000, twice the drift
+actually observed within a screen. Walking this band, read the printed gap rather
+than trusting the arrival.
+
 **Screen fingerprints, for identifying where a route has got to.** Mean brightness
 and distinct colours over the guest's area, `-crop 667x500+0+55`. Text, so they can
 live here; the captures they came from cannot:
