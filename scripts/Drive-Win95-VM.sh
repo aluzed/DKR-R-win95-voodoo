@@ -18,6 +18,9 @@
 #                                                  actually moves -- walk a menu
 #                                                  route with this, never with a
 #                                                  fixed number of presses
+#   scripts/Drive-Win95-VM.sh game-mode            what the running game says it
+#                                                  is doing: INTRO, MENU, INGAME.
+#                                                  INGAME is a race
 #   scripts/Drive-Win95-VM.sh type "E:\WIN95\INSTALL.EXE"
 #   scripts/Drive-Win95-VM.sh run "D:\DKRR.EXE D:\DKR.Z64"   starts the game
 #   scripts/Drive-Win95-VM.sh run-glide "D:\REPLAY.EXE ..."  starts it, checks
@@ -548,6 +551,43 @@ case "${1:-}" in
       say "pad-until: press $attempt left the screen where it was (delta $delta)"
     done
     die "pad-until: six presses of '$*' and the screen never moved"
+    ;;
+  game-mode)
+    # **What the game says it is doing, read from the host while it runs.**
+    #
+    # `pad-until` can tell that the screen moved and not what it moved to, because
+    # these menus animate and no bound on an image difference separates the two.
+    # The game itself has no such difficulty: it logs `gGameMode` - -1 INTRO,
+    # 0 INGAME, 1 MENU, 5 LOCKUP - which is exactly the signal a route to a race
+    # needs, since a race is the one that reads 0.
+    #
+    # It was written off as unreachable while the guest runs, on the grounds that
+    # Windows 95 holds a write behind its cache. That is only half true and the
+    # half that matters is the other one: `dkr_diag_commit` closes and reopens the
+    # log, from the display-list report and again every three hundred presents,
+    # precisely so that a program that is killed rather than closed still leaves a
+    # readable tail. So the directory entry is current within a few seconds, and
+    # `mtools` reads it with the dirty flag skipped - the same way every image has
+    # been read off this disk mid-run today.
+    #
+    # **Two limits, and they are the reason this prints a line rather than a
+    # verdict.** The mode is coarse: every menu screen in the game reads MENU, so
+    # this cannot tell PLAYER SELECT from GAME SELECT. And it lags: the line is
+    # printed with the display-list report, once in sixty lists, which at this
+    # target's frame rate is on the order of ten seconds.
+    need_running
+    command -v mcopy >/dev/null || die "mtools is required"
+    mode_img="$VM/transfer.img@@$((63 * 512))"
+    mode_log="$(mktemp)"
+    trap 'rm -f "$mode_log"' EXIT
+    MTOOLS_SKIP_CHECK=1 mcopy -o -i "$mode_img" \
+      ::/dkr-runtime-data/logs/runtime.log "$mode_log" 2>/dev/null \
+      || die "the guest has written no runtime log yet"
+    mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1)"
+    if [[ -z "$mode_line" ]]; then
+      die "the log is there but carries no game mode line yet"
+    fi
+    say "$mode_line"
     ;;
   hold)
     # Presses a key, waits, releases it. `key` above sends a press and a release
