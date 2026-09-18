@@ -502,3 +502,66 @@ and all of them transfer unchanged to a raised floor or to the native port.
 The risk section of E00-S03 said this outcome was acceptable and was the ticket's
 reason for being. It cost six weeks rather than the three months it would have cost
 after E04 and E05, which is what the ordering was for.
+
+## How wrong is the model? Measured — 18 September 2026
+
+Every figure above is 86Box's prediction, and this report has said so since August
+without ever putting a number on the error. `CPUMODEL.EXE`
+(`tools/win95/witnesses/cpu_model_probe.c`) puts one there.
+
+It cites no published benchmark on purpose. Dhrystone's Pentium II figures vary by
+compiler, version and who ran them, and calibrating against a number whose
+provenance cannot be checked would reintroduce the same uncertainty by another
+door. The four kernels are chosen so that their cost on silicon follows from the
+**documented architecture** — a three-wide core, 16 KB of L1, 512 KB of L2 at half
+clock, a 100 MHz memory bus.
+
+    clock 1193180 Hz, modelling 400 MHz
+    dep_add       1.13 cycles/op   (real P2: 1.00, the latency of add)
+    ind_add       0.75 cycles/op   (real P2: near 0.33, three-wide)
+    l1_chase      2.12 cycles/step (real P2: about 3, L1 load-use)
+    mem_chase    11.04 cycles/step (real P2: tens, on a 100 MHz bus)
+    RATIO mem/L1 = 5.2
+
+**The kernels carry loop overhead that must be subtracted before any of this is
+read as a bias**, and doing so changes two of the four readings:
+
+| kernel | measured | expected *with* the loop | reading |
+|---|---:|---:|---|
+| `dep_add` | 1.13 | 1.25 | the cycle model is sound |
+| `ind_add` | 0.75 | 0.59 | mildly pessimistic, not the 2.3× it first looks |
+| `l1_chase` | 2.12 | ~3 | mildly optimistic |
+| `mem_chase` | 11.04 | 60–80 | **optimistic by roughly six** |
+
+### What this says, and it is the answer to "is it the Pentium II or the emulator?"
+
+**It is the Pentium II.** The instruction-timing model is accurate where it can be
+checked against a documented latency: a dependent `add` chain comes out at 1.13
+cycles against 1.25 predicted with the loop, which is as close as this method can
+resolve. Superscalar issue is if anything under-credited, which makes the emulated
+CPU look *slower* than silicon on parallel work.
+
+The exception is memory, and it is a large one. Eleven cycles for a random access
+across eight megabytes is 27.6 ns; a Pentium II 400 on a 100 MHz bus takes 150 to
+200 ns for the same thing. The model is optimistic there by about a factor of six,
+and the `mem/L1` ratio of 5.2 against tens on silicon says the hierarchy is barely
+represented.
+
+**Which way that moves the verdict.** The recompiled code chases an eight-megabyte
+RDRAM image and is the most memory-bound thing in the frame; the renderer works on
+warmer, smaller buffers. So the 73.5 % term is precisely the one the model
+flatters. Real silicon would be **worse than 170 ms**, not better, and E00-S03's
+no-go is conservative rather than an artefact of emulation.
+
+### What this does not license
+
+It does not turn the six into a corrected frame time. How much of the 125 ms is
+memory-bound is not measured, so the correction cannot be applied — only its
+direction is established. And the "150 to 200 ns" is a documented range for the
+class of machine, not a measurement of one; E09-S04 remains the way to replace it
+with a number.
+
+What has changed is that the reservation is no longer open-ended. It was "the model
+is wrong by an unknown amount in an unknown direction". It is now "the model is
+right on instruction timing, optimistic by about six on main memory, and therefore
+wrong in the direction that makes the port look better than it is".
