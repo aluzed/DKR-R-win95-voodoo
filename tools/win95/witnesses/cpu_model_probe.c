@@ -141,12 +141,18 @@ static unsigned chase(const unsigned int *a, unsigned long steps)
  * If the two come out equal, branches are free in the model, and every count this
  * project has taken of recompiled-code time is missing whatever the real predictor
  * would have charged. */
-static unsigned branchy(const unsigned char *pattern, unsigned long n)
+/* `mask` wraps the walk inside the buffer. The first version indexed `pattern[i]`
+   with `i` running to `n`, which is sixty times the 64 KB allocated - it read four
+   megabytes past the end, faulted, and left the report file open at zero bytes.
+   The screen's fingerprint, identical twenty minutes apart, is what showed it:
+   nothing was still running. */
+static unsigned branchy(const unsigned char *pattern, unsigned long n,
+                        unsigned long mask)
 {
     unsigned taken = 0;
     unsigned long i;
     for (i = 0; i < n; i++) {
-        if (pattern[i] & 1u) { taken += 3u; } else { taken ^= 7u; }
+        if (pattern[i & mask] & 1u) { taken += 3u; } else { taken ^= 7u; }
     }
     return taken;
 }
@@ -212,9 +218,9 @@ int main(void)
         pat_easy[bi] = (unsigned char)(bi & 1u);          /* strict alternation */
         pat_hard[bi] = (unsigned char)((bi * 1103515245ul + 12345ul) >> 16);
     }
-    t0 = dkr_clock_now_us(); sink += branchy(pat_easy, (1ul << 16) * 60ul); t1 = dkr_clock_now_us();
+    t0 = dkr_clock_now_us(); sink += branchy(pat_easy, (1ul << 16) * 60ul, 0xFFFFul); t1 = dkr_clock_now_us();
     br_easy = per_op_cycles(t1 - t0, 65536.0 * 60.0);
-    t0 = dkr_clock_now_us(); sink += branchy(pat_hard, (1ul << 16) * 60ul); t1 = dkr_clock_now_us();
+    t0 = dkr_clock_now_us(); sink += branchy(pat_hard, (1ul << 16) * 60ul, 0xFFFFul); t1 = dkr_clock_now_us();
     br_hard = per_op_cycles(t1 - t0, 65536.0 * 60.0);
 
     say("dep_add   %8.2f cycles/op   (real P2: 1.00, the latency of add)\n", dep_c);
