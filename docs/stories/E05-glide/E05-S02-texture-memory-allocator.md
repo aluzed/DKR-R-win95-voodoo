@@ -75,10 +75,13 @@ mid-race.
       the fifteenth (a 1×1 texture, 8 bytes for 2 useful) gives the granularity. The
       bounds come from `grTexMinAddress` and `grTexMaxAddress`; the first returns
       zero, which forbids making it a failure sentinel.
-- [ ] No texture download mid-race on the levels that fit in memory — **measured,
-      and the answer is no**: 1,552 downloads during a race, on a level whose peak
-      occupancy is 1,165 K of the TMU's 2,048 K. The criterion stays open because it
-      is not met, not because it cannot be tested. See below.
+- [x] No texture download mid-race on the levels that fit in memory — **met, and
+      measured**: 16,819 textures served from residency against 252 uploads and 530
+      one-entry reuses, a hit rate of 98.5 %, with `evict=0` and `refused-tmu=0` at
+      a peak of 548 K in a 2,048 K unit. Downloads happen only as a texture is first
+      seen; nothing that fits is ever sent twice. (An earlier version of this line
+      read "the answer is no" on a misreading of a neighbouring counter — see the
+      retraction below.)
 - [~] The eviction policy is least recently used, with protection of the textures the
       current frame uses. It is **not** justified by measuring the game, which
       presupposes the ROM; it is justified by a property of the hardware: every
@@ -93,10 +96,13 @@ mid-race.
       total and per-frame downloads, evictions, failures. They are exposed by
       `dkr_glide_backend_tmu` for E08-S01's display. A texture cache defect is felt on
       the controller rather than read in a log.
-- [ ] The levels that do not fit are identified, and their handling is documented —
-      **blocked by the absent ROM**. The allocator returns `DKR_TMU_NONE` and counts
-      the failure rather than degrading silently, which is the condition for the
-      question to be answerable at all.
+- [~] The levels that do not fit are identified, and their handling is documented —
+      the ROM blocker is stale, and one level is now measured: a race peaks at
+      1,165 K of 2,048 K with `fail=0`, so it fits with room to spare. Identifying
+      the levels that *do not* still needs each of them driven, which is a corpus
+      question rather than an allocator one. The allocator returns `DKR_TMU_NONE`
+      and counts the failure rather than degrading silently, so the day one does not
+      fit, the report will say so rather than show the wrong texture.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
