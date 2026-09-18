@@ -268,6 +268,35 @@ with a cheap fix.
 two consecutive frames on the same screen. Same address, and the fault is downstream
 of it; different address, and the design question is real.
 
+### The address holds still, so that explanation is wrong too — 18 September 2026
+
+    matches=0 of  97   timg: first=0x263E20 lo=0x1F4050 hi=0x2C8C40
+    matches=0 of  97   timg: first=0x263E20 lo=0x1F4050 hi=0x266090
+    matches=0 of 210   timg: first=0x252D60 lo=0x20CCE0 hi=0x3712C0
+    matches=0 of 252   timg: first=0x252D60 lo=0x20CCE0 hi=0x319ED0
+
+`first` and `lo` are **identical** between consecutive reports on the same screen,
+across two different screens. The textures are not being DMA'd to a moving scratch
+area; the address the key is built on holds still. The leading explanation of the
+previous section is refuted, which is the third time an instrument in this
+investigation has contradicted the hypothesis that prompted it.
+
+And `matches` is still zero, over 252 uploads, 42 of them between the last two
+reports.
+
+So: a stable address, a stable format and size, a stable width and height — and a
+key that never recurs. Those cannot all be true, which means one of the four terms
+does move, or the key is not what the slot table compares.
+
+**The next instrument is the smallest yet**: print the 64-bit key itself for the
+first upload of each report, beside the address already printed. Same address and a
+different key names which term moves. Same key and no match names the comparison.
+
+`hi` does vary from report to report — 0x2C8C40 against 0x266090 — so the *set* of
+textures a screen touches changes over time even when the screen looks still. That
+is worth knowing but it does not rescue the moving-address explanation: it is the
+top of a range, not the address the first key is built on, and that one held.
+
 ### The question this left, and which the instrument has now narrowed
 
 **Why does `dkr_tmu_alloc` fail often enough to force 1,040 evictions when the unit
