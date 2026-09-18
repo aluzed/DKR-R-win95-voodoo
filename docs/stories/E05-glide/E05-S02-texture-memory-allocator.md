@@ -227,6 +227,47 @@ impossible rather than failing at something possible.
 That is the next instrument, and like the last two it is smaller than the argument it
 replaces.
 
+### Measured: a key never comes back — 18 September 2026
+
+    key recurrence: matches=0 of 250 uploads
+    tmu0: hits=0/250 downloads=250 bytes=561408 evict=0 fail=0 peak=548K
+    refusal-detail: aspect=0 size=0 slots=0 tmu-memory=0 reclaimed=0
+    conversions: distinct-keys=99 overflow=0 repeats=36
+
+**Not one key in two hundred and fifty uploads.** And `reclaimed=0` closes the last
+hole: no slot was ever recycled, so every one of those 250 entries is still live and
+still carrying its key. A repeat would have matched. None did.
+
+Meanwhile the decoder reports 86 to 99 distinct keys *per frame* with 36 to 53
+repeats, so keys repeat perfectly well **inside** a frame — the decoder's one-entry
+cache absorbs the consecutive ones before they ever reach the backend. What never
+happens is a key coming back **between** frames: the whole set turns over.
+
+### What this means for the design, and it is not small
+
+The residency cache is not failing at something possible. It is being asked for
+something impossible: a cache keyed on identity cannot hit when the identity is new
+every frame. Every number in this ticket now follows from that one fact — the zero
+hits, the zero evictions, the peak that only climbs, the three megabytes re-sent
+across a session.
+
+The key is `timg_address << 24 ^ fmt << 20 ^ siz << 18 ^ width << 9 ^ height`. The
+shape terms cannot be what moves — a tile's format and size are stable. **The
+leading explanation is that `timg_address` moves**, which is what a game does when it
+DMAs its textures into a scratch area each frame rather than leaving them at rest in
+ROM-shadowed RAM.
+
+That is the leading explanation and **not yet measured**, and the difference matters
+because the remedy differs. If the address moves, no address-derived key can work and
+the cache must key on *content* — a hash of the texels — which costs CPU on a frame
+already 5.1× over its budget (E00-S03), and which would have to be weighed rather
+than assumed. If instead something in the port perturbs the address, that is a bug
+with a cheap fix.
+
+**What would settle it in one run**: log `timg_address` for the first tile of each of
+two consecutive frames on the same screen. Same address, and the fault is downstream
+of it; different address, and the design question is real.
+
 ### The question this left, and which the instrument has now narrowed
 
 **Why does `dkr_tmu_alloc` fail often enough to force 1,040 evictions when the unit
