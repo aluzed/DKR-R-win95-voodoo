@@ -129,6 +129,28 @@ static unsigned chase(const unsigned int *a, unsigned long steps)
     return at;
 }
 
+/* **Branch prediction, the second thing the report says is not modelled.**
+ *
+ * It matters as much as memory here: translated MIPS is dense with branches, and a
+ * Pentium II pays about fifteen cycles for a mispredict against roughly nothing for
+ * a correct one. Two loops over the same array of bytes, one whose values alternate
+ * in a pattern the predictor learns, one whose values are unpredictable. The
+ * difference is the misprediction cost as the model charges it; on silicon it is
+ * ten to fifteen cycles.
+ *
+ * If the two come out equal, branches are free in the model, and every count this
+ * project has taken of recompiled-code time is missing whatever the real predictor
+ * would have charged. */
+static unsigned branchy(const unsigned char *pattern, unsigned long n)
+{
+    unsigned taken = 0;
+    unsigned long i;
+    for (i = 0; i < n; i++) {
+        if (pattern[i] & 1u) { taken += 3u; } else { taken ^= 7u; }
+    }
+    return taken;
+}
+
 /* --- Timing ------------------------------------------------------------------ */
 
 static double per_op_cycles(unsigned long long us, double ops)
@@ -141,8 +163,11 @@ int main(void)
     unsigned long long t0, t1;
     double dep_c, ind_c, l1_c, mem_c;
     unsigned sink = 0;
-    unsigned int *small_a, *big_a;
-    unsigned long small_n = 0, big_n = 0;
+    unsigned int *small_a, *l2_a, *big_a;
+    unsigned long small_n = 0, l2_n = 0, big_n = 0;
+    unsigned char *pat_easy, *pat_hard;
+    double l2_c, br_easy, br_hard;
+    unsigned long bi;
 
     g_out = fopen("D:\\CPUMODEL.TXT", "w");
     if (!dkr_clock_init()) {
@@ -160,25 +185,52 @@ int main(void)
     ind_c = per_op_cycles(t1 - t0, 2000000.0 * 8.0);
 
     small_a = build_chase(4096ul, &small_n);
+    /* 256 KB: comfortably inside the 512 KB L2 and far outside the 16 KB L1, so it
+       isolates the middle tier. Three tiers reading alike would mean no hierarchy
+       at all rather than a merely optimistic one. */
+    l2_a    = build_chase(256ul * 1024ul, &l2_n);
     big_a   = build_chase(8ul * 1024ul * 1024ul, &big_n);
-    if (!small_a || !big_a) { fputs("out of memory\n", stdout); return 2; }
+    if (!small_a || !l2_a || !big_a) { fputs("out of memory\n", stdout); return 2; }
 
     /* Warm the small one; the big one is a miss by construction. */
     sink += chase(small_a, small_n * 4u);
     t0 = dkr_clock_now_us(); sink += chase(small_a, small_n * 200u); t1 = dkr_clock_now_us();
     l1_c = per_op_cycles(t1 - t0, (double)small_n * 200.0);
 
+    sink += chase(l2_a, l2_n * 2u);
+    t0 = dkr_clock_now_us(); sink += chase(l2_a, l2_n * 30u); t1 = dkr_clock_now_us();
+    l2_c = per_op_cycles(t1 - t0, (double)l2_n * 30.0);
+
     t0 = dkr_clock_now_us(); sink += chase(big_a, big_n * 2u); t1 = dkr_clock_now_us();
     mem_c = per_op_cycles(t1 - t0, (double)big_n * 2.0);
+
+    /* Branches: the same loop, one pattern learnable and one not. */
+    pat_easy = (unsigned char *)malloc(1u << 16);
+    pat_hard = (unsigned char *)malloc(1u << 16);
+    if (!pat_easy || !pat_hard) { fputs("out of memory\n", stdout); return 2; }
+    for (bi = 0; bi < (1ul << 16); bi++) {
+        pat_easy[bi] = (unsigned char)(bi & 1u);          /* strict alternation */
+        pat_hard[bi] = (unsigned char)((bi * 1103515245ul + 12345ul) >> 16);
+    }
+    t0 = dkr_clock_now_us(); sink += branchy(pat_easy, (1ul << 16) * 60ul); t1 = dkr_clock_now_us();
+    br_easy = per_op_cycles(t1 - t0, 65536.0 * 60.0);
+    t0 = dkr_clock_now_us(); sink += branchy(pat_hard, (1ul << 16) * 60ul); t1 = dkr_clock_now_us();
+    br_hard = per_op_cycles(t1 - t0, 65536.0 * 60.0);
 
     say("dep_add   %8.2f cycles/op   (real P2: 1.00, the latency of add)\n", dep_c);
     say("ind_add   %8.2f cycles/op   (real P2: near 0.33, three-wide)\n", ind_c);
     say("l1_chase  %8.2f cycles/step (real P2: about 3, L1 load-use)\n", l1_c);
     say("mem_chase %8.2f cycles/step (real P2: tens, on a 100 MHz bus)\n", mem_c);
+    say("l2_chase  %8.2f cycles/step (real P2: about 8-12, L2 at half clock)\n", l2_c);
     say("RATIO mem/L1 = %.1f   -- on silicon this is tens\n",
         l1_c > 0.0 ? mem_c / l1_c : 0.0);
+    say("branch predictable   %8.2f cycles/iter\n", br_easy);
+    say("branch unpredictable %8.2f cycles/iter\n", br_hard);
+    say("MISPREDICT COST = %.2f cycles -- on silicon about 10-15\n",
+        br_hard - br_easy);
 
-    free(small_a); free(big_a);
+    free(small_a); free(l2_a); free(big_a);
+    free(pat_easy); free(pat_hard);
     if (g_out) { fclose(g_out); }
     return (int)(sink & 1u);
 }
