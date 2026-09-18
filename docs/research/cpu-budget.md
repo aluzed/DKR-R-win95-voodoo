@@ -553,6 +553,54 @@ warmer, smaller buffers. So the 73.5 % term is precisely the one the model
 flatters. Real silicon would be **worse than 170 ms**, not better, and E00-S03's
 no-go is conservative rather than an artefact of emulation.
 
+### Completed, 18 September 2026: two tiers of the model are simply absent
+
+The first run measured instruction timing and main memory. Adding the middle cache
+tier and a branch kernel finishes the picture, and both new readings are flat zeros
+rather than approximations:
+
+    dep_add       1.13 cycles/op   (real P2: 1.00, the latency of add)
+    ind_add       0.75 cycles/op   (real P2: near 0.33, three-wide)
+    l1_chase      2.16 cycles/step (real P2: about 3, L1 load-use)
+    l2_chase      2.03 cycles/step (real P2: about 8-12, L2 at half clock)
+    mem_chase    11.05 cycles/step (real P2: tens, on a 100 MHz bus)
+    branch predictable       5.52 cycles/iter
+    branch unpredictable     5.18 cycles/iter
+    MISPREDICT COST = -0.35 cycles  (real P2: about 10-15)
+
+**The second-level cache does not exist in the model.** A 256 KB working set — well
+inside the real 512 KB L2 and sixteen times the L1 — costs 2.03 cycles a step
+against L1's 2.16. The same, within noise. On silicon that tier costs three to four
+times L1, because it runs at half the core clock.
+
+**A mispredicted branch is free.** The unpredictable pattern comes out 0.35 cycles
+*faster* than the alternating one, which is noise around zero and has to be read as
+"no charge at all". On silicon the same experiment separates by ten to fifteen
+cycles.
+
+### So the model flatters exactly the code this port is made of
+
+Three independent axes, all leaning the same way:
+
+| effect | model | silicon | who it flatters |
+|---|---|---|---|
+| instruction latency | 1.13 | 1.25 expected with the loop | nobody — it is right |
+| superscalar issue | 0.75 | 0.59 expected | mildly pessimistic |
+| L2 | absent | 8–12 cycles | **anything with a working set over 16 KB** |
+| main memory | 11 cycles | 60–80 | **anything that walks megabytes** |
+| branch mispredict | free | 10–15 cycles | **anything branch-dense** |
+
+Translated MIPS is branch-dense by construction — every `beq` in the original
+becomes a test and a jump — and it chases an eight-megabyte RDRAM image. It is the
+workload those three rows describe. The renderer, working on warmer and smaller
+buffers with longer straight runs, is much less affected.
+
+So the 73.5 % term is flattered on three counts and the 13.6 % term on none of them
+much. The answer to *"is it the Pentium II or the fact that we emulate one?"* is
+**the Pentium II**, and more firmly than the first run could say: the emulator is
+not making the machine look bad, it is making it look considerably better than it
+would be.
+
 ### What this does not license
 
 It does not turn the six into a corrected frame time. How much of the 125 ms is
