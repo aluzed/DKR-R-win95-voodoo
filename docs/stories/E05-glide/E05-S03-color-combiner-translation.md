@@ -91,7 +91,33 @@ deviation.
       `PASS2` is the identity, `(COMBINED,0,X,0)` is a scaling that composes — which
       avoids declaring every second cycle multipass and doubling the fill on the most
       common surfaces.
-- [ ] The multipass fill cost is measured — not yet done. **The reason given here is
+- [x] The multipass fill cost is measured — **18 September 2026**, and the claim
+      below that "there is no multipass to measure" is itself now stale: second
+      passes exist, are counted, and are drawn. `CAP2600`, a race, on the card:
+
+          second pass: drawn=213 (by-shade=201, approximate over a blended
+                       first pass=42) skipped: identity=4315 unsupported=0
+          first cycle in two blends: drawn=201 | texel-alone: drawn=0
+
+      **Two hundred and thirteen drawn against four thousand three hundred and
+      fifteen skipped** — 95.3 % of candidate second passes cost nothing because
+      they would be the identity, which is exactly what the paragraph below
+      predicted from the corpus and is now measured on the card rather than
+      inferred from fill. On a menu (`CAP0420`) the figures are 0 drawn and 97
+      skipped: the mechanism is exercised only where the second cycle does
+      something.
+
+      One figure in the same report does **not** line up and is recorded rather
+      than explained: `triangles reaching the card: 2341` against `emitted=2335`,
+      six more, where 213 extra passes ought to show as many more draws. The two
+      counters plainly measure different things — passes are not triangles — and
+      saying which would need the one that counts draw calls, not the one that
+      counts geometry.
+
+      The original text of this criterion follows, kept because its reasoning
+      holds and its bound turned out right:
+
+      Not yet done. **The reason given here is
       no longer true**: it said "it needs a race, not the menu, and the port does not
       render one legibly yet", and since 4 September 2026 the port renders one legibly
       and E09-S02's corpus holds a frozen capture of it (`CAP0400.BIN`) and of a hub
