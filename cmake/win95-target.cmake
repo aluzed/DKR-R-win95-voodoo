@@ -713,6 +713,22 @@ set_target_properties(DKRWin95GlideProbe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95GlideProbe)
 
+# --- How wrong is 86Box's Pentium II model? (E00-S03 / E09-S04) --------------
+#
+# The go/no-go rests on a frame measured inside an emulated Pentium II, and the
+# report says in as many words that the model reproduces neither the real caches
+# nor the period's memory bandwidth. This measures by how much, using kernels
+# whose cost on silicon follows from the documented architecture rather than from
+# a published benchmark whose provenance cannot be checked.
+add_executable(DKRWin95CpuModel
+    "${DKR_WIN95_TOOLS}/witnesses/cpu_model_probe.c")
+target_link_libraries(DKRWin95CpuModel PRIVATE win95clock winmm)
+set_target_properties(DKRWin95CpuModel PROPERTIES
+    OUTPUT_NAME "CPUMODEL"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95CpuModel)
+
 # Replays the render state the game produces and **reads the frame buffer back**.
 # Six measurements cleared the decoder; what remains is what the card does with
 # the state, and that cannot be seen from the game -- there you observe what you
