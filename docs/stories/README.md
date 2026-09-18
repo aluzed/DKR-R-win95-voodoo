@@ -55,6 +55,24 @@ rather than code. Each line now carries the evidence it rests on.*
 | [E09](E09-qa/) | Integration, QA and distribution | 5 | 2 | 3 | The test machine is complete; a real frame of the game now replays through both backends and is compared automatically. The corpus of captures is one capture |
 | | **Total** | **56** | **40** | **16** | |
 
+### What the four statuses mean here
+
+Written down on 18 September 2026 because nothing said, and a reconciliation pass
+had to guess. **This is descriptive — it records how the backlog actually uses
+them — and should be corrected rather than obeyed if the intent was different.**
+
+| Status | As used in this backlog |
+|---|---|
+| `TODO` | Not started, or started and abandoned. No acceptance criterion ticked. |
+| `IN_PROGRESS` | Work exists on the target and some criteria are ticked; at least one is open or partial. |
+| `REVIEW` | Every criterion is ticked and the work has been exercised, but nobody has signed it off. |
+| `DONE` | Signed off. A criterion that turned out unreachable is recorded as a result, not left open. |
+
+The distinction that matters in practice is the last one: `REVIEW` is a statement
+about the work, `DONE` is a statement about somebody having looked at it. A
+reconciliation can move a ticket to `REVIEW` from its own criteria; it cannot move
+it to `DONE`.
+
 **"Built" means the code exists and has been exercised on the target**, not that
 the ticket's acceptance criteria are ticked — almost none are, which is a
 bookkeeping debt and not an engineering one.

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E02 — Windows 95 system substrate |
-| **Status** | IN_PROGRESS |
+| **Status** | DONE |
 | **Priority** | P1 |
 | **Estimate** | S |
 | **Depends on** | E02-S03 |
