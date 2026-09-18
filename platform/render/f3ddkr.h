@@ -273,6 +273,18 @@ typedef struct {
        linear scan that computes it already ran -- only the counter was
        missing. */
     unsigned long     distinct_repeats;
+    /* **Where the frame's textures live in RDRAM.**
+     *
+     * The backend measured `matches=0 of 250 uploads` on 18 September: no texture
+     * key ever comes back between frames, while keys repeat freely inside one. The
+     * key is `timg_address ^ format ^ size ^ width ^ height` and the shape terms
+     * are stable, so the address is the suspect and nothing recorded it.
+     *
+     * `timg_first` is the first texture image a list names; `timg_lo`/`timg_hi`
+     * bound them all. Two reports from the same screen settle it: an address that
+     * holds means the fault is downstream of the key, one that moves means no
+     * address-derived key can ever hit and the cache has to key on content. */
+    unsigned int      timg_first, timg_lo, timg_hi;
     unsigned long     textures_refused;   /* texture memory full */
     /* Padded up to the next power of two, which the Voodoo requires and the N64
        does not. */

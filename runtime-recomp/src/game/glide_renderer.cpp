@@ -1419,6 +1419,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                          "[gfx]   key recurrence: matches=%lu of %lu uploads\n",
                          matches, uploads);
         }
+        // Where this frame's textures sat in RDRAM. Two reports from the same
+        // screen say whether the address the key is built on holds still.
+        std::fprintf(stderr,
+                     "[gfx]   timg: first=0x%06X lo=0x%06X hi=0x%06X\n",
+                     context_.state.timg_first, context_.state.timg_lo,
+                     context_.state.timg_hi);
         std::fprintf(stderr,
                      "[gfx]   padded-to-power-of-2=%lu "
                      "refused-aspect=%lu\n",

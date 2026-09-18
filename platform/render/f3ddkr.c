@@ -1780,6 +1780,13 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         dkr_n64_format key_fmt;
         dkr_n64_size   key_siz;
         dkr_texel_declaration(c, &key_fmt, &key_siz);
+        if (c->state.timg_first == 0u) { c->state.timg_first = c->timg_address; }
+        if (c->state.timg_lo == 0u || c->timg_address < c->state.timg_lo) {
+            c->state.timg_lo = c->timg_address;
+        }
+        if (c->timg_address > c->state.timg_hi) {
+            c->state.timg_hi = c->timg_address;
+        }
         key = ((unsigned long long)c->timg_address << 24)
             ^ ((unsigned long long)key_fmt << 20)
             ^ ((unsigned long long)key_siz << 18)
