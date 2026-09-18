@@ -481,6 +481,14 @@ unsigned long dkr_glide_backend_upload_failure(int kind);
    and not a hope: the two together say whether the reclaim is doing the work
    or whether the working set has simply not reached the limit yet. */
 unsigned long dkr_glide_backend_slots_reclaimed(void);
+
+/* **How often a texture key comes back**, cumulative across frames, beside how
+   many uploads were attempted. The decoder's distinct-key figures are reset by
+   `dkr_f3d_init` once per display list and cannot answer this; these two can.
+   If they track each other, keys never recur and a residency cache reporting no
+   hits is being asked for the impossible. */
+void dkr_glide_backend_key_recurrence(unsigned long *matches,
+                                      unsigned long *uploads);
 /* **Which Glide entry points the card's driver actually exports.**
  *
  * They are resolved by `GetProcAddress`, which answers null for a name it cannot

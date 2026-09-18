@@ -253,6 +253,10 @@ static unsigned long g_tex_failures[GL_TEX_FAIL_COUNT];
 /* Slots taken back rather than refused. Reported so that "the table never fills"
    is a figure and not a hope. */
 static unsigned long g_tex_reclaimed;
+/* See the scan in the upload path: how often a key comes back to a slot that is
+   still live, against how many uploads were attempted at all. */
+static unsigned long g_tex_key_matches;
+static unsigned long g_tex_uploads_seen;
 /* The table's own clock, advanced on every upload and every binding. The
    allocator has one of its own and they are deliberately separate: this one
    measures the age of a *handle*, which is what the table hands out. */
@@ -281,6 +285,13 @@ unsigned long dkr_glide_backend_upload_failure(int kind)
 unsigned long dkr_glide_backend_slots_reclaimed(void)
 {
     return g_tex_reclaimed;
+}
+
+void dkr_glide_backend_key_recurrence(unsigned long *matches,
+                                      unsigned long *uploads)
+{
+    if (matches) { *matches = g_tex_key_matches; }
+    if (uploads) { *uploads = g_tex_uploads_seen; }
 }
 
 #define GLIDE_MAX_TEXTURES 512
@@ -2391,10 +2402,22 @@ static dkr_texture_handle gl_texture_upload(void *self,
     bytes = gs.tex_required(GR_MIPMAPLEVELMASK_BOTH, &info);
     if (bytes == 0u) { g_tex_failures[GL_TEX_FAIL_SIZE]++; return 0; }
 
+    /* **Does a key ever come back?** The one number that separates a residency
+       cache failing at something possible from one asked to do the impossible.
+       The scan below already answers it and nobody was counting: a live slot
+       carrying this key means the backend has seen it before and still holds it.
+       Cumulative, because the decoder's own counters are memset once per display
+       list and cannot see across frames - which is what made an earlier reading
+       of these figures wrong. */
     for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
-        if (g_tex[i].live && g_tex[i].key == desc->key) { slot = i; break; }
+        if (g_tex[i].live && g_tex[i].key == desc->key) {
+            slot = i;
+            g_tex_key_matches++;
+            break;
+        }
         if (!g_tex[i].live && slot < 0) { slot = i; }
     }
+    g_tex_uploads_seen++;
     /* --- The two caches deadlocked each other ------------------------------- *
      *
      * A slot was cleared only when a later allocation's range **overlapped** it.

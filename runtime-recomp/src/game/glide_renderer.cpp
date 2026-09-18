@@ -1404,6 +1404,21 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                      dkr_glide_backend_upload_failure(2),
                      dkr_glide_backend_upload_failure(3),
                      dkr_glide_backend_slots_reclaimed());
+        // **Does a key ever come back?** Cumulative across frames, which the
+        // decoder's own distinct-key figures cannot be: `dkr_f3d_init` memsets
+        // the context once per display list, and reading those per-frame numbers
+        // against the backend's cumulative ones is what made an earlier entry in
+        // E05-S02 wrong. If `matches` stays near zero while `uploads` climbs,
+        // keys never recur and the residency cache reporting no hits is being
+        // asked for something impossible rather than failing at something
+        // possible.
+        {
+            unsigned long matches = 0, uploads = 0;
+            dkr_glide_backend_key_recurrence(&matches, &uploads);
+            std::fprintf(stderr,
+                         "[gfx]   key recurrence: matches=%lu of %lu uploads\n",
+                         matches, uploads);
+        }
         std::fprintf(stderr,
                      "[gfx]   padded-to-power-of-2=%lu "
                      "refused-aspect=%lu\n",
