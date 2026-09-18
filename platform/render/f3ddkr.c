@@ -1792,6 +1792,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             ^ ((unsigned long long)key_siz << 18)
             ^ ((unsigned long long)width << 9)
             ^ (unsigned long long)height;
+        if (c->state.timg_first_key == 0ull) { c->state.timg_first_key = key; }
     }
 
     /* The distinct set, kept before the one-entry cache answers: what is counted

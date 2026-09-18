@@ -285,6 +285,12 @@ typedef struct {
      * holds means the fault is downstream of the key, one that moves means no
      * address-derived key can ever hit and the cache has to key on content. */
     unsigned int      timg_first, timg_lo, timg_hi;
+    /* The 64-bit key built from that very address, recorded at the same moment so
+       the two cannot drift. Four terms go into it and three were shown stable on
+       18 September while the key never recurred, which cannot all hold: same
+       address with a different key names the term that moves, same key with no
+       match names the comparison instead. */
+    unsigned long long timg_first_key;
     unsigned long     textures_refused;   /* texture memory full */
     /* Padded up to the next power of two, which the Voodoo requires and the N64
        does not. */

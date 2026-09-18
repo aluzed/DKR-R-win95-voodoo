@@ -1422,9 +1422,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         // Where this frame's textures sat in RDRAM. Two reports from the same
         // screen say whether the address the key is built on holds still.
         std::fprintf(stderr,
-                     "[gfx]   timg: first=0x%06X lo=0x%06X hi=0x%06X\n",
+                     "[gfx]   timg: first=0x%06X lo=0x%06X hi=0x%06X"
+                     " key=%08lX%08lX\n",
                      context_.state.timg_first, context_.state.timg_lo,
-                     context_.state.timg_hi);
+                     context_.state.timg_hi,
+                     (unsigned long)(context_.state.timg_first_key >> 32),
+                     (unsigned long)(context_.state.timg_first_key & 0xFFFFFFFFull));
         std::fprintf(stderr,
                      "[gfx]   padded-to-power-of-2=%lu "
                      "refused-aspect=%lu\n",
