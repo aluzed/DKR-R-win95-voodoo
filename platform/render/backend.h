@@ -489,6 +489,11 @@ unsigned long dkr_glide_backend_slots_reclaimed(void);
    hits is being asked for the impossible. */
 void dkr_glide_backend_key_recurrence(unsigned long *matches,
                                       unsigned long *uploads);
+
+/* The first and most recent key the *upload path* was handed. Not the same as the
+   decoder's first tile: `f3ddkr.c` keys every tile it examines, uploaded or not. */
+void dkr_glide_backend_key_samples(unsigned long long *first,
+                                   unsigned long long *last);
 /* **Which Glide entry points the card's driver actually exports.**
  *
  * They are resolved by `GetProcAddress`, which answers null for a name it cannot

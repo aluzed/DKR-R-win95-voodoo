@@ -257,6 +257,13 @@ static unsigned long g_tex_reclaimed;
    still live, against how many uploads were attempted at all. */
 static unsigned long g_tex_key_matches;
 static unsigned long g_tex_uploads_seen;
+/* **The key as the upload path sees it**, which is not the key the decoder's
+   first tile carries. `f3ddkr.c` computes a key for every tile it examines,
+   uploaded or not, so an instrument placed there measures a neighbouring
+   quantity — and on 18 September it did: a stable key printed beside
+   `matches=0`, which cannot both describe the same texture. These two are
+   recorded where `dkr_tmu_acquire` is actually called. */
+static unsigned long long g_tex_key_first, g_tex_key_last;
 /* The table's own clock, advanced on every upload and every binding. The
    allocator has one of its own and they are deliberately separate: this one
    measures the age of a *handle*, which is what the table hands out. */
@@ -292,6 +299,13 @@ void dkr_glide_backend_key_recurrence(unsigned long *matches,
 {
     if (matches) { *matches = g_tex_key_matches; }
     if (uploads) { *uploads = g_tex_uploads_seen; }
+}
+
+void dkr_glide_backend_key_samples(unsigned long long *first,
+                                   unsigned long long *last)
+{
+    if (first) { *first = g_tex_key_first; }
+    if (last)  { *last  = g_tex_key_last; }
 }
 
 #define GLIDE_MAX_TEXTURES 512
@@ -2418,6 +2432,8 @@ static dkr_texture_handle gl_texture_upload(void *self,
         if (!g_tex[i].live && slot < 0) { slot = i; }
     }
     g_tex_uploads_seen++;
+    if (g_tex_key_first == 0ull) { g_tex_key_first = desc->key; }
+    g_tex_key_last = desc->key;
     /* --- The two caches deadlocked each other ------------------------------- *
      *
      * A slot was cleared only when a later allocation's range **overlapped** it.

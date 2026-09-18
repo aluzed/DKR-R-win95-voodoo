@@ -1418,6 +1418,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             std::fprintf(stderr,
                          "[gfx]   key recurrence: matches=%lu of %lu uploads\n",
                          matches, uploads);
+            unsigned long long kf = 0, kl = 0;
+            dkr_glide_backend_key_samples(&kf, &kl);
+            std::fprintf(stderr,
+                         "[gfx]   upload keys: first=%08lX%08lX last=%08lX%08lX\n",
+                         (unsigned long)(kf >> 32), (unsigned long)(kf & 0xFFFFFFFFull),
+                         (unsigned long)(kl >> 32), (unsigned long)(kl & 0xFFFFFFFFull));
         }
         // Where this frame's textures sat in RDRAM. Two reports from the same
         // screen say whether the address the key is built on holds still.
