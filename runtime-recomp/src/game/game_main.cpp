@@ -177,8 +177,35 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
         if (task->t.data_size == 0) {
             return EmptyAudioTask;
         }
+        // **What the audio microcode costs, per frame.**
+        //
+        // E00-S03's verdict says in one place that "the audio is in none of these
+        // numbers" and its own table says three lines above that the 147 ms is
+        // "recompiled code, scheduler, **audio**". Both cannot be true, and this
+        // dispatcher settles which: `dkrAspMain` is wired and reached, so the
+        // microcode does run inside the measured frame.
+        //
+        // That matters for what the verdict concludes rather than for its
+        // arithmetic. The ceiling of 22.2 fps assumes E08-S02 *optimising* the
+        // recompiled code. E03-S03 does not optimise this part - it **replaces**
+        // it with a high-level mixer, because E00-S04 measured the microcode path
+        // at 3.9 % of the throughput it needs. Work that is going to be deleted
+        // does not belong in a ceiling computed over work that has to be kept.
+        //
+        // So the cost is measured rather than argued about.
         return +[](std::uint8_t* rdram, std::uint32_t ucode_address) {
-            return dkrAspMain(rdram, ucode_address);
+            static unsigned long long calls = 0, total_us = 0;
+            const unsigned long long t0 = dkr_clock_now_us();
+            const RspExitReason r = dkrAspMain(rdram, ucode_address);
+            const unsigned long long dt = dkr_clock_now_us() - t0;
+            calls++;
+            total_us += dt;
+            if ((calls % 50ull) == 0ull) {
+                std::fprintf(stderr,
+                             "[audio][cost] calls=%llu total=%llu us mean=%llu us\n",
+                             calls, total_us, total_us / calls);
+            }
+            return r;
         };
     }
     std::fprintf(stderr,
