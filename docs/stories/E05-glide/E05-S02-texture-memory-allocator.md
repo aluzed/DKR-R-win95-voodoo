@@ -100,6 +100,53 @@ mid-race.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
+## RETRACTED IN FULL — 18 September 2026: the cache works, and works well
+
+Everything in the four sections below is wrong, and the number that shows it was in
+the same report the whole time, one line above the one I read:
+
+    textures: uploaded=252 reused=530 resident=16819 refused-tmu=0
+    tmu0:     hits=0/252 downloads=252 evict=0 fail=0 peak=548K
+
+**`resident=16819`.** `textures_resident` is incremented on a path in `f3ddkr.c`
+that binds an already-uploaded handle and **returns** — `texture_upload` is never
+called, the allocator is never consulted. Sixteen thousand eight hundred and
+nineteen textures served that way, against 252 genuine uploads and 530 served by
+the one-entry reuse. **A hit rate of 98.5 %.**
+
+So `tmu0: hits=0/252` is not a defect. It says that of the 252 requests which
+reached the allocator — the genuine misses, everything resident having already been
+filtered out upstream — none was resident. **Zero is the healthy value of that
+counter**, and it could only be non-zero if the backend's slot table had lost an
+entry the TMU still held.
+
+What this retracts, item by item: "three megabytes crossed the bus for textures the
+card had already been given" — no, 252 first loads at about 12 K each; "the cache is
+being asked for something impossible" — no, it is answering 98.5 % of what it is
+asked; "a defect in the residency path" — there is no defect; and the arithmetic
+about 122 acquisitions, already corrected once for a different error, was reasoning
+about a population that does not exist.
+
+**How it happened, since that is the part worth keeping.** I read `tmu0: hits` and
+did not read `textures: resident` printed immediately above it. Every instrument
+built afterwards — the free-shape walk, the repeat counter, the key recurrence, the
+address range, the upload-site key — was sound, measured correctly, and answered a
+question that should never have been asked. Three of them contradicted the
+hypothesis that prompted them, which should have been the signal to re-read the
+premise rather than sharpen the next instrument.
+
+The instruments stay: `dkr_tmu_free_shape`, `key recurrence`, the enlarged
+distinct-key set with its repeat counter, and the address and key samples are all
+useful and all cost nothing. They are the one good outcome of a day spent on a
+defect that was not there.
+
+**What the ticket's open criterion actually reads now**: 252 uploads across 300
+display lists, `evict=0`, `refused-tmu=0`, peak 548 K of 2,048 K. Downloads do
+happen as new textures appear, and nothing is being thrashed out to make room. That
+is close to what the criterion asks for and is measured rather than blocked.
+
+---
+
 ## The residency cache reports no hit at all — 17 September 2026
 
 The first measurement of this allocator against a race, taken from the runtime log
