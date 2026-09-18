@@ -601,6 +601,43 @@ much. The answer to *"is it the Pentium II or the fact that we emulate one?"* is
 not making the machine look bad, it is making it look considerably better than it
 would be.
 
+### The workload's shape, measured statically — 18 September 2026
+
+The calibration establishes a direction. Turning it into a magnitude needs the
+recompiled code's own mix, and hardware counters are not available here: `perf`
+refuses without elevated privileges (`perf_event_paranoid` is 4), and changing a
+system-wide kernel setting to take a measurement is not this project's to do.
+
+What is available is the 32-bit objects the bench already builds. Counted across
+all 37 of them:
+
+    instructions             933,015
+    conditional branches      30,546   3.3 %, one every 30 instructions
+    calls                     17,624   1.9 %
+    memory-referencing       575,765   **61.7 %**
+
+**Nearly two instructions in three touch memory**, which follows from the
+translation itself: x86-32 has eight registers for the VR4300's thirty-two, so the
+guest context lives in memory and almost every operation reads or writes it.
+
+### What this does and does not settle
+
+It does **not** license multiplying 61.7 % by the six-fold memory optimism. Most of
+those accesses are to the register context — a few hundred bytes, L1-resident on
+silicon as in the model, and correctly charged by both. The accesses that the model
+flatters are the ones reaching the eight-megabyte RDRAM image, and this static count
+does not separate the two.
+
+What it does settle is that the recompiled code is **memory-shaped rather than
+compute-shaped**, and that is the category the model's two absent tiers punish. Any
+RDRAM access at all is an L2 miss on silicon, because eight megabytes cannot sit in
+512 KB, and the model charges that at a sixth. The direction of E00-S03's error is
+confirmed by the workload's shape and not only by the calibration.
+
+And it is static. Loops execute their bodies many times, so a dynamic mix would
+weight hot regions differently — most likely upward for branches, since loop
+back-edges are branches. The figure to trust here is the *shape*, not the decimals.
+
 ### What this does not license
 
 It does not turn the six into a corrected frame time. How much of the 125 ms is
