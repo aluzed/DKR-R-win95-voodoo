@@ -184,9 +184,16 @@ They no longer do. One report, one session, one frame window:
     tmu0: free=1553K largest=1024K blocks=6
 
 **Zero evictions.** Nothing was ever thrown out, so everything acquired is still
-resident. And 210 acquisitions against 88 distinct keys in the same report: at least
-**122 acquisitions were for a key that was still resident**, and not one of them
-hit.
+resident, and not one acquisition hit.
+
+> **Correction, same day.** This section first read "210 acquisitions against 88
+> distinct keys, so at least 122 were for a key still resident". That arithmetic is
+> wrong and the reason is worth keeping: `dkr_f3d_init` does
+> `memset(ctx, 0, sizeof(*ctx))` and the live renderer calls it **once per display
+> list**, so `distinct-keys` and `repeats` are one frame's figures. The TMU counters
+> live in the backend and are never reset, so `0/210` is cumulative over frames.
+> Subtracting one from the other compares two different windows. The zero hits and
+> the zero evictions stand on their own; the 122 does not.
 
 Memory is not even under pressure — 494 K used of 2,048 K, 1,553 K free, and a whole
 1,024 K block inside it. The allocator never had to refuse anything and never did.
@@ -196,10 +203,29 @@ under load": `find_resident` fails to match a key that is present and was never
 evicted. Everything else in this path — the allocator, the buddy tree, the slot
 table, the eviction policy — is exonerated by the same six numbers.
 
-**What to look at first**, in the order the evidence suggests: `find_resident`'s
-comparison and the `live` flag it tests, then whether `dkr_tmu_acquire` is reached
-with the same key the slot table matched on, which is the one link this report has
-not instrumented.
+### Both sides of the cache are correct on inspection, which moves the suspicion
+
+`find_resident` scans all 512 entries and tests `live && key == key`. The write path
+sets `r->key`, `r->live = 1` after a successful download. The backend has **no early
+return** for a texture the slot table already knows — the comment saying it goes
+through the allocator deliberately is matched by the code. Nothing in the three is
+wrong.
+
+Which leaves one thing that would explain every number at once: **the key may not be
+stable from one frame to the next.** It is built from `timg_address` and the tile's
+shape, and if the address moves the key moves with it — no hit, no eviction (each
+new key takes a fresh slot of the 512), and a peak that keeps climbing. The peak did
+climb, 189 K to 494 K between two reports, with `evict=0`.
+
+That is a hypothesis and not yet a finding, because those two reports are from
+different menu screens, and different screens legitimately bring different textures.
+Telling the two apart needs the one number nothing keeps: **a cumulative distinct-key
+count at the backend**, beside the cumulative acquisitions. If they track each other,
+keys never recur across frames and the residency cache is being asked to do something
+impossible rather than failing at something possible.
+
+That is the next instrument, and like the last two it is smaller than the argument it
+replaces.
 
 ### The question this left, and which the instrument has now narrowed
 
