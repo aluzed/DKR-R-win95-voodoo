@@ -168,6 +168,14 @@ RspExitReason EmptyAudioTask(std::uint8_t*, std::uint32_t) {
 }
 
 RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
+    /* Whether any RSP task arrives at all, said once. Without it, "no audio cost"
+       and "no audio task" are the same silence. */
+    static bool announced = false;
+    if (!announced) {
+        announced = true;
+        std::fprintf(stderr, "[audio][cost] first RSP task: type=%u data_size=%u\n",
+                     task->t.type, task->t.data_size);
+    }
     if (task->t.type == M_AUDTASK &&
         task->t.ucode == dkr::runtime::revision_addresses::AspMainTextStart) {
         // DKR can submit a zero-command audio frame when the host-reported AI
@@ -200,7 +208,12 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
             const unsigned long long dt = dkr_clock_now_us() - t0;
             calls++;
             total_us += dt;
-            if ((calls % 50ull) == 0ull) {
+            /* A line at the **first** event, then sparsely. The first version
+               reported every fiftieth call and produced nothing at all, which
+               reads identically to an audio path that is never reached - the
+               failure `cpu-budget.md` records as this project's most repeated,
+               and which it names the cheap fix for. */
+            if (calls <= 3ull || (calls % 50ull) == 0ull) {
                 std::fprintf(stderr,
                              "[audio][cost] calls=%llu total=%llu us mean=%llu us\n",
                              calls, total_us, total_us / calls);
