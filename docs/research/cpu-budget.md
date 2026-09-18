@@ -638,6 +638,35 @@ And it is static. Loops execute their bodies many times, so a dynamic mix would
 weight hot regions differently — most likely upward for branches, since loop
 back-edges are branches. The figure to trust here is the *shape*, not the decimals.
 
+### Why raising the emulated clock cannot answer the raised-floor question
+
+The obvious next experiment is to reconfigure 86Box as a faster machine and measure
+the frame again — the verdict names "a ~1.4 GHz Pentium III *and* a 1.5× optimisation"
+and that 1.5× is an extrapolation. It was considered and **deliberately not run**.
+
+The calibration above is what rules it out. A model that charges main memory at a
+sixth and has no second-level cache at all has nothing to hold a workload back as
+the clock rises: in that model almost everything scales linearly with frequency. So
+the experiment would return a clean linear speed-up and it would be an artefact of
+the emulator, not a property of the code.
+
+And linear scaling is exactly the assumption in doubt. The recompiled code
+references memory in 61.7 % of its instructions and walks an eight-megabyte image;
+on silicon that is the archetype of a workload that **stops** scaling with clock,
+because the memory behind it does not get faster when the core does. A 1.4 GHz part
+on a 133 MHz bus has three and a half times the core clock of a 400 MHz part on a
+100 MHz bus and only a third more memory bandwidth.
+
+So the one number the raised-floor decision needs — does this frame scale with
+clock, or is it memory-bound? — is precisely the number this emulator cannot
+produce. Running it anyway would yield a confident figure pointing the wrong way,
+which is worse than having none.
+
+**What would answer it**: the same frame on two real machines of different clock and
+the same memory subsystem, which is [E09-S04](../stories/E09-qa/E09-S04-real-hardware-validation.md)
+with a second data point. Failing hardware, a cache-and-bandwidth-aware simulator
+would do, and 86Box is measured above not to be one.
+
 ### What this does not license
 
 It does not turn the six into a corrected frame time. How much of the 125 ms is
