@@ -667,6 +667,47 @@ the same memory subsystem, which is [E09-S04](../stories/E09-qa/E09-S04-real-har
 with a second data point. Failing hardware, a cache-and-bandwidth-aware simulator
 would do, and 86Box is measured above not to be one.
 
+### What the audio microcode costs, and where the rest of the time goes
+
+Raised by the user, who objected that a VR4300 at 93.75 MHz should not leave a
+Pentium II 400 five times short, and that something unexplained sat in the middle.
+They were right that something did. Two measurements answer it.
+
+**The audio microcode runs, and it is not the explanation.** `GetRspMicrocode`
+dispatches `dkrAspMain` for every audio task, so E00-S03's claim that "the audio is
+in none of these numbers" was false — its own table lists audio in the 147 ms.
+Instrumented:
+
+    first RSP task: type=2 data_size=7968
+    calls=1    total=101750 us   mean=101750 us
+    calls=100  total=1644033 us  mean=16440 us
+
+Over 300 display lists that is **5.5 ms per frame, 3.2 %** of 170 ms. The mean per
+call, 16.4 ms, is large for work the console gave to a dedicated 62.5 MHz vector
+DSP running in parallel — and its share here is *understated*, because at five
+frames a second the audio tasks arrive about once in three frames. At thirty they
+would arrive at real-time rate, and 16.4 ms against a 33 ms budget would be half the
+frame. That strengthens E03-S03's place on the critical path rather than weakening
+it.
+
+**The rest is dependency-bound execution, not a mystery.** Working back from the
+measured frame:
+
+    P2 cycles per frame on recompiled code            50.0 M
+    guest instructions per frame, VR4300 100 % busy    3.12 M
+    implied                                           16.0 cycles per MIPS instruction
+    at 3.89 x86 instructions per MIPS instruction      4.1 cycles per x86 instruction
+
+Four cycles per emitted instruction on a three-wide out-of-order core is the
+signature of code that cannot issue in parallel. The objection's arithmetic assumed
+roughly 1.3 — near the issue limit — and that assumption is the whole gap. Each
+guest instruction feeds the next, and on 32-bit every 64-bit guest register carries
+its add-with-carry chains behind it.
+
+One assumption to name: 3.12 M guest instructions per frame takes the VR4300 as
+fully busy at 30 fps. If DKR used less of it, the implied cost per instruction is
+**higher**, not lower. The figure is a floor.
+
 ### What this does not license
 
 It does not turn the six into a corrected frame time. How much of the 125 ms is

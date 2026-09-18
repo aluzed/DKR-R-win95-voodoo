@@ -109,8 +109,12 @@ twenty-five. Twenty and fifteen are arithmetically reachable and ask the recompi
 part to fall by 98 % and 85 % respectively, which a recompiler does not give back. A
 realistic E08-S02 at 1.3× to 1.5× lands the frame at 130 ms — **7.7 fps**.
 
-The audio is in none of these numbers: E00-S04 measured the microcode path at 3.9 %
-of the throughput it needs, and its replacement is unwritten.
+~~The audio is in none of these numbers~~ — **wrong, and corrected 18 September
+2026.** `GetRspMicrocode` wires `dkrAspMain` and it is reached: the microcode does
+run inside the measured frame, exactly as this ticket's own table says three lines
+above. Measured, it costs **16.4 ms per call** and about **5.5 ms per display
+list** — 3.2 % of a 170 ms frame, so the correction is real but small. E00-S04's
+3.9 %-of-throughput figure and the unwritten replacement both still stand.
 
 **The threshold that would flip it**, stated as the acceptance criteria require:
 
