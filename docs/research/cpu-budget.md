@@ -708,6 +708,44 @@ One assumption to name: 3.12 M guest instructions per frame takes the VR4300 as
 fully busy at 30 fps. If DKR used less of it, the implied cost per instruction is
 **higher**, not lower. The figure is a floor.
 
+### DKR pays for 64-bit registers it does not use — 19 September 2026
+
+The diagnosis above says the recompiled code is dependency-bound, and names the
+64-bit guest register carried on a 32-bit host as part of what lengthens the chain.
+That suggested a question nobody had asked: **does DKR use 64 bits at all?**
+
+Counted across the whole generated set, 40 files:
+
+    32-bit-width operations      116,795
+    64-bit-width operations           20   (18 `SD`, 2 `DDIV`)
+    share genuinely needing 64 bits   0.017 %
+
+`MEM_D`, `DADDU`, `DADDIU`, `DSLL`, `DSRL`, `DSRA`, `DSUBU`, `DMULT`: **zero
+occurrences each**. The earlier finding that `DMULT`/`DMULTU` are never called was
+the tip of it — the game is, in practice, pure 32-bit MIPS.
+
+Yet `recomp.h` declares `typedef uint64_t gpr` unconditionally, so every one of
+those 116,795 operations carries a register pair on the target. The measured price
+is in this report's own summary: **3.89 x86 instructions per MIPS instruction in
+32-bit against 2.74 in 64-bit**, a 42 % increase in count — applied to code already
+running at 4.1 cycles per emitted instruction because it cannot issue in parallel.
+The carry chains do not merely add instructions; they lengthen the dependency chain
+that is the bottleneck, so the cost is plausibly worse than the count suggests.
+
+**This is a lead, not a result, and the risk has a name.** MIPS III sign-extends a
+32-bit result into the full 64-bit register, and code that compares registers or
+forms addresses can depend on the upper half. Narrowing `gpr` is therefore not a
+width change but a semantic one, and nothing here has verified it is safe. The
+twenty wide operations would also need a path of their own, which is easy; the sign
+extension is not.
+
+**What would measure it without deciding it**: `tools/cpu-budget/run.sh` already
+builds the recompiled functions twice, 64-bit and 32-bit, and times the same leaf
+functions in both. A third variant with a narrowed guest register would put a number
+on the gain on the development machine in one run, before anyone touches semantics
+for real. That is the cheapest next step on E08-S02 by a wide margin, and it is the
+first one this report can point at with a measurement behind it rather than a hope.
+
 ### What this does not license
 
 It does not turn the six into a corrected frame time. How much of the 125 ms is
