@@ -765,6 +765,43 @@ So the static figure stands on its own and the dynamic one waits on correctness.
 The order is the opposite of what was written here: **sign extension first, then
 measurement**, not measurement first as a cheap preview.
 
+### The sign-extension risk, scoped
+
+"Sign extension is not handled" names a danger without sizing it. Worked through,
+it is narrower than it sounds.
+
+**Address formation is what breaks, and only it.** `MEM_W(offset, reg)` computes
+`rdram + ((reg + offset) - 0xFFFFFFFF80000000)`, which relies on the register
+holding a sign-extended KSEG0 address:
+
+    MEM_W(0, 0x80100000)
+      64-bit register, sign-extended : rdram + 0x100000       correct
+      32-bit register                : rdram + 0x100100000    four gigabytes out
+
+A narrowed build would fault on its first load, or worse, not fault. The fix has an
+obvious shape — **mask instead of subtract**, `rdram + (addr & 0x7FFFFFFF)` gives
+back `0x100000` — and it lives in a handful of macro definitions rather than being
+scattered through 116,795 operations.
+
+**Comparisons survive truncation**, which is the other classic worry and the one
+that would have been scattered. Values that are all sign-extended the same way
+compare identically at either width, signed or unsigned. Checked on the two cases
+that would fail if anything did:
+
+    0xFFFFFFFF vs 0x00000001 : unsigned, 64-bit >, 32-bit >
+    0x80000000 vs 0x7FFFFFFF : unsigned, 64-bit >, 32-bit >
+
+**What this does not clear.** Two failure modes were named and checked; others may
+exist and have not been. The eighteen `SD` sites write eight bytes from a register
+and need a path of their own. The `& 0x7FFFFFFF` mask assumes every guest address
+sits in the low two gigabytes, which holds for KSEG0 and KSEG1 on this machine and
+is an assumption all the same. And none of this is a build that runs.
+
+What has changed is the shape of the work. It was "a semantic change nobody has
+verified"; it is now "one family of macros wants a masked form, comparisons are
+provably unaffected, and eighteen stores want a wide path" — which is a day's work
+to try rather than a research question.
+
 ### What this does not license
 
 It does not turn the six into a corrected frame time. How much of the 125 ms is
