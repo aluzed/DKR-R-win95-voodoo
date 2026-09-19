@@ -739,12 +739,31 @@ width change but a semantic one, and nothing here has verified it is safe. The
 twenty wide operations would also need a path of their own, which is easy; the sign
 extension is not.
 
-**What would measure it without deciding it**: `tools/cpu-budget/run.sh` already
-builds the recompiled functions twice, 64-bit and 32-bit, and times the same leaf
-functions in both. A third variant with a narrowed guest register would put a number
-on the gain on the development machine in one run, before anyone touches semantics
-for real. That is the cheapest next step on E08-S02 by a wide margin, and it is the
-first one this report can point at with a measurement behind it rather than a hope.
+**Built, and it prices the lever statically.** A third set of objects was compiled
+from the same sources with the same flags, differing only in `typedef uint32_t gpr`
+shadowed ahead of the real header:
+
+    .text, 32-bit wide register      4,034,404 bytes
+    .text, 32-bit narrowed register  2,637,831 bytes
+    reduction                            34.6 %
+
+**A third of the emitted code is there to carry a width the game uses twenty times
+in 116,795 operations.** It corroborates this report's own earlier figure from the
+other direction: 2.74 against 3.89 x86 instructions per MIPS instruction is 29.6 %
+fewer, measured on instruction counts where this is measured on bytes.
+
+**And the run-time gain cannot be had this cheaply, which corrects what this section
+first said.** It claimed the third variant would "put a number on the gain in one
+run, before anyone touches semantics for real". That is wrong, and building it is
+what showed why: the narrowed objects need 214 stubs where the wide ones need
+fewer, and they reference game symbols the wide build optimises away. Different code
+survives compilation, because the semantics differ — sign extension is not handled.
+A timing comparison would be timing two different computations and reporting the
+difference as a speed-up.
+
+So the static figure stands on its own and the dynamic one waits on correctness.
+The order is the opposite of what was written here: **sign extension first, then
+measurement**, not measurement first as a cheap preview.
 
 ### What this does not license
 
