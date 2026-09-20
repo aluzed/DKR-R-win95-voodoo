@@ -797,10 +797,19 @@ and need a path of their own. The `& 0x7FFFFFFF` mask assumes every guest addres
 sits in the low two gigabytes, which holds for KSEG0 and KSEG1 on this machine and
 is an assumption all the same. And none of this is a build that runs.
 
-What has changed is the shape of the work. It was "a semantic change nobody has
+~~What has changed is the shape of the work. It was "a semantic change nobody has
 verified"; it is now "one family of macros wants a masked form, comparisons are
 provably unaffected, and eighteen stores want a wide path" — which is a day's work
-to try rather than a research question.
+to try rather than a research question.~~
+
+**Corrected below, 20 September 2026.** "Comparisons are provably unaffected" is
+wrong. The arithmetic above is right about values that are already sign-extended,
+but the emitted code does not compare registers directly — it compares them through
+`SIGNED(val)`, which is `((int64_t)(val))`. Widening an *unsigned* 32-bit register
+to `int64_t` zero-extends, so `-1` becomes four billion and every signed comparison
+in the game reads the wrong way. The next section measures it happening. The
+remedy is one line rather than a scattered audit, so the estimate of the work
+survives; the claim of safety did not.
 
 ### What this does not license
 
@@ -814,3 +823,146 @@ What has changed is that the reservation is no longer open-ended. It was "the mo
 is wrong by an unknown amount in an unknown direction". It is now "the model is
 right on instruction timing, optimistic by about six on main memory, and therefore
 wrong in the direction that makes the port look better than it is".
+
+### Narrowing the guest register, done properly — 20 September 2026
+
+The previous section left the narrowing as an estimate resting on two checks. Both
+checks have now been run as code rather than as arithmetic, and one of them fails.
+`scripts/Measure-Narrow-Gpr.sh` reproduces everything below in one command.
+
+#### Which code actually wants sixty-four bits
+
+The earlier count — "20 wide operations in 116,795" — was right in magnitude and
+wrong in shape: it counted `ld`/`sd` and missed the doubleword shifts. Counted from
+the opcodes the recompiler prints in its own comments, DKR's entire 64-bit usage is:
+
+    dsll     5        atan2s, rand_range
+    dsll32   2        rand_range
+    dsrl     2        rand_range
+    dsrl32   2        rand_range
+    ddivu    2        atan2s
+    ld      12        10 are `ld $ra, 0($sp)`; 2 are dmacopy_doubleword
+    sd      13        10 are `sd $ra, 0($sp)`; 3 are dmacopy_doubleword
+
+There are also 30 `ld` and 5 `sd` that name a float register. Those are `ldc1` and
+`sdc1` — double-precision traffic through `ctx->fN.u64`, a union field whose width
+does not follow `gpr`. They are untouched by any of this.
+
+So the whole game uses a general register as sixty-four bits of data in **three
+functions**:
+
+- `dmacopy_doubleword`, a sixteen-bytes-per-iteration block copy;
+- `atan2s`, which does `dsll` by 11 then `ddivu` — a fixed-point divide that makes
+  room for its fractional bits above bit 31;
+- `rand_range`, which does the same with `dsll32`/`dsrl32`.
+
+The twenty `$ra` saves and restores are not data. They are a prologue storing a
+sign-extended return address into an eight-byte stack slot and an epilogue reading
+it back; the high word is the sign extension and nothing else reads it.
+
+#### The compiler finds one family by itself, and only one
+
+Built narrow with `-Wshift-count-overflow`, gcc reports exactly four warnings, all
+in `rand_range` — the `dsll32`/`dsrl32` sites, where the shift count is 32 or more
+and the type is now 32 bits wide. That is a free mechanical detector, and it covers
+four of the thirteen. The rest — `dsll` by 11, `ddivu`, the block copy — are
+perfectly legal 32-bit expressions that compute the wrong number in silence. The
+census above is what finds those; no warning will.
+
+#### Three header changes, and the one that was missed
+
+Address formation, as predicted, needs rewriting — but not masked. The upstream
+expression's low word is *always* `(uint32_t)addr - 0x80000000`, and on a 32-bit
+target only the low word reaches the pointer, so the narrowed form
+
+    #define DKR_GUEST_OFF(addr) ((uint32_t)(addr) - 0x80000000u)
+
+is bit-identical rather than equivalent-for-the-addresses-we-use. The mask proposed
+in the previous section would have diverged for any address below 0x80000000.
+
+`SD` needs to widen its argument by that argument's own size, because it is reached
+both from a narrowed general register, which must sign-extend, and from a float
+register's `u64`, which must pass through:
+
+    #define DKR_WIDEN(v) (sizeof(v) > 4 ? (uint64_t)(v) : (uint64_t)(int64_t)(int32_t)(v))
+
+And `SIGNED` — the one the previous section pronounced safe — has to say what it is
+widening from:
+
+    #define SIGNED(val) ((int64_t)(int32_t)(val))
+
+It appears 9,376 times in the emitted code. Without the inner cast, a narrowed
+register zero-extends and `SIGNED(0xFFFFFFFF) < SIGNED(1)` is false. The test below
+caught it on its first run.
+
+`S64` and `U64` turn out to need nothing: the recompiler always writes them as
+`U64(U32(ctx->rN))`, narrowing before it widens. The two `DDIVU` sites are the
+exception, and they are inside `atan2s`.
+
+#### The test, and what it is allowed to disagree about
+
+`tools/cpu-budget/narrow_gpr_test.c` compiles against either header and prints a
+transcript: address formation at positive and negative offsets, the misaligned
+`lwl`/`lwr`/`swl`/`swr` helpers, signed and unsigned comparison across the sign
+boundary, the `sd $ra`/`ld $ra` round trip, and a block copy.
+
+Two of its lines are deliberately excluded from the transcript hash. The block copy
+appears twice — once written the way the recompiler emits it, with the temporaries
+in general registers, and once with the wide locals a width-aware recompiler would
+emit. The first is *expected* to diverge, and does: the narrow build copies 64 bytes
+and gets 32 of them wrong, because every `ld` truncates. The second agrees exactly.
+A test where every case passed would not have shown that the first case is real.
+
+Everything else agrees:
+
+    transcript 28e3206d1c158c51    at both widths
+
+Two further lines differ in print and not in value, so they are recorded as 32-bit
+quantities: `do_lwl`'s result and the restored `$ra` are the same MIPS value at
+either width, shown with or without its sign extension.
+
+#### What it costs the machine
+
+Both trees built with the same compiler and the same flags, `gcc -m32 -O2`:
+
+    .text                3,644,771  ->  2,465,574     -32.4%
+    x86 instructions       927,976  ->    645,348     -30.5%
+    memory-referencing     512,556  ->    351,083     -31.5%
+
+The mix says plainly what the width was buying:
+
+    sar     41,694  ->   1,171    -97.2%    sign-extending by shifting right 31
+    sbb      3,990  ->      81    -98.0%    carrying between halves
+    cltd     8,193  ->     371    -95.5%    sign-extending eax into edx:eax
+    or       9,372  ->   1,503    -84.0%    recombining halves
+    movl    63,401  ->  32,775    -48.3%    storing upper-half immediates
+    mov    408,112  -> 241,180    -40.9%
+    xor     30,511  ->  19,291    -36.8%    zeroing upper halves
+    lea     51,538  ->  47,034     -8.7%
+
+`sar`, `sbb` and `cltd` essentially vanish — between 95 and 98 percent of each. They
+are the pure cost of emulating a 64-bit register on a 32-bit machine, and DKR was
+paying it on every instruction to use it thirteen times.
+
+The memory figure is the one that matters most here. 161,473 fewer instructions
+reference memory, and this is a machine measured earlier in this note to have no L2
+at all under 86Box and a three-cycle load-use on the real part, executing a workload
+that is 61.7% memory-referencing and dependency-bound at 4.1 cycles per emitted
+instruction. A third fewer memory operations is the third most likely to be on the
+critical path.
+
+#### What this still does not give
+
+A frame time. None of this has run as a game: the three wide functions need their
+wide path written, and the narrowed build cannot link against a runtime whose
+`recomp_context` is shared with the 64-bit modern target. The 32.4% is code size and
+the 30.5% is instruction count; neither is a speedup, and the relationship between
+them and wall time is exactly the thing this note has spent two days establishing is
+not one-to-one.
+
+What it gives is a decision that no longer needs research. The work is: three
+functions hand-written with wide locals, three macros changed, a shadowed header for
+the 32-bit target, and a `recomp_context` whose register file is narrow. That is
+scoped, measured, and tested. Whether it is worth doing depends on the direction
+chosen for the hardware floor, which remains the open question this note keeps
+handing back.
