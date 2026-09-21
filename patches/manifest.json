@@ -181,6 +181,10 @@
         {
           "path": "patches/n64-modern-runtime/0044-record-the-shape-of-the-wait.patch",
           "sha256": "41853d5ffca36a43fcdfbcdd9e7861519d1f0e9e4197ab49790e0834c551d3be"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0045-measure-the-graphics-thread-s-own-loop.patch",
+          "sha256": "2031a8d00cd3be69054ac37d9c90a881142c1c0d933222ee2501e3b6a0cc63f5"
         }
       ]
     },

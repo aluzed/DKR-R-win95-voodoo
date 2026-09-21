@@ -1,0 +1,102 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Measure the graphics thread's own loop
+
+Patches 0042 to 0044 measure the wall time on which no guest thread runs, charge
+half of it to the renderer's display-list path, and leave 17% with no name.
+Three candidates were tested and refuted -- the vertical interval, the scheduler
+quantum, the synchronised buffer swap -- and the second established the time is
+not idle: raise the guest threads' priority so they stop yielding it and the
+frame stops finishing.
+
+So it is measured here instead of guessed at again. The graphics thread counts
+its rounds, the rounds that find nothing, and the span it spends awake -- closed
+before the wait rather than after it, so the sleep is not folded into the work.
+
+  [trace][gfx] rounds=N empty=N awake=N us
+
+Measured at the title screen: 29.2% of the wall awake, of which 14.6% is inside
+send_dl and update_screen and 14.5% is the loop itself, against the 16.7% that
+nothing could account for. 120 rounds a second, three in five empty.
+
+---
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -8,6 +8,8 @@
+ #include <memory>
+ #include <queue>
+ #include <cstring>
++#include <cstdio>
++#include <cstdlib>
+ 
+ #include "blockingconcurrentqueue.h"
+ 
+@@ -444,6 +446,28 @@
+ std::atomic<ultramodern::renderer::SetupResult> renderer_setup_result = ultramodern::renderer::SetupResult::Success;
+ std::atomic<ultramodern::renderer::GraphicsApi> renderer_chosen_api = ultramodern::renderer::GraphicsApi::Auto;
+ 
++/* **What the graphics thread does with its second.**
++ *
++ * The scheduler's idle accounting says 17% of the wall has no guest thread
++ * running and nothing being drawn, and raising guest priorities showed that time
++ * is not idle: take it away and the frame stops finishing. Somebody uses it, and
++ * this thread is the first suspect for a reason visible in its loop below -- it
++ * polls its queue on a one millisecond timeout, so it wakes a thousand times a
++ * second whether there is work or not.
++ *
++ * Three numbers settle it: how many times round the loop, how many of those
++ * found nothing, and how long the thread spent awake. The third is the answer;
++ * the first two say whether that time is work or polling. */
++static std::atomic<unsigned long long> g_gfx_rounds{0};
++static std::atomic<unsigned long long> g_gfx_empty{0};
++static std::atomic<unsigned long long> g_gfx_awake_us{0};
++
++extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++
++static const bool g_gfx_trace_on =
++    (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
++
+ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_ready, ultramodern::renderer::WindowHandle window_handle) {
+     bool enabled_instant_present = false;
+     using namespace std::chrono_literals;
+@@ -472,10 +496,39 @@
+     // Notify the caller thread that this thread is ready.
+     thread_ready->signal();
+ 
++    unsigned long long gfx_awake_at = 0ULL;
++    unsigned long long gfx_last_report_us = 0ULL;
++
+     while (!exited) {
++        /* Closed before the wait, not after it: the span that counts runs from
++           waking to going back to sleep, and stamping it on the far side of the
++           wait would fold the sleep into the work. */
++        if (g_gfx_trace_on && gfx_awake_at != 0ULL) {
++            g_gfx_awake_us.fetch_add(dkr_clock_now_us() - gfx_awake_at);
++        }
++
+         // Try to pull an action from the queue
+         Action action;
+-        if (events_context.action_queue.wait_dequeue_timed(action, 1ms)) {
++        const bool got_action =
++            events_context.action_queue.wait_dequeue_timed(action, 1ms);
++
++        if (g_gfx_trace_on) {
++            const unsigned long long now = dkr_clock_now_us();
++            gfx_awake_at = now;
++            const unsigned long long rounds = g_gfx_rounds.fetch_add(1) + 1;
++            if (!got_action) { g_gfx_empty.fetch_add(1); }
++            if (gfx_last_report_us == 0ULL) { gfx_last_report_us = now; }
++            if (now - gfx_last_report_us >= 5000000ULL) {
++                gfx_last_report_us = now;
++                std::fprintf(stderr,
++                             "[trace][gfx] rounds=%llu empty=%llu awake=%llu us\n",
++                             rounds, (unsigned long long)g_gfx_empty.load(),
++                             (unsigned long long)g_gfx_awake_us.load());
++                if (dkr_diag_commit) { dkr_diag_commit(); }
++            }
++        }
++
++        if (got_action) {
+             // Determine the action type and act on it
+             if (const auto* task_action = std::get_if<SpTaskAction>(&action)) {
+                 // The queued task owns an immutable RDRAM snapshot, so the CPU
