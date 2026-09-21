@@ -1217,3 +1217,40 @@ scene twice, which is what the title screen gave and this does not.
 **For E08-S01's budget**, the entry is not one ratio. The recompiled code is 72% of
 the frame in a menu and 50% in a world scene, and a budget that carries a single
 figure for it will be wrong in whichever of the two it was not measured in.
+
+### A quarter of the frame is in neither the game nor the renderer
+
+Three instruments now report on the same frame and they can be put together, with
+the caution that one of them is a per-interval ratio and the other two are
+cumulative means, so the arithmetic below is approximate and is offered as an
+accounting rather than a measurement.
+
+**The renderer runs outside the guest threads, and the run with the diagnostic
+renderer proves it without reading a line of the threading code.** Take the whole
+graphics pipeline away and `busy` — the share of wall on which guest threads are
+scheduled — *rises*, 72% to 82%. Had the renderer been running on a guest thread,
+removing it would have taken guest execution away with it and the share would have
+fallen. It rose, so the time the renderer spends is wall time the guest is not
+executing: the game thread is waiting on it.
+
+So, for the adventure hub, from a 213 ms frame:
+
+    the renderer, its own clock                    ~58 ms     27%
+    guest threads executing, 50% of wall          ~106 ms     50%
+    neither                                        ~49 ms     23%
+
+`elsewhere`, which the renderer computes exactly as period minus render, is 154 ms,
+and it divides into those 106 and 49.
+
+**Nothing in this repository has ever measured that 49 ms.** It is not the
+recompiled code, which is the 106; it is not the renderer, which is the 58; and at
+roughly a quarter of the frame it is larger than the whole 33.3 ms budget. The
+candidates are the ones this port has been building instrumentation around all along
+— the SP and DP handshake, the emulated vertical interval, the audio output path,
+the host's own scheduling — and patches 0035 through 0040 already trace the first of
+them behind `DKR_TRACE_SP`.
+
+That is the next measurement, and it is a better one than any remaining question
+about the recompiled code. This section has spent two days establishing that the
+game's own execution is a flat floor that does not respond to having a third of its
+instructions removed. The 49 ms has never been looked at.
