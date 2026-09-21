@@ -1166,12 +1166,45 @@ waterfall, water, vegetation and a butterfly is the richest scene this port has
 drawn, and there the recompiled code is **half** the wall time, not three quarters.
 
 The frame rate falls with it — 74 context switches a second at the title screen,
-63 in the hub — so the extra time is not idle. It is the renderer.
+63 in the hub — so the extra time is not idle.
+
+**Where it goes, from the renderer's own clock.** `glide_renderer.cpp` has timed
+itself all along and reports `[gfx] frame: period=… render=… elsewhere=…`. Read
+alongside the trace above it corrects one thing and adds another.
+
+The correction first: `busy` is the share of wall time that guest *threads were
+scheduled*, which is not the same quantity as the share of a frame spent in
+recompiled code, and the section above slid between the two. A guest thread blocked
+on the renderer is wall time that `busy` does not count and the frame still pays
+for.
+
+    scene            period      render            elsewhere
+    title screen    196 ms      47 ms (24%)       149 ms (76%)
+    the route       213 ms      58 ms (27%)       154 ms (73%)
+
+Both columns are **cumulative means** — `render_us_total_ / render_n_` — so a
+per-scene value cannot be read off them directly. What can be read is the
+direction: through the hub the render mean climbed from 16% to 27%, and a mean only
+climbs when the arriving values are above it, so the hub's own frames cost more than
+27% in the renderer. That is what the falling `busy` is: the game thread waiting on
+a renderer that has more to do.
+
+And the addition, which is the more useful half: **`elsewhere` is flat.** 147, 148,
+149, then 151, 152, 153, 154 — through menus, through loading, through the richest
+scene the port draws, everything that is not the renderer costs about **150 ms a
+frame and does not move.** The scene changes the renderer's share; it does not
+change the game's own cost.
+
+That is the same 125–153 ms this note has been quoting for the recompiled code since
+August, arrived at from a different instrument, and it is the reason the frame is
+190 ms rather than 33: not that any scene is expensive, but that the floor is.
 
 **Which cuts the same way as everything else in this section.** The richer the
-scene, the smaller the share the recompiled code holds, and the less any change to
-it can buy. At the title screen narrowing the register had 72% of the frame to work
-on and moved it by nothing; in a world scene it would have had 50%.
+scene, the larger the renderer's share and the smaller the recompiled code's, so the
+less any change to the latter can buy. But the sharper point is the flat 150 ms: the
+game's own cost is the floor under every frame in every scene, it is five times the
+whole budget on its own, and narrowing a third of its instructions moved it by
+nothing.
 
 Two cautions. The earlier phases are not attributed — the route was walking through
 menus and loading, and which interval is which screen is a guess, so only the final
