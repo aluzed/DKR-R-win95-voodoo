@@ -45,11 +45,25 @@ fourth does.
    hand-written wide paths are in `docs/research/cpu-budget.md` and reproduced by
    `scripts/Measure-Narrow-Gpr.sh`.
 
-   What remains is plumbing rather than semantics: a shadowed header for the 32-bit
-   target, the three functions entered in the recomp policy's `stubs` list with
-   their wide implementations supplied, and a `recomp_context` that does not have to
-   agree with the 64-bit modern target. Until that is done there is no frame time
-   for it, only an instruction count.
+   **Built, run, and measured at nothing — 21 September 2026.** The plumbing is
+   done: `DKR_WIN95_NARROW_GUEST_REGISTER`, the three functions served by native
+   paths through the policy's hooks, and a game that boots and plays its attract
+   loop with every general register half as wide. On the test machine, at the same
+   wall offset, guest execution time moved by **−0.6%** and the context-switch rate
+   by **+0.2%**.
+
+   The inference from the instruction count was wrong, and the measurements that
+   explain why were already in this repository: the core retires one instruction
+   every 4.1 cycles on a three-wide machine, so 92% of its issue capacity was
+   already idle; `recomp_context` is L1-resident at either width, so the vanished
+   memory accesses were hits; and the guest's own eight megabytes are touched
+   identically whatever the host register is made of.
+
+   **This retires the lever and raises a question about the others.** Lever 1 —
+   compiler options — is also argued from instruction count, and now has to answer
+   the same objection before it is worth measuring. The levers that survive are the
+   ones that change *what the guest touches and when*: code layout for locality
+   (lever 2), and anything that shrinks the working set (E08-S04).
 
 ## Objective
 
@@ -98,8 +112,13 @@ replacement.
 - [x] The three functions that need a 64-bit general register are identified by a
       census of the emitted opcodes, and each is proved equivalent at both widths —
       `tools/cpu-budget/wide_register_paths.h`, `tools/cpu-budget/narrow_gpr_test.c`.
-- [ ] The narrowed register is built and linked, and its gain measured as a frame
-      time rather than an instruction count.
+- [x] The narrowed register is built and linked, and its gain measured as a running
+      game rather than an instruction count — `scripts/Measure-Guest-Time-VM.sh`.
+      The gain is −0.6%, which is nothing, and the reason is recorded.
+- [ ] The measurement is repeated during a race rather than at the title screen,
+      where the balance between game logic and graphics is not the same.
+- [ ] Lever 1 is re-argued before it is measured: "fewer instructions" is now known
+      not to be the currency on this machine.
 
 ## Risks
 
@@ -109,6 +128,10 @@ manifest only in a rare game situation. Use it only on functions the profile pro
 matter, and never without proof of equivalence.
 
 ## Risks, added for the fifth lever
+
+The narrowing is measured at nothing and is therefore off by default, which makes
+the risks below latent rather than live. They are kept because the option exists and
+someone may turn it on.
 
 Narrowing the register is uniform and therefore cannot be applied to part of the
 game: every function gets it. Three need a wide path and have one; the argument that
