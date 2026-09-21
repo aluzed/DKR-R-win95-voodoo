@@ -23,6 +23,7 @@
 #include <stdlib.h>
 
 #include "recomp.h"
+#include "wide_register_paths.h"
 
 #define GUEST_BASE 0x80100000u
 #define RDRAM_SIZE (8u * 1024u * 1024u)
@@ -133,37 +134,6 @@ static void exercise_return_address(uint8_t* rdram) {
     record("restored matches", (uint64_t)(restored == ra));
 }
 
-/* dmacopy_doubleword as the recompiler emits it: the temporaries live in the
-   general registers, so their width is the gpr width. */
-static void copy_as_emitted(uint8_t* rdram, gpr source, gpr destination,
-                            gpr end) {
-    gpr r4 = source, r5 = destination, r6 = end, r8, r9;
-    do {
-        r8 = (gpr)LD(r4, 0x0);
-        r9 = (gpr)LD(r4, 0x8);
-        r5 = ADD32(r5, 0x10);
-        r4 = ADD32(r4, 0x10);
-        SD(r8, -0x10, r5);
-        SD(r9, -0x8, r5);
-    } while (r5 != r6);
-}
-
-/* The same loop with the width the instructions actually ask for.  A
-   recompiler that typed each register by its observed width would emit this. */
-static void copy_with_wide_temporaries(uint8_t* rdram, gpr source,
-                                       gpr destination, gpr end) {
-    gpr r4 = source, r5 = destination, r6 = end;
-    uint64_t t0, t1;
-    do {
-        t0 = LD(r4, 0x0);
-        t1 = LD(r4, 0x8);
-        r5 = ADD32(r5, 0x10);
-        r4 = ADD32(r4, 0x10);
-        SD(t0, -0x10, r5);
-        SD(t1, -0x8, r5);
-    } while (r5 != r6);
-}
-
 static unsigned long long checksum(const uint8_t* bytes, size_t count) {
     unsigned long long hash = 1469598103934665603ull;
     for (size_t i = 0; i < count; i++) {
@@ -173,7 +143,48 @@ static unsigned long long checksum(const uint8_t* bytes, size_t count) {
     return hash;
 }
 
-static void exercise_block_copy(uint8_t* rdram) {
+/* The three functions the census found, each run both ways.  The "as emitted"
+   line is printed and not compared: at the upstream width it agrees with the
+   wide one, and at the narrowed width it is expected not to. */
+static void exercise_wide_functions(uint8_t* rdram) {
+    puts("rand_range");
+    static const uint32_t seeds[] = {
+        0x00000001u, 0x12345678u, 0x80000000u, 0xFFFFFFFFu, 0x7A3B91C4u,
+    };
+    for (size_t i = 0; i < sizeof(seeds) / sizeof(seeds[0]); i++) {
+        const gpr seed = guest(seeds[i]);
+        char label[48];
+        snprintf(label, sizeof(label), "%08x as emitted", seeds[i]);
+        note(label, (uint32_t)dkr_rand_scramble_as_emitted(seed));
+        snprintf(label, sizeof(label), "%08x wide", seeds[i]);
+        record(label, (uint32_t)dkr_rand_scramble_wide(seed));
+    }
+
+    puts("atan2s");
+    static const uint32_t pairs[][2] = {
+        { 100u, 40u }, { 0x0000FFFFu, 3u }, { 0x00100000u, 7u },
+        { 1u, 1u }, { 0x7FFFFFFFu, 0x40000000u },
+        /* The shift is by eleven, so a narrowed register keeps the right
+           answer while the numerator fits in twenty-one bits and loses it one
+           step later.  These two straddle that edge. */
+        { 2097151u, 3u }, { 2097152u, 3u },
+    };
+    for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+        uint64_t quotient = 0, remainder = 0;
+        char label[48];
+        dkr_atan2s_quotient_as_emitted(guest(pairs[i][0]), guest(pairs[i][1]),
+                                       &quotient, &remainder);
+        snprintf(label, sizeof(label), "%u/%u as emitted index",
+                 pairs[i][0], pairs[i][1]);
+        note(label, quotient & 0xFFEu);
+        dkr_atan2s_quotient_wide(guest(pairs[i][0]), guest(pairs[i][1]),
+                                 &quotient, &remainder);
+        snprintf(label, sizeof(label), "%u/%u wide index",
+                 pairs[i][0], pairs[i][1]);
+        record(label, quotient & 0xFFEu);
+    }
+
+    puts("dmacopy_doubleword");
     const unsigned int source_address = GUEST_BASE + 0x2000u;
     const unsigned int target_address = GUEST_BASE + 0x3000u;
     const size_t bytes = 64;
@@ -184,25 +195,20 @@ static void exercise_block_copy(uint8_t* rdram) {
         rdram[(source_address - 0x80000000u) + i] = (uint8_t)(0xA0 + i);
     }
 
-    puts("block copy, as the recompiler emits it");
     memset(rdram + (target_address - 0x80000000u), 0, bytes);
-    copy_as_emitted(rdram, guest(source_address), guest(target_address),
-                    guest(target_address + bytes));
-    note("copied bytes",
-         checksum(rdram + (target_address - 0x80000000u), bytes));
-    note("matches source",
-           (uint64_t)(memcmp(rdram + (source_address - 0x80000000u),
-                             rdram + (target_address - 0x80000000u),
-                             bytes) == 0));
+    dkr_dmacopy_as_emitted(rdram, guest(source_address), guest(target_address),
+                           guest(target_address + bytes));
+    note("as emitted, matches source",
+         (uint64_t)(memcmp(rdram + (source_address - 0x80000000u),
+                           rdram + (target_address - 0x80000000u),
+                           bytes) == 0));
 
-    puts("block copy, with wide temporaries");
     memset(rdram + (target_address - 0x80000000u), 0, bytes);
-    copy_with_wide_temporaries(rdram, guest(source_address),
-                               guest(target_address),
-                               guest(target_address + bytes));
-    record("copied bytes",
+    dkr_dmacopy_wide(rdram, guest(source_address), guest(target_address),
+                     guest(target_address + bytes));
+    record("wide, copied bytes",
            checksum(rdram + (target_address - 0x80000000u), bytes));
-    record("matches source",
+    record("wide, matches source",
            (uint64_t)(memcmp(rdram + (source_address - 0x80000000u),
                              rdram + (target_address - 0x80000000u),
                              bytes) == 0));
@@ -220,10 +226,10 @@ int main(void) {
     exercise_offset_algebra();
     exercise_comparison();
     exercise_return_address(rdram);
-    exercise_block_copy(rdram);
+    exercise_wide_functions(rdram);
     printf("\ntranscript %016llx\n", transcript);
-    puts("the two builds agree when this line matches; the block copy as the");
-    puts("recompiler emits it is excluded, because it is expected to differ");
+    puts("the two builds agree when this line matches; the \"as emitted\" lines");
+    puts("are excluded, because those are the ones expected to differ");
 
     free(rdram);
     return 0;

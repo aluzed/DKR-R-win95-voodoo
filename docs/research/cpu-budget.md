@@ -966,3 +966,50 @@ the 32-bit target, and a `recomp_context` whose register file is narrow. That is
 scoped, measured, and tested. Whether it is worth doing depends on the direction
 chosen for the hardware floor, which remains the open question this note keeps
 handing back.
+
+### The three wide paths, written and checked — 21 September 2026
+
+The three functions now have the implementation a width-aware recompiler would
+emit, in `tools/cpu-budget/wide_register_paths.h`. Each appears twice — as the
+recompiler emits it, and with wide locals — and the test runs both. At the
+upstream width the two agree; at the narrowed width only the second one is still
+DKR. The transcript matches across widths, so the hand-written versions reproduce
+the 64-bit semantics on a 32-bit register file.
+
+What they do when they break is worth writing down, because the three fail very
+differently.
+
+**`dmacopy_doubleword` fails on every call.** Each `ld` truncates, so half the
+payload becomes the sign extension of the other half. Sixty-four bytes copied,
+thirty-two of them wrong, on the path of every DMA the game does.
+
+**`rand_range` fails on every call, and fails to a constant.** The `dsll32` and
+`dsrl32` shift by 32 or more, which is undefined on a 32-bit type; gcc folds them
+to zero. Every seed tested — `00000001`, `12345678`, `80000000`, `ffffffff`,
+`7a3b91c4` — returns the same thing:
+
+    00000001 as emitted   0000000000000000
+    12345678 as emitted   0000000000000000
+    ffffffff as emitted   0000000000000000
+
+A random-number generator that returns zero. Loud, at least.
+
+**`atan2s` fails only on large inputs, which is the dangerous one.** The shift is
+by 11, so the emitted version keeps the right answer while the numerator fits in
+twenty-one bits and loses it one step later. The boundary is exact:
+
+    2097151/3 as emitted index   0x2aa      correct
+    2097152/3 as emitted index   0x000      wrong
+
+`atan2s` takes coordinate differences. Most of them are small, so a narrowed build
+would compute correct angles almost everywhere and wrong ones at the far end of a
+track — the failure that survives a play-test and shows up as something else
+entirely. It is also the one of the three that compiles without a warning.
+
+That is the argument for the census rather than for the compiler. gcc finds four
+of the thirteen sites, all of them in the function that fails loudly. The two that
+fail quietly, and the one that fails everywhere, are legal 32-bit expressions.
+
+Folding these back in would go through the `stubs` list in the recomp policy,
+which already exists for replacing a generated function with a hand-written one.
+That is plumbing rather than semantics; the semantics are done and checked.
