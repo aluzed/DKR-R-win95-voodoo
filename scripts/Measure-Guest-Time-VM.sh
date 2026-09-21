@@ -127,11 +127,20 @@ import re
 import sys
 
 pattern = re.compile(r"guest-run=(\d+) us wall=(\d+) us switches=(\d+)")
+# Patch 0042's companion line: the wall time on which no guest thread was
+# running at all, charged to the renderer or to something else.
+idle_pattern = re.compile(
+    r"none-running=(\d+) us \(rendering=(\d+) other=(\d+)\) "
+    r"intervals=(\d+) worst=(\d+)")
 rows = []
+idle_rows = []
 for line in open(sys.argv[1], errors="replace"):
     found = pattern.search(line)
     if found:
         rows.append(tuple(int(g) for g in found.groups()))
+    found = idle_pattern.search(line)
+    if found:
+        idle_rows.append(tuple(int(g) for g in found.groups()))
 
 if len(rows) < 3:
     print("only %d trace samples: the instrument said nothing" % len(rows))
@@ -156,4 +165,24 @@ print()
 print("  cumulative at %.1f s: guest %.1f s, busy %.1f%%, %.2f switches/s"
       % (last[1] / 1e6, last[0] / 1e6, 100.0 * last[0] / last[1],
          last[2] / (last[1] / 1e6)))
+
+if idle_rows:
+    total, rendering, other, intervals, worst = idle_rows[-1]
+    wall = last[1]
+    print("  no guest thread running: %.1f s (%.1f%% of wall)"
+          % (total / 1e6, 100.0 * total / wall if wall else 0.0))
+    if total:
+        print("    waiting on the renderer  %.1f s  %5.1f%% of the wait"
+              % (rendering / 1e6, 100.0 * rendering / total))
+        print("    waiting on anything else %.1f s  %5.1f%% of the wait"
+              % (other / 1e6, 100.0 * other / total))
+    print("    %d intervals, worst %.1f ms, mean %.1f ms"
+          % (intervals, worst / 1e3,
+             (total / intervals) / 1e3 if intervals else 0.0))
+    # A leaked thread count stops the accounting without stopping the run, so
+    # say whether the intervals kept arriving rather than only their total.
+    growth = [row[3] for row in idle_rows]
+    if len(growth) > 2 and growth[-1] == growth[len(growth) // 2]:
+        print("    WARNING: the interval count stopped rising; a guest thread"
+              " that exited while counted would do that")
 PYTHON

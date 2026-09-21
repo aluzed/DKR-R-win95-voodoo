@@ -1254,3 +1254,53 @@ That is the next measurement, and it is a better one than any remaining question
 about the recompiled code. This section has spent two days establishing that the
 game's own execution is a flat floor that does not respond to having a third of its
 instructions removed. The 49 ms has never been looked at.
+
+### The 49 ms, measured: a sixth of all time is nobody working — 21 September 2026
+
+The previous entry arrived at the remainder by subtracting one instrument's ratio
+from another's per-display-list mean. Two instruments with different populations
+and different denominators should not be subtracted from one another, so the
+remainder now has an instrument of its own: patch 0042 counts running guest threads
+and stamps each edge between one and none, which gives the interval exactly. And it
+asks the renderer, at the moment the last guest thread goes to sleep, whether it is
+inside a display list — so the wait is not merely measured but charged.
+
+At the title screen, over 95.6 seconds:
+
+    guest threads executing             64.7 s    67.6%
+    no guest running, renderer drawing  14.2 s    14.9%
+    no guest running, nothing drawing   16.8 s    17.5%
+                                                 -------
+                                                 100.1%
+
+**The accounting closes**, which is the first thing to say about it: 67.6 and 32.4
+are two independent measurements from the same hook and they sum to the wall. The
+subtraction the previous entry performed was giving roughly the right answer for
+roughly the wrong reason, and now it does not have to.
+
+6,550 intervals, a mean of 4.73 ms each. The interval count rose steadily through
+the run — 1040, 2132, 3204, 4208, 5163, 6224 — which matters because the obvious way
+for this instrument to break is a guest thread that exits while counted, leaving the
+running count permanently above zero and the accounting silently switched off. It
+did not happen here. A flat count is the signature and the harness now warns on it.
+
+#### The half that is not the renderer
+
+Fourteen points of the wait are the game thread blocked while the renderer draws,
+which is unsurprising and is the serialisation the pipeline is built around.
+
+**Seventeen and a half points are neither.** No guest thread is running and nothing
+is being drawn — a sixth of every second, on a machine that needs to be five times
+faster than it is. That is not the recompiled code, which this note spent two days
+establishing is a flat 150 ms floor that does not respond to losing a third of its
+instructions; and it is not the renderer, which is timed separately and was idle
+throughout.
+
+What it is has not been measured. The candidates are the ones the runtime's own
+patches already trace — the SP and DP handshake, the emulated vertical interval, the
+audio output path — and the instrument that would name it is the same one again with
+the wake source recorded beside the interval rather than only the renderer's state.
+
+**This is the first number in the note that is neither the game nor the graphics**,
+and at a sixth of the wall it is larger than several of the budget's named items put
+together. Whether it is reclaimable is unknown. That it is there is now measured.

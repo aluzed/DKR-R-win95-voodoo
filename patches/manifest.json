@@ -169,6 +169,10 @@
         {
           "path": "patches/n64-modern-runtime/0041-measure-guest-execution-time.patch",
           "sha256": "ca108936d4dc26bee88f05ab60ffb947a93ae17037285d76d7a5a8a72a445587"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0042-measure-and-attribute-the-idle-frame.patch",
+          "sha256": "294a615c4598d53ee54a2b57b4b5655aab996494a0754a4960efa249ea56b9a4"
         }
       ]
     },

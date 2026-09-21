@@ -1,0 +1,124 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Measure and attribute the time when no guest thread runs
+
+`guest-run` against `wall` leaves a remainder, and on 21 September 2026 that
+remainder came out at about a quarter of the frame -- larger than the whole
+33.3 ms budget -- by subtracting this instrument's ratio from the renderer's
+per-display-list mean. Two instruments with different populations and different
+denominators should not be subtracted from one another.
+
+So the remainder is measured here instead: a count of running guest threads and
+a stamp at each edge between one and none, which gives the interval exactly
+rather than by difference.
+
+It is also attributed. When the last guest thread goes to sleep the renderer is
+asked whether it is inside a display list, and the interval is charged to
+`rendering` or to `other`. "The guest is waiting for the renderer" and "the
+guest is waiting for something else" are different findings and the difference
+decides where the next work goes.
+
+`dkr_renderer_busy` is weak for the same reason `dkr_clock_now_us` is:
+ultramodern is a dependency and cannot depend back on the game's renderer. A
+build without one links and charges every wait to `other`.
+
+Reported beside the existing line, on the same five-second clock:
+
+  [trace][idle] none-running=N us (rendering=N other=N) intervals=N worst=N us share=N%
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -216,6 +216,39 @@
+    would happen with a single global stamp the moment the scheduler switched. */
+ static thread_local unsigned long long tl_resumed_at = 0;
+ 
++/* **The time when no guest thread is running at all, measured rather than
++   subtracted.**
++ *
++ * `guest-run` against `wall` leaves a remainder, and on 21 September 2026 that
++ * remainder was about a quarter of the frame -- larger than the whole 33.3 ms
++ * budget -- arrived at by subtracting this instrument's ratio from the
++ * renderer's per-display-list mean. Two instruments with different populations
++ * and different denominators should not be subtracted from one another, so the
++ * remainder is measured here instead: a count of running guest threads, and a
++ * stamp at each edge between one and none.
++ *
++ * It is also **attributed**, which is the point. When the last guest thread goes
++ * to sleep the renderer is asked whether it is inside a display list, and the
++ * interval is charged to one of two buckets. "Waiting for the renderer" and
++ * "waiting for something else" are different findings and the difference decides
++ * where the next work goes.
++ *
++ * `dkr_renderer_busy` is weak for the same reason the clock is: ultramodern is a
++ * dependency and cannot depend back on the game's renderer. A build without one
++ * links, and charges every wait to the unattributed bucket. */
++extern "C" int dkr_renderer_busy(void) __attribute__((weak));
++
++static std::atomic<int> g_guest_running{0};
++static std::atomic<unsigned long long> g_idle_since{0};
++static std::atomic<int> g_idle_renderer_busy{0};
++static std::atomic<unsigned long long> g_idle_us_rendering{0};
++static std::atomic<unsigned long long> g_idle_us_other{0};
++static std::atomic<unsigned long long> g_idle_n{0};
++static std::atomic<unsigned long long> g_idle_worst{0};
++/* A thread that has never been resumed was never counted, so it must not
++   decrement on its first wait. */
++static thread_local bool tl_counted = false;
++
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
+     if (guest_time_enabled() && tl_resumed_at != 0) {
+         const unsigned long long now = dkr_clock_now_us();
+@@ -249,11 +282,52 @@
+                          "switches=%llu busy=%llu%%\n",
+                          (unsigned long long)g_guest_run_us.load(), wall, n,
+                          wall ? (100ULL * g_guest_run_us.load()) / wall : 0ULL);
++            const unsigned long long idle_r = g_idle_us_rendering.load();
++            const unsigned long long idle_o = g_idle_us_other.load();
++            std::fprintf(stderr,
++                         "[trace][idle] none-running=%llu us (rendering=%llu "
++                         "other=%llu) intervals=%llu worst=%llu us share=%llu%%\n",
++                         idle_r + idle_o, idle_r, idle_o,
++                         (unsigned long long)g_idle_n.load(),
++                         (unsigned long long)g_idle_worst.load(),
++                         wall ? (100ULL * (idle_r + idle_o)) / wall : 0ULL);
+             if (dkr_diag_commit) { dkr_diag_commit(); }
+         }
++        if (tl_counted) {
++            tl_counted = false;
++            if (g_guest_running.fetch_sub(1) == 1) {
++                /* The last one out. Stamp the hour and ask the renderer what it
++                   is doing, because that is the answer this bucket carries. */
++                g_idle_renderer_busy.store(
++                    (dkr_renderer_busy != nullptr) ? dkr_renderer_busy() : -1);
++                g_idle_since.store(now);
++            }
++        }
+     }
+     thread_context->running.wait();
+-    if (guest_time_enabled()) { tl_resumed_at = dkr_clock_now_us(); }
++    if (guest_time_enabled()) {
++        const unsigned long long woke_at = dkr_clock_now_us();
++        tl_resumed_at = woke_at;
++        if (!tl_counted) {
++            tl_counted = true;
++            if (g_guest_running.fetch_add(1) == 0) {
++                const unsigned long long since = g_idle_since.load();
++                if (since != 0ULL && woke_at > since) {
++                    const unsigned long long d = woke_at - since;
++                    if (g_idle_renderer_busy.load() == 1) {
++                        g_idle_us_rendering.fetch_add(d);
++                    } else {
++                        g_idle_us_other.fetch_add(d);
++                    }
++                    g_idle_n.fetch_add(1);
++                    unsigned long long worst = g_idle_worst.load();
++                    while (d > worst &&
++                           !g_idle_worst.compare_exchange_weak(worst, d)) {
++                    }
++                }
++            }
++        }
++    }
+     // If this thread's context was replaced by another thread or deleted, destroy it again from its own context.
+     // This will trigger thread cleanup instead.
+     if (TO_PTR(OSThread, ultramodern::this_thread())->context != thread_context) {

@@ -27,6 +27,27 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
+
+/* **Is the renderer inside a display list right now?**
+ *
+ * The scheduler wants to know. Its guest threads spend part of every frame with
+ * all of them blocked, and the question that time raises is whether they are
+ * waiting for this file or for something else. Answering it from the outside
+ * needs one bit, sampled at the moment the last guest thread goes to sleep.
+ *
+ * A weak symbol, like `dkr_clock_now_us` and `dkr_diag_commit`: ultramodern is a
+ * dependency and cannot depend back, so it declares this weak and checks for
+ * null. A build without a Glide renderer links, and reports the wait as
+ * unattributed rather than failing.
+ *
+ * The flag covers exactly the region `render_us_total_` measures, so the two
+ * accounts agree by construction. */
+static std::atomic<int> g_renderer_busy{0};
+
+extern "C" int dkr_renderer_busy(void) {
+    return g_renderer_busy.load(std::memory_order_relaxed);
+}
 #include <iterator>
 #include <memory>
 
@@ -613,6 +634,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
        immediately when a source is already chosen. */
     static const bool clock_ready = dkr_clock_init() != 0;
     const unsigned long long t_entry = clock_ready ? dkr_clock_now_us() : 0ULL;
+    g_renderer_busy.store(1, std::memory_order_relaxed);
     if (clock_ready && last_task_us_ != 0ULL) {
         const unsigned long long d = t_entry - last_task_us_;
         /* A first period after a pause is not a frame -- the ROM load and the
@@ -1144,6 +1166,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         render_n_++;
         if (d > render_us_worst_) { render_us_worst_ = d; }
     }
+    g_renderer_busy.store(0, std::memory_order_relaxed);
 
     for (int i = 0; i < DKR_F3D_REJECT_COUNT_MAX; i++) {
         rejects_by_kind_[i] += context_.state.rejects[i];
