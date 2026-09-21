@@ -2,6 +2,7 @@
 #include "glide.h"
 
 #include <windows.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -390,13 +391,44 @@ void dkr_glide_clear(unsigned argb)
     }
 }
 
+/* **Synchronised or immediate, and why it is a switch rather than a constant.**
+ *
+ * `grBufferSwap(1)` schedules the flip for the next vertical retrace and blocks
+ * until it happens; `grBufferSwap(0)` flips at once and may tear. E06-S04 frames
+ * the trade the usual way -- tearing against smoothness -- and that framing
+ * assumes a game that meets its deadline.
+ *
+ * This one does not meet it. Measured 21 September 2026, a frame here is about
+ * 190 ms against a 16.7 ms scan, so the synchronised swap is not holding a
+ * ready frame back to the right moment: it is waiting for a scan the game has
+ * already missed eleven of. That wait is inside the renderer's own timing and
+ * inside the interval on which every guest thread is blocked.
+ *
+ * So it becomes a switch, defaulting to the behaviour that was there, with the
+ * measurement that E06-S04 asks for taken against it rather than assumed. Read
+ * once: the environment is not consulted per frame. */
+static int swap_wait_scans(void)
+{
+    static int decided = -1;
+    if (decided < 0) {
+        const char *choice = getenv("DKR_GLIDE_SWAP");
+        decided = (choice != NULL && (choice[0] == 'i' || choice[0] == 'I'))
+                      ? 0
+                      : 1;
+        /* Said once, because a switch that silently fails to take and a switch
+           that takes and changes nothing produce the same measurement, and this
+           project has already spent runs on that distinction. */
+        fprintf(stderr, "[gfx][swap] %s (DKR_GLIDE_SWAP=%s)\n",
+                decided ? "synchronised with the retrace" : "immediate",
+                (choice != NULL) ? choice : "unset");
+    }
+    return decided;
+}
+
 void dkr_glide_swap(void)
 {
     if (g.context_open) {
-        /* 1: synchronise with the retrace. The choice between this and an
-           immediate swap is measured in E06-S04; by default we avoid
-           tearing. */
-        g.swap(1);
+        g.swap(swap_wait_scans());
     }
 }
 

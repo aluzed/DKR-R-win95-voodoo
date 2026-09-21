@@ -1633,6 +1633,19 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 }
 
 void dkr::runtime::GlideRenderer::update_screen() {
+    /* Counted as the renderer being busy, like `send_dl`.
+     *
+     * The scheduler's idle accounting charges a wait to "the renderer" or to
+     * "something else" by asking this flag, and on 21 September 2026 more than
+     * half the wait came back as "something else". Part of that bucket is this
+     * function: it runs on the graphics thread, outside the display-list path
+     * that `render_us_total_` measures, and was therefore invisible to both
+     * accounts at once. */
+    struct BusyWhileHere {
+        BusyWhileHere() { g_renderer_busy.store(1, std::memory_order_relaxed); }
+        ~BusyWhileHere() { g_renderer_busy.store(0, std::memory_order_relaxed); }
+    } busy_while_here;
+
     const auto index = ++present_count_;
     if (index == 1) {
         // The first refresh is only queued once ultramodern's VI thread has

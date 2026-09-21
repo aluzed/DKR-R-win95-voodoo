@@ -61,8 +61,15 @@ the target.
 ## Acceptance criteria
 
 - [ ] The rates available at the retained resolution are surveyed.
-- [ ] The synchronised / immediate choice is justified by a measurement, and
-      configurable.
+- [x] The synchronised / immediate choice is justified by a measurement, and
+      configurable — `DKR_GLIDE_SWAP=immediate`, announced once in the log so a
+      switch that fails to take cannot be read as a switch that changed nothing.
+      Measured 21 September 2026 on the test machine: **no difference**, 67.7%
+      against 67.9% of wall in guest execution and the same frame period, so the
+      synchronised swap is free here and keeps its no-tearing. The emulated Voodoo
+      does not make the caller wait for a scan; on real hardware it would, so this
+      is a fact about the bench and E09-S04 still owns the question.
+      See `docs/research/cpu-budget.md`.
 - [ ] The simulation rate stays at 30 Hz independently of the presentation.
 - [ ] The behaviour on a budget overrun is decided and documented.
 - [ ] The regularity is measured as a distribution, not as a mean.

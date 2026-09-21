@@ -1469,3 +1469,41 @@ finishing.
 What the 17.5% is remains open. What it is not is idle, and the instrument that
 would settle it has to time the non-guest threads too, which neither patch 0042 nor
 0043 does.
+
+#### The synchronised swap costs nothing here, and E06-S04 can stop wondering
+
+`dkr_glide_swap` called `grBufferSwap(1)` — schedule the flip for the next vertical
+retrace and block until it comes — under a comment saying the choice between that
+and an immediate swap "is measured in E06-S04". E06-S04's criterion for it is
+unticked; the measurement had not been taken. It has now.
+
+The argument for expecting a cost was good: E06-S04 says in as many words that a
+game which misses its deadline loses a whole scan to a synchronised swap, and this
+game misses its deadline by a factor of eleven. A 16.7 ms wait inside a 190 ms frame
+would be nine percent, and it would sit inside both the renderer's own timing and
+the interval on which every guest thread is blocked.
+
+Same binary, same route, compared at the same wall offset:
+
+    swap            busy    idle   renderer   other   switches/s
+    synchronised   67.7%   32.3%     15.2%   17.2%       69.4
+    immediate      67.9%   32.2%     14.5%   17.7%       69.1
+
+Nothing. The emulated Voodoo 2 does not make the caller wait for a scan, so the
+choice is free here and the no-tearing one is the one to keep.
+
+**Said once, in the log, because it had to be.** The first run of this experiment
+produced the same null result and was worthless: a switch that silently fails to
+take and a switch that takes and changes nothing are the same measurement. The
+second run carries `[gfx][swap] immediate (DKR_GLIDE_SWAP=immediate)` and is the one
+quoted. It cost a build and a run to learn that again.
+
+**And it is a measurement of this machine.** On real silicon the retrace is real and
+the wait would be too; what is settled is that 86Box's card does not model it, which
+is a fact about the bench rather than about the port. E09-S04 still owns the
+question.
+
+`update_screen` was brought into the renderer's flag at the same time — it runs on
+the graphics thread, outside the display-list path, and was invisible to both
+accounts at once. It moves about half a point from "other" to "rendering". The
+unattributed share is still seventeen.
