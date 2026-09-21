@@ -42,16 +42,23 @@ be bounded but not read off. `scripts/Measure-Guest-Time-VM.sh` produces the ser
 **A third item belongs in the table above and is not in it.** Measured at the title
 screen with patches 0042 and 0043, the wall divides into
 
-    computing                  67.6%
-    waiting for the renderer   14.9%
-    waiting for a clock        17.5%
+    computing                             67.6%
+    no guest running, renderer flagged    14.9%
+    no guest running, nothing flagged     17.5%
 
-and the third is none of the items this ticket lists. Two thirds of it ends when
-libultra's scheduler or the audio manager wakes — the retrace loop and the audio
-pacing — so it is the guest world waiting on time passing rather than on work
-finishing. At a sixth of every second on a machine that needs to be five times
-faster, it is larger than several named items put together, and nothing in this
-project has ever budgeted for it.
+and the third is none of the items this ticket lists.
+
+**Named, 21 September 2026: it is the graphics thread's own loop.** Not the
+vertical interval, not the scheduler quantum, not the synchronised buffer swap;
+all three were tested and refuted. The graphics thread is unblocked 29.2% of the
+wall, of which 14.6% is inside `send_dl` and `update_screen` — which the rows
+below already cover — and **14.5% is the loop around them**: the queue poll, the
+variant dispatch, `sp_complete`, the DP edge. It wakes 120 times a second and
+three rounds in five find nothing at all.
+
+That is a row this table does not have. It is the size of the vertex path's whole
+allowance, and it belongs to E08-S03 and E05 rather than to the recompiled code it
+has been silently charged to. `[trace][gfx]`, patch 0045.
 
 | Audio microcode | E03-S02 |
 | Display-list decoding | E04-S02 |
