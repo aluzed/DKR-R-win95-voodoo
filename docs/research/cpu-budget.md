@@ -1145,3 +1145,42 @@ a save, or the live recompiler, which computes its register offsets from
 been audited for the widths of the moves it emits. Nothing in this target reaches
 it — it exists for mods — but the option is off by default and should stay off until
 someone plays the game on it.
+
+### The split is not a constant: it is 72/28 at the title and 50/50 in a world
+
+The measurement above is at the title screen, and the note said so as a limitation.
+Driving the route — `pad-until-screen` to PLAYER SELECT, to CAUTION, then on into
+the adventure hub — and reading the trace interval by interval says how much that
+limitation mattered.
+
+    phase                                   busy      switches/s
+    attract sequence and early menus     72 - 91 %     55 - 79
+    the character and caution screens    51 - 58 %     62 - 64
+    menus again                          70 - 75 %     69 - 78
+    the adventure hub, last 105 seconds  47 - 54 %     58 - 67
+
+The last block is the one that matters and it is the one I can attribute with
+confidence: the hub was on screen when the route arrived, it was still on screen
+when the run ended, and nothing moved it in between. Timber's Island with its
+waterfall, water, vegetation and a butterfly is the richest scene this port has
+drawn, and there the recompiled code is **half** the wall time, not three quarters.
+
+The frame rate falls with it — 74 context switches a second at the title screen,
+63 in the hub — so the extra time is not idle. It is the renderer.
+
+**Which cuts the same way as everything else in this section.** The richer the
+scene, the smaller the share the recompiled code holds, and the less any change to
+it can buy. At the title screen narrowing the register had 72% of the frame to work
+on and moved it by nothing; in a world scene it would have had 50%.
+
+Two cautions. The earlier phases are not attributed — the route was walking through
+menus and loading, and which interval is which screen is a guess, so only the final
+block is quoted as a finding. And this is one route on one build: the narrow build
+was not driven through it, because the marginal question it would answer is smaller
+than the variance the route introduces. The documented route drifts — five
+ten-minute runs were lost to that in September — and a comparison needs the same
+scene twice, which is what the title screen gave and this does not.
+
+**For E08-S01's budget**, the entry is not one ratio. The recompiled code is 72% of
+the frame in a menu and 50% in a world scene, and a budget that carries a single
+figure for it will be wrong in whichever of the two it was not measured in.
