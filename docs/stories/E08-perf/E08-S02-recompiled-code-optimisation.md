@@ -116,9 +116,12 @@ replacement.
       game rather than an instruction count — `scripts/Measure-Guest-Time-VM.sh`.
       The gain is −0.6%, which is nothing, and the reason is recorded.
 - [~] The measurement is repeated away from the title screen. Driven into the
-      adventure hub, the recompiled code is **50%** of the wall time rather than
-      72%, with the frame rate down from 74 context switches a second to 63 — so
-      this ticket's lever has *less* to work on in a real scene, not more. Not a
+      adventure hub, the share of wall time on which guest threads are *scheduled*
+      falls from 72% to 50% — which is the game thread waiting on a renderer that
+      has more to do, not the recompiled code shrinking. The renderer's own clock
+      gives the frame instead, and there the finding is that **`elsewhere` is flat
+      at about 150 ms a frame in every scene**: the game's own cost is a floor, five
+      times the whole budget, and it does not vary with what is on screen. Not a
       race, and the narrow build was not driven through the same route: see
       `docs/research/cpu-budget.md`.
 - [ ] Lever 1 is re-argued before it is measured: "fewer instructions" is now known

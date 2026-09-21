@@ -21,11 +21,23 @@ The expected items, each measured by its ticket of origin:
 |---|---|
 | Recompiled game's CPU | E00-S03, E02-S06 |
 
-Measured 21 September 2026, and **it is not one number**: the recompiled code is
-72% of the wall time at the title screen and 50% in the adventure hub, the richest
-scene this port draws. A budget carrying a single figure for it will be wrong in
-whichever scene it was not measured in. `scripts/Measure-Guest-Time-VM.sh` produces
-the series; `docs/research/cpu-budget.md` has the runs.
+Measured 21 September 2026 by two instruments that do not measure the same thing,
+which is worth settling before the budget is filled in.
+
+`DKR_TRACE_CPU` gives the share of wall time on which guest threads are
+**scheduled**: 72% at the title screen, 50% in the adventure hub. That is a
+scheduling figure. A guest thread blocked on the renderer is wall time it does not
+count and the frame still pays for, so it is not the budget's line item.
+
+The renderer's own `[gfx] frame:` line gives the frame, and its answer is steadier
+than expected: `elsewhere` — everything outside the renderer — is about **150 ms a
+frame in every scene measured**, menus, loading and the richest world alike, while
+the renderer's share is what the scene changes. The game's own cost is a floor, and
+at roughly five times the 33.3 ms budget it is the reason the frame is 190 ms.
+
+Both figures are cumulative means in the log, so per-scene instantaneous values can
+be bounded but not read off. `scripts/Measure-Guest-Time-VM.sh` produces the series;
+`docs/research/cpu-budget.md` has the runs.
 
 | Audio microcode | E03-S02 |
 | Display-list decoding | E04-S02 |
