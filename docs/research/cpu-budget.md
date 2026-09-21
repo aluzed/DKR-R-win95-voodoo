@@ -1304,3 +1304,50 @@ the wake source recorded beside the interval rather than only the renderer's sta
 **This is the first number in the note that is neither the game nor the graphics**,
 and at a sixth of the wall it is larger than several of the budget's named items put
 together. Whether it is reclaimable is unknown. That it is there is now measured.
+
+#### Who ends the silence
+
+Patch 0043 records the id of the thread that wakes first out of each interval, and
+the ids are recoverable from the game's own creation sites — the second argument to
+`osCreateThread`, read out of the recompiled code:
+
+    id  created by           what it is                 of the wait   wakes   mean
+     5  osCreateScheduler    the scheduler                   43.8%     2737   4.95 ms
+     3  thread1_main         the game thread                 31.2%     1845   5.25 ms
+     4  amCreateAudioMgr     the audio manager               21.6%     1512   4.43 ms
+     1  recomp_entrypoint    the idle thread                  3.4%      503   2.07 ms
+    30  bgload_init          the background loader             0%         1
+
+The columns sum to 31.0 s and 6,598 wakes, which are the same 31.0 s and 6,598
+intervals the previous table measured, so the attribution is complete rather than a
+sample.
+
+**Nearly half of the dead time ends when the scheduler wakes.** In libultra the
+scheduler is the retrace loop: it waits on the vertical interrupt and hands the
+graphics and audio tasks out. A fifth ends when the audio manager wakes. Between
+them, two thirds of the time nobody is working is time the guest world is waiting on
+a *clock*, not on a computation.
+
+The game thread's 31% is the other shape — it is the thread that would be waiting
+for a task it submitted to come back.
+
+**What this names and what it does not.** It names who ended each wait, which is not
+the same as what every sleeping thread was waiting for: the scheduler waking first
+does not prove the others were waiting for the scheduler. And the mean interval is
+about 5 ms in every row, which is suspiciously close to uniform and deserves a look
+of its own — a 60 Hz retrace is 16.7 ms and an audio frame is neither.
+
+What it does establish is the shape of the remaining question. The port's time
+divides into 68% computing, 15% waiting for the renderer, and **17% waiting for a
+clock** — and the third of those has never been an item in the budget at all.
+
+#### Reproducibility
+
+Two runs, the second after adding the waker attribution:
+
+    run 1   none-running 32%   renderer 45.9%   other 54.1%   6550 intervals
+    run 2   none-running 32%   renderer 44.7%   other 55.3%   6598 intervals
+
+Same machine, same route, a little over one percent apart on the split. The
+instrument is stable enough to compare builds with, which is what it will be used
+for next.

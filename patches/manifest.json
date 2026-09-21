@@ -173,6 +173,10 @@
         {
           "path": "patches/n64-modern-runtime/0042-measure-and-attribute-the-idle-frame.patch",
           "sha256": "294a615c4598d53ee54a2b57b4b5655aab996494a0754a4960efa249ea56b9a4"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0043-name-the-thread-that-ends-each-silence.patch",
+          "sha256": "830d610b206f1d9e8ea6bb6910b6eacd2d99129d30df269d84b2c2fd458de38a"
         }
       ]
     },

@@ -1,0 +1,82 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Name the thread that ends each silence
+
+Patch 0042 measures the wall time on which no guest thread runs and charges
+half of it to the renderer. The other half -- a sixth of every second at the
+title screen -- has no name.
+
+The thread that wakes first is the closest thing to one the scheduler can offer
+without instrumenting every wake site, and it separates the candidates that
+matter: the audio thread ending the waits says the audio path paces the frame,
+the game thread ending them says it is the vertical interval or a message
+queue.
+
+Sixteen slots by guest thread id, everything above folded into the last, and
+only the interval's *end* recorded -- asking which thread went to sleep last
+would name the one that had least to do, not the one being waited for.
+
+  [trace][waker] t1=NNN us/NN t3=NNN us/NN
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -249,6 +249,22 @@
+    decrement on its first wait. */
+ static thread_local bool tl_counted = false;
+ 
++/* **Which thread ends the silence.**
++ *
++ * Half the idle time is charged to the renderer and half is not, and the half
++ * that is not has no name. The thread that wakes first is the closest thing to
++ * one the scheduler can offer without instrumenting every wake site: the audio
++ * thread ending the waits would say the audio path paces the frame, the game
++ * thread ending them would say it is the vertical interval or a message queue.
++ *
++ * Sixteen slots by guest thread id, which is more than DKR uses, and everything
++ * above that folded into the last. Only the interval's *end* is recorded --
++ * asking which thread went to sleep last would name the one that had least to
++ * do, not the one being waited for. */
++#define DKR_IDLE_WAKER_SLOTS 16
++static std::atomic<unsigned long long> g_idle_waker_us[DKR_IDLE_WAKER_SLOTS];
++static std::atomic<unsigned long long> g_idle_waker_n[DKR_IDLE_WAKER_SLOTS];
++
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
+     if (guest_time_enabled() && tl_resumed_at != 0) {
+         const unsigned long long now = dkr_clock_now_us();
+@@ -291,6 +307,19 @@
+                          (unsigned long long)g_idle_n.load(),
+                          (unsigned long long)g_idle_worst.load(),
+                          wall ? (100ULL * (idle_r + idle_o)) / wall : 0ULL);
++            /* One line, the busiest wakers first is not worth sorting for:
++               sixteen fields is short enough to read and a fixed order lets two
++               runs be compared column by column. Empty slots are skipped so the
++               line stays narrow when the game uses four threads. */
++            std::fprintf(stderr, "[trace][waker]");
++            for (int s = 0; s < DKR_IDLE_WAKER_SLOTS; s++) {
++                const unsigned long long us = g_idle_waker_us[s].load();
++                if (us != 0ULL) {
++                    std::fprintf(stderr, " t%d=%llu us/%llu", s, us,
++                                 (unsigned long long)g_idle_waker_n[s].load());
++                }
++            }
++            std::fprintf(stderr, "\n");
+             if (dkr_diag_commit) { dkr_diag_commit(); }
+         }
+         if (tl_counted) {
+@@ -324,6 +353,16 @@
+                     while (d > worst &&
+                            !g_idle_worst.compare_exchange_weak(worst, d)) {
+                     }
++                    {
++                        const OSThread* self =
++                            TO_PTR(OSThread, ultramodern::this_thread());
++                        int slot = (self != nullptr) ? (int)self->id : 0;
++                        if (slot < 0 || slot >= DKR_IDLE_WAKER_SLOTS) {
++                            slot = DKR_IDLE_WAKER_SLOTS - 1;
++                        }
++                        g_idle_waker_us[slot].fetch_add(d);
++                        g_idle_waker_n[slot].fetch_add(1);
++                    }
+                 }
+             }
+         }
