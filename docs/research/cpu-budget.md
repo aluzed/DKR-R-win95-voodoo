@@ -1507,3 +1507,60 @@ question.
 the graphics thread, outside the display-list path, and was invisible to both
 accounts at once. It moves about half a point from "other" to "rendering". The
 unattributed share is still seventeen.
+
+### The seventeen percent is the graphics thread, outside the part that was timed
+
+Three candidates for the unattributed wait were tested and refuted — the vertical
+interval, the scheduler quantum, the synchronised swap — and the third experiment
+along the way established that the time is not idle. So it was measured directly
+rather than guessed at again. The graphics thread now counts its own rounds, its
+empty rounds, and the span it spends awake.
+
+Over 80.6 seconds at the title screen:
+
+    guest threads not blocked                       55.4 s   68.8%
+    no guest running, renderer flagged              11.8 s   14.6%
+    no guest running, nothing flagged               13.4 s   16.7%
+
+    graphics thread not blocked                     23.5 s   29.2%
+      of which inside send_dl and update_screen              14.6%
+      of which elsewhere in its own loop                     14.5%
+
+**14.5 against 16.7.** The graphics thread awake outside the two functions that
+were timed is, to within a couple of points, the whole of the share nothing could
+account for. The seventeen percent has a name.
+
+#### What it is doing there
+
+    9,670 rounds in 80.6 s   120 a second
+    5,719 of them empty      59%
+    2.43 ms awake per round  on average
+
+Its loop polls the action queue on a one millisecond timeout — `wait_dequeue_timed
+(action, 1ms)` — so it was expected to wake a thousand times a second. It wakes a
+hundred and twenty, which says the timeout is rarely what ends the wait, and **three
+rounds in five find nothing at all**. The work between the two timed functions is
+the loop itself: the variant dispatch, `sp_complete`, the DP edge publication, the
+queue handling, and the clock reads.
+
+#### The caveat this number carries
+
+"Not blocked" is not "executing". A thread that has been preempted is runnable and
+counts as awake here, and the same is true of `guest-run` on the other side of the
+table — the instrument in patch 0041 stamps from resume to the next voluntary block,
+and Windows may have taken the processor away in between. On a single emulated core
+the two cannot really overlap, so 68.8 and 29.2 summing to ninety-eight is a
+coincidence of two ceilings rather than a closed account.
+
+What survives the caveat is the comparison that matters: the graphics thread's
+unflagged time and the unattributed idle are the same size, they move together, and
+no other thread was found doing anything of that order. The budget's missing item is
+the graphics thread's own loop.
+
+#### Which is a different ticket from the one it was charged to
+
+The frame's 150 ms of `elsewhere` has been read all along as the recompiled game.
+Part of it is the graphics thread running between display lists, and that belongs to
+E08-S03 and E05, not to E08-S02. Whether the loop can be made cheaper — a queue that
+blocks properly instead of polling, fewer rounds that find nothing — is work that has
+never been scoped, because until now nobody knew it cost anything.
