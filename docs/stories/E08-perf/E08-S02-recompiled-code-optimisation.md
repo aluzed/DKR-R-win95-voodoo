@@ -115,8 +115,12 @@ replacement.
 - [x] The narrowed register is built and linked, and its gain measured as a running
       game rather than an instruction count — `scripts/Measure-Guest-Time-VM.sh`.
       The gain is −0.6%, which is nothing, and the reason is recorded.
-- [ ] The measurement is repeated during a race rather than at the title screen,
-      where the balance between game logic and graphics is not the same.
+- [~] The measurement is repeated away from the title screen. Driven into the
+      adventure hub, the recompiled code is **50%** of the wall time rather than
+      72%, with the frame rate down from 74 context switches a second to 63 — so
+      this ticket's lever has *less* to work on in a real scene, not more. Not a
+      race, and the narrow build was not driven through the same route: see
+      `docs/research/cpu-budget.md`.
 - [ ] Lever 1 is re-argued before it is measured: "fewer instructions" is now known
       not to be the currency on this machine.
 

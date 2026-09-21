@@ -20,6 +20,13 @@ The expected items, each measured by its ticket of origin:
 | Item | Ticket of origin |
 |---|---|
 | Recompiled game's CPU | E00-S03, E02-S06 |
+
+Measured 21 September 2026, and **it is not one number**: the recompiled code is
+72% of the wall time at the title screen and 50% in the adventure hub, the richest
+scene this port draws. A budget carrying a single figure for it will be wrong in
+whichever scene it was not measured in. `scripts/Measure-Guest-Time-VM.sh` produces
+the series; `docs/research/cpu-budget.md` has the runs.
+
 | Audio microcode | E03-S02 |
 | Display-list decoding | E04-S02 |
 | Vertex transformation | E04-S03 |
