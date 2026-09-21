@@ -1398,7 +1398,25 @@ retrace". What would settle it is the vertical interval's own period timed on th
 machine and the retrace count per frame beside it — which is a smaller instrument
 than either of the two already added here.
 
-If it holds, it is the first thing this note has found that is neither the
+~~If it holds, it is the first thing this note has found that is neither the
 recompiled code nor the renderer and is plainly wasteful: not work that is slow, but
 work that is not being done while the machine waits for a clock it has already
-missed.
+missed.~~
+
+**It does not hold. Refuted the same day.** `ultramodern::get_speed_multiplier` is a
+compile-time constant that scales both the vertical interval's cadence and the
+guest's own counter together, so setting it to 2 doubles the retrace rate without
+changing what the game perceives. Both builds, compared at the same wall offset:
+
+    VI rate     busy    idle    renderer   other   waits 8-32 ms   switches/s
+    60 Hz      67.9%   32.1%      14.6%   17.5%      25.1%            68.2
+    120 Hz     66.4%   33.8%      15.2%   18.6%      24.4%            74.0
+
+The cluster does not move. Idle goes marginally *up*. The change did take effect —
+the switch rate rises 8.5%, which is the scheduler seeing twice as many retraces —
+and the waits are simply not made of retraces.
+
+So the 8 to 32 milliseconds are set by something whose period is not the vertical
+interval, and the reading above was wrong. Written out rather than quietly replaced,
+because the experiment took an hour and the reason it was worth running is that the
+reading was plausible.
