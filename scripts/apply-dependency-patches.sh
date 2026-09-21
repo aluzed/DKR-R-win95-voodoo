@@ -68,6 +68,13 @@ for dependency in data["dependencies"]:
     # re-apply everything. Safe because the commit is pinned and verified.
     print(f"[INFO] {dependency['name']}: resetting to pinned commit and re-applying all patches")
     subprocess.run(["git", "-C", str(repo), "checkout", "--", "."], check=True)
+    # `checkout` restores tracked files and leaves untracked ones where they
+    # are. A patch that *adds* a file -- the platform seams add three between
+    # them -- then refuses on the second run, because its new file already
+    # exists, and the stack stops there for good. Anything untracked in a
+    # pinned dependency checkout came from a patch, so clean it: the checkout
+    # is meant to be the pinned commit plus this list and nothing else.
+    subprocess.run(["git", "-C", str(repo), "clean", "-fdq"], check=True)
     for entry, p in patches:
         subprocess.run(["git", "-C", str(repo), "apply", str(p)], check=True)
         print(f"[OK] {dependency['name']}: {entry['path']} (applied)")
