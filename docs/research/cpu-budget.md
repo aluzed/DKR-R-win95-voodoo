@@ -1420,3 +1420,52 @@ So the 8 to 32 milliseconds are set by something whose period is not the vertica
 interval, and the reading above was wrong. Written out rather than quietly replaced,
 because the experiment took an hour and the reason it was worth running is that the
 reading was plausible.
+
+#### The quantum was the right guess and the wrong conclusion
+
+If the waits are not retraces and four unrelated threads agree on their length, the
+next candidate is the scheduler's own slice. And there was a plausible cause sitting
+in the runtime: `ultramodern::set_native_thread_priority` computes a native priority
+for every thread it creates — `Critical` for the vertical-interval thread,
+`VeryHigh` for the timer — and then does not apply it. The `SetThreadPriority` call
+is commented out upstream. On one core with every thread at NORMAL, a signalled
+thread does not preempt; it waits for the running slice to end, which is tens of
+milliseconds on Windows 95.
+
+Applying it, on this target only, does exactly what the hypothesis predicted to the
+waits:
+
+    build                   busy    idle    waits 8-32 ms    switches/s
+    priorities unapplied   67.9%   32.1%   1631 of 6495       68
+    priorities applied     97.0%    2.6%     32 of 22427     124
+
+The cluster is gone. 93% of the remaining waits are under 256 µs — the semaphore's
+spin and nothing else. Guest threads run 97% of the wall.
+
+**And the game stops.** Over 181 seconds the renderer processed **one** display
+list, against 477 in the baseline's 95; `gGameMode` never left INTRO, where the
+baseline reaches the title screen in twenty seconds. The screen holds the logo and
+does not advance. The frame figures the run produced are a single sample and mean
+nothing.
+
+So the waits were the quantum, and the quantum was not the enemy. Give the guest
+threads priority on one core and they take it — from the graphics thread, which is
+the one that has to run for the frame to finish.
+
+#### Which corrects what the idle time was called
+
+The entry above called the 17.5% "nobody executing, nothing drawing", and that is
+wrong in its second half and misleading in its first. The instrument counts **guest**
+threads. The ultramodern graphics thread, the audio output, and Windows 95 itself are
+none of them guest threads, and everything they do lands in that bucket looking like
+silence.
+
+The renderer's time *inside* `send_dl` is separately accounted, which is what made
+the mistake easy: having subtracted the part of the renderer that is measured, it
+was tempting to read the remainder as empty. The priority experiment is what says
+otherwise — take that time away from whoever was using it and the frame stops
+finishing.
+
+What the 17.5% is remains open. What it is not is idle, and the instrument that
+would settle it has to time the non-guest threads too, which neither patch 0042 nor
+0043 does.
