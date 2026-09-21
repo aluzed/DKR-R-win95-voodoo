@@ -39,6 +39,20 @@ Both figures are cumulative means in the log, so per-scene instantaneous values 
 be bounded but not read off. `scripts/Measure-Guest-Time-VM.sh` produces the series;
 `docs/research/cpu-budget.md` has the runs.
 
+**A third item belongs in the table above and is not in it.** Measured at the title
+screen with patches 0042 and 0043, the wall divides into
+
+    computing                  67.6%
+    waiting for the renderer   14.9%
+    waiting for a clock        17.5%
+
+and the third is none of the items this ticket lists. Two thirds of it ends when
+libultra's scheduler or the audio manager wakes — the retrace loop and the audio
+pacing — so it is the guest world waiting on time passing rather than on work
+finishing. At a sixth of every second on a machine that needs to be five times
+faster, it is larger than several named items put together, and nothing in this
+project has ever budgeted for it.
+
 | Audio microcode | E03-S02 |
 | Display-list decoding | E04-S02 |
 | Vertex transformation | E04-S03 |
