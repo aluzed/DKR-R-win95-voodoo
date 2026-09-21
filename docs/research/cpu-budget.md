@@ -1013,3 +1013,116 @@ fail quietly, and the one that fails everywhere, are legal 32-bit expressions.
 Folding these back in would go through the `stubs` list in the recomp policy,
 which already exists for replacing a generated function with a hand-written one.
 That is plumbing rather than semantics; the semantics are done and checked.
+
+### The narrowing, run on the machine — 21 September 2026
+
+It builds, it boots, and it changes nothing.
+
+#### It runs
+
+`DKR_WIN95_NARROW_GUEST_REGISTER=ON` produces an 8,059,248-byte `DKRR.EXE` against
+the upstream build's 9,227,069 — 12.7% of the whole executable, which is the 32.4%
+of the recompiled part diluted by everything else in the binary. Both pass the
+Pentium II instruction-set check and the import audit.
+
+On the test machine it plays the N64 logo, the Rare copyright, and the title
+screen's animated scene, and exits cleanly when asked. A change to the width of
+every general register across 116,795 operations, and the game does not notice.
+
+That is worth stating plainly, because it was the open question: the three
+hand-written wide paths and the three macro changes are sufficient. Nothing else
+in DKR wanted sixty-four bits.
+
+#### It changes nothing
+
+`DKR_TRACE_CPU` stamps every context switch and reports every five seconds, reading
+the guest's own 8254 for both numbers, so the ratio is in emulated time and does not
+move with the host. Both builds were run through the same sequence — boot, launch,
+the intro's attract loop — and the trace compared at the same wall offset, because
+the ratio falls through a run as loading gives way to the title screen and two runs
+compared at their last sample would not be comparing the same work.
+
+At 60 seconds of guest wall time, with the Glide renderer:
+
+    build     guest-run        wall        switches   busy    switches/s
+    wide      43,441,571 us    60,337,034      4,215   72.0%       69.86
+    narrow    43,174,877 us    60,495,651      4,235   71.4%       70.01
+
+Guest execution time: **−0.6%**. Switch rate: **+0.2%**. Against a static change of
+**−30.5% of emitted instructions** and −31.5% of the instructions that reference
+memory.
+
+The binary was checked rather than assumed: the executable on the test disk after
+the second run has the same MD5 as `build/win95-narrow/bin/DKRR.EXE`, and a
+different one from the wide build. Two measurements this close are also what "the
+wrong binary ran" looks like, and that had to be excluded rather than argued away.
+
+#### Why nothing moved
+
+Three measurements already in this note predict it between them.
+
+**The core was idle.** At 16 cycles per MIPS instruction and 3.89 emitted x86
+instructions per MIPS instruction, the recompiled code retires one instruction
+every 4.1 cycles on a three-wide core — one instruction for every twelve issue
+slots, about 8% of what the machine can retire. Removing 30% of the instructions
+removes work from a resource that was 92% idle. The prediction is that the cost per
+instruction rises to absorb it, and it did: the same time over 0.695 of the
+instructions is 5.9 cycles each.
+
+**The removed traffic never missed.** `recomp_context` is 540 bytes wide and 412
+narrow; both live in a 16 KB L1 permanently. The upper half of a register shares its
+cache line with the lower half, so the accesses that went away were L1 hits that
+cost an instruction and no miss. Classified by addressing mode across the two
+disassemblies:
+
+    simple displacement (the context)   184,700 -> 149,110
+    indexed base (the guest's RDRAM)     57,048 ->  63,301
+
+The guest's own memory traffic is untouched — the same loads from the same eight
+megabytes. The count rises only because a 32-bit address folds into the addressing
+mode where a 64-bit one needed a separate `lea`, which is also why `lea` fell by
+4,509.
+
+**And the emulator does not hide it.** 18 September's calibration found main memory
+at 11 cycles a step where silicon charges tens, a second-level cache that does not
+exist because everything up to 256 KB is already L1-fast, and mispredicts free. All
+three make the model *less* memory-stalled than the real part, which means the model
+is the environment where an instruction-count saving should show up best. It did
+not.
+
+So the register width was not the bottleneck, and the reason it was not is that the
+bottleneck is the guest's own memory behaviour — eight megabytes of game data,
+accessed the same way whatever the host register is made of.
+
+#### What this costs the argument for the fifth lever
+
+E08-S02 listed the guest register's width as the largest of five levers, on a
+measurement of emitted instructions. That measurement was right and the inference
+from it was wrong: on this machine instruction count is not the currency. The lever
+is now measured at nothing, and the same objection applies in advance to any other
+lever whose claim is "fewer instructions" — including the first of the four the
+ticket already had.
+
+What survives is narrower and more specific: the levers worth measuring are the ones
+that change *what the guest touches and when*, not how many instructions it takes to
+touch it.
+
+#### What this does not settle
+
+It is one scene. The title screen spends 72% of its time in guest execution, which
+is enough for the recompiled code to be worth optimising, but it is not a race:
+nothing here has been driven into gameplay, and the mix of game logic against
+graphics there is not measured.
+
+It is one machine, and an emulated one. The three deviations named above all point
+the same way, so the direction of the extrapolation is sound, but E09-S04 remains
+the way to replace "a model where this shows nothing" with "silicon where this shows
+nothing".
+
+And the narrow build has run for three minutes of attract loop, not a session. The
+equivalence tests cover the arithmetic across 386 inputs; they do not cover a race,
+a save, or the live recompiler, which computes its register offsets from
+`sizeof(recomp_context::r0)` and so follows the width for addressing but has not
+been audited for the widths of the moves it emits. Nothing in this target reaches
+it — it exists for mods — but the option is off by default and should stay off until
+someone plays the game on it.
