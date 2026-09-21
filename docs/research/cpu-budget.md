@@ -1094,6 +1094,25 @@ So the register width was not the bottleneck, and the reason it was not is that 
 bottleneck is the guest's own memory behaviour — eight megabytes of game data,
 accessed the same way whatever the host register is made of.
 
+#### The renderer was not hiding it
+
+The obvious objection to the table above is that `guest-run` counts a guest thread's
+whole slice, graphics included, so a renderer that dominates would dilute any change
+in the recompiled code. `DKR_RENDERER=null` answers it: the diagnostic renderer
+counts display lists instead of drawing them, and guest execution rises from 72% of
+wall to 82%. If the renderer had been the dilution, the difference would open up
+here.
+
+At 60 seconds of guest wall time, with the renderer taken out:
+
+    build     guest-run        wall        switches   busy
+    wide      49,682,886 us    60,542,978      4,614   82.1%
+    narrow    49,594,001 us    60,413,214      4,580   82.1%
+
+**−0.18%.** Smaller than with the renderer in, not larger. Whatever the recompiled
+code is waiting for, it is not the graphics pipeline and it is not the instruction
+count.
+
 #### What this costs the argument for the fifth lever
 
 E08-S02 listed the guest register's width as the largest of five levers, on a
