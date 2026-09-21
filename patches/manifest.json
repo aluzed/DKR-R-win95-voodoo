@@ -177,6 +177,10 @@
         {
           "path": "patches/n64-modern-runtime/0043-name-the-thread-that-ends-each-silence.patch",
           "sha256": "830d610b206f1d9e8ea6bb6910b6eacd2d99129d30df269d84b2c2fd458de38a"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0044-record-the-shape-of-the-wait.patch",
+          "sha256": "41853d5ffca36a43fcdfbcdd9e7861519d1f0e9e4197ab49790e0834c551d3be"
         }
       ]
     },

@@ -1,0 +1,77 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Record the shape of the wait, not only its mean
+
+Every waker in patch 0043's table came out at about five milliseconds a wait,
+which is close enough to uniform across four unrelated threads to be
+suspicious. A 60 Hz retrace is 16.7 ms, an audio frame is neither, and threads
+waiting on different things have no reason to agree.
+
+A mean cannot separate a population clustered on a quantum from one spread
+smoothly around the same average, and the two are different findings: the first
+is an artefact of how this port waits and may be reclaimable, the second is the
+guest genuinely having nothing to do.
+
+Octave buckets in microseconds, eleven comparisons at a scheduler edge, which
+is nothing beside the clock read already being taken there.
+
+  [trace][idle-shape] N N N N N N N N N N N N   us: <64 <128 ... rest
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -261,6 +261,33 @@
+  * above that folded into the last. Only the interval's *end* is recorded --
+  * asking which thread went to sleep last would name the one that had least to
+  * do, not the one being waited for. */
++/* **The shape of the wait, not its mean.**
++ *
++ * Every waker came out at about five milliseconds a wait, which is close enough
++ * to uniform across four unrelated threads to be suspicious: a 60 Hz retrace is
++ * 16.7 ms, an audio frame is neither, and threads waiting on different things
++ * should not agree. A mean cannot tell a population clustered on a quantum from
++ * one spread smoothly around the same average, and those are different findings
++ * -- the first is an artefact of how the port waits and may be reclaimable, the
++ * second is the guest genuinely having nothing to do.
++ *
++ * Octave buckets, in microseconds: <64, <128, <256, <512, <1k, <2k, <4k, <8k,
++ * <16k, <32k, <64k, and the rest. Eleven comparisons at a scheduler edge is
++ * nothing beside the clock read already being done. */
++#define DKR_IDLE_HISTOGRAM_BUCKETS 12
++static std::atomic<unsigned long long>
++    g_idle_histogram[DKR_IDLE_HISTOGRAM_BUCKETS];
++
++static int idle_bucket(unsigned long long us) {
++    int bucket = 0;
++    unsigned long long edge = 64ULL;
++    while (bucket < DKR_IDLE_HISTOGRAM_BUCKETS - 1 && us >= edge) {
++        edge <<= 1;
++        bucket++;
++    }
++    return bucket;
++}
++
+ #define DKR_IDLE_WAKER_SLOTS 16
+ static std::atomic<unsigned long long> g_idle_waker_us[DKR_IDLE_WAKER_SLOTS];
+ static std::atomic<unsigned long long> g_idle_waker_n[DKR_IDLE_WAKER_SLOTS];
+@@ -320,6 +347,13 @@
+                 }
+             }
+             std::fprintf(stderr, "\n");
++            std::fprintf(stderr, "[trace][idle-shape]");
++            for (int b = 0; b < DKR_IDLE_HISTOGRAM_BUCKETS; b++) {
++                std::fprintf(stderr, " %llu",
++                             (unsigned long long)g_idle_histogram[b].load());
++            }
++            std::fprintf(stderr, "   us: <64 <128 <256 <512 <1k <2k <4k <8k"
++                                 " <16k <32k <64k rest\n");
+             if (dkr_diag_commit) { dkr_diag_commit(); }
+         }
+         if (tl_counted) {
+@@ -362,6 +396,7 @@
+                         }
+                         g_idle_waker_us[slot].fetch_add(d);
+                         g_idle_waker_n[slot].fetch_add(1);
++                        g_idle_histogram[idle_bucket(d)].fetch_add(1);
+                     }
+                 }
+             }

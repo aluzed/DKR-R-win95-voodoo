@@ -1351,3 +1351,54 @@ Two runs, the second after adding the waker attribution:
 Same machine, same route, a little over one percent apart on the split. The
 instrument is stable enough to compare builds with, which is what it will be used
 for next.
+
+#### The five milliseconds was an average of two populations
+
+The mean wait came out near five milliseconds for every thread, which was
+suspicious enough to instrument: four threads waiting on different things have no
+reason to agree. Patch 0044 records the shape in octave buckets rather than the
+mean, and the shape is bimodal.
+
+    bucket     count   of n   est. time   of t
+    <256 us     3246   50.0%     0.59 s    2.0%
+    <512 us      705   10.9%     0.26 s    0.9%
+    <1 ms        239    3.7%     0.17 s    0.6%
+    <2 ms         91    1.4%     0.13 s    0.4%
+    <4 ms        194    3.0%     0.56 s    1.9%
+    <8 ms        369    5.7%     2.14 s    7.2%
+    <16 ms      1100   16.9%    12.74 s   43.1%
+    <32 ms       531    8.2%    12.30 s   41.6%
+    <64 ms        13    0.2%     0.60 s    2.0%
+
+Estimating each bucket at its geometric midpoint totals 29.6 s against the 30.7 s
+measured, so the histogram accounts for the time rather than merely sorting it.
+
+**Half the waits are two hundred microseconds and cost nothing.** That is
+`moodycamel::LightweightSemaphore`, which `UltraThreadContext::running` is, spinning
+its default ten thousand iterations before it sleeps. Three thousand of those a run,
+two percent of the idle time. Worth knowing — on a single emulated core a spinning
+thread delays the one it is waiting for — but not worth chasing.
+
+**A quarter of the waits, between 8 and 32 ms, are 85% of the time.** 1,631 of them
+over about 480 frames: **3.4 such waits a frame, of roughly 16 ms each.** That is
+some fifty-five milliseconds of a hundred-and-ninety-millisecond frame spent in
+waits the length of one vertical interval, and the thread that ends the largest
+share of them is the scheduler — libultra's retrace loop.
+
+#### What that points at, and what would confirm it
+
+The reading is that the frame is being quantised to the emulated vertical interval:
+the game finishes a piece of work, waits for the next retrace boundary before the
+next piece is dispatched, and pays a rounding-up several times a frame. At 5 fps the
+game is nowhere near 60 Hz and should never be waiting for a retrace at all.
+
+It is a reading and not yet a measurement. The buckets straddle 16.7 ms rather than
+landing on it, and "the scheduler woke first" is not "the thread was waiting for a
+retrace". What would settle it is the vertical interval's own period timed on this
+machine and the retrace count per frame beside it — which is a smaller instrument
+than either of the two already added here.
+
+If it holds, it is the first thing this note has found that is neither the
+recompiled code nor the renderer and is plainly wasteful: not work that is slow, but
+work that is not being done while the machine waits for a clock it has already
+missed.
