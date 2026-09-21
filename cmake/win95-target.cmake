@@ -243,7 +243,35 @@ list(APPEND DKR_WIN95_LIBRECOMP_SOURCES
      "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz/miniz_tinfl.c"
      "${DKRPORT_ROOT}/extern/n64-modern-runtime/thirdparty/miniz/miniz_tdef.c")
 
+# The guest's general registers are 64 bits on the VR4300, and `recomp.h`
+# declares them so. On this machine that costs about a third of the emitted code
+# -- sign extensions, carries between halves, moves of an upper half that is
+# always 0x00000000 or 0xFFFFFFFF -- to carry a width DKR uses in thirteen
+# operations across three functions, each of which now has a native path the
+# recompilation policy hooks in ahead of it.
+#
+# Measured on the recompiled sources, `scripts/Measure-Narrow-Gpr.sh`:
+#
+#   .text              3,644,883 -> 2,465,606   -32.4%
+#   x86 instructions     927,995 ->   645,358   -30.5%
+#   memory-referencing   512,572 ->   351,080   -31.5%
+#
+# Off by default: the arithmetic is checked (`tools/cpu-budget/`, two tests, 386
+# inputs across the whole register file) but the *game* has not run this way,
+# and the register width is not something a play session half-reveals. Turn it
+# on to measure a frame time; `docs/research/cpu-budget.md` says what to watch.
+#
+# PUBLIC rather than PRIVATE because the width is part of the ABI: every
+# translation unit that sees `recomp_context` must agree on how wide its
+# registers are, and they all reach it through this target.
+option(DKR_WIN95_NARROW_GUEST_REGISTER
+       "Declare the guest's general registers 32 bits wide" OFF)
+
 add_library(win95librecomp STATIC ${DKR_WIN95_LIBRECOMP_SOURCES})
+if(DKR_WIN95_NARROW_GUEST_REGISTER)
+    target_compile_definitions(win95librecomp PUBLIC DKR_NARROW_GUEST_REGISTER)
+    message(STATUS "Windows 95 target: 32-bit guest registers")
+endif()
 target_include_directories(win95librecomp PUBLIC
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/include"
     "${DKRPORT_ROOT}/extern/n64-modern-runtime/librecomp/include/librecomp"
@@ -1184,6 +1212,14 @@ set(DKR_WIN95_GAME_SOURCES
 list(TRANSFORM DKR_WIN95_GAME_SOURCES
      PREPEND "${DKRPORT_ROOT}/runtime-recomp/src/game/")
 list(TRANSFORM DKR_WIN95_GAME_SOURCES APPEND ".cpp")
+
+# The three functions that use a general register as sixty-four bits. The
+# recompilation policy hooks them at their entry on every target, so this is
+# not conditional on the register width -- see the file's own note, and
+# `docs/research/cpu-budget.md` for why there are exactly three of them.
+# A `.c` rather than a `.cpp`, so it does not join the list transformed above.
+list(APPEND DKR_WIN95_GAME_SOURCES
+     "${DKRPORT_ROOT}/runtime-recomp/src/game/runtime_wide_registers.c")
 
 add_executable(DKRWin95Game ${DKR_WIN95_GAME_SOURCES})
 target_include_directories(DKRWin95Game PRIVATE

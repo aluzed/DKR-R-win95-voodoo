@@ -1,0 +1,121 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Narrow the guest register on request
+
+The VR4300's general registers are 64 bits and recomp.h declares them so
+unconditionally. On a 32-bit host that costs about a third of the emitted
+code -- sign extensions, carries between halves, and moves of an upper half
+that is always 0x00000000 or 0xFFFFFFFF -- to carry a width DKR uses in
+thirteen operations across three functions.
+
+DKR_NARROW_GUEST_REGISTER declares the register file 32 bits wide and changes
+the three things that depend on the width: address formation, SD, and SIGNED.
+Nothing else in the header moves, and a build that does not define it is
+byte-for-byte what it was.
+
+The three functions that genuinely need sixty-four bits are served by the
+dkr_wide_* entry points the recompilation policy hooks at their entry.
+
+Measured on DKR's recompiled sources with gcc -m32 -O2:
+
+  .text              3,644,771 -> 2,465,574   -32.4%
+  x86 instructions     927,976 ->   645,348   -30.5%
+  memory-referencing   512,556 ->   351,083   -31.5%
+
+See docs/research/cpu-budget.md and scripts/Measure-Narrow-Gpr.sh.
+---
+--- a/include/recomp.h
++++ b/include/recomp.h
+@@ -118,17 +118,84 @@
+     *rem = a % b;
+ }
+ 
++/* The VR4300's general registers are 64 bits, and this header declares them so.
++   DKR uses that width in thirteen operations across three functions, so a
++   32-bit host spends about a third of the emitted code carrying something
++   almost nothing reads: sign extensions, carries between halves, and moves of
++   an upper half that is always 0x00000000 or 0xFFFFFFFF.
++
++   A target that cannot afford that may define DKR_NARROW_GUEST_REGISTER, which
++   changes three things and nothing else:
++
++     - address formation stops subtracting a 64-bit constant.  The upstream
++       expression's low word is always `(uint32_t)addr - 0x80000000`, and on a
++       32-bit target only the low word reaches the pointer, so the narrowed form
++       is bit-identical rather than equivalent-for-our-addresses;
++     - SD widens by its argument's own size, because it is reached both from a
++       general register, which must sign-extend, and from a float register's
++       u64 field, which keeps its width and must pass through;
++     - SIGNED says what it is widening from.  Without the inner cast an unsigned
++       32-bit register zero-extends, and every signed comparison in the game --
++       9,376 of them -- reads a negative number as a large positive one.
++
++   The three functions that genuinely need sixty-four bits get it from the
++   dkr_wide_* entry points in runtime_wide_registers.c, which the recompilation
++   policy hooks at their entry.  They are dmacopy_doubleword, atan2s and
++   rand_range; docs/research/cpu-budget.md records the census that says there is
++   no fourth, and scripts/Measure-Narrow-Gpr.sh reproduces it. */
++#ifdef DKR_NARROW_GUEST_REGISTER
++
++typedef uint32_t gpr;
++
++#define DKR_GUEST_OFF(addr) \
++    ((uint32_t)(addr) - 0x80000000u)
++
++#define DKR_WIDEN(v) \
++    (sizeof(v) > 4 ? (uint64_t)(v) : (uint64_t)(int64_t)(int32_t)(v))
++
++#define SIGNED(val) \
++    ((int64_t)(int32_t)(val))
++
++#else
++
+ typedef uint64_t gpr;
+ 
+ #define SIGNED(val) \
+     ((int64_t)(val))
+ 
++#endif
++
+ #define ADD32(a, b) \
+     ((gpr)(int32_t)((a) + (b)))
+ 
+ #define SUB32(a, b) \
+     ((gpr)(int32_t)((a) - (b)))
+ 
++#ifdef DKR_NARROW_GUEST_REGISTER
++
++#define MEM_W(offset, reg) \
++    (*(int32_t*)(rdram + DKR_GUEST_OFF((reg) + (offset))))
++
++#define MEM_H(offset, reg) \
++    (*(int16_t*)(rdram + DKR_GUEST_OFF(((reg) + (offset)) ^ 2)))
++
++#define MEM_B(offset, reg) \
++    (*(int8_t*)(rdram + DKR_GUEST_OFF(((reg) + (offset)) ^ 3)))
++
++#define MEM_HU(offset, reg) \
++    (*(uint16_t*)(rdram + DKR_GUEST_OFF(((reg) + (offset)) ^ 2)))
++
++#define MEM_BU(offset, reg) \
++    (*(uint8_t*)(rdram + DKR_GUEST_OFF(((reg) + (offset)) ^ 3)))
++
++#define SD(val, offset, reg) { \
++    uint64_t dkr_sd_value = DKR_WIDEN(val); \
++    *(uint32_t*)(rdram + DKR_GUEST_OFF((reg) + (offset) + 4)) = (uint32_t)(dkr_sd_value >> 0); \
++    *(uint32_t*)(rdram + DKR_GUEST_OFF((reg) + (offset) + 0)) = (uint32_t)(dkr_sd_value >> 32); \
++}
++
++#else
++
+ #define MEM_W(offset, reg) \
+     (*(int32_t*)(rdram + ((((reg) + (offset))) - 0xFFFFFFFF80000000)))
+ 
+@@ -149,6 +216,8 @@
+     *(uint32_t*)(rdram + ((((reg) + (offset) + 0)) - 0xFFFFFFFF80000000)) = (uint32_t)((gpr)(val) >> 32); \
+ }
+ 
++#endif
++
+ static inline uint64_t load_doubleword(uint8_t* rdram, gpr reg, gpr offset) {
+     uint64_t ret = 0;
+     uint64_t lo = (uint64_t)(uint32_t)MEM_W(reg, offset + 4);

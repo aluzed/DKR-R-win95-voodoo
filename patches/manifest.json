@@ -188,6 +188,10 @@
         {
           "path": "patches/n64recomp/0003-portable-128-bit-multiply-for-32-bit-targets.patch",
           "sha256": "25771fd1bcef4b10a6f4f73603160b375a7c20f13bb0d216339d51c1a2558cd2"
+        },
+        {
+          "path": "patches/n64recomp/0004-narrow-the-guest-register-on-request.patch",
+          "sha256": "c208ce8c6947240db47efd5a41092b1525e5578cfd38a059b1b38609862215db"
         }
       ]
     },

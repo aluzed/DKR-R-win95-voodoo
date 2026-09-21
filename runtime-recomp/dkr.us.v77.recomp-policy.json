@@ -233,8 +233,8 @@
     {
       "function": "rand_range",
       "beforeVram": "0x8006F94C",
-      "text": "extern int dkr_netplay_presentation_random_range(uint8_t*, recomp_context*); if (dkr_netplay_presentation_random_range(rdram, ctx)) { return; }",
-      "reason": "Redirect presentation-only randomness to a side stream while rollback gameplay is active, preventing local audio handles, viewport rendering, and other non-authoritative state from advancing DKR's shared gameplay RNG."
+      "text": "extern int dkr_netplay_presentation_random_range(uint8_t*, recomp_context*); if (dkr_netplay_presentation_random_range(rdram, ctx)) { return; } extern int dkr_wide_rand_range(uint8_t*, recomp_context*); if (dkr_wide_rand_range(rdram, ctx)) { return; }",
+      "reason": "Redirect presentation-only randomness to a side stream while rollback gameplay is active, preventing local audio handles, viewport rendering, and other non-authoritative state from advancing DKR's shared gameplay RNG. Give this function the 64-bit general register it uses and the narrowed register file does not have. DKR uses that width in thirteen operations across three functions; this is one of them. The native path is a transcription rather than a rewrite and computes what the generated body computes at the upstream width, checked over the whole register file on 386 inputs by tools/cpu-budget/wide_fidelity_test.c, so it is hooked on every target rather than only the narrow one. See docs/research/cpu-budget.md."
     },
     {
       "function": "hud_render_player",
@@ -937,6 +937,18 @@
       "beforeVram": "0x8006DD70",
       "text": "extern void dkr_custom_tracks_auto_boot(uint8_t*, recomp_context*); dkr_custom_tracks_auto_boot(rdram, ctx);",
       "reason": "Immediately after mode_menu reads menu_loop result, before the MENU_RESULT_FLAGS_200 test. Track Lab auto boot answers with the same value the menus produce when a track is chosen, so retail performs its own start sequence rather than the host reproducing vehicle, entrance, cutscene and game mode by hand."
+    },
+    {
+      "function": "atan2s",
+      "beforeVram": "0x8007066C",
+      "text": "extern int dkr_wide_atan2s(uint8_t*, recomp_context*); if (dkr_wide_atan2s(rdram, ctx)) { return; }",
+      "reason": "Give this function the 64-bit general register it uses and the narrowed register file does not have. DKR uses that width in thirteen operations across three functions; this is one of them. The native path is a transcription rather than a rewrite and computes what the generated body computes at the upstream width, checked over the whole register file on 386 inputs by tools/cpu-budget/wide_fidelity_test.c, so it is hooked on every target rather than only the narrow one. See docs/research/cpu-budget.md."
+    },
+    {
+      "function": "dmacopy_doubleword",
+      "beforeVram": "0x80070B04",
+      "text": "extern int dkr_wide_dmacopy_doubleword(uint8_t*, recomp_context*); if (dkr_wide_dmacopy_doubleword(rdram, ctx)) { return; }",
+      "reason": "Give this function the 64-bit general register it uses and the narrowed register file does not have. DKR uses that width in thirteen operations across three functions; this is one of them. The native path is a transcription rather than a rewrite and computes what the generated body computes at the upstream width, checked over the whole register file on 386 inputs by tools/cpu-budget/wide_fidelity_test.c, so it is hooked on every target rather than only the narrow one. See docs/research/cpu-budget.md."
     }
   ],
   "stubs": [

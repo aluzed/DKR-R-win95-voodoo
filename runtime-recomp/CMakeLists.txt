@@ -490,6 +490,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/runtime_save_routing.cpp
         src/game/runtime_stubs.cpp
         src/game/runtime_support.cpp
+        src/game/runtime_wide_registers.c
         src/game/runtime_telemetry.cpp
         src/game/startup_performance.cpp
         src/game/virtual_pak.cpp
