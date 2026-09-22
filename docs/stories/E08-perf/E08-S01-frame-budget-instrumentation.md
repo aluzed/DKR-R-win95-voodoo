@@ -48,6 +48,20 @@ screen with patches 0042 and 0043, the wall divides into
 
 and the third is none of the items this ticket lists.
 
+**The budget closed on 22 September 2026**, and the table it closed to is not the
+one below. One run, 400 display lists:
+
+    RDRAM snapshot              94.0 ms a frame    50.2%
+    guest, minus the snapshot   50.9 ms            27.2%
+    renderer (send_dl)          39.9 ms            21.3%
+    unaccounted                  2.5 ms             1.3%
+
+The largest item is not in this ticket's list at all: an eight-megabyte copy of
+RDRAM that `ultramodern` takes per graphics task, on the guest thread, which is
+why it has been counted as the recompiled game since August. The middle row is by
+subtraction and holds the recompiled game, the audio microcode and the scheduler
+together. See `docs/research/cpu-budget.md`.
+
 **Named, 21 September 2026: it is the graphics thread's own loop.** Not the
 vertical interval, not the scheduler quantum, not the synchronised buffer swap;
 all three were tested and refuted. The graphics thread is unblocked 29.2% of the

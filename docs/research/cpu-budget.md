@@ -1725,3 +1725,62 @@ The ranked list from two days ago now reads:
 
 The last row is the one this note has spent two days arguing about, and it has never
 once been measured on its own.
+
+### The frame budget, closed — 22 September 2026
+
+E08-S01 has wanted this table since August. It closes now because the snapshot is
+timed from inside the guest thread that takes it, which is what was missing: the
+instrument that separates the runtime's work from the game's.
+
+One run, the raw-allocation build, 85.5 seconds and 400 display lists:
+
+    RDRAM snapshot              94.0 ms a frame    50.2%
+    guest, minus the snapshot   50.9 ms            27.2%
+    renderer (send_dl)          39.9 ms            21.3%
+    --------------------------------------------------
+    sum                        184.8 ms            98.7%
+    measured frame period      187.3 ms
+    unaccounted                  2.5 ms             1.3%
+
+Three quantities, measured by three different instruments against the same clock,
+summing to the frame within one and a third percent. On a single emulated core they
+serialise, so the sum is the right operation.
+
+**The middle row is by subtraction** and carries that weight: `guest-run` minus the
+snapshot's own stamps. It is the one row here that was not measured directly, and it
+is the row everything else in this note has been about. Within it sit the recompiled
+game, the audio microcode this note measured at 5.5 ms a frame in August, and
+libultra's scheduler.
+
+#### What it costs the verdict
+
+E00-S03 pronounced the go/no-go on a frame of 170 ms of which **125 ms was
+"recompiled code"**, measured as the interval between graphics tasks. That interval
+counts whatever the guest thread was doing, and what it was doing, for most of it,
+was an eight-megabyte `memcpy` belonging to `ultramodern`'s task queue. The
+recompiled game's real share is **50.9 ms**, and that figure still has audio and the
+scheduler inside it.
+
+Which finally explains the result that made no sense: removing 30% of the emitted
+instructions moved the frame by 0.6%. At 125 ms of 170 that is inexplicable. At 45
+of 187, behind a copy that is 94, it is what should have happened.
+
+**It does not make the port viable.** 187 ms against 33.3 is five and a half times
+over, and deleting the snapshot entirely — which nothing here has shown to be
+possible — would leave 93.3 ms and 10.7 fps. The floor is still far above the
+budget.
+
+What changes is where the floor is. It was "the recompiled game, and nothing can be
+done about it". It is now "an eight-megabyte copy per frame that the runtime does on
+the game's behalf, and which no measurement has yet shown to need its full size" —
+DKR's display lists reference RDRAM widely, so a partial snapshot is a correctness
+question and not a free win, but it is a question, where the recompiled game's cost
+was an answer.
+
+#### The order the remaining work should be looked at in
+
+    the RDRAM snapshot      50%   half already deleted; the rest is a design question
+    the recompiled game     27%   E08-S02, whose five levers now address a quarter
+                                  of the frame rather than three quarters
+    the renderer            21%   E05, E08-S03
+    everything else          1%
