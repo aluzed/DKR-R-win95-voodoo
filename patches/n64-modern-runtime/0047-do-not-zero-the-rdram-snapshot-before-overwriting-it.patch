@@ -1,5 +1,5 @@
 From: DKR-R Windows 95 port
-Subject: [PATCH] Stop copying eight megabytes of RDRAM the game never wrote
+Subject: [PATCH] Reuse the RDRAM snapshot buffer, and copy only what is written
 
 Every graphics task carries an eight-megabyte copy of RDRAM, taken on the guest
 thread that submits it. `std::make_unique<uint8_t[]>` value-initialises, so the
@@ -52,10 +52,64 @@ it is 209.5 ms to 138.9 ms: -33.7%, and 4.77 fps to 7.20, +51%.
 
 `DKR_RDRAM_SNAPSHOT_SIZE` overrides, which is how the two were compared, and the
 size is announced once.
+
+**And then the allocation.** A fresh eight-megabyte block per display list is
+not free even without an explicit fill: Windows hands back untouched pages and
+zeroes them in the fault handler, which is why deleting the `make_unique` fill
+made the copy slower rather than saving the fill's whole cost. Two pooled
+buffers, zeroed once at their birth and reused, pay neither.
+
+Three configurations, the same instrument in each:
+
+  configuration                     alloc      copy   snapshot   period    fps
+  pool of two, 4 MB copied        0.23 ms   32.28 ms  32.51 ms  118.0 ms  8.48
+  fresh raw alloc, 4 MB copied    0.66 ms   46.68 ms  47.34 ms  138.9 ms  7.20
+  fresh zeroed alloc, 4 MB        50.89 ms  32.39 ms  83.28 ms  176.5 ms  5.67
+
+The third row is what settles the mechanism: with pages pre-touched by the fill,
+the copy is 32.4 ms -- the same as the pool's -- so the raw allocation's 46.7 ms
+copy was carrying fourteen milliseconds of fault-zeroing inside it.
+
+Sixteen megabytes standing, against eight that were transient; the test machine
+has sixty-four. If both buffers are busy the allocator is used as before, so the
+queue never blocks. Measured: 600 acquisitions, 0 misses.
+
+DKR_RDRAM_SNAPSHOT_POOL=off bypasses the pool, though that path also restores
+the zero-fill for safety, so it is not a clean A/B and is not quoted as one.
 ---
 --- a/ultramodern/src/events.cpp
 +++ b/ultramodern/src/events.cpp
-@@ -156,6 +156,75 @@
+@@ -27,9 +27,28 @@
+     events_callbacks = callbacks;
+ }
+ 
++/* **The snapshot buffer comes from a pool of two, not from the allocator.**
++ *
++ * Allocating and freeing eight megabytes per display list costs more than the
++ * allocator's own bookkeeping: Windows hands back fresh pages and zeroes them in
++ * its fault handler, which is why deleting the explicit `make_unique` fill made
++ * the copy slower instead of making the frame faster by the fill's whole cost.
++ * A buffer that is reused pays that once.
++ *
++ * Two of them, so one can be in flight with the graphics thread while the next
++ * is filled -- which is the decoupling the snapshot exists for. Sixteen
++ * megabytes standing, against the eight that were transient; the test machine
++ * has sixty-four. If both are busy the allocator is used as before, so the
++ * queue never blocks and the change can only cost what it saves. */
++struct SnapshotDeleter {
++    void operator()(uint8_t* buffer) const noexcept;
++};
++
++using SnapshotPtr = std::unique_ptr<uint8_t[], SnapshotDeleter>;
++
+ struct SpTaskAction {
+     OSTask task;
+-    std::unique_ptr<uint8_t[]> rdram_snapshot;
++    SnapshotPtr rdram_snapshot;
+     bool presentation_allowed;
+ };
+ 
+@@ -156,6 +175,134 @@
   *
   * Behind a switch and announced once, because a switch that silently fails to
   * take and a switch that changes nothing are the same measurement. */
@@ -101,6 +155,65 @@ size is announced once.
 + * reads -- a renderer reading uninitialised memory would not show up here --
 + * but a high-water mark below four megabytes is what would make halving the
 + * copy worth trying at all. */
++namespace {
++
++constexpr size_t kSnapshotPoolSlots = 2;
++constexpr size_t kSnapshotBytes = 0x800000;
++
++uint8_t* g_snapshot_pool[kSnapshotPoolSlots] = {nullptr, nullptr};
++std::atomic<bool> g_snapshot_pool_busy[kSnapshotPoolSlots];
++std::atomic<unsigned long long> g_snapshot_pool_hits{0};
++std::atomic<unsigned long long> g_snapshot_pool_misses{0};
++
++/* Zeroed once, here, and never again: the copy overwrites the low half every
++   time and nothing ever writes the high half, so it stays as it was made. */
++bool snapshot_pool_enabled() {
++    static int decided = -1;
++    if (decided < 0) {
++        const char* choice = std::getenv("DKR_RDRAM_SNAPSHOT_POOL");
++        decided = (choice != nullptr && choice[0] == 'o' && choice[1] == 'f')
++                      ? 0
++                      : 1;
++        std::fprintf(stderr, "[snap][pool] %s (DKR_RDRAM_SNAPSHOT_POOL=%s)\n",
++                     decided ? "two reused buffers"
++                             : "a fresh allocation per display list",
++                     (choice != nullptr) ? choice : "unset");
++    }
++    return decided == 1;
++}
++
++uint8_t* acquire_snapshot_buffer() {
++    if (!snapshot_pool_enabled()) {
++        g_snapshot_pool_misses.fetch_add(1);
++        return new uint8_t[kSnapshotBytes]();
++    }
++    for (size_t slot = 0; slot < kSnapshotPoolSlots; slot++) {
++        bool expected = false;
++        if (g_snapshot_pool_busy[slot].compare_exchange_strong(expected, true)) {
++            if (g_snapshot_pool[slot] == nullptr) {
++                g_snapshot_pool[slot] = new uint8_t[kSnapshotBytes]();
++            }
++            g_snapshot_pool_hits.fetch_add(1);
++            return g_snapshot_pool[slot];
++        }
++    }
++    g_snapshot_pool_misses.fetch_add(1);
++    return new uint8_t[kSnapshotBytes]();
++}
++
++} // namespace
++
++void SnapshotDeleter::operator()(uint8_t* buffer) const noexcept {
++    if (buffer == nullptr) { return; }
++    for (size_t slot = 0; slot < kSnapshotPoolSlots; slot++) {
++        if (g_snapshot_pool[slot] == buffer) {
++            g_snapshot_pool_busy[slot].store(false);
++            return;
++        }
++    }
++    delete[] buffer;
++}
++
 +static size_t snapshot_copy_size(void) {
 +    static size_t decided = 0;
 +    if (decided == 0) {
@@ -131,7 +244,7 @@ size is announced once.
  static std::atomic<bool> g_frame_drawn_since_update{true};
  static std::atomic<unsigned long long> g_updates_enqueued{0};
  static std::atomic<unsigned long long> g_updates_skipped{0};
-@@ -541,9 +610,6 @@
+@@ -541,9 +688,6 @@
  
  static std::atomic<unsigned long long> g_gfx_screen_n{0};
  
@@ -141,7 +254,12 @@ size is announced once.
  static const bool g_gfx_trace_on =
      (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
  
-@@ -899,8 +965,77 @@
+@@ -895,12 +1039,82 @@
+             // No RDRAM snapshot is needed because the worker skips display-list
+             // parsing whenever presentation_allowed is false.
+             events_context.action_queue.enqueue(SpTaskAction{
+-                *task, std::unique_ptr<uint8_t[]>{}, false });
++                *task, SnapshotPtr{}, false });
              return;
          }
          constexpr size_t RDRAMSnapshotSize = 0x800000;
@@ -175,9 +293,7 @@ size is announced once.
 +         *
 +         * Behind a switch so the two can be compared in one binary, and
 +         * announced once. */
-+        auto rdram_snapshot = snapshot_zero_filled()
-+            ? std::unique_ptr<uint8_t[]>(new uint8_t[RDRAMSnapshotSize]())
-+            : std::unique_ptr<uint8_t[]>(new uint8_t[RDRAMSnapshotSize]);
++        auto rdram_snapshot = SnapshotPtr(acquire_snapshot_buffer());
 +        const unsigned long long snapshot_t1 =
 +            g_snapshot_trace_on ? dkr_clock_now_us() : 0ULL;
 +        /* **Copy what the game has written, not what the runtime reports.**
@@ -212,9 +328,12 @@ size is announced once.
 +                             (unsigned long long)g_snapshot_high_water.load(),
 +                             (unsigned long long)(g_snapshot_high_water.load() / 1024));
 +                std::fprintf(stderr,
-+                             "[trace][snap] n=%llu alloc=%llu us copy=%llu us\n",
++                             "[trace][snap] n=%llu alloc=%llu us copy=%llu us"
++                             " pool-hits=%llu misses=%llu\n",
 +                             n, (unsigned long long)g_snapshot_alloc_us.load(),
-+                             (unsigned long long)g_snapshot_copy_us.load());
++                             (unsigned long long)g_snapshot_copy_us.load(),
++                             (unsigned long long)g_snapshot_pool_hits.load(),
++                             (unsigned long long)g_snapshot_pool_misses.load());
 +                if (dkr_diag_commit) { dkr_diag_commit(); }
 +            }
 +        }

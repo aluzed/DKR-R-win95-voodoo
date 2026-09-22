@@ -1858,3 +1858,62 @@ stands on its conclusion. What has changed in two days is that the frame went fr
 "170 ms of which 125 is the recompiled game, and nothing can be done" to "138.9 ms
 of which 50.9 is the game, and two of the three remaining items are the runtime's
 own bookkeeping".
+
+### A buffer that is reused pays the page faults once — 8.47 fps
+
+Halving the copy left the allocation, and the allocation is not free even after the
+explicit fill is gone. Windows hands back untouched pages and zeroes them when they
+are first written, which is why removing `make_unique`'s fill made the copy slower
+instead of saving the fill's whole cost: the zeroing moved into the fault handler.
+
+Two buffers, zeroed once at their birth and reused, pay neither. Three
+configurations, the same instrument in each:
+
+    configuration                     alloc      copy   snapshot   period    fps
+    pool of two, 4 MB copied        0.23 ms   32.28 ms  32.51 ms  118.0 ms  8.48
+    fresh raw alloc, 4 MB copied    0.66 ms   46.68 ms  47.34 ms  138.9 ms  7.20
+    fresh zeroed alloc, 4 MB       50.89 ms   32.39 ms  83.28 ms  176.5 ms  5.67
+
+**The third row settles the mechanism.** With the pages pre-touched by the explicit
+fill, the copy is 32.4 ms — the same as the pool's — so the raw allocation's 46.7 ms
+copy was carrying fourteen milliseconds of fault-zeroing inside it. Nothing was
+saved by not zeroing; it was only moved. The pool is what removes it.
+
+Sixteen megabytes standing against eight that were transient. The test machine has
+sixty-four, and if both buffers are busy the allocator is used as before, so the
+queue can never block on the pool: 600 acquisitions in the measured run, 0 misses.
+
+#### Where the frame is now
+
+    zero-filled, 8 MB, fresh     209.5 ms    4.77 fps    where this began
+    raw, 8 MB, fresh             188.6 ms    5.30 fps
+    raw, 4 MB, fresh             138.9 ms    7.20 fps
+    pooled, 4 MB                 118.0 ms    8.47 fps
+
+**−43.7% on the frame and +77.6% on the rate**, from three changes that between them
+add no cleverness at all: stop filling a buffer that is overwritten, stop copying
+memory the game never wrote, stop asking the operating system for the same eight
+megabytes sixty times a minute.
+
+    RDRAM snapshot              32.5 ms    27.6%
+    guest, minus the snapshot   50.9 ms    43.1%
+    renderer (send_dl)          38.4 ms    32.5%
+
+The guest row is **50.9 ms for the third time**, unchanged across configurations
+whose other terms have moved by a factor of three. It is now the largest item in the
+frame, which is where E00-S03 thought it was all along — at 43% rather than 73.5%,
+and in a frame of 118 ms rather than 170.
+
+#### What that leaves
+
+Still three and a half times the 33.3 ms budget, so the verdict is untouched in its
+conclusion for the third time. But the shape of the remaining problem is finally the
+one the tickets describe: a renderer at 32.5% that E05 and E08-S03 own, a game at
+43.1% that E08-S02 owns, and a snapshot at 27.6% that is now the smallest of the
+three rather than the largest.
+
+Whether the snapshot can go further is a different kind of question from the three
+above. Those were waste. What is left is a genuine copy of four megabytes, and
+removing it means changing when the guest is allowed to touch its display-list
+buffers — which is what patch 0007 bought with it, and what the crash at display
+list 344 cost to learn.
