@@ -1564,3 +1564,60 @@ Part of it is the graphics thread running between display lists, and that belong
 E08-S03 and E05, not to E08-S02. Whether the loop can be made cheaper — a queue that
 blocks properly instead of polling, fewer rounds that find nothing — is work that has
 never been scoped, because until now nobody knew it cost anything.
+
+### The graphics thread, decomposed
+
+Attributing the thread's awake time to the loop was as far as the last measurement
+went, and it left two stories that fit the same six seconds: three thousand screen
+updates at two milliseconds each, or four hundred display lists at sixteen
+milliseconds each outside `send_dl` — the latter being where an eight-megabyte RDRAM
+snapshot is released. Splitting the awake time by what the round was handling
+settles it, and the answer is both, in comparable parts.
+
+Over 80.3 seconds at the title screen:
+
+    display-list rounds     389 x  49.10 ms = 19.10 s   23.8% of wall
+      of which in send_dl   389 x  37.61 ms = 14.63 s   18.2%
+      of which outside it   389 x  11.49 ms =  4.47 s    5.6%
+    screen updates         3371 x   0.99 ms =  3.35 s    4.2%
+    empty rounds           5594 x   0.01 ms =  0.03 s    0.0%
+
+**The poll costs nothing.** An empty round is 5.5 µs — the loop's one-millisecond
+timeout, its variant test and its clock reads together. Three rounds in five are
+empty and they account for three hundredths of a second in eighty. Whatever is worth
+attacking here, it is not the polling.
+
+**A display list costs 11.5 ms outside the renderer.** That is `sp_complete`, the DP
+edge publication, and the destruction of the queued action — which frees the RDRAM
+snapshot that patch 0007 attaches to every graphics task. Eleven and a half
+milliseconds per frame, on a frame that is a hundred and ninety, for work that is
+not drawing.
+
+**And the screen updates are nine to one.** 3,371 of them against 389 rendered
+frames: the vertical-interval thread enqueues one per retrace, the queue coalesces
+to at most one pending, and **8.7 still get through for every frame the game
+actually produces.** Each costs 0.99 ms in a handler that assigns two registers,
+clears a flag, and calls a function that increments a counter — so the cost is the
+queue round trip rather than the work, and it is paid nine times for one frame's
+worth of effect.
+
+#### What is worth taking, and what is not
+
+Ranked by what they cost the wall:
+
+    the renderer proper                18.2%   E05, and the subject of E08-S03
+    a display list's non-drawing tail   5.6%   sp_complete, DP edge, 8 MB free
+    redundant screen updates            4.2%   8.7 per frame, 1 ms each
+    the queue poll                      0.0%   nothing
+
+The third is the only one that is plainly waste rather than work: presenting the same
+image nine times between two frames buys nothing that presenting it once would not.
+It is four percent of the wall, which is eight milliseconds of a hundred-and-ninety
+millisecond frame — small beside the floor, and the first thing found in this note
+that could simply be deleted.
+
+The second is not waste but it is not drawing either, and an eight-megabyte
+allocation released on the consumer's thread every frame is worth looking at on its
+own terms.
+
+Neither of them changes the verdict. The floor is still the floor.
