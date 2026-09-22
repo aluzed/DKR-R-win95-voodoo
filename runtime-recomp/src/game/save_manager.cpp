@@ -16,9 +16,22 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#endif
+
+/* **Outside the `_WIN32` guard, and that is the whole of the fix.**
+ *
+ * This file names `dkr::sync` and `dkr::fs` sixty times, unconditionally, and
+ * for a month it included the headers that declare them only when `_WIN32` was
+ * defined. On Windows that is invisible. On Linux nothing declares them and the
+ * file does not compile, which is where `run-tests.sh saves` builds it -- both
+ * in its "modern targets" mode and in its "Windows 95 branch on the POSIX
+ * backends" mode, neither of which defines `_WIN32`.
+ *
+ * Both headers choose their own backend from `DKR_TARGET_WIN95` and fall back to
+ * the standard library otherwise, so including them always is what they were
+ * written for. */
 #include "win95/fileio.hpp"
 #include "win95/sync.hpp"
-#endif
 
 namespace {
 

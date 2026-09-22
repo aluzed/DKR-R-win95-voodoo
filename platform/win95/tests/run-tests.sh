@@ -188,8 +188,14 @@ if [[ "$suite" == "all" || "$suite" == "render" ]]; then
   command -v "$CC" >/dev/null \
     || { echo "error: no host C compiler ($CC)" >&2; exit 2; }
   R="$HERE/../../render"
+  # `combiner.c` and `backend_null.c` joined the link when the rasteriser grew a
+  # combiner and the test grew a null backend to compare against. The list was
+  # not updated with them and the suite has not linked since; it is the second
+  # of two suites found broken on 22 September 2026, neither by the change that
+  # went looking.
   "$CC" -std=gnu11 -O2 -Wall -Wextra -I"$HERE/../.." -I"$R" \
-        -o "$tmp/test_software" "$R/tests/test_software.c" "$R/software.c"
+        -o "$tmp/test_software" "$R/tests/test_software.c" "$R/software.c" \
+        "$R/combiner.c" "$R/backend_null.c" "$R/rdp_state.c"
   echo
   ( cd "$tmp" && "$tmp/test_software" )
 fi
