@@ -109,6 +109,33 @@ twenty-five. Twenty and fifteen are arithmetically reachable and ask the recompi
 part to fall by 98 % and 85 % respectively, which a recompiler does not give back. A
 realistic E08-S02 at 1.3× to 1.5× lands the frame at 130 ms — **7.7 fps**.
 
+> **The split above is wrong, and the verdict survives anyway — 22 September 2026.**
+>
+> The 125 ms was measured as the interval between graphics tasks, which counts
+> whatever the guest thread was doing. What it was doing, for most of it, was an
+> eight-megabyte `memcpy` of RDRAM that `ultramodern` takes per graphics task —
+> the runtime's work, not DKR's. Timed from inside that copy, the frame divides:
+>
+>     RDRAM snapshot              94.0 ms    50.2%
+>     guest, minus the snapshot   50.9 ms    27.2%
+>     renderer (send_dl)          39.9 ms    21.3%
+>
+> So the recompiled code is **50.9 ms and not 125**, with audio and the scheduler
+> still inside that figure, and "73.5 %" was half the runtime's memory traffic.
+>
+> The go/no-go is unaffected in its conclusion and wrong in its reason. Thirty
+> frames per second remains unreachable — deleting the snapshot outright would
+> leave 93.3 ms and 10.7 fps — but not because the recompiled code caps it. The
+> cap is a copy the port chose to make, which is a design question rather than a
+> property of the machine, and E08-S02's levers address a quarter of the frame
+> rather than three quarters.
+>
+> Confirmed independently by E08-S02's own result: narrowing the guest register
+> removed 30 % of the emitted instructions and moved the frame by 0.6 %, which is
+> inexplicable at 73.5 % and expected at 27 %.
+>
+> See `docs/research/cpu-budget.md`, "The frame budget, closed".
+
 ~~The audio is in none of these numbers~~ — **wrong, and corrected 18 September
 2026.** `GetRspMicrocode` wires `dkrAspMain` and it is reached: the microcode does
 run inside the measured frame, exactly as this ticket's own table says three lines
