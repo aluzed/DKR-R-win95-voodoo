@@ -192,7 +192,7 @@
         },
         {
           "path": "patches/n64-modern-runtime/0047-do-not-zero-the-rdram-snapshot-before-overwriting-it.patch",
-          "sha256": "3414f9a388f0b77a7afe86dc5a50c4182f3fd8971e7aa697372bf1a56b53f633"
+          "sha256": "cafbd020652f6374d017663b123d8579aa8fd256c662af2aeb4ab01e68211b72"
         }
       ]
     },

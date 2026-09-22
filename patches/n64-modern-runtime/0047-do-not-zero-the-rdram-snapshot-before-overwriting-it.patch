@@ -1,5 +1,5 @@
 From: DKR-R Windows 95 port
-Subject: [PATCH] Do not zero the RDRAM snapshot before overwriting it
+Subject: [PATCH] Stop copying eight megabytes of RDRAM the game never wrote
 
 Every graphics task carries an eight-megabyte copy of RDRAM, taken on the guest
 thread that submits it. `std::make_unique<uint8_t[]>` value-initialises, so the
@@ -32,10 +32,30 @@ The choice is announced once, and the allocation and the copy are timed
 separately, because the previous entry in this stack was worthless until it
 said which of them it had changed.
 
+
+**And then the copy itself.** `osMemSize` answers eight megabytes, so the
+snapshot has always been eight. DKR is a four-megabyte game: scanned backwards
+for its last non-zero byte over four hundred display lists, the high-water mark
+is 0x3FFF68 -- 4,095 KB of 8,192, a hundred and fifty-two bytes below the line
+and never above it. Half of every copy was zeroes the game has never touched.
+
+The allocation stays eight megabytes so a read above the line remains in bounds;
+only the copy shrinks. Same binary, same route:
+
+  copy size   copy      period      render     elsewhere    fps
+  8192 KB    93.5 ms   188.6 ms    39.8 ms    148.8 ms     5.30
+  4096 KB    46.7 ms   138.9 ms    39.9 ms     99.0 ms     7.20
+
+-26.4% on the frame and +35.8% on the rate, with the renderer's own figure
+unchanged. Against the stack's starting point -- zero-filled, eight megabytes --
+it is 209.5 ms to 138.9 ms: -33.7%, and 4.77 fps to 7.20, +51%.
+
+`DKR_RDRAM_SNAPSHOT_SIZE` overrides, which is how the two were compared, and the
+size is announced once.
 ---
 --- a/ultramodern/src/events.cpp
 +++ b/ultramodern/src/events.cpp
-@@ -156,6 +156,39 @@
+@@ -156,6 +156,75 @@
   *
   * Behind a switch and announced once, because a switch that silently fails to
   * take and a switch that changes nothing are the same measurement. */
@@ -68,6 +88,42 @@ said which of them it had changed.
 +    return decided == 1;
 +}
 +
++/* **How much of the eight megabytes the game has ever written.**
++ *
++ * The snapshot copies all of RDRAM because the runtime reports eight megabytes
++ * to the guest. DKR is a four-megabyte game; whether it writes above that line
++ * is a question the copy's cost makes worth asking, and the answer decides
++ * whether the copy can be halved.
++ *
++ * Scanned backwards for the last non-zero byte, once every hundred display
++ * lists so the scan itself is not the measurement's cost. It bounds what the
++ * *game* has written, which is not the same as bounding what the renderer
++ * reads -- a renderer reading uninitialised memory would not show up here --
++ * but a high-water mark below four megabytes is what would make halving the
++ * copy worth trying at all. */
++static size_t snapshot_copy_size(void) {
++    static size_t decided = 0;
++    if (decided == 0) {
++#ifdef DKR_TARGET_WIN95
++        decided = 0x400000;   /* the four megabytes DKR actually writes */
++#else
++        decided = 0x800000;
++#endif
++        const char* choice = std::getenv("DKR_RDRAM_SNAPSHOT_SIZE");
++        if (choice != nullptr) {
++            const unsigned long asked = std::strtoul(choice, nullptr, 0);
++            if (asked >= 0x100000UL && asked <= 0x800000UL) {
++                decided = static_cast<size_t>(asked);
++            }
++        }
++        std::fprintf(stderr, "[snap][size] %llu KB copied of 8192\n",
++                     (unsigned long long)(decided / 1024));
++    }
++    return decided;
++}
++
++static std::atomic<unsigned long long> g_snapshot_high_water{0};
++
 +static std::atomic<unsigned long long> g_snapshot_alloc_us{0};
 +static std::atomic<unsigned long long> g_snapshot_copy_us{0};
 +static std::atomic<unsigned long long> g_snapshot_n{0};
@@ -75,7 +131,7 @@ said which of them it had changed.
  static std::atomic<bool> g_frame_drawn_since_update{true};
  static std::atomic<unsigned long long> g_updates_enqueued{0};
  static std::atomic<unsigned long long> g_updates_skipped{0};
-@@ -541,9 +574,6 @@
+@@ -541,9 +610,6 @@
  
  static std::atomic<unsigned long long> g_gfx_screen_n{0};
  
@@ -85,11 +141,12 @@ said which of them it had changed.
  static const bool g_gfx_trace_on =
      (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
  
-@@ -899,8 +929,53 @@
+@@ -899,8 +965,77 @@
              return;
          }
          constexpr size_t RDRAMSnapshotSize = 0x800000;
 -        auto rdram_snapshot = std::make_unique<uint8_t[]>(RDRAMSnapshotSize);
+-        std::memcpy(rdram_snapshot.get(), rdram, RDRAMSnapshotSize);
 +        /* **Eight megabytes copied per graphics task, and eight more zeroed
 +           before the copy overwrites them.**
 +         *
@@ -123,13 +180,37 @@ said which of them it had changed.
 +            : std::unique_ptr<uint8_t[]>(new uint8_t[RDRAMSnapshotSize]);
 +        const unsigned long long snapshot_t1 =
 +            g_snapshot_trace_on ? dkr_clock_now_us() : 0ULL;
-         std::memcpy(rdram_snapshot.get(), rdram, RDRAMSnapshotSize);
++        /* **Copy what the game has written, not what the runtime reports.**
++         *
++         * `osMemSize` answers eight megabytes, so the snapshot has always been
++         * eight. DKR is a four-megabyte game and does not use the expansion:
++         * scanned backwards for its last non-zero byte over four hundred
++         * display lists, the high-water mark is **0x3FFF68 -- 4,095 KB of
++         * 8,192**, a hundred and fifty-two bytes below the line and never
++         * above it. Half of every copy is zeroes the game has never touched.
++         *
++         * The allocation stays eight megabytes so that a read above the line
++         * remains in bounds; what changes is how much is copied into it. A read
++         * up there gets whatever the allocator left instead of zero, and
++         * nothing is supposed to make one -- the texture images observed span
++         * 0x20CCE0 to 0x3712C0, all of them inside the half that is copied. */
++        std::memcpy(rdram_snapshot.get(), rdram, snapshot_copy_size());
 +        if (g_snapshot_trace_on) {
 +            const unsigned long long t2 = dkr_clock_now_us();
 +            g_snapshot_alloc_us.fetch_add(snapshot_t1 - snapshot_t0);
 +            g_snapshot_copy_us.fetch_add(t2 - snapshot_t1);
 +            const unsigned long long n = g_snapshot_n.fetch_add(1) + 1;
 +            if ((n % 100ULL) == 0ULL) {
++                size_t high = RDRAMSnapshotSize;
++                while (high > 0 && rdram_snapshot[high - 1] == 0) { high--; }
++                unsigned long long seen = g_snapshot_high_water.load();
++                while (high > seen &&
++                       !g_snapshot_high_water.compare_exchange_weak(seen, high)) {
++                }
++                std::fprintf(stderr,
++                             "[trace][snap-extent] high-water=0x%llx (%llu KB of 8192)\n",
++                             (unsigned long long)g_snapshot_high_water.load(),
++                             (unsigned long long)(g_snapshot_high_water.load() / 1024));
 +                std::fprintf(stderr,
 +                             "[trace][snap] n=%llu alloc=%llu us copy=%llu us\n",
 +                             n, (unsigned long long)g_snapshot_alloc_us.load(),

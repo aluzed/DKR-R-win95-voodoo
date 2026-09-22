@@ -1784,3 +1784,77 @@ was an answer.
                                   of the frame rather than three quarters
     the renderer            21%   E05, E08-S03
     everything else          1%
+
+### The copy was twice the size it needed to be — 4.77 fps to 7.20
+
+Half the snapshot's cost was a zero-fill nobody read, and deleting it gave 10.6%.
+The other half is the copy, and the question it raises is whether eight megabytes is
+the right number.
+
+It is not. `osMemSize` answers eight megabytes to the guest, so the snapshot has
+always been eight. DKR is a four-megabyte game. Scanned backwards for its last
+non-zero byte, once every hundred display lists over four hundred of them, the
+high-water mark is
+
+    0x3FFF68 — 4,095 KB of 8,192
+
+a hundred and fifty-two bytes below the four-megabyte line, and never once above it.
+Half of every copy was memory the game has never written, and the texture images the
+renderer asks for span 0x20CCE0 to 0x3712C0 — all inside the half that is kept.
+
+The allocation stays eight megabytes so that a read above the line is still in
+bounds; only the copy shrinks. Same binary, same route:
+
+    copy size    copy       period      render      elsewhere    fps
+    8192 KB     93.5 ms    188.6 ms    39.8 ms     148.8 ms     5.30
+    4096 KB     46.7 ms    138.9 ms    39.9 ms      99.0 ms     7.20
+
+**−26.4% on the frame, +35.8% on the rate**, and the renderer's own figure does not
+move — 39.8 against 39.9 — which is what says the gain is the copy and not the
+weather.
+
+#### Where the stack now stands
+
+Against the state this investigation found:
+
+    zero-filled, 8 MB      209.5 ms    4.77 fps
+    raw, 8 MB              188.6 ms    5.30 fps
+    raw, 4 MB              138.9 ms    7.20 fps
+
+**−33.7% on the frame and +51% on the rate**, from two changes that delete work
+rather than do it faster: a fill that was overwritten, and a copy of memory that was
+never written.
+
+And the frame closes again, at 4 MB:
+
+    RDRAM snapshot              47.3 ms    34.1%
+    guest, minus the snapshot   50.9 ms    36.6%
+    renderer (send_dl)          39.9 ms    28.7%
+    --------------------------------------------
+    sum                        138.1 ms    99.5%
+    measured period            138.9 ms
+
+The middle row is **50.9 ms in both configurations** — the same number from the same
+subtraction in two runs whose other terms differ by a factor of two. That is the
+strongest evidence yet that the row is real, and it is the recompiled game, the
+audio and the scheduler together.
+
+#### What is left, and what it would take
+
+    the recompiled game        36.6%   E08-S02, whose levers measured at nothing
+    the renderer               28.7%   E05, E08-S03
+    the RDRAM snapshot         34.1%   a copy per display list that still exists
+
+The snapshot is now the smallest of the three and still a third of the frame. What
+would remove the rest of it is not another size reduction but a different shape: the
+buffer is allocated and freed per display list, and Windows zeroes a fresh
+eight-megabyte block in the page-fault handler, which is why removing the explicit
+fill made the copy slower rather than making the frame faster by the fill's whole
+cost. **A pool of two reused buffers would pay neither.** That is a change to how
+`ultramodern` owns the queued task's memory, and it is the next thing worth trying.
+
+None of this reaches 33.3 ms. 138.9 is still four times over, and E00-S03's verdict
+stands on its conclusion. What has changed in two days is that the frame went from
+"170 ms of which 125 is the recompiled game, and nothing can be done" to "138.9 ms
+of which 50.9 is the game, and two of the three remaining items are the runtime's
+own bookkeeping".
