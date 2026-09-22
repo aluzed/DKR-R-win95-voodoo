@@ -1896,13 +1896,18 @@ memory the game never wrote, stop asking the operating system for the same eight
 megabytes sixty times a minute.
 
     RDRAM snapshot              32.5 ms    27.6%
-    guest, minus the snapshot   50.9 ms    43.1%
+    guest, minus the snapshot   34.0 ms    28.8%
     renderer (send_dl)          38.4 ms    32.5%
+    unaccounted                 13.1 ms    11.1%
 
-The guest row is **50.9 ms for the third time**, unchanged across configurations
-whose other terms have moved by a factor of three. It is now the largest item in the
-frame, which is where E00-S03 thought it was all along — at 43% rather than 73.5%,
-and in a frame of 118 ms rather than 170.
+~~The guest row is **50.9 ms for the third time**, unchanged across configurations
+whose other terms have moved by a factor of three.~~
+
+**That was wrong and the number above is the corrected one.** 50.9 ms was the
+previous configuration's figure, carried over instead of recomputed; this run's
+guest-minus-snapshot is 34.0 ms, and the table as first published summed to 121.8 ms
+in a frame of 118, which is the arithmetic that should have caught it. The row is
+not invariant across configurations and was never measured to be.
 
 #### What that leaves
 
@@ -1917,3 +1922,61 @@ above. Those were waste. What is left is a genuine copy of four megabytes, and
 removing it means changing when the guest is allowed to touch its display-list
 buffers — which is what patch 0007 bought with it, and what the crash at display
 list 344 cost to learn.
+
+### The guest, split by thread: the game is twelve percent of its own frame
+
+With the runtime's bookkeeping cut from 63% of the frame to 27%, the guest's own
+time became the item worth decomposing, and it never had been: the recompiled game,
+libultra's scheduler and the audio manager were one number. `guest-run` is already
+stamped per thread; bucketing it by the id the game gave each thread costs nothing.
+
+The ids come from the game's own `osCreateThread` calls: 1 the idle thread from
+`recomp_entrypoint`, 3 the game thread from `thread1_main`, 4 the audio manager from
+`amCreateAudioMgr`, 5 the scheduler from `osCreateScheduler`.
+
+500 display lists, a frame of 122.5 ms:
+
+    id 5   the scheduler          38.80 ms   31.7%   the snapshot's 32.7 is inside it
+    id 1   the idle thread        17.23 ms   14.1%
+    id 3   the game thread        15.32 ms   12.5%
+    id 4   the audio manager       2.11 ms    1.7%
+           renderer (send_dl)     38.82 ms   31.7%
+    ------------------------------------------------
+           sum                   112.38 ms   91.7%
+           unaccounted            10.16 ms    8.3%
+
+The scheduler's figure is where the snapshot lands, because the scheduler is the
+thread that submits the graphics task. Take it out and libultra's scheduler costs
+**6.1 ms**.
+
+#### Two things fall out of this and neither was expected
+
+**The recompiled game is 15.3 ms.** Twelve and a half percent of its own frame. E00-S03
+put it at 125 of 170; the honest figure, with the runtime's copy taken out and the
+scheduler and audio separated from it, is an eighth of a frame that is itself down
+to 122 ms. E08-S02's five levers address that eighth.
+
+**The idle thread costs more than the game.** 17.2 ms against 15.3. libultra's idle
+thread exists to have something to run when nothing else can; under `ultramodern` it
+is a real host thread, and on one emulated core the time it is not blocked is time
+the others do not get.
+
+That second one carries the caveat this note has repeated all session: *not blocked*
+is not *executing*. A thread that is runnable but preempted accumulates here exactly
+as a thread that is working. The idle thread is the one place where that distinction
+decides whether there is anything to win — a spinning idle loop is 14% of the frame
+to reclaim, and a thread merely sitting in the run queue is nothing at all. The
+instrument as built cannot tell them apart.
+
+#### The frame, as it now stands
+
+    the RDRAM snapshot          32.7 ms   26.7%   a real copy; what is left of 63%
+    the renderer                38.8 ms   31.7%   E05, E08-S03
+    the idle thread             17.2 ms   14.1%   unexplained, and possibly nothing
+    the recompiled game         15.3 ms   12.5%   E08-S02
+    the graphics thread's loop  10.2 ms    8.3%   measured earlier at 5.6% + presents
+    libultra's scheduler         6.1 ms    5.0%
+    the audio manager            2.1 ms    1.7%
+
+Four of the seven rows are the runtime's, not the game's, and together they are
+two thirds of the frame.
