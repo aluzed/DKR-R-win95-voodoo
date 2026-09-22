@@ -1,0 +1,142 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Do not zero the RDRAM snapshot before overwriting it
+
+Every graphics task carries an eight-megabyte copy of RDRAM, taken on the guest
+thread that submits it. `std::make_unique<uint8_t[]>` value-initialises, so the
+buffer is filled with zeroes and the memcpy on the very next line overwrites
+every one of them: eight megabytes written twice, once with a value nobody ever
+reads.
+
+Timed on the test machine, 400 snapshots:
+
+  zero-filled   alloc 50.9 ms + copy 64.8 ms = 115.6 ms a snapshot
+  raw           alloc  0.6 ms + copy 93.4 ms =  94.0 ms
+
+157 MB/s for the fill and 247 MB/s for the copy, which is what a Pentium II's
+bus does -- memory traffic, not a measurement artefact. The copy grows because
+the page faults move into it rather than happening during the fill, and the net
+is still twenty-one milliseconds a frame.
+
+Same binary, same route, truncated to the same number of frame reports:
+
+  zero-filled   period 209.5 ms   render 40.9 ms   elsewhere 168.6 ms
+  raw           period 187.3 ms   render 39.9 ms   elsewhere 147.4 ms
+
+-10.6% on the frame, -12.6% on everything that is not the renderer, 4.77 fps to
+5.33.
+
+`new uint8_t[n]` default-initialises a trivial type, which for uint8_t means
+doing nothing. Off by default where it was measured, on elsewhere, and
+DKR_RDRAM_SNAPSHOT=zeroed restores it -- which is how the two were compared.
+The choice is announced once, and the allocation and the copy are timed
+separately, because the previous entry in this stack was worthless until it
+said which of them it had changed.
+
+---
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -156,6 +156,39 @@
+  *
+  * Behind a switch and announced once, because a switch that silently fails to
+  * take and a switch that changes nothing are the same measurement. */
++extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++
++static const bool g_snapshot_trace_on =
++    (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
++
++static bool snapshot_zero_filled(void) {
++    static int decided = -1;
++    if (decided < 0) {
++        /* Off by default where it was measured: the fill is overwritten in the
++           next statement and buys nothing anywhere. `=zeroed` restores it,
++           which is how the two were compared. */
++#ifdef DKR_TARGET_WIN95
++        decided = 0;
++#else
++        decided = 1;
++#endif
++        const char* choice = std::getenv("DKR_RDRAM_SNAPSHOT");
++        if (choice != nullptr) {
++            decided = (choice[0] == 'z') ? 1 : ((choice[0] == 'r') ? 0 : decided);
++        }
++        std::fprintf(stderr, "[snap][alloc] %s (DKR_RDRAM_SNAPSHOT=%s)\n",
++                     decided ? "zero-filled then overwritten"
++                             : "left for the copy to fill",
++                     (choice != nullptr) ? choice : "unset");
++    }
++    return decided == 1;
++}
++
++static std::atomic<unsigned long long> g_snapshot_alloc_us{0};
++static std::atomic<unsigned long long> g_snapshot_copy_us{0};
++static std::atomic<unsigned long long> g_snapshot_n{0};
++
+ static std::atomic<bool> g_frame_drawn_since_update{true};
+ static std::atomic<unsigned long long> g_updates_enqueued{0};
+ static std::atomic<unsigned long long> g_updates_skipped{0};
+@@ -541,9 +574,6 @@
+ 
+ static std::atomic<unsigned long long> g_gfx_screen_n{0};
+ 
+-extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
+-extern "C" void dkr_diag_commit(void) __attribute__((weak));
+-
+ static const bool g_gfx_trace_on =
+     (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
+ 
+@@ -899,8 +929,53 @@
+             return;
+         }
+         constexpr size_t RDRAMSnapshotSize = 0x800000;
+-        auto rdram_snapshot = std::make_unique<uint8_t[]>(RDRAMSnapshotSize);
++        /* **Eight megabytes copied per graphics task, and eight more zeroed
++           before the copy overwrites them.**
++         *
++         * `std::make_unique<uint8_t[]>` value-initialises, so the buffer is
++         * filled with zeroes and then immediately overwritten by the memcpy
++         * below -- sixteen megabytes of memory traffic where eight would do, on
++         * a machine whose main memory this note has measured as the thing it is
++         * actually waiting for.
++         *
++         * Timed here rather than assumed, because it runs on the *guest* thread
++         * that submits the task and has therefore been inside the frame's
++         * `elsewhere` -- read as the recompiled game -- since the beginning. */
++        const unsigned long long snapshot_t0 =
++            g_snapshot_trace_on ? dkr_clock_now_us() : 0ULL;
++        /* **`make_unique` value-initialises; `new` does not.**
++         *
++         * `std::make_unique<uint8_t[]>(n)` zero-fills, and the memcpy on the
++         * next line overwrites every one of those bytes. Eight megabytes
++         * written twice, once with zeroes nobody reads.
++         *
++         * Measured 22 September 2026: the fill alone is 51 ms of a 182 ms
++         * frame, at 157 MB/s -- which is what a Pentium II's bus does, so it is
++         * memory traffic and not a measurement artefact. `new uint8_t[n]`
++         * default-initialises a trivial type, which for `uint8_t` means doing
++         * nothing at all.
++         *
++         * Behind a switch so the two can be compared in one binary, and
++         * announced once. */
++        auto rdram_snapshot = snapshot_zero_filled()
++            ? std::unique_ptr<uint8_t[]>(new uint8_t[RDRAMSnapshotSize]())
++            : std::unique_ptr<uint8_t[]>(new uint8_t[RDRAMSnapshotSize]);
++        const unsigned long long snapshot_t1 =
++            g_snapshot_trace_on ? dkr_clock_now_us() : 0ULL;
+         std::memcpy(rdram_snapshot.get(), rdram, RDRAMSnapshotSize);
++        if (g_snapshot_trace_on) {
++            const unsigned long long t2 = dkr_clock_now_us();
++            g_snapshot_alloc_us.fetch_add(snapshot_t1 - snapshot_t0);
++            g_snapshot_copy_us.fetch_add(t2 - snapshot_t1);
++            const unsigned long long n = g_snapshot_n.fetch_add(1) + 1;
++            if ((n % 100ULL) == 0ULL) {
++                std::fprintf(stderr,
++                             "[trace][snap] n=%llu alloc=%llu us copy=%llu us\n",
++                             n, (unsigned long long)g_snapshot_alloc_us.load(),
++                             (unsigned long long)g_snapshot_copy_us.load());
++                if (dkr_diag_commit) { dkr_diag_commit(); }
++            }
++        }
+         events_context.action_queue.enqueue(SpTaskAction{
+             *task, std::move(rdram_snapshot), true });
+     }

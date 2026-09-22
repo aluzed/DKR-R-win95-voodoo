@@ -189,6 +189,10 @@
         {
           "path": "patches/n64-modern-runtime/0046-present-only-when-a-frame-has-been-drawn.patch",
           "sha256": "956a3baeb954d1a49166f537c808c61832c46952035c9f857fb3dc6a7f5f0038"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0047-do-not-zero-the-rdram-snapshot-before-overwriting-it.patch",
+          "sha256": "3414f9a388f0b77a7afe86dc5a50c4182f3fd8971e7aa697372bf1a56b53f633"
         }
       ]
     },

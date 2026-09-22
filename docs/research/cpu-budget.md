@@ -1666,3 +1666,62 @@ which is the note's recurring lesson in one line.
 
 On by default where it was measured, off elsewhere, and `DKR_VI_PRESENT=every`
 restores the old behaviour — which is how the two were compared.
+
+### Sixty-three percent of the frame was a memory copy, and half of it was zeroes
+
+The `elsewhere` floor — 150 ms a frame, flat across every scene, unmoved by removing
+a third of the recompiled instructions — has been read as the game's own execution
+since August. It is not. Most of it is one `memcpy`.
+
+Every graphics task carries an eight-megabyte snapshot of RDRAM, taken on the guest
+thread that submits it (patch 0007, so that the CPU can recycle its display-list
+buffers while the task is queued). Timed:
+
+    zero-fill by make_unique   50.99 ms a snapshot   157 MB/s
+    memcpy of 8 MB             64.70 ms a snapshot   247 MB/s
+    together                  115.69 ms              63% of a 182 ms frame
+
+The bandwidths are the first thing to check and they settle the doubt that has
+attached to every other number in this note: 157 MB/s for a write-only fill and
+247 MB/s for a copy are what a Pentium II on a 100 MHz bus achieves. This is memory
+traffic, not a thread being preempted with the clock running.
+
+**And half of it is a fill nobody reads.** `std::make_unique<uint8_t[]>` value-
+initialises; the memcpy on the next line overwrites all eight megabytes of it.
+
+    same binary, same route, same number of frame reports
+                  period      render     elsewhere     snapshot
+    zero-filled  209.5 ms    40.9 ms     168.6 ms     115.6 ms
+    raw          187.3 ms    39.9 ms     147.4 ms      94.0 ms
+
+**−10.6% on the frame**, 4.77 fps to 5.33. The copy itself grows, 64.8 to 93.4 ms,
+because the page faults move into it instead of happening during the fill; the net
+is twenty-one milliseconds a frame all the same.
+
+#### What this does to the note's own conclusions
+
+It does not overturn the verdict — 187 ms against a 33 ms budget is still five times
+over. But it reopens something the verdict rested on.
+
+E00-S03 measured 125 ms of a 170 ms frame as "recompiled code" and the go/no-go was
+pronounced on that split. The measurement was the interval between graphics tasks,
+which counts whatever the guest thread was doing, and **the guest thread was
+spending most of it inside an eight-megabyte memcpy that belongs to the runtime's
+task queue, not to DKR**. The recompiled code's real share is smaller than the
+verdict assumed, and by an amount nobody has yet measured.
+
+Which is consistent with the thing that made no sense until now: removing 30% of the
+emitted instructions changed the frame by 0.6%. If the recompiled code were 73% of
+the frame that would be inexplicable. If it is a third of it, sitting behind a copy
+that is 63%, it is exactly what should have happened.
+
+The ranked list from two days ago now reads:
+
+    the RDRAM snapshot, per display list   63%   half of it deleted here
+    the renderer proper                    18%   E05, E08-S03
+    a display list's other overhead         6%   sp_complete, DP edge
+    redundant screen updates                4%   deleted
+    the recompiled game                      ?   never separately measured
+
+The last row is the one this note has spent two days arguing about, and it has never
+once been measured on its own.
