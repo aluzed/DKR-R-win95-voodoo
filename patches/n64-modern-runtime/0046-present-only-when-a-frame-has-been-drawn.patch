@@ -1,0 +1,137 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Enqueue a screen update only when a frame has been drawn
+
+The vertical-interval thread posts a ScreenUpdateAction every retrace and the
+queue keeps at most one pending, which was assumed to be enough coalescing.
+Measured on 22 September 2026 it is not: 3,371 of them arrive for 389 rendered
+frames -- 8.7 per frame -- each costing about a millisecond of the graphics
+thread, for a handler that assigns two registers, clears a flag and calls a
+function that increments a counter.
+
+Dropping them is safe on this target because nothing reads what they carry:
+`ultramodern::renderer::get_vi_regs` has no caller in this tree, RT64 being the
+consumer and RT64 not being built for Windows 95, and `update_screen` neither
+presents nor draws. The first sixteen go through unconditionally all the same,
+because the very first is what starts the recompiled game and nothing has been
+drawn yet to arm the flag.
+
+Measured with the control on the same binary, truncated to the same number of
+frame reports:
+
+  every retrace     period 190.2 ms   render 38.2 ms   elsewhere 152.0 ms
+  only on a frame   period 184.9 ms   render 38.2 ms   elsewhere 146.8 ms
+
+-2.8% on the frame. The renderer's own figure is identical, so the whole of it
+is in `elsewhere`: 5.2 ms a frame. 386 updates enqueued against 3,180 skipped.
+
+On by default where it was measured, off elsewhere, and `DKR_VI_PRESENT=every`
+or `=new` overrides either way. The choice is announced once in the log, because
+a switch that silently fails to take and a switch that changes nothing are the
+same measurement.
+
+---
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -138,6 +138,53 @@
+     moodycamel::ConcurrentQueue<OSThread*> deleted_threads{};
+ } events_context{};
+ 
++/* **Enqueue a screen update only when there is a new frame to show.**
++ *
++ * The vertical-interval thread posts one of these every retrace and the queue
++ * keeps at most one pending, which was thought to be enough. Measured on
++ * 22 September 2026 it is not: 3,371 of them arrive for 389 rendered frames --
++ * **8.7 per frame** -- each costing about a millisecond of the graphics thread
++ * for a handler that assigns two registers, clears a flag and increments a
++ * counter. Four percent of the wall, buying nothing that one update would not.
++ *
++ * What makes it safe to drop them here is that nothing on this target reads what
++ * they carry: `ultramodern::renderer::get_vi_regs` has no caller in this tree --
++ * RT64 is the consumer and RT64 is not built for Windows 95 -- and
++ * `update_screen` neither presents nor draws. The first updates are let through
++ * unconditionally all the same, because the very first is what starts the
++ * recompiled game.
++ *
++ * Behind a switch and announced once, because a switch that silently fails to
++ * take and a switch that changes nothing are the same measurement. */
++static std::atomic<bool> g_frame_drawn_since_update{true};
++static std::atomic<unsigned long long> g_updates_enqueued{0};
++static std::atomic<unsigned long long> g_updates_skipped{0};
++
++static bool update_only_on_new_frame(void) {
++    static int decided = -1;
++    if (decided < 0) {
++        /* On by default where it was measured and where nothing reads what the
++           action carries; off everywhere else, because a target that builds RT64
++           has a consumer for those registers and this has not been measured
++           against one. `DKR_VI_PRESENT=every` restores the old behaviour, which
++           is how the two were compared. */
++#ifdef DKR_TARGET_WIN95
++        decided = 1;
++#else
++        decided = 0;
++#endif
++        const char* choice = std::getenv("DKR_VI_PRESENT");
++        if (choice != nullptr) {
++            decided = (choice[0] == 'n') ? 1 : ((choice[0] == 'e') ? 0 : decided);
++        }
++        std::fprintf(stderr, "[vi][present] %s (DKR_VI_PRESENT=%s)\n",
++                     decided ? "only when a frame has been drawn"
++                             : "every retrace",
++                     (choice != nullptr) ? choice : "unset");
++    }
++    return decided == 1;
++}
++
+ ultramodern::renderer::ViRegs* ultramodern::renderer::get_vi_regs() {
+     return &events_context.vi.update_screen_regs;
+ }
+@@ -230,7 +277,18 @@
+         // presents. Keep at most one pending update so graphics tasks cannot
+         // age behind stale screen-update work.
+         if (!screen_update_action_pending.exchange(true)) {
+-            events_context.action_queue.enqueue(ScreenUpdateAction{ events_context.vi.regs });
++            /* The first sixteen go through whatever the policy: the first one
++               starts the recompiled game, and nothing has been drawn yet to
++               arm the flag. */
++            const unsigned long long sent = g_updates_enqueued.load();
++            const bool obliged = !update_only_on_new_frame() || sent < 16ULL;
++            if (obliged || g_frame_drawn_since_update.exchange(false)) {
++                g_updates_enqueued.fetch_add(1);
++                events_context.action_queue.enqueue(ScreenUpdateAction{ events_context.vi.regs });
++            } else {
++                g_updates_skipped.fetch_add(1);
++                screen_update_action_pending.store(false);
++            }
+         }
+ 
+         // Update VI registers and swap VI modes.
+@@ -480,6 +538,7 @@
+ static std::atomic<unsigned long long> g_gfx_awake_task_us{0};
+ static std::atomic<unsigned long long> g_gfx_awake_screen_us{0};
+ static std::atomic<unsigned long long> g_gfx_task_n{0};
++
+ static std::atomic<unsigned long long> g_gfx_screen_n{0};
+ 
+ extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
+@@ -564,6 +623,10 @@
+                              (unsigned long long)g_gfx_task_n.load(),
+                              (unsigned long long)g_gfx_awake_screen_us.load(),
+                              (unsigned long long)g_gfx_screen_n.load());
++                std::fprintf(stderr,
++                             "[trace][vi] updates-enqueued=%llu skipped=%llu\n",
++                             (unsigned long long)g_updates_enqueued.load(),
++                             (unsigned long long)g_updates_skipped.load());
+                 if (dkr_diag_commit) { dkr_diag_commit(); }
+             }
+         }
+@@ -572,6 +635,9 @@
+             // Determine the action type and act on it
+             if (const auto* task_action = std::get_if<SpTaskAction>(&action)) {
+                 gfx_round_kind = 0;
++                /* A frame's worth of drawing is about to happen, so the next
++                   retrace has something new to show. */
++                g_frame_drawn_since_update.store(true);
+                 // The queued task owns an immutable RDRAM snapshot, so the CPU
+                 // can safely recycle its live display-list buffers as soon as
+                 // the emulated RSP completes. Deliver this edge before parsing

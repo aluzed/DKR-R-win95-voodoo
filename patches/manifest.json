@@ -185,6 +185,10 @@
         {
           "path": "patches/n64-modern-runtime/0045-measure-the-graphics-thread-s-own-loop.patch",
           "sha256": "fe884870429c0b728be3aae68888382168ec4c76b5b3a665842c5be67f7d21f8"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0046-present-only-when-a-frame-has-been-drawn.patch",
+          "sha256": "956a3baeb954d1a49166f537c808c61832c46952035c9f857fb3dc6a7f5f0038"
         }
       ]
     },

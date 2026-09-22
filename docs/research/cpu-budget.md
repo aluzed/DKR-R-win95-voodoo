@@ -1621,3 +1621,48 @@ allocation released on the consumer's thread every frame is worth looking at on 
 own terms.
 
 Neither of them changes the verdict. The floor is still the floor.
+
+### Deleting the redundant presents: the first gain this note has measured
+
+The decomposition left one item that was plainly waste rather than work — 8.7 screen
+updates for every frame the game produces — so it was removed and measured.
+
+The vertical-interval thread posts a `ScreenUpdateAction` every retrace and the queue
+keeps at most one pending, which was assumed to coalesce enough. It does not: the
+graphics thread drains the pending one long before the game draws again, so the next
+retrace posts another. The change is to post one only when a display list has been
+handled since the last, with the first sixteen let through because the very first is
+what starts the recompiled game.
+
+It is safe here for a reason worth writing down rather than assuming:
+`ultramodern::renderer::get_vi_regs` — the reader of what these actions carry — **has
+no caller in this tree**. RT64 is its consumer and RT64 is not built for Windows 95.
+`update_screen` neither presents nor draws; it assigns two registers, clears a flag
+and increments a counter.
+
+Control on the same binary, truncated to the same number of frame reports:
+
+    policy             period      render      elsewhere    updates
+    every retrace     190.2 ms    38.2 ms      152.0 ms      3,770
+    only on a frame   184.9 ms    38.2 ms      146.8 ms        386
+
+**−2.8% on the frame, and the renderer's own figure is unchanged** — 38.2 ms on both
+sides — so the whole of the gain is in `elsewhere`: **5.2 ms a frame**. Ninety
+percent of the updates are gone and the game reaches the title screen as before.
+
+#### What it is worth, honestly
+
+Five milliseconds out of a hundred and ninety, against a budget of thirty-three. It
+does not move the verdict and was never going to. What it does is close a loop this
+note has been open on for two days: the frame's `elsewhere` was read as the
+recompiled game, then measured to contain the graphics thread, then decomposed, and
+the one part of it that bought nothing has been deleted and the deletion measured.
+
+It is also the first change in this investigation that made anything faster. The
+register narrowing removed a third of the emitted instructions for nothing; this
+removes about six thousand queue round trips a minute for three percent. The ratio
+between effort and effect is the opposite of what the instruction counts predicted,
+which is the note's recurring lesson in one line.
+
+On by default where it was measured, off elsewhere, and `DKR_VI_PRESENT=every`
+restores the old behaviour — which is how the two were compared.
