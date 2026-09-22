@@ -1,0 +1,83 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Split guest-run by the thread that earned it
+
+With the runtime's own bookkeeping cut from 63% of the frame to 27%, the guest's
+time is the largest item left and it has never been decomposed: the recompiled
+game, libultra's scheduler and the audio manager are one number.
+
+`guest-run` is already stamped per thread by patch 0041; bucketing the
+accumulation by the id the game gave each thread costs nothing. The ids come
+from the game's own osCreateThread calls -- 1 the idle thread, 3 the game
+thread, 4 the audio manager, 5 the scheduler.
+
+500 display lists, a frame of 122.5 ms:
+
+  id 5  the scheduler       38.80 ms  31.7%   the RDRAM snapshot is inside it
+  id 1  the idle thread     17.23 ms  14.1%
+  id 3  the game thread     15.32 ms  12.5%
+  id 4  the audio manager    2.11 ms   1.7%
+
+Take the snapshot out of the scheduler and libultra's scheduler costs 6.1 ms.
+The recompiled game is an eighth of its own frame, and the idle thread costs
+more than it does -- subject to the caveat that "not blocked" is not
+"executing", which this instrument cannot separate.
+
+A patch of its own rather than an extension of 0043, because 0044 and 0045
+already touch the file between them and folding it backwards broke the stack
+once.
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -205,6 +205,18 @@
+ static bool guest_time_enabled() { return g_guest_time_on; }
+ 
+ static std::atomic<unsigned long long> g_guest_run_us{0};
++/* **The same total, split by which guest thread earned it.**
++ *
++ * With the runtime's own bookkeeping cut from the frame, the guest's 50.9 ms is
++ * the largest item left, and it has never been decomposed: the recompiled game,
++ * libultra's scheduler and the audio manager are one number. The ids are the
++ * game's own -- 1 idle, 3 the game thread, 4 the audio manager, 5 the scheduler
++ * -- read off the second argument to `osCreateThread` in the recompiled code.
++ *
++ * Sixteen slots, everything above folded into the last, which is the same shape
++ * the waker attribution uses and for the same reason. */
++#define DKR_GUEST_RUN_SLOTS 16
++static std::atomic<unsigned long long> g_guest_run_by_id[DKR_GUEST_RUN_SLOTS];
+ static std::atomic<unsigned long long> g_guest_switches{0};
+ /* The wall clock's origin, stamped at the **first** switch and not at the first
+    report. Stamping it at the report would leave `guest-run` accumulating from the
+@@ -295,7 +307,16 @@
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
+     if (guest_time_enabled() && tl_resumed_at != 0) {
+         const unsigned long long now = dkr_clock_now_us();
+-        g_guest_run_us.fetch_add(now - tl_resumed_at);
++        const unsigned long long ran = now - tl_resumed_at;
++        g_guest_run_us.fetch_add(ran);
++        {
++            const OSThread* self = TO_PTR(OSThread, ultramodern::this_thread());
++            int slot = (self != nullptr) ? (int)self->id : 0;
++            if (slot < 0 || slot >= DKR_GUEST_RUN_SLOTS) {
++                slot = DKR_GUEST_RUN_SLOTS - 1;
++            }
++            g_guest_run_by_id[slot].fetch_add(ran);
++        }
+         const unsigned long long n = g_guest_switches.fetch_add(1) + 1;
+         {
+             unsigned long long expected = 0;
+@@ -338,6 +359,14 @@
+                sixteen fields is short enough to read and a fixed order lets two
+                runs be compared column by column. Empty slots are skipped so the
+                line stays narrow when the game uses four threads. */
++            std::fprintf(stderr, "[trace][ran]");
++            for (int s = 0; s < DKR_GUEST_RUN_SLOTS; s++) {
++                const unsigned long long us = g_guest_run_by_id[s].load();
++                if (us != 0ULL) {
++                    std::fprintf(stderr, " t%d=%llu", s, us);
++                }
++            }
++            std::fprintf(stderr, " us\n");
+             std::fprintf(stderr, "[trace][waker]");
+             for (int s = 0; s < DKR_IDLE_WAKER_SLOTS; s++) {
+                 const unsigned long long us = g_idle_waker_us[s].load();

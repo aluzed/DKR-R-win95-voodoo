@@ -176,7 +176,7 @@
         },
         {
           "path": "patches/n64-modern-runtime/0043-name-the-thread-that-ends-each-silence.patch",
-          "sha256": "e610f2ed93db6ef2c93fb785abd3ba07c7c661882d4744ad6677d3d598c7b4dd"
+          "sha256": "830d610b206f1d9e8ea6bb6910b6eacd2d99129d30df269d84b2c2fd458de38a"
         },
         {
           "path": "patches/n64-modern-runtime/0044-record-the-shape-of-the-wait.patch",
@@ -193,6 +193,10 @@
         {
           "path": "patches/n64-modern-runtime/0047-do-not-zero-the-rdram-snapshot-before-overwriting-it.patch",
           "sha256": "73200ffe21f51f78e06596e1d1d65d31f717814a07e6d08686e22ede7e2dec8b"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0048-split-guest-run-by-thread.patch",
+          "sha256": "350b5d3a3c09fd7b2b4690690f38977b006bbd1f9abedb879b129dbc35c7c5dd"
         }
       ]
     },
