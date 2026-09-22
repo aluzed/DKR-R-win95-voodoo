@@ -184,7 +184,7 @@
         },
         {
           "path": "patches/n64-modern-runtime/0045-measure-the-graphics-thread-s-own-loop.patch",
-          "sha256": "2031a8d00cd3be69054ac37d9c90a881142c1c0d933222ee2501e3b6a0cc63f5"
+          "sha256": "fe884870429c0b728be3aae68888382168ec4c76b5b3a665842c5be67f7d21f8"
         }
       ]
     },

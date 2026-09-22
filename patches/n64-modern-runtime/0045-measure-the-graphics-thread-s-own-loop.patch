@@ -14,9 +14,18 @@ before the wait rather than after it, so the sleep is not folded into the work.
 
   [trace][gfx] rounds=N empty=N awake=N us
 
-Measured at the title screen: 29.2% of the wall awake, of which 14.6% is inside
-send_dl and update_screen and 14.5% is the loop itself, against the 16.7% that
-nothing could account for. 120 rounds a second, three in five empty.
+The awake span is split three ways -- by whether the round found anything, and
+by what it found -- because a single mean fits two very different stories.
+
+Measured at the title screen over 80.3 s:
+
+  display-list rounds     389 x  49.10 ms = 19.10 s   23.8% of wall
+    of which in send_dl   389 x  37.61 ms = 14.63 s   18.2%
+    of which outside it   389 x  11.49 ms =  4.47 s    5.6%
+  screen updates         3371 x   0.99 ms =  3.35 s    4.2%
+  empty rounds           5594 x   0.01 ms =  0.03 s    0.0%
+
+The poll costs nothing. The screen updates arrive 8.7 per rendered frame.
 
 ---
 --- a/ultramodern/src/events.cpp
@@ -30,7 +39,7 @@ nothing could account for. 120 rounds a second, three in five empty.
  
  #include "blockingconcurrentqueue.h"
  
-@@ -444,6 +446,28 @@
+@@ -444,6 +446,48 @@
  std::atomic<ultramodern::renderer::SetupResult> renderer_setup_result = ultramodern::renderer::SetupResult::Success;
  std::atomic<ultramodern::renderer::GraphicsApi> renderer_chosen_api = ultramodern::renderer::GraphicsApi::Auto;
  
@@ -49,6 +58,26 @@ nothing could account for. 120 rounds a second, three in five empty.
 +static std::atomic<unsigned long long> g_gfx_rounds{0};
 +static std::atomic<unsigned long long> g_gfx_empty{0};
 +static std::atomic<unsigned long long> g_gfx_awake_us{0};
++/* **Split by whether the round had anything to do.**
++ *
++ * "Awake" is not "executing": a preempted thread is runnable and counts here,
++ * and on one emulated core it will be preempted often. A round that dequeued
++ * nothing does essentially no work -- it tests a boolean and loops -- so its
++ * awake time is almost pure preemption, and comparing the two means tells the
++ * difference between a loop that costs something and a loop that merely waits
++ * its turn. Without this split the 14.5% of the wall attributed to the loop
++ * cannot be read as work at all. */
++static std::atomic<unsigned long long> g_gfx_awake_empty_us{0};
++/* Split again, by what the round was handling. Subtracting the renderer's own
++   per-display-list mean from the thread's awake time leaves a remainder that two
++   very different stories fit equally well -- three thousand screen updates at two
++   milliseconds each, or four hundred display lists at sixteen milliseconds each
++   outside `send_dl`, the latter being where an eight-megabyte RDRAM snapshot is
++   released. Guessing between them is what the last three experiments were. */
++static std::atomic<unsigned long long> g_gfx_awake_task_us{0};
++static std::atomic<unsigned long long> g_gfx_awake_screen_us{0};
++static std::atomic<unsigned long long> g_gfx_task_n{0};
++static std::atomic<unsigned long long> g_gfx_screen_n{0};
 +
 +extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
 +extern "C" void dkr_diag_commit(void) __attribute__((weak));
@@ -59,19 +88,31 @@ nothing could account for. 120 rounds a second, three in five empty.
  void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_ready, ultramodern::renderer::WindowHandle window_handle) {
      bool enabled_instant_present = false;
      using namespace std::chrono_literals;
-@@ -472,10 +496,39 @@
+@@ -472,12 +516,62 @@
      // Notify the caller thread that this thread is ready.
      thread_ready->signal();
  
 +    unsigned long long gfx_awake_at = 0ULL;
 +    unsigned long long gfx_last_report_us = 0ULL;
++    bool gfx_round_was_empty = false;
++    int gfx_round_kind = -1;   /* 0 sp task, 1 screen update, -1 neither */
 +
      while (!exited) {
 +        /* Closed before the wait, not after it: the span that counts runs from
 +           waking to going back to sleep, and stamping it on the far side of the
 +           wait would fold the sleep into the work. */
 +        if (g_gfx_trace_on && gfx_awake_at != 0ULL) {
-+            g_gfx_awake_us.fetch_add(dkr_clock_now_us() - gfx_awake_at);
++            const unsigned long long span = dkr_clock_now_us() - gfx_awake_at;
++            g_gfx_awake_us.fetch_add(span);
++            if (gfx_round_was_empty) { g_gfx_awake_empty_us.fetch_add(span); }
++            if (gfx_round_kind == 0) {
++                g_gfx_awake_task_us.fetch_add(span);
++                g_gfx_task_n.fetch_add(1);
++            } else if (gfx_round_kind == 1) {
++                g_gfx_awake_screen_us.fetch_add(span);
++                g_gfx_screen_n.fetch_add(1);
++            }
++            gfx_round_kind = -1;
 +        }
 +
          // Try to pull an action from the queue
@@ -84,14 +125,22 @@ nothing could account for. 120 rounds a second, three in five empty.
 +            const unsigned long long now = dkr_clock_now_us();
 +            gfx_awake_at = now;
 +            const unsigned long long rounds = g_gfx_rounds.fetch_add(1) + 1;
++            gfx_round_was_empty = !got_action;
 +            if (!got_action) { g_gfx_empty.fetch_add(1); }
 +            if (gfx_last_report_us == 0ULL) { gfx_last_report_us = now; }
 +            if (now - gfx_last_report_us >= 5000000ULL) {
 +                gfx_last_report_us = now;
 +                std::fprintf(stderr,
-+                             "[trace][gfx] rounds=%llu empty=%llu awake=%llu us\n",
++                             "[trace][gfx] rounds=%llu empty=%llu awake=%llu us "
++                             "awake-on-empty=%llu us task=%llu us/%llu "
++                             "screen=%llu us/%llu\n",
 +                             rounds, (unsigned long long)g_gfx_empty.load(),
-+                             (unsigned long long)g_gfx_awake_us.load());
++                             (unsigned long long)g_gfx_awake_us.load(),
++                             (unsigned long long)g_gfx_awake_empty_us.load(),
++                             (unsigned long long)g_gfx_awake_task_us.load(),
++                             (unsigned long long)g_gfx_task_n.load(),
++                             (unsigned long long)g_gfx_awake_screen_us.load(),
++                             (unsigned long long)g_gfx_screen_n.load());
 +                if (dkr_diag_commit) { dkr_diag_commit(); }
 +            }
 +        }
@@ -99,4 +148,15 @@ nothing could account for. 120 rounds a second, three in five empty.
 +        if (got_action) {
              // Determine the action type and act on it
              if (const auto* task_action = std::get_if<SpTaskAction>(&action)) {
++                gfx_round_kind = 0;
                  // The queued task owns an immutable RDRAM snapshot, so the CPU
+                 // can safely recycle its live display-list buffers as soon as
+                 // the emulated RSP completes. Deliver this edge before parsing
+@@ -542,6 +636,7 @@
+                 // printf("Renderer ProcessDList time: %d us\n", static_cast<u32>(std::chrono::duration_cast<std::chrono::microseconds>(renderer_end - renderer_start).count()));
+             }
+             else if (const auto* screen_update_action = std::get_if<ScreenUpdateAction>(&action)) {
++                gfx_round_kind = 1;
+                 events_context.vi.update_screen_regs = screen_update_action->regs;
+                 screen_update_action_pending.store(false);
+                 renderer_context->update_screen();
