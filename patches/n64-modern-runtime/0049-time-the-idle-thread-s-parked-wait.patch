@@ -1,0 +1,96 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Time the idle thread's parked wait
+
+Patch 0048 put the idle thread at 17.2 ms of a 122.5 ms frame -- more than the
+recompiled game -- with the caveat that the instrument could not tell work
+from waiting. The code answers it before any measurement does: the recompiler
+turns the idle thread's `b .` into `pause_self`, which blocks on the external
+message queue **while still holding the guest token**. It never passes through
+`wait_for_resumed`, so every millisecond it sleeps waiting for a VI, SP or DP
+interrupt is charged to it as running time.
+
+This times that wait and prints it per thread beside `[trace][ran]`. One run
+on the test machine, glide renderer, 80 s, frame 121.5 ms:
+
+  [trace][ran]    t1=9024865 us
+  [trace][parked] t1=5602408 us   62.1% of the idle thread's "run"
+
+Applied to 0048's 17.2 ms: about 10.7 ms of each frame is the idle thread
+asleep, and about 6.5 ms is what it executes -- delivering the external
+message and handing the token to the thread it woke.
+
+Two clock reads per wake, and only under DKR_TRACE_CPU.
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -217,6 +217,26 @@
+  * the waker attribution uses and for the same reason. */
+ #define DKR_GUEST_RUN_SLOTS 16
+ static std::atomic<unsigned long long> g_guest_run_by_id[DKR_GUEST_RUN_SLOTS];
++/* **The part of each thread's run spent parked in `pause_self`.**
++ *
++ * The recompiler turns a guest `b .` -- the idle thread's `for (;;)` -- into
++ * `pause_self`, which blocks on the external message queue **while still holding
++ * the guest token**: it never passes through `wait_for_resumed`, so every
++ * millisecond it sleeps waiting for a VI, SP or DP interrupt is charged to it as
++ * running time. That is why the idle thread appeared to cost more than the game.
++ * Subtracting this from `t1` gives what the idle thread actually executes. */
++static std::atomic<unsigned long long> g_parked_by_id[DKR_GUEST_RUN_SLOTS];
++
++bool dkr_guest_time_enabled() { return g_guest_time_on; }
++
++void dkr_note_parked(RDRAM_ARG unsigned long long us) {
++    const OSThread* self = TO_PTR(OSThread, ultramodern::this_thread());
++    int slot = (self != nullptr) ? (int)self->id : 0;
++    if (slot < 0 || slot >= DKR_GUEST_RUN_SLOTS) {
++        slot = DKR_GUEST_RUN_SLOTS - 1;
++    }
++    g_parked_by_id[slot].fetch_add(us);
++}
+ static std::atomic<unsigned long long> g_guest_switches{0};
+ /* The wall clock's origin, stamped at the **first** switch and not at the first
+    report. Stamping it at the report would leave `guest-run` accumulating from the
+@@ -365,6 +385,14 @@
+                 if (us != 0ULL) {
+                     std::fprintf(stderr, " t%d=%llu", s, us);
+                 }
++            }
++            std::fprintf(stderr, " us\n");
++            std::fprintf(stderr, "[trace][parked]");
++            for (int s = 0; s < DKR_GUEST_RUN_SLOTS; s++) {
++                const unsigned long long us = g_parked_by_id[s].load();
++                if (us != 0ULL) {
++                    std::fprintf(stderr, " t%d=%llu", s, us);
++                }
+             }
+             std::fprintf(stderr, " us\n");
+             std::fprintf(stderr, "[trace][waker]");
+--- a/ultramodern/src/scheduling.cpp
++++ b/ultramodern/src/scheduling.cpp
+@@ -29,10 +29,24 @@
+     }
+ }
+ 
++/* Patch 0049: the wait below is counted by threads.cpp as the caller's running
++   time, because the caller keeps the guest token while it sleeps. Timed here so
++   the trace can take it back out. */
++extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
++bool dkr_guest_time_enabled();
++void dkr_note_parked(RDRAM_ARG unsigned long long us);
++
+ extern "C" void pause_self(RDRAM_ARG1) {
++    const bool timed = dkr_guest_time_enabled();
+     while (true) {
+         // Wait until an external message arrives, then allow the next thread to run.
+-        ultramodern::wait_for_external_message(PASS_RDRAM1);
++        if (timed) {
++            const unsigned long long parked_at = dkr_clock_now_us();
++            ultramodern::wait_for_external_message(PASS_RDRAM1);
++            dkr_note_parked(PASS_RDRAM dkr_clock_now_us() - parked_at);
++        } else {
++            ultramodern::wait_for_external_message(PASS_RDRAM1);
++        }
+         ultramodern::check_running_queue(PASS_RDRAM1);
+     }
+ }

@@ -1980,3 +1980,58 @@ instrument as built cannot tell them apart.
 
 Four of the seven rows are the runtime's, not the game's, and together they are
 two thirds of the frame.
+
+### The idle thread is mostly asleep, and the code said so before the clock did
+
+The question the previous section left open -- is the idle thread's 17.2 ms work,
+or a thread that merely holds its place? -- has an answer in the recompiled code.
+The game's idle loop is a `b .` at `0x80065E18` in `thread1_main`, and N64Recomp
+emits it as a call to `pause_self`:
+
+    extern "C" void pause_self(RDRAM_ARG1) {
+        while (true) {
+            ultramodern::wait_for_external_message(PASS_RDRAM1);
+            ultramodern::check_running_queue(PASS_RDRAM1);
+        }
+    }
+
+`wait_for_external_message` blocks on a `moodycamel` semaphore until a VI, SP or DP
+event arrives. The idle thread does it **while holding the guest token**: it never
+passes through `wait_for_resumed`, so none of 0048's clock reads fall inside the
+sleep, and the whole of it is charged to thread 1 as running time.
+
+So the instrument was not unable to tell spinning from queued, as the note
+assumed: it was counting a third thing, a thread blocked in the kernel with the
+token in its hand. Patch 0049 times that wait and prints it beside `[trace][ran]`.
+One run on the test machine, glide renderer, 80 s, a frame of 121.5 ms:
+
+    [trace][ran]     t1=9024865 us
+    [trace][parked]  t1=5602408 us     62.1% of the idle thread's "run"
+
+Applied to 0048's figure:
+
+    the idle thread, as reported     17.2 ms
+      asleep in pause_self           10.7 ms   waiting on an interrupt
+      executing                       6.5 ms   delivering it, handing the token over
+
+The 10.7 ms is not CPU the frame can have back. It is the frame waiting for
+something -- the renderer, a vertical interval -- and it belongs with the
+"no guest running" time 0042 measures, not with any guest thread. The 6.5 ms is
+real: `do_send` and the switch to the thread the message woke, once per
+interrupt. It is the runtime's cost, not the game's, and it is small beside the
+snapshot and the renderer.
+
+The frame, corrected:
+
+    the renderer                38.8 ms   31.7%   E05, E08-S03
+    the RDRAM snapshot          32.7 ms   26.7%   a real copy
+    the recompiled game         15.3 ms   12.5%   E08-S02
+    waiting, charged to idle    10.7 ms    8.7%   not CPU
+    the graphics thread's loop  10.2 ms    8.3%
+    delivering interrupts        6.5 ms    5.3%   the idle thread's real work
+    libultra's scheduler         6.1 ms    5.0%
+    the audio manager            2.1 ms    1.7%
+
+The idle thread no longer costs more than the game. The three items worth a
+ticket are unchanged, and they are the ones E08-S01 was meant to find: the
+renderer, the snapshot, and the recompiled code, in that order.

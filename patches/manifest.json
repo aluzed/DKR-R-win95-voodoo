@@ -197,6 +197,10 @@
         {
           "path": "patches/n64-modern-runtime/0048-split-guest-run-by-thread.patch",
           "sha256": "350b5d3a3c09fd7b2b4690690f38977b006bbd1f9abedb879b129dbc35c7c5dd"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0049-time-the-idle-thread-s-parked-wait.patch",
+          "sha256": "74dcdc7105effab595af8fa0b9f7a114c35b65766c622c0c504ef2682441d262"
         }
       ]
     },
