@@ -2289,3 +2289,49 @@ a 150 s run has 924 `[gfx][f3d]` lines before the fix and 924 after it.
 **−18.7% on the frame from one line of the renderer's setup.** It is the largest
 single gain this note has recorded, and it came from an instrument pointed one
 level further down than the last one.
+
+### The snapshot is not needed on one processor: 10.2 fps to 18.4
+
+Patch 0007 made every graphics task carry a copy of RDRAM, so that the renderer
+never reads memory the game may recycle. The watchdog fix of the crash at display
+list 344 then relied on that copy to publish the DP edge before drawing. After the
+trace fix, the copy is the second largest item in the frame, at 29.5 ms.
+
+The copy exists for an overlap: the game writes RDRAM while the renderer reads
+it. On a machine with one processor that overlap never happened. The two only ever
+took turns.
+
+Patch 0052, under `DKR_RDRAM_SNAPSHOT=none`, copies nothing. `submit_rsp_task` runs
+on libultra's scheduler thread. It queues the task and waits on a semaphore that
+the graphics thread signals once the display list is drawn, and it **keeps the
+guest token** while it waits. No guest thread can run, so none can write what the
+renderer reads, and the renderer reads live RDRAM.
+
+The DP edge still has to be published before the drawing, for the watchdog, and
+it still is. What changes is that it cannot be *delivered* then. Delivery needs a
+guest thread, `sp_complete` waits for delivery, and the thread holding the token
+is the one waiting for the drawing: waiting would deadlock. So in this mode both
+edges are queued without waiting. They sit in the external queue ahead of every
+retrace that arrives during the drawing, and they are delivered first as soon as
+the scheduler blocks again. The watchdog sees the task completed before it sees a
+single retrace.
+
+On the test machine, normal mode, trace off:
+
+    default     98.2 ms   10.18 fps   150 s
+    none        54.2 ms   18.44 fps   150 s
+    none        59.7 ms   16.75 fps   300 s, 1,920 lists, 0 rejects, clean exit
+
+**−45% on the frame.** That is more than the 29.5 ms the copy cost in exclusive
+mode. Probably the copy also cost what it did to the cache: every display list
+read memory that four megabytes of copying had just evicted. That has not been
+measured.
+
+Screenshots of the attract mode taken at the same offsets match between the two
+modes. The one oddity, a black patch of track on the beach, is present in the
+default mode as well.
+
+It stays **off by default**. The attract mode does not exercise the menus, a
+race under input, or a long session. Those are what would find a path in which
+the game touches RDRAM that the drawing needs, from a thread this reasoning has
+not accounted for.

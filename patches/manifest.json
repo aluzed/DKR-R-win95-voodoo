@@ -209,6 +209,10 @@
         {
           "path": "patches/n64-modern-runtime/0051-exclusive-sections-and-the-preemption-they-reveal.patch",
           "sha256": "69feccd28293d0a74cdd1b85ef63c3d5beefd18da7f2fb63fb548b14de6143ba"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0052-draw-from-live-rdram-while-the-scheduler-waits.patch",
+          "sha256": "c2f9f8405683cf4ca4bc42d4a2e1b3aa7483b62fc040d9e65dcf04625df16794"
         }
       ]
     },

@@ -1,0 +1,152 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Draw from live RDRAM while the scheduler waits
+
+The RDRAM snapshot is 29.5 ms of a 106.9 ms frame, the second item in the frame
+budget. It exists so that the game can go on writing RDRAM while the renderer
+reads the display list it submitted, and on one processor that overlap does not
+exist.
+
+With DKR_RDRAM_SNAPSHOT=none, submit_rsp_task copies nothing. The scheduler
+thread that submits the graphics task waits for the graphics thread to draw it,
+holding the guest token, so no guest thread can write what the renderer reads.
+The SP and DP edges are still published before the drawing, which keeps the
+watchdog fix of the crash at display list 344. They are queued without waiting
+for delivery: delivery needs a guest thread, and the submitting thread holds the
+token. They wait in the external queue ahead of every retrace of the drawing.
+
+Off by default. On the test machine, normal mode, trace off:
+
+  default    98.2 ms   10.18 fps   150 s
+  none       54.2 ms   18.44 fps   150 s
+  none       59.7 ms   16.75 fps   300 s, 1,920 display lists, 0 rejects,
+                                   clean shutdown
+
+The screenshots of the attract mode match the default mode's, including a black
+patch of track that the default mode shows too.
+
+---
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -50,6 +50,10 @@
+     OSTask task;
+     SnapshotPtr rdram_snapshot;
+     bool presentation_allowed;
++    /* Patch 0052: set only in the synchronous mode, where there is no snapshot
++       and the submitting guest thread waits on it until the display list has
++       been drawn from live RDRAM. */
++    moodycamel::LightweightSemaphore* drawn = nullptr;
+ };
+ 
+ struct ScreenUpdateAction {
+@@ -185,6 +189,48 @@
+ static const bool g_snapshot_trace_on =
+     (dkr_clock_now_us != nullptr) && (std::getenv("DKR_TRACE_CPU") != nullptr);
+ 
++/* --- No snapshot at all: the synchronous mode, patch 0052 -------------------- *
++ *
++ * The snapshot exists so that the game can go on writing RDRAM while the
++ * renderer reads the display list it submitted. On one processor that overlap
++ * does not exist: the renderer and the game take turns on the same CPU either
++ * way. What the snapshot costs is real, though -- 29.5 ms of a 106.9 ms frame,
++ * the second item in `frame-budget.md`.
++ *
++ * With DKR_RDRAM_SNAPSHOT=none, `submit_rsp_task` copies nothing. The guest
++ * thread that submits the task -- libultra's scheduler -- waits for the
++ * graphics thread to draw it, **holding the guest token**. No guest thread can
++ * run, so none can write what the renderer reads, and the renderer reads live
++ * RDRAM.
++ *
++ * The two constraints that the snapshot satisfied still hold:
++ *
++ *  - The SP and DP edges are still published **before** the display list is
++ *    drawn, because DKR's scheduler watchdog counts retraces while a DP task is
++ *    outstanding (the crash at display list 344,
++ *    `docs/research/win95-first-game-crash.md`). They wait in the external
++ *    message queue, ahead of every retrace that arrives during the drawing, and
++ *    are delivered first when the scheduler blocks again.
++ *
++ *  - They are published **without** waiting for delivery. `sp_complete` waits
++ *    until the SP edge has entered the game's queue, and delivery needs a guest
++ *    thread to run. The submitting thread holds the token until the drawing is
++ *    done, so waiting would deadlock. The wait exists so that a fast renderer
++ *    cannot outrun the emulated scheduler, and here the scheduler cannot submit
++ *    anything until it has the token back.
++ *
++ * Off by default. */
++static const bool g_snapshot_none = [] {
++    const char* choice = std::getenv("DKR_RDRAM_SNAPSHOT");
++    return (choice != nullptr) && (std::strcmp(choice, "none") == 0);
++}();
++static moodycamel::LightweightSemaphore g_sync_drawn;
++/* Announced at the first task rather than at static initialisation, which runs
++   before the game has moved stderr to its log: the first version of this line
++   went nowhere, and the mode could only be inferred from `[snap][pool]` never
++   appearing. */
++static std::atomic<bool> g_snapshot_none_announced{false};
++
+ static bool snapshot_zero_filled(void) {
+     static int decided = -1;
+     if (decided < 0) {
+@@ -801,7 +847,22 @@
+                 // the emulated RSP completes. Deliver this edge before parsing
+                 // to keep SP and DP interrupts from racing back-to-back through
+                 // games such as DKR that schedule their next task on SP.
+-                sp_complete();
++                if (task_action->drawn != nullptr) {
++                    /* Synchronous mode: the submitting thread holds the guest
++                       token until `drawn` is signalled, so nothing can deliver
++                       the edge yet. Queue it and do not wait. */
++                    PTR(OSMesgQueue) sp_mq;
++                    OSMesg sp_msg;
++                    {
++                        ultramodern::lock_guard lock{ events_context.message_mutex };
++                        sp_mq = events_context.sp.mq;
++                        sp_msg = events_context.sp.msg;
++                    }
++                    ultramodern::enqueue_external_message_src(
++                        sp_mq, sp_msg, false, ultramodern::EventMessageSource::Sp);
++                } else {
++                    sp_complete();
++                }
+ 
+                 // Publish the DP edge BEFORE rendering, not after.
+                 //
+@@ -850,13 +911,19 @@
+                     ultramodern::extensions::on_displaylist_submitted(displaylist);
+ 
+                     [[maybe_unused]] auto renderer_start = std::chrono::high_resolution_clock::now();
+-                    renderer_context->send_dl(&task_action->task, task_action->rdram_snapshot.get());
++                    renderer_context->send_dl(
++                        &task_action->task,
++                        task_action->rdram_snapshot ? task_action->rdram_snapshot.get()
++                                                    : rdram);
+                     [[maybe_unused]] auto renderer_end = std::chrono::high_resolution_clock::now();
+                     trace_dl_duration(renderer_start, renderer_end);
+                     // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
+                     ultramodern::extensions::on_displaylist_parsed(displaylist);
+                     ultramodern::extensions::on_displaylist_completed(displaylist);
+                 }
++                if (task_action->drawn != nullptr) {
++                    task_action->drawn->signal();
++                }
+                 // printf("Renderer ProcessDList time: %d us\n", static_cast<u32>(std::chrono::duration_cast<std::chrono::microseconds>(renderer_end - renderer_start).count()));
+             }
+             else if (const auto* screen_update_action = std::get_if<ScreenUpdateAction>(&action)) {
+@@ -1056,6 +1123,17 @@
+                 *task, SnapshotPtr{}, false });
+             return;
+         }
++        if (g_snapshot_none) {
++            if (!g_snapshot_none_announced.exchange(true)) {
++                std::fprintf(stderr, "[snap][mode] none: display lists drawn from "
++                                     "live RDRAM, the scheduler waits "
++                                     "(DKR_RDRAM_SNAPSHOT=none)\n");
++            }
++            events_context.action_queue.enqueue(SpTaskAction{
++                *task, SnapshotPtr{}, true, &g_sync_drawn });
++            g_sync_drawn.wait();
++            return;
++        }
+         constexpr size_t RDRAMSnapshotSize = 0x800000;
+         /* **Eight megabytes copied per graphics task, and eight more zeroed
+            before the copy overwrites them.**

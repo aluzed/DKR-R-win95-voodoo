@@ -68,6 +68,24 @@ section runs. The processor then belongs to host threads that no one times: the 
 thread, the SP task thread outside the microcode, the window's message loop, the
 Glide driver. It may also be genuinely idle. The instrument cannot tell which.
 
+### The snapshot row can be zero: `DKR_RDRAM_SNAPSHOT=none`
+
+Patch 0052 adds a mode in which the graphics task is drawn from live RDRAM while
+libultra's scheduler waits for it, holding the guest token. Nothing is copied. The
+reasoning is in the patch and in `cpu-budget.md`. In short: on one processor, the
+overlap the snapshot bought never existed. Normal mode, trace off:
+
+| Mode | Frame | fps | Run |
+|---|---:|---:|---|
+| default (snapshot) | 98.2 ms | 10.18 | 150 s |
+| `none` | 54.2 ms | 18.44 | 150 s |
+| `none` | 59.7 ms | 16.75 | 300 s: 1,920 display lists, 0 rejects, clean shutdown |
+
+The attract mode's screenshots match between the two modes. **It is still off by
+default.** Two runs of the attract mode are not the menus, a race under the
+player's control, or a long session. Turning it on is a decision to take after
+those have been played.
+
 ## Inside the display list
 
 `DKR_TRACE_RENDER_ZONES` puts a timed proxy in front of every entry of the
