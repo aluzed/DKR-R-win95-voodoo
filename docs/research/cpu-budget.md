@@ -2335,3 +2335,20 @@ It stays **off by default**. The attract mode does not exercise the menus, a
 race under input, or a long session. Those are what would find a path in which
 the game touches RDRAM that the drawing needs, from a thread this reasoning has
 not accounted for.
+
+### The spin before the kernel wait, on one processor
+
+Patch 0042's histogram of silences had a peak between 128 and 256 µs, four
+thousand of them in 80 s. This note guessed it was `LightweightSemaphore`
+spinning 10,000 times before it blocks. On one processor that spin cannot
+succeed, because the thread that would signal cannot run while this one spins.
+Patch 0053 turns the spin count into a macro. The Windows 95 target sets it to 0
+in `cmake/win95-target.cmake`, which keeps the first check. Normal mode, trace
+off, 150 s:
+
+    10,000 spins   97.4   98.2   98.8 ms
+    0 spins        96.3   96.4 ms
+
+About 2 ms, all of it on the guest side (`elsewhere` goes from 82.1–82.5 ms to
+80.2–80.4). It is the size the histogram suggested. The histogram itself has not
+been re-read, so the match between the peak and the spin is still an inference.

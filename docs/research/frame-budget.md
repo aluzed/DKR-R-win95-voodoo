@@ -135,6 +135,13 @@ evaluated when there is no trace.
 
 The counter lines read zero with the switch on, which is why it is off by default.
 
+### The semaphore spin, removed on this target
+
+`LightweightSemaphore` spun up to 10,000 times before each kernel wait, on every
+guest handoff. On one processor that spin cannot succeed. Patch 0053 and
+`cmake/win95-target.cmake` set it to zero: 97.4–98.8 ms to 96.3–96.4 ms in normal
+mode, trace off. This one is on by default: it changes timing only, not results.
+
 ## What the instrumentation costs
 
 `DKR_TRACE_CPU` and everything built on it (patches 0041 to 0051), measured by the

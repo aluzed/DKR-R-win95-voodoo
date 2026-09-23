@@ -1,0 +1,38 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Make the semaphore spin count a macro
+
+moodycamel's LightweightSemaphore spins up to 10,000 times before it blocks in
+the kernel. That is the default for every guest thread's `running` and
+`initialized` semaphores, and every guest handoff goes through them. On one
+processor the thread that would end the spin by signalling cannot run while
+this one spins. The spin can only succeed if the signal has already arrived,
+and the first check sees that.
+
+MOODYCAMEL_LIGHTWEIGHT_SEMAPHORE_SPINS replaces the constant. It defaults to
+10,000, so nothing changes unless a target sets it. The Windows 95 target sets
+it to 0 in cmake/win95-target.cmake. Normal mode, trace off, 150 s:
+
+  10,000 spins   97.4  98.2  98.8 ms
+  0 spins        96.3  96.4 ms
+
+All of it comes off `elsewhere`, the guest side: 82.1-82.5 ms to 80.2-80.4.
+
+---
+--- a/thirdparty/concurrentqueue/lightweightsemaphore.h
++++ b/thirdparty/concurrentqueue/lightweightsemaphore.h
+@@ -346,7 +346,14 @@
+ 	}
+ 
+ public:
+-	LightweightSemaphore(ssize_t initialCount = 0, int maxSpins = 10000) : m_count(initialCount), m_maxSpins(maxSpins)
++	// DKR-R, patch 0053: the spin count is a macro so that a one-processor target
++	// can set it to zero. On one processor, the thread that would end the spin
++	// by signalling cannot run while this one spins, so the spin can only
++	// succeed if the signal has already arrived -- which the first check sees.
++#ifndef MOODYCAMEL_LIGHTWEIGHT_SEMAPHORE_SPINS
++#define MOODYCAMEL_LIGHTWEIGHT_SEMAPHORE_SPINS 10000
++#endif
++	LightweightSemaphore(ssize_t initialCount = 0, int maxSpins = MOODYCAMEL_LIGHTWEIGHT_SEMAPHORE_SPINS) : m_count(initialCount), m_maxSpins(maxSpins)
+ 	{
+ 		assert(initialCount >= 0);
+ 		assert(maxSpins >= 0);

@@ -213,6 +213,10 @@
         {
           "path": "patches/n64-modern-runtime/0052-draw-from-live-rdram-while-the-scheduler-waits.patch",
           "sha256": "c2f9f8405683cf4ca4bc42d4a2e1b3aa7483b62fc040d9e65dcf04625df16794"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0053-make-the-semaphore-spin-count-a-macro.patch",
+          "sha256": "3cb5a76d97d423c01ff6e738f9cdec24f8a41bc2a0077750e3cdcfd960f68e5c"
         }
       ]
     },

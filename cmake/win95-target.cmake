@@ -53,6 +53,16 @@ set(DKR_WIN95_PLATFORM "${DKRPORT_ROOT}/platform/win95")
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 message(STATUS "Windows 95 target: ${CMAKE_C_COMPILER}")
+
+# E08-S01. moodycamel's LightweightSemaphore spins up to 10,000 times before it
+# blocks. On one processor the thread that would end the spin cannot run while
+# it spins, so the spin only burns the time before the kernel wait. Zero keeps
+# the first check, which still catches a signal that has already arrived.
+# Patch 0053 turns the constant into this macro; every target that includes the
+# header must see the same value, hence a directory-wide definition.
+set(DKR_WIN95_SEMA_SPINS 0 CACHE STRING
+    "LightweightSemaphore spins before blocking on the Windows 95 target")
+add_compile_definitions(MOODYCAMEL_LIGHTWEIGHT_SEMAPHORE_SPINS=${DKR_WIN95_SEMA_SPINS})
 message(STATUS "  instruction set: Pentium II, no SSE, x87 floating point")
 message(STATUS "  API: _WIN32_WINNT=0x0400")
 
