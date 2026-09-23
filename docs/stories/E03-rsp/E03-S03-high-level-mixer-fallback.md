@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E03 — RSP on x86 without SSE |
-| **Status** | TODO — **triggered** |
+| **Status** | IN_PROGRESS — mixer delivered, bit-exact, default on Windows 95 |
 | **Priority** | **P0** |
 | **Estimate** | XL |
 | **Depends on** | E03-S02 |
@@ -69,15 +69,27 @@ them back.
 
 ## Acceptance criteria
 
-- [ ] DKR's audio ABI is documented from the decomp and the microcode.
-- [ ] The mixer produces audible and correct output for the music and for the
-      effects.
-- [ ] The deviation from the reference is measured objectively and recorded.
+- [x] DKR's audio ABI is documented from the decomp and the microcode
+      (`docs/AUDIO-HLE.md`).
+- [x] The mixer produces correct output for the music and for the effects: it is
+      **bit-exact** against the microcode on every command and on 13 tasks
+      captured from the game. It is not yet *audible* on Windows 95, because
+      there is no audio output (E06-S03).
+- [x] The deviation from the reference is measured objectively and recorded:
+      zero bytes (`tools/audio/abi_difftest`, `tools/audio/replay_hle`).
 - [ ] The CPU gain is measured and brings the audio back within its budget.
-- [ ] The microcode path stays selectable through the configuration.
-- [ ] The known differences are documented.
-- [ ] This ticket's triggering is justified by E03-S02's figure, and that figure is
-      quoted here.
+      Measured: 695 ms of processor per second of sound with the microcode,
+      about 165 ms with the mixer. At 30 fps that is about 5.5 ms of a 33.3 ms
+      frame, against a proposed allocation of 4 ms (`frame-budget.md`). Close,
+      not yet within.
+- [x] The microcode path stays selectable, with `DKR_AUDIO_MICROCODE=1`. It is
+      an environment variable, not yet the E06-S05 configuration.
+- [x] The known differences are documented (`docs/AUDIO-HLE.md`). None occurs in
+      DKR's command lists.
+- [x] This ticket's triggering is justified by E03-S02's figure: 26.7 ms per
+      task, 695 ms per second of sound, 70% of the processor for real-time
+      sound, measured after the strict-aliasing fix
+      (`docs/research/rsp-scalar-aliasing.md`).
 
 ## Risks
 
