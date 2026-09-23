@@ -1191,6 +1191,17 @@ target_include_directories(win95recompiled PUBLIC
     "${DKRPORT_ROOT}/runtime-recomp/RecompiledRSP")
 target_link_libraries(win95recompiled PUBLIC win95librecomp)
 target_compile_options(win95recompiled PRIVATE -w)   # generated code
+# The RSP microcode needs -fno-strict-aliasing, and only this target notices.
+# librecomp's vector registers store their lanes in `uint64_t u128[2]` and the
+# scalar path -- the one a Pentium II takes, without SSE4.1 -- reads and writes
+# them through `uint16_t*` and `uint8_t*` casts. That is undefined behaviour, and
+# -O3 uses it: the audio microcode came out wrong and not even deterministic, two
+# replays of one captured task writing different bytes. Every modern target runs
+# the SIMD path, which goes through intrinsics and is unaffected, so the defect
+# never showed upstream. With the option, the scalar path matches the SIMD one
+# bit for bit on captured DKR audio tasks (tools/audio, E03-S01).
+set_source_files_properties(${DKR_WIN95_RECOMPILED_RSP}
+    PROPERTIES COMPILE_OPTIONS "-fno-strict-aliasing")
 
 # --- The game (E02-S06) ------------------------------------------------------
 #

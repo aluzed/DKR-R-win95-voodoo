@@ -133,6 +133,7 @@ runtime-recomp/build/
 # ... and the same for every other tool directory this fork tracks. A bare
 # `/tools/*` makes the next file added under any of them invisible, which is
 # exactly the failure the paragraph above describes for the addon.
+!/tools/audio/
 !/tools/cpu-budget/
 !/tools/render/
 !/tools/win95/

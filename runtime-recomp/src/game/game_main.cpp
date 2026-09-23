@@ -103,6 +103,39 @@ static std::atomic<unsigned long long> g_audio_samples_queued{0};
 static std::atomic<unsigned> g_audio_frequency{0};
 extern "C" unsigned long long dkr_display_lists_drawn(void);
 
+/* **Audio task capture, the oracle's input (E03-S03).**
+ *
+ * `DKR_AUDIO_CAPTURE=first,step,count` writes `count` audio tasks, starting at
+ * task `first` and every `step` after it, to `D:\AUDnnn.BIN`. Each file holds
+ * the RSP's DMEM and the low four megabytes of RDRAM, both **before** the
+ * microcode runs and **after**, so that a host harness can replay the task
+ * through the same recompiled `dkrAspMain` and check two things: that the host
+ * reproduces the target bit for bit, and how far a high-level mixer strays
+ * from it. Four megabytes because DKR never writes above that line
+ * (`[trace][snap-extent]`).
+ *
+ * Layout, little-endian: "DKRA", version 1, ucode address, RDRAM bytes,
+ * then DMEM[4096], RDRAM[n] before, DMEM[4096], RDRAM[n] after. Both memories
+ * are stored exactly as the runtime holds them, byte-swapped words included. */
+constexpr std::uint32_t kAudioCaptureRdramBytes = 0x400000u;
+struct AudioCapturePlan {
+    unsigned long first = 0, step = 1, count = 0;
+};
+static AudioCapturePlan ReadAudioCapturePlan() {
+    AudioCapturePlan plan;
+    if (const char* v = std::getenv("DKR_AUDIO_CAPTURE")) {
+        std::sscanf(v, "%lu,%lu,%lu", &plan.first, &plan.step, &plan.count);
+        if (plan.step == 0) { plan.step = 1; }
+    }
+    return plan;
+}
+static const AudioCapturePlan g_audio_capture = ReadAudioCapturePlan();
+
+static void WriteAudioCapturePart(std::FILE* f, const std::uint8_t* rdram) {
+    std::fwrite(dmem, 1, 0x1000, f);
+    std::fwrite(rdram, 1, kAudioCaptureRdramBytes, f);
+}
+
 static void CountAndQueueAudio(std::int16_t* samples, std::size_t sample_count) {
     g_audio_samples_queued.fetch_add(sample_count, std::memory_order_relaxed);
     dkr::runtime::platform::queue_audio(samples, sample_count);
@@ -235,8 +268,22 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
         // So the cost is measured rather than argued about.
         return +[](std::uint8_t* rdram, std::uint32_t ucode_address) {
             static unsigned long long calls = 0, total_us = 0;
+            static unsigned long captured = 0;
             unsigned long long dt = 0;
             RspExitReason r;
+            std::FILE* capture = nullptr;
+            if (captured < g_audio_capture.count && calls >= g_audio_capture.first &&
+                (calls - g_audio_capture.first) % g_audio_capture.step == 0) {
+                char path[32];
+                std::snprintf(path, sizeof(path), "D:\\AUD%03lu.BIN", captured);
+                capture = std::fopen(path, "wb");
+                if (capture != nullptr) {
+                    const std::uint32_t header[4] = {0x41524B44u, 1u, ucode_address,
+                                                     kAudioCaptureRdramBytes};
+                    std::fwrite(header, sizeof(header), 1, capture);
+                    WriteAudioCapturePart(capture, rdram);
+                }
+            }
             {
                 const dkr::runtime::ExclusiveSection exclusive;
                 const unsigned long long t0 = dkr_clock_now_us();
@@ -244,6 +291,13 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
                 r = dkrAspMain(rdram, ucode_address);
                 g_audio_busy.store(0, std::memory_order_relaxed);
                 dt = dkr_clock_now_us() - t0;
+            }
+            if (capture != nullptr) {
+                WriteAudioCapturePart(capture, rdram);
+                std::fclose(capture);
+                std::fprintf(stderr, "[audio][capture] task %llu -> AUD%03lu.BIN\n",
+                             calls, captured);
+                captured++;
             }
             calls++;
             total_us += dt;
