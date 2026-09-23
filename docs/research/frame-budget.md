@@ -27,6 +27,43 @@ processor time too.
 The lines to read are `[trace][ran]`, `[trace][preempted]`, `[trace][parked]`,
 `[trace][snap]`, `[trace][gfx]` and `[audio][rate]`.
 
+## The budget, 24 September 2026, with the audio mixer
+
+After the audio mixer (E03-S03), the semaphore-spin fix and
+`-fno-strict-aliasing` on all recompiled code. This is measured with both
+opt-in options on, `DKR_RDRAM_SNAPSHOT=none` and `DKR_GFX_NO_STATS=1`, since
+they are what a player would run once they are validated. Exclusive mode,
+90.1 s, a frame of 44.9 ms. The same binary in normal mode runs at 43.2 ms,
+23.1 fps.
+
+| Item | Owner | Measured | Share |
+|---|---|---:|---:|
+| Graphics thread: display lists, present, loop | E08-S03 | 12.7 ms | 28.3% |
+| Audio: the high-level mixer | E03-S03 | 9.6 ms | 21.3% |
+| Recompiled game (thread 3) | E08-S02 | 7.4 ms | 16.5% |
+| Idle thread executing: delivering interrupts | runtime | 4.6 ms | 10.2% |
+| Audio manager (thread 4) | E03-S03 | 1.6 ms | 3.6% |
+| libultra scheduler (thread 5) | runtime | 1.5 ms | 3.4% |
+| RDRAM snapshot | E08-S04 | 0 | - |
+| Not measured: idle thread parked, nothing timed running | E08-S01 | 7.5 ms | 16.6% |
+| **Frame** | | **44.9 ms** | |
+
+Three things have changed since the table below:
+
+- **Nothing dominates any more.** The largest item is 28% of the frame. The
+  three that were 90 ms of a 120 ms frame are now 22 ms together: the renderer
+  fell 19 ms through the trace fix, the snapshot is gone, and the audio is a
+  quarter of what it was.
+- **The recompiled game is now the third item**, at 7.4 ms. That is E08-S02's
+  turn. It was deliberately left for last.
+- **16.6% is not measured, and is probably idle.** At 22 fps the frame no longer
+  divides evenly into retraces. The game waits for the next vertical interval,
+  and nothing runs while it does. If so, that time comes back only when the frame
+  crosses the next retrace boundary, not by making any single item cheaper.
+
+The audio row covers 62% of real-time sound. At full rate the mixer would be
+about 15 ms here, and about 5.5 ms of a 33.3 ms frame at the target.
+
 ## The budget, 23 September 2026, after the trace fix
 
 The test machine is a Pentium II with a Voodoo 2. The run was 100 s of intro and
