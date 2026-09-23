@@ -335,7 +335,102 @@ static void cmd_adpcm(u32 w0, u32 w1)
 }
 
 static void cmd_envmixer(u32 w0, u32 w1)  { (void)w0; (void)w1; }
-static void cmd_resample(u32 w0, u32 w1)  { (void)w0; (void)w1; }
+/* VMULF: a 1.15 product, rounded and saturated. */
+static s32 mulf(s32 a, s32 b)
+{
+    return clamp16((s32)(((long long)a * b * 2 + 0x8000) >> 16));
+}
+
+/* RESAMPLE: a four-tap interpolation through the table in the microcode's data
+ * (DMEM 0xD0, 64 entries of four taps), the entry chosen by the top six bits of
+ * the position's fraction. Each tap is a VMULF, and the four are summed pairwise
+ * with saturating adds, as VADD does:
+ *
+ *   out = sat16(sat16(p0 + p1) + sat16(p2 + p3)),  pk = mulf(in[pos + k], lut[k])
+ *
+ * The position advances by pitch * 2 in 16.16, eight outputs at a time. The
+ * state -- 32 bytes, kept by the microcode at DMEM 0xF90 -- holds the four input
+ * samples before the next position, the fraction at +8, and, for flag 2, an
+ * alignment remainder at +0xA and sixteen bytes of input at +0x10, which this
+ * microcode revision adds to ABI 1. DKR's lists never set flag 2; the state is
+ * still written in full, since it goes back to RDRAM. */
+#define DMEM_RESAMPLE_STATE 0xF90u
+#define DMEM_RESAMPLE_LUT   0xD0u
+static void cmd_resample(u32 w0, u32 w1)
+{
+    const u32 flags = (w0 >> 16) & 0xFFu;
+    const u32 pitch = w0 & 0xFFFFu;
+    const u32 address = resolve(w1);
+    const u32 in_start = state_u16(ST_IN);
+    u32 in = in_start;
+    u32 out = state_u16(ST_OUT);
+    s32 count = (s32)state_u16(ST_COUNT);
+    u32 fraction, i;
+
+    if (flags & 0x01u) {                                 /* A_INIT */
+        dmem_set_s16(DMEM_RESAMPLE_STATE + 8u, 0);
+        for (i = 0; i < 8u; i++) { dmem_set_u8(DMEM_RESAMPLE_STATE + i, 0); }
+    } else {
+        dma_read(DMEM_RESAMPLE_STATE, address, 32u);
+    }
+    if (flags & 0x02u) {
+        for (i = 0; i < 16u; i++) {
+            dmem_set_u8(in - 16u + i, dmem_u8(DMEM_RESAMPLE_STATE + 0x10u + i));
+        }
+        in -= dmem_u16(DMEM_RESAMPLE_STATE + 0x0Au);
+    }
+    in -= 8u;
+    for (i = 0; i < 8u; i++) { dmem_set_u8(in + i, dmem_u8(DMEM_RESAMPLE_STATE + i)); }
+
+    fraction = dmem_u16(DMEM_RESAMPLE_STATE + 8u);
+    while (count > 0) {
+        u32 lane;
+        for (lane = 0; lane < 8u; lane++) {
+            const u32 lut = DMEM_RESAMPLE_LUT + ((fraction >> 10) & 0x3Fu) * 8u;
+            const s32 p0 = mulf(dmem_s16(in + 0u), dmem_s16(lut + 0u));
+            const s32 p1 = mulf(dmem_s16(in + 2u), dmem_s16(lut + 2u));
+            const s32 p2 = mulf(dmem_s16(in + 4u), dmem_s16(lut + 4u));
+            const s32 p3 = mulf(dmem_s16(in + 6u), dmem_s16(lut + 6u));
+            dmem_set_s16(out + lane * 2u, clamp16(clamp16(p0 + p1) + clamp16(p2 + p3)));
+            fraction += pitch * 2u;
+            in += (fraction >> 16) * 2u;
+            fraction &= 0xFFFFu;
+        }
+        out += 16u;
+        count -= 16;
+    }
+
+    /* The microcode's scratch, which it leaves behind: the next eight outputs'
+       input addresses at 0xFB0 and table addresses at 0xFC0 (over the task,
+       which it has already read). Written because 0xFB0 is inside the buffer
+       area, where a later SAVEBUFF would see it. */
+    {
+        u32 probe_in = in, probe_fraction = fraction, lane;
+        for (lane = 0; lane < 8u; lane++) {
+            dmem_set_s16(0xFB0u + lane * 2u, (s32)probe_in);
+            dmem_set_s16(0xFC0u + lane * 2u,
+                         (s32)(DMEM_RESAMPLE_LUT + ((probe_fraction >> 10) & 0x3Fu) * 8u));
+            probe_fraction += pitch * 2u;
+            probe_in += (probe_fraction >> 16) * 2u;
+            probe_fraction &= 0xFFFFu;
+        }
+    }
+    /* The state for the next task: the fraction, the four samples at the next
+       position, and the alignment remainder with the sixteen bytes around it. */
+    dmem_set_s16(DMEM_RESAMPLE_STATE + 8u, (s32)fraction);
+    for (i = 0; i < 8u; i++) { dmem_set_u8(DMEM_RESAMPLE_STATE + i, dmem_u8(in + i)); }
+    {
+        u32 next = in + 8u;
+        u32 remainder = (next - in_start) & 0xFu;
+        next -= remainder;
+        if (remainder != 0) { remainder = 16u - remainder; }
+        dmem_set_s16(DMEM_RESAMPLE_STATE + 0x0Au, (s32)remainder);
+        for (i = 0; i < 16u; i++) {
+            dmem_set_u8(DMEM_RESAMPLE_STATE + 0x10u + i, dmem_u8(next + i));
+        }
+    }
+    dma_write(DMEM_RESAMPLE_STATE, address, 32u);
+}
 static void cmd_polef(u32 w0, u32 w1)     { (void)w0; (void)w1; }
 
 /* --- The task ------------------------------------------------------------------ */

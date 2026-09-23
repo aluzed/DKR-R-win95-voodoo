@@ -37,6 +37,7 @@ constexpr uint32_t kTable = 0x320000u;    // codebooks
 constexpr uint32_t kArea = 0xA00u;
 
 uint32_t rng_state = 0xC0FFEE11u;
+uint32_t g_resample_remainder = 0;
 uint32_t rng() {
     rng_state ^= rng_state << 13; rng_state ^= rng_state >> 17; rng_state ^= rng_state << 5;
     return rng_state;
@@ -97,6 +98,17 @@ void add_test(const std::string& name, List& l) {
         const uint32_t mode = rng() % 3;
         if (mode == 2) { l.add(cmd(SETLOOP, 0, 0), kState + 0x40); }
         l.add(cmd(ADPCM, mode == 0 ? 1 : (mode == 2 ? 2 : 0), 0), kState);
+    } else if (name == "resample") {
+        // Pitches from far below to near the ceiling of 1.99996, the three
+        // state modes (init, from RDRAM, flag 2), and counts that are and are
+        // not multiples of eight outputs.
+        const uint32_t count = ((rng() % 0x100) + 2) & ~1u;
+        const uint32_t in = 0x300 + (rng() % 0x10) * 16;
+        l.add(cmd(SETBUFF, 0, in), (((rng() % 0x10) * 16) << 16) | count);
+        const uint32_t pitch = (rng() & 3) == 0 ? 0x8000 : (rng() % 0xFFFF) + 1;
+        const uint32_t flags = (rng() % 3 == 0) ? 1 : ((rng() % 4 == 0) ? 2 : 0);
+        l.add(cmd(RESAMPLE, flags, pitch), kState);
+        g_resample_remainder = (rng() % 8) * 2;   // a real state's remainder: even, below 16
     } else if (name == "segment") {
         l.add(cmd(SEGMENT, 0, 0), (3u << 24) | kSource);
         l.add(cmd(SETBUFF, 0, 0), (offset(0x110) << 16) | 0x100);
@@ -120,7 +132,7 @@ int main(int argc, char** argv) {
         std::fclose(f);
     }
     const std::vector<std::string> all = {"clearbuff", "dmemmove", "mixer", "interleave",
-                                          "setvol", "loadsave", "segment", "adpcm"};
+                                          "setvol", "loadsave", "segment", "adpcm", "resample"};
     std::vector<std::string> names = all;
     if (argc >= 3) { names = {argv[2]}; }
     const int cases = argc >= 4 ? std::atoi(argv[3]) : 200;
@@ -141,6 +153,9 @@ int main(int argc, char** argv) {
             l.add(cmd(SETBUFF, 0, 0), (0u << 16) | kArea);
             l.add(cmd(SAVEBUFF, 0, 0), kSaved);
             for (size_t i = 0; i < l.words.size(); i++) { put32(a, kList + 4 * i, l.words[i]); }
+            if (name == "resample") {
+                put8(a, kState + 0xA, 0); put8(a, kState + 0xB, g_resample_remainder);
+            }
             b = a;
 
             std::vector<uint8_t> da = template_dmem;
@@ -149,6 +164,12 @@ int main(int argc, char** argv) {
             std::memcpy(&da[0xFC0 + 0x34], &size, 4);
             std::vector<uint8_t> db = da;
 
+            if (std::getenv("ABI_TRACE") != nullptr) {
+                const size_t n = l.words.size();
+                std::printf("case %d: %08X %08X after %08X %08X\n", c, l.words[n - 6], l.words[n - 5],
+                            l.words[n - 8], l.words[n - 7]);
+                std::fflush(stdout);
+            }
             std::memcpy(dmem, da.data(), 0x1000);
             dkrAspMain(a.data(), ucode);
             std::memcpy(da.data(), dmem, 0x1000);
