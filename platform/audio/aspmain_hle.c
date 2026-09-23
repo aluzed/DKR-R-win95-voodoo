@@ -71,6 +71,21 @@ static u32 dmem_u32(u32 a)
     return ((u32)dmem_u16(a) << 16) | dmem_u16(a + 2u);
 }
 
+/* The sample loops' fast path. An aligned word of DMEM is one native u32 holding
+ * two samples: the one at address a in its high half, the one at a + 2 in its
+ * low half. Reading and writing whole words halves the memory traffic and drops
+ * the per-sample address swizzle. Used only when a command's buffers are all
+ * word-aligned -- DKR's always are, sixteen-byte aligned -- and the byte-exact
+ * path serves otherwise. */
+static u32 word_get(u32 a)
+{
+    u32 w;
+    memcpy(&w, g_dmem + (a & 0xFFCu), sizeof(w));
+    return w;
+}
+static void word_set(u32 a, u32 w) { memcpy(g_dmem + (a & 0xFFCu), &w, sizeof(w)); }
+static u32 word_pack(s32 hi, s32 lo) { return ((u32)(u16)hi << 16) | (u16)lo; }
+
 static u8  rdram_u8(u32 a)            { return g_rdram[(a & 0xFFFFFFu) ^ 3u]; }
 static void rdram_set_u8(u32 a, u8 v) { g_rdram[(a & 0xFFFFFFu) ^ 3u] = v; }
 
@@ -261,8 +276,18 @@ static void cmd_mixer(u32 w0, u32 w1)
     const s32 k = dmem_s16(0x0Cu);
     const u32 in = DMEM_BUFFERS + (w1 >> 16);
     const u32 out = DMEM_BUFFERS + (w1 & 0xFFFFu);
+    const u32 bytes = (count + 31u) & ~31u;
     u32 i;
-    for (i = 0; i < ((count + 31u) & ~31u); i += 2u) {
+    if (((in | out) & 3u) == 0) {
+        for (i = 0; i < bytes; i += 4u) {
+            const u32 wo = word_get(out + i), wi = word_get(in + i);
+            const s32 hi = ((s16)(wo >> 16)) * k + ((s16)(wi >> 16)) * gain;
+            const s32 lo = ((s16)wo) * k + ((s16)wi) * gain;
+            word_set(out + i, word_pack(clamp16((hi + 0x4000) >> 15), clamp16((lo + 0x4000) >> 15)));
+        }
+        return;
+    }
+    for (i = 0; i < bytes; i += 2u) {
         /* out*k + in*gain stays inside 32 bits for any 16-bit operands with
            |k| <= 0x7FFF, which is what the microcode's data holds. */
         const s32 acc = dmem_s16(out + i) * k + dmem_s16(in + i) * gain;
@@ -439,6 +464,14 @@ static void ramp_clamp(ramp *r, u32 rate_hi, u32 target)
 static void envmix_load(s16 *block, u32 address)
 {
     u32 i;
+    if ((address & 3u) == 0) {
+        for (i = 0; i < 4u; i++) {
+            const u32 w = word_get(address + i * 4u);
+            block[i * 2u] = (s16)(w >> 16);
+            block[i * 2u + 1u] = (s16)w;
+        }
+        return;
+    }
     for (i = 0; i < 8u; i++) { block[i] = dmem_s16(address + i * 2u); }
 }
 
@@ -455,6 +488,12 @@ static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const ramp *r,
 static void envmix_store(const s16 *block, u32 address)
 {
     u32 i;
+    if ((address & 3u) == 0) {
+        for (i = 0; i < 4u; i++) {
+            word_set(address + i * 4u, word_pack(block[i * 2u], block[i * 2u + 1u]));
+        }
+        return;
+    }
     for (i = 0; i < 8u; i++) { dmem_set_s16(address + i * 2u, block[i]); }
 }
 
@@ -575,17 +614,42 @@ static void cmd_resample(u32 w0, u32 w1)
 
     fraction = dmem_u16(DMEM_RESAMPLE_STATE + 8u);
     while (count > 0) {
+        s16 result[8];
         u32 lane;
         for (lane = 0; lane < 8u; lane++) {
+            /* The table entry is eight-byte aligned: two words, four taps. The
+               four input samples are two words when the position is word-
+               aligned, and three otherwise. */
             const u32 lut = DMEM_RESAMPLE_LUT + ((fraction >> 10) & 0x3Fu) * 8u;
-            const s32 p0 = mulf(dmem_s16(in + 0u), dmem_s16(lut + 0u));
-            const s32 p1 = mulf(dmem_s16(in + 2u), dmem_s16(lut + 2u));
-            const s32 p2 = mulf(dmem_s16(in + 4u), dmem_s16(lut + 4u));
-            const s32 p3 = mulf(dmem_s16(in + 6u), dmem_s16(lut + 6u));
-            dmem_set_s16(out + lane * 2u, clamp16(clamp16(p0 + p1) + clamp16(p2 + p3)));
+            const u32 t01 = word_get(lut), t23 = word_get(lut + 4u);
+            s32 s0, s1, s2, s3;
+            if ((in & 3u) == 0) {
+                const u32 a = word_get(in), b = word_get(in + 4u);
+                s0 = (s16)(a >> 16); s1 = (s16)a; s2 = (s16)(b >> 16); s3 = (s16)b;
+            } else if ((in & 1u) == 0) {
+                const u32 a = word_get(in - 2u), b = word_get(in + 2u), c = word_get(in + 6u);
+                s0 = (s16)a; s1 = (s16)(b >> 16); s2 = (s16)b; s3 = (s16)(c >> 16);
+            } else {
+                s0 = dmem_s16(in); s1 = dmem_s16(in + 2u);
+                s2 = dmem_s16(in + 4u); s3 = dmem_s16(in + 6u);
+            }
+            {
+                const s32 p0 = mulf(s0, (s16)(t01 >> 16));
+                const s32 p1 = mulf(s1, (s16)t01);
+                const s32 p2 = mulf(s2, (s16)(t23 >> 16));
+                const s32 p3 = mulf(s3, (s16)t23);
+                result[lane] = (s16)clamp16(clamp16(p0 + p1) + clamp16(p2 + p3));
+            }
             fraction += pitch * 2u;
             in += (fraction >> 16) * 2u;
             fraction &= 0xFFFFu;
+        }
+        if ((out & 3u) == 0) {
+            for (lane = 0; lane < 4u; lane++) {
+                word_set(out + lane * 4u, word_pack(result[lane * 2u], result[lane * 2u + 1u]));
+            }
+        } else {
+            for (lane = 0; lane < 8u; lane++) { dmem_set_s16(out + lane * 2u, result[lane]); }
         }
         out += 16u;
         count -= 16;

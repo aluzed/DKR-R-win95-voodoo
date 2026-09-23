@@ -112,3 +112,23 @@ on a captured task: 11,006 bytes written, 0 mismatched.
 
 `DKR_TRACE_AUDIO_ZONES=1` reports the mixer's cost per command on the cycle
 counter (`[audio][zones]`).
+
+### Word-wide sample loops
+
+An aligned DMEM word is one native u32 holding two samples: the one at address a
+in its high half, the one at a + 2 in its low half. MIXER, the ENVMIXER buffers,
+RESAMPLE's output, its input taps and its table now move whole words, with a
+fallback to the byte-exact path when a buffer is not word-aligned. DKR's buffers
+always are aligned, to 16 bytes. Output is still bit-exact on all tests. On the
+target, per task, measured with `DKR_TRACE_AUDIO_ZONES`:
+
+| | before | after |
+|---|---:|---:|
+| whole mixer | 7.59 ms | **6.43 ms** |
+| MIXER, per call | 11.1 µs | 4.2 µs |
+| RESAMPLE, per call | 23.7 µs | 20.6 µs |
+| ENVMIXER, per call | 50.9 µs | 48.0 µs |
+
+ENVMIXER is now 39% of the mixer and is limited by arithmetic, not memory:
+about 120 cycles per sample for four gains and four mixes. The frame in normal
+mode, with both opt-in options, is **42.7 ms (23.4 fps)**.
