@@ -52,3 +52,6 @@ gcc -std=c99 -O2 -fno-strict-aliasing -w -c "$root/platform/audio/aspmain_hle.c"
 g++ "${common[@]}" "${simd[@]}" -I "$root/platform/audio" "$root/tools/audio/abi_difftest.cpp" \
     "$out/aspMain.o" "$out/aspmain_hle.o" -o "$out/abi_difftest"
 echo "built abi_difftest"
+g++ "${common[@]}" "${simd[@]}" -I "$root/platform/audio" "$root/tools/audio/replay_hle.cpp" \
+    "$out/aspMain.o" "$out/aspmain_hle.o" -o "$out/replay_hle"
+echo "built replay_hle"

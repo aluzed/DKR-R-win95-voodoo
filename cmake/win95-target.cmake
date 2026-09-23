@@ -595,6 +595,15 @@ set_target_properties(DKRWin95F3DDKR PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95F3DDKR)
 
+# --- The high-level audio mixer (E03-S03) ------------------------------------
+#
+# Interprets DKR's aspMain in plain C instead of running the recompiled
+# microcode through the scalar vector path. Bit-exact against the microcode on
+# every command (tools/audio/abi_difftest) and on captured game tasks
+# (tools/audio/replay_hle). The game uses it unless DKR_AUDIO_MICROCODE=1.
+add_library(win95audiohle STATIC "${DKRPORT_ROOT}/platform/audio/aspmain_hle.c")
+target_include_directories(win95audiohle PUBLIC "${DKRPORT_ROOT}/platform/audio")
+
 # --- RDP state decoding (E04-S06) --------------------------------------------
 #
 # The RDP's combiner is a programmable unit; Glide's is fixed, and the translation
@@ -1276,7 +1285,9 @@ target_link_libraries(DKRWin95Game PRIVATE
     # The render chain. `win95f3ddkr` pulls in clipping and the transformation;
     # `win95glide` pulls in the TMU and the combiner. The game is the first binary
     # to bring them together - until now only witnesses opened them separately.
-    win95f3ddkr win95glide)
+    win95f3ddkr win95glide
+    # E03-S03: the audio microcode's high-level replacement.
+    win95audiohle)
 # `win95compat` is not named here: it adds itself, first and under
 # `--whole-archive`, through the interface options set above. Naming it a second
 # time duplicates the archive and the linker refuses - multiple definitions.

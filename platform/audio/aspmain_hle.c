@@ -16,6 +16,7 @@ typedef int            s32;
 #define DMEM_CODEBOOK   0x4C0u  /* LOADADPCM's destination */
 #define DMEM_BUFFERS    0x5C0u  /* every buffer address in a command is relative to it */
 #define DMEM_TASK       0xFC0u
+#define DMEM_RESAMPLE_STATE 0xF90u  /* the scratch state of RESAMPLE, POLEF, ENVMIXER */
 
 /* The state block at 0x360, halfword offsets as the microcode writes them. */
 #define ST_IN        0x00u
@@ -63,6 +64,12 @@ static void state_set(u32 field, u32 v)    { dmem_set_s16(DMEM_STATE + field, (s
 static s32 clamp16(s32 v)
 {
     return v > 32767 ? 32767 : (v < -32768 ? -32768 : v);
+}
+
+/* VMULF: a 1.15 product, rounded and saturated. */
+static s32 mulf(s32 a, s32 b)
+{
+    return clamp16((s32)(((long long)a * b * 2 + 0x8000) >> 16));
 }
 
 /* A 24-bit address through the segment table, as every command that names
@@ -334,11 +341,170 @@ static void cmd_adpcm(u32 w0, u32 w1)
     dma_write(out - 32u, address, 32u);
 }
 
-static void cmd_envmixer(u32 w0, u32 w1)  { (void)w0; (void)w1; }
-/* VMULF: a 1.15 product, rounded and saturated. */
-static s32 mulf(s32 a, s32 b)
+/* ENVMIXER: one input into four outputs -- dry and wet, left and right -- under
+ * a linear volume ramp per side. Each side's volume is 16.16 on eight lanes: at
+ * A_INIT lane i starts at vol + rate * c_i / 65536, c = {0x2000 ... 0xE000,
+ * 0xFFFF} from the microcode's data, and every block of eight samples adds a
+ * whole rate, fraction with carry (VADDC) and integer saturating (VADD). The
+ * integer part is clamped to the target every block: an unsigned minimum when
+ * the rate climbs (VCL), a signed maximum when it falls (VGE). Each output is
+ * mixed as MIXER mixes, with gains VMULF(volume, dry) and VMULF(volume, wet).
+ *
+ * The state, 80 bytes at DMEM 0xF90: left integer and fraction lanes, right
+ * integer and fraction lanes, then the parameters -- targets, rates, dry, wet --
+ * which a continuing task takes from the state rather than from SETVOL. Without
+ * A_AUX the wet outputs go to scratch at 0xFE0 and are discarded.
+ *
+ * Two orderings are the microcode's and are kept: an A_INIT task mixes its
+ * first block and then at least one more (the loop is do-while), and inside the
+ * loop the right side's buffers are read before the left side's are stored,
+ * while the A_INIT block reads them after. */
+typedef struct {
+    s16 integer[8];
+    u16 fraction[8];
+} ramp;
+
+static s32 mix_sample(s32 out, s32 in, s32 gain)
 {
-    return clamp16((s32)(((long long)a * b * 2 + 0x8000) >> 16));
+    return clamp16((s32)(((long long)out * 0x7FFF * 2 + 0x8000 +
+                          (long long)in * gain * 2) >> 16));
+}
+
+static void ramp_start(ramp *r, s32 volume, u32 rate_hi, u32 rate_lo)
+{
+    static const u16 kLane[8] = {0x2000, 0x4000, 0x6000, 0x8000,
+                                 0xA000, 0xC000, 0xE000, 0xFFFF};
+    const s32 rate = (s32)((rate_hi << 16) | rate_lo);
+    u32 i;
+    for (i = 0; i < 8u; i++) {
+        const long long a = (long long)volume * 65536 +
+                            (long long)kLane[i] * (s16)rate_hi +
+                            (((long long)kLane[i] * rate_lo) >> 16);
+        const long long top = a >> 16;          /* ACCH:ACCM */
+        r->integer[i] = (s16)clamp16((s32)(top > 0x7FFFFFFFLL ? 0x7FFFFFFF :
+                                           (top < -0x7FFFFFFFLL - 1 ? -0x7FFFFFFF - 1 : top)));
+        r->fraction[i] = top > 32767 ? 0xFFFFu : (top < -32768 ? 0x0000u : (u16)(a & 0xFFFF));
+    }
+    (void)rate;
+}
+
+static void ramp_step(ramp *r, u32 rate_hi, u32 rate_lo)
+{
+    u32 i;
+    for (i = 0; i < 8u; i++) {
+        const u32 sum = (u32)r->fraction[i] + rate_lo;
+        r->fraction[i] = (u16)sum;
+        r->integer[i] = (s16)clamp16((s32)r->integer[i] + (s16)rate_hi + (s32)(sum >> 16));
+    }
+}
+
+static void ramp_clamp(ramp *r, u32 rate_hi, u32 target)
+{
+    u32 i;
+    for (i = 0; i < 8u; i++) {
+        if ((s16)rate_hi > 0) {                              /* VCL: unsigned min */
+            if ((u16)r->integer[i] >= (u16)target) { r->integer[i] = (s16)target; }
+        } else {                                             /* VGE: signed max */
+            if (r->integer[i] < (s16)target) { r->integer[i] = (s16)target; }
+        }
+    }
+}
+
+static void envmix_load(s16 *block, u32 address)
+{
+    u32 i;
+    for (i = 0; i < 8u; i++) { block[i] = dmem_s16(address + i * 2u); }
+}
+
+static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const ramp *r,
+                       s32 dry_gain, s32 wet_gain)
+{
+    u32 i;
+    for (i = 0; i < 8u; i++) {
+        dry[i] = (s16)mix_sample(dry[i], in[i], mulf(r->integer[i], dry_gain));
+        wet[i] = (s16)mix_sample(wet[i], in[i], mulf(r->integer[i], wet_gain));
+    }
+}
+
+static void envmix_store(const s16 *block, u32 address)
+{
+    u32 i;
+    for (i = 0; i < 8u; i++) { dmem_set_s16(address + i * 2u, block[i]); }
+}
+
+#define DMEM_ENVMIX_SCRATCH 0xFE0u
+static void cmd_envmixer(u32 w0, u32 w1)
+{
+    const u32 flags = (w0 >> 16) & 0xFFu;
+    const u32 address = resolve(w1);
+    const u32 st = DMEM_RESAMPLE_STATE;
+    u16 param[8];
+    ramp left, right;
+    u32 in = state_u16(ST_IN);
+    u32 dry_l = state_u16(ST_OUT);
+    u32 dry_r = state_u16(ST_AUX_DRY_R);
+    u32 wet_l = state_u16(ST_AUX_WET_L);
+    u32 wet_r = state_u16(ST_AUX_WET_R);
+    u32 stride = 16u;
+    s32 count = (s32)state_u16(ST_COUNT);
+    s16 b_in[8], b_dl[8], b_wl[8], b_dr[8], b_wr[8];
+    u32 i;
+
+    for (i = 0; i < 8u; i++) { param[i] = dmem_u16(DMEM_STATE + 0x10u + i * 2u); }
+    if (!(flags & 0x01u)) {
+        dma_read(st, address, 80u);
+        for (i = 0; i < 8u; i++) {
+            left.integer[i] = dmem_s16(st + i * 2u);
+            left.fraction[i] = dmem_u16(st + 0x10u + i * 2u);
+            right.integer[i] = dmem_s16(st + 0x20u + i * 2u);
+            right.fraction[i] = dmem_u16(st + 0x30u + i * 2u);
+            param[i] = dmem_u16(st + 0x40u + i * 2u);
+        }
+    }
+    if (!(flags & 0x08u)) {                                  /* no A_AUX */
+        wet_l = wet_r = DMEM_ENVMIX_SCRATCH;
+        stride = 0;
+    }
+    /* param: 0 target L, 1-2 rate L, 3 target R, 4-5 rate R, 6 dry, 7 wet */
+
+    if (flags & 0x01u) {
+        ramp_start(&left, dmem_s16(DMEM_STATE + ST_VOL_L), param[1], param[2]);
+        ramp_clamp(&left, param[1], param[0]);
+        envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
+        envmix_mix(b_dl, b_wl, b_in, &left, (s16)param[6], (s16)param[7]);
+        envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
+        ramp_start(&right, dmem_s16(DMEM_STATE + ST_VOL_R), param[4], param[5]);
+        ramp_clamp(&right, param[4], param[3]);
+        envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
+        envmix_mix(b_dr, b_wr, b_in, &right, (s16)param[6], (s16)param[7]);
+        envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
+        count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;
+    }
+    ramp_step(&left, param[1], param[2]);
+    do {
+        ramp_clamp(&left, param[1], param[0]);
+        ramp_step(&right, param[4], param[5]);
+        envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
+        envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
+        envmix_mix(b_dl, b_wl, b_in, &left, (s16)param[6], (s16)param[7]);
+        for (i = 0; i < 8u; i++) {
+            dmem_set_s16(st + i * 2u, left.integer[i]);
+            dmem_set_s16(st + 0x10u + i * 2u, left.fraction[i]);
+        }
+        ramp_clamp(&right, param[4], param[3]);
+        ramp_step(&left, param[1], param[2]);
+        envmix_mix(b_dr, b_wr, b_in, &right, (s16)param[6], (s16)param[7]);
+        envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
+        envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
+        count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;
+    } while (count > 0);
+
+    for (i = 0; i < 8u; i++) {
+        dmem_set_s16(st + 0x20u + i * 2u, right.integer[i]);
+        dmem_set_s16(st + 0x30u + i * 2u, right.fraction[i]);
+        dmem_set_s16(st + 0x40u + i * 2u, param[i]);
+    }
+    dma_write(st, address, 80u);
 }
 
 /* RESAMPLE: a four-tap interpolation through the table in the microcode's data
@@ -354,7 +520,6 @@ static s32 mulf(s32 a, s32 b)
  * alignment remainder at +0xA and sixteen bytes of input at +0x10, which this
  * microcode revision adds to ABI 1. DKR's lists never set flag 2; the state is
  * still written in full, since it goes back to RDRAM. */
-#define DMEM_RESAMPLE_STATE 0xF90u
 #define DMEM_RESAMPLE_LUT   0xD0u
 static void cmd_resample(u32 w0, u32 w1)
 {

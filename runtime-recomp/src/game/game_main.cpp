@@ -2,6 +2,11 @@
 #include "exclusive_section.hpp"
 #if defined(DKR_TARGET_WIN95)
 extern "C" {
+#include "aspmain_hle.h"
+}
+#endif
+#if defined(DKR_TARGET_WIN95)
+extern "C" {
 #include "window.h"
 #include "render/glide.h"
 #include "clock.h"
@@ -288,7 +293,26 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
                 const dkr::runtime::ExclusiveSection exclusive;
                 const unsigned long long t0 = dkr_clock_now_us();
                 g_audio_busy.store(1, std::memory_order_relaxed);
+#if defined(DKR_TARGET_WIN95)
+                // E03-S03. The high-level mixer, bit-exact against the
+                // microcode, unless DKR_AUDIO_MICROCODE asks for the microcode.
+                static const bool use_microcode = std::getenv("DKR_AUDIO_MICROCODE") != nullptr;
+                static bool announced_path = false;
+                if (!announced_path) {
+                    announced_path = true;
+                    std::fprintf(stderr, "[audio][path] %s\n",
+                                 use_microcode ? "recompiled microcode (DKR_AUDIO_MICROCODE)"
+                                               : "high-level mixer (platform/audio/aspmain_hle.c)");
+                }
+                if (use_microcode) {
+                    r = dkrAspMain(rdram, ucode_address);
+                } else {
+                    (void)dkr_aspmain_hle(rdram, dmem);
+                    r = RspExitReason::Broke;
+                }
+#else
                 r = dkrAspMain(rdram, ucode_address);
+#endif
                 g_audio_busy.store(0, std::memory_order_relaxed);
                 dt = dkr_clock_now_us() - t0;
             }
