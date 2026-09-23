@@ -431,7 +431,71 @@ static void cmd_resample(u32 w0, u32 w1)
     }
     dma_write(DMEM_RESAMPLE_STATE, address, 32u);
 }
-static void cmd_polef(u32 w0, u32 w1)     { (void)w0; (void)w1; }
+/* POLEF: a two-pole filter shaped like the ADPCM predictor. The table is the
+ * codebook area (loaded by LOADADPCM), book0 at 0x4C0 and book1 at 0x4D0, and
+ * the input sample takes the command's gain where ADPCM has 2048:
+ *
+ *   S = book0[i] * l2 + book1[i] * l1 + sum_{k<i} book1s[i-1-k] * in[k]
+ *       + in[i] * gain
+ *   out[i] = sat16(S * 4 >> 16)
+ *
+ * book1s is book1 scaled by VMUDM against gain * 4 -- and written back over
+ * book1 in DMEM, as the microcode does, while the l1 term keeps the unscaled
+ * register copy. With A_INIT only the first four bytes of the state at 0xF90 are
+ * cleared: l2 and l1 then come from whatever the previous command left at 0xF94,
+ * and so they do here. Eight samples at a time, the next block read before the
+ * current one is stored. */
+static void cmd_polef(u32 w0, u32 w1)
+{
+    const u32 flags = (w0 >> 16) & 0xFFu;
+    const s32 gain = (s16)(w0 & 0xFFFFu);
+    const u32 gain4 = (w0 << 2) & 0xFFFFu;
+    const s32 k_scale = 4;
+    s32 count = (s32)state_u16(ST_COUNT);
+    u32 in = state_u16(ST_IN);
+    u32 out = state_u16(ST_OUT);
+    u32 address;
+    s16 book0[8], book1[8], book1s[8], input[8];
+    s32 l2, l1;
+    u32 i;
+
+    if (count == 0) { return; }
+    address = resolve(w1);
+    for (i = 0; i < 4u; i++) { dmem_set_u8(DMEM_RESAMPLE_STATE + i, 0); }
+    if (!(flags & 0x01u)) { dma_read(DMEM_RESAMPLE_STATE, address, 8u); }
+    for (i = 0; i < 8u; i++) {
+        book0[i] = dmem_s16(DMEM_CODEBOOK + i * 2u);
+        book1[i] = dmem_s16(DMEM_CODEBOOK + 16u + i * 2u);
+        book1s[i] = (s16)clamp16((s32)(((long long)book1[i] * (long long)gain4) >> 16));
+        dmem_set_s16(DMEM_CODEBOOK + 16u + i * 2u, book1s[i]);
+    }
+    l2 = dmem_s16(DMEM_RESAMPLE_STATE + 4u);
+    l1 = dmem_s16(DMEM_RESAMPLE_STATE + 6u);
+    for (i = 0; i < 8u; i++) { input[i] = dmem_s16(in + i * 2u); }
+
+    while (count > 0) {
+        s16 result[8];
+        s32 j;
+        for (j = 0; j < 8; j++) {
+            long long sum = (long long)book0[j] * l2 + (long long)book1[j] * l1 +
+                            (long long)input[j] * gain;
+            s32 k;
+            for (k = 0; k < j; k++) { sum += (long long)book1s[j - 1 - k] * input[k]; }
+            {
+                const s32 wrapped = (s32)(u32)(unsigned long long)sum;
+                result[j] = (s16)clamp16((s32)(((long long)wrapped * k_scale) >> 16));
+            }
+        }
+        in += 16u;
+        for (i = 0; i < 8u; i++) { input[i] = dmem_s16(in + i * 2u); }
+        for (i = 0; i < 8u; i++) { dmem_set_s16(out + i * 2u, result[i]); }
+        l2 = result[6];
+        l1 = result[7];
+        out += 16u;
+        count -= 16;
+    }
+    dma_write(out - 8u, address, 8u);
+}
 
 /* --- The task ------------------------------------------------------------------ */
 

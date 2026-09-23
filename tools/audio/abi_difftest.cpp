@@ -109,6 +109,12 @@ void add_test(const std::string& name, List& l) {
         const uint32_t flags = (rng() % 3 == 0) ? 1 : ((rng() % 4 == 0) ? 2 : 0);
         l.add(cmd(RESAMPLE, flags, pitch), kState);
         g_resample_remainder = (rng() % 8) * 2;   // a real state's remainder: even, below 16
+    } else if (name == "polef") {
+        // The filter table is loaded like a codebook; gains of both signs.
+        l.add(cmd(LOADADPCM, 0, 0x20), kTable);
+        const uint32_t count = ((rng() % 0x100) + 2) & ~1u;
+        l.add(cmd(SETBUFF, 0, 0x300 + (rng() % 0x10) * 16), (((rng() % 0x10) * 16) << 16) | count);
+        l.add(cmd(POLEF, (rng() % 3 == 0) ? 1 : 0, rng()), kState);
     } else if (name == "segment") {
         l.add(cmd(SEGMENT, 0, 0), (3u << 24) | kSource);
         l.add(cmd(SETBUFF, 0, 0), (offset(0x110) << 16) | 0x100);
@@ -132,7 +138,7 @@ int main(int argc, char** argv) {
         std::fclose(f);
     }
     const std::vector<std::string> all = {"clearbuff", "dmemmove", "mixer", "interleave",
-                                          "setvol", "loadsave", "segment", "adpcm", "resample"};
+                                          "setvol", "loadsave", "segment", "adpcm", "resample", "polef"};
     std::vector<std::string> names = all;
     if (argc >= 3) { names = {argv[2]}; }
     const int cases = argc >= 4 ? std::atoi(argv[3]) : 200;
