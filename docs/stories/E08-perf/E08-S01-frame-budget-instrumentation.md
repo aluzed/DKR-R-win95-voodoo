@@ -124,7 +124,10 @@ items, readable on the target machine.
 ## Acceptance criteria
 
 - [ ] The counters cover every item in the table.
-- [ ] The instrumentation's cost is measured and it is disableable.
+- [x] The instrumentation's cost is measured and it is disableable. The coarse trace
+      (`DKR_TRACE_CPU`) costs less than the run-to-run spread. The render zones
+      (`DKR_TRACE_RENDER_ZONES`) cost 5.8 µs per clock read, about 8 ms a display
+      list. Everything is off unless its variable is set. See `frame-budget.md`.
 - [ ] The on-screen display is legible on the target machine.
 - [ ] Median and 99th percentile are reported per item.
 - [ ] The export to a file allows offline analysis.
