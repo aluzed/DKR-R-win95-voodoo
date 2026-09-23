@@ -66,10 +66,15 @@ game; the microcode does not.
 - **Every audio figure measured before this fix measured a wrong computation.** The
   cost per task had the right order of magnitude, since it was the same code, but
   it has to be measured again.
-- The game's recompiled code (`RecompiledFuncs/*.c`) is also built at `-O3` with
-  strict aliasing. Nothing shows it to be wrong, and it runs, but it casts
-  pointers into RDRAM in every memory access. That is worth an audit, not an
-  assumption.
+- The game's recompiled code (`RecompiledFuncs/*.c`) was built at `-O3` with
+  strict aliasing too. N64Recomp's output requires `-fno-strict-aliasing`: its
+  `MEM_W`, `MEM_H` and `MEM_B` macros reach one RDRAM through `int32_t*`,
+  `int16_t*` and `int8_t*`. The modern targets pass the option
+  (`runtime-recomp/CMakeLists.txt`). The Windows 95 target rebuilt the library
+  itself and left it out. It now passes it for the whole `win95recompiled`
+  library. The cost was measured in normal mode with both opt-in options: 43.2 ms
+  against 42.7 ms, about 1%, at the edge of the run-to-run spread. No defect had
+  been traced to it; the point is not to wait for one.
 
 ## The tools
 
