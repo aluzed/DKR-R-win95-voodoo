@@ -1,0 +1,165 @@
+// E03-S03 - one audio command at a time, the high-level mixer against the
+// recompiled microcode.
+//
+// Each case is a synthetic task: fill the whole buffer area (DMEM 0x5C0, 0xA00
+// bytes) from random RDRAM, run the command under test with random parameters,
+// then save the whole area back to RDRAM. The same task goes through
+// `dkrAspMain` (the oracle, SIMD) and `dkr_aspmain_hle`, and everything is
+// compared: the saved area, any state the command wrote to RDRAM, and the state
+// block at DMEM 0x360.
+//
+//   abi_difftest <capture> [command [cases]]
+//
+// The capture only lends its DMEM, for the microcode's data and tables.
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "librecomp/rsp.hpp"
+extern "C" {
+#include "aspmain_hle.h"
+}
+
+uint8_t dmem[0x1000];
+RspExitReason dkrAspMain(uint8_t* rdram, uint32_t ucode_addr);
+
+namespace {
+
+constexpr uint32_t kRdram = 0x800000u;
+constexpr uint32_t kSource = 0x100000u;   // random data loaded into the buffers
+constexpr uint32_t kList = 0x200000u;     // the command list
+constexpr uint32_t kSaved = 0x300000u;    // where the buffer area is saved
+constexpr uint32_t kState = 0x310000u;    // state saved by ADPCM, RESAMPLE...
+constexpr uint32_t kTable = 0x320000u;    // codebooks
+constexpr uint32_t kArea = 0xA00u;
+
+uint32_t rng_state = 0xC0FFEE11u;
+uint32_t rng() {
+    rng_state ^= rng_state << 13; rng_state ^= rng_state >> 17; rng_state ^= rng_state << 5;
+    return rng_state;
+}
+
+void put8(std::vector<uint8_t>& m, uint32_t a, uint8_t v) { m[a ^ 3] = v; }
+void put32(std::vector<uint8_t>& m, uint32_t a, uint32_t v) {
+    put8(m, a, v >> 24); put8(m, a + 1, v >> 16); put8(m, a + 2, v >> 8); put8(m, a + 3, v);
+}
+
+struct List {
+    std::vector<uint32_t> words;
+    void add(uint32_t w0, uint32_t w1) { words.push_back(w0); words.push_back(w1); }
+};
+uint32_t cmd(uint32_t op, uint32_t flags, uint32_t low) { return (op << 24) | (flags << 16) | (low & 0xFFFF); }
+enum { SPNOOP, ADPCM, CLEARBUFF, ENVMIXER, LOADBUFF, RESAMPLE, SAVEBUFF, SEGMENT,
+       SETBUFF, SETVOL, DMEMMOVE, LOADADPCM, MIXER, INTERLEAVE, POLEF, SETLOOP };
+
+// Buffer offsets the tests use: even, inside the area, leaving room for count.
+uint32_t offset(uint32_t count) { return (rng() % ((kArea - count) / 16)) * 16; }
+
+void add_test(const std::string& name, List& l) {
+    if (name == "clearbuff") {
+        const uint32_t count = (rng() % 0x200) & ~1u;
+        l.add(cmd(CLEARBUFF, 0, offset(0x210)), count);
+    } else if (name == "dmemmove") {
+        const uint32_t count = (rng() % 0x200) & ~1u;
+        l.add(cmd(DMEMMOVE, 0, offset(0x210)), (offset(0x210) << 16) | count);
+    } else if (name == "mixer") {
+        const uint32_t count = ((rng() % 0x1C0) + 2) & ~1u;
+        // As the game uses it: in place (a gain on a buffer), or between two
+        // disjoint buffers. The microcode loads the next block before it stores
+        // the last, so a partial overlap -- which no DKR list contains -- would
+        // come out differently from any sequential implementation.
+        l.add(cmd(SETBUFF, 0, 0), count);
+        const uint32_t in = (rng() % 0x10) * 16, out = (rng() & 1) ? in : 0x500 + (rng() % 0x10) * 16;
+        l.add(cmd(MIXER, 0, rng()), (in << 16) | out);
+    } else if (name == "interleave") {
+        const uint32_t count = ((rng() % 0x100) + 2) & ~1u;
+        // As the game uses it: the output below both inputs, all three disjoint.
+        l.add(cmd(SETBUFF, 0, 0), (((rng() % 0x10) * 16) << 16) | count);
+        l.add(cmd(INTERLEAVE, 0, 0), ((0x400 + (rng() % 0x10) * 16) << 16) | (0x600 + (rng() % 0x10) * 16));
+    } else if (name == "setvol") {
+        const uint32_t flags = rng() & 0x0E;
+        l.add(cmd(SETVOL, flags, rng()), rng());
+    } else if (name == "loadsave") {
+        const uint32_t count = ((rng() % 0x200) + 1);
+        l.add(cmd(SETBUFF, 0, offset(0x210)), (offset(0x210) << 16) | count);
+        l.add(cmd(LOADBUFF, 0, 0), kSource + (rng() % 0x400));
+        l.add(cmd(SAVEBUFF, 0, 0), kState + (rng() % 0x400));
+    } else if (name == "segment") {
+        l.add(cmd(SEGMENT, 0, 0), (3u << 24) | kSource);
+        l.add(cmd(SETBUFF, 0, 0), (offset(0x110) << 16) | 0x100);
+        l.add(cmd(LOADBUFF, 0, 0), (3u << 24) | (rng() % 0x400));
+    }
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    if (argc < 2) { std::fprintf(stderr, "usage: abi_difftest <capture> [command [cases]]\n"); return 2; }
+    std::vector<uint8_t> template_dmem(0x1000);
+    uint32_t ucode = 0;
+    {
+        std::FILE* f = std::fopen(argv[1], "rb");
+        if (!f) { std::perror(argv[1]); return 2; }
+        uint32_t h[4];
+        if (std::fread(h, sizeof(h), 1, f) != 1 ||
+            std::fread(template_dmem.data(), 1, 0x1000, f) != 0x1000) { return 2; }
+        ucode = h[2];
+        std::fclose(f);
+    }
+    const std::vector<std::string> all = {"clearbuff", "dmemmove", "mixer", "interleave",
+                                          "setvol", "loadsave", "segment"};
+    std::vector<std::string> names = all;
+    if (argc >= 3) { names = {argv[2]}; }
+    const int cases = argc >= 4 ? std::atoi(argv[3]) : 200;
+    int failing = 0;
+
+    std::vector<uint8_t> a(kRdram), b(kRdram);
+    for (const auto& name : names) {
+        int bad = 0;
+        for (int c = 0; c < cases; c++) {
+            std::fill(a.begin(), a.end(), 0);
+            for (uint32_t i = 0; i < 0x800; i++) { put8(a, kSource + i, rng()); }
+            for (uint32_t i = 0; i < 0x100; i++) { put8(a, kTable + i, rng()); }
+            List l;
+            l.add(cmd(SETBUFF, 0, 0), (0u << 16) | kArea);
+            l.add(cmd(LOADBUFF, 0, 0), kSource);
+            add_test(name, l);
+            l.add(cmd(SETBUFF, 0, 0), (0u << 16) | kArea);
+            l.add(cmd(SAVEBUFF, 0, 0), kSaved);
+            for (size_t i = 0; i < l.words.size(); i++) { put32(a, kList + 4 * i, l.words[i]); }
+            b = a;
+
+            std::vector<uint8_t> da = template_dmem;
+            const uint32_t ptr = kList, size = static_cast<uint32_t>(l.words.size() * 4);
+            std::memcpy(&da[0xFC0 + 0x30], &ptr, 4);
+            std::memcpy(&da[0xFC0 + 0x34], &size, 4);
+            std::vector<uint8_t> db = da;
+
+            std::memcpy(dmem, da.data(), 0x1000);
+            dkrAspMain(a.data(), ucode);
+            std::memcpy(da.data(), dmem, 0x1000);
+            dkr_aspmain_hle(b.data(), db.data());
+
+            uint32_t first = 0; unsigned long diff = 0;
+            for (uint32_t i = 0; i < kRdram; i++) {
+                if (a[i] != b[i]) { if (!diff) first = i ^ 3; diff++; }
+            }
+            unsigned long state_diff = 0;
+            for (uint32_t i = 0x360; i < 0x380; i++) { if (da[i] != db[i]) state_diff++; }
+            if (diff || state_diff) {
+                if (bad < 3) {
+                    std::printf("  %s case %d: %lu RDRAM bytes differ (first 0x%06X), %lu state bytes;"
+                                " command %08X %08X\n", name.c_str(), c, diff, first, state_diff,
+                                l.words[4], l.words[5]);
+                }
+                bad++;
+            }
+        }
+        std::printf("%-11s %s (%d of %d cases differ)\n", name.c_str(), bad ? "FAIL" : "ok", bad, cases);
+        if (bad) failing++;
+    }
+    return failing ? 1 : 0;
+}

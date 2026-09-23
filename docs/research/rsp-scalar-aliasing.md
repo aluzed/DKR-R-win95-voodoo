@@ -80,3 +80,15 @@ game; the microcode does not.
 - `vu_difftest_simd` and `vu_difftest_sisd`: diff their output with each other.
 - `dump_alist.py`: prints a capture's command list, `--summary` for counts and
   flags.
+
+## The corrected cost
+
+Measured again after the fix, exclusive mode, 80.8 s, 1,090 tasks:
+
+    per task                        26.7 ms    (24.2 before the fix)
+    processor per second of sound    695 ms    (628)
+    share of the processor          36.1%
+
+The correct computation costs about 10% more than the broken one did. Real-time
+sound through the microcode would now take **70% of the processor**. E03-S03 is
+more necessary than before, not less.

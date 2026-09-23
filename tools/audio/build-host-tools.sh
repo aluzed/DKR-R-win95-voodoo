@@ -45,4 +45,10 @@ g++ "${common[@]}" "${scalar[@]}" "$root/tools/audio/replay_aspmain.cpp" "$out/a
     -o "$out/replay_aspmain_sisd"
 g++ "${common[@]}" "${simd[@]}" "$root/tools/audio/vu_difftest.cpp" -o "$out/vu_difftest_simd"
 g++ "${common[@]}" "${scalar[@]}" "$root/tools/audio/vu_difftest.cpp" -o "$out/vu_difftest_sisd"
-echo "built into $out"
+
+
+# The high-level mixer, command by command against the SIMD oracle.
+gcc -std=c99 -O2 -fno-strict-aliasing -w -c "$root/platform/audio/aspmain_hle.c" -o "$out/aspmain_hle.o"
+g++ "${common[@]}" "${simd[@]}" -I "$root/platform/audio" "$root/tools/audio/abi_difftest.cpp" \
+    "$out/aspMain.o" "$out/aspmain_hle.o" -o "$out/abi_difftest"
+echo "built abi_difftest"
