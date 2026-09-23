@@ -770,6 +770,14 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         if (d < 1000000ULL) {
             period_us_total_ += d;
             period_n_++;
+            {
+                unsigned long n = static_cast<unsigned long>((d + 8333ULL) / 16667ULL);
+                period_retraces_[n > 8UL ? 8UL : n]++;
+            }
+            {
+                const unsigned long bin = static_cast<unsigned long>(d / 2000ULL);
+                period_bins_[bin > 50UL ? 50UL : bin]++;
+            }
             if (d > period_us_worst_) { period_us_worst_ = d; }
         } else {
             period_dropped_++;
@@ -1484,6 +1492,14 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                              per ? (100000000ULL / per) % 100ULL : 0ULL),
                          static_cast<unsigned long>(ren),
                          static_cast<unsigned long>(per > ren ? per - ren : 0ULL));
+            std::fprintf(stderr, "[gfx]   frame-retraces:");
+            for (int n = 0; n < 9; n++) {
+                std::fprintf(stderr, " %d%s=%lu", n, n == 8 ? "+" : "", period_retraces_[n]);
+            }
+            std::fprintf(stderr, "\n");
+            std::fprintf(stderr, "[gfx]   frame-bins-2ms:");
+            for (int b = 0; b < 51; b++) { std::fprintf(stderr, " %lu", period_bins_[b]); }
+            std::fprintf(stderr, "\n");
             std::fprintf(stderr,
                          "[gfx]   frame-worst: period=%lu us render=%lu us "
                          "samples=%lu dropped=%lu\n",

@@ -93,6 +93,13 @@ private:
     unsigned long long period_us_total_ = 0, period_us_worst_ = 0;
     unsigned long long render_us_total_ = 0, render_us_worst_ = 0;
     unsigned long period_n_ = 0, render_n_ = 0, period_dropped_ = 0;
+    // The periods' shape in retraces (16.67 ms): bucket n counts periods
+    // nearest n retraces, the last one everything from 8 up. Is the frame paced
+    // by the vertical interval? This says so directly; a mean cannot.
+    unsigned long period_retraces_[9] = {0};
+    // And in 2 ms bins up to 100 ms, to tell a clustering on multiples of
+    // 16.67 ms from a spread that merely rounds to them.
+    unsigned long period_bins_[51] = {0};
     unsigned long total_tex_refused_ = 0;
     unsigned long total_tex_padded_ = 0;
     unsigned long total_emitted_textured_ = 0;

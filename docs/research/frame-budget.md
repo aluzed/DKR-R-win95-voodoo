@@ -27,6 +27,43 @@ processor time too.
 The lines to read are `[trace][ran]`, `[trace][preempted]`, `[trace][parked]`,
 `[trace][snap]`, `[trace][gfx]` and `[audio][rate]`.
 
+## Correction, 24 September 2026: steady state, and what the 17% is
+
+**The budgets below were taken from cumulative counters, and those include the
+loading phase.** An idle meter now shows how much that matters.
+`DKR_TRACE_IDLE_METER=1` runs a thread at THREAD_PRIORITY_IDLE, which only runs
+when nothing else of any process is ready. It measures spare processor
+directly, and it costs nothing: 44.3 ms a frame with it against 44.1 without.
+Per five-second interval:
+
+    10 s  86%   15 s 27%   20 s 60%   25 s 10%     loading
+    30 s   3%   35 s  5%   40 s  4%   ...   90 s 2.4%   attract mode
+
+In steady state the processor is **97% busy**. The same budget taken over a
+steady window (40 to 90 s) rather than from boot:
+
+| Item | Share | Per 44.9 ms frame |
+|---|---:|---:|
+| Graphics thread | 29.0% | 13.0 ms |
+| Audio mixer | 24.2% | 10.8 ms |
+| Recompiled game (thread 3) | 14.2% | 6.4 ms |
+| Idle thread executing: delivering interrupts | 8.7% | 3.9 ms |
+| Audio manager (thread 4) | 3.6% | 1.6 ms |
+| libultra scheduler (thread 5) | 3.0% | 1.4 ms |
+| Not measured | 17.3% | 7.8 ms |
+
+Of the 17.3% not measured, about 3 points are spare. The rest, **about 14% of
+the processor, is work no timer sees.** The VI thread is not it: it waits in
+`Sleep`, not in a spin. What remains is kernel-side: thread switches and the
+semaphore calls behind every guest handoff, the 1 ms timer interrupt, the
+Glide driver's own work. A user-mode stopwatch cannot see any of these, so the
+next instrument would have to be a sampler.
+
+**The frame is not paced by the retrace.** A histogram of frame periods in 2 ms
+bins (`[gfx] frame-bins-2ms`, beside `[gfx] frame-retraces`) shows one broad hump
+from 20 to 60 ms, peaking at 38 to 44 ms, with no clustering on 33.3 or 50. The
+frame is as long as its work.
+
 ## The budget, 24 September 2026, with the audio mixer
 
 After the audio mixer (E03-S03), the semaphore-spin fix and

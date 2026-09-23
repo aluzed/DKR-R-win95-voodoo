@@ -92,6 +92,56 @@ extern RspUcodeFunc dkrAspMain;
  * what has the processor? The microcode runs on ultramodern's SP task thread,
  * outside every guest thread, so on one processor its time can only show up as
  * a silence. Read weakly by patch 0050 in ultramodern's threads.cpp. */
+#if defined(DKR_TARGET_WIN95)
+/* **The idle meter (E08-S01): how much of the processor nobody wants.**
+ *
+ * The frame budget leaves 17% unaccounted, time in which the idle guest thread
+ * sleeps and no timed section runs. That is either spare processor or host
+ * threads nobody times: the VI thread, the Glide driver, the message loop, the
+ * kernel. A thread at THREAD_PRIORITY_IDLE runs only when no other thread of any
+ * process is ready, so the time it gets to spin is spare time by definition.
+ * It adds up the short gaps between two cycle-counter reads; a long gap means
+ * it was preempted and is not counted. It takes nothing from anyone else.
+ *
+ * DKR_TRACE_IDLE_METER=1. Reports `[trace][idle-meter]` every five seconds of
+ * cycle counter, from the meter thread itself, so a machine that is never idle
+ * reports late -- which is itself the answer. */
+static DWORD WINAPI IdleMeterThread(LPVOID) {
+    const unsigned long long hz = dkr_cycles_hz();
+    const unsigned long long preempted = hz / 100000ull;     /* 10 us */
+    unsigned long long idle = 0, last = dkr_cycles_now();
+    const unsigned long long start = last;
+    unsigned long long next_report = start + hz * 5ull;
+    for (;;) {
+        const unsigned long long now = dkr_cycles_now();
+        const unsigned long long gap = now - last;
+        if (gap < preempted) { idle += gap; }
+        last = now;
+        if (now >= next_report) {
+            const unsigned long long wall = now - start;
+            std::fprintf(stderr, "[trace][idle-meter] idle=%llu us wall=%llu us share=%llu%%\n",
+                         idle / (hz / 1000000ull), wall / (hz / 1000000ull),
+                         wall ? (100ull * idle) / wall : 0ull);
+            next_report = now + hz * 5ull;
+        }
+    }
+    return 0;
+}
+
+static void StartIdleMeter() {
+    if (std::getenv("DKR_TRACE_IDLE_METER") == nullptr || !dkr_cycles_init()) {
+        return;
+    }
+    DWORD id = 0;
+    HANDLE thread = CreateThread(nullptr, 0, IdleMeterThread, nullptr, 0, &id);
+    if (thread != nullptr) {
+        SetThreadPriority(thread, THREAD_PRIORITY_IDLE);
+        CloseHandle(thread);
+        std::fprintf(stderr, "[boot][idle-meter] started at %llu Hz\n", dkr_cycles_hz());
+    }
+}
+#endif
+
 static std::atomic<int> g_audio_busy{0};
 
 extern "C" int dkr_audio_busy(void) {
@@ -1172,6 +1222,9 @@ int DkrMain(int argc, char** argv) {
         std::fprintf(stderr,
                      "[boot][log] could not create the persistent runtime log\n");
     }
+#if defined(DKR_TARGET_WIN95)
+    StartIdleMeter();
+#endif
 #if DKR_RUNTIME_HAS_RT64
     if (!rom_identified) {
         window_handle = dkr::runtime::platform::prepare_window_for_game();
