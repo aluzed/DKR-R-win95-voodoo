@@ -260,3 +260,34 @@ unsigned long long dkr_clock_vr4300_count(void)
 {
     return dkr_clock_ticks_to_vr4300(dkr_clock_now(), clock_frequency);
 }
+
+/* --- The cycle counter's calibration ------------------------------------------ */
+
+static unsigned long long cycles_hz = 0;
+
+static unsigned long long calibrate_cycles(unsigned long long wait_us)
+{
+    const unsigned long long u0 = dkr_clock_now_us();
+    const unsigned long long c0 = dkr_cycles_now();
+    unsigned long long u1 = u0;
+    while (u1 - u0 < wait_us) { u1 = dkr_clock_now_us(); }
+    const unsigned long long c1 = dkr_cycles_now();
+    return (u1 > u0) ? (c1 - c0) * 1000000ULL / (u1 - u0) : 0ULL;
+}
+
+int dkr_cycles_init(void)
+{
+    if (cycles_hz != 0ULL) { return 1; }
+    if (dkr_clock_source_in_use() == DKR_CLOCK_SOURCE_NONE && !dkr_clock_init()) {
+        return 0;
+    }
+    const unsigned long long a = calibrate_cycles(20000ULL);
+    const unsigned long long b = calibrate_cycles(40000ULL);
+    if (a == 0ULL || b == 0ULL) { return 0; }
+    const unsigned long long diff = (a > b) ? a - b : b - a;
+    if (diff * 100ULL > a) { return 0; }
+    cycles_hz = (a + b) / 2ULL;
+    return 1;
+}
+
+unsigned long long dkr_cycles_hz(void) { return cycles_hz; }

@@ -100,7 +100,19 @@
  * and it is worth keeping — it is what allowed us to see that the memory layout
  * was right, since *no* address rejection appeared. */
 unsigned long long (*dkr_f3d_zone_clock)(void) = 0;
-unsigned long long dkr_f3d_convert_us = 0;
+unsigned long long dkr_f3d_opcode_ticks[256];
+unsigned long long dkr_f3d_triangle_ticks[DKR_F3D_TRIANGLE_ZONES];
+
+/* Charges the ticks since the last mark to zone `z` of `cmd_triangle`. */
+#define TRI_MARK(z) \
+    do { \
+        if (dkr_f3d_zone_clock) { \
+            const unsigned long long tri_now_ = dkr_f3d_zone_clock(); \
+            dkr_f3d_triangle_ticks[(z)] += tri_now_ - tri_zone_at; \
+            tri_zone_at = tri_now_; \
+        } \
+    } while (0)
+unsigned long long dkr_f3d_convert_ticks = 0;
 unsigned long long dkr_f3d_convert_n = 0;
 
 static int opcode_effect_deferred(unsigned int opcode)
@@ -193,7 +205,13 @@ static void reject(dkr_f3d_context *c, dkr_f3d_reject why, const char *detail)
 {
     c->state.rejects[why]++;
     if (c->state.rejects[why] <= MAX_LOGGED_REJECTS) {
-        trace(c, "REJECT %s: %s", dkr_f3d_reject_text(why), detail);
+        if (c->trace) {
+            trace(c, "REJECT %s: %s", dkr_f3d_reject_text(why), detail);
+        } else if (c->reject_trace) {
+            char line[192];
+            sprintf(line, "REJECT %.40s: %.120s", dkr_f3d_reject_text(why), detail);
+            c->reject_trace(c->trace_user, line);
+        }
     }
 }
 
@@ -399,6 +417,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
      * drawn in its vertex colours and was being drawn through a texture. */
     const unsigned int textured = (w0 >> 16) & 1u;
     unsigned int i;
+    unsigned long long tri_zone_at = dkr_f3d_zone_clock ? dkr_f3d_zone_clock() : 0ULL;
 
     if (textured != (unsigned int)c->batch_textured) {
         c->batch_textured = (unsigned char)textured;
@@ -462,6 +481,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
      *
      * Every triangle goes through: texture coordinates laid down per corner,
      * near-plane clipping, projection, culling, off-screen rejection. */
+    TRI_MARK(0);
     for (i = 0; i < count; i++) {
         const unsigned int a = source + i * TRIANGLE_STRIDE;
         const unsigned char flags = read_u8(c, a + 0);
@@ -508,6 +528,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 const float tb = (float)read_s16(c, a + 6 + corner * 4);
                 tri[corner].s = sb * c->tex_scale_s;
                 tri[corner].t = tb * c->tex_scale_t;
+                TRI_MARK(8);
                 /* The raw pair, per corner, as the list gives it. A quad whose
                    three corners carry the same pair renders flat whatever the
                    scale does afterwards, and nothing printed these until the
@@ -516,6 +537,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                       corner, (int)sb, (int)tb,
                       (int)tri[corner].r, (int)tri[corner].g,
                       (int)tri[corner].b, (int)tri[corner].a);
+                TRI_MARK(9);
                 /* The measurement that can refute the interpretation above: if
                    10.5 is the right format and the width the right one, the
                    extremes must stay in the neighbourhood of [0,1]. Thousands
@@ -543,6 +565,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     if (in) { c->state.st_inside++; }
                     else    { c->state.st_outside++; }
                 }
+                TRI_MARK(10);
             }
         }
         if (emitted_here < 0) {
@@ -607,7 +630,9 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 }
             }
         }
+        TRI_MARK(11);
 
+        TRI_MARK(1);
         pieces = dkr_clip_near(tri, clipped);
         if (pieces == 0) {
             c->state.clipped_away++;
@@ -622,11 +647,13 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         cull = dkr_cull_mode_for_viewport(c->transform.viewport_scale_x,
                                           (flags & 0x40u) == 0);
 
+        TRI_MARK(2);
         for (k = 0; k < pieces; k++) {
             dkr_render_vertex *v = &out[k * 3];
             dkr_clip_project(&c->transform, &clipped[k * 3 + 0], &v[0]);
             dkr_clip_project(&c->transform, &clipped[k * 3 + 1], &v[1]);
             dkr_clip_project(&c->transform, &clipped[k * 3 + 2], &v[2]);
+            TRI_MARK(3);
             if (!c->no_cull && !dkr_cull_accept(v, cull)) {
                 c->state.culled++;
                 continue;
@@ -635,7 +662,9 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 c->state.clipped_away++;
                 continue;
             }
+            TRI_MARK(7);
             apply_state(c);
+            TRI_MARK(4);
             /* **What the emitted triangles are made of.**
              *
              * The screen stays white while textures upload and the coordinates
@@ -1155,12 +1184,15 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 }
                 c->state.emitted_two_layer++;
             }
+            TRI_MARK(5);
             if (c->backend && c->backend->draw_triangles) {
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }
             c->state.emitted++;
+            TRI_MARK(6);
         }
     }
+    TRI_MARK(7);
 }
 
 static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
@@ -2170,7 +2202,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
                                         c->texels,
                                         &c->state.textures);
         if (dkr_f3d_zone_clock) {
-            dkr_f3d_convert_us += dkr_f3d_zone_clock() - convert_t0;
+            dkr_f3d_convert_ticks += dkr_f3d_zone_clock() - convert_t0;
             dkr_f3d_convert_n++;
         }
         if (!converted) {
@@ -2948,14 +2980,26 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
     unsigned int depth = 0;
     unsigned long executed = 0;
     int running = 1;
+    unsigned long long zone_at = 0;
+    int zone_opcode = -1;
 
     if (!c || !c->rdram) {
         return 0;
     }
     address &= RDRAM_MASK;
+    if (dkr_f3d_zone_clock) { zone_at = dkr_f3d_zone_clock(); }
 
     while (running) {
         unsigned int w0, w1, opcode;
+
+        /* Stamped at the top of the loop, so that every path out of the switch,
+           `continue` included, closes the previous command. */
+        if (dkr_f3d_zone_clock) {
+            const unsigned long long now = dkr_f3d_zone_clock();
+            if (zone_opcode >= 0) { dkr_f3d_opcode_ticks[zone_opcode] += now - zone_at; }
+            zone_at = now;
+            zone_opcode = -1;
+        }
 
         if (!in_range(c, address, 8u)) {
             char d[64];
@@ -2966,6 +3010,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         w0 = read_u32(c, address);
         w1 = read_u32(c, address + 4u);
         opcode = (w0 >> 24) & 0xFFu;
+        zone_opcode = (int)opcode;
         address += 8u;
         executed++;
         c->state.commands++;
@@ -3523,6 +3568,9 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             remaining = remaining_stack[depth];
             trace(c, "CountedDisplayList finished - return to 0x%06X", address);
         }
+    }
+    if (dkr_f3d_zone_clock && zone_opcode >= 0) {
+        dkr_f3d_opcode_ticks[zone_opcode] += dkr_f3d_zone_clock() - zone_at;
     }
     return executed;
 }

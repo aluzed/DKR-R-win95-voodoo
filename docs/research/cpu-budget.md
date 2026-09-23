@@ -2238,3 +2238,54 @@ Both are recorded in `frame-budget.md`. In short:
 - A read of the 8254 clock costs about 5.8 µs. That is fine at a few thousand
   reads a second and not at seven hundred per display list. The finer zones
   E08-S03 will need call for `RDTSC`.
+
+### Half the renderer was formatting log lines nobody printed
+
+The previous section stopped on a clock too dear for fine timing: 5.8 µs to read
+the 8254. `platform/win95/clock` now has a second, profiling-only clock,
+`dkr_cycles_now()`, which is `RDTSC`. It is calibrated against the first one
+twice at startup, over 20 and 40 ms, and refused if the two calibrations disagree
+by more than 1%. On the test machine it calibrates at **399,993,987 Hz**, which is
+86Box's emulated 400 MHz Deschutes. With it, the render zones cost about 0.9 ms a
+display list instead of 8.
+
+Two new cuts of the decoder, both on that clock:
+
+- **by opcode**: the time between one command and the next is charged to the
+  first, backend calls included;
+- **inside `cmd_triangle`**, which turned out to be 25.1 ms of a 31 ms list: eight
+  phases, and then four more inside the corner loop once that loop was 18 ms by
+  itself.
+
+Per display list, exclusive mode:
+
+    cmd_triangle, 0x05                    25.1 ms
+      the corner loop                     18.1 ms
+        trace-args                        16.7 ms   <--
+        fetch, (s,t) stats, NDC stats      2.0 ms
+      draw_triangles                       2.1 ms
+      clipping, projection, state, rest    4.9 ms
+    everything else in the decoder         ~6 ms
+
+`trace-args` is a single line: `trace(c, "vtx corner=%d raw s=%d ...", ...)`,
+once per triangle corner. `trace()` returns at once when `c->trace` is null, but
+the renderer set `context_.trace = trace_decoder` unconditionally. So every call
+went through `vsprintf` into a 192-byte buffer and handed the line to a function
+that prints the first 24 lines of the session and throws away every one after
+that. Forty-five call sites in the decoder did the same.
+
+The fix does not change a single line of output. The renderer installs `trace`
+only while the 24 context lines are not yet spent. A new field,
+`reject_trace`, keeps the rejections' route to the log. Rejections are
+rate-limited per kind in `reject()`, so formatting them costs nothing. The log of
+a 150 s run has 924 `[gfx][f3d]` lines before the fix and 924 after it.
+
+                         before      after
+    display list, CPU    31.2 ms    12.1 ms   exclusive mode
+    display list, wall   38.4 ms    16.1 ms   normal mode
+    frame                120.9 ms   98.3 ms   normal mode, trace off
+    frame rate           8.27 fps   10.17 fps
+
+**−18.7% on the frame from one line of the renderer's setup.** It is the largest
+single gain this note has recorded, and it came from an instrument pointed one
+level further down than the last one.

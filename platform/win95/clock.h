@@ -72,6 +72,30 @@ unsigned long long dkr_clock_now(void);
 /* The same, in microseconds. */
 unsigned long long dkr_clock_now_us(void);
 
+/* --- The processor's cycle counter, for profiling only ------------------- *
+ *
+ * E08-S01 found the clock above too dear for fine timing: a read of the 8254
+ * through I/O ports costs about 5.8 us, so seven hundred timers in a display
+ * list add 8 ms to it. `RDTSC` costs a few cycles. It is not the game's time
+ * base and must not become one -- its frequency has to be calibrated and power
+ * management can change it -- so it is exposed separately, for instruments.
+ *
+ * `dkr_cycles_init` calibrates it against `dkr_clock_now_us` twice, over 20 and
+ * 40 ms, and refuses it when the two disagree by more than 1%. Busy-waits for
+ * 60 ms, so it is called only when an instrument asks for it. Returns 1 if the
+ * counter is usable; `dkr_cycles_hz` is then its frequency, and 0 otherwise. */
+int                dkr_cycles_init(void);
+unsigned long long dkr_cycles_hz(void);
+
+static inline unsigned long long dkr_cycles_now(void)
+{
+#if defined(__i386__) || defined(__x86_64__)
+    return __builtin_ia32_rdtsc();
+#else
+    return 0ULL;
+#endif
+}
+
 /* --- The VR4300 cycle counter --------------------------------------------- *
  *
  * DKR measures time through this counter, which advances at 46.875 MHz - half

@@ -854,6 +854,13 @@ typedef struct {
        nothing but the result. */
     void (*trace)(void *user, const char *line);
     void  *trace_user;
+    /* Where rejections go when `trace` is null. `trace` formats a line at 45
+       places in the decoder, three of them per triangle corner, and E08-S01
+       measured that formatting at 16.7 ms of a 31 ms display list while the
+       lines it produced were being thrown away. A caller that wants the
+       rejections and nothing else sets this and leaves `trace` null: a
+       rejection is rate-limited per kind, so formatting it costs nothing. */
+    void (*reject_trace)(void *user, const char *line);
 } dkr_f3d_context;
 
 /* Prepares the context. `rdram` and `rdram_size` describe the visible memory;
@@ -867,12 +874,24 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
  * anything coming from the display list without bounding it first. */
 unsigned long dkr_f3d_run(dkr_f3d_context *ctx, unsigned int address);
 
-/* **Where the renderer's time goes, E08-S01.** A clock the caller may install to
- * time texture conversion, the one piece of the decoder's work that is neither
- * the command loop nor a backend call. Null -- the default, and what every
- * witness and test leaves it -- costs one branch per conversion. */
+/* **Where the renderer's time goes, E08-S01.** A clock the caller may install,
+ * in ticks of its choosing (the renderer uses the processor's cycle counter).
+ * With it, `dkr_f3d_run` charges the time between one command and the next to
+ * the first one's opcode, inclusive of any backend call it makes, and texture
+ * conversion is timed on its own. Null -- the default, and what every witness and
+ * test leaves it -- costs one branch per command. */
 extern unsigned long long (*dkr_f3d_zone_clock)(void);
-extern unsigned long long dkr_f3d_convert_us;
+extern unsigned long long dkr_f3d_opcode_ticks[256];
+/* `cmd_triangle`, which is most of the decoder, split into its phases:
+ * 0 batch checks, 1 the corner loop's own overhead, 2 near-plane clipping,
+ * 3 projection, 4 `apply_state`, 5 the per-triangle diagnostics between the
+ * state and the draw, 6 the draw call, 7 cull, offscreen rejection and the tail,
+ * and inside the corners: 8 fetching the vertex and its (s,t), 9 the `trace`
+ * call and the conversions its arguments need, 10 the (s,t) statistics, 11 the
+ * degenerate-(s,t) and NDC statistics. */
+#define DKR_F3D_TRIANGLE_ZONES 12
+extern unsigned long long dkr_f3d_triangle_ticks[DKR_F3D_TRIANGLE_ZONES];
+extern unsigned long long dkr_f3d_convert_ticks;
 extern unsigned long long dkr_f3d_convert_n;
 
 #ifdef __cplusplus

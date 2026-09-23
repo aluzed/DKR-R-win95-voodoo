@@ -87,11 +87,20 @@ static unsigned long long g_zone_n[kZoneCount];
 static unsigned long long g_zone_run_us = 0;
 static unsigned long long g_zone_run_backend_us = 0;
 static int g_zone_in_run = 0;
+/* The zones' clock: the cycle counter when it calibrates, which costs a few
+   cycles a read, and the 8254 otherwise, which costs 5.8 us and inflates every
+   zone by it. All zone totals are in its ticks; `g_zone_hz` converts. */
+static unsigned long long zone_cycles(void) { return dkr_cycles_now(); }
+static unsigned long long (*g_zone_clock)(void) = dkr_clock_now_us;
+static unsigned long long g_zone_hz = 1000000ULL;
+static unsigned long long zone_us(unsigned long long ticks) {
+    return ticks * 1000ULL / (g_zone_hz / 1000ULL);
+}
 
 struct ZoneTimer {
-    explicit ZoneTimer(RenderZone z) : zone(z), t0(dkr_clock_now_us()) {}
+    explicit ZoneTimer(RenderZone z) : zone(z), t0(g_zone_clock()) {}
     ~ZoneTimer() {
-        const unsigned long long d = dkr_clock_now_us() - t0;
+        const unsigned long long d = g_zone_clock() - t0;
         g_zone_us[zone] += d;
         g_zone_n[zone]++;
         if (g_zone_in_run) { g_zone_run_backend_us += d; }
@@ -149,7 +158,13 @@ static void install_render_zones(dkr_render_backend* b) {
     if (b->texture_upload)  { b->texture_upload = zone_texture_upload; }
     if (b->texture_release) { b->texture_release = zone_texture_release; }
     if (b->texture_lookup)  { b->texture_lookup = zone_texture_lookup; }
-    dkr_f3d_zone_clock = dkr_clock_now_us;
+    if (dkr_cycles_init()) {
+        g_zone_clock = zone_cycles;
+        g_zone_hz = dkr_cycles_hz();
+    }
+    dkr_f3d_zone_clock = g_zone_clock;
+    std::fprintf(stderr, "[boot][gfx] render zones clock: %s at %llu Hz\n",
+                 g_zone_clock == zone_cycles ? "rdtsc" : "8254", g_zone_hz);
 }
 #endif
 #include <iterator>
@@ -779,7 +794,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // oracle -- which has one -- answers for itself.
     context_.tmu_count =
         static_cast<unsigned char>(dkr_glide_backend_tmu_count());
-    context_.trace = trace_decoder;
+    // `trace_decoder` prints the first 24 context lines and then discards the
+    // rest, but the decoder formats every line before handing it over: 16.7 ms
+    // of a 31 ms display list, measured by the render zones. Once the context
+    // lines are spent, only the rejections keep a route to the log.
+    context_.trace = (g_trace_context != 0) ? trace_decoder : nullptr;
+    context_.reject_trace = trace_decoder;
     // `DKR_NO_DEPTH=1` turns depth sorting off. A diagnostic switch: it answers
     // in one run a question that reading the code does not settle.
     {
@@ -1101,11 +1121,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 
 #if defined(DKR_TARGET_WIN95)
     if (g_render_zones_on) {
-        const unsigned long long run_t0 = dkr_clock_now_us();
+        const unsigned long long run_t0 = g_zone_clock();
         g_zone_in_run = 1;
         (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
         g_zone_in_run = 0;
-        g_zone_run_us += dkr_clock_now_us() - run_t0;
+        g_zone_run_us += g_zone_clock() - run_t0;
     } else
 #endif
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
@@ -1471,13 +1491,36 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                add up to the renderer's own time only when read together. */
             std::fprintf(stderr, "[gfx]   zones: lists=%lu run=%llu decoder=%llu "
                                  "convert=%llu/%llu",
-                         render_n_, g_zone_run_us,
-                         g_zone_run_us - g_zone_run_backend_us - dkr_f3d_convert_us,
-                         dkr_f3d_convert_us, dkr_f3d_convert_n);
+                         render_n_, zone_us(g_zone_run_us),
+                         zone_us(g_zone_run_us - g_zone_run_backend_us -
+                                 dkr_f3d_convert_ticks),
+                         zone_us(dkr_f3d_convert_ticks), dkr_f3d_convert_n);
             for (int z = 0; z < kZoneCount; z++) {
                 if (g_zone_n[z] != 0ULL) {
                     std::fprintf(stderr, " %s=%llu/%llu", kZoneNames[z],
-                                 g_zone_us[z], g_zone_n[z]);
+                                 zone_us(g_zone_us[z]), g_zone_n[z]);
+                }
+            }
+            std::fprintf(stderr, " us\n");
+            /* Inclusive of the backend calls each command makes. Opcode, total
+               microseconds, and the command count the decoder already keeps. */
+            {
+                static const char* const kTriangleZones[DKR_F3D_TRIANGLE_ZONES] = {
+                    "batch", "corners", "clip", "project", "state",
+                    "diagnostics", "draw", "cull-and-tail", "fetch", "trace-args",
+                    "st-stats", "ndc-stats"};
+                std::fprintf(stderr, "[gfx]   zones-triangle:");
+                for (int z = 0; z < DKR_F3D_TRIANGLE_ZONES; z++) {
+                    std::fprintf(stderr, " %s=%llu", kTriangleZones[z],
+                                 zone_us(dkr_f3d_triangle_ticks[z]));
+                }
+                std::fprintf(stderr, " us\n");
+            }
+            std::fprintf(stderr, "[gfx]   zones-by-opcode:");
+            for (int op = 0; op < 256; op++) {
+                if (dkr_f3d_opcode_ticks[op] != 0ULL) {
+                    std::fprintf(stderr, " %02X=%llu/%lu", op,
+                                 zone_us(dkr_f3d_opcode_ticks[op]), opcodes_[op]);
                 }
             }
             std::fprintf(stderr, " us\n");
