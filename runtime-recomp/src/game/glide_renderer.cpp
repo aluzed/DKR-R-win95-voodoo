@@ -49,6 +49,15 @@ static std::atomic<int> g_renderer_busy{0};
 extern "C" int dkr_renderer_busy(void) {
     return g_renderer_busy.load(std::memory_order_relaxed);
 }
+
+/* Display lists drawn so far, for the game's `[audio][rate]` line: whether the
+ * audio microcode's cost follows the frames drawn or the sound played is read by
+ * setting it against both, window by window. */
+static std::atomic<unsigned long long> g_display_lists_drawn{0};
+
+extern "C" unsigned long long dkr_display_lists_drawn(void) {
+    return g_display_lists_drawn.load(std::memory_order_relaxed);
+}
 #include <iterator>
 #include <memory>
 
@@ -1168,6 +1177,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         const unsigned long long d = dkr_clock_now_us() - t_entry;
         render_us_total_ += d;
         render_n_++;
+        g_display_lists_drawn.fetch_add(1, std::memory_order_relaxed);
         if (d > render_us_worst_) { render_us_worst_ = d; }
     }
     g_renderer_busy.store(0, std::memory_order_relaxed);

@@ -2149,10 +2149,12 @@ the frame to remove, only work.
 Three things change:
 
 - **The audio microcode is the largest single item, 30.1 ms a frame**, and it has
-  had no row in this table until now. If its cost follows the audio played and not
+  had no row in this table until now. ~~If its cost follows the audio played and not
   the frames drawn, and 1.52 tasks a frame at 8 fps suggests so, then it is a fixed
   quarter of the processor at any frame rate: 8.1 ms of a 33.3 ms frame at the
-  target, before anything else runs. E03-S03 replaces it.
+  target, before anything else runs.~~ **Wrong, and optimistic: see the next
+  section. Real-time audio would need 63% of the processor, about 21 ms of a
+  33.3 ms frame.** E03-S03 replaces it.
 - **The recompiled game is at most 11.1 ms, not 15.3.** Its old figure carried the
   audio's and the renderer's preemption.
 - **The renderer is 32.3 ms of processor** (`send_dl` plus `update_screen`), not
@@ -2162,3 +2164,53 @@ In this mode the silence attribution from patch 0050 comes back as `neither` for
 the whole silence. That is expected. A section that cannot be preempted runs
 entirely inside a silence, and a start/end sample never sees it. Read `idle-by`
 from normal runs only.
+
+### Real-time audio would take 63% of the processor
+
+The previous section guessed that the audio microcode's cost follows the sound
+played rather than the frames drawn, which would make it a fixed quarter of the
+processor at any frame rate. That was a guess, so it was measured. The game now
+prints `[audio][rate]` every five seconds of wall clock. The line gives the
+microcode's cumulative cost, the samples handed to the audio interface, the
+interface's frequency, and the display lists drawn. The run was 240 s in exclusive
+mode, so that the cost is processor time and the renderer's preemption, which
+varies by scene, does not blur it.
+
+First, what the audio interface is told. On Windows 95,
+`platform::audio_frames_remaining` has no device behind it, because E06-S03 is
+still TODO, and it always returns 0. DKR's audio manager reads that as an empty
+DMA queue and synthesises its largest quantum every time: **exactly 848 frames,
+38.5 ms of sound at 22,050 Hz, in each of 1,350 tasks.** No sound clock paces the
+production, and nothing is played.
+
+Over the 121.7 s of the run with a steady rate:
+
+    tasks                          1,350      11.1 a second
+    sound synthesised             51.9 s      42.7% of real time
+    processor spent on it         32.6 s      26.8% of the wall
+    processor per task            24.2 ms     10 to 35 ms by scene
+    processor per second of sound  628 ms     263 to 922 ms by scene
+
+Window by window, the task rate follows the frame rate (correlation 0.73). The
+audio manager falls behind whenever the game does, so it is paced by the
+processor it can get and not by the sound. The share of the processor it takes
+does **not** follow the frame rate (correlation 0.07). What each task costs
+depends on the scene: more voices, more work.
+
+So neither reading of the guess survives:
+
+- **The 25% is not a property of the audio.** It is what the audio manager
+  manages to take while starving. It produces less than half of the sound the
+  game needs, and would be heard at 43% speed if anything played it.
+- **The invariant is the cost per second of sound, 628 ms.** Real-time audio
+  would take **63% of this processor** on average, and up to 92% in the heaviest
+  window. At the 30 fps target that is **about 21 ms of every 33.3 ms frame**, not
+  8.1. Faithful microcode audio cannot run in real time on this machine, even with
+  every other item at zero.
+
+That settles `rsp-audio-cost-measured.md`'s trigger for E03-S03 beyond argument.
+The high-level mixer is not the first optimisation of E08; it is a precondition of
+the port having sound at all. E06-S03 will also have to give
+`audio_frames_remaining` a real clock. Until it does, the game's audio pacing on
+this target is an artefact, and cost figures per task are measured at the largest
+quantum.

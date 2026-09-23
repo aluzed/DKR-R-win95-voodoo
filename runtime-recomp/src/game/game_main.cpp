@@ -93,6 +93,26 @@ extern "C" int dkr_audio_busy(void) {
     return g_audio_busy.load(std::memory_order_relaxed);
 }
 
+/* **Does the audio microcode's cost follow the sound played, or the frames
+ * drawn?** At 8 fps the game submits 1.52 audio tasks a frame, which suggests the
+ * former; if so, the microcode is a fixed share of the processor at any frame rate
+ * and E03-S03 comes first. The answer is read from `[audio][rate]`, which sets the
+ * cumulative cost against the samples handed to the audio interface and against
+ * the display lists drawn, every five seconds of wall clock. */
+static std::atomic<unsigned long long> g_audio_samples_queued{0};
+static std::atomic<unsigned> g_audio_frequency{0};
+extern "C" unsigned long long dkr_display_lists_drawn(void);
+
+static void CountAndQueueAudio(std::int16_t* samples, std::size_t sample_count) {
+    g_audio_samples_queued.fetch_add(sample_count, std::memory_order_relaxed);
+    dkr::runtime::platform::queue_audio(samples, sample_count);
+}
+
+static void RecordAndSetAudioFrequency(std::uint32_t frequency) {
+    g_audio_frequency.store(frequency, std::memory_order_relaxed);
+    dkr::runtime::platform::set_audio_frequency(frequency);
+}
+
 namespace {
 
 #ifdef _WIN32
@@ -227,6 +247,20 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
             }
             calls++;
             total_us += dt;
+            {
+                static unsigned long long last_rate_us = 0;
+                const unsigned long long now = dkr_clock_now_us();
+                if (calls == 1ull || now - last_rate_us >= 5000000ull) {
+                    last_rate_us = now;
+                    std::fprintf(stderr,
+                                 "[audio][rate] wall=%llu us calls=%llu cost=%llu us "
+                                 "samples=%llu freq=%u dls=%llu\n",
+                                 now, calls, total_us,
+                                 (unsigned long long)g_audio_samples_queued.load(),
+                                 g_audio_frequency.load(),
+                                 dkr_display_lists_drawn());
+                }
+            }
             /* A line at the **first** event, then sparsely. The first version
                reported every fiftieth call and produced nothing at all, which
                reads identically to an audio path that is never reached - the
@@ -1070,9 +1104,9 @@ int DkrMain(int argc, char** argv) {
         .create_render_context = dkr::runtime::SelectRenderContext};
 #endif
     const ultramodern::audio_callbacks_t audio_callbacks{
-        .queue_samples = dkr::runtime::platform::queue_audio,
+        .queue_samples = CountAndQueueAudio,
         .get_frames_remaining = dkr::runtime::platform::audio_frames_remaining,
-        .set_frequency = dkr::runtime::platform::set_audio_frequency,
+        .set_frequency = RecordAndSetAudioFrequency,
 #if DKR_RUNTIME_HAS_NETPLAY
         .external_work_allowed = []() {
             return dkr::runtime::netplay::external_side_effects_allowed();
