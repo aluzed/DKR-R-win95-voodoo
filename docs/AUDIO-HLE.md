@@ -87,21 +87,28 @@ Only in cases DKR's command lists do not contain:
 
 ## Cost
 
-On the test machine, exclusive mode, 100.8 s, 1,629 tasks:
+On the test machine, exclusive mode:
 
-|  | microcode | mixer |
-|---|---:|---:|
-| per task | 26.7 ms | **12.4 ms** |
-| processor per second of sound | 695 ms | **323 ms** |
-| share for real-time sound | 70% | **32%** |
+|  | microcode | mixer, first version | mixer, 32-bit |
+|---|---:|---:|---:|
+| per task | 26.7 ms | 12.4 ms | **8.4 ms** |
+| processor per second of sound | 695 ms | 323 ms | **219 ms** |
+| share for real-time sound | 70% | 32% | **22%** |
 
-The frame in normal mode, with `DKR_RDRAM_SNAPSHOT=none` and `DKR_GFX_NO_STATS=1`,
-goes from 52.7 ms (19.0 fps) to **45.1 ms (22.1 fps)**.
+The "32-bit" version rewrites every product so that it fits in 32 bits. MIXER
+becomes `(out*0x7FFF + in*gain + 0x4000) >> 15`, VMULF becomes
+`(a*b + 0x4000) >> 15`, and the ADPCM and POLEF sums wrap in unsigned 32-bit
+arithmetic before `>> 11` and `>> 14`. A 64-bit multiply is several instructions
+on i686. The version also reads aligned halfwords in one load and copies DMA by
+whole words. None of this changes a bit of output: abi_difftest and replay_hle
+still match everywhere. On the host, where 64-bit multiplies are free, it makes
+no difference at all. On the target it is a third off.
+
+The frame in normal mode, with `DKR_RDRAM_SNAPSHOT=none` and `DKR_GFX_NO_STATS=1`:
+52.7 ms with the microcode, then 45.1 ms, then **44.0 ms (22.7 fps)**.
 
 On the target, the mixer's output matches the host's microcode oracle bit for bit
 on a captured task: 11,006 bytes written, 0 mismatched.
 
-The mixer is 4.2 times faster than the scalar microcode on the host but only
-2.15 times faster on the Pentium II. It still uses 64-bit multiplies, which cost
-several instructions on i686, and reads memory a byte at a time. That is the next
-work.
+`DKR_TRACE_AUDIO_ZONES=1` reports the mixer's cost per command on the cycle
+counter (`[audio][zones]`).

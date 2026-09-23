@@ -43,10 +43,26 @@ static u8 *g_dmem;
 
 static u8  dmem_u8(u32 a)            { return g_dmem[(a & 0xFFFu) ^ 3u]; }
 static void dmem_set_u8(u32 a, u8 v) { g_dmem[(a & 0xFFFu) ^ 3u] = v; }
-static s16 dmem_s16(u32 a)           { return (s16)((dmem_u8(a) << 8) | dmem_u8(a + 1u)); }
+/* An aligned halfword is one native u16 at a ^ 2 -- a single load instead of two
+   byte loads, which matters in the sample loops. memcpy keeps it free of
+   aliasing questions and compiles to the same load. */
+static s16 dmem_s16(u32 a)
+{
+    if ((a & 1u) == 0) {
+        u16 v;
+        memcpy(&v, g_dmem + ((a & 0xFFFu) ^ 2u), sizeof(v));
+        return (s16)v;
+    }
+    return (s16)((dmem_u8(a) << 8) | dmem_u8(a + 1u));
+}
 static u16 dmem_u16(u32 a)           { return (u16)dmem_s16(a); }
 static void dmem_set_s16(u32 a, s32 v)
 {
+    if ((a & 1u) == 0) {
+        const u16 h = (u16)v;
+        memcpy(g_dmem + ((a & 0xFFFu) ^ 2u), &h, sizeof(h));
+        return;
+    }
     dmem_set_u8(a, (u8)((u32)v >> 8));
     dmem_set_u8(a + 1u, (u8)v);
 }
@@ -69,7 +85,9 @@ static s32 clamp16(s32 v)
 /* VMULF: a 1.15 product, rounded and saturated. */
 static s32 mulf(s32 a, s32 b)
 {
-    return clamp16((s32)(((long long)a * b * 2 + 0x8000) >> 16));
+    /* (a*b*2 + 0x8000) >> 16 is (a*b + 0x4000) >> 15, and a*b fits in 32 bits:
+       a 64-bit multiply is several instructions on i686. */
+    return clamp16((a * b + 0x4000) >> 15);
 }
 
 /* A 24-bit address through the segment table, as every command that names
@@ -88,18 +106,30 @@ static u32 resolve(u32 w1)
  * interchangeable with the recompiled microcode.) */
 static void dma_read(u32 dmem_addr, u32 dram_addr, u32 length)
 {
-    u32 i;
+    u32 i = 0;
     dram_addr &= 0xFFFFF8u;
-    for (i = 0; i < length; i++) {
+    /* Both memories hold one native word per big-endian word, so whole aligned
+       words copy as they are. */
+    if ((dmem_addr & 3u) == 0 && (dmem_addr & 0xFFFu) + length <= 0x1000u) {
+        const u32 words = length & ~3u;
+        memcpy(g_dmem + (dmem_addr & 0xFFFu), g_rdram + dram_addr, words);
+        i = words;
+    }
+    for (; i < length; i++) {
         dmem_set_u8(dmem_addr + i, rdram_u8(dram_addr + i));
     }
 }
 
 static void dma_write(u32 dmem_addr, u32 dram_addr, u32 length)
 {
-    u32 i;
+    u32 i = 0;
     dram_addr &= 0xFFFFF8u;
-    for (i = 0; i < length; i++) {
+    if ((dmem_addr & 3u) == 0 && (dmem_addr & 0xFFFu) + length <= 0x1000u) {
+        const u32 words = length & ~3u;
+        memcpy(g_rdram + dram_addr, g_dmem + (dmem_addr & 0xFFFu), words);
+        i = words;
+    }
+    for (; i < length; i++) {
         rdram_set_u8(dram_addr + i, dmem_u8(dmem_addr + i));
     }
 }
@@ -233,9 +263,10 @@ static void cmd_mixer(u32 w0, u32 w1)
     const u32 out = DMEM_BUFFERS + (w1 & 0xFFFFu);
     u32 i;
     for (i = 0; i < ((count + 31u) & ~31u); i += 2u) {
-        const long long acc = (long long)dmem_s16(out + i) * k * 2 + 0x8000 +
-                              (long long)dmem_s16(in + i) * gain * 2;
-        dmem_set_s16(out + i, clamp16((s32)(acc >> 16)));
+        /* out*k + in*gain stays inside 32 bits for any 16-bit operands with
+           |k| <= 0x7FFF, which is what the microcode's data holds. */
+        const s32 acc = dmem_s16(out + i) * k + dmem_s16(in + i) * gain;
+        dmem_set_s16(out + i, clamp16((acc + 0x4000) >> 15));
     }
 }
 
@@ -282,7 +313,6 @@ static void cmd_adpcm(u32 w0, u32 w1)
 {
     const u32 flags = (w0 >> 16) & 0xFFu;
     const u32 address = resolve(w1);
-    const s32 k_scale = dmem_s16(0x08u);   /* v31[4], 32 */
     const s32 k_input = dmem_s16(0x0Au);   /* v31[5], 2048 */
     u32 in = state_u16(ST_IN);
     u32 out = state_u16(ST_OUT);
@@ -316,18 +346,15 @@ static void cmd_adpcm(u32 w0, u32 w1)
                 residual[j] = v;
             }
             for (j = 0; j < 8; j++) {
-                long long sum = (long long)frame.book0[j] * l2 +
-                                (long long)frame.book1[j] * l1 +
-                                (long long)residual[j] * k_input;
+                /* The accumulator's top 32 bits wrap, so the sum is taken in
+                   unsigned 32-bit arithmetic; S * 32 >> 16 is then S >> 11. */
+                u32 sum = (u32)(frame.book0[j] * l2) + (u32)(frame.book1[j] * l1) +
+                          (u32)(residual[j] * k_input);
                 s32 k;
                 for (k = 0; k < j; k++) {
-                    sum += (long long)frame.book1[j - 1 - k] * residual[k];
+                    sum += (u32)(frame.book1[j - 1 - k] * residual[k]);
                 }
-                {
-                    const s32 wrapped = (s32)(u32)(unsigned long long)sum;
-                    samples[half * 8 + j] =
-                        (s16)clamp16((s32)(((long long)wrapped * k_scale) >> 16));
-                }
+                samples[half * 8 + j] = (s16)clamp16((s32)sum >> 11);
             }
             l2 = samples[half * 8 + 6];
             l1 = samples[half * 8 + 7];
@@ -366,8 +393,7 @@ typedef struct {
 
 static s32 mix_sample(s32 out, s32 in, s32 gain)
 {
-    return clamp16((s32)(((long long)out * 0x7FFF * 2 + 0x8000 +
-                          (long long)in * gain * 2) >> 16));
+    return clamp16((out * 0x7FFF + in * gain + 0x4000) >> 15);
 }
 
 static void ramp_start(ramp *r, s32 volume, u32 rate_hi, u32 rate_lo)
@@ -615,7 +641,6 @@ static void cmd_polef(u32 w0, u32 w1)
     const u32 flags = (w0 >> 16) & 0xFFu;
     const s32 gain = (s16)(w0 & 0xFFFFu);
     const u32 gain4 = (w0 << 2) & 0xFFFFu;
-    const s32 k_scale = 4;
     s32 count = (s32)state_u16(ST_COUNT);
     u32 in = state_u16(ST_IN);
     u32 out = state_u16(ST_OUT);
@@ -642,14 +667,10 @@ static void cmd_polef(u32 w0, u32 w1)
         s16 result[8];
         s32 j;
         for (j = 0; j < 8; j++) {
-            long long sum = (long long)book0[j] * l2 + (long long)book1[j] * l1 +
-                            (long long)input[j] * gain;
+            u32 sum = (u32)(book0[j] * l2) + (u32)(book1[j] * l1) + (u32)(input[j] * gain);
             s32 k;
-            for (k = 0; k < j; k++) { sum += (long long)book1s[j - 1 - k] * input[k]; }
-            {
-                const s32 wrapped = (s32)(u32)(unsigned long long)sum;
-                result[j] = (s16)clamp16((s32)(((long long)wrapped * k_scale) >> 16));
-            }
+            for (k = 0; k < j; k++) { sum += (u32)(book1s[j - 1 - k] * input[k]); }
+            result[j] = (s16)clamp16((s32)sum >> 14);   /* S * 4 >> 16 */
         }
         in += 16u;
         for (i = 0; i < 8u; i++) { input[i] = dmem_s16(in + i * 2u); }
@@ -674,6 +695,10 @@ static const command_fn kCommands[16] = {
     cmd_mixer,    cmd_interleave, cmd_polef,    cmd_setloop
 };
 
+unsigned long long (*dkr_aspmain_hle_clock)(void) = 0;
+unsigned long long dkr_aspmain_hle_ticks[16];
+unsigned long dkr_aspmain_hle_calls[16];
+
 unsigned long dkr_aspmain_hle(unsigned char *rdram, unsigned char *dmem)
 {
     u32 list, size, i;
@@ -690,7 +715,14 @@ unsigned long dkr_aspmain_hle(unsigned char *rdram, unsigned char *dmem)
                        ((u32)rdram_u8(list + i + 2u) << 8) | rdram_u8(list + i + 3u);
         const u32 w1 = ((u32)rdram_u8(list + i + 4u) << 24) | ((u32)rdram_u8(list + i + 5u) << 16) |
                        ((u32)rdram_u8(list + i + 6u) << 8) | rdram_u8(list + i + 7u);
-        kCommands[(w0 >> 24) & 0xFu](w0, w1);
+        if (dkr_aspmain_hle_clock) {
+            const unsigned long long t0 = dkr_aspmain_hle_clock();
+            kCommands[(w0 >> 24) & 0xFu](w0, w1);
+            dkr_aspmain_hle_ticks[(w0 >> 24) & 0xFu] += dkr_aspmain_hle_clock() - t0;
+            dkr_aspmain_hle_calls[(w0 >> 24) & 0xFu]++;
+        } else {
+            kCommands[(w0 >> 24) & 0xFu](w0, w1);
+        }
     }
     return size / 8u;
 }

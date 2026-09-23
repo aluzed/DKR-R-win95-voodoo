@@ -29,6 +29,13 @@ extern "C" {
 /* Runs the task at DMEM 0xFC0. Returns the number of commands executed. */
 unsigned long dkr_aspmain_hle(unsigned char *rdram, unsigned char *dmem);
 
+/* Where the mixer's time goes, per command (E08-S01's instrument). With a clock
+ * installed, each command's ticks and count accumulate here, indexed by opcode.
+ * Null -- the default -- costs one branch per command. */
+extern unsigned long long (*dkr_aspmain_hle_clock)(void);
+extern unsigned long long dkr_aspmain_hle_ticks[16];
+extern unsigned long dkr_aspmain_hle_calls[16];
+
 #ifdef __cplusplus
 }
 #endif

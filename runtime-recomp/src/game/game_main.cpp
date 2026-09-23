@@ -304,11 +304,35 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
                                  use_microcode ? "recompiled microcode (DKR_AUDIO_MICROCODE)"
                                                : "high-level mixer (platform/audio/aspmain_hle.c)");
                 }
+                // DKR_TRACE_AUDIO_ZONES: the mixer's cost per command, on the
+                // cycle counter (platform/win95/clock.h), reported every 200
+                // tasks as total microseconds / calls.
+                static const bool audio_zones =
+                    std::getenv("DKR_TRACE_AUDIO_ZONES") != nullptr && dkr_cycles_init();
+                if (audio_zones && dkr_aspmain_hle_clock == nullptr) {
+                    dkr_aspmain_hle_clock = +[]() -> unsigned long long { return dkr_cycles_now(); };
+                }
                 if (use_microcode) {
                     r = dkrAspMain(rdram, ucode_address);
                 } else {
                     (void)dkr_aspmain_hle(rdram, dmem);
                     r = RspExitReason::Broke;
+                }
+                if (audio_zones && (calls % 200ull) == 199ull) {
+                    static const char* const kNames[16] = {
+                        "spnoop", "adpcm", "clearbuff", "envmixer", "loadbuff", "resample",
+                        "savebuff", "segment", "setbuff", "setvol", "dmemmove", "loadadpcm",
+                        "mixer", "interleave", "polef", "setloop"};
+                    const unsigned long long hz = dkr_cycles_hz();
+                    std::fprintf(stderr, "[audio][zones] tasks=%llu", calls + 1);
+                    for (int c = 0; c < 16; c++) {
+                        if (dkr_aspmain_hle_calls[c] != 0) {
+                            std::fprintf(stderr, " %s=%llu/%lu", kNames[c],
+                                         dkr_aspmain_hle_ticks[c] * 1000ull / (hz / 1000ull),
+                                         dkr_aspmain_hle_calls[c]);
+                        }
+                    }
+                    std::fprintf(stderr, " us\n");
                 }
 #else
                 r = dkrAspMain(rdram, ucode_address);
