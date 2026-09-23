@@ -45,6 +45,9 @@ say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
     printf '@ECHO OFF\r\n'
     printf 'SET DKR_TRACE_CPU=1\r\n'
     [[ "$renderer" == "null" ]] && printf 'SET DKR_RENDERER=null\r\n'
+    # Extra variables for the game, space-separated NAME=VALUE pairs:
+    #   DKR_MEASURE_SET="DKR_TRACE_EXCLUSIVE=1" scripts/Measure-Guest-Time-VM.sh ...
+    for pair in ${DKR_MEASURE_SET:-}; do printf 'SET %s\r\n' "$pair"; done
     printf 'D:\\DKRR.EXE D:\\DKR.Z64\r\n'
 } > "$work/MEASURE.BAT"
 

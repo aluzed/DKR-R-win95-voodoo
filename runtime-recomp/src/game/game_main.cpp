@@ -1,4 +1,5 @@
 #include "diagnostic_log.hpp"
+#include "exclusive_section.hpp"
 #if defined(DKR_TARGET_WIN95)
 extern "C" {
 #include "window.h"
@@ -214,11 +215,16 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
         // So the cost is measured rather than argued about.
         return +[](std::uint8_t* rdram, std::uint32_t ucode_address) {
             static unsigned long long calls = 0, total_us = 0;
-            const unsigned long long t0 = dkr_clock_now_us();
-            g_audio_busy.store(1, std::memory_order_relaxed);
-            const RspExitReason r = dkrAspMain(rdram, ucode_address);
-            g_audio_busy.store(0, std::memory_order_relaxed);
-            const unsigned long long dt = dkr_clock_now_us() - t0;
+            unsigned long long dt = 0;
+            RspExitReason r;
+            {
+                const dkr::runtime::ExclusiveSection exclusive;
+                const unsigned long long t0 = dkr_clock_now_us();
+                g_audio_busy.store(1, std::memory_order_relaxed);
+                r = dkrAspMain(rdram, ucode_address);
+                g_audio_busy.store(0, std::memory_order_relaxed);
+                dt = dkr_clock_now_us() - t0;
+            }
             calls++;
             total_us += dt;
             /* A line at the **first** event, then sparsely. The first version

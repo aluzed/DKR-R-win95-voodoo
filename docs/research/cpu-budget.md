@@ -2096,3 +2096,69 @@ So, with what this instrument can and cannot say:
   knows which thread holds the CPU. On Windows 95 that means a sampler, because
   `GetThreadTimes` is not implemented there. Until one exists, no row of the table
   should be read as the CPU time of its item.
+
+### The budget in processor time: the audio microcode is a quarter of the machine
+
+The previous section ended on a limit: every row of the table is a wall interval
+on one processor, and Windows 95 does not implement `GetThreadTimes`, so nothing
+could say how much processor any item actually used. There is a way around it
+that needs no new API. **A thread at `THREAD_PRIORITY_TIME_CRITICAL` cannot be
+preempted by any other thread of the process**, so its wall interval is its
+processor time, give or take hardware interrupts.
+
+`runtime-recomp/src/game/exclusive_section.hpp` does exactly that under
+`DKR_TRACE_EXCLUSIVE`, around the three host sections that have a timer already:
+the audio microcode, `send_dl`, and `update_screen`. The measurement script passes
+the variable through with
+`DKR_MEASURE_SET="DKR_TRACE_EXCLUSIVE=1" scripts/Measure-Guest-Time-VM.sh`.
+
+The frame did not move, 123.4 ms against 123.4 ms, which is what you expect from a
+processor that was already full: raising priorities reorders the work but does not
+remove any. The two timed sections lost a third of their wall each:
+
+                              shared      exclusive
+    audio microcode, a task   30.9 ms      20.9 ms
+    send_dl, a display list   39.7 ms      29.7 ms
+
+20.9 ms is the figure `rsp-audio-cost-measured.md` found by a different route, so
+the method agrees with the one earlier measurement taken when little else competed.
+The ten milliseconds that disappear from each were other threads' time, counted as
+their own.
+
+One run, 85 s, as shares of the wall and per 123.4 ms frame:
+
+                                              share   per frame
+    audio microcode           exclusive       24.4%     30.1 ms
+    send_dl                   exclusive       22.9%     28.2 ms
+    update_screen             exclusive        3.3%      4.1 ms
+    graphics thread, rest     upper bound     12.2%     15.1 ms
+    scheduler, id 5           upper bound     29.8%     36.7 ms   snapshot inside
+    game thread, id 3         upper bound      9.0%     11.1 ms
+    audio manager, id 4       upper bound      2.2%      2.7 ms
+    idle thread executing     upper bound      4.2%      5.1 ms
+    ---------------------------------------------------------
+                                             108.0%
+
+The exclusive rows are processor time. The others are still wall intervals, and a
+section at time-critical priority preempts them just as the audio preempted the
+renderer before. That is where the extra 8% sits, so each of them is an upper
+bound. The table closes to within that 8%, with the idle thread's parked sleep
+taken out. That means the processor is **never idle**: there is no waiting left in
+the frame to remove, only work.
+
+Three things change:
+
+- **The audio microcode is the largest single item, 30.1 ms a frame**, and it has
+  had no row in this table until now. If its cost follows the audio played and not
+  the frames drawn, and 1.52 tasks a frame at 8 fps suggests so, then it is a fixed
+  quarter of the processor at any frame rate: 8.1 ms of a 33.3 ms frame at the
+  target, before anything else runs. E03-S03 replaces it.
+- **The recompiled game is at most 11.1 ms, not 15.3.** Its old figure carried the
+  audio's and the renderer's preemption.
+- **The renderer is 32.3 ms of processor** (`send_dl` plus `update_screen`), not
+  the 39.7 ms its own line reports in a normal run.
+
+In this mode the silence attribution from patch 0050 comes back as `neither` for
+the whole silence. That is expected. A section that cannot be preempted runs
+entirely inside a silence, and a start/end sample never sees it. Read `idle-by`
+from normal runs only.

@@ -1,4 +1,5 @@
 #include "glide_renderer.hpp"
+#include "exclusive_section.hpp"
 
 #include "game_registration.hpp"
 #include "diagnostic_log.hpp"
@@ -633,6 +634,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
        has no `DkrMain` -- still gets a time base. `dkr_clock_init` returns 1
        immediately when a source is already chosen. */
     static const bool clock_ready = dkr_clock_init() != 0;
+    // Under DKR_TRACE_EXCLUSIVE, the display list runs at time-critical
+    // priority so that `render=` is processor time; see exclusive_section.hpp.
+    const ExclusiveSection exclusive;
     const unsigned long long t_entry = clock_ready ? dkr_clock_now_us() : 0ULL;
     g_renderer_busy.store(1, std::memory_order_relaxed);
     if (clock_ready && last_task_us_ != 0ULL) {
@@ -1645,6 +1649,7 @@ void dkr::runtime::GlideRenderer::update_screen() {
         BusyWhileHere() { g_renderer_busy.store(1, std::memory_order_relaxed); }
         ~BusyWhileHere() { g_renderer_busy.store(0, std::memory_order_relaxed); }
     } busy_while_here;
+    const ExclusiveSection exclusive;
 
     const auto index = ++present_count_;
     if (index == 1) {
