@@ -43,7 +43,9 @@ say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 # of its own.
 {
     printf '@ECHO OFF\r\n'
-    printf 'SET DKR_TRACE_CPU=1\r\n'
+    # DKR_MEASURE_NO_TRACE=1 leaves the trace off, to measure what it costs: the
+    # renderer's `[gfx] frame:` line is printed either way.
+    [[ -z "${DKR_MEASURE_NO_TRACE:-}" ]] && printf 'SET DKR_TRACE_CPU=1\r\n'
     [[ "$renderer" == "null" ]] && printf 'SET DKR_RENDERER=null\r\n'
     # Extra variables for the game, space-separated NAME=VALUE pairs:
     #   DKR_MEASURE_SET="DKR_TRACE_EXCLUSIVE=1" scripts/Measure-Guest-Time-VM.sh ...
@@ -124,6 +126,11 @@ sleep 10
 
 "$prefix/bin/mcopy" -i "$image" "::/dkr-runtime-data/logs/runtime.log" "$work/runtime.log" \
     >/dev/null 2>&1 || { echo "no runtime log: the run produced nothing" >&2; exit 1; }
+
+if [[ -n "${DKR_MEASURE_NO_TRACE:-}" ]]; then
+    grep -a '\[gfx\]   frame:' "$work/runtime.log" | tail -n 3
+    exit 0
+fi
 
 python3 - "$work/runtime.log" "$renderer" <<'PYTHON'
 import re

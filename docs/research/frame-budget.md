@@ -65,10 +65,55 @@ section runs. The processor then belongs to host threads that no one times: the 
 thread, the SP task thread outside the microcode, the window's message loop, the
 Glide driver. It may also be genuinely idle. The instrument cannot tell which.
 
+## Inside the display list
+
+`DKR_TRACE_RENDER_ZONES` puts a timed proxy in front of every entry of the
+`dkr_render_backend` table and times `dkr_f3d_run` and the texture conversion
+inside it. The decoder's own time is the run minus what it spent in the backend.
+One run, exclusive mode, 660 display lists:
+
+| Zone | Per list, raw | Per list, corrected | Calls a list |
+|---|---:|---:|---:|
+| Decoder: commands, matrices, vertices, clipping, triangle setup | 30.7 ms | 26.7 ms | |
+| `draw_triangles` (Glide) | 5.1 ms | 2.0 ms | 540 |
+| `texture_lookup` | 1.1 ms | 0.7 ms | 74 |
+| `set_state` | 0.8 ms | 0.4 ms | 78 |
+| Texture conversion and upload | 0.13 ms | 0.13 ms | 1.3 |
+| Everything else in the backend | 0.05 ms | 0.03 ms | |
+
+**The instrument is not free at this grain.** With the zones on, a display list
+costs 38.4 ms against 30.3 ms without them. That comes to about 700 timers a list,
+and **5.8 µs for each read of the clock**, which is the 8254 read through I/O
+ports. The corrected column charges one read to each zone per call. That makes the
+total fall back on 30 ms by construction, so it is an estimate and not a check.
+What does not depend on the correction is the bound. Even if every microsecond of
+overhead is charged to the decoder, **the decoder is at least 22.6 ms of a 30.3 ms
+list, three quarters of it.** Glide, textures and state changes together are 2 to
+7 ms.
+
+So the renderer's cost is the software front end, not the Voodoo 2 and not the
+texture path. The texture cache hits: 1.3 conversions a list. That is E08-S03's
+work. Splitting the decoder further, into vertex transform, clipping and triangle
+setup, needs a cheaper clock than 5.8 µs a read. E08-S01's own first work item
+already names one: `RDTSC`, a few cycles a read.
+
+## What the instrumentation costs
+
+`DKR_TRACE_CPU` and everything built on it (patches 0041 to 0051), measured by the
+renderer's `[gfx] frame:` line, which is printed with or without the trace. Four
+150 s runs on the same binary, alternating:
+
+    trace off   120.1 ms   121.7 ms   mean 120.9 ms
+    trace on    118.4 ms   122.3 ms   mean 120.4 ms
+
+The difference is below the run-to-run spread of about ±1.6 ms. The coarse trace
+costs nothing measurable. The fine one does, as above: 5.8 µs a clock read, so
+nothing called hundreds of times a frame should be timed with that clock.
+
 ## The three most expensive items, and where they go
 
-1. **The graphics thread, 34.2 ms.** It goes to E08-S03 (the vertex path) and E05
-   (the Glide backend). The display list alone is 30.3 ms of processor. This is the
+1. **The graphics thread, 34.2 ms.** It goes to E08-S03 (the vertex path). The
+   Glide backend, E05, is only 2 to 7 ms of it. The display list alone is 30.3 ms of processor. This is the
    renderer's real cost, and not the 39.7 ms its own log line reports in a normal
    run.
 2. **The RDRAM snapshot, 30.5 ms.** It goes to E08-S04, whose first work item is
@@ -85,11 +130,10 @@ proposed allocation. E08-S02 should wait for the three items above.
 
 ## What is still missing from E08-S01
 
-- The instrumentation's own cost has not been measured. Every line above costs two
-  clock reads per switch and per section, and exclusive mode changes the schedule by
-  design.
+- The instrumentation's cost is measured (above), but only for the coarse trace
+  and the render zones. Exclusive mode changes the schedule by design, and it is
+  meant for reading costs, not frames.
 - Medians and 99th percentiles per item: the figures above are means.
 - The on-screen display, and the export for offline analysis.
-- Within the graphics thread, the rows E08-S01 lists separately: display-list
-  decoding, vertex transformation, clipping, texture decoding and download, and
-  the Glide calls.
+- Within the decoder: vertex transformation, clipping and triangle setup, which
+  need an `RDTSC` clock to be timed at that grain.

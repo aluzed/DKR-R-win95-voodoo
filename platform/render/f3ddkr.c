@@ -99,6 +99,10 @@
  * property we would have lost by simply replacing the rejection with a `break`,
  * and it is worth keeping — it is what allowed us to see that the memory layout
  * was right, since *no* address rejection appeared. */
+unsigned long long (*dkr_f3d_zone_clock)(void) = 0;
+unsigned long long dkr_f3d_convert_us = 0;
+unsigned long long dkr_f3d_convert_n = 0;
+
 static int opcode_effect_deferred(unsigned int opcode)
 {
     return (opcode >= 0xB0u && opcode <= 0xBFu) ||
@@ -2156,12 +2160,20 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         }
         if (c->no_odd_row_swap) { swap = 0; }
         if (swap != 0) { c->state.odd_row_swapped++; }
-        if (!dkr_texture_convert_swapped(c->rdram, c->rdram_size,
-                                         c->rdram_native, c->timg_address,
-                                         tex_format, tex_size,
-                                         width, height, src_row, swap,
-                                         c->texels,
-                                         &c->state.textures)) {
+        const unsigned long long convert_t0 =
+            dkr_f3d_zone_clock ? dkr_f3d_zone_clock() : 0ULL;
+        const int converted =
+            dkr_texture_convert_swapped(c->rdram, c->rdram_size,
+                                        c->rdram_native, c->timg_address,
+                                        tex_format, tex_size,
+                                        width, height, src_row, swap,
+                                        c->texels,
+                                        &c->state.textures);
+        if (dkr_f3d_zone_clock) {
+            dkr_f3d_convert_us += dkr_f3d_zone_clock() - convert_t0;
+            dkr_f3d_convert_n++;
+        }
+        if (!converted) {
             /* Refused: we **unbind** rather than draw with the previous one. A
                stale texture on a surface is more confusing than a surface with
                no texture, because it passes for rendering. */

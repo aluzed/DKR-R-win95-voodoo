@@ -867,6 +867,14 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
  * anything coming from the display list without bounding it first. */
 unsigned long dkr_f3d_run(dkr_f3d_context *ctx, unsigned int address);
 
+/* **Where the renderer's time goes, E08-S01.** A clock the caller may install to
+ * time texture conversion, the one piece of the decoder's work that is neither
+ * the command loop nor a backend call. Null -- the default, and what every
+ * witness and test leaves it -- costs one branch per conversion. */
+extern unsigned long long (*dkr_f3d_zone_clock)(void);
+extern unsigned long long dkr_f3d_convert_us;
+extern unsigned long long dkr_f3d_convert_n;
+
 #ifdef __cplusplus
 }
 #endif

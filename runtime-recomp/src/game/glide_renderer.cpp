@@ -58,6 +58,100 @@ static std::atomic<unsigned long long> g_display_lists_drawn{0};
 extern "C" unsigned long long dkr_display_lists_drawn(void) {
     return g_display_lists_drawn.load(std::memory_order_relaxed);
 }
+
+#if defined(DKR_TARGET_WIN95)
+/* --- Where the renderer's time goes: zones, E08-S01 ---------------------------
+ *
+ * The renderer is the largest row of `frame-budget.md` and was one number. It
+ * has a clean seam: the decoder calls the Glide backend only through the
+ * `dkr_render_backend` table. Under DKR_TRACE_RENDER_ZONES the table is replaced
+ * by a proxy that times each entry and forwards to the real one, and the
+ * decoder's own time is `dkr_f3d_run` minus what it spent in the backend. Texture
+ * conversion, the one piece of decoder work worth its own row, is timed inside
+ * f3ddkr.c through `dkr_f3d_zone_clock`.
+ *
+ * Read under DKR_TRACE_EXCLUSIVE, so that the zones are processor time. */
+enum RenderZone {
+    kZoneSetState, kZoneScissor, kZoneDraw, kZoneFill, kZoneUpload,
+    kZoneRelease, kZoneLookup, kZoneBegin, kZonePresent, kZoneInvalidate,
+    kZoneCount
+};
+static const char* const kZoneNames[kZoneCount] = {
+    "state", "scissor", "draw", "fill", "upload",
+    "release", "lookup", "begin", "present", "invalidate"};
+static const bool g_render_zones_on =
+    std::getenv("DKR_TRACE_RENDER_ZONES") != nullptr;
+static dkr_render_backend g_zone_inner{};
+static unsigned long long g_zone_us[kZoneCount];
+static unsigned long long g_zone_n[kZoneCount];
+static unsigned long long g_zone_run_us = 0;
+static unsigned long long g_zone_run_backend_us = 0;
+static int g_zone_in_run = 0;
+
+struct ZoneTimer {
+    explicit ZoneTimer(RenderZone z) : zone(z), t0(dkr_clock_now_us()) {}
+    ~ZoneTimer() {
+        const unsigned long long d = dkr_clock_now_us() - t0;
+        g_zone_us[zone] += d;
+        g_zone_n[zone]++;
+        if (g_zone_in_run) { g_zone_run_backend_us += d; }
+    }
+    RenderZone zone;
+    unsigned long long t0;
+};
+
+static void zone_begin_frame(void*, unsigned argb) {
+    ZoneTimer t(kZoneBegin); g_zone_inner.begin_frame(g_zone_inner.self, argb);
+}
+static void zone_present(void*) {
+    ZoneTimer t(kZonePresent); g_zone_inner.present(g_zone_inner.self);
+}
+static void zone_set_state(void*, const dkr_render_state* st) {
+    ZoneTimer t(kZoneSetState); g_zone_inner.set_state(g_zone_inner.self, st);
+}
+static void zone_set_scissor(void*, int x0, int y0, int x1, int y1) {
+    ZoneTimer t(kZoneScissor);
+    g_zone_inner.set_scissor(g_zone_inner.self, x0, y0, x1, y1);
+}
+static void zone_invalidate(void*) {
+    ZoneTimer t(kZoneInvalidate); g_zone_inner.invalidate(g_zone_inner.self);
+}
+static void zone_draw_triangles(void*, const dkr_render_vertex* v, int n) {
+    ZoneTimer t(kZoneDraw); g_zone_inner.draw_triangles(g_zone_inner.self, v, n);
+}
+static void zone_fill_rect(void*, int x0, int y0, int x1, int y1, unsigned argb) {
+    ZoneTimer t(kZoneFill);
+    g_zone_inner.fill_rect(g_zone_inner.self, x0, y0, x1, y1, argb);
+}
+static dkr_texture_handle zone_texture_upload(void*, const dkr_texture_desc* d) {
+    ZoneTimer t(kZoneUpload);
+    return g_zone_inner.texture_upload(g_zone_inner.self, d);
+}
+static void zone_texture_release(void*, dkr_texture_handle h) {
+    ZoneTimer t(kZoneRelease); g_zone_inner.texture_release(g_zone_inner.self, h);
+}
+static dkr_texture_handle zone_texture_lookup(void*, unsigned long long key, int tmu) {
+    ZoneTimer t(kZoneLookup);
+    return g_zone_inner.texture_lookup(g_zone_inner.self, key, tmu);
+}
+
+/* Replaces each non-null entry with its timed twin. `open` and `close` are left
+   alone: they run once. */
+static void install_render_zones(dkr_render_backend* b) {
+    g_zone_inner = *b;
+    if (b->begin_frame)     { b->begin_frame = zone_begin_frame; }
+    if (b->present)         { b->present = zone_present; }
+    if (b->set_state)       { b->set_state = zone_set_state; }
+    if (b->set_scissor)     { b->set_scissor = zone_set_scissor; }
+    if (b->invalidate)      { b->invalidate = zone_invalidate; }
+    if (b->draw_triangles)  { b->draw_triangles = zone_draw_triangles; }
+    if (b->fill_rect)       { b->fill_rect = zone_fill_rect; }
+    if (b->texture_upload)  { b->texture_upload = zone_texture_upload; }
+    if (b->texture_release) { b->texture_release = zone_texture_release; }
+    if (b->texture_lookup)  { b->texture_lookup = zone_texture_lookup; }
+    dkr_f3d_zone_clock = dkr_clock_now_us;
+}
+#endif
 #include <iterator>
 #include <memory>
 
@@ -158,6 +252,10 @@ dkr::runtime::GlideRenderer::GlideRenderer() {
 
 #if defined(DKR_TARGET_WIN95)
     dkr_render_backend_glide(&backend_);
+    if (g_render_zones_on) {
+        install_render_zones(&backend_);
+        std::fprintf(stderr, "[boot][gfx] render zones on\n");
+    }
     if (backend_.open != nullptr && backend_.open(backend_.self, kWidth, kHeight) != 0) {
         opened_ = true;
         width_ = kWidth;
@@ -1001,6 +1099,15 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             }
         }
 
+#if defined(DKR_TARGET_WIN95)
+    if (g_render_zones_on) {
+        const unsigned long long run_t0 = dkr_clock_now_us();
+        g_zone_in_run = 1;
+        (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
+        g_zone_in_run = 0;
+        g_zone_run_us += dkr_clock_now_us() - run_t0;
+    } else
+#endif
     (void)dkr_f3d_run(&context_, task->t.data_ptr & 0x00FFFFFFu);
 
     // --- The canary -----------------------------------------------------------
@@ -1358,6 +1465,24 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                          static_cast<unsigned long>(render_us_worst_),
                          period_n_, period_dropped_);
         }
+#if defined(DKR_TARGET_WIN95)
+        if (g_render_zones_on) {
+            /* Totals, not means: the reader divides by `lists`, and the zones
+               add up to the renderer's own time only when read together. */
+            std::fprintf(stderr, "[gfx]   zones: lists=%lu run=%llu decoder=%llu "
+                                 "convert=%llu/%llu",
+                         render_n_, g_zone_run_us,
+                         g_zone_run_us - g_zone_run_backend_us - dkr_f3d_convert_us,
+                         dkr_f3d_convert_us, dkr_f3d_convert_n);
+            for (int z = 0; z < kZoneCount; z++) {
+                if (g_zone_n[z] != 0ULL) {
+                    std::fprintf(stderr, " %s=%llu/%llu", kZoneNames[z],
+                                 g_zone_us[z], g_zone_n[z]);
+                }
+            }
+            std::fprintf(stderr, " us\n");
+        }
+#endif
         std::fprintf(stderr,
                      "[gfx]   textures: uploaded=%lu reused=%lu resident=%lu "
                      "refused-tmu=%lu unknown-format=%lu outside-rdram=%lu\n",

@@ -2227,3 +2227,14 @@ other threads' work, and 2.5 s of its own.
 The table closes to 90.4% of the wall in processor time. The rest is host threads
 nobody times, while the idle thread sleeps. From here on the budget is kept in
 `frame-budget.md`, and this note keeps the reasoning behind it.
+
+### Inside the renderer, and what the instruments cost
+
+Both are recorded in `frame-budget.md`. In short:
+
+- The decoder is at least three quarters of a display list's 30.3 ms. The Glide
+  calls are 2 to 7 ms, and texture conversion is 0.13 ms, because the cache hits.
+- `DKR_TRACE_CPU` costs less than the spread between two runs.
+- A read of the 8254 clock costs about 5.8 µs. That is fine at a few thousand
+  reads a second and not at seven hundred per display list. The finer zones
+  E08-S03 will need call for `RDTSC`.
