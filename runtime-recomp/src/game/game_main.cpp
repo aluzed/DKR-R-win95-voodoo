@@ -81,6 +81,17 @@ extern "C" {
 
 extern RspUcodeFunc dkrAspMain;
 
+/* **Is the audio microcode running?** The same one bit the renderer answers with
+ * `dkr_renderer_busy`, for the same question: when no guest thread is running,
+ * what has the processor? The microcode runs on ultramodern's SP task thread,
+ * outside every guest thread, so on one processor its time can only show up as
+ * a silence. Read weakly by patch 0050 in ultramodern's threads.cpp. */
+static std::atomic<int> g_audio_busy{0};
+
+extern "C" int dkr_audio_busy(void) {
+    return g_audio_busy.load(std::memory_order_relaxed);
+}
+
 namespace {
 
 #ifdef _WIN32
@@ -204,7 +215,9 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
         return +[](std::uint8_t* rdram, std::uint32_t ucode_address) {
             static unsigned long long calls = 0, total_us = 0;
             const unsigned long long t0 = dkr_clock_now_us();
+            g_audio_busy.store(1, std::memory_order_relaxed);
             const RspExitReason r = dkrAspMain(rdram, ucode_address);
+            g_audio_busy.store(0, std::memory_order_relaxed);
             const unsigned long long dt = dkr_clock_now_us() - t0;
             calls++;
             total_us += dt;

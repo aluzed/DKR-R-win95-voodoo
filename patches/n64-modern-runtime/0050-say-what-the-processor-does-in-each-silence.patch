@@ -1,0 +1,81 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Say what the processor is doing in each silence
+
+Patch 0042 found no guest thread running for 48% of the wall, and could name
+only half of it: the renderer's bit, sampled when the silence starts, covered
+45% and the rest was "other". The audio microcode is the obvious suspect -- it
+runs on the SP task thread, outside every guest thread, so on one processor its
+time can only appear as a silence -- and nothing asked it.
+
+The game now exports `dkr_audio_busy` beside `dkr_renderer_busy`, and both are
+sampled at the start **and** the end of each silence, which is charged to the
+union. One run on the test machine, 75 s, a frame of 123.4 ms:
+
+  [trace][idle-by] neither=2241083 render=10459776 audio=11263068 both=12274423 us
+
+  the renderer only    10.46 s   28.9%
+  the audio only       11.26 s   31.1%
+  both in progress     12.27 s   33.9%
+  neither               2.24 s    6.2%
+
+94% of the silence has the renderer or the audio microcode in progress. The
+silence is not waiting; it is the processor, busy on host threads that are
+not guest threads.
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -269,6 +269,22 @@
+  * dependency and cannot depend back on the game's renderer. A build without one
+  * links, and charges every wait to the unattributed bucket. */
+ extern "C" int dkr_renderer_busy(void) __attribute__((weak));
++/* **And the audio microcode, patch 0050.** Half the silence is "other", and
++ * the audio microcode runs on the SP task thread, outside every guest thread:
++ * on one processor its time can only appear as a silence. The renderer's bit is
++ * sampled only when the silence starts; both bits are now sampled at its start
++ * **and** its end, and the interval charged to the union. A silence that begins
++ * in a display list and ends in an audio task is both, and a start-only sample
++ * would call it rendering. */
++extern "C" int dkr_audio_busy(void) __attribute__((weak));
++static std::atomic<int> g_idle_mask_at_start{0};
++static std::atomic<unsigned long long> g_idle_by_mask[4];
++static int host_activity_mask() {
++    int mask = 0;
++    if (dkr_renderer_busy != nullptr && dkr_renderer_busy() == 1) { mask |= 1; }
++    if (dkr_audio_busy != nullptr && dkr_audio_busy() == 1) { mask |= 2; }
++    return mask;
++}
+ 
+ static std::atomic<int> g_guest_running{0};
+ static std::atomic<unsigned long long> g_idle_since{0};
+@@ -387,6 +403,13 @@
+                 }
+             }
+             std::fprintf(stderr, " us\n");
++            std::fprintf(stderr,
++                         "[trace][idle-by] neither=%llu render=%llu audio=%llu "
++                         "both=%llu us\n",
++                         (unsigned long long)g_idle_by_mask[0].load(),
++                         (unsigned long long)g_idle_by_mask[1].load(),
++                         (unsigned long long)g_idle_by_mask[2].load(),
++                         (unsigned long long)g_idle_by_mask[3].load());
+             std::fprintf(stderr, "[trace][parked]");
+             for (int s = 0; s < DKR_GUEST_RUN_SLOTS; s++) {
+                 const unsigned long long us = g_parked_by_id[s].load();
+@@ -420,6 +443,7 @@
+                    is doing, because that is the answer this bucket carries. */
+                 g_idle_renderer_busy.store(
+                     (dkr_renderer_busy != nullptr) ? dkr_renderer_busy() : -1);
++                g_idle_mask_at_start.store(host_activity_mask());
+                 g_idle_since.store(now);
+             }
+         }
+@@ -440,6 +464,8 @@
+                         g_idle_us_other.fetch_add(d);
+                     }
+                     g_idle_n.fetch_add(1);
++                    g_idle_by_mask[(g_idle_mask_at_start.load() |
++                                    host_activity_mask()) & 3].fetch_add(d);
+                     unsigned long long worst = g_idle_worst.load();
+                     while (d > worst &&
+                            !g_idle_worst.compare_exchange_weak(worst, d)) {

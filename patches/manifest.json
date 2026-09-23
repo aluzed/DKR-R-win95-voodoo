@@ -201,6 +201,10 @@
         {
           "path": "patches/n64-modern-runtime/0049-time-the-idle-thread-s-parked-wait.patch",
           "sha256": "74dcdc7105effab595af8fa0b9f7a114c35b65766c622c0c504ef2682441d262"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0050-say-what-the-processor-does-in-each-silence.patch",
+          "sha256": "79f2d1fd12ba3e16991cdf07d79b00ccf30d14c5d8050c010cc9cae8eec5170a"
         }
       ]
     },

@@ -2035,3 +2035,64 @@ The frame, corrected:
 The idle thread no longer costs more than the game. The three items worth a
 ticket are unchanged, and they are the ones E08-S01 was meant to find: the
 renderer, the snapshot, and the recompiled code, in that order.
+
+### The 48% with no guest thread running is the processor, busy elsewhere
+
+Patch 0042 has said since the start that no guest thread runs for 48% of the
+wall, and could name half of it: the renderer's bit, sampled when a silence
+begins, covered 45%, and the remaining 55% was "other". Two things in the logs
+pointed at the audio microcode. It runs on ultramodern's SP task thread, which is
+not a guest thread, so on one processor its time can only show up as a silence.
+And `[audio][cost]` put it at 26.7 s of microcode in an 80 s run, against 21.4 s
+of unnamed silence.
+
+Patch 0050 makes the game export `dkr_audio_busy` beside `dkr_renderer_busy`,
+samples both at the start **and** at the end of every silence, and charges the
+interval to the union. One run, 75 s, a frame of 123.4 ms:
+
+    [trace][idle-by] neither=2241083 render=10459776 audio=11263068 both=12274423 us
+
+                          total     share     per frame
+    the renderer only    10.46 s    28.9%       17.2 ms
+    the audio only       11.26 s    31.1%       18.5 ms
+    both in progress     12.27 s    33.9%       20.2 ms
+    neither               2.24 s     6.2%        3.7 ms
+    -------------------------------------------------
+    no guest running     36.24 s   100.0%       59.5 ms
+
+**94% of the silence has the renderer or the audio microcode in progress.** The
+silence is not waiting. It is the one processor running host threads that are
+not guest threads, and the guest thread that was woken sits ready until the
+Windows 95 scheduler hands it back. That is also where the histogram's hump comes
+from. Most of the time is in silences of 4 to 32 ms, which is the scale of a
+quantum, not of a handoff.
+
+What is left, **3.7 ms a frame**, is the handoffs themselves. Some of that is the
+histogram's other peak: 4,077 silences between 128 and 256 µs. That is the size
+you would expect from `LightweightSemaphore` spinning 10,000 times before it
+blocks. On one processor that spin can never succeed, because the thread it is
+waiting for cannot run while it spins. The two have not been matched by
+measurement yet.
+
+#### What this does to the budget table
+
+The audio microcode has never had a row in it, and the table still summed to the
+frame. Both are true for the same reason. Every row is a **wall interval** taken
+on one processor: the renderer's `send_dl`, each guest thread's run, the
+snapshot. A display list preempted by an audio task goes on counting the audio
+task's time as its own. The microcode, at 30.9 ms of wall per task and about 1.36
+tasks per presented frame, is inside the other rows as preemption. So is a good
+part of the renderer, inside the guest rows. The table partitions the wall, but it
+does not partition the processor.
+
+So, with what this instrument can and cannot say:
+
+- The audio microcode is a first-rank item, the size of the renderer. E03-S03, the
+  high-level mixer, already owns it, and `rsp-audio-cost-measured.md`'s trigger
+  for starting that ticket is met a second time over.
+- The 48% is not a separate problem to solve. It is the renderer and the audio,
+  seen from the guest's side.
+- A budget in processor time, rather than wall time, needs an instrument that
+  knows which thread holds the CPU. On Windows 95 that means a sampler, because
+  `GetThreadTimes` is not implemented there. Until one exists, no row of the table
+  should be read as the CPU time of its item.
