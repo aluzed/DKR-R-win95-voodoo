@@ -120,6 +120,21 @@ diagnostics block. That work produces counters and draws nothing. The vertex
 path proper, clipping plus projection, is 2 ms. The texture cache hits: 0.6
 conversions a list.
 
+### The statistics, now optional: `DKR_GFX_NO_STATS=1`
+
+About a fifth of what was left of `dkr_f3d_run` was statistics: (s,t) and NDC
+extremes, triangle areas, the screen-centre probe, per-combiner and per-state
+counts. They feed the diagnostic counter lines and draw nothing, and until now no
+switch skipped them. `no_statistics` in the decoder's context now skips all of
+them behind one test, and `DKR_GFX_NO_STATS=1` sets it. The per-corner `trace`
+call is also guarded at the call site now, so that its arguments are not
+evaluated when there is no trace.
+
+    dkr_f3d_run, per list, exclusive     11.7 ms -> 9.5 ms
+    frame, normal mode, trace off        98.8 ms -> 95.9 ms   (about -3%)
+
+The counter lines read zero with the switch on, which is why it is off by default.
+
 ## What the instrumentation costs
 
 `DKR_TRACE_CPU` and everything built on it (patches 0041 to 0051), measured by the

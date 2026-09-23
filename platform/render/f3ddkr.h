@@ -861,6 +861,11 @@ typedef struct {
        rejections and nothing else sets this and leaves `trace` null: a
        rejection is rate-limited per kind, so formatting it costs nothing. */
     void (*reject_trace)(void *user, const char *line);
+    /* Skips the per-triangle statistics that feed the diagnostic counters of
+       `dkr_f3d_state` -- (s,t) and NDC extremes, areas, the probe, per-combiner
+       and per-state counts. They draw nothing, and cost about 1.8 ms a display
+       list on the test machine. Zero, the default, keeps them. */
+    unsigned char no_statistics;
 } dkr_f3d_context;
 
 /* Prepares the context. `rdram` and `rdram_size` describe the visible memory;

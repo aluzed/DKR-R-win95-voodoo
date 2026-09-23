@@ -800,6 +800,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // lines are spent, only the rejections keep a route to the log.
     context_.trace = (g_trace_context != 0) ? trace_decoder : nullptr;
     context_.reject_trace = trace_decoder;
+    // `DKR_GFX_NO_STATS=1` skips the decoder's per-triangle statistics. The
+    // counter lines they feed then read zero. Off by default.
+    {
+        static const bool no_stats = std::getenv("DKR_GFX_NO_STATS") != nullptr;
+        context_.no_statistics = no_stats ? 1 : 0;
+    }
     // `DKR_NO_DEPTH=1` turns depth sorting off. A diagnostic switch: it answers
     // in one run a question that reading the code does not settle.
     {

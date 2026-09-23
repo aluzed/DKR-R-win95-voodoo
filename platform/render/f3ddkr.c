@@ -533,6 +533,11 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                    three corners carry the same pair renders flat whatever the
                    scale does afterwards, and nothing printed these until the
                    copyright screen's logo came out as one colour. */
+                /* Guarded here and not only inside `trace`: the six conversions
+                   of the arguments are evaluated before the call, three times
+                   per triangle, and cost 1.3 ms a display list with the trace
+                   off (E08-S01, render zones). */
+                if (c->trace)
                 trace(c, "vtx corner=%d raw s=%d t=%d rgba=%d,%d,%d,%d",
                       corner, (int)sb, (int)tb,
                       (int)tri[corner].r, (int)tri[corner].g,
@@ -543,6 +548,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                    extremes must stay in the neighbourhood of [0,1]. Thousands
                    would say the scale is wrong, and saying it in figures rather
                    than on screen is the whole point. */
+                if (!c->no_statistics) {
                 if (tri[corner].s < c->state.s_min) { c->state.s_min = tri[corner].s; }
                 if (tri[corner].s > c->state.s_max) { c->state.s_max = tri[corner].s; }
                 if (tri[corner].t < c->state.t_min) { c->state.t_min = tri[corner].t; }
@@ -565,6 +571,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     if (in) { c->state.st_inside++; }
                     else    { c->state.st_outside++; }
                 }
+                }
                 TRI_MARK(10);
             }
         }
@@ -584,6 +591,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
          *
          * Counted per triangle, before clipping introduces interpolated corners
          * of its own. */
+        if (!c->no_statistics) {
         if (tri[0].s == tri[1].s && tri[1].s == tri[2].s &&
             tri[0].t == tri[1].t && tri[1].t == tri[2].t) {
             c->state.tri_st_degenerate++;
@@ -630,6 +638,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 }
             }
         }
+        }
         TRI_MARK(11);
 
         TRI_MARK(1);
@@ -665,6 +674,10 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
             TRI_MARK(7);
             apply_state(c);
             TRI_MARK(4);
+            /* Everything from here to `DKR_FLATTEN_W` counts; none of it draws.
+               `no_statistics` skips it: about 1.8 ms a display list with the
+               corner statistics above (E08-S01, render zones). */
+            if (!c->no_statistics) {
             /* **What the emitted triangles are made of.**
              *
              * The screen stays white while textures upload and the coordinates
@@ -1037,6 +1050,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                     if (v[q].b > c->state.shade_max) { c->state.shade_max = v[q].b; }
                     if (v[q].a > c->state.alpha_max) { c->state.alpha_max = v[q].a; }
                 }
+            }
             }
             /* --- `DKR_FLATTEN_W=1`, a diagnostic switch ---------------------- *
              *
