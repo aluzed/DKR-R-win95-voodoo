@@ -87,6 +87,16 @@ void add_test(const std::string& name, List& l) {
         l.add(cmd(SETBUFF, 0, offset(0x210)), (offset(0x210) << 16) | count);
         l.add(cmd(LOADBUFF, 0, 0), kSource + (rng() % 0x400));
         l.add(cmd(SAVEBUFF, 0, 0), kState + (rng() % 0x400));
+    } else if (name == "adpcm") {
+        // A random codebook of 16 predictors, random frames, and each of the
+        // three ways the state is found: A_INIT, from the address, from the loop.
+        l.add(cmd(LOADADPCM, 0, 0x100), kTable);
+        const uint32_t count = ((rng() % 12) + 1) * 32 - ((rng() & 1) ? (rng() % 32) & ~1u : 0);
+        const uint32_t in = 0x400 + (rng() % 8) * 16;
+        l.add(cmd(SETBUFF, 0, in), ((rng() % 8) * 16 << 16) | count);
+        const uint32_t mode = rng() % 3;
+        if (mode == 2) { l.add(cmd(SETLOOP, 0, 0), kState + 0x40); }
+        l.add(cmd(ADPCM, mode == 0 ? 1 : (mode == 2 ? 2 : 0), 0), kState);
     } else if (name == "segment") {
         l.add(cmd(SEGMENT, 0, 0), (3u << 24) | kSource);
         l.add(cmd(SETBUFF, 0, 0), (offset(0x110) << 16) | 0x100);
@@ -110,7 +120,7 @@ int main(int argc, char** argv) {
         std::fclose(f);
     }
     const std::vector<std::string> all = {"clearbuff", "dmemmove", "mixer", "interleave",
-                                          "setvol", "loadsave", "segment"};
+                                          "setvol", "loadsave", "segment", "adpcm"};
     std::vector<std::string> names = all;
     if (argc >= 3) { names = {argv[2]}; }
     const int cases = argc >= 4 ? std::atoi(argv[3]) : 200;
@@ -123,6 +133,7 @@ int main(int argc, char** argv) {
             std::fill(a.begin(), a.end(), 0);
             for (uint32_t i = 0; i < 0x800; i++) { put8(a, kSource + i, rng()); }
             for (uint32_t i = 0; i < 0x100; i++) { put8(a, kTable + i, rng()); }
+            for (uint32_t i = 0; i < 0x80; i++) { put8(a, kState + i, rng()); }
             List l;
             l.add(cmd(SETBUFF, 0, 0), (0u << 16) | kArea);
             l.add(cmd(LOADBUFF, 0, 0), kSource);
@@ -151,9 +162,28 @@ int main(int argc, char** argv) {
             for (uint32_t i = 0x360; i < 0x380; i++) { if (da[i] != db[i]) state_diff++; }
             if (diff || state_diff) {
                 if (bad < 3) {
+                    const size_t n = l.words.size();
                     std::printf("  %s case %d: %lu RDRAM bytes differ (first 0x%06X), %lu state bytes;"
-                                " command %08X %08X\n", name.c_str(), c, diff, first, state_diff,
-                                l.words[4], l.words[5]);
+                                " command %08X %08X after %08X %08X\n", name.c_str(), c, diff, first,
+                                state_diff, l.words[n - 6], l.words[n - 5], l.words[n - 8], l.words[n - 7]);
+                    if (std::getenv("ABI_DEBUG") != nullptr) {
+                        if (name == "adpcm") {
+                            // The frame the command decoded, and the codebook it used.
+                            const uint32_t in = l.words[l.words.size() - 7 - ((l.words[l.words.size()-8] >> 24) == SETLOOP ? 2 : 0)];
+                            (void)in;
+                            std::printf("    first frame bytes (saved area copy of input):");
+                            for (uint32_t i = 0; i < 0x40; i++) { std::printf("%s%02X", (i % 9) ? "" : " ", a[(kSaved + 0x400 + i) ^ 3]); }
+                            std::printf("\n");
+                        }
+                        // Differing halfwords of the saved area: offset, oracle, mixer.
+                        int shown = 0;
+                        for (uint32_t off = 0; off < kArea && shown < 12; off += 2) {
+                            const uint32_t p = kSaved + off;
+                            const int16_t va = (int16_t)((a[p ^ 3] << 8) | a[(p + 1) ^ 3]);
+                            const int16_t vb = (int16_t)((b[p ^ 3] << 8) | b[(p + 1) ^ 3]);
+                            if (va != vb) { std::printf("    +0x%03X oracle %6d mixer %6d\n", off, va, vb); shown++; }
+                        }
+                    }
                 }
                 bad++;
             }

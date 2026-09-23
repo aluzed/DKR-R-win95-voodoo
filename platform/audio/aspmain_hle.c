@@ -39,7 +39,6 @@ typedef int            s32;
 
 static u8 *g_rdram;
 static u8 *g_dmem;
-static u32 g_loop;   /* SETLOOP's address, already resolved */
 
 static u8  dmem_u8(u32 a)            { return g_dmem[(a & 0xFFFu) ^ 3u]; }
 static void dmem_set_u8(u32 a, u8 v) { g_dmem[(a & 0xFFFu) ^ 3u] = v; }
@@ -187,10 +186,17 @@ static void cmd_loadadpcm(u32 w0, u32 w1)
     dma_read(DMEM_CODEBOOK, resolve(w1), w0 & 0xFFFFu);
 }
 
+/* SETLOOP stores its resolved address as a word at state + 0x10 -- on top of
+ * SETVOL's left target and rate, which ABI 1 overlaps with it. Kept overlapped:
+ * a list that sets a loop and then a left volume ramp sees exactly what the
+ * microcode would. */
+#define ST_LOOP 0x10u
 static void cmd_setloop(u32 w0, u32 w1)
 {
+    const u32 address = resolve(w1);
     (void)w0;
-    g_loop = resolve(w1);
+    state_set(ST_LOOP, address >> 16);
+    state_set(ST_LOOP + 2u, address);
 }
 
 static void cmd_interleave(u32 w0, u32 w1)
@@ -228,7 +234,106 @@ static void cmd_mixer(u32 w0, u32 w1)
 
 /* --- The four that do arithmetic: not yet implemented ------------------------- */
 
-static void cmd_adpcm(u32 w0, u32 w1)     { (void)w0; (void)w1; }
+/* ADPCM: 9-byte frames, a header and sixteen 4-bit residuals, into sixteen
+ * samples. The header's low nibble picks a 32-byte predictor from the codebook
+ * at 0x4C0 (book0, book1), its high nibble the scale. For each half of eight:
+ *
+ *   S = book0[i] * l2 + book1[i] * l1 + sum_{k<i} book1[i-1-k] * in[k]
+ *       + in[i] * 2048
+ *   out[i] = sat16(S >> 11)            (VSAR, then * 32 and >> 16)
+ *
+ * where l2, l1 are the last two samples out, and in[k] the residual sign-
+ * extended and shifted left by the scale, capped at 12 -- the microcode puts it
+ * at the top of a halfword and shifts right by 12 - scale only when that is
+ * positive. The state, the last sixteen samples, is read from the command's
+ * address (or the loop's, A_LOOP) unless A_INIT, and written back there. */
+/* One frame's inputs, read the way the microcode reads them: everything for
+ * frame f + 1 -- header, the eight bytes of residuals, the predictor -- is loaded
+ * before frame f is stored. When a frame's inputs overlap the output (a
+ * predictor index past the loaded codebook reaches into the buffers), the
+ * result then matches the microcode's rather than depending on write order. */
+typedef struct {
+    s32 shift;
+    u8  data[8];
+    s16 book0[8], book1[8];
+} adpcm_frame;
+
+static void adpcm_fetch(adpcm_frame *f, u32 in)
+{
+    const u32 header = dmem_u8(in);
+    const u32 book = DMEM_CODEBOOK + (header & 0xFu) * 32u;
+    u32 i;
+    f->shift = 12 - (s32)(header >> 4);
+    for (i = 0; i < 8u; i++) {
+        f->data[i] = dmem_u8(in + 1u + i);
+        f->book0[i] = dmem_s16(book + i * 2u);
+        f->book1[i] = dmem_s16(book + 16u + i * 2u);
+    }
+}
+
+static void cmd_adpcm(u32 w0, u32 w1)
+{
+    const u32 flags = (w0 >> 16) & 0xFFu;
+    const u32 address = resolve(w1);
+    const s32 k_scale = dmem_s16(0x08u);   /* v31[4], 32 */
+    const s32 k_input = dmem_s16(0x0Au);   /* v31[5], 2048 */
+    u32 in = state_u16(ST_IN);
+    u32 out = state_u16(ST_OUT);
+    s32 count = (s32)state_u16(ST_COUNT);
+    s32 l2, l1;
+    adpcm_frame frame;
+    u32 i;
+
+    for (i = 0; i < 32u; i++) { dmem_set_u8(out + i, 0); }
+    if (!(flags & 0x01u)) {                              /* not A_INIT */
+        const u32 from = (flags & 0x02u)                 /* A_LOOP */
+            ? (((u32)state_u16(ST_LOOP) << 16) | state_u16(ST_LOOP + 2u)) : address;
+        dma_read(out, from, 32u);
+    }
+    l2 = dmem_s16(out + 28u);
+    l1 = dmem_s16(out + 30u);
+    out += 32u;
+    adpcm_fetch(&frame, in);
+
+    while (count > 0) {
+        s16 samples[16];
+        s32 half;
+        for (half = 0; half < 2; half++) {
+            s32 residual[8];
+            s32 j;
+            for (j = 0; j < 8; j++) {
+                const u32 byte = frame.data[half * 4 + j / 2];
+                const u32 nibble = (j & 1) ? (byte & 0xFu) : (byte >> 4);
+                s32 v = (s16)(nibble << 12);
+                if (frame.shift > 0) { v >>= frame.shift; }
+                residual[j] = v;
+            }
+            for (j = 0; j < 8; j++) {
+                long long sum = (long long)frame.book0[j] * l2 +
+                                (long long)frame.book1[j] * l1 +
+                                (long long)residual[j] * k_input;
+                s32 k;
+                for (k = 0; k < j; k++) {
+                    sum += (long long)frame.book1[j - 1 - k] * residual[k];
+                }
+                {
+                    const s32 wrapped = (s32)(u32)(unsigned long long)sum;
+                    samples[half * 8 + j] =
+                        (s16)clamp16((s32)(((long long)wrapped * k_scale) >> 16));
+                }
+            }
+            l2 = samples[half * 8 + 6];
+            l1 = samples[half * 8 + 7];
+        }
+        in += 9u;
+        adpcm_fetch(&frame, in);
+        for (i = 0; i < 16u; i++) { dmem_set_s16(out + i * 2u, samples[i]); }
+        out += 32u;
+        count -= 32;
+    }
+    dma_write(out - 32u, address, 32u);
+}
+
 static void cmd_envmixer(u32 w0, u32 w1)  { (void)w0; (void)w1; }
 static void cmd_resample(u32 w0, u32 w1)  { (void)w0; (void)w1; }
 static void cmd_polef(u32 w0, u32 w1)     { (void)w0; (void)w1; }
@@ -250,7 +355,6 @@ unsigned long dkr_aspmain_hle(unsigned char *rdram, unsigned char *dmem)
     u32 list, size, i;
     g_rdram = rdram;
     g_dmem = dmem;
-    g_loop = 0;
     for (i = 0; i < 16u * 4u; i++) { dmem_set_u8(DMEM_SEGMENTS + i, 0); }
     /* The task, as the runtime copied it: data_ptr at +0x30, data_size at +0x34,
        native words -- the task is written into DMEM with memcpy, not by DMA. */
