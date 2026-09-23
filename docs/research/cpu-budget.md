@@ -2214,3 +2214,16 @@ the port having sound at all. E06-S03 will also have to give
 `audio_frames_remaining` a real clock. Until it does, the game's audio pacing on
 this target is an artefact, and cost figures per task are measured at the largest
 quantum.
+
+### Every row in processor time: the table is now `frame-budget.md`
+
+Patch 0051 moves the exclusive sections into ultramodern's `threads.cpp` and
+extends them to the RDRAM snapshot and to each round of the graphics thread. It
+also charges every exclusive section that interrupts a counted guest thread to
+that thread, as `[trace][preempted]`. That was the missing piece. The scheduler's
+52.7 s of `ran` in a 100 s run turned out to be 25.4 s of snapshot, 24.8 s of
+other threads' work, and 2.5 s of its own.
+
+The table closes to 90.4% of the wall in processor time. The rest is host threads
+nobody times, while the idle thread sleeps. From here on the budget is kept in
+`frame-budget.md`, and this note keeps the reasoning behind it.

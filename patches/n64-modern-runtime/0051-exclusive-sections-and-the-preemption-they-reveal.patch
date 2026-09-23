@@ -1,0 +1,210 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Exclusive sections, and the preemption they reveal
+
+Windows 95 does not implement GetThreadTimes, so every row of the frame budget
+is a wall interval, and on one processor a wall interval counts whatever
+preempted the thread being timed. Under DKR_TRACE_EXCLUSIVE, a section raises
+its thread to time-critical priority. Nothing else in the process can then run
+inside it, so its wall interval is its processor time.
+
+The implementation lives here rather than in the game, because this is where the
+guest rows become exact. A guest thread cannot execute during another host
+thread's exclusive section, so if one is counted as running, the whole section
+is preemption. It is charged to that thread in [trace][preempted], and
+`ran - preempted` is what the thread used. Sections taken while the idle thread
+is parked go to their own bucket, and nested sections count once.
+
+The game's audio microcode, send_dl and update_screen use it through
+dkr_exclusive_enter/leave. This patch adds the RDRAM snapshot and each round of
+the graphics thread. One run, 100 s, a frame of 120.1 ms:
+
+  [trace][preempted] t1=130911 t3=585801 t4=502444 t5=24779877 us
+
+The scheduler, id 5, was 52.7 s of `ran`: 25.4 s of snapshot, 24.8 s of other
+threads' work, and 2.5 s of its own.
+
+---
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -340,6 +340,75 @@
+ static std::atomic<unsigned long long> g_idle_waker_us[DKR_IDLE_WAKER_SLOTS];
+ static std::atomic<unsigned long long> g_idle_waker_n[DKR_IDLE_WAKER_SLOTS];
+ 
++/* --- Exclusive sections: processor time where Windows 95 has none ------------ *
++ *
++ * Patch 0051. Windows 95 does not implement `GetThreadTimes`, so every figure
++ * this file reports is a wall interval, and on one processor a wall interval
++ * counts the time of whatever preempted the thread being timed. Under
++ * DKR_TRACE_EXCLUSIVE a section raises its thread to time-critical priority:
++ * no other thread of the process can run inside it, so its wall interval is its
++ * processor time.
++ *
++ * That also makes the guest rows exact, which is the point of keeping the
++ * implementation here rather than in the game. A guest thread cannot execute
++ * during an exclusive section on another host thread, so if one is counted as
++ * running at the time, the whole section is preemption and belongs to someone
++ * else. It is charged to that thread's `preempted` slot, and `ran - preempted`
++ * is what the thread actually used. A section taken while the idle thread is
++ * parked goes to its own bucket instead: `parked` already takes that time out.
++ *
++ * Nested sections -- `send_dl` inside the graphics thread's round -- change the
++ * priority and count their time only at the outermost level. */
++static const bool g_exclusive_on =
++    guest_time_enabled() && (std::getenv("DKR_TRACE_EXCLUSIVE") != nullptr);
++static thread_local int tl_exclusive_depth = 0;
++static std::atomic<int> g_counted_guest_id{-1};
++static std::atomic<int> g_idle_parked_now{0};
++static std::atomic<unsigned long long> g_preempted_by_id[DKR_GUEST_RUN_SLOTS];
++static std::atomic<unsigned long long> g_exclusive_while_parked_us{0};
++static std::atomic<unsigned long long> g_exclusive_us{0};
++
++void dkr_set_idle_parked(int parked) { g_idle_parked_now.store(parked); }
++
++extern "C" unsigned long long dkr_exclusive_enter(int* previous) {
++    if (!g_exclusive_on || tl_exclusive_depth++ != 0) {
++        return 0ULL;
++    }
++#if defined(_WIN32)
++    *previous = GetThreadPriority(GetCurrentThread());
++    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
++#else
++    *previous = 0;
++#endif
++    return dkr_clock_now_us();
++}
++
++extern "C" void dkr_exclusive_leave(int previous, unsigned long long entered_at) {
++    if (!g_exclusive_on || --tl_exclusive_depth != 0) {
++        return;
++    }
++    const unsigned long long d = dkr_clock_now_us() - entered_at;
++    g_exclusive_us.fetch_add(d);
++    /* A guest thread's own section -- the snapshot, on the scheduler -- is its
++       own work, not preemption of it. */
++    if (!is_game_thread && g_guest_running.load() > 0) {
++        if (g_idle_parked_now.load() != 0) {
++            g_exclusive_while_parked_us.fetch_add(d);
++        } else {
++            int slot = g_counted_guest_id.load();
++            if (slot < 0 || slot >= DKR_GUEST_RUN_SLOTS) {
++                slot = DKR_GUEST_RUN_SLOTS - 1;
++            }
++            g_preempted_by_id[slot].fetch_add(d);
++        }
++    }
++#if defined(_WIN32)
++    SetThreadPriority(GetCurrentThread(), previous);
++#else
++    (void)previous;
++#endif
++}
++
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
+     if (guest_time_enabled() && tl_resumed_at != 0) {
+         const unsigned long long now = dkr_clock_now_us();
+@@ -410,6 +479,18 @@
+                          (unsigned long long)g_idle_by_mask[1].load(),
+                          (unsigned long long)g_idle_by_mask[2].load(),
+                          (unsigned long long)g_idle_by_mask[3].load());
++            if (g_exclusive_on) {
++                std::fprintf(stderr, "[trace][preempted]");
++                for (int s = 0; s < DKR_GUEST_RUN_SLOTS; s++) {
++                    const unsigned long long us = g_preempted_by_id[s].load();
++                    if (us != 0ULL) {
++                        std::fprintf(stderr, " t%d=%llu", s, us);
++                    }
++                }
++                std::fprintf(stderr, " while-parked=%llu exclusive=%llu us\n",
++                             (unsigned long long)g_exclusive_while_parked_us.load(),
++                             (unsigned long long)g_exclusive_us.load());
++            }
+             std::fprintf(stderr, "[trace][parked]");
+             for (int s = 0; s < DKR_GUEST_RUN_SLOTS; s++) {
+                 const unsigned long long us = g_parked_by_id[s].load();
+@@ -454,6 +535,10 @@
+         tl_resumed_at = woke_at;
+         if (!tl_counted) {
+             tl_counted = true;
++            {
++                const OSThread* me = TO_PTR(OSThread, ultramodern::this_thread());
++                g_counted_guest_id.store((me != nullptr) ? (int)me->id : -1);
++            }
+             if (g_guest_running.fetch_add(1) == 0) {
+                 const unsigned long long since = g_idle_since.load();
+                 if (since != 0ULL && woke_at > since) {
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -176,6 +176,10 @@
+  * Behind a switch and announced once, because a switch that silently fails to
+  * take and a switch that changes nothing are the same measurement. */
+ extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
++/* Patch 0051, threads.cpp: time-critical sections under DKR_TRACE_EXCLUSIVE, so
++   that a wall interval is processor time. No-ops when the variable is unset. */
++extern "C" unsigned long long dkr_exclusive_enter(int* previous);
++extern "C" void dkr_exclusive_leave(int previous, unsigned long long entered_at);
+ extern "C" void dkr_diag_commit(void) __attribute__((weak));
+ 
+ static const bool g_snapshot_trace_on =
+@@ -724,7 +728,15 @@
+     bool gfx_round_was_empty = false;
+     int gfx_round_kind = -1;   /* 0 sp task, 1 screen update, -1 neither */
+ 
++    int gfx_exclusive_previous = 0;
++    unsigned long long gfx_exclusive_at = 0ULL;
++    bool gfx_exclusive_open = false;
+     while (!exited) {
++        /* The round since the last wait was exclusive; close it before sleeping. */
++        if (gfx_exclusive_open) {
++            dkr_exclusive_leave(gfx_exclusive_previous, gfx_exclusive_at);
++            gfx_exclusive_open = false;
++        }
+         /* Closed before the wait, not after it: the span that counts runs from
+            waking to going back to sleep, and stamping it on the far side of the
+            wait would fold the sleep into the work. */
+@@ -746,6 +758,8 @@
+         Action action;
+         const bool got_action =
+             events_context.action_queue.wait_dequeue_timed(action, 1ms);
++        gfx_exclusive_at = dkr_exclusive_enter(&gfx_exclusive_previous);
++        gfx_exclusive_open = true;
+ 
+         if (g_gfx_trace_on) {
+             const unsigned long long now = dkr_clock_now_us();
+@@ -1055,6 +1069,9 @@
+          * Timed here rather than assumed, because it runs on the *guest* thread
+          * that submits the task and has therefore been inside the frame's
+          * `elsewhere` -- read as the recompiled game -- since the beginning. */
++        int snapshot_exclusive_previous = 0;
++        const unsigned long long snapshot_exclusive_at =
++            dkr_exclusive_enter(&snapshot_exclusive_previous);
+         const unsigned long long snapshot_t0 =
+             g_snapshot_trace_on ? dkr_clock_now_us() : 0ULL;
+         /* **`make_unique` value-initialises; `new` does not.**
+@@ -1089,6 +1106,7 @@
+          * nothing is supposed to make one -- the texture images observed span
+          * 0x20CCE0 to 0x3712C0, all of them inside the half that is copied. */
+         std::memcpy(rdram_snapshot.get(), rdram, snapshot_copy_size());
++        dkr_exclusive_leave(snapshot_exclusive_previous, snapshot_exclusive_at);
+         if (g_snapshot_trace_on) {
+             const unsigned long long t2 = dkr_clock_now_us();
+             g_snapshot_alloc_us.fetch_add(snapshot_t1 - snapshot_t0);
+--- a/ultramodern/src/scheduling.cpp
++++ b/ultramodern/src/scheduling.cpp
+@@ -35,6 +35,7 @@
+ extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
+ bool dkr_guest_time_enabled();
+ void dkr_note_parked(RDRAM_ARG unsigned long long us);
++void dkr_set_idle_parked(int parked);
+ 
+ extern "C" void pause_self(RDRAM_ARG1) {
+     const bool timed = dkr_guest_time_enabled();
+@@ -42,7 +43,9 @@
+         // Wait until an external message arrives, then allow the next thread to run.
+         if (timed) {
+             const unsigned long long parked_at = dkr_clock_now_us();
++            dkr_set_idle_parked(1);
+             ultramodern::wait_for_external_message(PASS_RDRAM1);
++            dkr_set_idle_parked(0);
+             dkr_note_parked(PASS_RDRAM dkr_clock_now_us() - parked_at);
+         } else {
+             ultramodern::wait_for_external_message(PASS_RDRAM1);

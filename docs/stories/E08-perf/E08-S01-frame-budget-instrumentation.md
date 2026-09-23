@@ -128,9 +128,12 @@ items, readable on the target machine.
 - [ ] The on-screen display is legible on the target machine.
 - [ ] Median and 99th percentile are reported per item.
 - [ ] The export to a file allows offline analysis.
-- [ ] `docs/research/frame-budget.md` gives allocation, measurement and deviation per
-      item.
-- [ ] The three most expensive items are identified and directed.
+- [x] `docs/research/frame-budget.md` gives allocation, measurement and deviation per
+      item. The allocation is a proposal awaiting a decision; the measurement is in
+      processor time (patch 0051).
+- [x] The three most expensive items are identified and directed: the graphics
+      thread to E08-S03 and E05, the RDRAM snapshot to E08-S04, the audio microcode
+      to E03-S03.
 
 ## Risks
 

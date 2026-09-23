@@ -17,39 +17,28 @@
 // reading from such a run is each section's own cost, not the frame.
 //
 // Off unless the variable is set, and a no-op on every target but Windows 95.
+// The same sections are taken inside ultramodern around the RDRAM snapshot and
+// the graphics thread's rounds.
 
 #if defined(DKR_TARGET_WIN95)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <Windows.h>
-#include <cstdlib>
+
+// Implemented in ultramodern's threads.cpp (patch 0051), which also charges a
+// section to the guest thread it preempted, and makes nested sections count once.
+extern "C" unsigned long long dkr_exclusive_enter(int* previous);
+extern "C" void dkr_exclusive_leave(int previous, unsigned long long entered_at);
 
 namespace dkr::runtime {
 
-// Namespace scope and not a function-local static: see the note on
-// `g_guest_time_on` in ultramodern's threads.cpp about initialisation guards on
-// this toolchain.
-static const bool kExclusiveSections = std::getenv("DKR_TRACE_EXCLUSIVE") != nullptr;
-
 class ExclusiveSection {
 public:
-    ExclusiveSection() {
-        if (kExclusiveSections) {
-            previous_ = GetThreadPriority(GetCurrentThread());
-            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-        }
-    }
-    ~ExclusiveSection() {
-        if (kExclusiveSections) {
-            SetThreadPriority(GetCurrentThread(), previous_);
-        }
-    }
+    ExclusiveSection() : entered_at_(dkr_exclusive_enter(&previous_)) {}
+    ~ExclusiveSection() { dkr_exclusive_leave(previous_, entered_at_); }
     ExclusiveSection(const ExclusiveSection&) = delete;
     ExclusiveSection& operator=(const ExclusiveSection&) = delete;
 
 private:
-    int previous_ = THREAD_PRIORITY_NORMAL;
+    int previous_ = 0;
+    unsigned long long entered_at_;
 };
 
 } // namespace dkr::runtime
