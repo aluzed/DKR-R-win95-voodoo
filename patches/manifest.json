@@ -240,6 +240,10 @@
         {
           "path": "patches/n64recomp/0004-narrow-the-guest-register-on-request.patch",
           "sha256": "c208ce8c6947240db47efd5a41092b1525e5578cfd38a059b1b38609862215db"
+        },
+        {
+          "path": "patches/n64recomp/0005-set-the-rounding-mode-through-the-x87-control-word.patch",
+          "sha256": "588af0b672cb616ce5991e235acee493df3b6fe5d4377fbae192e74c884afef0"
         }
       ]
     },

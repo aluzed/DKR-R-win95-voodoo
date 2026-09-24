@@ -404,6 +404,27 @@ ULONGLONG WINAPI GetTickCount64(void)
  * what makes the whole thing possible: Windows 95 does not export
  * `InterlockedCompareExchange`, but the processor does know how to do it.
  */
+/* **A benaphore, E08-S01.** The first version of these functions released the
+ * semaphore on every Leave, whether anyone waited or not. Two things followed.
+ * Every unlock of every mutex in the binary paid a system call. And the unused
+ * tokens piled up in the semaphore, so a thread that found the lock taken
+ * "waited" in WaitForSingleObject(sem, 1), returned at once on a stale token,
+ * and tried again: a busy loop. On one processor the owner cannot run to
+ * release the lock while the waiter spins, and it only gets the processor back
+ * when the scheduler's quantum runs out. A sampling thread waking every
+ * millisecond, which forces the scheduler to decide again, made the frame 26%
+ * faster. That is how it was found.
+ *
+ * Now LockCount counts the holder and the waiters. Enter increments it; if it
+ * was not zero, the lock is taken, and the caller sleeps on the semaphore with no
+ * timeout. Leave decrements it and releases the semaphore only when someone is
+ * waiting, handing the lock straight to one of them. A counting semaphore loses
+ * no wake-up, so no timed retry is needed. An uncontended Enter and Leave cost
+ * two locked instructions and no system call. TryEnter keeps its contract: it
+ * takes the lock only when nobody holds it and nobody waits.
+ *
+ * A section whose semaphore could not be created, or one never initialised,
+ * keeps the previous behaviour, a flag with a yield loop. */
 void WINAPI InitializeCriticalSection(LPCRITICAL_SECTION cs)
 {
     cs->DebugInfo      = NULL;
@@ -417,8 +438,7 @@ void WINAPI InitializeCriticalSection(LPCRITICAL_SECTION cs)
 BOOL WINAPI TryEnterCriticalSection(LPCRITICAL_SECTION cs)
 {
     DWORD me = GetCurrentThreadId();
-
-    if ((DWORD)(ULONG_PTR)cs->OwningThread == me) {   /* already the owner */
+    if (cs->OwningThread == (HANDLE)(ULONG_PTR)me) {
         cs->RecursionCount++;
         return TRUE;
     }
@@ -432,16 +452,22 @@ BOOL WINAPI TryEnterCriticalSection(LPCRITICAL_SECTION cs)
 
 void WINAPI EnterCriticalSection(LPCRITICAL_SECTION cs)
 {
-    /* A timed wait rather than an infinite one: if a wake-up is lost between the
-       test and the wait, the loop catches it on the next turn instead of
-       sleeping forever. */
-    while (!TryEnterCriticalSection(cs)) {
-        if (cs->LockSemaphore) {
-            WaitForSingleObject(cs->LockSemaphore, 1);
-        } else {
+    DWORD me = GetCurrentThreadId();
+    if (cs->OwningThread == (HANDLE)(ULONG_PTR)me) {
+        cs->RecursionCount++;
+        return;
+    }
+    if (cs->LockSemaphore) {
+        if (__sync_fetch_and_add(&cs->LockCount, 1) != 0) {
+            WaitForSingleObject(cs->LockSemaphore, INFINITE);   /* handed over by Leave */
+        }
+    } else {
+        while (!__sync_bool_compare_and_swap(&cs->LockCount, 0, 1)) {
             Sleep(0);
         }
     }
+    cs->OwningThread   = (HANDLE)(ULONG_PTR)me;
+    cs->RecursionCount = 1;
 }
 
 void WINAPI LeaveCriticalSection(LPCRITICAL_SECTION cs)
@@ -450,9 +476,12 @@ void WINAPI LeaveCriticalSection(LPCRITICAL_SECTION cs)
         return;
     }
     cs->OwningThread = NULL;
-    __sync_lock_release(&cs->LockCount);
     if (cs->LockSemaphore) {
-        ReleaseSemaphore(cs->LockSemaphore, 1, NULL);
+        if (__sync_sub_and_fetch(&cs->LockCount, 1) > 0) {
+            ReleaseSemaphore(cs->LockSemaphore, 1, NULL);   /* one waiter takes it */
+        }
+    } else {
+        __sync_lock_release(&cs->LockCount);
     }
 }
 

@@ -1,6 +1,9 @@
 #include "diagnostic_log.hpp"
 #include "exclusive_section.hpp"
 #if defined(DKR_TARGET_WIN95)
+#include "sampler.h"
+#endif
+#if defined(DKR_TARGET_WIN95)
 extern "C" {
 #include "aspmain_hle.h"
 }
@@ -1224,6 +1227,10 @@ int DkrMain(int argc, char** argv) {
     }
 #if defined(DKR_TARGET_WIN95)
     StartIdleMeter();
+    if (dkr_sampler_start()) {
+        dkr_sampler_register_current_thread();
+        std::fprintf(stderr, "[boot][sampler] sampling every 1 ms into D:\\SAMPLES.BIN\n");
+    }
 #endif
 #if DKR_RUNTIME_HAS_RT64
     if (!rom_identified) {

@@ -1,0 +1,63 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Set the rounding mode through the x87 control word
+
+The recompiled game switches the rounding mode around every float-to-int
+conversion (ctc1 $FpcCsr), twice per conversion. mingw-w64's fesetround and
+fegetround also look for SSE on each call, to keep MXCSR in step. A Pentium II
+target built with -mno-sse has only the x87 control word to set. A sampling
+profiler put fesetround at 1.8% of the game's own samples.
+
+On DKR_TARGET_WIN95, i386 without SSE, get_cop1_cs and set_cop1_cs now read
+and write the control word with fnstcw and fldcw. mingw's i386 FE_ constants
+are the x87 rounding-control bits (0x000, 0x400, 0x800, 0xC00), so the result
+is unchanged. Every other target keeps fegetround and fesetround.
+
+---
+--- a/include/recomp.h
++++ b/include/recomp.h
+@@ -367,9 +367,35 @@
+     MEM_W(0, dword_address + 0) = hi;
+ }
+ 
++/* DKR-R, patch 0005: the rounding mode through the x87 control word alone.
++ *
++ * The recompiled game switches the rounding mode around every float-to-int
++ * conversion (ctc1 $FpcCsr), twice per conversion. mingw-w64's fesetround and
++ * fegetround also look for SSE on each call, to keep MXCSR in step. A Pentium II
++ * target built with -mno-sse has only the x87 control word to set. A sampling
++ * profiler put fesetround at 1.8% of the game's own samples. The FE_ constants
++ * of mingw's i386 fenv.h are the x87 rounding-control bits (0x000, 0x400, 0x800,
++ * 0xC00), so the result is the same; only the SSE probe is gone. */
++#if defined(DKR_TARGET_WIN95) && defined(__i386__) && !defined(__SSE__)
++static inline int recomp_fegetround(void) {
++    unsigned short cw;
++    __asm__ volatile("fnstcw %0" : "=m"(cw));
++    return cw & 0xC00;
++}
++static inline void recomp_fesetround(int round) {
++    unsigned short cw;
++    __asm__ volatile("fnstcw %0" : "=m"(cw));
++    cw = (unsigned short)((cw & ~0xC00) | (round & 0xC00));
++    __asm__ volatile("fldcw %0" : : "m"(cw));
++}
++#else
++#define recomp_fegetround fegetround
++#define recomp_fesetround fesetround
++#endif
++
+ static inline uint32_t get_cop1_cs() {
+     uint32_t rounding_mode = 0;
+-    switch (fegetround()) {
++    switch (recomp_fegetround()) {
+         // round to nearest value
+         case FE_TONEAREST:
+         default:
+@@ -408,7 +434,7 @@
+             round = FE_DOWNWARD;
+             break;
+     }
+-    fesetround(round);
++    recomp_fesetround(round);
+ }
+ 
+ #define S32(val) \

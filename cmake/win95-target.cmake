@@ -118,7 +118,8 @@ target_link_options(win95compat INTERFACE
 #
 # The dependency goes the other way: the layer leans on `win95compat` for the five
 # critical-section functions and for the startup log.
-add_library(win95threading STATIC "${DKR_WIN95_PLATFORM}/threading.cpp")
+add_library(win95threading STATIC "${DKR_WIN95_PLATFORM}/threading.cpp"
+    "${DKR_WIN95_PLATFORM}/sampler.c")
 target_include_directories(win95threading PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95threading PUBLIC win95compat)
 add_dependencies(win95threading dkr_win95_cpp_subset)

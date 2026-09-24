@@ -18,6 +18,7 @@
  *     suite is also built as THREADS.EXE and run under Windows 95.
  */
 #include "threading.h"
+#include "sampler.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -433,6 +434,7 @@ dkr_thread *dkr_thread_start(dkr_thread_fn fn, void *arg, unsigned long stack_by
         return 0;
     }
     t->handle = (HANDLE)h;
+    dkr_sampler_register_thread(t->handle);   /* E08-S01: no-op unless sampling */
     return t;
 }
 
