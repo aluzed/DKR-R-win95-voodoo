@@ -2352,3 +2352,49 @@ off, 150 s:
 About 2 ms, all of it on the guest side (`elsewhere` goes from 82.1–82.5 ms to
 80.2–80.4). It is the size the histogram suggested. The histogram itself has not
 been re-read, so the match between the peak and the spin is still an inference.
+
+### The game's clock moved in sixteenths of a second
+
+The sampling profiler (`DKR_TRACE_SAMPLER`) made the frame 31.5 ms, against
+40.6 ms without it. A thread that only samples should not make a game faster.
+It did not. It made the game's time run faster.
+
+**The clock.** Everything `ultramodern` times went through
+`std::chrono::high_resolution_clock`: `osGetCount`, `osGetTime`, the game's
+timers, the VI thread's schedule. With mingw-w64 that is the system clock, over
+winpthreads' `CLOCK_REALTIME`. Windows 95 has no
+`GetSystemTimePreciseAsFileTime`, so it falls back to `GetSystemTimeAsFileTime`,
+which moves only with the scheduler's tick. A probe at start-up
+(`[boot][clock]`) found **4 steps in 200 ms, the largest 60 ms**. The project's
+own clock, QueryPerformanceCounter on the 8254, was used for instruments and
+never reached `ultramodern`. `ultramodern::precise_now()` (patch 0054) keeps the
+time-point type and advances with `steady_clock`, which winpthreads takes from
+QueryPerformanceCounter: **18,325 steps in 200 ms, the largest 77 µs**.
+
+**The retraces.** The VI loop sent the game a VI interrupt on every pass. It
+sleeps until the next retrace is due, but on a clock that lags by up to 60 ms it
+often woke early, and an early pass sent a retrace all the same.
+`[trace][vi-late]` counted **66.5 passes a second**. With the sampler forcing the
+scheduler to decide again every millisecond there were **109**. DKR paces its
+logic in retraces, so the sampler did not speed the program up: it fed the game
+almost twice as many retraces as real time holds. Even without it, the game ran
+about 10% fast. The loop now sends nothing until the retrace count has moved.
+
+**The lateness.** A quarter of the VI thread's wakes came **16 ms or more
+late**, a whole retrace, because it waited out whoever held the processor at
+normal priority. `ultramodern` asks for Critical, but this target's
+`set_native_thread_priority` did nothing. On Windows 95 it now applies Critical
+and VeryHigh, which are the VI and timer threads, both asleep nearly all the
+time. The wakes are now all under 2 ms late, with a mean of 1.3 ms.
+
+Normal mode with both opt-in options: **40.3 ms to 37.3 ms (26.8 fps)**, and at
+a correct game speed, which none of the figures before this entry had.
+
+Two costs in the tooling, recorded so they are not paid twice. The sampler's
+first captures kept writing until the harness cut the machine's power, and an
+early version of the clock probe spun forever on a clock not yet initialised.
+Both times the transfer disk was left dirty and mtools refused it. It was
+repaired from a backup copy with `fsck.fat`, after the 28 `FSCK*.REC` fragments
+of the first repair had filled the FAT16 root directory. The sampler now stops
+and closes its file after `DKR_TRACE_SAMPLER` seconds (60 by default), and the
+probe initialises the clock itself and is bounded.

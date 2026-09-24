@@ -20,6 +20,7 @@ static volatile LONG    g_thread_count = 0;
 static int              g_enabled = -1;
 static sampler_record   g_chunk[SAMPLER_CHUNK];
 static FILE            *g_file;
+static unsigned int     g_seconds = 60;   /* DKR_TRACE_SAMPLER's value */
 
 static int sampler_enabled(void)
 {
@@ -84,6 +85,13 @@ static void write_records(FILE *f, unsigned int count)
 
 static DWORD WINAPI sampler_thread(LPVOID unused)
 {
+    /* The sampler stops, closes its file and exits after DKR_TRACE_SAMPLER
+       seconds. The measurement harness quits the game and then cuts the machine's
+       power, and a sampler still writing at that point left the transfer disk
+       with its dirty bit set and 565 orphaned clusters. mtools then refused the
+       disk until a repair. A capture that is closed long before shutdown cannot
+       do that. */
+    const DWORD stop_at = GetTickCount() + g_seconds * 1000u;
     unsigned int used = 0, ticks = 0;
     HANDLE self = GetCurrentThread();
     (void)unused;
@@ -91,6 +99,13 @@ static DWORD WINAPI sampler_thread(LPVOID unused)
         LONG i, n;
         Sleep(1);
         ticks++;
+        if ((LONG)(GetTickCount() - stop_at) >= 0) {
+            if (used) { write_records(g_file, used); }
+            write_modules(g_file);
+            fclose(g_file);
+            g_file = NULL;
+            return 0;
+        }
         n = g_thread_count;
         if (n > SAMPLER_MAX_THREADS) { n = SAMPLER_MAX_THREADS; }
         for (i = 0; i < n; i++) {
@@ -128,6 +143,11 @@ int dkr_sampler_start(void)
     HANDLE t;
     DWORD id;
     if (!sampler_enabled()) { return 0; }
+    {
+        const char *v = getenv("DKR_TRACE_SAMPLER");
+        const unsigned long n = v ? strtoul(v, NULL, 10) : 0;
+        if (n > 1) { g_seconds = (unsigned int)n; }   /* "1" keeps the default */
+    }
     g_file = fopen("D:\\SAMPLES.BIN", "wb");
     if (!g_file) { return 0; }
     fwrite("DKRS", 1, 4, g_file);

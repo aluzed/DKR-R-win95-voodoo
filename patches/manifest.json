@@ -217,6 +217,10 @@
         {
           "path": "patches/n64-modern-runtime/0053-make-the-semaphore-spin-count-a-macro.patch",
           "sha256": "3cb5a76d97d423c01ff6e738f9cdec24f8a41bc2a0077750e3cdcfd960f68e5c"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0054-a-precise-clock-and-a-punctual-vi-thread.patch",
+          "sha256": "cd85fd4c5a9b1d182f9657aace05785e255bba34bda5ad3343711d0e91025ea4"
         }
       ]
     },

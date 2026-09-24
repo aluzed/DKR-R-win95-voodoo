@@ -1226,6 +1226,49 @@ int DkrMain(int argc, char** argv) {
                      "[boot][log] could not create the persistent runtime log\n");
     }
 #if defined(DKR_TARGET_WIN95)
+    // How fine is std::chrono::high_resolution_clock here? ultramodern times
+    // everything with it -- osGetCount, osGetTime, its timers, the VI loop -- and
+    // on this target it is libstdc++'s system clock over winpthreads'
+    // clock_gettime. Measured against the 8254 over 200 ms: the distinct steps
+    // it takes, and the largest one.
+    // The clock is initialised here, not relied upon: DkrMain only calls
+    // dkr_clock_init further down, and the first version of this probe spun
+    // forever on a clock that read zero -- the game never took the screen, and
+    // the harness cut the machine's power with the log open. The iteration cap
+    // makes sure no clock can hang it again.
+    if (dkr_clock_init()) {
+        const unsigned long long t0 = dkr_clock_now_us();
+        auto last = std::chrono::high_resolution_clock::now();
+        unsigned long steps = 0, spins = 0;
+        long long largest = 0;
+        while (dkr_clock_now_us() - t0 < 200000ULL && ++spins < 5000000UL) {
+            const auto now = std::chrono::high_resolution_clock::now();
+            if (now != last) {
+                const long long d = std::chrono::duration_cast<std::chrono::microseconds>(now - last).count();
+                if (d > largest) { largest = d; }
+                steps++;
+                last = now;
+            }
+        }
+        std::fprintf(stderr, "[boot][clock] high_resolution_clock: %lu steps in 200 ms, "
+                             "largest %lld us\n", steps, largest);
+        // And the clock ultramodern now uses instead (patch 0055).
+        const unsigned long long t1 = dkr_clock_now_us();
+        auto plast = ultramodern::precise_now();
+        unsigned long psteps = 0, pspins = 0;
+        long long plargest = 0;
+        while (dkr_clock_now_us() - t1 < 200000ULL && ++pspins < 5000000UL) {
+            const auto now = ultramodern::precise_now();
+            if (now != plast) {
+                const long long d = std::chrono::duration_cast<std::chrono::microseconds>(now - plast).count();
+                if (d > plargest) { plargest = d; }
+                psteps++;
+                plast = now;
+            }
+        }
+        std::fprintf(stderr, "[boot][clock] ultramodern::precise_now: %lu steps in 200 ms, "
+                             "largest %lld us\n", psteps, plargest);
+    }
     StartIdleMeter();
     if (dkr_sampler_start()) {
         dkr_sampler_register_current_thread();

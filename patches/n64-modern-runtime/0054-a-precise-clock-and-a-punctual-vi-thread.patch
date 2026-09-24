@@ -1,0 +1,254 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] A precise clock and a punctual VI thread
+
+Everything ultramodern times went through std::chrono::high_resolution_clock:
+osGetCount, osGetTime, the game's timers and the VI thread's schedule. With
+mingw-w64 that is the system clock, over winpthreads' CLOCK_REALTIME, and on
+Windows 95 it falls back to GetSystemTimeAsFileTime. Measured on the target: 4
+steps in 200 ms, the largest 60 ms. ultramodern::precise_now() keeps the time
+point type but advances with steady_clock, which winpthreads takes from
+QueryPerformanceCounter: 18,325 steps in 200 ms, the largest 77 us.
+
+The VI loop sent a retrace on every pass. Early wakes on the coarse clock gave
+the game 66.5 retraces a second instead of 60, and 109 with a profiler forcing
+the scheduler every millisecond. It now sends nothing until the retrace count
+has moved.
+
+On Windows 95, set_native_thread_priority applies Critical (the VI thread) and
+VeryHigh (the timer thread). A quarter of the VI thread's wakes had come 16 ms
+or more late, waiting out whoever held the processor. They are now all under
+2 ms, with a mean of 1.3 ms. Every other thread keeps normal priority.
+
+Normal mode with both opt-in options: 40.3 ms -> 37.3 ms (26.8 fps). 2,160
+display lists, no rejects, clean exit. The instrument, [trace][vi-late], is
+part of this patch.
+
+---
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -108,6 +108,8 @@
+ 
+ // Time
+ std::chrono::high_resolution_clock::time_point get_start();
++// Patch 0055: "now" for everything ultramodern times. See timer.cpp.
++std::chrono::high_resolution_clock::time_point precise_now();
+ std::chrono::high_resolution_clock::duration time_since_start();
+ void measure_input_latency();
+ void sleep_milliseconds(uint32_t millis);
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -12,7 +12,32 @@
+ #endif
+ 
+ // Start time for the program
+-static std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
++/* **Patch 0055: a clock that moves.**
++ *
++ * Everything ultramodern times -- osGetCount, osGetTime, the game's timers, the
++ * VI thread's schedule -- used std::chrono::high_resolution_clock::now(). With
++ * mingw-w64 that is the system clock over winpthreads' CLOCK_REALTIME, and on
++ * Windows 95 it falls back to GetSystemTimeAsFileTime, which only moves with the
++ * scheduler's tick. Measured on the target: 4 steps in 200 ms, the largest
++ * 60 ms. The game's time advanced in jumps of a sixteenth of a second.
++ *
++ * steady_clock is CLOCK_MONOTONIC, which winpthreads takes from
++ * QueryPerformanceCounter, and that is the 8254 at 1,193,180 Hz here. The time
++ * points keep high_resolution_clock's type, so no signature changes: they are
++ * the system clock's reading at start-up plus the steady clock's advance since.
++ * These two statics are defined before start_time, which static initialisation
++ * order within one translation unit guarantees. */
++static const std::chrono::high_resolution_clock::time_point g_precise_base =
++    std::chrono::high_resolution_clock::now();
++static const std::chrono::steady_clock::time_point g_precise_steady_base =
++    std::chrono::steady_clock::now();
++
++std::chrono::high_resolution_clock::time_point ultramodern::precise_now() {
++    return g_precise_base + std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
++        std::chrono::steady_clock::now() - g_precise_steady_base);
++}
++
++static std::chrono::high_resolution_clock::time_point start_time = ultramodern::precise_now();
+ // Offset of the duration since program start used to calculate the value for osGetTime. 
+ static int64_t ostime_offset = 0;
+ // Game speed multiplier (1 means no speedup)
+@@ -65,7 +90,7 @@
+ }
+ 
+ uint64_t time_now() {
+-    return duration_to_ticks(std::chrono::high_resolution_clock::now() - start_time);
++    return duration_to_ticks(ultramodern::precise_now() - start_time);
+ }
+ 
+ void timer_thread(RDRAM_ARG1) {
+@@ -127,7 +152,7 @@
+         active_timers.erase(cur_timer_);
+ 
+         // Determine how long to wait to reach the timer's timestamp
+-        auto wait_duration = ticks_to_timepoint(cur_timer->timestamp) - std::chrono::high_resolution_clock::now();
++        auto wait_duration = ticks_to_timepoint(cur_timer->timestamp) - ultramodern::precise_now();
+ 
+         // Wait for either the duration to complete or a new action to come through
+         if (wait_duration.count() >= 0 && timer_context.action_queue.wait_dequeue_timed(cur_action, wait_duration)) {
+@@ -154,7 +179,7 @@
+ void ultramodern::init_timers(RDRAM_ARG1) {
+     Action stale_action;
+     while (timer_context.action_queue.try_dequeue(stale_action)) {}
+-    start_time = std::chrono::high_resolution_clock::now();
++    start_time = ultramodern::precise_now();
+     ostime_offset = 0;
+     timer_context.thread = ultramodern::thread{ timer_thread, PASS_RDRAM1 };
+ }
+@@ -179,7 +204,7 @@
+ }
+ 
+ std::chrono::high_resolution_clock::duration ultramodern::time_since_start() {
+-    return std::chrono::high_resolution_clock::now() - start_time;
++    return ultramodern::precise_now() - start_time;
+ }
+ 
+ extern "C" u32 osGetCount() {
+@@ -238,7 +263,7 @@
+ }
+ 
+ void ultramodern::sleep_until(const std::chrono::high_resolution_clock::time_point& time_point) {
+-    auto time_now = std::chrono::high_resolution_clock::now();
++    auto time_now = ultramodern::precise_now();
+     if (time_point > time_now) {
+         long long delta_ms = std::chrono::ceil<std::chrono::milliseconds>(time_point - time_now).count();
+         // printf("Sleeping %lld %d ms\n", delta_ms, (uint32_t)delta_ms);
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -424,6 +424,14 @@
+ 
+ void set_dummy_vi(bool odd);
+ 
++/* Patch 0054: how late the VI thread wakes. Every retrace the game sees starts
++   here, after `sleep_until`, which on Windows 95 is a `Sleep` of whole
++   milliseconds on whatever the scheduler's tick allows. A retrace that arrives
++   late delays whatever the game was waiting on it for. Buckets: under 0.25, 1, 2,
++   4, 8 and 16 ms, and the rest. */
++static std::atomic<unsigned long long> g_vi_late_bins[7];
++static std::atomic<unsigned long long> g_vi_late_us{0};
++
+ void vi_thread_func() {
+     ultramodern::set_native_thread_name("VI Thread");
+     // This thread should be prioritized over every other thread in the application, as it's what allows
+@@ -446,14 +454,37 @@
+         //    printf("No need to sleep\n");
+         //}
+         // Detect if there's more than a second to wait and wait a fixed amount instead for the next VI if so, as that usually means the system clock went back in time.
+-        if (std::chrono::floor<std::chrono::seconds>(next - std::chrono::high_resolution_clock::now()) > 1s) {
++        if (std::chrono::floor<std::chrono::seconds>(next - ultramodern::precise_now()) > 1s) {
+             // printf("Skipping the next VI wait\n");
+-            next = std::chrono::high_resolution_clock::now();
++            next = ultramodern::precise_now();
+         }
+         ultramodern::sleep_until(next);
++        {
++            /* In whole microseconds on ultramodern's own base, both sides cast
++               separately: `next` comes out of mixed signed and unsigned duration
++               arithmetic, and subtracting it from now() directly gave nonsense. */
++            const long long now_us = (long long)std::chrono::duration_cast<std::chrono::microseconds>(
++                ultramodern::time_since_start()).count();
++            const long long due_us = (long long)((total_vis * 1000000ULL) /
++                                                 (60ULL * ultramodern::get_speed_multiplier()));
++            const long long late = now_us - due_us;
++            const unsigned long long l = late > 0 ? (unsigned long long)late : 0ULL;
++            const int bin = l < 250 ? 0 : l < 1000 ? 1 : l < 2000 ? 2 : l < 4000 ? 3
++                          : l < 8000 ? 4 : l < 16000 ? 5 : 6;
++            g_vi_late_bins[bin].fetch_add(1);
++            g_vi_late_us.fetch_add(l);
++        }
+         auto time_now = ultramodern::time_since_start();
+         // Calculate how many VIs have passed
+         uint64_t new_total_vis = (time_now * (60 * ultramodern::get_speed_multiplier()) / 1000ms) + 1;
++        /* Patch 0055: a wake before the retrace is due is not a retrace. The loop
++           used to send the game a VI interrupt on every pass, and a coarse clock
++           woke it early often enough that the game received 66.5 retraces a
++           second instead of 60 -- and 109 with a sampling profiler forcing the
++           scheduler every millisecond. Nothing is sent until the count moves. */
++        if (new_total_vis <= total_vis) {
++            continue;
++        }
+         if (new_total_vis > total_vis + 1) {
+             //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
+         }
+@@ -831,6 +862,21 @@
+                              "[trace][vi] updates-enqueued=%llu skipped=%llu\n",
+                              (unsigned long long)g_updates_enqueued.load(),
+                              (unsigned long long)g_updates_skipped.load());
++                {
++                    unsigned long long n = 0;
++                    for (int b = 0; b < 7; b++) { n += g_vi_late_bins[b].load(); }
++                    std::fprintf(stderr,
++                                 "[trace][vi-late] wakes=%llu mean=%llu us  <0.25ms=%llu <1=%llu "
++                                 "<2=%llu <4=%llu <8=%llu <16=%llu rest=%llu\n",
++                                 n, n ? g_vi_late_us.load() / n : 0ULL,
++                                 (unsigned long long)g_vi_late_bins[0].load(),
++                                 (unsigned long long)g_vi_late_bins[1].load(),
++                                 (unsigned long long)g_vi_late_bins[2].load(),
++                                 (unsigned long long)g_vi_late_bins[3].load(),
++                                 (unsigned long long)g_vi_late_bins[4].load(),
++                                 (unsigned long long)g_vi_late_bins[5].load(),
++                                 (unsigned long long)g_vi_late_bins[6].load());
++                }
+                 if (dkr_diag_commit) { dkr_diag_commit(); }
+             }
+         }
+@@ -910,12 +956,12 @@
+                     PTR(u64) displaylist = task_action->task.t.data_ptr;
+                     ultramodern::extensions::on_displaylist_submitted(displaylist);
+ 
+-                    [[maybe_unused]] auto renderer_start = std::chrono::high_resolution_clock::now();
++                    [[maybe_unused]] auto renderer_start = ultramodern::precise_now();
+                     renderer_context->send_dl(
+                         &task_action->task,
+                         task_action->rdram_snapshot ? task_action->rdram_snapshot.get()
+                                                     : rdram);
+-                    [[maybe_unused]] auto renderer_end = std::chrono::high_resolution_clock::now();
++                    [[maybe_unused]] auto renderer_end = ultramodern::precise_now();
+                     trace_dl_duration(renderer_start, renderer_end);
+                     // TODO hook the parsed event up to the actual parsing point when a callback is added to RT64.
+                     ultramodern::extensions::on_displaylist_parsed(displaylist);
+--- a/ultramodern/src/input.cpp
++++ b/ultramodern/src/input.cpp
+@@ -31,7 +31,7 @@
+ static std::chrono::high_resolution_clock::time_point input_poll_time;
+ 
+ static void update_poll_time() {
+-    input_poll_time = std::chrono::high_resolution_clock::now();
++    input_poll_time = ultramodern::precise_now();
+ }
+ 
+ void ultramodern::input::prepare_input_read() {
+@@ -50,7 +50,7 @@
+ 
+ void ultramodern::measure_input_latency() {
+ #if 0
+-    printf("Delta: %ld micros\n", std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - input_poll_time));
++    printf("Delta: %ld micros\n", std::chrono::duration_cast<std::chrono::microseconds>(ultramodern::precise_now() - input_poll_time));
+ #endif
+ }
+ 
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -106,7 +106,19 @@
+             throw std::runtime_error("Invalid thread priority!");
+             break;
+     }
++#if defined(DKR_TARGET_WIN95)
++    /* Patch 0055: on Windows 95 the two threads that keep time get the priority
++       they ask for -- the VI thread (Critical) and the timer thread (VeryHigh).
++       At normal priority the VI thread waited out whoever held the processor:
++       a quarter of its wakes came 16 ms or more late, a whole retrace. Both
++       sleep almost all the time. Every other thread keeps normal priority, as
++       upstream leaves it. */
++    if (pri == ThreadPriority::Critical || pri == ThreadPriority::VeryHigh) {
++        SetThreadPriority(GetCurrentThread(), nPriority);
++    }
++#else
+     // SetThreadPriority(GetCurrentThread(), nPriority);
++#endif
+ }
+ #elif defined(__linux__)
+ #include <sys/prctl.h>

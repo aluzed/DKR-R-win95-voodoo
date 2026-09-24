@@ -11,7 +11,9 @@
  * fact: they are registered as they are created (`dkr_thread_start`), and the
  * main thread registers itself.
  *
- * DKR_TRACE_SAMPLER=1 writes `D:\SAMPLES.BIN`: a header listing the loaded
+ * DKR_TRACE_SAMPLER=1 samples for 60 s, DKR_TRACE_SAMPLER=<n> for n seconds,
+ * then closes its file and stops, well before the harness quits the game. It
+ * writes `D:\SAMPLES.BIN`: a header listing the loaded
  * modules (Toolhelp32: base, size, name), then records of thread index and EIP.
  * `tools/win95/sampler_report.py` turns it into a profile by module and by
  * function, using the executable's own symbols.
