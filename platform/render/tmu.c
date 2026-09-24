@@ -2,7 +2,10 @@
 #include "tmu.h"
 
 #include <stdio.h>
+#include <stddef.h>
 #include <string.h>
+
+static void tmu_memo_clear(void);   /* the lookup memo, below find_resident */
 
 /* --- The buddy tree ---------------------------------------------------------- *
  *
@@ -80,6 +83,7 @@ void dkr_tmu_init(dkr_tmu *t, int index, unsigned int base, unsigned int limit,
 {
     if (!t) { return; }
     memset(t, 0, sizeof(*t));
+    tmu_memo_clear();
     t->index          = index;
     t->base           = base;
     t->limit          = limit;
@@ -184,11 +188,45 @@ unsigned int dkr_tmu_used(const dkr_tmu *t) { return t ? t->used_bytes : 0u; }
 
 /* --- The residency cache ------------------------------------------------------ */
 
+/* **A memo in front of the scan (E08-S03).** `find_resident` walked all 512
+ * slots with 64-bit compares on every texture lookup: on the Pentium II the
+ * lookup path cost about 12 us, 0.9 ms a display list. The memo remembers the
+ * index the scan found for a key, and an answer from it is checked before it is
+ * returned (still live, still that key). It can only ever give the scan's own
+ * answer -- the first live slot holding the key -- because it is emptied
+ * whenever a slot becomes live, the one event that could put an earlier match
+ * in front of the remembered one. */
+#define TMU_MEMO_SLOTS 256u
+static struct {
+    const dkr_tmu *tmu;
+    unsigned long long key;
+    int index;
+} g_tmu_memo[TMU_MEMO_SLOTS];
+
+static unsigned tmu_memo_slot(const dkr_tmu *t, unsigned long long key)
+{
+    const unsigned long long h = key ^ (key >> 21) ^ (key >> 42) ^ (unsigned long long)(size_t)t;
+    return (unsigned)(h ^ (h >> 8)) & (TMU_MEMO_SLOTS - 1u);
+}
+
+static void tmu_memo_clear(void)
+{
+    memset(g_tmu_memo, 0, sizeof(g_tmu_memo));
+}
+
 static dkr_tmu_resident *find_resident(dkr_tmu *t, unsigned long long key)
 {
+    const unsigned slot = tmu_memo_slot(t, key);
     int i;
+    if (g_tmu_memo[slot].tmu == t && g_tmu_memo[slot].key == key) {
+        dkr_tmu_resident *r = &t->resident[g_tmu_memo[slot].index];
+        if (r->live && r->key == key) { return r; }
+    }
     for (i = 0; i < DKR_TMU_MAX_RESIDENT; i++) {
         if (t->resident[i].live && t->resident[i].key == key) {
+            g_tmu_memo[slot].tmu = t;
+            g_tmu_memo[slot].key = key;
+            g_tmu_memo[slot].index = i;
             return &t->resident[i];
         }
     }
@@ -291,6 +329,7 @@ unsigned int dkr_tmu_acquire(dkr_tmu *t, unsigned long long key,
     r->last_used = t->clock;
     r->pinned    = 1;
     r->live      = 1;
+    tmu_memo_clear();
     return address;
 }
 

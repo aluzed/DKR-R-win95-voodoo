@@ -309,6 +309,24 @@ void dkr_glide_backend_key_samples(unsigned long long *first,
 }
 
 #define GLIDE_MAX_TEXTURES 512
+
+/* The same memo as `tmu.c`'s, for the same reason: this scan walked 512 slots
+ * with 64-bit compares on every lookup. It remembers the first slot the scan
+ * found for (key, TMU), checks it before trusting it, and is emptied whenever a
+ * slot becomes live, so it only ever returns what the scan would. */
+#define GL_TEX_MEMO_SLOTS 256u
+static struct {
+    unsigned long long key;
+    int tmu;
+    int index;   /* index + 1; zero is empty */
+} g_tex_memo[GL_TEX_MEMO_SLOTS];
+
+static unsigned gl_tex_memo_slot(unsigned long long key, int tmu)
+{
+    const unsigned long long h = key ^ (key >> 21) ^ (key >> 42) ^ (unsigned long long)tmu;
+    return (unsigned)(h ^ (h >> 8)) & (GL_TEX_MEMO_SLOTS - 1u);
+}
+
 static glide_texture g_tex[GLIDE_MAX_TEXTURES];
 static dkr_tmu       g_tmu[2];
 static int           g_tmu_count;
@@ -2557,6 +2575,7 @@ static dkr_texture_handle gl_texture_upload(void *self,
     g_tex[slot].info.data = 0;   /* the pixels do not belong to us */
     g_tex[slot].last_used = ++g_tex_clock;
     g_tex[slot].live    = 1;
+    memset(g_tex_memo, 0, sizeof(g_tex_memo));
     return (dkr_texture_handle)(slot + 1);
 }
 
@@ -2576,14 +2595,26 @@ static dkr_texture_handle gl_texture_upload(void *self,
 static dkr_texture_handle gl_texture_lookup(void *self, unsigned long long key,
                                             int tmu)
 {
-    int i;
+    int i, start = 0;
+    unsigned memo;
     (void)self;
     if (g_tmu_count == 0) { return 0; }
     if (tmu < 0 || tmu >= g_tmu_count) { tmu = 0; }
-    for (i = 0; i < GLIDE_MAX_TEXTURES; i++) {
+    memo = gl_tex_memo_slot(key, tmu);
+    if (g_tex_memo[memo].index != 0 && g_tex_memo[memo].key == key &&
+        g_tex_memo[memo].tmu == tmu) {
+        const int m = g_tex_memo[memo].index - 1;
+        if (g_tex[m].live && g_tex[m].key == key && g_tex[m].tmu == (unsigned char)tmu) {
+            start = m;   /* the scan's first match: resume there */
+        }
+    }
+    for (i = start; i < GLIDE_MAX_TEXTURES; i++) {
         if (!g_tex[i].live) { continue; }
         if (g_tex[i].key != key) { continue; }
         if (g_tex[i].tmu != (unsigned char)tmu) { continue; }
+        g_tex_memo[memo].key = key;
+        g_tex_memo[memo].tmu = tmu;
+        g_tex_memo[memo].index = i + 1;
         /* The allocator is the sole judge of what resides where -- the same rule
            the descriptor table already follows on upload. If it no longer holds
            the key, the slot is stale and says so by being cleared, rather than

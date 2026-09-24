@@ -475,13 +475,34 @@ static void envmix_load(s16 *block, u32 address)
     for (i = 0; i < 8u; i++) { block[i] = dmem_s16(address + i * 2u); }
 }
 
-static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const ramp *r,
-                       s32 dry_gain, s32 wet_gain)
+/* The per-lane gains of one side, VMULF(volume, dry) and VMULF(volume, wet).
+ * With a zero rate the volumes stop moving once clamped, and so do the gains:
+ * half of DKR's ENVMIXER calls have both rates at zero, and for those the gains
+ * are computed once per call instead of once per block. `valid` is cleared at
+ * the start of every call and whenever the rate is not zero. */
+typedef struct {
+    s32 dry[8], wet[8];
+    int valid;
+} envmix_gains;
+
+static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 wet_gain,
+                             int rate_is_zero)
+{
+    u32 i;
+    if (g->valid && rate_is_zero) { return; }
+    for (i = 0; i < 8u; i++) {
+        g->dry[i] = mulf(r->integer[i], dry_gain);
+        g->wet[i] = mulf(r->integer[i], wet_gain);
+    }
+    g->valid = 1;
+}
+
+static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const envmix_gains *g)
 {
     u32 i;
     for (i = 0; i < 8u; i++) {
-        dry[i] = (s16)mix_sample(dry[i], in[i], mulf(r->integer[i], dry_gain));
-        wet[i] = (s16)mix_sample(wet[i], in[i], mulf(r->integer[i], wet_gain));
+        dry[i] = (s16)mix_sample(dry[i], in[i], g->dry[i]);
+        wet[i] = (s16)mix_sample(wet[i], in[i], g->wet[i]);
     }
 }
 
@@ -513,7 +534,10 @@ static void cmd_envmixer(u32 w0, u32 w1)
     u32 stride = 16u;
     s32 count = (s32)state_u16(ST_COUNT);
     s16 b_in[8], b_dl[8], b_wl[8], b_dr[8], b_wr[8];
+    envmix_gains gains_l, gains_r;
+    int rate_l_zero, rate_r_zero;
     u32 i;
+    gains_l.valid = gains_r.valid = 0;
 
     for (i = 0; i < 8u; i++) { param[i] = dmem_u16(DMEM_STATE + 0x10u + i * 2u); }
     if (!(flags & 0x01u)) {
@@ -531,18 +555,23 @@ static void cmd_envmixer(u32 w0, u32 w1)
         stride = 0;
     }
     /* param: 0 target L, 1-2 rate L, 3 target R, 4-5 rate R, 6 dry, 7 wet */
+    rate_l_zero = (param[1] == 0 && param[2] == 0);
+    rate_r_zero = (param[4] == 0 && param[5] == 0);
 
     if (flags & 0x01u) {
         ramp_start(&left, dmem_s16(DMEM_STATE + ST_VOL_L), param[1], param[2]);
         ramp_clamp(&left, param[1], param[0]);
         envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
-        envmix_mix(b_dl, b_wl, b_in, &left, (s16)param[6], (s16)param[7]);
+        envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], 0);
+        envmix_mix(b_dl, b_wl, b_in, &gains_l);
         envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
         ramp_start(&right, dmem_s16(DMEM_STATE + ST_VOL_R), param[4], param[5]);
         ramp_clamp(&right, param[4], param[3]);
         envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
-        envmix_mix(b_dr, b_wr, b_in, &right, (s16)param[6], (s16)param[7]);
+        envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], 0);
+        envmix_mix(b_dr, b_wr, b_in, &gains_r);
         envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
+        gains_l.valid = gains_r.valid = 0;   /* the loop's first clamp may still move them */
         count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;
     }
     ramp_step(&left, param[1], param[2]);
@@ -551,14 +580,16 @@ static void cmd_envmixer(u32 w0, u32 w1)
         ramp_step(&right, param[4], param[5]);
         envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
         envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
-        envmix_mix(b_dl, b_wl, b_in, &left, (s16)param[6], (s16)param[7]);
+        envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero);
+        envmix_mix(b_dl, b_wl, b_in, &gains_l);
         for (i = 0; i < 8u; i++) {
             dmem_set_s16(st + i * 2u, left.integer[i]);
             dmem_set_s16(st + 0x10u + i * 2u, left.fraction[i]);
         }
         ramp_clamp(&right, param[4], param[3]);
         ramp_step(&left, param[1], param[2]);
-        envmix_mix(b_dr, b_wr, b_in, &right, (s16)param[6], (s16)param[7]);
+        envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero);
+        envmix_mix(b_dr, b_wr, b_in, &gains_r);
         envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
         envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
         count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;

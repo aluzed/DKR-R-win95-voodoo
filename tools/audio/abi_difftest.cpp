@@ -122,8 +122,10 @@ void add_test(const std::string& name, List& l) {
         const uint32_t count = ((rng() % 0x100) + 2) & ~1u;
         l.add(cmd(SETVOL, 0x06, rng()), 0);                   // A_VOL | A_LEFT
         l.add(cmd(SETVOL, 0x04, rng()), 0);                   // A_VOL | A_RIGHT
-        l.add(cmd(SETVOL, 0x02, rng()), rng());               // A_RATE | A_LEFT
-        l.add(cmd(SETVOL, 0x00, rng()), rng());               // A_RATE | A_RIGHT
+        // Half the time a side's rate is zero, as in half of DKR's calls: the
+        // mixer then computes that side's gains once per call.
+        l.add(cmd(SETVOL, 0x02, rng()), (rng() & 1) ? 0 : rng());   // A_RATE | A_LEFT
+        l.add(cmd(SETVOL, 0x00, rng()), (rng() & 1) ? 0 : rng());   // A_RATE | A_RIGHT
         l.add(cmd(SETVOL, 0x08, rng()), rng());               // A_AUX: dry, wet
         l.add(cmd(SETBUFF, 0, 0x000), (0x100u << 16) | count);
         l.add(cmd(SETBUFF, 0x08, 0x200), (0x300u << 16) | 0x400u);
