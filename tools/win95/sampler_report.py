@@ -79,12 +79,28 @@ def main():
     exe_name = (sys.argv[sys.argv.index("--module") + 1] if "--module" in sys.argv
                 else "DKRR.EXE").upper()
 
+    # --exports KERNEL32.DLL=exports.txt: "RVA name" lines (a DLL's export table),
+    # so that samples in a system DLL are attributed to the nearest export below
+    # them. Approximate for internal code, which is attributed to the export
+    # before it, but enough to tell a timer from a wait.
+    exports = {}
+    for i, arg in enumerate(sys.argv):
+        if arg == "--exports":
+            mod, path_ = sys.argv[i + 1].split("=", 1)
+            table = sorted((int(line.split()[0], 16), line.split()[1])
+                           for line in open(path_) if line.strip())
+            exports[mod.upper()] = ([r for r, _ in table], [n for _, n in table])
+
     def where(eip):
         for base, size, name in modules:
             if base <= eip < base + size:
                 if name.upper() == exe_name:
                     i = bisect.bisect_right(addrs, eip) - 1
                     return name, names[i] if i >= 0 else "?"
+                if name.upper() in exports:
+                    rvas, enames = exports[name.upper()]
+                    i = bisect.bisect_right(rvas, eip - base) - 1
+                    return name, (name + "!" + enames[i]) if i >= 0 else name
                 return name, name
         return "?", "?"
 
@@ -100,6 +116,14 @@ def main():
     print("\nby module:")
     for m, c in by_module.most_common():
         print(f"  {100 * c / total:5.1f}%  {m}")
+    for mod in exports:
+        mod_total = sum(c for (m, _), c in by_function.items() if m.upper() == mod)
+        print(f"\n{mod}, top exports ({mod_total} samples):")
+        for (m, f), c in by_function.most_common():
+            if m.upper() == mod:
+                print(f"  {100 * c / max(mod_total, 1):5.1f}%  {f}")
+                if c < mod_total * 0.01:
+                    break
     exe_total = sum(c for (m, _), c in by_function.items() if m.upper() == exe_name)
     print(f"\n{exe_name}, top {top} functions ({exe_total} samples):")
     for (m, f), c in by_function.most_common():
