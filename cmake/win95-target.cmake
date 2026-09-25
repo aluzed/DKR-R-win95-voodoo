@@ -604,6 +604,10 @@ dkr_win95_verify(DKRWin95F3DDKR)
 # (tools/audio/replay_hle). The game uses it unless DKR_AUDIO_MICROCODE=1.
 add_library(win95audiohle STATIC "${DKRPORT_ROOT}/platform/audio/aspmain_hle.c")
 target_include_directories(win95audiohle PUBLIC "${DKRPORT_ROOT}/platform/audio")
+set(DKR_WIN95_AUDIO_OPT "" CACHE STRING "Extra optimisation flag for the audio mixer, e.g. -O2")
+if(DKR_WIN95_AUDIO_OPT)
+    target_compile_options(win95audiohle PRIVATE ${DKR_WIN95_AUDIO_OPT})
+endif()
 
 # --- RDP state decoding (E04-S06) --------------------------------------------
 #
@@ -1216,6 +1220,15 @@ target_compile_options(win95recompiled PRIVATE -w)   # generated code
 # and int8_t*, and a word store followed by a halfword load of the same bytes is
 # exactly what the optimiser may reorder.
 target_compile_options(win95recompiled PRIVATE -fno-strict-aliasing)
+
+# E08-S02: the recompiled code's optimisation level, for measurement. Empty keeps
+# the build type's (-O3). On a Pentium II with 16 KB of instruction cache, -Os can
+# beat -O3 on code this large, and the ticket asks for it to be measured, not
+# assumed.
+set(DKR_WIN95_RECOMP_OPT "" CACHE STRING "Extra optimisation flag for the recompiled code, e.g. -Os")
+if(DKR_WIN95_RECOMP_OPT)
+    target_compile_options(win95recompiled PRIVATE ${DKR_WIN95_RECOMP_OPT})
+endif()
 
 # --- The game (E02-S06) ------------------------------------------------------
 #

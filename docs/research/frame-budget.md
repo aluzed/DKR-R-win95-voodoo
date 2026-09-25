@@ -255,3 +255,25 @@ proposed allocation. E08-S02 should wait for the three items above.
 - The on-screen display, and the export for offline analysis.
 - The zones stop at `cmd_triangle`'s phases. `dkr_clip_near` and
   `dkr_clip_project` are timed whole, not inside.
+
+### E08-S02, first measurement: the recompiled code's optimisation level
+
+`DKR_WIN95_RECOMP_OPT` (CMake) adds a flag to the recompiled code. The game
+thread's processor time, in exclusive mode over a steady window, with both
+opt-in options on:
+
+| Level | Game thread | Share |
+|---|---:|---:|
+| `-O3` (the default) | 4.49 ms a frame | 11.9% |
+| `-O2` | 4.24 ms | 11.5% |
+| `-Os` | 4.71 ms | 12.8% |
+
+The spread is about 5%, which is the run-to-run spread. The windows were not the
+same length either. **The recompiled game is 4.5 ms of a 37 ms frame**, since
+the clock fix and at a correct game speed. E08-S02 has less to win than any other
+item in this table. `-O3` stays.
+
+One reservation. The ticket expects `-Os` to win on a real Pentium II, because
+its instruction cache is 16 KB. Whether 86Box models instruction-cache misses is
+not established. If it does not, that effect cannot show here in either
+direction.
