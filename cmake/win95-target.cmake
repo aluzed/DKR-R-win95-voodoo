@@ -603,6 +603,10 @@ dkr_win95_verify(DKRWin95F3DDKR)
 # every command (tools/audio/abi_difftest) and on captured game tasks
 # (tools/audio/replay_hle). The game uses it unless DKR_AUDIO_MICROCODE=1.
 add_library(win95audiohle STATIC "${DKRPORT_ROOT}/platform/audio/aspmain_hle.c")
+# E06-S03: the game's audio through waveOut.
+add_library(win95audioout STATIC "${DKR_WIN95_PLATFORM}/audio_out.c")
+target_include_directories(win95audioout PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95audioout PUBLIC winmm)
 target_include_directories(win95audiohle PUBLIC "${DKRPORT_ROOT}/platform/audio")
 set(DKR_WIN95_AUDIO_OPT "" CACHE STRING "Extra optimisation flag for the audio mixer, e.g. -O2")
 if(DKR_WIN95_AUDIO_OPT)
@@ -1305,7 +1309,9 @@ target_link_libraries(DKRWin95Game PRIVATE
     # to bring them together - until now only witnesses opened them separately.
     win95f3ddkr win95glide
     # E03-S03: the audio microcode's high-level replacement.
-    win95audiohle)
+    win95audiohle
+    # E06-S03: its output.
+    win95audioout)
 # `win95compat` is not named here: it adds itself, first and under
 # `--whole-archive`, through the interface options set above. Naming it a second
 # time duplicates the archive and the linker refuses - multiple definitions.

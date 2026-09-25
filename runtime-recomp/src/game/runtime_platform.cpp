@@ -29,6 +29,11 @@
 #endif
 #endif
 
+#if defined(DKR_TARGET_WIN95)
+extern "C" {
+#include "audio_out.h"
+}
+#endif
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -53,6 +58,12 @@
 namespace {
 
 std::atomic<std::uint64_t> g_audio_buffers{0};
+#if defined(DKR_TARGET_WIN95)
+// E06-S03. File scope, not function-local statics: see ultramodern's threads.cpp
+// on initialisation guards with this toolchain.
+bool g_win95_audio_enabled = std::getenv("DKR_NO_AUDIO_OUT") == nullptr;
+std::vector<std::int16_t> g_win95_audio_frames;
+#endif
 constexpr std::size_t kControllerCount = 4;
 std::array<std::atomic<std::uint16_t>, kControllerCount> g_buttons{};
 std::array<std::atomic<float>, kControllerCount> g_stick_x{};
@@ -2041,6 +2052,24 @@ void dkr::runtime::platform::queue_audio(std::int16_t* samples,
             }
         }
     }
+#elif defined(DKR_TARGET_WIN95)
+    /* E06-S03: waveOut. Each RDRAM word holds the pair right-then-left in this
+       layout, so left is samples[i + 1] -- the SDL path above reads them the
+       same way. DKR_NO_AUDIO_OUT=1 leaves the device closed. */
+    if (!g_win95_audio_enabled || sample_count < 2) { return; }
+    g_win95_audio_frames.resize(sample_count);
+    for (std::size_t i = 0; i + 1 < sample_count; i += 2) {
+        g_win95_audio_frames[i] = samples[i + 1];
+        g_win95_audio_frames[i + 1] = samples[i];
+    }
+    (void)dkr_audio_out_write(g_win95_audio_frames.data(),
+                              static_cast<unsigned int>(sample_count / 2));
+    if ((index % 500U) == 0U) {
+        unsigned long written = 0, underruns = 0, dropped = 0;
+        dkr_audio_out_stats(&written, &underruns, &dropped);
+        std::fprintf(stderr, "[audio][out] blocks=%llu frames=%lu underruns=%lu dropped=%lu\n",
+                     static_cast<unsigned long long>(index), written, underruns, dropped);
+    }
 #else
     (void)samples;
 #endif
@@ -2145,6 +2174,10 @@ std::size_t dkr::runtime::platform::audio_frames_remaining() {
         const std::size_t one_dma_frames = std::max(g_audio_frequency / 30U, 1U);
         return std::min(feedback_frames, one_dma_frames);
     }
+#elif defined(DKR_TARGET_WIN95)
+    if (g_win95_audio_enabled) {
+        return dkr_audio_out_feedback_frames();
+    }
 #endif
     return 0;
 }
@@ -2196,6 +2229,19 @@ void dkr::runtime::platform::set_audio_frequency(std::uint32_t frequency) {
     g_audio_equalizer.reset();
     std::fprintf(stderr, "[boot][audio] device opened requested=%u actual=%d format=%04X channels=%u\n",
                  frequency, obtained.freq, obtained.format, obtained.channels);
+#elif defined(DKR_TARGET_WIN95)
+    if (!g_win95_audio_enabled) {
+        std::fprintf(stderr, "[boot][audio] frequency=%u, output off (DKR_NO_AUDIO_OUT)\n", frequency);
+        return;
+    }
+    // A failure leaves the device closed and the next frequency tries again.
+    // ultramodern opens at a dummy 48,000 Hz before the game asks for its own,
+    // and a Sound Blaster 16 stops at 44,100: disabling on the first failure
+    // silenced the game for good.
+    const int ok = dkr_audio_out_open(frequency);
+    std::fprintf(stderr, "[boot][audio] waveOut at %u Hz: %s (devices=%u, result=%u)\n",
+                 frequency, ok ? "open" : "refused", dkr_audio_out_devices(),
+                 dkr_audio_out_last_error());
 #else
     std::fprintf(stderr, "[boot][audio] frequency=%u (diagnostic backend)\n", frequency);
 #endif
