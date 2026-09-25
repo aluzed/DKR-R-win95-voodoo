@@ -62,6 +62,19 @@ def main():
     path, exe = sys.argv[1], sys.argv[2]
     top = int(sys.argv[sys.argv.index("--top") + 1]) if "--top" in sys.argv else 30
     modules, records = read(path)
+    if "--all" not in sys.argv:
+        # A thread asleep in the kernel keeps the same EIP from one sample to the
+        # next -- and on Windows 95 that EIP is often not in KERNEL32 but at the
+        # return address after the call into the wait (dkr_condvar_wait,
+        # dkr_mutex_lock). A thread that computes moves. Keep only samples whose
+        # EIP differs from that thread's previous one; --all keeps everything.
+        last, moving = {}, []
+        for eip, thread in records:
+            if last.get(thread) != eip:
+                moving.append((eip, thread))
+            last[thread] = eip
+        print(f"{len(records)} samples, {len(moving)} moving (a thread's EIP changed since its last sample)")
+        records = moving
     addrs, names = symbols(exe)
     exe_name = (sys.argv[sys.argv.index("--module") + 1] if "--module" in sys.argv
                 else "DKRR.EXE").upper()
@@ -96,6 +109,18 @@ def main():
         top -= 1
         if top == 0:
             break
+    if "--hot" in sys.argv:
+        # The hottest addresses inside one function, to read against objdump -d.
+        wanted = sys.argv[sys.argv.index("--hot") + 1]
+        hot = collections.Counter()
+        for eip, _ in records:
+            module, function = where(eip)
+            if function == wanted:
+                hot[eip] += 1
+        n = sum(hot.values())
+        print(f"\nhottest addresses in {wanted} ({n} samples):")
+        for eip, c in hot.most_common(12):
+            print(f"  {eip:08X}  {100 * c / max(n, 1):5.1f}%")
     if "--thread" in sys.argv:
         for t, counter in sorted(by_thread.items()):
             n = sum(counter.values())

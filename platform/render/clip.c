@@ -58,14 +58,22 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
     /* **Short circuit.** Almost every triangle is entirely inside the band, and
        leaves here without a single edge being computed. That is what makes
        five-plane clipping affordable where full clipping would not be. */
+    /* The trivial accept, written out (E08-S03). It used to call plane_distance,
+       a switch, fifteen times; a sampling profiler put dkr_clip_near at the top
+       of the renderer, 8% of the game's samples, and almost every triangle
+       leaves here. The expressions are plane_distance's own, and their signs
+       cannot differ from its: DKR_CLIP_GUARD is 4, so g * w is exact, and the
+       sign of a floating-point sum or difference is that of the exact result
+       whatever the precision it is held in. */
     {
+        const float g = DKR_CLIP_GUARD;
         int all_inside = 1;
-        for (plane = 0; plane < CLIP_PLANES && all_inside; plane++) {
-            for (i = 0; i < 3; i++) {
-                if (plane_distance(&in[i], plane) < 0.0f) {
-                    all_inside = 0;
-                    break;
-                }
+        for (i = 0; i < 3 && all_inside; i++) {
+            const float w = in[i].w, x = in[i].x, y = in[i].y;
+            const float gw = g * w;
+            if (!(w - DKR_CLIP_NEAR_EPSILON >= 0.0f) || !(x + gw >= 0.0f) ||
+                !(gw - x >= 0.0f) || !(y + gw >= 0.0f) || !(gw - y >= 0.0f)) {
+                all_inside = 0;
             }
         }
         if (all_inside) {

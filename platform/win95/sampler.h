@@ -12,7 +12,8 @@
  * main thread registers itself.
  *
  * DKR_TRACE_SAMPLER=1 samples for 60 s, DKR_TRACE_SAMPLER=<n> for n seconds,
- * then closes its file and stops, well before the harness quits the game. It
+ * then closes its file and stops, well before the harness quits the game.
+ * DKR_TRACE_SAMPLER_DELAY=<n> starts sampling n seconds late, past the loading. It
  * writes `D:\SAMPLES.BIN`: a header listing the loaded
  * modules (Toolhelp32: base, size, name), then records of thread index and EIP.
  * `tools/win95/sampler_report.py` turns it into a profile by module and by

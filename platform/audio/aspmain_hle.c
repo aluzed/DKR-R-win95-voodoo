@@ -105,6 +105,15 @@ static s32 mulf(s32 a, s32 b)
     return clamp16((a * b + 0x4000) >> 15);
 }
 
+/* (out * 0x7FFF + in * gain + 0x4000) >> 15, with one multiply instead of two:
+ * out * 0x7FFF is out * 2^15 - out, and out * 2^15 comes out of the shift whole,
+ * so the result is out + ((in * gain - out + 0x4000) >> 15). Exact, and inside
+ * 32 bits for any 16-bit operands. */
+static s32 mix_sample(s32 out, s32 in, s32 gain)
+{
+    return clamp16(out + ((in * gain - out + 0x4000) >> 15));
+}
+
 /* A 24-bit address through the segment table, as every command that names
  * RDRAM resolves it. */
 static u32 resolve(u32 w1)
@@ -416,10 +425,6 @@ typedef struct {
     u16 fraction[8];
 } ramp;
 
-static s32 mix_sample(s32 out, s32 in, s32 gain)
-{
-    return clamp16((out * 0x7FFF + in * gain + 0x4000) >> 15);
-}
 
 static void ramp_start(ramp *r, s32 volume, u32 rate_hi, u32 rate_lo)
 {

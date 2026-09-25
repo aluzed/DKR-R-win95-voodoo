@@ -21,6 +21,7 @@ static int              g_enabled = -1;
 static sampler_record   g_chunk[SAMPLER_CHUNK];
 static FILE            *g_file;
 static unsigned int     g_seconds = 60;   /* DKR_TRACE_SAMPLER's value */
+static unsigned int     g_delay = 0;      /* DKR_TRACE_SAMPLER_DELAY: skip the loading */
 
 static int sampler_enabled(void)
 {
@@ -91,7 +92,9 @@ static DWORD WINAPI sampler_thread(LPVOID unused)
        with its dirty bit set and 565 orphaned clusters. mtools then refused the
        disk until a repair. A capture that is closed long before shutdown cannot
        do that. */
-    const DWORD stop_at = GetTickCount() + g_seconds * 1000u;
+    DWORD stop_at;
+    if (g_delay) { Sleep(g_delay * 1000u); }
+    stop_at = GetTickCount() + g_seconds * 1000u;
     unsigned int used = 0, ticks = 0;
     HANDLE self = GetCurrentThread();
     (void)unused;
@@ -147,6 +150,8 @@ int dkr_sampler_start(void)
         const char *v = getenv("DKR_TRACE_SAMPLER");
         const unsigned long n = v ? strtoul(v, NULL, 10) : 0;
         if (n > 1) { g_seconds = (unsigned int)n; }   /* "1" keeps the default */
+        v = getenv("DKR_TRACE_SAMPLER_DELAY");
+        if (v) { g_delay = (unsigned int)strtoul(v, NULL, 10); }
     }
     g_file = fopen("D:\\SAMPLES.BIN", "wb");
     if (!g_file) { return 0; }
