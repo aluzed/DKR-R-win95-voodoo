@@ -129,7 +129,10 @@ items, readable on the target machine.
       (`DKR_TRACE_RENDER_ZONES`) cost 5.8 µs per clock read, about 8 ms a display
       list. Everything is off unless its variable is set. See `frame-budget.md`.
 - [ ] The on-screen display is legible on the target machine.
-- [ ] Median and 99th percentile are reported per item.
+- [x] Median and 99th percentile are reported per item: the frame period, the
+      render per display list and the audio per task, over steady windows
+      (`[gfx]   frame-percentiles`, `[audio][percentiles]`). The game thread's
+      share comes from the trace and has no distribution. See `frame-budget.md`.
 - [ ] The export to a file allows offline analysis.
 - [x] `docs/research/frame-budget.md` gives allocation, measurement and deviation per
       item. The allocation is a proposal awaiting a decision; the measurement is in

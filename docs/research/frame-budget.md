@@ -251,10 +251,51 @@ proposed allocation. E08-S02 should wait for the three items above.
 - The instrumentation's cost is measured (above), but only for the coarse trace
   and the render zones. Exclusive mode changes the schedule by design, and it is
   meant for reading costs, not frames.
-- Medians and 99th percentiles per item: the figures above are means.
 - The on-screen display, and the export for offline analysis.
 - The zones stop at `cmd_triangle`'s phases. `dkr_clip_near` and
   `dkr_clip_project` are timed whole, not inside.
+
+### Medians and 99th percentiles
+
+The figures above are means. Stutters and audio dropouts come from the high
+percentile, so the log now also reports distributions, from fixed histograms
+(`runtime-recomp/src/game/percentile_histogram.hpp`, no allocation, no floating
+point):
+
+- `[gfx]   frame-percentiles`: the frame period (1 ms bins) and one display
+  list's render (250 µs bins), over windows of 600 display lists, about 20 s.
+- `[audio][percentiles]`: one audio task (250 µs bins), over windows of 300
+  tasks, about 10 s of sound.
+
+A percentile is the upper edge of its bin. It is reported in wall time, which
+includes preemption, and that is the time that matters for a missed retrace or
+an underrun. The first window of a run includes loading and is not read. The
+first audio histogram, at 100 µs a bin, capped its p99 at exactly 25,600 µs, the
+last bin; the bins are now 250 µs wide, with a 64 ms ceiling.
+
+Normal mode, 200 s runs, steady windows:
+
+| | Default options | Both opt-in options |
+|---|---:|---:|
+| Frame period, p50 | 68 ms | **34 ms** |
+| Frame period, p99 | 135 ms | 67 to 81 ms |
+| Render per list, p50 | 15.0 ms | 7.8 to 17.3 ms |
+| Render per list, p99 | 42.5 ms | 19.8 to 25.8 ms |
+| Audio per task, p50 | 8.8 to 14.3 ms | 7.8 to 10.0 ms |
+| Audio per task, p99 | 22 to 41 ms | 11 to 20 ms |
+
+Ranges are across windows; the render follows the scene. What they show:
+
+- **The frame's p99 is twice its median**, in both modes. With the options on,
+  one frame in a hundred takes four or five retraces instead of two. That is a
+  visible stutter, and the mean of 37 ms hides it.
+- **The default options' tail is the RDRAM snapshot and the statistics.** With
+  them on, the audio's p99 reaches 41 ms, longer than one audio DMA (33 ms). With a
+  sound driver, that risks an underrun. With both options on, the p99 stays at
+  20 ms or below.
+- The audio task's median, 8 to 10 ms of wall time, is above its 6.4 ms of
+  processor time (`AUDIO-HLE.md`). The difference is presumably preemption by
+  the graphics thread; this has not been measured separately.
 
 ### E08-S02, first measurement: the recompiled code's optimisation level
 

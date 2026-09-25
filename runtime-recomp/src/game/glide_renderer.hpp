@@ -1,5 +1,7 @@
 #pragma once
 
+#include "percentile_histogram.hpp"
+
 #include "ultramodern/renderer_context.hpp"
 
 #include <atomic>
@@ -100,6 +102,10 @@ private:
     // And in 2 ms bins up to 100 ms, to tell a clustering on multiples of
     // 16.67 ms from a spread that merely rounds to them.
     unsigned long period_bins_[51] = {0};
+    // Median and 99th percentile of the frame period and of one display list's
+    // render time (E08-S01).
+    PercentileHistogram period_hist_{1000};
+    PercentileHistogram render_hist_{250};
     unsigned long total_tex_refused_ = 0;
     unsigned long total_tex_padded_ = 0;
     unsigned long total_emitted_textured_ = 0;

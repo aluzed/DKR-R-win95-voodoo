@@ -777,6 +777,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             {
                 const unsigned long bin = static_cast<unsigned long>(d / 2000ULL);
                 period_bins_[bin > 50UL ? 50UL : bin]++;
+                period_hist_.add(d);
             }
             if (d > period_us_worst_) { period_us_worst_ = d; }
         } else {
@@ -1317,6 +1318,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     if (clock_ready) {
         const unsigned long long d = dkr_clock_now_us() - t_entry;
         render_us_total_ += d;
+        render_hist_.add(d);
         render_n_++;
         g_display_lists_drawn.fetch_add(1, std::memory_order_relaxed);
         if (d > render_us_worst_) { render_us_worst_ = d; }
@@ -1497,6 +1499,17 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 std::fprintf(stderr, " %d%s=%lu", n, n == 8 ? "+" : "", period_retraces_[n]);
             }
             std::fprintf(stderr, "\n");
+            // Over a window of 600 display lists (about 20 s), not from boot.
+            if (render_hist_.count() >= 600) {
+                std::fprintf(stderr,
+                             "[gfx]   frame-percentiles: window=%lu period p50=%llu p99=%llu us, "
+                             "render p50=%llu p99=%llu us\n",
+                             render_hist_.count(),
+                             period_hist_.percentile(500), period_hist_.percentile(990),
+                             render_hist_.percentile(500), render_hist_.percentile(990));
+                period_hist_.reset();
+                render_hist_.reset();
+            }
             std::fprintf(stderr, "[gfx]   frame-bins-2ms:");
             for (int b = 0; b < 51; b++) { std::fprintf(stderr, " %lu", period_bins_[b]); }
             std::fprintf(stderr, "\n");

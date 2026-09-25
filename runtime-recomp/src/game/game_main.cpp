@@ -1,5 +1,6 @@
 #include "diagnostic_log.hpp"
 #include "exclusive_section.hpp"
+#include "percentile_histogram.hpp"
 #if defined(DKR_TARGET_WIN95)
 #include "sampler.h"
 #endif
@@ -402,6 +403,8 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
             }
             calls++;
             total_us += dt;
+            static dkr::runtime::PercentileHistogram audio_hist{250};
+            audio_hist.add(dt);
             {
                 static unsigned long long last_rate_us = 0;
                 const unsigned long long now = dkr_clock_now_us();
@@ -425,6 +428,15 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
                 std::fprintf(stderr,
                              "[audio][cost] calls=%llu total=%llu us mean=%llu us\n",
                              calls, total_us, total_us / calls);
+            }
+            // Median and 99th percentile per task over windows of 300 tasks
+            // (about 10 s of sound), not from boot (E08-S01).
+            if (audio_hist.count() >= 300) {
+                std::fprintf(stderr,
+                             "[audio][percentiles] window=%lu p50=%llu p99=%llu us\n",
+                             audio_hist.count(), audio_hist.percentile(500),
+                             audio_hist.percentile(990));
+                audio_hist.reset();
             }
             return r;
         };
