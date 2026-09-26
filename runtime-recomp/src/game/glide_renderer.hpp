@@ -1,11 +1,13 @@
 #pragma once
 
+#include "frame_osd.hpp"
 #include "percentile_histogram.hpp"
 #include "timing_export.hpp"
 
 #include "ultramodern/renderer_context.hpp"
 
 #include <atomic>
+#include <memory>
 #include <cstdint>
 
 #if defined(DKR_TARGET_WIN95)
@@ -110,6 +112,16 @@ private:
     // DKR_TIMING_EXPORT: one record per display list, see timing_export.hpp.
     TimingExport timing_export_{"FRAMES.BIN"};
     unsigned long long last_period_us_ = 0;
+    // DKR_OSD: the on-screen display, and what it averages over its second.
+    std::unique_ptr<FrameOsd> osd_;
+    unsigned long long osd_t0_ = 0;
+    unsigned long long osd_period_sum_ = 0, osd_period_max_ = 0;
+    unsigned long osd_periods_ = 0;
+    unsigned long long osd_render_sum_ = 0, osd_render_max_ = 0;
+    unsigned long osd_renders_ = 0;
+    unsigned long long osd_draw_us_ = 0;
+    unsigned long osd_draws_ = 0, osd_refreshes_ = 0;
+    void osd_refresh(unsigned long long now_us);
     unsigned long total_tex_refused_ = 0;
     unsigned long total_tex_padded_ = 0;
     unsigned long total_emitted_textured_ = 0;

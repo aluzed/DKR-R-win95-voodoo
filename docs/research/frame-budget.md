@@ -251,7 +251,6 @@ proposed allocation. E08-S02 should wait for the three items above.
 - The instrumentation's cost is measured (above), but only for the coarse trace
   and the render zones. Exclusive mode changes the schedule by design, and it is
   meant for reading costs, not frames.
-- The on-screen display.
 - The zones stop at `cmd_triangle`'s phases. `dkr_clip_near` and
   `dkr_clip_project` are timed whole, not inside.
 
@@ -332,13 +331,43 @@ both opt-in options. The file held 3,200 of 3,212 display lists and 3,584 of
 
 The log's windowed percentiles, run for run, match those of a run without
 the export (period p99 76 to 77 ms, against 67 to 81 ms), so its cost is
-within the spread. The worst period, nearly a second, is a single hitch that
-the windowed percentiles cannot show; the export finds it at its time.
+within the spread. The worst period, nearly a second, is not a stutter. Every
+period above 150 ms in the file ends on a display list of 0 triangles and
+under 0.4 ms of render: a scene transition in the attract mode, which the game
+cycles through with no input. The audio pauses there too, for 150 to 450 ms.
+Only the export could tell them apart, since the windowed percentiles mix
+them in.
 
 The audio produces 49,078 samples a second, against 44,100 for 22,050 Hz
 stereo. Without a sound driver the feedback reads idle and the audio manager
 takes its largest quantum; this is the ratio to check again once the driver is
 in (E06-S03).
+
+### The on-screen display
+
+`DKR_OSD=1` draws four lines in the top-left corner, refreshed once a second
+(`runtime-recomp/src/game/frame_osd.hpp`):
+
+```
+27.1 FPS
+FRM  36.8 MAX  58.1     frame period, mean and worst of the second, ms
+GFX  18.0 MAX  21.2     render of one display list
+SND   7.7 MAX  13.6     one audio task
+```
+
+The worst is shown rather than a percentile, since a second holds about thirty
+frames. The text is a 3x5 bitmap font at three pixels a font pixel, drawn as
+flat rectangles through the backend's `draw_triangles`, with no texture, so it
+stays out of the game's TMU cache. It is drawn before the frame dumps: the
+passthrough Voodoo reaches no emulator capture, and a dump is how it was
+checked. On five dumps across the attract mode, the text is sharp on every
+background, and the game's own rendering is unchanged. The decoder does not
+push its state again at the start of a list, so the display marks it stale
+after drawing; without that, the next list's first triangles would inherit it.
+
+Cost, measured around the draw on the target: 324 to 370 triangles and 0.32 to
+0.34 ms a display list, 1% of a 34 ms frame. The log prints it
+(`[gfx] osd:`) every twenty seconds.
 
 ### E08-S02, first measurement: the recompiled code's optimisation level
 

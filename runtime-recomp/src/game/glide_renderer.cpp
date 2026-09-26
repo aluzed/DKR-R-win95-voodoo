@@ -59,6 +59,22 @@ extern "C" unsigned long long dkr_display_lists_drawn(void) {
     return g_display_lists_drawn.load(std::memory_order_relaxed);
 }
 
+/* The audio tasks' times, for the on-screen display: its only source outside
+ * this file. Written by the audio task, read and cleared by the graphics thread
+ * once a second; a task landing between the reads is counted in the next
+ * second, which the display can afford. */
+static std::atomic<unsigned long> g_osd_audio_sum{0};
+static std::atomic<unsigned long> g_osd_audio_count{0};
+static std::atomic<unsigned long> g_osd_audio_max{0};
+
+extern "C" void dkr_osd_audio_task(unsigned long us) {
+    g_osd_audio_sum.fetch_add(us, std::memory_order_relaxed);
+    g_osd_audio_count.fetch_add(1, std::memory_order_relaxed);
+    if (us > g_osd_audio_max.load(std::memory_order_relaxed)) {
+        g_osd_audio_max.store(us, std::memory_order_relaxed);
+    }
+}
+
 #if defined(DKR_TARGET_WIN95)
 /* --- Where the renderer's time goes: zones, E08-S01 ---------------------------
  *
@@ -276,6 +292,10 @@ dkr::runtime::GlideRenderer::GlideRenderer() {
         width_ = kWidth;
         height_ = kHeight;
         std::fprintf(stderr, "[boot][gfx] Glide opened at %dx%d\n", width_, height_);
+        if (std::getenv("DKR_OSD") != nullptr) {
+            osd_.reset(new FrameOsd());
+            std::fprintf(stderr, "[boot][gfx] on-screen display on\n");
+        }
     } else {
         // **Do not fail the startup for that, though.**
         //
@@ -693,6 +713,52 @@ void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
 }
 #endif
 
+// Once a second: the text of the on-screen display, from what the second held.
+// Integer formatting, tenths of a millisecond.
+void dkr::runtime::GlideRenderer::osd_refresh(unsigned long long now_us) {
+    const unsigned long long span = osd_t0_ != 0ULL ? now_us - osd_t0_ : 0ULL;
+    const unsigned long audio_sum = g_osd_audio_sum.exchange(0, std::memory_order_relaxed);
+    const unsigned long audio_n = g_osd_audio_count.exchange(0, std::memory_order_relaxed);
+    const unsigned long audio_max = g_osd_audio_max.exchange(0, std::memory_order_relaxed);
+    const auto tenths = [] (unsigned long long us) -> unsigned long {
+        return static_cast<unsigned long>((us + 50ULL) / 100ULL);
+    };
+    const unsigned long fps10 = (span != 0ULL)
+        ? static_cast<unsigned long>((static_cast<unsigned long long>(osd_periods_) *
+                                      10000000ULL) / span)
+        : 0UL;
+    const unsigned long frm = tenths(osd_periods_ ? osd_period_sum_ / osd_periods_ : 0ULL);
+    const unsigned long frm_max = tenths(osd_period_max_);
+    const unsigned long gfx = tenths(osd_renders_ ? osd_render_sum_ / osd_renders_ : 0ULL);
+    const unsigned long gfx_max = tenths(osd_render_max_);
+    const unsigned long snd = tenths(audio_n ? audio_sum / audio_n : 0UL);
+    const unsigned long snd_max = tenths(audio_max);
+
+    char lines[FrameOsd::kLines][FrameOsd::kColumns + 1];
+    std::snprintf(lines[0], sizeof(lines[0]), "%2lu.%lu FPS", fps10 / 10, fps10 % 10);
+    std::snprintf(lines[1], sizeof(lines[1]), "FRM %3lu.%lu MAX %3lu.%lu",
+                  frm / 10, frm % 10, frm_max / 10, frm_max % 10);
+    std::snprintf(lines[2], sizeof(lines[2]), "GFX %3lu.%lu MAX %3lu.%lu",
+                  gfx / 10, gfx % 10, gfx_max / 10, gfx_max % 10);
+    std::snprintf(lines[3], sizeof(lines[3]), "SND %3lu.%lu MAX %3lu.%lu",
+                  snd / 10, snd % 10, snd_max / 10, snd_max % 10);
+    osd_->set_text(lines);
+    // Its own cost, every twentieth second: what the display adds to `render`.
+    if (++osd_refreshes_ % 20UL == 0UL && osd_draws_ != 0UL) {
+        std::fprintf(stderr, "[gfx] osd: triangles=%d draw=%lu us a list\n",
+                     osd_->triangles(),
+                     static_cast<unsigned long>(osd_draw_us_ / osd_draws_));
+        osd_draw_us_ = 0;
+        osd_draws_ = 0;
+    }
+
+    osd_t0_ = now_us;
+    osd_period_sum_ = osd_period_max_ = 0;
+    osd_periods_ = 0;
+    osd_render_sum_ = osd_render_max_ = 0;
+    osd_renders_ = 0;
+}
+
 bool dkr::runtime::GlideRenderer::valid() {
     return true;
 }
@@ -779,6 +845,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 period_bins_[bin > 50UL ? 50UL : bin]++;
                 period_hist_.add(d);
                 last_period_us_ = d;
+                osd_period_sum_ += d;
+                osd_periods_++;
+                if (d > osd_period_max_) { osd_period_max_ = d; }
             }
             if (d > period_us_worst_) { period_us_worst_ = d; }
         } else {
@@ -1217,6 +1286,24 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         }
     }
 
+    // --- The on-screen display (DKR_OSD) --------------------------------------
+    //
+    // Drawn before the frame dumps, so that a dump shows it: the passthrough
+    // Voodoo's output reaches no capture, and a dump is how its legibility is
+    // checked. The decoder does not push its state again at the start of a
+    // list, so it is told its state is stale -- otherwise the next list's first
+    // triangles would inherit the display's.
+    if (osd_ && opened_) {
+        if (clock_ready && t_entry - osd_t0_ >= 1000000ULL) { osd_refresh(t_entry); }
+        const unsigned long long osd_start = clock_ready ? dkr_clock_now_us() : 0ULL;
+        osd_->draw(backend_);
+        context_.state_dirty = 1;
+        if (clock_ready) {
+            osd_draw_us_ += dkr_clock_now_us() - osd_start;
+            osd_draws_++;
+        }
+    }
+
     // **One frame brought back, before it is presented.**
     //
     // A passthrough Voodoo drives the monitor through an analogue relay, so its
@@ -1320,6 +1407,9 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         const unsigned long long d = dkr_clock_now_us() - t_entry;
         render_us_total_ += d;
         render_hist_.add(d);
+        osd_render_sum_ += d;
+        osd_renders_++;
+        if (d > osd_render_max_) { osd_render_max_ = d; }
         // FRAMES.BIN: period (0 for the first list after a pause), render, and
         // the display list's triangles emitted.
         timing_export_.add(static_cast<std::uint32_t>(t_entry / 1000ULL),

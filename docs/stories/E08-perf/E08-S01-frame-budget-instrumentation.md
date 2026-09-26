@@ -128,7 +128,9 @@ items, readable on the target machine.
       (`DKR_TRACE_CPU`) costs less than the run-to-run spread. The render zones
       (`DKR_TRACE_RENDER_ZONES`) cost 5.8 µs per clock read, about 8 ms a display
       list. Everything is off unless its variable is set. See `frame-budget.md`.
-- [ ] The on-screen display is legible on the target machine.
+- [x] The on-screen display is legible on the target machine: `DKR_OSD=1`,
+      checked on frame dumps from the Voodoo 2, 0.34 ms a display list. See
+      `frame-budget.md`.
 - [x] Median and 99th percentile are reported per item: the frame period, the
       render per display list and the audio per task, over steady windows
       (`[gfx]   frame-percentiles`, `[audio][percentiles]`). The game thread's

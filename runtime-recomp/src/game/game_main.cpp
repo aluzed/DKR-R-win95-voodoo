@@ -162,6 +162,7 @@ extern "C" int dkr_audio_busy(void) {
 static std::atomic<unsigned long long> g_audio_samples_queued{0};
 static std::atomic<unsigned> g_audio_frequency{0};
 extern "C" unsigned long long dkr_display_lists_drawn(void);
+extern "C" void dkr_osd_audio_task(unsigned long us);
 
 /* **Audio task capture, the oracle's input (E03-S03).**
  *
@@ -406,6 +407,7 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
             total_us += dt;
             static dkr::runtime::PercentileHistogram audio_hist{250};
             audio_hist.add(dt);
+            dkr_osd_audio_task(static_cast<unsigned long>(dt));
             // AUDIO.BIN: the task's wall time, a reserved zero, and the samples queued
             // since boot. The record's time is the task's end.
             static dkr::runtime::TimingExport audio_export{"AUDIO.BIN"};
