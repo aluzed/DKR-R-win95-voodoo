@@ -22,6 +22,7 @@
 // toolchain and therefore steps with the system date.
 extern "C" {
 #include "clock.h"
+#include "audio_out.h"   // underruns, for the on-screen display
 }
 #endif
 
@@ -742,6 +743,25 @@ void dkr::runtime::GlideRenderer::osd_refresh(unsigned long long now_us) {
                   gfx / 10, gfx % 10, gfx_max / 10, gfx_max % 10);
     std::snprintf(lines[3], sizeof(lines[3]), "SND %3lu.%lu MAX %3lu.%lu",
                   snd / 10, snd % 10, snd_max / 10, snd_max % 10);
+    {
+        const unsigned long lists = osd_renders_ ? osd_renders_ : 1UL;
+        std::snprintf(lines[4], sizeof(lines[4]), "TRI %4lu ST %3lu",
+                      static_cast<unsigned long>(osd_triangles_ / lists),
+                      static_cast<unsigned long>(osd_states_ / lists));
+    }
+    {
+        unsigned int used[2] = {0u, 0u};
+        unsigned long underruns = 0;
+#if defined(DKR_TARGET_WIN95)
+        for (int u = 0; u < dkr_glide_backend_tmu_count() && u < 2; u++) {
+            const dkr_tmu* t = dkr_glide_backend_tmu(u);
+            if (t != nullptr) { used[u] = dkr_tmu_used(t); }
+        }
+        dkr_audio_out_stats(nullptr, &underruns, nullptr);
+#endif
+        std::snprintf(lines[5], sizeof(lines[5]), "TEX %4uK %4uK UND %lu",
+                      used[0] / 1024u, used[1] / 1024u, underruns);
+    }
     osd_->set_text(lines);
     // Its own cost, every twentieth second: what the display adds to `render`.
     if (++osd_refreshes_ % 20UL == 0UL && osd_draws_ != 0UL) {
@@ -757,6 +777,7 @@ void dkr::runtime::GlideRenderer::osd_refresh(unsigned long long now_us) {
     osd_periods_ = 0;
     osd_render_sum_ = osd_render_max_ = 0;
     osd_renders_ = 0;
+    osd_triangles_ = osd_states_ = 0;
 }
 
 bool dkr::runtime::GlideRenderer::valid() {
@@ -1473,6 +1494,8 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     total_tex_unsupported_ += context_.state.textures.unsupported;
     total_tex_out_of_rdram_ += context_.state.textures.out_of_rdram;
     total_states_ += context_.state.states_applied;
+    osd_triangles_ += context_.state.triangles;
+    osd_states_ += context_.state.states_applied;
     total_combiners_known_ += context_.state.combiners_known;
     total_combiners_unknown_ += context_.state.combiners_unknown;
     total_approximate_ += context_.state.states_approximate;

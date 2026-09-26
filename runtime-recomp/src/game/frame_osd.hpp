@@ -2,12 +2,14 @@
 
 // E08-S01: "the on-screen display is legible on the target machine."
 //
-// `DKR_OSD=1` draws four lines in the top-left corner, refreshed once a second:
+// `DKR_OSD=1` draws six lines in the top-left corner, refreshed once a second:
 //
 //     27.3 FPS
 //     FRM 36.6 MAX 67.0     the frame period, mean and worst, in ms
 //     GFX 12.0 MAX 19.2     one display list's render
 //     SND  7.6 MAX 12.9     one audio task
+//     TRI 1234 ST 123       triangles and state changes, a display list
+//     TEX 1234K 567K UND 0  texture memory used on each TMU; audio underruns
 //
 // Worst rather than a percentile: a second holds about thirty frames, too few
 // for a 99th, and the worst is what a stutter is.
@@ -26,8 +28,8 @@ namespace dkr::runtime {
 
 class FrameOsd {
 public:
-    static constexpr int kLines = 4;
-    static constexpr int kColumns = 20;
+    static constexpr int kLines = 6;
+    static constexpr int kColumns = 24;
 
     // Replaces the text and rebuilds the vertices. Characters without a glyph
     // are drawn as blanks.
@@ -88,7 +90,9 @@ private:
             {'G', DKR_OSD_G(7, 4, 5, 5, 7)}, {'M', DKR_OSD_G(5, 7, 7, 5, 5)},
             {'N', DKR_OSD_G(6, 5, 5, 5, 5)}, {'P', DKR_OSD_G(7, 5, 7, 4, 4)},
             {'R', DKR_OSD_G(6, 5, 6, 5, 5)}, {'S', DKR_OSD_G(7, 4, 7, 1, 7)},
-            {'X', DKR_OSD_G(5, 5, 2, 5, 5)},
+            {'X', DKR_OSD_G(5, 5, 2, 5, 5)}, {'T', DKR_OSD_G(7, 2, 2, 2, 2)},
+            {'I', DKR_OSD_G(7, 2, 2, 2, 7)}, {'E', DKR_OSD_G(7, 4, 6, 4, 7)},
+            {'K', DKR_OSD_G(5, 5, 6, 5, 5)}, {'U', DKR_OSD_G(5, 5, 5, 5, 7)},
         };
         #undef DKR_OSD_G
         for (const Entry& e : font) {

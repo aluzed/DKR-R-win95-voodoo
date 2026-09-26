@@ -345,14 +345,17 @@ in (E06-S03).
 
 ### The on-screen display
 
-`DKR_OSD=1` draws four lines in the top-left corner, refreshed once a second
-(`runtime-recomp/src/game/frame_osd.hpp`):
+`DKR_OSD=1` draws six lines in the top-left corner, refreshed once a second
+(`runtime-recomp/src/game/frame_osd.hpp`). This is the list from the ticket's
+work item 4, from a dump of the target:
 
 ```
-27.1 FPS
-FRM  36.8 MAX  58.1     frame period, mean and worst of the second, ms
-GFX  18.0 MAX  21.2     render of one display list
-SND   7.7 MAX  13.6     one audio task
+27.0 FPS
+FRM  36.9 MAX  57.8     frame period, mean and worst of the second, ms
+GFX  18.4 MAX  21.5     render of one display list
+SND   8.0 MAX  12.4     one audio task
+TRI 2512 ST 147         triangles and state changes, a display list
+TEX  993K    1K UND 0   texture memory used on TMU 0 and TMU 1; audio underruns
 ```
 
 The worst is shown rather than a percentile, since a second holds about thirty
@@ -365,9 +368,13 @@ background, and the game's own rendering is unchanged. The decoder does not
 push its state again at the start of a list, so the display marks it stale
 after drawing; without that, the next list's first triangles would inherit it.
 
-Cost, measured around the draw on the target: 324 to 370 triangles and 0.32 to
-0.34 ms a display list, 1% of a 34 ms frame. The log prints it
-(`[gfx] osd:`) every twenty seconds.
+Cost, measured around the draw on the target: 514 to 562 triangles and 0.49 to
+0.54 ms a display list, 1.5% of a 34 ms frame. The first four-line version cost
+0.34 ms. The log prints it (`[gfx] osd:`) every twenty seconds.
+
+The display showed something straight away: **TMU 1 holds 1 KB** while TMU 0
+holds 850 to 990 KB in every scene. The second unit's memory is practically
+unused.
 
 ### E08-S02, first measurement: the recompiled code's optimisation level
 

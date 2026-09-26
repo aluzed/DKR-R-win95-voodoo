@@ -119,6 +119,7 @@ private:
     unsigned long osd_periods_ = 0;
     unsigned long long osd_render_sum_ = 0, osd_render_max_ = 0;
     unsigned long osd_renders_ = 0;
+    unsigned long long osd_triangles_ = 0, osd_states_ = 0;
     unsigned long long osd_draw_us_ = 0;
     unsigned long osd_draws_ = 0, osd_refreshes_ = 0;
     void osd_refresh(unsigned long long now_us);
