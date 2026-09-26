@@ -78,6 +78,7 @@ decoder counts, built for x86-64 and for i386 with x87 arithmetic.
 |---|---|---|
 | Trivial accept written in line (25 September) | clip 1.20 to 1.06 ms | 37.3 to 36.5 ms |
 | Clipping copies nothing it does not change (26 September) | clip 1.10 to 0.44 ms; `dkr_f3d_run` 10.52 to 9.83 ms | 37.2, 37.9 to 36.3, 36.3 ms; p99 89.8, 88.6 to 78.0, 80.8 ms |
+| Projection cached per vertex, **not kept** (26 September) | project 1.22 to **1.43 ms** | 36.4, 37.5 against 37.0, 36.4 ms: no difference |
 
 The second change: the decoder asks `dkr_clip_trivially_inside` and
 projects the triangle's own vertices, rather than having `dkr_clip_near` copy
@@ -85,6 +86,13 @@ all three. In the Sutherland-Hodgman path, a plane every vertex is inside is
 skipped, and the two polygon buffers trade places instead of being copied
 back. The sampler had put the copy loops at a third of `dkr_clip_near`'s
 samples.
+
+The projection cache was byte-identical on the 21 scenes, and slower. Each
+vertex was projected once and its projection shared by the triangles using it,
+with only s and t computed per corner. Copying the 84-byte projected vertex out
+of the cache, and checking it was still valid, cost more than projecting again:
+one division and a few multiplications. It is not in the tree. The diff is not
+kept either: an idea measured slower is recorded here, not stored.
 
 ## Acceptance criteria
 
