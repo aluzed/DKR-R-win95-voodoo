@@ -4,6 +4,7 @@
 #include "timing_export.hpp"
 #if defined(DKR_TARGET_WIN95)
 #include "sampler.h"
+#include "switch_probe.h"
 #endif
 #if defined(DKR_TARGET_WIN95)
 extern "C" {
@@ -1290,6 +1291,7 @@ int DkrMain(int argc, char** argv) {
         std::fprintf(stderr, "[boot][clock] ultramodern::precise_now: %lu steps in 200 ms, "
                              "largest %lld us\n", psteps, plargest);
     }
+    if (std::getenv("DKR_PROBE_SWITCH") != nullptr) { dkr_switch_probe(); }
     StartIdleMeter();
     if (dkr_sampler_start()) {
         dkr_sampler_register_current_thread();
@@ -1571,6 +1573,8 @@ int DkrMain(int argc, char** argv) {
                 timeout_requested = true;
                 ultramodern::quit();
             }
+            // Every millisecond. Measured against 16 ms on the target (E08-S01,
+            // frame-budget.md): no difference in the frame or in spare time.
             dkr::sync::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         runtime_thread.join();

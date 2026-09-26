@@ -134,6 +134,11 @@ target_include_directories(win95clock PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95clock PUBLIC win95compat winmm)
 add_dependencies(win95clock dkr_win95_cpp_subset)
 
+# The thread-handoff probe (E08-S01, DKR_PROBE_SWITCH): threads and the clock.
+add_library(win95switchprobe STATIC "${DKR_WIN95_PLATFORM}/switch_probe.c")
+target_include_directories(win95switchprobe PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95switchprobe PUBLIC win95threading win95clock)
+
 # --- Window and message loop (E06-S01) ---------------------------------------
 #
 # `user32` and nothing else. The window is a message receiver -- the Voodoo owns
@@ -1311,7 +1316,8 @@ target_link_libraries(DKRWin95Game PRIVATE
     # E03-S03: the audio microcode's high-level replacement.
     win95audiohle
     # E06-S03: its output.
-    win95audioout)
+    win95audioout
+    win95switchprobe)
 # `win95compat` is not named here: it adds itself, first and under
 # `--whole-archive`, through the interface options set above. Naming it a second
 # time duplicates the archive and the linker refuses - multiple definitions.

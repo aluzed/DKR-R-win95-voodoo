@@ -376,6 +376,54 @@ The display showed something straight away: **TMU 1 holds 1 KB** while TMU 0
 holds 850 to 990 KB in every scene. The second unit's memory is practically
 unused.
 
+### The unmeasured time: two suspects cleared
+
+About 14% of the processor is still work that no timer sees (the correction
+of 24 September, above). Two kernel-side suspects were measured on the target,
+with both opt-in options. Neither accounts for it.
+
+**Thread handoffs.** `DKR_PROBE_SWITCH=1` runs a probe at start-up
+(`platform/win95/switch_probe.c`) that measures the synchronisation primitives
+the guest token passes through:
+
+| Operation | Cost |
+|---|---:|
+| `dkr_mutex` lock and unlock, uncontended | 0.26 µs |
+| `dkr_condvar_notify_one`, no waiter | 0.26 µs |
+| Semaphore signal and wait, same thread | 1.8 µs |
+| Round trip between two threads, two switches | 37 µs |
+
+`[trace][cpu]` counts **245 switches a second** in steady state (95 to 105 s),
+9.4 a frame. At about 18 µs each, that is 4.5 ms a second, **0.5% of the
+processor**.
+
+**The main thread's 1 ms loop.** It wakes every millisecond to pump the
+window's messages, which could have cost up to 1,000 round trips a second.
+Interleaved runs of 200 s, the frame mean from the timing export after 40 s,
+and the spare time from the idle meter after 45 s:
+
+| Wake interval | Frame mean | Spare |
+|---|---:|---:|
+| 1 ms | 37.5 ms | 2.7% |
+| 16 ms | 37.7 ms | 2.8% |
+| 1 ms | 38.0 ms | 2.7% |
+| 16 ms | 37.8 ms | 2.9% |
+
+No difference, so the loop stays at 1 ms.
+
+**What the sampler shows, and what it cannot.** A 40 s capture in steady
+state puts a quarter of the samples in which a thread moved on one thread: the
+idle guest thread in `wait_for_external_message`, around the mutex, condition
+variable and `do_send` calls, and in KERNEL32. But the sampler reads every
+registered thread's EIP each millisecond, whether it runs or not. A thread that
+woke and slept at different places also counts as moving, so these samples are
+not processor time. With the trace on, the idle thread holds the guest token
+for 26% of the wall time, 13.5% of that parked. That is wall time, and it
+includes the host threads that preempt it.
+
+What remains untested: the 1 ms timer interrupt that `timeBeginPeriod(1)`
+imposes on the whole system, and the Glide driver's kernel-side work.
+
 ### E08-S02, first measurement: the recompiled code's optimisation level
 
 `DKR_WIN95_RECOMP_OPT` (CMake) adds a flag to the recompiled code. The game
