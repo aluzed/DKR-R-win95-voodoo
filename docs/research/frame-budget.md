@@ -251,7 +251,7 @@ proposed allocation. E08-S02 should wait for the three items above.
 - The instrumentation's cost is measured (above), but only for the coarse trace
   and the render zones. Exclusive mode changes the schedule by design, and it is
   meant for reading costs, not frames.
-- The on-screen display, and the export for offline analysis.
+- The on-screen display.
 - The zones stop at `cmd_triangle`'s phases. `dkr_clip_near` and
   `dkr_clip_project` are timed whole, not inside.
 
@@ -296,6 +296,49 @@ Ranges are across windows; the render follows the scene. What they show:
 - The audio task's median, 8 to 10 ms of wall time, is above its 6.4 ms of
   processor time (`AUDIO-HLE.md`). The difference is presumably preemption by
   the graphics thread; this has not been measured separately.
+
+### The export for offline analysis
+
+`DKR_TIMING_EXPORT=<prefix>` writes one record per event
+(`runtime-recomp/src/game/timing_export.hpp`). On the target the prefix is `D:\`,
+the transfer disk:
+
+- `FRAMES.BIN`, one record per display list: time, period, render, triangles.
+- `AUDIO.BIN`, one record per audio task: time, the task's wall time, and the
+  samples queued since boot.
+
+Each stream has its own file because each has a single writer, and the target
+has no `<mutex>`. Records are written and flushed 128 at a time. A run ends
+with the machine being killed; only the last partial chunk is lost. The file is
+capped at 131,072 records, 2 MB.
+
+```
+DKR_MEASURE_SET='DKR_TIMING_EXPORT=D:\' scripts/Measure-Guest-Time-VM.sh ...
+mcopy -i transfer.img@@32256 ::/FRAMES.BIN ::/AUDIO.BIN .
+tools/win95/timing_report.py FRAMES.BIN --skip-s 60 --csv frames.csv
+tools/win95/timing_report.py AUDIO.BIN --skip-s 60
+```
+
+The report gives exact percentiles, not binned ones, and `--csv` gives every
+record. Checked on the target: a 300 s run, 143 s of which is the game, with
+both opt-in options. The file held 3,200 of 3,212 display lists and 3,584 of
+3,597 audio tasks. Over the last 65 s:
+
+| | p50 | p99 | worst |
+|---|---:|---:|---:|
+| Frame period | 33.9 ms | 76.6 ms | 983.5 ms |
+| Render per list | 13.1 ms | 25.5 ms | 72.8 ms |
+| Audio task | 7.3 ms | 18.8 ms | 21.3 ms |
+
+The log's windowed percentiles, run for run, match those of a run without
+the export (period p99 76 to 77 ms, against 67 to 81 ms), so its cost is
+within the spread. The worst period, nearly a second, is a single hitch that
+the windowed percentiles cannot show; the export finds it at its time.
+
+The audio produces 49,078 samples a second, against 44,100 for 22,050 Hz
+stereo. Without a sound driver the feedback reads idle and the audio manager
+takes its largest quantum; this is the ratio to check again once the driver is
+in (E06-S03).
 
 ### E08-S02, first measurement: the recompiled code's optimisation level
 

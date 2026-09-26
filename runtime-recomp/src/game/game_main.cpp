@@ -1,6 +1,7 @@
 #include "diagnostic_log.hpp"
 #include "exclusive_section.hpp"
 #include "percentile_histogram.hpp"
+#include "timing_export.hpp"
 #if defined(DKR_TARGET_WIN95)
 #include "sampler.h"
 #endif
@@ -405,6 +406,12 @@ RspUcodeFunc* GetRspMicrocode(const OSTask* task) {
             total_us += dt;
             static dkr::runtime::PercentileHistogram audio_hist{250};
             audio_hist.add(dt);
+            // AUDIO.BIN: the task's wall time, a reserved zero, and the samples queued
+            // since boot. The record's time is the task's end.
+            static dkr::runtime::TimingExport audio_export{"AUDIO.BIN"};
+            audio_export.add(static_cast<std::uint32_t>(dkr_clock_now_us() / 1000ULL),
+                             static_cast<std::uint32_t>(dt), 0u,
+                             static_cast<std::uint32_t>(g_audio_samples_queued.load()));
             {
                 static unsigned long long last_rate_us = 0;
                 const unsigned long long now = dkr_clock_now_us();

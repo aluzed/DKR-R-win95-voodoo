@@ -133,7 +133,10 @@ items, readable on the target machine.
       render per display list and the audio per task, over steady windows
       (`[gfx]   frame-percentiles`, `[audio][percentiles]`). The game thread's
       share comes from the trace and has no distribution. See `frame-budget.md`.
-- [ ] The export to a file allows offline analysis.
+- [x] The export to a file allows offline analysis: `DKR_TIMING_EXPORT` writes
+      one record per display list and per audio task, and
+      `tools/win95/timing_report.py` gives CSV and exact percentiles. See
+      `frame-budget.md`.
 - [x] `docs/research/frame-budget.md` gives allocation, measurement and deviation per
       item. The allocation is a proposal awaiting a decision; the measurement is in
       processor time (patch 0051).

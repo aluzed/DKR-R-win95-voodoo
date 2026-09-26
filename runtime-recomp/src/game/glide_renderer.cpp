@@ -778,6 +778,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 const unsigned long bin = static_cast<unsigned long>(d / 2000ULL);
                 period_bins_[bin > 50UL ? 50UL : bin]++;
                 period_hist_.add(d);
+                last_period_us_ = d;
             }
             if (d > period_us_worst_) { period_us_worst_ = d; }
         } else {
@@ -1319,6 +1320,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         const unsigned long long d = dkr_clock_now_us() - t_entry;
         render_us_total_ += d;
         render_hist_.add(d);
+        // FRAMES.BIN: period (0 for the first list after a pause), render, and
+        // the display list's triangles emitted.
+        timing_export_.add(static_cast<std::uint32_t>(t_entry / 1000ULL),
+                           static_cast<std::uint32_t>(last_period_us_),
+                           static_cast<std::uint32_t>(d),
+                           static_cast<std::uint32_t>(context_.state.triangles));
+        last_period_us_ = 0;
         render_n_++;
         g_display_lists_drawn.fetch_add(1, std::memory_order_relaxed);
         if (d > render_us_worst_) { render_us_worst_ = d; }

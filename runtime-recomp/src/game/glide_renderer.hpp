@@ -1,6 +1,7 @@
 #pragma once
 
 #include "percentile_histogram.hpp"
+#include "timing_export.hpp"
 
 #include "ultramodern/renderer_context.hpp"
 
@@ -106,6 +107,9 @@ private:
     // render time (E08-S01).
     PercentileHistogram period_hist_{1000};
     PercentileHistogram render_hist_{250};
+    // DKR_TIMING_EXPORT: one record per display list, see timing_export.hpp.
+    TimingExport timing_export_{"FRAMES.BIN"};
+    unsigned long long last_period_us_ = 0;
     unsigned long total_tex_refused_ = 0;
     unsigned long total_tex_padded_ = 0;
     unsigned long total_emitted_textured_ = 0;
