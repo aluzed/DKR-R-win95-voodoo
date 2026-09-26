@@ -488,6 +488,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         const unsigned char idx[3] = { read_u8(c, a + 1), read_u8(c, a + 2),
                                        read_u8(c, a + 3) };
         dkr_clip_vertex   tri[3], clipped[6];
+        const dkr_clip_vertex *source;
         dkr_render_vertex out[6];
         int pieces, k, corner, emitted_here = 0;
         dkr_cull_mode cull;
@@ -642,7 +643,15 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         TRI_MARK(11);
 
         TRI_MARK(1);
-        pieces = dkr_clip_near(tri, clipped);
+        /* A triangle inside every plane -- almost all of them -- is projected
+           from `tri` directly; `dkr_clip_near` would only have copied it. */
+        if (dkr_clip_trivially_inside(tri)) {
+            pieces = 1;
+            source = tri;
+        } else {
+            pieces = dkr_clip_near(tri, clipped);
+            source = clipped;
+        }
         if (pieces == 0) {
             c->state.clipped_away++;
             continue;
@@ -659,9 +668,9 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         TRI_MARK(2);
         for (k = 0; k < pieces; k++) {
             dkr_render_vertex *v = &out[k * 3];
-            dkr_clip_project(&c->transform, &clipped[k * 3 + 0], &v[0]);
-            dkr_clip_project(&c->transform, &clipped[k * 3 + 1], &v[1]);
-            dkr_clip_project(&c->transform, &clipped[k * 3 + 2], &v[2]);
+            dkr_clip_project(&c->transform, &source[k * 3 + 0], &v[0]);
+            dkr_clip_project(&c->transform, &source[k * 3 + 1], &v[1]);
+            dkr_clip_project(&c->transform, &source[k * 3 + 2], &v[2]);
             TRI_MARK(3);
             if (!c->no_cull && !dkr_cull_accept(v, cull)) {
                 c->state.culled++;

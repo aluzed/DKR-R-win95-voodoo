@@ -84,6 +84,11 @@ typedef struct dkr_clip_vertex_ dkr_clip_vertex;
  * behind. The remaining polygon is then a quadrilateral, which has to be
  * retriangulated. Forgetting that makes half the surface disappear, which shows
  * up as a hole. */
+/* Whether all three vertices lie inside every plane: `dkr_clip_near` would
+   return them unchanged. Lets the caller use its own vertices without the copy
+   (E08-S03). */
+int dkr_clip_trivially_inside(const dkr_clip_vertex in[3]);
+
 int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6]);
 
 /* Projects a clipped vertex into the backend's format. The perspective divide

@@ -45,10 +45,26 @@ static float plane_distance(const dkr_clip_vertex *v, int plane)
    The bound is reachable, and exceeding it would smash the stack. */
 #define CLIP_MAX_VERTICES 8
 
+/* One vertex inside all five planes. The expressions are plane_distance's own;
+   see the trivial accept below for why their signs cannot differ from its. */
+static int inside_all_planes(const dkr_clip_vertex *v)
+{
+    const float gw = DKR_CLIP_GUARD * v->w;
+    return (v->w - DKR_CLIP_NEAR_EPSILON >= 0.0f) && (v->x + gw >= 0.0f) &&
+           (gw - v->x >= 0.0f) && (v->y + gw >= 0.0f) && (gw - v->y >= 0.0f);
+}
+
+int dkr_clip_trivially_inside(const dkr_clip_vertex in[3])
+{
+    return inside_all_planes(&in[0]) && inside_all_planes(&in[1]) &&
+           inside_all_planes(&in[2]);
+}
+
 int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
 {
-    dkr_clip_vertex poly[CLIP_MAX_VERTICES];
-    dkr_clip_vertex work[CLIP_MAX_VERTICES];
+    dkr_clip_vertex buf_a[CLIP_MAX_VERTICES];
+    dkr_clip_vertex buf_b[CLIP_MAX_VERTICES];
+    dkr_clip_vertex *poly = buf_a, *work = buf_b;
     int n = 3, plane, i, triangles;
 
     if (!in || !out) {
@@ -65,21 +81,12 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
        cannot differ from its: DKR_CLIP_GUARD is 4, so g * w is exact, and the
        sign of a floating-point sum or difference is that of the exact result
        whatever the precision it is held in. */
-    {
-        const float g = DKR_CLIP_GUARD;
-        int all_inside = 1;
-        for (i = 0; i < 3 && all_inside; i++) {
-            const float w = in[i].w, x = in[i].x, y = in[i].y;
-            const float gw = g * w;
-            if (!(w - DKR_CLIP_NEAR_EPSILON >= 0.0f) || !(x + gw >= 0.0f) ||
-                !(gw - x >= 0.0f) || !(y + gw >= 0.0f) || !(gw - y >= 0.0f)) {
-                all_inside = 0;
-            }
-        }
-        if (all_inside) {
-            out[0] = in[0]; out[1] = in[1]; out[2] = in[2];
-            return 1;
-        }
+    /* The decoder asks `dkr_clip_trivially_inside` first and skips this call
+       -- and its three copies -- when it holds; this test stays for any other
+       caller. */
+    if (dkr_clip_trivially_inside(in)) {
+        out[0] = in[0]; out[1] = in[1]; out[2] = in[2];
+        return 1;
     }
 
     poly[0] = in[0]; poly[1] = in[1]; poly[2] = in[2];
@@ -89,6 +96,19 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
        crosses. */
     for (plane = 0; plane < CLIP_PLANES; plane++) {
         int m = 0;
+        /* **A plane every vertex is inside leaves the polygon as it is**: the
+           loop below would copy each vertex and add none. Most clipped
+           triangles cross one plane, so four of the five passes were copies.
+           The test is on the sign alone, which is exact whatever precision the
+           distance is held in (see the trivial accept), so it takes the same
+           decision the loop would. */
+        {
+            int all = 1;
+            for (i = 0; i < n && all; i++) {
+                if (!(plane_distance(&poly[i], plane) >= 0.0f)) { all = 0; }
+            }
+            if (all) { continue; }
+        }
         for (i = 0; i < n; i++) {
             const dkr_clip_vertex *cur  = &poly[i];
             const dkr_clip_vertex *next = &poly[(i + 1) % n];
@@ -108,8 +128,12 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
         if (n < 3) {
             return 0;                 /* rejected entirely */
         }
-        for (i = 0; i < n; i++) {
-            poly[i] = work[i];
+        /* The two buffers trade places rather than the polygon being copied
+           back. */
+        {
+            dkr_clip_vertex *swap = poly;
+            poly = work;
+            work = swap;
         }
     }
 
