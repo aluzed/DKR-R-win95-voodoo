@@ -579,10 +579,17 @@ static void cmd_envmixer(u32 w0, u32 w1)
         gains_l.valid = gains_r.valid = 0;   /* the loop's first clamp may still move them */
         count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;
     }
+    /* **A side whose rate is zero stops moving after its first clamp.** With a
+       zero rate, `ramp_step` adds nothing (the fraction cannot carry) and
+       `ramp_clamp` is idempotent, so from the second block on both are the
+       identity. Half of DKR's calls have both rates at zero; for those, the
+       sixteen-lane ramp work runs once per call instead of once per block. */
     ramp_step(&left, param[1], param[2]);
+    {
+    int first = 1;
     do {
-        ramp_clamp(&left, param[1], param[0]);
-        ramp_step(&right, param[4], param[5]);
+        if (first || !rate_l_zero) { ramp_clamp(&left, param[1], param[0]); }
+        if (first || !rate_r_zero) { ramp_step(&right, param[4], param[5]); }
         envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
         envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
         envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero);
@@ -591,14 +598,16 @@ static void cmd_envmixer(u32 w0, u32 w1)
             dmem_set_s16(st + i * 2u, left.integer[i]);
             dmem_set_s16(st + 0x10u + i * 2u, left.fraction[i]);
         }
-        ramp_clamp(&right, param[4], param[3]);
-        ramp_step(&left, param[1], param[2]);
+        if (first || !rate_r_zero) { ramp_clamp(&right, param[4], param[3]); }
+        if (!rate_l_zero) { ramp_step(&left, param[1], param[2]); }
+        first = 0;
         envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero);
         envmix_mix(b_dr, b_wr, b_in, &gains_r);
         envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
         envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
         count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;
     } while (count > 0);
+    }
 
     for (i = 0; i < 8u; i++) {
         dmem_set_s16(st + 0x20u + i * 2u, right.integer[i]);

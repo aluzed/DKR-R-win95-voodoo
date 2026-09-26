@@ -1292,6 +1292,13 @@ int DkrMain(int argc, char** argv) {
                              "largest %lld us\n", psteps, plargest);
     }
     if (std::getenv("DKR_PROBE_SWITCH") != nullptr) { dkr_switch_probe(); }
+    // DKR_TRACE_AUDIO_ZONES calibrates the cycle counter here, not in the first
+    // audio task: the calibration takes 60 ms, and a first task that long is
+    // dropped by the game's scheduler as late, which then never sends another
+    // one. The zones run of 26 September 2026 had no sound past its first task.
+    if (std::getenv("DKR_TRACE_AUDIO_ZONES") != nullptr && !dkr_cycles_init()) {
+        std::fprintf(stderr, "[boot][audio] cycle counter not calibrated; no audio zones\n");
+    }
     StartIdleMeter();
     if (dkr_sampler_start()) {
         dkr_sampler_register_current_thread();

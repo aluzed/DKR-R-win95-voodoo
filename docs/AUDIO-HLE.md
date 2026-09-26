@@ -132,3 +132,27 @@ target, per task, measured with `DKR_TRACE_AUDIO_ZONES`:
 ENVMIXER is now 39% of the mixer and is limited by arithmetic, not memory:
 about 120 cycles per sample for four gains and four mixes. The frame in normal
 mode, with both opt-in options, is **42.7 ms (23.4 fps)**.
+
+### Zero-rate sides
+
+With a zero rate, `ramp_step` is the identity (the fraction cannot carry) and
+`ramp_clamp` is idempotent. So after its first clamp, a side whose rate is zero
+no longer moves, and its ramp work now runs once per call instead of once per
+block of eight samples. Half of DKR's ENVMIXER calls have both rates at zero.
+The output is still bit-exact: `abi_difftest envmixer` passes 5,000 cases,
+half of them with zero rates, and `replay_hle` finds 0 bytes of difference on
+seven captured tasks. On the target, per call, measured with
+`DKR_TRACE_AUDIO_ZONES` over 2,600 tasks:
+
+| | before | after |
+|---|---:|---:|
+| ENVMIXER, per call | 49.2 µs | **43.5 µs** |
+| ENVMIXER, per task | 2.62 ms | 2.31 ms |
+
+In normal mode the gain, about 0.3 ms a task, is within the run-to-run spread
+of the wall-time figures.
+
+`DKR_TRACE_AUDIO_ZONES` now calibrates the cycle counter at start-up. It used
+to calibrate during the first audio task, which then took 140 ms. The game's
+scheduler dropped that task as late and never sent another, so a zones run
+had no sound past its first task.

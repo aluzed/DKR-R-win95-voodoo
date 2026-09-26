@@ -66,6 +66,26 @@ To bring the vertex path back within its budget allocation, measurement in hand.
 8. Check for visual regressions after each change, by image comparison (E09-S02). An
    optimisation of geometric computation that moves a position by a pixel must show.
 
+## Measurements
+
+Each change is measured on the target on its own: render zones
+(`DKR_TRACE_RENDER_ZONES`) for the zone it touches, then interleaved runs in
+normal mode with both opt-in options for the frame. Each is also checked
+byte-identical on 21 captured scenes through `tools/render/replay`, image and
+decoder counts, built for x86-64 and for i386 with x87 arithmetic.
+
+| Change | Zone, per display list | Frame mean |
+|---|---|---|
+| Trivial accept written in line (25 September) | clip 1.20 to 1.06 ms | 37.3 to 36.5 ms |
+| Clipping copies nothing it does not change (26 September) | clip 1.10 to 0.44 ms; `dkr_f3d_run` 10.52 to 9.83 ms | 37.2, 37.9 to 36.3, 36.3 ms; p99 89.8, 88.6 to 78.0, 80.8 ms |
+
+The second change: the decoder asks `dkr_clip_trivially_inside` and
+projects the triangle's own vertices, rather than having `dkr_clip_near` copy
+all three. In the Sutherland-Hodgman path, a plane every vertex is inside is
+skipped, and the two polygon buffers trade places instead of being copied
+back. The sampler had put the copy loops at a third of `dkr_clip_near`'s
+samples.
+
 ## Acceptance criteria
 
 - [ ] The vertex path's detailed profile is established.
