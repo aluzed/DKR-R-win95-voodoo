@@ -277,12 +277,22 @@ unsigned long long dkr_cc_entry_key(const dkr_cc_entry *e)
 
 const dkr_cc_entry *dkr_cc_lookup(unsigned long long key)
 {
+    /* The entries' keys, computed on the first lookup. Recomputing them on
+       every call cost twenty-nine keys, each with a `memset`, per state change:
+       about 2,700 a display list, and 2% of the graphics thread's samples on
+       the target (E08-S03). The table is constant, so the keys are too. */
+    static unsigned long long keys[CC_COUNT];
+    static int keys_ready = 0;
     int i;
+    if (!keys_ready) {
+        for (i = 0; i < CC_COUNT; i++) { keys[i] = dkr_cc_entry_key(&CC_TABLE[i]); }
+        keys_ready = 1;
+    }
     /* A linear search over twenty-nine entries, called on state changes and not
        per triangle. A hash table would gain nothing measurable and would read
        less well. */
     for (i = 0; i < CC_COUNT; i++) {
-        if (dkr_cc_entry_key(&CC_TABLE[i]) == key) {
+        if (keys[i] == key) {
             return &CC_TABLE[i];
         }
     }

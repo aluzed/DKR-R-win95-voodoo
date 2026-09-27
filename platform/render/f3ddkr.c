@@ -1465,14 +1465,9 @@ static void apply_state(dkr_f3d_context *c)
            shorthand. */
         c->catalogue_index = -1;
         if (entry != 0) {
-            int n = dkr_cc_table_count();
-            int i;
-            for (i = 0; i < n; i++) {
-                if (dkr_cc_table_at(i) == entry) {
-                    c->catalogue_index = (short)i;
-                    break;
-                }
-            }
+            /* The lookup returns an element of the table, so its index is the
+               distance from the first one. */
+            c->catalogue_index = (short)(entry - dkr_cc_table_at(0));
             c->state.combiners_known++;
         } else {
             unsigned i;
