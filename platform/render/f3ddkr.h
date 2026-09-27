@@ -98,6 +98,16 @@ typedef struct {
     unsigned long clipped_away;
     unsigned long clip_split;      /* triangles that became two */
 
+    /* **What the transformation was spent on** (E08-S03). A vertex is
+       transformed when it is loaded, before anything knows whether a triangle
+       will draw it. Of `vertices`, these two were transformed for nothing: no
+       triangle referenced the slot before it was overwritten or the list
+       ended, or every triangle that did was culled or clipped away. The rest
+       reached the backend. Counted when a slot is retired, so a list's last
+       batch is counted when `dkr_f3d_run` returns. */
+    unsigned long vertices_unreferenced;
+    unsigned long vertices_undrawn;
+
     /* Commands recognised but whose effect is not wired up yet — geometry
        modes, RDP state, textures. Counted separately from `commands` because
        this figure answers a different question: not "is the sequence right" but
@@ -637,6 +647,9 @@ typedef struct {
     dkr_transform        transform;
     dkr_clip_vertex      cache[32];
     unsigned char        cache_valid[32];
+    /* Each slot's fate so far, for the two counts above: DKR_VERTEX_LOADED,
+       _REFERENCED, _DRAWN, or _RETIRED once counted, as f3ddkr.c defines them. */
+    unsigned char        vertex_fate[32];
     /* Where an appended vertex batch starts. `gSPVertexDKR` carries an append
        flag, not a destination: a flag-0 load writes at the beginning of the
        array and stores its count, a flag-1 load writes after it. This is that

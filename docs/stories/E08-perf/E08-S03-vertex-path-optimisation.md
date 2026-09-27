@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E08 — Performance |
-| **Status** | TODO |
+| **Status** | IN PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | L |
 | **Depends on** | E08-S01, E04-S03, E04-S05 |
@@ -94,10 +94,37 @@ of the cache, and checking it was still valid, cost more than projecting again:
 one division and a few multiplications. It is not in the tree. The diff is not
 kept either: an idea measured slower is recorded here, not stored.
 
+### How many vertices are transformed for nothing (27 September)
+
+Work item 2. The decoder now follows each vertex slot from its load to its
+retirement, when it is overwritten or the list ends, and counts two kinds of
+waste: a vertex no triangle referenced, and a vertex whose every triangle was
+culled or clipped away. `replay` prints them on a `vertices:` line. The counts
+are deterministic, so the 21 captured scenes give them on the host:
+
+| | Vertices | Share |
+|---|---:|---:|
+| Transformed | 26,919 | |
+| Referenced by no triangle | 260 | 1.0% |
+| Referenced, but no triangle drawn | 8,405 | 31.2% |
+| Drawn | 18,254 | 67.8% |
+
+A third of the transformations are wasted, and **that is not where the time
+is**. The whole of `G_VTX` (0x04), fetch and transformation, is 0.71 ms of a
+10.1 ms display list in the last render-zones run on the target, 2,400 lists.
+Avoiding every wasted vertex would save at most a third of that, about 0.23 ms
+a list, and that is a ceiling: back-face culling is decided per triangle
+after projection, so a vertex whose triangles all face away cannot be known
+to be wasted before it is transformed. Rejection is not the lever here, and
+the rest of the ticket is not secondary to it. The triangle opcode is 7.9 ms of the list, and the Glide
+calls are the largest share inside it.
+
+The counters are skipped with the other statistics under `DKR_GFX_NO_STATS=1`.
+
 ## Acceptance criteria
 
 - [ ] The vertex path's detailed profile is established.
-- [ ] The number of vertices transformed needlessly is measured, and rejection worked on
+- [x] The number of vertices transformed needlessly is measured, and rejection worked on
       first.
 - [ ] Every optimisation is measured separately.
 - [ ] MMX is used only if the measurement justifies it, and on whole blocks.

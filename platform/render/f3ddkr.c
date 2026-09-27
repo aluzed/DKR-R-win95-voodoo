@@ -56,6 +56,12 @@
 
 #define RDRAM_MASK           0x00FFFFFFu
 #define MAX_VERTICES         32u
+/* A vertex slot's fate, in `vertex_fate`: ordered, so that a later fate only
+   ever raises it, and a retired slot is past all of them. */
+#define DKR_VERTEX_LOADED     0u
+#define DKR_VERTEX_REFERENCED 1u
+#define DKR_VERTEX_DRAWN      2u
+#define DKR_VERTEX_RETIRED    3u
 #define MAX_NESTED           32u
 /* An ordinary list runs to its ENDDL; a counted list stops at its count. Zero
    cannot mean both. */
@@ -292,6 +298,19 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     trace(c, "Matrix slot=%u address=0x%06X", index, address);
 }
 
+/* Counts a slot's transformation as spent or wasted, once, when the slot is
+   overwritten or the list ends (E08-S03). */
+static void retire_vertex(dkr_f3d_context *c, unsigned int slot)
+{
+    if (!c->cache_valid[slot]) { return; }
+    if (c->vertex_fate[slot] == DKR_VERTEX_LOADED) {
+        c->state.vertices_unreferenced++;
+    } else if (c->vertex_fate[slot] == DKR_VERTEX_REFERENCED) {
+        c->state.vertices_undrawn++;
+    }
+    c->vertex_fate[slot] = DKR_VERTEX_RETIRED;
+}
+
 static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
 {
     /* --- What the parameter byte actually carries ---------------------------- *
@@ -348,6 +367,10 @@ static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         sv.g = read_u8(c, a + 7);
         sv.b = read_u8(c, a + 8);
         sv.a = read_u8(c, a + 9);
+        if (!c->no_statistics) {
+            retire_vertex(c, destination + i);
+            c->vertex_fate[destination + i] = DKR_VERTEX_LOADED;
+        }
         /* Transformed **here** and not at the triangle: a vertex served by
            three triangles would otherwise be transformed three times, and this
            is the port's heaviest stage. The texture coordinates stay at zero —
@@ -578,6 +601,13 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         }
         if (emitted_here < 0) {
             continue;
+        }
+        if (!c->no_statistics) {
+            for (corner = 0; corner < 3; corner++) {
+                if (c->vertex_fate[idx[corner]] < DKR_VERTEX_REFERENCED) {
+                    c->vertex_fate[idx[corner]] = DKR_VERTEX_REFERENCED;
+                }
+            }
         }
 
         /* --- Is the triangle degenerate in texture space? -------------------- *
@@ -1212,6 +1242,13 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 c->backend->draw_triangles(c->backend->self, v, 1);
             }
             c->state.emitted++;
+            if (!c->no_statistics) {
+                for (corner = 0; corner < 3; corner++) {
+                    if (c->vertex_fate[idx[corner]] < DKR_VERTEX_DRAWN) {
+                        c->vertex_fate[idx[corner]] = DKR_VERTEX_DRAWN;
+                    }
+                }
+            }
             TRI_MARK(6);
         }
     }
@@ -3594,6 +3631,10 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
     }
     if (dkr_f3d_zone_clock && zone_opcode >= 0) {
         dkr_f3d_opcode_ticks[zone_opcode] += dkr_f3d_zone_clock() - zone_at;
+    }
+    if (!c->no_statistics) {
+        unsigned int slot;
+        for (slot = 0; slot < MAX_VERTICES; slot++) { retire_vertex(c, slot); }
     }
     return executed;
 }

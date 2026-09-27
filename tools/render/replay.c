@@ -114,6 +114,9 @@ typedef struct {
        and nothing printed it - so "fog is off" and "fog is on and does nothing"
        were indistinguishable from the report. */
     unsigned long fogged, secondary;
+    /* E08-S03: of the vertices transformed, those no triangle referenced and
+       those whose every triangle was culled or clipped away. */
+    unsigned long vertices, vertices_unreferenced, vertices_undrawn;
     unsigned long geom_batches, geom_depth_disagrees, geom_cull_disagrees;
     unsigned long stride_checked, stride_mismatch, stride_mismatch_texels;
     unsigned short stride_first[8][4];
@@ -144,6 +147,9 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->clipped   = ctx->state.clipped_away;
     c->textures  = ctx->state.textures_loaded;
     c->fogged    = ctx->state.emitted_fogged;
+    c->vertices              = ctx->state.vertices;
+    c->vertices_unreferenced = ctx->state.vertices_unreferenced;
+    c->vertices_undrawn      = ctx->state.vertices_undrawn;
     c->oow_min   = ctx->state.oow_min;
     c->oow_max   = ctx->state.oow_max;
     c->distinct_keys     = ctx->state.distinct_keys;
@@ -206,6 +212,12 @@ static void say_counts(const char *who, const replay_counts *c)
         " lost=%lu textures=%lu (resident=%lu reused=%lu) fogged=%lu\n",
         who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
         c->rejects, lost, c->textures, c->resident, c->reused, c->fogged);
+    /* On its own line, so that the `cmd=` line `check-corpus.sh` compares
+       keeps its shape. */
+    say("           vertices: transformed=%lu unreferenced=%lu undrawn=%lu"
+        " drawn=%lu\n",
+        c->vertices, c->vertices_unreferenced, c->vertices_undrawn,
+        c->vertices - c->vertices_unreferenced - c->vertices_undrawn);
     /* Two sources for one fact. Silent when they agree, because a line of zeroes
        on every run is a line nobody reads. */
     /* Draws aimed at a colour image other than the first one named. The port
