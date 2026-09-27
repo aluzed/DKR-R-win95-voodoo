@@ -82,6 +82,7 @@ decoder counts, built for x86-64 and for i386 with x87 arithmetic.
 | Projection zeroes only what it does not write (27 September) | project 1.19 to 0.81 ms; `dkr_f3d_run` 9.94 to 9.57 ms | 36.4, 38.0 to 36.2, 36.4 ms; render mean 10.73, 10.66 to 10.29, 10.28 ms |
 | Corners copied without s and t, unrolled (27 September) | fetch 1.15 to 1.00 ms; `dkr_f3d_run` 9.56 to 9.45 ms | 36.3, 36.5 against 36.4, 36.5 ms: no difference; render mean 10.30, 9.49 to 10.07, 9.26 ms |
 | Combiner catalogue keys computed once (27 September) | state 0.71 to 0.57 ms; `dkr_f3d_run` 9.47 to 9.04 ms | 36.3, 36.4 to 36.3, 36.2 ms; render mean 10.07, 10.07 to 9.86, 9.86 ms |
+| Even 16-bit reads in one load (27 September) | decoder without the backend 5.41 to 5.16 ms, on different list counts | 36.4, 36.2 to 36.2, 36.2 ms; render mean 9.85, 9.87 to 9.80, 9.79 ms |
 
 The second change: the decoder asks `dkr_clip_trivially_inside` and
 projects the triangle's own vertices, rather than having `dkr_clip_near` copy
@@ -108,6 +109,13 @@ twenty-nine-entry catalogue, and `dkr_cc_lookup` recomputed each entry's key on
 every call: `dkr_rdp_combiner_key` alone was 2% of the graphics thread. The keys
 are now computed on the first lookup, and the entry's index is taken from its
 address rather than by a second search.
+
+The seventh: `read_s16` had no fast path, where `read_u32` has had one for
+long. A third of `dkr_f3d_run`'s samples were in the inlined vertex load, two
+byte reads and a shift per coordinate. An even address on the interleaved
+layout is now one native 16-bit read at `a ^ 2`, as N64Recomp's `MEM_HU` does
+it. The gain is small, 0.06 ms of render a frame, but it is in the same
+direction in both pairs and the code is no harder to read.
 
 The projection cache was byte-identical on the 21 scenes, and slower. Each
 vertex was projected once and its projection shared by the triangles using it,

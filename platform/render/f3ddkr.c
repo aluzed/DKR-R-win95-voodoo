@@ -178,6 +178,13 @@ static unsigned char read_u8(const dkr_f3d_context *c, unsigned int a)
 
 static short read_s16(const dkr_f3d_context *c, unsigned int a)
 {
+    /* The same fast path as `read_u32`, from `MEM_HU` above: an even address
+       is one native 16-bit read at `a ^ 2`. A vertex's x, y, z and a corner's
+       s, t come through here, and two byte reads and a shift for each were a
+       third of `dkr_f3d_run`'s samples on the target (E08-S03). */
+    if (c->rdram_native && (a & 1u) == 0u) {
+        return *(const short *)(const void *)(c->rdram + (a ^ 2u));
+    }
     return (short)(((unsigned)read_u8(c, a) << 8) | read_u8(c, a + 1u));
 }
 
