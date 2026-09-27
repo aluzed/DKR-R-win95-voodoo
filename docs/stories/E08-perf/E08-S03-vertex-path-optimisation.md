@@ -80,6 +80,7 @@ decoder counts, built for x86-64 and for i386 with x87 arithmetic.
 | Clipping copies nothing it does not change (26 September) | clip 1.10 to 0.44 ms; `dkr_f3d_run` 10.52 to 9.83 ms | 37.2, 37.9 to 36.3, 36.3 ms; p99 89.8, 88.6 to 78.0, 80.8 ms |
 | Projection cached per vertex, **not kept** (26 September) | project 1.22 to **1.43 ms** | 36.4, 37.5 against 37.0, 36.4 ms: no difference |
 | Projection zeroes only what it does not write (27 September) | project 1.19 to 0.81 ms; `dkr_f3d_run` 9.94 to 9.57 ms | 36.4, 38.0 to 36.2, 36.4 ms; render mean 10.73, 10.66 to 10.29, 10.28 ms |
+| Corners copied without s and t, unrolled (27 September) | fetch 1.15 to 1.00 ms; `dkr_f3d_run` 9.56 to 9.45 ms | 36.3, 36.5 against 36.4, 36.5 ms: no difference; render mean 10.30, 9.49 to 10.07, 9.26 ms |
 
 The second change: the decoder asks `dkr_clip_trivially_inside` and
 projects the triangle's own vertices, rather than having `dkr_clip_near` copy
@@ -92,6 +93,13 @@ The fourth change: `dkr_clip_project` cleared the whole 84-byte vertex with
 `memset`, which GCC inlines as a loop, then wrote 48 of those bytes again. It
 now zeroes the nine fields it does not write. The render mean moves by about
 0.4 ms a frame in both pairs of runs, and the median render by the same.
+
+The fifth: a quarter of `cmd_triangle`'s samples were on one loop, the
+40-byte structure copy that fetches each corner from the vertex cache. It now
+copies the eight fields other than s and t, which are written just after. A
+`memcpy` of those eight stays a loop on this target, so the copy is written as
+assignments, which GCC unrolls. The frame does not move; the render mean falls
+by 0.23 ms in both pairs of runs.
 
 The projection cache was byte-identical on the 21 scenes, and slower. Each
 vertex was projected once and its projection shared by the triangles using it,

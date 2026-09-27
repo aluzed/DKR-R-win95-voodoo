@@ -527,7 +527,21 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 emitted_here = -1;
                 break;
             }
-            tri[corner] = c->cache[idx[corner]];
+            /* Field by field, and without s and t, which are laid down just
+               below. The structure copy was a ten-word loop per corner, and the
+               sampler put a quarter of this function's samples on it
+               (E08-S03). A `memcpy` of the eight fields stays a loop on this
+               target; these assignments are unrolled. On x87 they go through
+               `fld`/`fstp`, which is exact for every value arithmetic can
+               produce: only a signalling NaN would change, and none is made. */
+            {
+                const dkr_clip_vertex *from = &c->cache[idx[corner]];
+                dkr_clip_vertex *to = &tri[corner];
+                to->x = from->x; to->y = from->y;
+                to->z = from->z; to->w = from->w;
+                to->r = from->r; to->g = from->g;
+                to->b = from->b; to->a = from->a;
+            }
             /* The corner's s, t, as signed 16-bit. This is where they come in
                — the vertex did not carry them. */
             /* --- The normalisation that was missing ---------------------- *
