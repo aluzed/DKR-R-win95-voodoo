@@ -1,8 +1,6 @@
 /* E04-S05 — implementation. The contract lives in `clip.h`. */
 #include "clip.h"
 
-#include <string.h>
-
 /* Interpolates **every** attribute between two vertices.
  *
  * Written once and used for every vertex produced: that is what prevents an
@@ -169,7 +167,14 @@ void dkr_clip_project(const dkr_transform *t, const dkr_clip_vertex *in,
        the whole point of having clipped first. */
     oow = 1.0f / in->w;
 
-    memset(out, 0, sizeof(*out));
+    /* Every field is written below except these nine, which are zeroed one by
+       one rather than by a `memset` of the whole vertex: that cleared 84 bytes
+       and rewrote 48 of them, on every corner of every triangle (E08-S03). */
+    out->tmu[0][3] = 0.0f;
+    out->tmu[1][0] = 0.0f; out->tmu[1][1] = 0.0f;
+    out->tmu[1][2] = 0.0f; out->tmu[1][3] = 0.0f;
+    out->tmu[2][0] = 0.0f; out->tmu[2][1] = 0.0f;
+    out->tmu[2][2] = 0.0f; out->tmu[2][3] = 0.0f;
     out->x = in->x * oow * t->viewport_scale_x + t->viewport_trans_x;
     out->y = in->y * oow * t->viewport_scale_y + t->viewport_trans_y;
 
