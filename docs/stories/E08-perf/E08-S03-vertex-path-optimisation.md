@@ -121,6 +121,36 @@ calls are the largest share inside it.
 
 The counters are skipped with the other statistics under `DKR_GFX_NO_STATS=1`.
 
+### Drawing through vertex arrays: not worth an API change (27 September)
+
+Work item 6. Glide 2.54, which ADR 0002 retains, has no `grDrawVertexArray`:
+its only list entry points draw one polygon, a fan, which DKR's independent
+triangles do not fit. Arrays would mean moving to Glide 3, which
+`glide3x.dll` on the test machine would allow and the ADR rejected.
+
+What it could win was measured first. A 60 s sampler capture in steady state
+(`DKR_TRACE_SAMPLER=60`, `DKR_TRACE_SAMPLER_DELAY=50`, normal mode, both opt-in
+options), with `GLIDE2X.DLL`'s export table read from the machine's disk and
+given to `sampler_report.py --exports`. On the graphics thread, 10,631 samples:
+
+| Where | Share |
+|---|---:|
+| `GLIDE2X.DLL`, internal code after `guTexSource`: triangle submission | 9.4% |
+| `GLIDE2X.DLL`, `grCheckForRoom`: waiting for FIFO space | 3.2% |
+| `GLIDE2X.DLL`, state calls (combine, depth, texture source) | about 2% |
+| `cmd_triangle` | 16.7% |
+| `dkr_clip_project` | 12.2% |
+| `dkr_f3d_run` | 8.5% |
+| `dkr_clip_near` | 5.9% |
+| `dkr_transform_to_clip` | 4.5% |
+
+The driver's per-triangle work is a tenth of the thread. A vertex array saves
+the call and its argument checks, not the packet each vertex becomes on a
+Voodoo 2, so it could recover only part of that tenth. The decoder's own
+triangle path is more than three times as large, and that is where this
+ticket's remaining work goes. These are samples of a thread whose instruction
+pointer moved, not processor time, but the graphics thread rarely waits.
+
 ## Acceptance criteria
 
 - [ ] The vertex path's detailed profile is established.
@@ -129,7 +159,7 @@ The counters are skipped with the other statistics under `DKR_GFX_NO_STATS=1`.
 - [ ] Every optimisation is measured separately.
 - [ ] MMX is used only if the measurement justifies it, and on whole blocks.
 - [ ] No copy and no reallocation per frame in the vertex path.
-- [ ] Drawing through vertex arrays is evaluated.
+- [x] Drawing through vertex arrays is evaluated.
 - [ ] The vertex path fits within its budget allocation.
 - [ ] No visual regression after optimisation, verified by image comparison.
 
