@@ -273,6 +273,12 @@ unpack against -1, and DMEM's word order is the halves of each doubleword
 swapped. ENVMIXER goes from 28.6 to **27.2 µs** a call, the mixer from 4.49 to
 **4.41 ms** a task, 28% below 28 September's 6.15 ms.
 
+**On the target, too.** Six tasks captured on the test machine with every MMX
+path above in the mixer (`DKR_AUDIO_CAPTURE=300,97,6`, at `24c06e8`) replay
+through the host's microcode oracle (`replay_aspmain`) with 0 bytes mismatched
+out of 10,205 to 11,671 written each. The host proves the arithmetic; this
+proves the i686 build does what the host build does.
+
 ADPCM has the same shape as POLEF, with rows that depend on each frame's
 predictor. Doing it the same way, the rows cached per predictor and call, made
 it slower on the target, 10.3 to 11.5 µs a call: building the rows and the
