@@ -440,7 +440,95 @@ static struct {
     unsigned int fog_color;
 } g_shadow;
 
-static void shadow_forget_all(void) { memset(&g_shadow, 0, sizeof(g_shadow)); }
+/* The combine units and the constant register, the same way. `apply_combine`
+   and `dkr_glide_backend_set_recipe` write through `sh_*`, which skip a call
+   that repeats the last one; the extra passes and the unit chaining write
+   through `raw_*`, which forget. */
+static struct {
+    unsigned char color_valid, alpha_valid, constant_valid, tex_valid[2];
+    FxU32 color[5], alpha[5], constant, tex[2][6];
+} g_cc_shadow;
+
+static void shadow_forget_all(void)
+{
+    memset(&g_shadow, 0, sizeof(g_shadow));
+    memset(&g_cc_shadow, 0, sizeof(g_cc_shadow));
+}
+
+static int same_args(unsigned char *valid, FxU32 *kept, const FxU32 *now, int n)
+{
+    int i;
+    if (*valid) {
+        for (i = 0; i < n && kept[i] == now[i]; i++) { }
+        if (i == n) { return 1; }
+    }
+    for (i = 0; i < n; i++) { kept[i] = now[i]; }
+    *valid = 1;
+    return 0;
+}
+
+static void sh_color_combine(FxU32 fn, FxU32 factor, FxU32 local, FxU32 other,
+                             FxBool invert)
+{
+    const FxU32 now[5] = { fn, factor, local, other, (FxU32)invert };
+    if (same_args(&g_cc_shadow.color_valid, g_cc_shadow.color, now, 5)) { return; }
+    gs.color_combine(fn, factor, local, other, invert);
+}
+
+static void sh_alpha_combine(FxU32 fn, FxU32 factor, FxU32 local, FxU32 other,
+                             FxBool invert)
+{
+    const FxU32 now[5] = { fn, factor, local, other, (FxU32)invert };
+    if (same_args(&g_cc_shadow.alpha_valid, g_cc_shadow.alpha, now, 5)) { return; }
+    gs.alpha_combine(fn, factor, local, other, invert);
+}
+
+static void sh_tex_combine(int tmu, FxU32 rgb_fn, FxU32 rgb_factor,
+                           FxU32 a_fn, FxU32 a_factor, FxBool rgb_invert,
+                           FxBool a_invert)
+{
+    const FxU32 now[6] = { rgb_fn, rgb_factor, a_fn, a_factor,
+                           (FxU32)rgb_invert, (FxU32)a_invert };
+    const int u = (tmu == GR_TMU1) ? 1 : 0;
+    if (same_args(&g_cc_shadow.tex_valid[u], g_cc_shadow.tex[u], now, 6)) { return; }
+    gs.tex_combine(tmu, rgb_fn, rgb_factor, a_fn, a_factor, rgb_invert, a_invert);
+}
+
+static void sh_constant_color(FxU32 argb)
+{
+    if (g_cc_shadow.constant_valid && g_cc_shadow.constant == argb) { return; }
+    g_cc_shadow.constant_valid = 1;
+    g_cc_shadow.constant = argb;
+    gs.constant_color(argb);
+}
+
+static void raw_color_combine(FxU32 fn, FxU32 factor, FxU32 local, FxU32 other,
+                              FxBool invert)
+{
+    g_cc_shadow.color_valid = 0;
+    gs.color_combine(fn, factor, local, other, invert);
+}
+
+static void raw_alpha_combine(FxU32 fn, FxU32 factor, FxU32 local, FxU32 other,
+                              FxBool invert)
+{
+    g_cc_shadow.alpha_valid = 0;
+    gs.alpha_combine(fn, factor, local, other, invert);
+}
+
+static void raw_tex_combine(int tmu, FxU32 rgb_fn, FxU32 rgb_factor,
+                            FxU32 a_fn, FxU32 a_factor, FxBool rgb_invert,
+                            FxBool a_invert)
+{
+    g_cc_shadow.tex_valid[(tmu == GR_TMU1) ? 1 : 0] = 0;
+    gs.tex_combine(tmu, rgb_fn, rgb_factor, a_fn, a_factor, rgb_invert, a_invert);
+}
+
+static void raw_constant_color(FxU32 argb)
+{
+    g_cc_shadow.constant_valid = 0;
+    gs.constant_color(argb);
+}
 
 static void raw_blend_function(FxU32 rgb_src, FxU32 rgb_dst,
                                FxU32 alpha_src, FxU32 alpha_dst)
@@ -475,9 +563,9 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
      * easier to diagnose. */
     if (handle == 0 || m == DKR_COMBINE_SHADE) {
         (void)constant;
-        gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+        sh_color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+        sh_alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_ITERATED, 0);
         return;
     }
@@ -488,7 +576,7 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
            Multitexturing across two TMUs is E05-S04, faithful translation of the
            RDP combiner is E05-S03 — what follows covers the modes the decoder
            can already produce, no more. */
-        gs.tex_combine(GR_TMU0, GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO,
+        sh_tex_combine(GR_TMU0, GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO,
                        GR_TEXTURECOMBINE_DECAL, GR_COMBINE_FACTOR_ZERO, 0, 0);
     }
 
@@ -526,34 +614,34 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
          * came out black where the oracle put blue -- the whole of the divergence
          * E09-S02 found on its first real frame. */
         if (gs.constant_color) {
-            gs.constant_color(((unsigned int)alpha_scale << 24) |
+            sh_constant_color(((unsigned int)alpha_scale << 24) |
                               (constant & 0x00FFFFFFu));
         }
-        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        sh_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        sh_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         break;
     case DKR_COMBINE_TEXTURE:
         /* The texel alone: the vertex colour plays no part. */
-        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+        sh_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+        sh_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         break;
     case DKR_COMBINE_TEXTURE_SHADE_ALPHA:
         /* Texel modulated by the vertex colour, but **texel alpha kept**: that
            is what lets a punched-through texture stay punched through when the
            vertex carries a transparency of its own. */
-        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        sh_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+        sh_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         break;
     default:  /* DKR_COMBINE_TEXTURE_SHADE */
-        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        sh_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        sh_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         break;
     }
@@ -1701,11 +1789,11 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
     if (!g_texel_factor_one) {
         /* --- Pass A: the texel, scaled by `1 - e`, at the mux's alpha -------- */
         if (gs.constant_color) {
-            gs.constant_color((p << 24) | (inv << 16) | (inv << 8) | inv);
+            raw_constant_color((p << 24) | (inv << 16) | (inv << 8) | inv);
         }
-        gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        raw_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         apply_blend(b.current.blend);
         pass_depth(0);
@@ -1721,12 +1809,12 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                                     / 255u;
             const unsigned int bl = (( b.current.env_color        & 0xFFu) * ea)
                                     / 255u;
-            gs.constant_color(((opaque_first ? 255u : p) << 24)
+            raw_constant_color(((opaque_first ? 255u : p) << 24)
                               | (r << 16) | (g << 8) | bl);
         }
-        gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+        raw_color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+        raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         raw_blend_function(opaque_first ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
                           GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
@@ -1759,10 +1847,10 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
         const float eb = (float)( b.current.env_color        & 0xFFu);
         const float eaf = (float)ea;
         int done;
-        gs.color_combine(GR_COMBINE_FUNCTION_BLEND_OTHER,
+        raw_color_combine(GR_COMBINE_FUNCTION_BLEND_OTHER,
                          GR_COMBINE_FACTOR_ONE_MINUS_LOCAL_ALPHA,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+        raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
         apply_blend(b.current.blend);
         apply_depth(b.current.depth);
@@ -1790,10 +1878,10 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
 
     /* A: the constant, opaque. `constant_color` carries the register the colour
        mux named, which for this shape is `PRIMITIVE`. */
-    if (gs.constant_color) { gs.constant_color(b.current.constant_color); }
-    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+    if (gs.constant_color) { raw_constant_color(b.current.constant_color); }
+    raw_color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+    raw_alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     raw_blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
     /* This pass stands in for the ordinary draw, and it still does not write: see
@@ -1803,9 +1891,9 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
     watch_pass(DKR_CARD_PASS_PRE_A);
 
     /* B: the texel over it, by the vertex alpha. */
-    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
+    raw_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+    raw_alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
@@ -1836,7 +1924,7 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
 
     /* A: dst *= 1 - shade. The source is the iterated colour and contributes
        nothing of itself -- `ZERO` -- it is there to *be* the factor. */
-    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+    raw_color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     raw_blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_COLOR,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
@@ -1852,8 +1940,8 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
        has seen work. `GR_COMBINE_OTHER_CONSTANT` would do as well - it is
        measured now, and correct - but a choice that was free either way is not
        worth revisiting. */
-    if (gs.constant_color) { gs.constant_color(b.current.env_color); }
-    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+    if (gs.constant_color) { raw_constant_color(b.current.env_color); }
+    raw_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
     raw_blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     /* The last pass of the logical draw, so this is the one that writes. */
@@ -1951,12 +2039,12 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
 
     /* One constant serves all three passes: the environment in its colour, which
        only pass C reads, and `p` in its alpha, which passes A and C read. */
-    if (gs.constant_color) { gs.constant_color((p << 24) | env); }
+    if (gs.constant_color) { raw_constant_color((p << 24) | env); }
 
     /* --- A: the destination, kept in the proportion the mux leaves it -------- */
-    gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+    raw_color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+    raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     raw_blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_ALPHA,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
@@ -1976,10 +2064,10 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
      * things and this term needs three. The batching is `prepass_draw`'s: a
      * fixed buffer, filled in slices, so that a long list does not want a
      * variable-length array on a machine with a 64 KiB stack. */
-    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER,
+    raw_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER,
                      GR_COMBINE_FACTOR_ONE_MINUS_LOCAL,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+    raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
@@ -1999,9 +2087,9 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
     watch_pass(DKR_CARD_PASS_EXACT_B);
 
     /* --- C: the environment, weighted by the shade and by `a` ---------------- */
-    gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+    raw_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
-    gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+    raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
@@ -2090,9 +2178,9 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
                                     * env_alpha) / 255u;
             const unsigned int bl = ((b.current.env_color & 0xFFu)
                                      * env_alpha) / 255u;
-            gs.constant_color(0xFF000000u | (r << 16) | (g << 8) | bl);
+            raw_constant_color(0xFF000000u | (r << 16) | (g << 8) | bl);
         } else {
-            gs.constant_color((pe << 24)
+            raw_constant_color((pe << 24)
                               | (b.current.env_color & 0x00FFFFFFu));
         }
     }
@@ -2104,7 +2192,7 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
        what had been written the same way. An unused argument is not worth an
        unverified constant. */
     if (gs.color_combine) {
-        gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+        raw_color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     }
     /* Alpha: the texel's times the constant's. The constant's is the lerp factor;
@@ -2116,12 +2204,12 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
        and the only one available. */
     if (gs.alpha_combine) {
         if (b.current.texture != 0) {
-            gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER,
+            raw_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER,
                              GR_COMBINE_FACTOR_LOCAL,
                              GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE,
                              0);
         } else {
-            gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
+            raw_alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                              GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE,
                              0);
         }
@@ -2885,15 +2973,15 @@ int dkr_glide_backend_can_draw(void)
 void dkr_glide_backend_set_recipe(const dkr_cc_setup *r, unsigned constant_argb)
 {
     if (!r) { return; }
-    if (gs.constant_color) { gs.constant_color(constant_argb); }
+    if (gs.constant_color) { sh_constant_color(constant_argb); }
     if (gs.color_combine) {
-        gs.color_combine(r->cc_function, r->cc_factor, r->cc_local, r->cc_other, 0);
+        sh_color_combine(r->cc_function, r->cc_factor, r->cc_local, r->cc_other, 0);
     }
     if (gs.alpha_combine) {
-        gs.alpha_combine(r->ac_function, r->ac_factor, r->ac_local, r->ac_other, 0);
+        sh_alpha_combine(r->ac_function, r->ac_factor, r->ac_local, r->ac_other, 0);
     }
     if (gs.tex_combine && r->uses_texture) {
-        gs.tex_combine(GR_TMU0, r->tc_function, r->tc_factor,
+        sh_tex_combine(GR_TMU0, r->tc_function, r->tc_factor,
                        r->tc_function, r->tc_factor, 0, 0);
     }
 }
@@ -2960,10 +3048,10 @@ void dkr_glide_backend_chain(dkr_texture_handle tmu0, dkr_texture_handle tmu1,
 
     bind_texture(tmu1);
     /* TMU 1 merely samples: it has no unit upstream. */
-    gs.tex_combine(GR_TMU1, GR_TEXTURECOMBINE_DECAL, 0,
+    raw_tex_combine(GR_TMU1, GR_TEXTURECOMBINE_DECAL, 0,
                              GR_TEXTURECOMBINE_DECAL, 0, 0, 0);
     bind_texture(tmu0);
-    gs.tex_combine(GR_TMU0, function, factor, function, factor, 0, 0);
+    raw_tex_combine(GR_TMU0, function, factor, function, factor, 0, 0);
 }
 
 const dkr_tmu *dkr_glide_backend_tmu(int index)

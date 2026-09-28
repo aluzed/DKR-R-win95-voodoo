@@ -105,6 +105,7 @@ way on 28 September: byte-identical on the 21 scenes.
 | Second-pass decision asked once per draw (28 September) | draw 4.73 to 4.62 us a call, 3.12 to 3.05 ms; `dkr_f3d_run` 8.76 to 8.67 ms, on 2,400 lists each | not run: below the spread |
 | Second-unit coordinates only for chained recipes (28 September) | decoder 5.05 to 4.99 ms, on 2,460 and 2,400 lists | not run: below the spread |
 | Glide state written part by part, only what changed (28 September) | state 4.73 to 3.40 us a call; draw 4.61 to 4.23 us; `dkr_f3d_run` 8.66 to 8.28 ms, on 2,400 lists each | 36.3, 36.2 to 36.0, 36.0 ms; render mean 9.19, 9.26 to 8.78, 8.77 ms; render p99 22.2, 22.5 to 20.6, 20.5 ms |
+| Combine units and constant written only when they change (28 September) | state 3.39 to 1.98 us a call; draw 4.23 to 3.95 us; `dkr_f3d_run` 8.29 to 7.94 ms, on 2,400 and 2,340 lists | render mean over 40-94 s 7.57, 7.57 to 7.38, 7.36 ms; over 95-101 s 17.19, 17.19 to 16.53, 16.56 ms |
 | Catalogue entry taken without calls into `combiner.c`, **not kept** (28 September) | draw 4.53 to 4.65 us a call | render mean 8.71, 8.74 against 9.40, 9.43 ms: no gain |
 | `1/w` computed once per vertex at load, **not kept** (28 September) | project 0.82 to 0.70 ms, decoder unchanged, on 2,400 lists each | render mean 9.42 against 9.87 ms: no gain |
 | Corners projected from the vertex cache without a copy, **not kept** (28 September) | fetch 0.93 to 0.84 ms, projection and corners 0.07 ms more; decoder 5.00 to 4.97 ms, on 2,400 lists each | not run: nothing to resolve |
@@ -203,6 +204,14 @@ state change costs 28% less, the draw path 8% less, since the restorations
 after a second pass got cheaper too, and the display list 0.38 ms. It is the
 first change since the ninth that the frame resolves: the render mean falls
 0.45 ms in both pairs of runs, and its 99th percentile 1.7 ms.
+
+The fourteenth carries the same idea into the combine units and the constant
+register: `grColorCombine`, `grAlphaCombine`, `grTexCombine` per unit, and
+`grConstantColorValue`. `apply_combine` and `dkr_glide_backend_set_recipe`
+write them through `sh_*`, which skip a repeat of the last call; the thirty
+writes of the extra passes and of the unit chaining go through `raw_*`, which
+forget. The 12 card images are byte-identical, and a state change now costs
+less than half of what it did this morning.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics
