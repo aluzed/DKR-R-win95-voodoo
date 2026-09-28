@@ -27,6 +27,24 @@ processor time too.
 The lines to read are `[trace][ran]`, `[trace][preempted]`, `[trace][parked]`,
 `[trace][snap]`, `[trace][gfx]` and `[audio][rate]`.
 
+## The graphics thread after E08-S03, 28 September 2026
+
+One run in exclusive mode, both opt-in options on, `DKR_GFX_NO_STATS=1`, read
+over the steady window 38 to 89 s like the table below, at `42b52e0`:
+
+| Item | Share | Per 36.2 ms frame | 24 September |
+|---|---:|---:|---:|
+| Graphics thread, awake | 25.3% | 9.15 ms | 12.7 ms |
+| Audio mixer | 20.7% | 7.49 ms | 9.6 ms |
+| Recompiled game (thread 3), ran less preempted | 11.8% | 4.27 ms | 7.4 ms |
+
+The graphics thread is now under the 12 ms proposed for it. The frame itself
+barely moves, 36.2 ms here against 36 to 37 ms since 26 September: its median
+is two retraces, 33.5 ms, which is the game's own 30 fps, and its mean is set
+by the slow frames. In the attract mode's race, 95 to 100 s into a run, the
+frame falls to 44 to 67 ms with 19 to 22 ms of render for about 2,000
+triangles; that scene is where the renderer is on the critical path.
+
 ## Correction, 24 September 2026: steady state, and what the 17% is
 
 **The budgets below were taken from cumulative counters, and those include the

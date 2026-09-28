@@ -274,7 +274,7 @@ pointer moved, not processor time, but the graphics thread rarely waits.
 - [x] MMX is used only if the measurement justifies it, and on whole blocks.
 - [ ] No copy and no reallocation per frame in the vertex path.
 - [x] Drawing through vertex arrays is evaluated.
-- [ ] The vertex path fits within its budget allocation.
+- [x] The vertex path fits within its budget allocation.
 - [x] No visual regression after optimisation, verified by image comparison.
 
 Where the others stand, 28 September:
@@ -308,10 +308,11 @@ Where the others stand, 28 September:
   transform works in float; a 16-bit fixed-point version would not be
   byte-identical, which puts the whole corpus check at stake for a fraction of
   a millisecond. No MMX code was written.
-- **The budget.** The render mean is 9 to 9.5 ms a frame, against 10.7 ms on
-  26 September, and the graphics thread's proposed allocation was 12 ms. The
-  frame's median is two retraces, 33.5 ms; its mean, about 36.2 ms, is set by
-  the slow frames, not by the renderer's mean.
+- **The budget: met.** Measured the way `frame-budget.md` measures it, in
+  exclusive mode over a steady window, the graphics thread is awake 9.15 ms of
+  a 36.2 ms frame, against 12.7 ms on 24 September and the 12 ms proposed for
+  it. The frame's median is two retraces, 33.5 ms; its mean is set by the slow
+  frames, not by the renderer's mean.
 - **Resolution.** From the ninth change on, the spread between runs of the
   render mean, about 0.6 ms and seemingly bimodal, exceeds a single change.
   The zones still resolve them; the frame no longer does.
