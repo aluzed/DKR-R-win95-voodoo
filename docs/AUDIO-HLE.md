@@ -227,4 +227,25 @@ thirteen tasks. On the target:
 | ENVMIXER | 36.8 µs | **28.7 µs** |
 | whole mixer, per task | 5.17 ms | **4.84 ms** |
 
-Since 28 September the mixer is 21% cheaper per task, 6.15 ms to 4.84 ms.
+### RESAMPLE's taps in MMX
+
+Each output is four taps, mulf(s, t) = clamp16((s * t + 0x4000) >> 15), summed
+as sat16(sat16(p0 + p1) + sat16(p2 + p3)). `pmaddwd` against zero partners
+gives the four products in 32 bits, the rounding and shift stay in 32 bits,
+`packssdw` is the clamp, and the sums are `paddsw`, which is the saturating
+add. The lanes follow DMEM's word order: a word-aligned position loads as
+samples 1, 0, 3, 2, the table entry's order too; a position two bytes past a
+word is assembled from the quadwords either side as samples 0, 3, 2, 1, with
+the taps rotated one lane to match, and the sums pair the right lanes in each
+case. An odd position, or one near DMEM's end, takes the C path. No difference
+on 5,000 cases and thirteen tasks. On the target:
+
+| | before | after |
+|---|---:|---:|
+| RESAMPLE | 20.9 µs | **18.6 µs** |
+| whole mixer, per task | 4.84 ms | **4.69 ms** |
+
+The position, the table index and the output stay scalar, which is why the gain
+is a tenth and not more.
+
+Since 28 September the mixer is 24% cheaper per task, 6.15 ms to 4.69 ms.

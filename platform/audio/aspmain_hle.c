@@ -797,6 +797,53 @@ static void cmd_envmixer(u32 w0, u32 w1)
  * microcode revision adds to ABI 1. DKR's lists never set flag 2; the state is
  * still written in full, since it goes back to RDRAM. */
 #define DMEM_RESAMPLE_LUT   0xD0u
+#if defined(__MMX__)
+/* --- One RESAMPLE output in MMX, bit for bit (E08) ----------------------------- *
+ *
+ * Each tap is mulf(s, t) = clamp16((s * t + 0x4000) >> 15): `pmaddwd` against
+ * zero partners gives the four products in 32 bits, the rounding and the shift
+ * stay in 32 bits, and `packssdw` is the clamp. The two pairwise sums and their
+ * sum are saturating adds, which `paddsw` is.
+ *
+ * The lanes follow DMEM's word order. A word-aligned position loads as samples
+ * 1, 0, 3, 2, the order the table entry loads in too. A position two bytes past
+ * a word is assembled from the quadwords either side as samples 0, 3, 2, 1, and
+ * the taps are rotated one lane to match. The sums then pair the lanes that
+ * hold samples 0 and 1, and 2 and 3, wherever they are. The caller keeps the
+ * loads inside DMEM and takes the C path otherwise. */
+static s16 resample_one_mmx(u32 in, u32 lut)
+{
+    const __m64 zero = _mm_setzero_si64();
+    const __m64 round = _mm_set1_pi32(0x4000);
+    __m64 taps = dmem_load8(lut), samples, lo, hi, p, sum;
+    const int aligned = (in & 3u) == 0;
+    if (aligned) {
+        samples = dmem_load8(in);                                     /* 1 0 3 2 */
+    } else {
+        const __m64 before = dmem_load8(in - 2u);                     /* 0 . 2 1 */
+        const __m64 after = dmem_load8(in + 2u);                      /* 2 1 4 3 */
+        samples = _mm_or_si64(_mm_and_si64(before, _mm_set_pi16(-1, -1, 0, -1)),
+                              _mm_and_si64(_mm_srli_si64(after, 32),
+                                           _mm_set_pi16(0, 0, -1, 0)));   /* 0 3 2 1 */
+        taps = _mm_or_si64(_mm_srli_si64(taps, 16), _mm_slli_si64(taps, 48));
+    }
+    lo = _mm_madd_pi16(_mm_unpacklo_pi16(samples, zero), _mm_unpacklo_pi16(taps, zero));
+    hi = _mm_madd_pi16(_mm_unpackhi_pi16(samples, zero), _mm_unpackhi_pi16(taps, zero));
+    lo = _mm_srai_pi32(_mm_add_pi32(lo, round), 15);
+    hi = _mm_srai_pi32(_mm_add_pi32(hi, round), 15);
+    p = _mm_packs_pi32(lo, hi);
+    if (aligned) {                                   /* p1 p0 p3 p2 */
+        sum = _mm_adds_pi16(p, _mm_srli_si64(p, 16));             /* p1+p0 . p3+p2 . */
+        sum = _mm_adds_pi16(sum, _mm_srli_si64(sum, 32));
+    } else {                                         /* p0 p3 p2 p1 */
+        const __m64 pair01 = _mm_adds_pi16(p, _mm_srli_si64(p, 48));   /* lane 0 */
+        const __m64 pair23 = _mm_adds_pi16(p, _mm_srli_si64(p, 16));   /* lane 1 */
+        sum = _mm_adds_pi16(pair01, _mm_srli_si64(pair23, 16));
+    }
+    return (s16)_mm_cvtsi64_si32(sum);
+}
+#endif
+
 static void cmd_resample(u32 w0, u32 w1)
 {
     const u32 flags = (w0 >> 16) & 0xFFu;
@@ -832,8 +879,19 @@ static void cmd_resample(u32 w0, u32 w1)
                four input samples are two words when the position is word-
                aligned, and three otherwise. */
             const u32 lut = DMEM_RESAMPLE_LUT + ((fraction >> 10) & 0x3Fu) * 8u;
-            const u32 t01 = word_get(lut), t23 = word_get(lut + 4u);
+            u32 t01, t23;
             s32 s0, s1, s2, s3;
+#if defined(__MMX__)
+            if ((in & 1u) == 0 && (in & 0xFFFu) >= 4u && (in & 0xFFFu) <= 0xFF0u) {
+                result[lane] = resample_one_mmx(in & 0xFFFu, lut);
+                fraction += pitch * 2u;
+                in += (fraction >> 16) * 2u;
+                fraction &= 0xFFFFu;
+                continue;
+            }
+#endif
+            t01 = word_get(lut);
+            t23 = word_get(lut + 4u);
             if ((in & 3u) == 0) {
                 const u32 a = word_get(in), b = word_get(in + 4u);
                 s0 = (s16)(a >> 16); s1 = (s16)a; s2 = (s16)(b >> 16); s3 = (s16)b;
@@ -896,6 +954,9 @@ static void cmd_resample(u32 w0, u32 w1)
         }
     }
     dma_write(DMEM_RESAMPLE_STATE, address, 32u);
+#if defined(__MMX__)
+    _mm_empty();   /* see `resample_one_mmx` */
+#endif
 }
 /* POLEF: a two-pole filter shaped like the ADPCM predictor. The table is the
  * codebook area (loaded by LOADADPCM), book0 at 0x4C0 and book1 at 0x4D0, and
