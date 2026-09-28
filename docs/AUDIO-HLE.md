@@ -210,4 +210,21 @@ does not matter: every operation is per sample. `abi_difftest mixer` passes
 | MIXER | 4.26 µs | **1.75 µs** |
 | whole mixer, per task | 5.72 ms | **5.17 ms** |
 
-Since 28 September the mixer is 16% cheaper per task, 6.15 ms to 5.17 ms.
+### ENVMIXER on the buffers where they are
+
+Each block read its five buffers from DMEM words into sample-order arrays and
+wrote four back the same way, 7% of the audio thread. When every buffer is
+word-aligned and the loop cannot wrap DMEM, the loop now reads them as MMX
+quadwords in DMEM's word order, where an aligned eight-byte chunk holds samples
+1, 0, 3, 2. The gains are the only lane-dependent term, and they are laid out
+in that order too. The microcode's order is kept: the five reads, the left
+state stored, then the four writes. The first block of an A_INIT call and any
+unaligned case take the sample-order path. No difference on 5,000 cases and
+thirteen tasks. On the target:
+
+| | before | after |
+|---|---:|---:|
+| ENVMIXER | 36.8 µs | **28.7 µs** |
+| whole mixer, per task | 5.17 ms | **4.84 ms** |
+
+Since 28 September the mixer is 21% cheaper per task, 6.15 ms to 4.84 ms.

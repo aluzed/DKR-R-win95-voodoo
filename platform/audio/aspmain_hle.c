@@ -537,6 +537,9 @@ typedef struct {
     /* The same gains laid out for `pmaddwd`: gain, -1, gain, -1 ... so that one
        multiply-add gives in * gain - out per lane (see `envmix_mix`). */
     s16 dry_pairs[16], wet_pairs[16];
+    /* And in DMEM's word order, for the loop that mixes the buffers where they
+       are: an aligned eight-byte chunk holds samples 1, 0, 3, 2 in its lanes. */
+    s16 dry_words[16], wet_words[16];
     int valid;
 } envmix_gains;
 
@@ -550,6 +553,11 @@ static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 w
         g->wet[i] = mulf(r->integer[i], wet_gain);
         g->dry_pairs[i * 2u] = (s16)g->dry[i];  g->dry_pairs[i * 2u + 1u] = -1;
         g->wet_pairs[i * 2u] = (s16)g->wet[i];  g->wet_pairs[i * 2u + 1u] = -1;
+    }
+    for (i = 0; i < 8u; i++) {
+        const u32 sample = i ^ 1u;           /* lanes 0 1 2 3 hold samples 1 0 3 2 */
+        g->dry_words[i * 2u] = (s16)g->dry[sample];  g->dry_words[i * 2u + 1u] = -1;
+        g->wet_words[i * 2u] = (s16)g->wet[sample];  g->wet_words[i * 2u + 1u] = -1;
     }
     g->valid = 1;
 }
@@ -576,6 +584,8 @@ static __m64 mix4_mmx(__m64 out, __m64 in, __m64 pairs_lo, __m64 pairs_hi)
 }
 
 static __m64 load4(const s16 *p) { __m64 v; memcpy(&v, p, sizeof(v)); return v; }
+static __m64 dmem_load8(u32 a) { __m64 v; memcpy(&v, g_dmem + (a & 0xFFFu), sizeof(v)); return v; }
+static void dmem_store8(u32 a, __m64 v) { memcpy(g_dmem + (a & 0xFFFu), &v, sizeof(v)); }
 static void store4(s16 *p, __m64 v) { memcpy(p, &v, sizeof(v)); }
 
 static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const envmix_gains *g)
@@ -678,6 +688,68 @@ static void cmd_envmixer(u32 w0, u32 w1)
     ramp_step(&left, param[1], param[2]);
     {
     int first = 1;
+#if defined(__MMX__)
+    /* **The buffers mixed where they are (E08).** When every buffer is word-
+       aligned and the loop cannot wrap DMEM, each block's five buffers are
+       read as MMX quadwords in DMEM's word order, mixed with gains laid out in
+       that order, and written back, with no conversion to sample order and
+       back. The order of the microcode is kept: all five read, the left state
+       stored, then the four written. Anything else takes the loop below. */
+    int direct = 0;
+    {
+        const u32 span = ((u32)(count > 0 ? count : 0) / 16u + 2u) * 16u;
+        const u32 base[5] = { in, dry_l, dry_r, wet_l, wet_r };
+        u32 k;
+        direct = 1;
+        for (k = 0; k < 5u; k++) {
+            const u32 a = base[k] & 0xFFFu;
+            if ((a & 3u) != 0 || a + ((k < 3u || stride) ? span : 16u) > 0x1000u) {
+                direct = 0;
+            }
+        }
+    }
+    if (direct) {
+        do {
+            __m64 vin[2], vdl[2], vwl[2], vdr[2], vwr[2];
+            u32 h;
+            if (first || !rate_l_zero) { ramp_clamp(&left, param[1], param[0]); }
+            if (first || !rate_r_zero) { ramp_step(&right, param[4], param[5]); }
+            for (h = 0; h < 2u; h++) {
+                vin[h] = dmem_load8(in + h * 8u);
+                vdl[h] = dmem_load8(dry_l + h * 8u);
+                vwl[h] = dmem_load8(wet_l + h * 8u);
+                vdr[h] = dmem_load8(dry_r + h * 8u);
+                vwr[h] = dmem_load8(wet_r + h * 8u);
+            }
+            envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero);
+            for (h = 0; h < 2u; h++) {
+                vdl[h] = mix4_mmx(vdl[h], vin[h], load4(gains_l.dry_words + h * 8u),
+                                  load4(gains_l.dry_words + h * 8u + 4u));
+                vwl[h] = mix4_mmx(vwl[h], vin[h], load4(gains_l.wet_words + h * 8u),
+                                  load4(gains_l.wet_words + h * 8u + 4u));
+            }
+            for (i = 0; i < 8u; i++) {
+                dmem_set_s16(st + i * 2u, left.integer[i]);
+                dmem_set_s16(st + 0x10u + i * 2u, left.fraction[i]);
+            }
+            if (first || !rate_r_zero) { ramp_clamp(&right, param[4], param[3]); }
+            if (!rate_l_zero) { ramp_step(&left, param[1], param[2]); }
+            first = 0;
+            envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero);
+            for (h = 0; h < 2u; h++) {
+                vdr[h] = mix4_mmx(vdr[h], vin[h], load4(gains_r.dry_words + h * 8u),
+                                  load4(gains_r.dry_words + h * 8u + 4u));
+                vwr[h] = mix4_mmx(vwr[h], vin[h], load4(gains_r.wet_words + h * 8u),
+                                  load4(gains_r.wet_words + h * 8u + 4u));
+            }
+            for (h = 0; h < 2u; h++) { dmem_store8(dry_l + h * 8u, vdl[h]); }
+            for (h = 0; h < 2u; h++) { dmem_store8(wet_l + h * 8u, vwl[h]); }
+            for (h = 0; h < 2u; h++) { dmem_store8(dry_r + h * 8u, vdr[h]); }
+            for (h = 0; h < 2u; h++) { dmem_store8(wet_r + h * 8u, vwr[h]); }
+            count -= 16; in += 16u; dry_l += 16u; dry_r += 16u; wet_l += stride; wet_r += stride;
+        } while (count > 0);
+    } else
+#endif
     do {
         if (first || !rate_l_zero) { ramp_clamp(&left, param[1], param[0]); }
         if (first || !rate_r_zero) { ramp_step(&right, param[4], param[5]); }
