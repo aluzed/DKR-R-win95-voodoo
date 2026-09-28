@@ -1732,11 +1732,13 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 if (t == nullptr) { continue; }
                 std::fprintf(stderr,
                              "[gfx]   tmu%d: hits=%lu/%lu downloads=%lu "
-                             "bytes=%lu evict=%lu fail=%lu peak=%luK\n",
+                             "bytes=%lu evict=%lu fail=%lu peak=%luK "
+                             "scans=%lu scan-steps=%lu\n",
                              u, t->stats.hits, t->stats.hits + t->stats.misses,
                              t->stats.downloads, t->stats.download_bytes,
                              t->stats.evictions, t->stats.failures,
-                             t->stats.peak_bytes / 1024u);
+                             t->stats.peak_bytes / 1024u,
+                             t->stats.lookup_scans, t->stats.lookup_scan_steps);
                 // **The shape of what is free, beside how much of it there is.**
                 //
                 // `peak` is a total and a total cannot tell a full unit from a

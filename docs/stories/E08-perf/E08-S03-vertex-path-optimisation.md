@@ -100,6 +100,7 @@ way on 28 September: byte-identical on the 21 scenes.
 | Even 16-bit reads in one load (27 September) | decoder without the backend 5.41 to 5.16 ms, on different list counts | 36.4, 36.2 to 36.2, 36.2 ms; render mean 9.85, 9.87 to 9.80, 9.79 ms |
 | Clipping reads the triangle in place, copies unrolled (28 September) | clip 0.44 to 0.41 ms | 36.2, 36.2 to 36.1, 36.2 ms; render mean 9.83, 9.80 to 9.70, 9.68 ms |
 | Trace calls skipped with their arguments (28 September) | decoder without the backend 5.05 to 4.89 ms, on 2,340 and 2,280 lists | 36.2, 36.4 against 36.5, 36.1 ms; render mean 9.66, 8.88 against 8.73, 9.50 ms: inconclusive |
+| Texture memos not emptied on upload (28 September) | lookup 2.98 to 2.27 us a call, 0.26 to 0.20 ms; residency scans 50,440 to 29,968 | 36.4, 36.1 against 36.3, 36.2 ms; render mean 8.65, 9.46 against 9.40, 9.41 ms: below the spread |
 | Catalogue entry taken without calls into `combiner.c`, **not kept** (28 September) | draw 4.53 to 4.65 us a call | render mean 8.71, 8.74 against 9.40, 9.43 ms: no gain |
 | `1/w` computed once per vertex at load, **not kept** (28 September) | project 0.82 to 0.70 ms, decoder unchanged, on 2,400 lists each | render mean 9.42 against 9.87 ms: no gain |
 | Triangle header in one read, cull direction per batch, **not kept** (28 September) | decoder 5.03 to 5.02 ms, on 2,400 lists each | not run: nothing to resolve |
@@ -150,6 +151,17 @@ a list lighter, but the two pairs of normal runs disagree in sign, by more
 than that: from here on the run-to-run spread of the render mean, about
 0.6 ms, is larger than a single change. It is kept because it cannot cost
 anything and the trace output is line for line the same.
+
+The tenth concerns the texture residency lookups, both of which put a memo in
+front of a 512-slot scan. The sampler found 95% of `find_resident`'s samples
+and 88% of `gl_texture_lookup`'s in the scans, so the memos were missing. New
+counters on the TMU (`scans`, `scan-steps` on the `tmu0:` line) said why: a
+better hash changed nothing, but both memos were emptied on every upload,
+which forced a fresh scan for every texture in use after each one. A key is
+never live in two slots of either table, so a checked memo answer is always
+the scan's own, and the emptying was never needed. Without it the scans fall
+by 41%. The ones left, about 220 slots each, are memo collisions: a larger or
+better-hashed memo is the next thing to try there.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics

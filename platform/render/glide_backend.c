@@ -311,9 +311,12 @@ void dkr_glide_backend_key_samples(unsigned long long *first,
 #define GLIDE_MAX_TEXTURES 512
 
 /* The same memo as `tmu.c`'s, for the same reason: this scan walked 512 slots
- * with 64-bit compares on every lookup. It remembers the first slot the scan
- * found for (key, TMU), checks it before trusting it, and is emptied whenever a
- * slot becomes live, so it only ever returns what the scan would. */
+ * with 64-bit compares on every lookup. It remembers the slot the scan found
+ * for (key, TMU) and checks it before trusting it. A key is never live in two
+ * slots -- an upload takes over the slot that already carries its key -- so a
+ * checked answer is the scan's, and the memo is not emptied when a slot
+ * becomes live, which used to cost a fresh scan per texture after every
+ * upload (E08-S03). */
 #define GL_TEX_MEMO_SLOTS 256u
 static struct {
     unsigned long long key;
@@ -2575,7 +2578,6 @@ static dkr_texture_handle gl_texture_upload(void *self,
     g_tex[slot].info.data = 0;   /* the pixels do not belong to us */
     g_tex[slot].last_used = ++g_tex_clock;
     g_tex[slot].live    = 1;
-    memset(g_tex_memo, 0, sizeof(g_tex_memo));
     return (dkr_texture_handle)(slot + 1);
 }
 

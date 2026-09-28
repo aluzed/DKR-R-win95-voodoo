@@ -192,10 +192,14 @@ unsigned int dkr_tmu_used(const dkr_tmu *t) { return t ? t->used_bytes : 0u; }
  * slots with 64-bit compares on every texture lookup: on the Pentium II the
  * lookup path cost about 12 us, 0.9 ms a display list. The memo remembers the
  * index the scan found for a key, and an answer from it is checked before it is
- * returned (still live, still that key). It can only ever give the scan's own
- * answer -- the first live slot holding the key -- because it is emptied
- * whenever a slot becomes live, the one event that could put an earlier match
- * in front of the remembered one. */
+ * returned (still live, still that key).
+ *
+ * **It is not emptied when a slot becomes live**, and it used to be. A key is
+ * never live in two slots: `dkr_tmu_acquire` makes a slot live only after
+ * `find_resident` has failed for that key. So a checked answer is the only
+ * live slot holding the key, which is what the scan returns. Emptying it on
+ * every download cost a fresh scan per texture after each one: 49,562 scans a
+ * run, 223 slots each on average, and 95% of `find_resident`'s samples. */
 #define TMU_MEMO_SLOTS 256u
 static struct {
     const dkr_tmu *tmu;
@@ -222,14 +226,17 @@ static dkr_tmu_resident *find_resident(dkr_tmu *t, unsigned long long key)
         dkr_tmu_resident *r = &t->resident[g_tmu_memo[slot].index];
         if (r->live && r->key == key) { return r; }
     }
+    t->stats.lookup_scans++;
     for (i = 0; i < DKR_TMU_MAX_RESIDENT; i++) {
         if (t->resident[i].live && t->resident[i].key == key) {
+            t->stats.lookup_scan_steps += (unsigned long)i + 1u;
             g_tmu_memo[slot].tmu = t;
             g_tmu_memo[slot].key = key;
             g_tmu_memo[slot].index = i;
             return &t->resident[i];
         }
     }
+    t->stats.lookup_scan_steps += DKR_TMU_MAX_RESIDENT;
     return 0;
 }
 
@@ -329,7 +336,6 @@ unsigned int dkr_tmu_acquire(dkr_tmu *t, unsigned long long key,
     r->last_used = t->clock;
     r->pinned    = 1;
     r->live      = 1;
-    tmu_memo_clear();
     return address;
 }
 

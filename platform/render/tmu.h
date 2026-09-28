@@ -105,6 +105,10 @@ typedef struct {
     unsigned long downloads_this_frame;
     unsigned long bytes_this_frame;
     unsigned long peak_bytes;      /* peak occupancy reached */
+    /* What the residency lookup cost: the lookups the memo could not answer,
+       and the slots those scans walked (E08-S03). */
+    unsigned long lookup_scans;
+    unsigned long lookup_scan_steps;
 } dkr_tmu_stats;
 
 /* The transfer to the card. Returns non-zero on success.
