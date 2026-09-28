@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """E08-S01 - reads the timing export (DKR_TIMING_EXPORT, timing_export.hpp).
 
-    tools/win95/timing_report.py FRAMES.BIN [--csv out.csv] [--skip-s 60]
+    tools/win95/timing_report.py FRAMES.BIN [--csv out.csv] [--skip-s 60] [--until-s 94]
     tools/win95/timing_report.py AUDIO.BIN  [--csv out.csv] [--skip-s 60]
 
 Prints the median, 99th percentile and worst of each column, exact rather than
 binned as in the log, over the records after --skip-s seconds (to leave the
-loading out). --csv writes every record for a spreadsheet or a plot.
+loading out) and before --until-s. --csv writes every record for a spreadsheet
+or a plot.
+
+**Two runs compare over the same window, bounded at both ends.** An export
+does not end at the same moment in every run: on 28 September two builds'
+exports ended at 104 and 108 s, and the four extra seconds were the attract
+mode's race, at twice the render of the rest. Over "everything after 40 s" the
+faster build read 0.45 ms slower, in both pairs of runs, while over 40 to 94 s
+it was 0.2 ms faster in both. Pass --until-s. Both it and --skip-s count from
+the export's first record, not from boot: in those runs the first record is at
+19 s, so 40 to 94 s after boot is --skip-s 21 --until-s 75.
 
 FRAMES.BIN, one record per display list:
     t_ms, period_us (0 after a pause), render_us, triangles
@@ -50,6 +60,8 @@ def main():
     ap.add_argument("--csv")
     ap.add_argument("--skip-s", type=float, default=0.0,
                     help="ignore the records of the first seconds")
+    ap.add_argument("--until-s", type=float, default=None,
+                    help="ignore the records after this many seconds")
     args = ap.parse_args()
 
     kind = "AUDIO" if "AUDIO" in args.export.upper() else "FRAMES"
@@ -65,7 +77,9 @@ def main():
                 out.write(",".join(str(v) for v in r) + "\n")
 
     start = records[0][0] + int(args.skip_s * 1000)
-    kept = [r for r in records if r[0] >= start]
+    end = (records[0][0] + int(args.until_s * 1000)) if args.until_s is not None \
+        else records[-1][0]
+    kept = [r for r in records if start <= r[0] <= end]
     span = (kept[-1][0] - kept[0][0]) / 1000.0 if len(kept) > 1 else 0.0
     print(f"{kind}: {len(records)} records, {len(kept)} kept over {span:.1f} s")
     if kind == "FRAMES":

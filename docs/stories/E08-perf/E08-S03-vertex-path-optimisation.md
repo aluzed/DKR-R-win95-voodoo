@@ -89,6 +89,30 @@ match the target:
 Every change of this ticket, from `5a49753` to `de8e0a1`, was re-checked that
 way on 28 September: byte-identical on the 21 scenes.
 
+**Compare the frames over a window bounded at both ends.** The timing export
+does not end at the same moment in every run, 104 s in one and 108 s in the
+next, and past 101 s the attract mode is in its race at twice the render of
+the rest. The frame columns below were first read over "everything after 40
+s", and that is what made the render mean look like noise from the ninth change
+on: a run that happened to record four more seconds of the race read 0.45 ms
+slower. Re-read on 28 September over fixed windows after boot, 40 to 94 s and
+the race at 95 to 101 s, every pair agrees in sign:
+
+| Change | Render mean, 40-94 s | Render mean, 95-101 s |
+|---|---|---|
+| Even 16-bit reads | 8.51, 8.54 to 8.45, 8.47 ms | 19.13, 19.29 to 19.04, 19.05 ms |
+| Clipping in place | 8.49, 8.46 to 8.34, 8.34 ms | 19.01, 18.93 to 18.80, 18.92 ms |
+| `TRACE` | 8.31, 8.32 to 8.18, 8.15 ms | 18.94, 19.26 to 18.98, 18.97 ms |
+| Catalogue entry without calls into `combiner.c` | 8.16, 8.17 to 8.07, 8.07 ms | 19.09, 19.04 to 18.82, 18.87 ms |
+| `1/w` per vertex | 8.06 to 8.09 ms | 18.90 to 18.84 ms |
+| Texture memos not emptied | 8.11, 8.10 to 8.02, 8.03 ms | 18.94, 18.95 to 18.91, 18.75 ms |
+| Combine units written when they change | 7.57, 7.57 to 7.38, 7.36 ms | 17.19, 17.19 to 16.53, 16.56 ms |
+
+The catalogue entry change was rejected on the unbounded figures, which had it
+0.7 ms slower in both pairs; bounded, it is 0.1 ms faster in both, and it goes
+back in. `1/w` per vertex stays out. `tools/win95/timing_report.py` now takes
+`--until-s`.
+
 | Change | Zone, per display list | Frame mean |
 |---|---|---|
 | Trivial accept written in line (25 September) | clip 1.20 to 1.06 ms | 37.3 to 36.5 ms |
