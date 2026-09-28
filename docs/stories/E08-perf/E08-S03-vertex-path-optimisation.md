@@ -104,6 +104,7 @@ way on 28 September: byte-identical on the 21 scenes.
 | Texture memos of 1,024 slots (28 September) | lookup 2.29 to 1.14 us a call, 0.20 to 0.10 ms; scans 29,011 to 9,930 | not run: below the spread |
 | Catalogue entry taken without calls into `combiner.c`, **not kept** (28 September) | draw 4.53 to 4.65 us a call | render mean 8.71, 8.74 against 9.40, 9.43 ms: no gain |
 | `1/w` computed once per vertex at load, **not kept** (28 September) | project 0.82 to 0.70 ms, decoder unchanged, on 2,400 lists each | render mean 9.42 against 9.87 ms: no gain |
+| Corners projected from the vertex cache without a copy, **not kept** (28 September) | fetch 0.93 to 0.84 ms, projection and corners 0.07 ms more; decoder 5.00 to 4.97 ms, on 2,400 lists each | not run: nothing to resolve |
 | Triangle header in one read, cull direction per batch, **not kept** (28 September) | decoder 5.03 to 5.02 ms, on 2,400 lists each | not run: nothing to resolve |
 
 The second change: the decoder asks `dkr_clip_trivially_inside` and
@@ -258,7 +259,7 @@ pointer moved, not processor time, but the graphics thread rarely waits.
 - [ ] No copy and no reallocation per frame in the vertex path.
 - [x] Drawing through vertex arrays is evaluated.
 - [ ] The vertex path fits within its budget allocation.
-- [ ] No visual regression after optimisation, verified by image comparison.
+- [x] No visual regression after optimisation, verified by image comparison.
 
 Where the others stand, 28 September:
 
@@ -266,11 +267,22 @@ Where the others stand, 28 September:
   Glide backend allocates. The projected vertex is written straight in
   `GrVertex`'s layout. One copy remains per corner: the 32 bytes fetched from
   the vertex cache, because s and t arrive with the triangle and not with the
-  vertex. The clipper copies only for triangles that cross a plane.
-- **Visual regression.** Every decoder change is byte-identical on the 21
-  captured scenes, on x86-64 and on i386 with the target's options. The
-  backend change, the texture memos, returns the same answer by construction
-  and has no card-side image comparison of its own.
+  vertex. The clipper copies only for triangles that cross a plane. Removing
+  that copy was tried on 28 September, projecting each corner from the cache
+  with its s and t passed apart: the fetch zone lost 0.09 ms a list and the
+  projection gained most of it back, 0.03 ms net. The copy costs nothing
+  measurable, so it stays, and the criterion stays open on its letter.
+- **Visual regression: none, on the card as in the oracle.** Every decoder
+  change is byte-identical on the 21 captured scenes, on x86-64 and on i386
+  with the target's options. On 28 September the card was checked too:
+  `REPLAY.EXE --card` built at `5a49753`, before this ticket, and at `f248776`
+  replayed 12 captures on the Voodoo 2 (CAP0050, 0250, 0400, 0420, 0600, 0700,
+  0800, 1500, 2000, 2600, CG0060, CKEY1622). The 12 images are byte-identical,
+  and the card is deterministic: the same binary twice on CAP0050 gives the
+  same image. The run goes through a `.BAT` of `START /W` lines. One trap: the
+  transfer disk's FAT16 root directory holds 512 entries, long names take
+  several, and when it is full the replay's `BMP` silently fails to be
+  created; the batch ends with "Erreur lors de la creation du fichier".
 - **MMX: measured, and not justified.** The only block it could cover whole is
   the transformation, `dkr_transform_to_clip`: 4.2% of the graphics thread's
   samples on 27 September, about 0.4 ms of a 9.5 ms render. That is the
