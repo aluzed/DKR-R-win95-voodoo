@@ -156,3 +156,20 @@ of the wall-time figures.
 to calibrate during the first audio task, which then took 140 ms. The game's
 scheduler dropped that task as late and never sent another, so a zones run
 had no sound past its first task.
+
+### CLEARBUFF and DMEMMOVE by the word
+
+CLEARBUFF cleared DMEM one byte at a time, each through the address mask and
+the byte swizzle. Zero is zero in any byte order, so an aligned range that does
+not wrap is now one `memset`. DMEMMOVE copies sixteen-byte chunks whose ends are
+both eight-byte aligned, so a chunk that does not wrap is four native words in
+the same layout on both sides; it is read whole and written whole, as the byte
+loop reads then writes, which keeps overlapping moves exact. `abi_difftest`
+passes 3,000 cases of each and `replay_hle` finds 0 bytes of difference on
+thirteen captured tasks. On the target, per call, over 1,800 tasks:
+
+| | before | after |
+|---|---:|---:|
+| CLEARBUFF | 3.77 µs | **0.86 µs** |
+| DMEMMOVE | 5.62 µs | **1.41 µs** |
+| whole mixer, per task | 6.15 ms | 5.97 ms |

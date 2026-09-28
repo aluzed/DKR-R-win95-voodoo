@@ -165,6 +165,13 @@ static void cmd_clearbuff(u32 w0, u32 w1)
     const u32 count = ((w1 & 0xFFFFu) + 15u) & ~15u;
     const u32 base = DMEM_BUFFERS + (w0 & 0xFFFFu);
     u32 i;
+    /* Zero is zero in any byte order, so an aligned range that does not wrap
+       clears with one memset instead of a masked, swizzled store per byte
+       (E08). */
+    if ((base & 3u) == 0 && (base & 0xFFFu) + count <= 0x1000u) {
+        memset(g_dmem + (base & 0xFFFu), 0, count);
+        return;
+    }
     for (i = 0; i < count; i++) { dmem_set_u8(base + i, 0); }
 }
 
@@ -237,6 +244,15 @@ static void cmd_dmemmove(u32 w0, u32 w1)
     for (i = 0; i < ((count + 15u) & ~15u); i += 16u) {
         u8 chunk[16];
         u32 k;
+        const u32 from = ((in + i) & ~7u) & 0xFFFu, to = ((out + i) & ~7u) & 0xFFFu;
+        /* Both ends are eight-byte aligned, so a chunk that does not wrap is
+           four native words in the same layout on both sides: read whole, then
+           written whole, as the byte loop below does (E08). */
+        if (from + 16u <= 0x1000u && to + 16u <= 0x1000u) {
+            memcpy(chunk, g_dmem + from, 16u);
+            memcpy(g_dmem + to, chunk, 16u);
+            continue;
+        }
         for (k = 0; k < 16u; k++) { chunk[k] = dmem_u8(((in + i) & ~7u) + k); }
         for (k = 0; k < 16u; k++) { dmem_set_u8(((out + i) & ~7u) + k, chunk[k]); }
     }
