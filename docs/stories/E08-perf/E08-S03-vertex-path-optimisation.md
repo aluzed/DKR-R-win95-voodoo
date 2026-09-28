@@ -363,7 +363,7 @@ Where the others stand, 28 September:
 - **The budget: met.** Measured the way `frame-budget.md` measures it, in
   exclusive mode over a steady window, the graphics thread is awake 9.15 ms of
   a 36.2 ms frame, against 12.7 ms on 24 September and the 12 ms proposed for
-  it. The frame's median is two retraces, 33.5 ms; its mean is set by the slow
+  it; 8.57 ms at `e0b7a04`, after the state caches. The frame's median is two retraces, 33.5 ms; its mean is set by the slow
   frames, not by the renderer's mean.
 - **Resolution.** From the ninth change on, the spread between runs of the
   render mean, about 0.6 ms and seemingly bimodal, exceeds a single change.

@@ -38,6 +38,10 @@ over the steady window 38 to 89 s like the table below, at `42b52e0`:
 | Audio mixer | 20.7% | 7.49 ms | 9.6 ms |
 | Recompiled game (thread 3), ran less preempted | 11.8% | 4.27 ms | 7.4 ms |
 
+The same run at `e0b7a04`, after Glide's state and combine units were made
+to skip repeated writes the same evening: the graphics thread is awake 23.7%,
+**8.57 ms a frame**, the audio mixer 7.54 ms and the game thread 4.28 ms.
+
 The graphics thread is now under the 12 ms proposed for it. The frame itself
 barely moves, 36.2 ms here against 36 to 37 ms since 26 September: its median
 is two retraces, 33.5 ms, which is the game's own 30 fps, and its mean is set
