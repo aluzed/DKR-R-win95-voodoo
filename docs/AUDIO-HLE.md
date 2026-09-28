@@ -265,3 +265,9 @@ same. No difference on 5,000 cases and thirteen tasks. On the target:
 | whole mixer, per task | 4.69 ms | **4.49 ms** |
 
 Since 28 September the mixer is 27% cheaper per task, 6.15 ms to 4.49 ms.
+
+ADPCM has the same shape as POLEF, with rows that depend on each frame's
+predictor. Doing it the same way, the rows cached per predictor and call, made
+it slower on the target, 10.3 to 11.5 µs a call: building the rows and the
+residual vector costs more than the products it replaces. It is not in the
+tree.
