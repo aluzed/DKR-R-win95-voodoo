@@ -306,6 +306,34 @@ static void cmd_mixer(u32 w0, u32 w1)
     const u32 out = DMEM_BUFFERS + (w1 & 0xFFFFu);
     const u32 bytes = (count + 31u) & ~31u;
     u32 i;
+#if defined(__MMX__)
+    /* **Four samples at a time in MMX, bit for bit (E08).** `pmaddwd` on (out,
+       in) pairs against (k, gain) gives out * k + in * gain in 32 bits; its one
+       overflow, all four operands at -32768, cannot happen with |k| <= 0x7FFF.
+       The rounding and the arithmetic shift stay in 32 bits and `packssdw` is
+       clamp16. The lanes are in DMEM's word order, but every operation is per
+       sample, so the order does not matter. */
+    if (((in | out) & 3u) == 0 && (in & 0xFFFu) + bytes <= 0x1000u &&
+        (out & 0xFFFu) + bytes <= 0x1000u) {
+        const __m64 factors = _mm_set_pi16((short)gain, (short)k, (short)gain, (short)k);
+        const __m64 round = _mm_set1_pi32(0x4000);
+        u8 *const po = g_dmem + (out & 0xFFFu);
+        const u8 *const pi = g_dmem + (in & 0xFFFu);
+        for (i = 0; i < bytes; i += 8u) {
+            __m64 vo, vi, lo, hi;
+            memcpy(&vo, po + i, sizeof(vo));
+            memcpy(&vi, pi + i, sizeof(vi));
+            lo = _mm_madd_pi16(_mm_unpacklo_pi16(vo, vi), factors);
+            hi = _mm_madd_pi16(_mm_unpackhi_pi16(vo, vi), factors);
+            lo = _mm_srai_pi32(_mm_add_pi32(lo, round), 15);
+            hi = _mm_srai_pi32(_mm_add_pi32(hi, round), 15);
+            vo = _mm_packs_pi32(lo, hi);
+            memcpy(po + i, &vo, sizeof(vo));
+        }
+        _mm_empty();
+        return;
+    }
+#endif
     if (((in | out) & 3u) == 0) {
         for (i = 0; i < bytes; i += 4u) {
             const u32 wo = word_get(out + i), wi = word_get(in + i);

@@ -194,3 +194,20 @@ On the target, per call:
 |---|---:|---:|
 | ENVMIXER | 43.0 µs | **36.9 µs** |
 | whole mixer, per task | 5.97 ms | 5.72 ms |
+
+### MIXER in MMX
+
+MIXER is `(out * k + in * gain + 0x4000) >> 15`, saturated. On (out, in) pairs
+against (k, gain), `pmaddwd` is out * k + in * gain in 32 bits; its one
+overflow, all four operands at -32768, cannot happen since k, from the
+microcode's data, is at most 0x7FFF. The shift stays in 32 bits and `packssdw`
+saturates. The lanes are in DMEM's word order rather than sample order, and it
+does not matter: every operation is per sample. `abi_difftest mixer` passes
+5,000 cases and `replay_hle` thirteen tasks. On the target:
+
+| | before | after |
+|---|---:|---:|
+| MIXER | 4.26 µs | **1.75 µs** |
+| whole mixer, per task | 5.72 ms | **5.17 ms** |
+
+Since 28 September the mixer is 16% cheaper per task, 6.15 ms to 5.17 ms.
