@@ -999,6 +999,52 @@ static void cmd_polef(u32 w0, u32 w1)
     l1 = dmem_s16(DMEM_RESAMPLE_STATE + 6u);
     for (i = 0; i < 8u; i++) { input[i] = dmem_s16(in + i * 2u); }
 
+#if defined(__MMX__)
+    /* **Each block as eight dot products in MMX (E08).** Output j is the dot
+       product of [l2, l1, in0 .. in7] with a row fixed for the whole call:
+       book0[j], book1[j], then book1s[j-1-k] for k < j, gain at k = j and zero
+       after. The C sum wraps in unsigned 32-bit arithmetic, and so do `pmaddwd`
+       and `paddd`, the corner of two -32768 * -32768 products included, so the
+       sum is the same bits before the shift. */
+    {
+        s16 rows[8][12];
+        u32 j, k;
+        for (j = 0; j < 8u; j++) {
+            rows[j][0] = book0[j];
+            rows[j][1] = book1[j];
+            for (k = 0; k < 8u; k++) {
+                rows[j][2u + k] = (k < j) ? book1s[j - 1u - k] : (k == j ? (s16)gain : 0);
+            }
+            rows[j][10] = 0;
+            rows[j][11] = 0;
+        }
+        while (count > 0) {
+            s16 x[12], result[8];
+            __m64 x0, x1, x2;
+            x[0] = (s16)l2; x[1] = (s16)l1;
+            for (k = 0; k < 8u; k++) { x[2u + k] = input[k]; }
+            x[10] = 0; x[11] = 0;
+            memcpy(&x0, x, 8u); memcpy(&x1, x + 4, 8u); memcpy(&x2, x + 8, 8u);
+            for (j = 0; j < 8u; j++) {
+                __m64 r0, r1, r2, acc;
+                memcpy(&r0, rows[j], 8u); memcpy(&r1, rows[j] + 4, 8u);
+                memcpy(&r2, rows[j] + 8, 8u);
+                acc = _mm_add_pi32(_mm_add_pi32(_mm_madd_pi16(x0, r0), _mm_madd_pi16(x1, r1)),
+                                   _mm_madd_pi16(x2, r2));
+                acc = _mm_add_pi32(acc, _mm_srli_si64(acc, 32));
+                result[j] = (s16)clamp16((s32)(u32)_mm_cvtsi64_si32(acc) >> 14);
+            }
+            in += 16u;
+            for (i = 0; i < 8u; i++) { input[i] = dmem_s16(in + i * 2u); }
+            for (i = 0; i < 8u; i++) { dmem_set_s16(out + i * 2u, result[i]); }
+            l2 = result[6];
+            l1 = result[7];
+            out += 16u;
+            count -= 16;
+        }
+        _mm_empty();
+    }
+#endif
     while (count > 0) {
         s16 result[8];
         s32 j;

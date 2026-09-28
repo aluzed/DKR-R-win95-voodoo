@@ -248,4 +248,20 @@ on 5,000 cases and thirteen tasks. On the target:
 The position, the table index and the output stay scalar, which is why the gain
 is a tenth and not more.
 
-Since 28 September the mixer is 24% cheaper per task, 6.15 ms to 4.69 ms.
+### POLEF as dot products in MMX
+
+Inside a block, POLEF's output j depends only on the block's input and the
+previous block's last two outputs: it is the dot product of [l2, l1, in0 ..
+in7] with a row fixed for the whole call -- book0[j], book1[j], then book1s
+for the earlier inputs, the gain for its own, zero after. The rows are built
+once per call and each output is three `pmaddwd` and two adds. The C sum wraps
+in unsigned 32-bit arithmetic, and so do `pmaddwd` and `paddd`, the corner of
+two -32768 * -32768 products included, so the bits before the shift are the
+same. No difference on 5,000 cases and thirteen tasks. On the target:
+
+| | before | after |
+|---|---:|---:|
+| POLEF | 16.5 µs | **9.7 µs** |
+| whole mixer, per task | 4.69 ms | **4.49 ms** |
+
+Since 28 September the mixer is 27% cheaper per task, 6.15 ms to 4.49 ms.
