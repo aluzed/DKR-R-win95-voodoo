@@ -74,6 +74,21 @@ normal mode with both opt-in options for the frame. Each is also checked
 byte-identical on 21 captured scenes through `tools/render/replay`, image and
 decoder counts, built for x86-64 and for i386 with x87 arithmetic.
 
+**The i386 build has to use the target's language mode, not only its FPU.**
+`cmake/win95-target.cmake` compiles with `-std=c17`, where GCC rounds excess
+x87 precision on every assignment. A host build with `gcc -m32 -mfpmath=387`
+and no `-std` is in GNU mode, where a value may stay in an 80-bit register:
+there `dkr_clip_project` kept `1/w` unrounded, while the target's code stores
+and reloads it as a float. Checked against that build, a change can look like
+a regression that the target would not see, or the reverse. The options that
+match the target:
+
+    gcc -m32 -std=c17 -D_DEFAULT_SOURCE -march=pentium2 -mtune=pentium3 \
+        -mfpmath=387 -mno-sse -mno-sse2
+
+Every change of this ticket, from `5a49753` to `de8e0a1`, was re-checked that
+way on 28 September: byte-identical on the 21 scenes.
+
 | Change | Zone, per display list | Frame mean |
 |---|---|---|
 | Trivial accept written in line (25 September) | clip 1.20 to 1.06 ms | 37.3 to 36.5 ms |
@@ -83,6 +98,7 @@ decoder counts, built for x86-64 and for i386 with x87 arithmetic.
 | Corners copied without s and t, unrolled (27 September) | fetch 1.15 to 1.00 ms; `dkr_f3d_run` 9.56 to 9.45 ms | 36.3, 36.5 against 36.4, 36.5 ms: no difference; render mean 10.30, 9.49 to 10.07, 9.26 ms |
 | Combiner catalogue keys computed once (27 September) | state 0.71 to 0.57 ms; `dkr_f3d_run` 9.47 to 9.04 ms | 36.3, 36.4 to 36.3, 36.2 ms; render mean 10.07, 10.07 to 9.86, 9.86 ms |
 | Even 16-bit reads in one load (27 September) | decoder without the backend 5.41 to 5.16 ms, on different list counts | 36.4, 36.2 to 36.2, 36.2 ms; render mean 9.85, 9.87 to 9.80, 9.79 ms |
+| Clipping reads the triangle in place, copies unrolled (28 September) | clip 0.44 to 0.41 ms | 36.2, 36.2 to 36.1, 36.2 ms; render mean 9.83, 9.80 to 9.70, 9.68 ms |
 
 The second change: the decoder asks `dkr_clip_trivially_inside` and
 projects the triangle's own vertices, rather than having `dkr_clip_near` copy
@@ -116,6 +132,12 @@ byte reads and a shift per coordinate. An even address on the interleaved
 layout is now one native 16-bit read at `a ^ 2`, as N64Recomp's `MEM_HU` does
 it. The gain is small, 0.06 ms of render a frame, but it is in the same
 direction in both pairs and the code is no harder to read.
+
+The eighth: in `dkr_clip_near`, a fifth of the samples were the three
+structure copies that loaded the triangle into the first polygon buffer, and
+the per-vertex copies of Sutherland-Hodgman were ten-word loops too. The
+first pass now reads the triangle where it is, and every copy is written
+field by field.
 
 The projection cache was byte-identical on the 21 scenes, and slower. Each
 vertex was projected once and its projection shared by the triangles using it,

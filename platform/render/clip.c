@@ -21,6 +21,18 @@ static void lerp_vertex(const dkr_clip_vertex *a, const dkr_clip_vertex *b,
     out->t = a->t + (b->t - a->t) * k;
 }
 
+/* A vertex copied field by field. A structure assignment is a ten-word loop
+   on this target, and the sampler found those loops in `dkr_clip_near`
+   (E08-S03); these assignments are unrolled. On x87 they go through
+   `fld`/`fstp`, exact for every value arithmetic can produce: only a
+   signalling NaN would change, and none is made. */
+static void copy_vertex(const dkr_clip_vertex *from, dkr_clip_vertex *to)
+{
+    to->x = from->x; to->y = from->y; to->z = from->z; to->w = from->w;
+    to->r = from->r; to->g = from->g; to->b = from->b; to->a = from->a;
+    to->s = from->s; to->t = from->t;
+}
+
 /* The signed distance from a vertex to a plane, in homogeneous space.
  *
  * Five planes: the near plane, and the four sides of the guard band. Writing
@@ -62,7 +74,10 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
 {
     dkr_clip_vertex buf_a[CLIP_MAX_VERTICES];
     dkr_clip_vertex buf_b[CLIP_MAX_VERTICES];
-    dkr_clip_vertex *poly = buf_a, *work = buf_b;
+    /* The first pass reads the triangle where it is; `work` is always the
+       buffer `poly` is not in. */
+    const dkr_clip_vertex *poly = in;
+    dkr_clip_vertex *work = buf_a;
     int n = 3, plane, i, triangles;
 
     if (!in || !out) {
@@ -83,11 +98,11 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
        -- and its three copies -- when it holds; this test stays for any other
        caller. */
     if (dkr_clip_trivially_inside(in)) {
-        out[0] = in[0]; out[1] = in[1]; out[2] = in[2];
+        copy_vertex(&in[0], &out[0]);
+        copy_vertex(&in[1], &out[1]);
+        copy_vertex(&in[2], &out[2]);
         return 1;
     }
-
-    poly[0] = in[0]; poly[1] = in[1]; poly[2] = in[2];
 
     /* Sutherland-Hodgman, one plane after another: for each edge we keep the
        vertex if it is on the right side, and add the intersection if the edge
@@ -114,7 +129,7 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
             const float dn = plane_distance(next, plane);
 
             if (dc >= 0.0f && m < CLIP_MAX_VERTICES) {
-                work[m++] = *cur;
+                copy_vertex(cur, &work[m++]);
             }
             if ((dc >= 0.0f) != (dn >= 0.0f) && m < CLIP_MAX_VERTICES) {
                 /* The denominator cannot vanish: the two vertices are on
@@ -128,11 +143,8 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
         }
         /* The two buffers trade places rather than the polygon being copied
            back. */
-        {
-            dkr_clip_vertex *swap = poly;
-            poly = work;
-            work = swap;
-        }
+        poly = work;
+        work = (work == buf_a) ? buf_b : buf_a;
     }
 
     /* The polygon is retriangulated as a fan. Keeping only the first triangle
@@ -148,9 +160,9 @@ int dkr_clip_near(const dkr_clip_vertex in[3], dkr_clip_vertex out[6])
         triangles = 2;
     }
     for (i = 0; i < triangles; i++) {
-        out[i * 3 + 0] = poly[0];
-        out[i * 3 + 1] = poly[i + 1];
-        out[i * 3 + 2] = poly[i + 2];
+        copy_vertex(&poly[0],     &out[i * 3 + 0]);
+        copy_vertex(&poly[i + 1], &out[i * 3 + 1]);
+        copy_vertex(&poly[i + 2], &out[i * 3 + 2]);
     }
     return triangles;
 }
