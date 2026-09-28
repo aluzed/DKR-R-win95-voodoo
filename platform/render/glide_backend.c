@@ -418,6 +418,23 @@ static void gl_invalidate(void *self);
 #define PASS2_BY_SHADE     2   /* factor = the vertex colour, per channel */
 static int pass2_wanted(const dkr_render_state *st);
 
+/* The catalogue entry a state's recipe names, or NULL. The predicates below ask
+   it for every draw, and each asked `combiner.c` twice across a file boundary.
+   The table is constant, so its base and size are taken once. First measured
+   as no gain on unbounded frame windows; over fixed ones, 0.1 ms of render a
+   frame in both pairs of runs (E08-S03). */
+static const dkr_cc_entry *recipe_entry(const dkr_render_state *st)
+{
+    static const dkr_cc_entry *base = 0;
+    static int count = -1;
+    if (count < 0) {
+        base = dkr_cc_table_at(0);
+        count = dkr_cc_table_count();
+    }
+    if (st->recipe <= 0 || st->recipe > count) { return 0; }
+    return base + (st->recipe - 1);
+}
+
 /* --- What the card was last told, part by part (E08-S03) --------------------- *
  *
  * `gl_set_state` programmed every part of the state on every change: combine,
@@ -1406,8 +1423,8 @@ static int pass2_wanted(const dkr_render_state *st)
     int kind;
 
     if (!g_extra_passes) { return 0; }
-    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
-    e = dkr_cc_table_at(st->recipe - 1);
+    e = recipe_entry(st);
+    if (e == 0) { return 0; }
     /* A one-cycle configuration has nothing to compose and is not a refusal.
        Counting it as one made the first measurement read "unsupported=165" for a
        scene whose problem was elsewhere entirely. */
@@ -1540,8 +1557,8 @@ static int prepass_wanted(const dkr_render_state *st)
     int shape;
 
     if (!g_extra_passes) { return 0; }
-    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
-    e = dkr_cc_table_at(st->recipe - 1);
+    e = recipe_entry(st);
+    if (e == 0) { return 0; }
     shape = prepass_shape(e);
     if (shape == PREPASS_NONE) { return 0; }
     /* **Not while a cutout is in force.** Pass B has to put the *iterated* alpha
@@ -2014,8 +2031,8 @@ static int shade_exact_wanted(const dkr_render_state *st)
        configuration's fill, which there is no reason to disturb. */
     if (st->blend != DKR_BLEND_ALPHA) { return 0; }
     if (st->alpha_test) { return 0; }
-    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 0; }
-    e = dkr_cc_table_at(st->recipe - 1);
+    e = recipe_entry(st);
+    if (e == 0) { return 0; }
     if (prepass_shape(e) != PREPASS_PRIM_TO_TEXEL) { return 0; }
     if (pass2_wanted(st) != PASS2_BY_SHADE) { return 0; }
     /* The primitive has to be black, or the term the card cannot form yet is not
@@ -2322,8 +2339,8 @@ static unsigned char iterated_scale_wanted(const dkr_render_state *st)
 {
     const dkr_cc_entry *e;
     if (st->alpha_scale == 255u) { return 255u; }
-    if (st->recipe <= 0 || st->recipe > dkr_cc_table_count()) { return 255u; }
-    e = dkr_cc_table_at(st->recipe - 1);
+    e = recipe_entry(st);
+    if (e == 0) { return 255u; }
     if (e == 0 || !e->setup.uses_texture) { return 255u; }
     if (e->setup.ac_local != GR_COMBINE_LOCAL_ITERATED) { return 255u; }
     /* The vertex alpha has to be the mux's own shade term, or it may be carrying

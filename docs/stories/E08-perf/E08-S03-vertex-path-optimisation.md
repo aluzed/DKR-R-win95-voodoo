@@ -130,7 +130,8 @@ back in. `1/w` per vertex stays out. `tools/win95/timing_report.py` now takes
 | Second-unit coordinates only for chained recipes (28 September) | decoder 5.05 to 4.99 ms, on 2,460 and 2,400 lists | not run: below the spread |
 | Glide state written part by part, only what changed (28 September) | state 4.73 to 3.40 us a call; draw 4.61 to 4.23 us; `dkr_f3d_run` 8.66 to 8.28 ms, on 2,400 lists each | 36.3, 36.2 to 36.0, 36.0 ms; render mean 9.19, 9.26 to 8.78, 8.77 ms; render p99 22.2, 22.5 to 20.6, 20.5 ms |
 | Combine units and constant written only when they change (28 September) | state 3.39 to 1.98 us a call; draw 4.23 to 3.95 us; `dkr_f3d_run` 8.29 to 7.94 ms, on 2,400 and 2,340 lists | render mean over 40-94 s 7.57, 7.57 to 7.38, 7.36 ms; over 95-101 s 17.19, 17.19 to 16.53, 16.56 ms |
-| Catalogue entry taken without calls into `combiner.c`, **not kept** (28 September) | draw 4.53 to 4.65 us a call | render mean 8.71, 8.74 against 9.40, 9.43 ms: no gain |
+| Catalogue entry taken without calls into `combiner.c`, rejected then **reinstated** (28 September) | draw 4.53 to 4.65 us a call | unbounded: 8.71, 8.74 against 9.40, 9.43 ms; over 40-94 s: 8.16, 8.17 to 8.07, 8.07 ms |
+| Texture source bound only when it changes, **not kept** (28 September) | state 1.97 to 2.02 us, draw 3.90 to 4.05 us; `dkr_f3d_run` 7.81 to 8.02 ms, on 2,340 and 2,400 lists | not run: the zones say no |
 | `1/w` computed once per vertex at load, **not kept** (28 September) | project 0.82 to 0.70 ms, decoder unchanged, on 2,400 lists each | render mean 9.42 against 9.87 ms: no gain |
 | Corners projected from the vertex cache without a copy, **not kept** (28 September) | fetch 0.93 to 0.84 ms, projection and corners 0.07 ms more; decoder 5.00 to 4.97 ms, on 2,400 lists each | not run: nothing to resolve |
 | Triangle header in one read, cull direction per batch, **not kept** (28 September) | decoder 5.03 to 5.02 ms, on 2,400 lists each | not run: nothing to resolve |
@@ -239,8 +240,12 @@ less than half of what it did this morning.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics
-thread. Taking the base and size once measured no gain in the draw zone, so it
-is not in the tree.
+thread. Taking the base and size once measured no gain in the draw zone and a
+loss in the frame, so it was taken out; the frame figure was the unbounded
+window's artefact, and over 40 to 94 s it is 0.1 ms faster in both pairs, so
+it went back in on 28 September. Skipping `grTexSource` when the unit already
+samples the same texture did not pay: the call was 0.4% of the thread, and the
+comparison cost what it saved.
 
 Dividing by `w` once per vertex, when it is loaded, rather than once per
 corner took 0.12 ms a list off the projection zone and put it back in the
