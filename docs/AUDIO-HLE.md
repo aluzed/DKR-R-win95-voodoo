@@ -173,3 +173,24 @@ thirteen captured tasks. On the target, per call, over 1,800 tasks:
 | CLEARBUFF | 3.77 µs | **0.86 µs** |
 | DMEMMOVE | 5.62 µs | **1.41 µs** |
 | whole mixer, per task | 6.15 ms | 5.97 ms |
+
+### ENVMIXER's mix in MMX
+
+ENVMIXER is limited by arithmetic, and its mix is `mix_sample` four times per
+lane pair. With the input and the output interleaved and each gain paired with
+-1, `pmaddwd` gives in * gain - out in 32 bits, exactly, for any 16-bit
+operands. The rounding, the arithmetic shift and the addition of out stay in 32
+bits, and `packssdw` saturates to 16 bits, which is clamp16. Nothing is
+approximated; the gains are laid out in pairs when they are computed, once per
+block or once per call for a zero rate. `_mm_empty` ends the MMX block at the
+end of the command.
+
+The path is compiled whenever `__MMX__` is defined, which the host's x86-64
+build also defines, so `abi_difftest` and `replay_hle` test this code and not
+the C loop it replaces: 5,000 cases and thirteen captured tasks, no difference.
+On the target, per call:
+
+| | before | after |
+|---|---:|---:|
+| ENVMIXER | 43.0 µs | **36.9 µs** |
+| whole mixer, per task | 5.97 ms | 5.72 ms |

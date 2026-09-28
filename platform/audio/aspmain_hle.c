@@ -3,6 +3,9 @@
 #include "aspmain_hle.h"
 
 #include <string.h>
+#if defined(__MMX__)
+#include <mmintrin.h>
+#endif
 
 typedef unsigned char  u8;
 typedef unsigned short u16;
@@ -503,6 +506,9 @@ static void envmix_load(s16 *block, u32 address)
  * the start of every call and whenever the rate is not zero. */
 typedef struct {
     s32 dry[8], wet[8];
+    /* The same gains laid out for `pmaddwd`: gain, -1, gain, -1 ... so that one
+       multiply-add gives in * gain - out per lane (see `envmix_mix`). */
+    s16 dry_pairs[16], wet_pairs[16];
     int valid;
 } envmix_gains;
 
@@ -514,10 +520,50 @@ static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 w
     for (i = 0; i < 8u; i++) {
         g->dry[i] = mulf(r->integer[i], dry_gain);
         g->wet[i] = mulf(r->integer[i], wet_gain);
+        g->dry_pairs[i * 2u] = (s16)g->dry[i];  g->dry_pairs[i * 2u + 1u] = -1;
+        g->wet_pairs[i * 2u] = (s16)g->wet[i];  g->wet_pairs[i * 2u + 1u] = -1;
     }
     g->valid = 1;
 }
 
+#if defined(__MMX__)
+/* --- Four `mix_sample`s in MMX, bit for bit (E08) ------------------------------ *
+ *
+ * mix_sample is clamp16(out + ((in * gain - out + 0x4000) >> 15)). With in and
+ * out interleaved and the gain paired with -1, `pmaddwd` gives in * gain - out
+ * in 32 bits, exactly, for any 16-bit operands; the rounding, the arithmetic
+ * shift and the addition of out stay in 32 bits; and `packssdw` saturates to 16
+ * bits, which is clamp16. Nothing is approximated. The caller ends the MMX
+ * block with `_mm_empty` before anything touches the x87. */
+static __m64 mix4_mmx(__m64 out, __m64 in, __m64 pairs_lo, __m64 pairs_hi)
+{
+    const __m64 round = _mm_set1_pi32(0x4000);
+    const __m64 lo = _mm_madd_pi16(_mm_unpacklo_pi16(in, out), pairs_lo);
+    const __m64 hi = _mm_madd_pi16(_mm_unpackhi_pi16(in, out), pairs_hi);
+    const __m64 out_lo = _mm_srai_pi32(_mm_unpacklo_pi16(out, out), 16);
+    const __m64 out_hi = _mm_srai_pi32(_mm_unpackhi_pi16(out, out), 16);
+    const __m64 sum_lo = _mm_add_pi32(_mm_srai_pi32(_mm_add_pi32(lo, round), 15), out_lo);
+    const __m64 sum_hi = _mm_add_pi32(_mm_srai_pi32(_mm_add_pi32(hi, round), 15), out_hi);
+    return _mm_packs_pi32(sum_lo, sum_hi);
+}
+
+static __m64 load4(const s16 *p) { __m64 v; memcpy(&v, p, sizeof(v)); return v; }
+static void store4(s16 *p, __m64 v) { memcpy(p, &v, sizeof(v)); }
+
+static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const envmix_gains *g)
+{
+    u32 h;
+    for (h = 0; h < 2u; h++) {
+        const __m64 vin = load4(in + h * 4u);
+        store4(dry + h * 4u, mix4_mmx(load4(dry + h * 4u), vin,
+                                      load4(g->dry_pairs + h * 8u),
+                                      load4(g->dry_pairs + h * 8u + 4u)));
+        store4(wet + h * 4u, mix4_mmx(load4(wet + h * 4u), vin,
+                                      load4(g->wet_pairs + h * 8u),
+                                      load4(g->wet_pairs + h * 8u + 4u)));
+    }
+}
+#else
 static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const envmix_gains *g)
 {
     u32 i;
@@ -526,6 +572,7 @@ static void envmix_mix(s16 *dry, s16 *wet, const s16 *in, const envmix_gains *g)
         wet[i] = (s16)mix_sample(wet[i], in[i], g->wet[i]);
     }
 }
+#endif
 
 static void envmix_store(const s16 *block, u32 address)
 {
@@ -631,6 +678,9 @@ static void cmd_envmixer(u32 w0, u32 w1)
         dmem_set_s16(st + 0x40u + i * 2u, param[i]);
     }
     dma_write(st, address, 80u);
+#if defined(__MMX__)
+    _mm_empty();   /* the MMX block ends here; see `mix4_mmx` */
+#endif
 }
 
 /* RESAMPLE: a four-tap interpolation through the table in the microcode's data
