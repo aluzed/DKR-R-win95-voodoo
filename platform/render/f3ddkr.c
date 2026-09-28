@@ -214,12 +214,18 @@ static void trace(dkr_f3d_context *c, const char *fmt, ...)
     c->trace(c->trace_user, line);
 }
 
+/* Every call goes through this: with the trace off, the arguments are not even
+   evaluated. Forty-five unguarded calls, several per display-list command, each
+   pushed its arguments for `trace` to drop them, and `trace` alone was 0.6% of
+   the graphics thread's samples on the target (E08-S03). */
+#define TRACE(c, ...) do { if ((c)->trace) { trace((c), __VA_ARGS__); } } while (0)
+
 static void reject(dkr_f3d_context *c, dkr_f3d_reject why, const char *detail)
 {
     c->state.rejects[why]++;
     if (c->state.rejects[why] <= MAX_LOGGED_REJECTS) {
         if (c->trace) {
-            trace(c, "REJECT %s: %s", dkr_f3d_reject_text(why), detail);
+            TRACE(c, "REJECT %s: %s", dkr_f3d_reject_text(why), detail);
         } else if (c->reject_trace) {
             char line[192];
             sprintf(line, "REJECT %.40s: %.120s", dkr_f3d_reject_text(why), detail);
@@ -253,7 +259,7 @@ static void cmd_dma_offsets(dkr_f3d_context *c, unsigned int w0, unsigned int w1
 {
     c->state.matrix_offset = w0 & RDRAM_MASK;
     c->state.vertex_offset = w1 & RDRAM_MASK;
-    trace(c, "DMAOffsets matrices=0x%06X vertices=0x%06X",
+    TRACE(c, "DMAOffsets matrices=0x%06X vertices=0x%06X",
           c->state.matrix_offset, c->state.vertex_offset);
 }
 
@@ -302,7 +308,7 @@ static void cmd_matrix(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         }
     }
     dkr_transform_select(&c->transform, (int)index);
-    trace(c, "Matrix slot=%u address=0x%06X", index, address);
+    TRACE(c, "Matrix slot=%u address=0x%06X", index, address);
 }
 
 /* Counts a slot's transformation as spent or wasted, once, when the slot is
@@ -414,7 +420,7 @@ static void cmd_vertex(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
        at the same index. */
     if (!append) { c->vertex_base = count; }
     c->state.vertices += count;
-    trace(c, "Vertex %u vertices to %u (append=%u) from 0x%06X",
+    TRACE(c, "Vertex %u vertices to %u (append=%u) from 0x%06X",
           count, destination, append, source);
 }
 
@@ -499,12 +505,12 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 if (tb < tmin) { tmin = tb; } if (tb > tmax) { tmax = tb; }
             }
         }
-        trace(c, "Triangle %u from 0x%06X  s=%d..%d t=%d..%d texels"
+        TRACE(c, "Triangle %u from 0x%06X  s=%d..%d t=%d..%d texels"
                  " (tile %dx%d)",
               count, source, smin / 32, smax / 32, tmin / 32, tmax / 32,
               (int)c->tex_padded_width, (int)c->tex_padded_height);
     } else {
-        trace(c, "Triangle %u from 0x%06X", count, source);
+        TRACE(c, "Triangle %u from 0x%06X", count, source);
     }
 
     /* --- Emission, and this is where the chain closes ----------------------- *
@@ -583,7 +589,7 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                    per triangle, and cost 1.3 ms a display list with the trace
                    off (E08-S01, render zones). */
                 if (c->trace)
-                trace(c, "vtx corner=%d raw s=%d t=%d rgba=%d,%d,%d,%d",
+                TRACE(c, "vtx corner=%d raw s=%d t=%d rgba=%d,%d,%d,%d",
                       corner, (int)sb, (int)tb,
                       (int)tri[corner].r, (int)tri[corner].g,
                       (int)tri[corner].b, (int)tri[corner].a);
@@ -1282,7 +1288,7 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     /* Which `MOVEWORD` types the lists actually carry. On stock F3D the fog
        multiplier and offset arrive by this command, and the fog coefficient this
        port cannot find would have to come from somewhere like it. */
-    trace(c, "MoveWord type=0x%02X w0=0x%08X w1=0x%08X", type, w0, w1);
+    TRACE(c, "MoveWord type=0x%02X w0=0x%08X w1=0x%08X", type, w0, w1);
     if (type == MOVEWORD_FOG) {
         /* --- The fog coefficient's two constants ------------------------- *
          *
@@ -1338,7 +1344,7 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         c->fog_multiplier = (short)((w1 >> 16) & 0xFFFFu);
         c->fog_offset     = (short)(w1 & 0xFFFFu);
         c->state.fog_words++;
-        trace(c, "FogPosition multiplier=%d offset=%d",
+        TRACE(c, "FogPosition multiplier=%d offset=%d",
               (int)c->fog_multiplier, (int)c->fog_offset);
         return;
     }
@@ -1347,18 +1353,18 @@ static void cmd_move_word(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
         /* An extension of the port, not of the original microcode: the magic
            word "DKR\0" tells the commands added by the modern engine apart from
            the game's. */
-        trace(c, "PresentationGroup mode=%u", w1 & 7u);
+        TRACE(c, "PresentationGroup mode=%u", w1 & 7u);
     } else if (type == MOVEWORD_BILLBOARD) {
         c->state.billboard = (unsigned char)(w1 & 1u);
-        trace(c, "MoveWord billboard=%u", c->state.billboard);
+        TRACE(c, "MoveWord billboard=%u", c->state.billboard);
     } else if (type == MOVEWORD_MVPMATRIX) {
         unsigned int m = (w1 >> 6) & 0x03u;
         if (m > 2u) { m = 2u; }
         c->state.selected_matrix = m;
         dkr_transform_select(&c->transform, (int)m);
-        trace(c, "MoveWord matrix=%u", m);
+        TRACE(c, "MoveWord matrix=%u", m);
     } else {
-        trace(c, "MoveWord type=0x%02X value=0x%08X", type, w1);
+        TRACE(c, "MoveWord type=0x%02X value=0x%08X", type, w1);
     }
 }
 
@@ -2498,7 +2504,7 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         }
     }
 
-    trace(c, "SetTileSize %dx%d %s at 0x%06X", width, height,
+    TRACE(c, "SetTileSize %dx%d %s at 0x%06X", width, height,
           dkr_texture_format_name((dkr_n64_format)c->timg_format,
                                   (dkr_n64_size)c->timg_size),
           c->timg_address);
@@ -2536,7 +2542,7 @@ static void cmd_viewport(dkr_f3d_context *c, unsigned int address)
        same point, which looks like a wrong matrix. We then keep the one we had
        rather than install an unusable one. */
     if (sx == 0 || sy == 0) {
-        trace(c, "Viewport ignored: zero scale");
+        TRACE(c, "Viewport ignored: zero scale");
         return;
     }
 
@@ -2546,7 +2552,7 @@ static void cmd_viewport(dkr_f3d_context *c, unsigned int address)
                                ((float)tx / 4.0f) * scale,
                                ((float)ty / 4.0f) * scale);
     c->state.viewports++;
-    trace(c, "Viewport scale=%d,%d translation=%d,%d (x%d/100)",
+    TRACE(c, "Viewport scale=%d,%d translation=%d,%d (x%d/100)",
           sx / 4, sy / 4, tx / 4, ty / 4, (int)(scale * 100.0f));
 }
 
@@ -2776,7 +2782,7 @@ static void texrect_emit(dkr_f3d_context *c)
     }
     c->backend->draw_triangles(c->backend->self, v, 2);
     c->state.texrects_drawn++;
-    trace(c, "TexRect %d,%d..%d,%d s=%d t=%d /1000",
+    TRACE(c, "TexRect %d,%d..%d,%d s=%d t=%d /1000",
           c->texrect_ulx, c->texrect_uly, c->texrect_lrx, c->texrect_lry,
           (int)(s0 * 1000.0f), (int)(t0 * 1000.0f));
 }
@@ -2888,7 +2894,7 @@ static void blend_rect_emit(dkr_f3d_context *c, int x0, int y0, int x1, int y1)
     }
     c->state.fill_sample_n++;
     c->state.blend_rects++;
-    trace(c, "BlendRect %d,%d..%d,%d rgba=0x%08X", x0, y0, x1, y1, c->prim_color);
+    TRACE(c, "BlendRect %d,%d..%d,%d rgba=0x%08X", x0, y0, x1, y1, c->prim_color);
 }
 
 static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
@@ -2906,7 +2912,7 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     int x0, y0, x1, y1;
 
     if (!c->backend || !c->backend->fill_rect) {
-        trace(c, "FillRect ignored: no backend");
+        TRACE(c, "FillRect ignored: no backend");
         return;
     }
 
@@ -2982,7 +2988,7 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     if (c->state.depth_image_address != 0u &&
         c->state.color_image_address == c->state.depth_image_address) {
         c->state.fills_to_depth++;
-        trace(c, "FillRect skipped: aimed at the depth buffer 0x%08X",
+        TRACE(c, "FillRect skipped: aimed at the depth buffer 0x%08X",
               c->state.depth_image_address);
         return;
     }
@@ -3026,7 +3032,7 @@ static void cmd_fill_rect(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
     }
     c->state.fill_sample_n++;
     c->state.rects++;
-    trace(c, "FillRect %d,%d..%d,%d colour=0x%06X",
+    TRACE(c, "FillRect %d,%d..%d,%d colour=0x%06X",
           x0, y0, x1, y1, c->state.fill_color_argb);
 }
 
@@ -3127,13 +3133,13 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->prim_lod_min = (unsigned char)((w0 >> 8) & 0xFFu);
             c->prim_lod_frac = (unsigned char)(w0 & 0xFFu);
             c->state_dirty = 1;
-            trace(c, "SetPrimColor 0x%08X lod=%u/%u", w1,
+            TRACE(c, "SetPrimColor 0x%08X lod=%u/%u", w1,
                   c->prim_lod_min, c->prim_lod_frac);
             break;
         case OP_SETENVCOLOR:
             c->env_color = w1;
             c->state_dirty = 1;
-            trace(c, "SetEnvColor 0x%08X", w1);
+            TRACE(c, "SetEnvColor 0x%08X", w1);
             break;
         case OP_TEXRECT:    cmd_texrect(c, w0, w1, 0);  break;
         case OP_TEXRECTFLIP: cmd_texrect(c, w0, w1, 1); break;
@@ -3162,7 +3168,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->state.texture_offset = w1 & 0x00FFFFFFu;
             c->state.texture_shift  = 0;
             c->state.texture_count  = 0;
-            trace(c, "TextureOffset base=0x%06X", c->state.texture_offset);
+            TRACE(c, "TextureOffset base=0x%06X", c->state.texture_offset);
             break;
 
         case OP_DLBRANCH: {
@@ -3188,7 +3194,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 return_stack[depth++] = address;
                 remaining = NO_COUNT;   /* a called list runs to its ENDDL */
             }
-            trace(c, "DisplayList %s to 0x%06X",
+            TRACE(c, "DisplayList %s to 0x%06X",
                   branch ? "branch" : "call", target);
             address = target;
             break;
@@ -3196,12 +3202,12 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
 
         case OP_ENDDL:
             if (depth == 0u) {
-                trace(c, "EndDisplayList - end");
+                TRACE(c, "EndDisplayList - end");
                 running = 0;
             } else {
                 address = return_stack[--depth];
                 remaining = remaining_stack[depth];
-                trace(c, "EndDisplayList - return to 0x%06X", address);
+                TRACE(c, "EndDisplayList - return to 0x%06X", address);
             }
             break;
 
@@ -3222,7 +3228,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             remaining_stack[depth] = remaining;
             return_stack[depth++] = address;
             remaining = count;
-            trace(c, "CountedDisplayList %u commands at 0x%06X", count, target);
+            TRACE(c, "CountedDisplayList %u commands at 0x%06X", count, target);
             address = target;
             break;
         }
@@ -3256,7 +3262,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->mode_h = w0 & 0x00FFFFFFu;
             c->mode_l = w1;
             c->state_dirty = 1;
-            trace(c, "SetOtherMode whole h=0x%06X l=0x%08X",
+            TRACE(c, "SetOtherMode whole h=0x%06X l=0x%08X",
                   c->mode_h, c->mode_l);
             break;
 
@@ -3271,7 +3277,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                deduced: `m1a == 3 && m1b == 2` is `G_RM_FOG_SHADE_A`. Traced
                because the gate built on it never fires, and the first question
                is what the lists actually carry. */
-            trace(c, "othermode_l=0x%08X m1a=%u m1b=%u", c->mode_l,
+            TRACE(c, "othermode_l=0x%08X m1a=%u m1b=%u", c->mode_l,
                   (c->mode_l >> 30) & 3u, (c->mode_l >> 26) & 3u);
             c->state_dirty = 1;
             break;
@@ -3284,7 +3290,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         case OP_SETFILLCOLOR:
             c->state.fill_color_raw = w1;
             c->state.fill_color_argb = colour_from_5551(w1 & 0xFFFFu);
-            trace(c, "SetFillColor raw=0x%08X -> 0x%06X",
+            TRACE(c, "SetFillColor raw=0x%08X -> 0x%06X",
                   w1, c->state.fill_color_argb);
             break;
 
@@ -3304,7 +3310,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                top byte and share their low twenty-four bits, so masking made
                both read 0x000000 and every fill look like a frame clear. */
             c->state.color_image_address = w1;
-            trace(c, "SetColorImage width=%u address=0x%08X",
+            TRACE(c, "SetColorImage width=%u address=0x%08X",
                   c->state.color_image_width, c->state.color_image_address);
             break;
 
@@ -3322,10 +3328,10 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                fault behind the first. */
             if (opcode == OP_SETFOGCOLOR) {
                 c->fog_color = ((w1 >> 8) & 0x00FFFFFFu);
-                trace(c, "SetFogColor 0x%08X", w1);
+                TRACE(c, "SetFogColor 0x%08X", w1);
             } else {
                 c->blend_color = ((w1 >> 8) & 0x00FFFFFFu);
-                trace(c, "SetBlendColor 0x%08X", w1);
+                TRACE(c, "SetBlendColor 0x%08X", w1);
             }
             c->state_dirty = 1;
             break;
@@ -3383,7 +3389,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 c->state_dirty = 1;
                 c->state.tiles_decoded++;
             }
-            trace(c, "SetTile tile=%u w0=0x%08X w1=0x%08X", tile, w0, w1);
+            TRACE(c, "SetTile tile=%u w0=0x%08X w1=0x%08X", tile, w0, w1);
             break;
         }
 
@@ -3431,7 +3437,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                                         (int)((float)lrx * scale),
                                         (int)((float)lry * scale));
             }
-            trace(c, "SetScissor %d,%d..%d,%d", ulx, uly, lrx, lry);
+            TRACE(c, "SetScissor %d,%d..%d,%d", ulx, uly, lrx, lry);
             break;
         }
 
@@ -3443,7 +3449,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                recognise that fill by, and it paints the screen -- white, since
                the fill colour is then 0xFFFCFFFC, the depth far value. */
             c->state.depth_image_address = w1;
-            trace(c, "SetDepthImage address=0x%08X", w1);
+            TRACE(c, "SetDepthImage address=0x%08X", w1);
             break;
 
         case OP_SETTEXIMAGE:
@@ -3500,7 +3506,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                     c->state.texture_count  = 0u;
                 }
             }
-            trace(c, "SetTextureImage %s at 0x%06X (shift %u)",
+            TRACE(c, "SetTextureImage %s at 0x%06X (shift %u)",
                   dkr_texture_format_name((dkr_n64_format)c->timg_format,
                                           (dkr_n64_size)c->timg_size),
                   c->timg_address, c->state.texture_shift);
@@ -3518,7 +3524,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 in_range(c, source, VIEWPORT_BYTES)) {
                 cmd_viewport(c, source);
             } else {
-                trace(c, "MoveMem index=0x%02X size=%u at 0x%06X",
+                TRACE(c, "MoveMem index=0x%02X size=%u at 0x%06X",
                       index, size, source);
             }
             break;
@@ -3557,7 +3563,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                 c->block_row_bytes = (dxt != 0u)
                     ? (unsigned short)((2048u / dxt) * 8u) : 0u;
             }
-            trace(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
+            TRACE(c, "LoadBlock w0=0x%08X w1=0x%08X", w0, w1);
             break;
 
         /* --- The geometry mode, and the fog colour ------------------------- *
@@ -3593,7 +3599,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->state.texture_cmds++;
             c->texture_scale_s = (unsigned short)((w1 >> 16) & 0xFFFFu);
             c->texture_scale_t = (unsigned short)(w1 & 0xFFFFu);
-            trace(c, "SPTexture s=0x%04X t=0x%04X level=%u tile=%u on=%u",
+            TRACE(c, "SPTexture s=0x%04X t=0x%04X level=%u tile=%u on=%u",
                   (unsigned)c->texture_scale_s, (unsigned)c->texture_scale_t,
                   (w0 >> 11) & 7u, (w0 >> 8) & 7u, w0 & 0xFFu);
             break;
@@ -3601,14 +3607,14 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         case 0xB7u:
             c->state.geometry_mode |= w1;
             c->state.geometry_mode_writes++;
-            trace(c, "SetGeometryMode +0x%08X -> 0x%08X", w1,
+            TRACE(c, "SetGeometryMode +0x%08X -> 0x%08X", w1,
                   c->state.geometry_mode);
             break;
 
         case 0xB6u:
             c->state.geometry_mode &= ~w1;
             c->state.geometry_mode_writes++;
-            trace(c, "ClearGeometryMode -0x%08X -> 0x%08X", w1,
+            TRACE(c, "ClearGeometryMode -0x%08X -> 0x%08X", w1,
                   c->state.geometry_mode);
             break;
 
@@ -3621,7 +3627,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
                    scenery comes out wrong. */
                 c->state.deferred++;
                 if (c->state.deferred <= MAX_LOGGED_REJECTS) {
-                    trace(c, "deferred 0x%02X w0=0x%08X w1=0x%08X", opcode, w0, w1);
+                    TRACE(c, "deferred 0x%02X w0=0x%08X w1=0x%08X", opcode, w0, w1);
                 }
                 break;
             }
@@ -3642,7 +3648,7 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
         if (running && remaining == 0u && depth > 0u) {
             address = return_stack[--depth];
             remaining = remaining_stack[depth];
-            trace(c, "CountedDisplayList finished - return to 0x%06X", address);
+            TRACE(c, "CountedDisplayList finished - return to 0x%06X", address);
         }
     }
     if (dkr_f3d_zone_clock && zone_opcode >= 0) {

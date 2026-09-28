@@ -99,6 +99,7 @@ way on 28 September: byte-identical on the 21 scenes.
 | Combiner catalogue keys computed once (27 September) | state 0.71 to 0.57 ms; `dkr_f3d_run` 9.47 to 9.04 ms | 36.3, 36.4 to 36.3, 36.2 ms; render mean 10.07, 10.07 to 9.86, 9.86 ms |
 | Even 16-bit reads in one load (27 September) | decoder without the backend 5.41 to 5.16 ms, on different list counts | 36.4, 36.2 to 36.2, 36.2 ms; render mean 9.85, 9.87 to 9.80, 9.79 ms |
 | Clipping reads the triangle in place, copies unrolled (28 September) | clip 0.44 to 0.41 ms | 36.2, 36.2 to 36.1, 36.2 ms; render mean 9.83, 9.80 to 9.70, 9.68 ms |
+| Trace calls skipped with their arguments (28 September) | decoder without the backend 5.05 to 4.89 ms, on 2,340 and 2,280 lists | 36.2, 36.4 against 36.5, 36.1 ms; render mean 9.66, 8.88 against 8.73, 9.50 ms: inconclusive |
 
 The second change: the decoder asks `dkr_clip_trivially_inside` and
 projects the triangle's own vertices, rather than having `dkr_clip_near` copy
@@ -138,6 +139,14 @@ structure copies that loaded the triangle into the first polygon buffer, and
 the per-vertex copies of Sutherland-Hodgman were ten-word loops too. The
 first pass now reads the triangle where it is, and every copy is written
 field by field.
+
+The ninth is below what the frame can resolve. Forty-five `trace` calls ran
+with the trace off, each pushing its arguments for `trace` to drop them; a
+`TRACE` macro now tests the callback first. The zones show the decoder 0.16 ms
+a list lighter, but the two pairs of normal runs disagree in sign, by more
+than that: from here on the run-to-run spread of the render mean, about
+0.6 ms, is larger than a single change. It is kept because it cannot cost
+anything and the trace output is line for line the same.
 
 The projection cache was byte-identical on the 21 scenes, and slower. Each
 vertex was projected once and its projection shared by the triangles using it,
