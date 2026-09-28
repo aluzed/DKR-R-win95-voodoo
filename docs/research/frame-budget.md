@@ -42,6 +42,23 @@ The same run at `e0b7a04`, after Glide's state and combine units were made
 to skip repeated writes the same evening: the graphics thread is awake 23.7%,
 **8.57 ms a frame**, the audio mixer 7.54 ms and the game thread 4.28 ms.
 
+The audio mixer, reworked the following night (`AUDIO-HLE.md`: whole-word
+CLEARBUFF and DMEMMOVE, MMX for ENVMIXER, MIXER, RESAMPLE and POLEF, all bit for
+bit), in the same run at `70ba8c4`: **5.45 ms a frame**, 15.1%, against 7.54 ms.
+The graphics thread reads 8.59 ms and the game thread 4.39 ms.
+
+Where it shows is the attract mode's race, the one scene where the processor
+ran out. Normal mode, interleaved runs of the build before the audio work
+(`aaedd23`) and after (`70ba8c4`), over 95 to 101 s:
+
+| | before | after |
+|---|---:|---:|
+| frames | 126, 114 | **136, 141** |
+| mean period | 47.5, 52.6 ms | **44.1, 43.2 ms** |
+
+Over 40 to 94 s, where the frame already sits on two retraces, the mean period
+moves from 35.05 ms to 34.9 ms.
+
 The graphics thread is now under the 12 ms proposed for it. The frame itself
 barely moves, 36.2 ms here against 36 to 37 ms since 26 September: its median
 is two retraces, 33.5 ms, which is the game's own 30 fps, and its mean is set
