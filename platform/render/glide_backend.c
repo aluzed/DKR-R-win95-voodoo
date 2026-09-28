@@ -418,6 +418,49 @@ static void gl_invalidate(void *self);
 #define PASS2_BY_SHADE     2   /* factor = the vertex colour, per channel */
 static int pass2_wanted(const dkr_render_state *st);
 
+/* --- What the card was last told, part by part (E08-S03) --------------------- *
+ *
+ * `gl_set_state` programmed every part of the state on every change: combine,
+ * texture modes, blend, depth, cull, alpha test, fog, some fifteen Glide calls
+ * at 4.7 us a state. Most changes touch one part. Each `apply_*` below now
+ * remembers the value it last wrote and skips the call when asked for it again.
+ *
+ * The one way this goes wrong is a register written behind its back, and blend
+ * and depth are: the extra passes program them directly. Every such write goes
+ * through `raw_blend_function` or `raw_depth_*`, which forget the remembered
+ * value, so the next `apply_*` writes it again. Nothing else writes texture
+ * modes, cull, alpha test or fog. All of it is forgotten when the context
+ * opens. */
+static struct {
+    unsigned char tex_valid, blend_valid, depth_valid, cull_valid,
+                  alpha_valid, fog_valid;
+    FxU32 tex_filter, tex_clamp_s, tex_clamp_t;
+    int blend, depth, depth_w;
+    unsigned char alpha_enabled, alpha_reference, fog_enabled;
+    unsigned int fog_color;
+} g_shadow;
+
+static void shadow_forget_all(void) { memset(&g_shadow, 0, sizeof(g_shadow)); }
+
+static void raw_blend_function(FxU32 rgb_src, FxU32 rgb_dst,
+                               FxU32 alpha_src, FxU32 alpha_dst)
+{
+    g_shadow.blend_valid = 0;
+    gs.blend_function(rgb_src, rgb_dst, alpha_src, alpha_dst);
+}
+
+static void raw_depth_mask(FxU32 on)
+{
+    g_shadow.depth_valid = 0;
+    gs.depth_mask(on);
+}
+
+static void raw_depth_mode(FxU32 mode)
+{
+    g_shadow.depth_valid = 0;
+    gs.depth_mode(mode);
+}
+
 static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
                           unsigned int constant, unsigned char alpha_scale)
 {
@@ -520,23 +563,32 @@ static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
    avoid letting an inherited state decide on our behalf. */
 static void apply_texture_modes(const dkr_render_state *st)
 {
+    const FxU32 f = (st->filter == DKR_FILTER_BILINEAR) ? 1u : 0u;
+    const FxU32 cs = (st->wrap_s == DKR_WRAP_REPEAT) ? 0u : 1u;
+    const FxU32 ct = (st->wrap_t == DKR_WRAP_REPEAT) ? 0u : 1u;
+    if (g_shadow.tex_valid && g_shadow.tex_filter == f &&
+        g_shadow.tex_clamp_s == cs && g_shadow.tex_clamp_t == ct) {
+        return;
+    }
+    g_shadow.tex_valid = 1;
+    g_shadow.tex_filter = f; g_shadow.tex_clamp_s = cs; g_shadow.tex_clamp_t = ct;
     /* GR_TEXTUREFILTER_POINT_SAMPLED = 0, BILINEAR = 1.
        GR_TEXTURECLAMP_WRAP = 0, CLAMP = 1 — mirroring does not exist on the
        Voodoo 2 and is handled at decode time, which is noted for E05-S08. */
     if (gs.tex_filter) {
-        const FxU32 f = (st->filter == DKR_FILTER_BILINEAR) ? 1u : 0u;
         gs.tex_filter(GR_TMU0, f, f);
     }
     if (gs.tex_clamp) {
-        gs.tex_clamp(GR_TMU0,
-                     (st->wrap_s == DKR_WRAP_REPEAT) ? 0u : 1u,
-                     (st->wrap_t == DKR_WRAP_REPEAT) ? 0u : 1u);
+        gs.tex_clamp(GR_TMU0, cs, ct);
     }
 }
 
 static void apply_blend(dkr_blend_mode m)
 {
     if (!gs.blend_function) { return; }
+    if (g_shadow.blend_valid && g_shadow.blend == (int)m) { return; }
+    g_shadow.blend_valid = 1;
+    g_shadow.blend = (int)m;
     switch (m) {
     case DKR_BLEND_ALPHA:
         gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
@@ -566,6 +618,13 @@ void dkr_glide_backend_depth_mode(int use_w)
 static void apply_depth(dkr_depth_mode m)
 {
     if (!gs.depth_mode || !gs.depth_function || !gs.depth_mask) { return; }
+    if (g_shadow.depth_valid && g_shadow.depth == (int)m &&
+        g_shadow.depth_w == g_depth_use_w) {
+        return;
+    }
+    g_shadow.depth_valid = 1;
+    g_shadow.depth = (int)m;
+    g_shadow.depth_w = g_depth_use_w;
     if (m == DKR_DEPTH_DISABLED) {
         gs.depth_mode(GR_DEPTHBUFFER_DISABLE);
         gs.depth_mask(0);
@@ -610,12 +669,22 @@ static void apply_cull(dkr_cull_mode m)
        opposite conventions — hence emptying everything. We disable it explicitly
        rather than leave it in an inherited state. */
     (void)m;
+    if (g_shadow.cull_valid) { return; }
+    g_shadow.cull_valid = 1;
     gs.cull_mode(GR_CULL_DISABLE);
 }
 
 static void apply_alpha_test(unsigned char enabled, unsigned char reference)
 {
     if (!gs.alpha_test_function || !gs.alpha_test_reference) { return; }
+    if (!enabled) { reference = 0; }
+    if (g_shadow.alpha_valid && g_shadow.alpha_enabled == enabled &&
+        g_shadow.alpha_reference == reference) {
+        return;
+    }
+    g_shadow.alpha_valid = 1;
+    g_shadow.alpha_enabled = enabled;
+    g_shadow.alpha_reference = reference;
     if (!enabled) {
         gs.alpha_test_function(GR_CMP_ALWAYS);
         return;
@@ -627,6 +696,14 @@ static void apply_alpha_test(unsigned char enabled, unsigned char reference)
 static void apply_fog(unsigned char enabled, unsigned int color)
 {
     if (!gs.fog_mode) { return; }
+    if (!enabled) { color = 0u; }
+    if (g_shadow.fog_valid && g_shadow.fog_enabled == enabled &&
+        g_shadow.fog_color == color) {
+        return;
+    }
+    g_shadow.fog_valid = 1;
+    g_shadow.fog_enabled = enabled;
+    g_shadow.fog_color = color;
     if (!enabled) {
         gs.fog_mode(GR_FOG_DISABLE);
         return;
@@ -677,6 +754,7 @@ static int gl_open(void *self, int width, int height)
        what Glide itself starts with. Leaving this at zero would make the probe
        report every point outside a window nobody had set. */
     g_clip[0] = 0; g_clip[1] = 0; g_clip[2] = b.width; g_clip[3] = b.height;
+    shadow_forget_all();
 
     if (!gs.ready) {
         gs.color_combine        = (pfn_5)dkr_glide_symbol("_grColorCombine@20");
@@ -994,10 +1072,10 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
      * back by the same `has_state` invalidation that already served the mask. */
     if (gs.depth_mask) {
         if (gs.depth_mode) {
-            gs.depth_mode(g_depth_use_w ? GR_DEPTHBUFFER_WBUFFER
+            raw_depth_mode(g_depth_use_w ? GR_DEPTHBUFFER_WBUFFER
                                         : GR_DEPTHBUFFER_ZBUFFER);
         }
-        gs.depth_mask(1);
+        raw_depth_mask(1);
         b.has_state = 0;
     }
     dkr_glide_clear(clear_argb);
@@ -1557,7 +1635,7 @@ static void pass_depth(int last)
 {
     if (!gs.depth_mode || !gs.depth_function || !gs.depth_mask) { return; }
     apply_depth(b.current.depth);
-    if (!last) { gs.depth_mask(0); }
+    if (!last) { raw_depth_mask(0); }
 }
 
 /* Whether a second pass will follow the pre-pass, so that the pre-pass knows it
@@ -1650,7 +1728,7 @@ static void prepass_draw_texel_alone(const dkr_render_vertex *vertices,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
         gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                          GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-        gs.blend_function(opaque_first ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
+        raw_blend_function(opaque_first ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
                           GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
         pass_depth(1);
         for (i = 0; i + 2 < count * 3; i += 3) {
@@ -1717,7 +1795,7 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
+    raw_blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
     /* This pass stands in for the ordinary draw, and it still does not write: see
        `pass_depth`. The last pass of the whole logical draw does. */
     pass_depth(0);
@@ -1729,7 +1807,7 @@ static void prepass_draw(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.alpha_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+    raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     pass_depth(!g_pass2_follows);
     pass2_geometry(vertices, count);
@@ -1760,7 +1838,7 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
        nothing of itself -- `ZERO` -- it is there to *be* the factor. */
     gs.color_combine(GR_COMBINE_FUNCTION_LOCAL, GR_COMBINE_FACTOR_ONE,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_COLOR,
+    raw_blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_COLOR,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     pass2_geometry(vertices, count);
     watch_pass(DKR_CARD_PASS_SHADE_A);
@@ -1777,7 +1855,7 @@ static void pass2_draw_by_shade(const dkr_render_vertex *vertices, int count)
     if (gs.constant_color) { gs.constant_color(b.current.env_color); }
     gs.color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
-    gs.blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
+    raw_blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     /* The last pass of the logical draw, so this is the one that writes. */
     pass_depth(1);
     pass2_geometry(vertices, count);
@@ -1880,7 +1958,7 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+    raw_blend_function(GR_BLEND_ZERO, GR_BLEND_ONE_MINUS_SRC_ALPHA,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     /* This pass stands in for the ordinary draw, so it is the one that may write
        depth; the two after it revisit the same fragments. */
@@ -1903,7 +1981,7 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
     gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
+    raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     while (done < count) {
         const int n = (count - done > PREPASS_BATCH) ? PREPASS_BATCH
@@ -1925,7 +2003,7 @@ static void prepass_shade_exact(const dkr_render_vertex *vertices, int count)
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_ITERATED, 0);
     gs.alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
                      GR_COMBINE_LOCAL_CONSTANT, GR_COMBINE_OTHER_TEXTURE, 0);
-    gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
+    raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE,
                       GR_BLEND_ONE, GR_BLEND_ZERO);
     /* The last of the three, so this is the one that writes. */
     pass_depth(1);
@@ -2056,7 +2134,7 @@ static void pass2_draw(const dkr_render_vertex *vertices, int count)
        `ENV x e` in the constant, and the alpha carries coverage for the test, not
        a weight. */
     if (gs.blend_function) {
-        gs.blend_function((b.current.blend != DKR_BLEND_ALPHA)
+        raw_blend_function((b.current.blend != DKR_BLEND_ALPHA)
                               ? GR_BLEND_ONE : GR_BLEND_SRC_ALPHA,
                           GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
     }
@@ -2782,6 +2860,7 @@ static void gl_invalidate(void *self)
 {
     (void)self;
     b.has_state = 0;
+    shadow_forget_all();
 }
 
 /* Whether the entry points the drawing path needs are resolved at all. The
@@ -2837,7 +2916,7 @@ void dkr_glide_backend_set_blend(int rgb_src, int rgb_dst,
                                  int alpha_src, int alpha_dst)
 {
     if (!gs.blend_function) { return; }
-    gs.blend_function((FxU32)rgb_src, (FxU32)rgb_dst,
+    raw_blend_function((FxU32)rgb_src, (FxU32)rgb_dst,
                       (FxU32)alpha_src, (FxU32)alpha_dst);
     /* The card no longer holds the block the cache believes it does. */
     b.has_state = 0;
