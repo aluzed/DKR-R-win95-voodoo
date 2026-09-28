@@ -160,8 +160,11 @@ better hash changed nothing, but both memos were emptied on every upload,
 which forced a fresh scan for every texture in use after each one. A key is
 never live in two slots of either table, so a checked memo answer is always
 the scan's own, and the emptying was never needed. Without it the scans fall
-by 41%. The ones left, about 220 slots each, are memo collisions: a larger or
-better-hashed memo is the next thing to try there.
+by 41%. What the ones left are, about 220 slots each, is not established: a
+multiplicative hash of the whole key, tried on 28 September, left them where
+they were (41,195 scans against 29,968, 2.26 against 2.27 us a lookup), so they
+are not simply collisions in the memo. Lookups of keys resident nowhere would
+also scan all 512 slots; counting those apart is the next measurement.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics
