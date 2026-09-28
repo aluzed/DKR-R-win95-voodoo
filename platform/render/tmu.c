@@ -200,7 +200,7 @@ unsigned int dkr_tmu_used(const dkr_tmu *t) { return t ? t->used_bytes : 0u; }
  * live slot holding the key, which is what the scan returns. Emptying it on
  * every download cost a fresh scan per texture after each one: 49,562 scans a
  * run, 223 slots each on average, and 95% of `find_resident`'s samples. */
-#define TMU_MEMO_SLOTS 256u
+#define TMU_MEMO_SLOTS 1024u
 static struct {
     const dkr_tmu *tmu;
     unsigned long long key;

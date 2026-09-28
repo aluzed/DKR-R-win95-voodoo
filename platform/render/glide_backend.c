@@ -317,7 +317,7 @@ void dkr_glide_backend_key_samples(unsigned long long *first,
  * checked answer is the scan's, and the memo is not emptied when a slot
  * becomes live, which used to cost a fresh scan per texture after every
  * upload (E08-S03). */
-#define GL_TEX_MEMO_SLOTS 256u
+#define GL_TEX_MEMO_SLOTS 1024u
 static struct {
     unsigned long long key;
     int tmu;
