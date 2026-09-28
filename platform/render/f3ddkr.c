@@ -1253,7 +1253,15 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
              *
              * `oow` is copied and not scaled: it is the perspective divide, and
              * it belongs to the vertex rather than to either texture. */
-            if (c->render_state.texture1 != 0 && c->tex_scale_s != 0.0f) {
+            /* **Only when the second unit will be chained.** `texture1` stays
+               set for every textured triangle once a tile-1 texture has been
+               bound, and this block ran for 402,771 triangles in a run against
+               312 two-layer states, filling coordinates Glide does not send
+               unless the backend chains the units, which it does for
+               `DKR_CC_TWO_TEXELS` alone. The `two-layer` line now counts the
+               triangles that are chained (E08-S03). */
+            if (c->render_state.texture1 != 0 && c->recipe_two_texels &&
+                c->tex_scale_s != 0.0f) {
                 const float ks = c->tex1_scale_s / c->tex_scale_s;
                 const float kt = c->tex1_scale_t / c->tex_scale_t;
                 int q;
@@ -1719,6 +1727,12 @@ static void apply_state(dkr_f3d_context *c)
         c->render_state.texture1 = 0;
         c->render_state.combine = DKR_COMBINE_SHADE;
         c->render_state.recipe = 0;
+    }
+    {
+        const dkr_cc_entry *e = (c->render_state.recipe > 0)
+                                  ? dkr_cc_table_at(c->render_state.recipe - 1) : 0;
+        c->recipe_two_texels =
+            (unsigned char)(e != 0 && e->category == DKR_CC_TWO_TEXELS);
     }
     if (!exact) {
         /* **An approximate translation that does not announce itself is worse

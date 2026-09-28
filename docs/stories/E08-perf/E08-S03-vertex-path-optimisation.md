@@ -103,6 +103,7 @@ way on 28 September: byte-identical on the 21 scenes.
 | Texture memos not emptied on upload (28 September) | lookup 2.98 to 2.27 us a call, 0.26 to 0.20 ms; residency scans 50,440 to 29,968 | 36.4, 36.1 against 36.3, 36.2 ms; render mean 8.65, 9.46 against 9.40, 9.41 ms: below the spread |
 | Texture memos of 1,024 slots (28 September) | lookup 2.29 to 1.14 us a call, 0.20 to 0.10 ms; scans 29,011 to 9,930 | not run: below the spread |
 | Second-pass decision asked once per draw (28 September) | draw 4.73 to 4.62 us a call, 3.12 to 3.05 ms; `dkr_f3d_run` 8.76 to 8.67 ms, on 2,400 lists each | not run: below the spread |
+| Second-unit coordinates only for chained recipes (28 September) | decoder 5.05 to 4.99 ms, on 2,460 and 2,400 lists | not run: below the spread |
 | Catalogue entry taken without calls into `combiner.c`, **not kept** (28 September) | draw 4.53 to 4.65 us a call | render mean 8.71, 8.74 against 9.40, 9.43 ms: no gain |
 | `1/w` computed once per vertex at load, **not kept** (28 September) | project 0.82 to 0.70 ms, decoder unchanged, on 2,400 lists each | render mean 9.42 against 9.87 ms: no gain |
 | Corners projected from the vertex cache without a copy, **not kept** (28 September) | fetch 0.93 to 0.84 ms, projection and corners 0.07 ms more; decoder 5.00 to 4.97 ms, on 2,400 lists each | not run: nothing to resolve |
@@ -181,6 +182,13 @@ CAP2600 the card replay's `identity` read 4,315 for 2,341 triangles. It is
 asked once now and the answer kept, since the restorations in between put the
 same state back. The count reads 2,265, the 12 card images are unchanged, and
 the draw zone is 2% lighter.
+
+The twelfth, the same kind. The decoder filled the second texture unit's
+coordinates for every triangle with a tile-1 texture bound, 402,771 in a run,
+while the backend chained the units for 312 states: only a `DKR_CC_TWO_TEXELS`
+recipe uses them. It now fills them for those recipes alone. The saving is
+small, about 0.06 ms a list, but the log's `two-layer` line stops contradicting
+itself, and the 12 card images are unchanged.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics

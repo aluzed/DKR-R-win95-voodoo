@@ -762,6 +762,10 @@ typedef struct {
        context rather than in the render state's translation, for the same
        reason as the texture handle: it is a decoder resource. */
     short                catalogue_index;
+    /* Whether the render state's recipe is a `DKR_CC_TWO_TEXELS` entry, the only
+       kind the Glide backend chains the second unit for. Set with the recipe in
+       `apply_state`. */
+    unsigned char        recipe_two_texels;
     /* The render tile's wrap modes, from `G_SETTILE`. Defaults to repeat, which
        is what the translation used to write unconditionally. */
     unsigned char        tile_wrap_s, tile_wrap_t;
