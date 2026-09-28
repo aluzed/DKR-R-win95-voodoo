@@ -254,7 +254,7 @@ pointer moved, not processor time, but the graphics thread rarely waits.
 - [x] The number of vertices transformed needlessly is measured, and rejection worked on
       first.
 - [x] Every optimisation is measured separately.
-- [ ] MMX is used only if the measurement justifies it, and on whole blocks.
+- [x] MMX is used only if the measurement justifies it, and on whole blocks.
 - [ ] No copy and no reallocation per frame in the vertex path.
 - [x] Drawing through vertex arrays is evaluated.
 - [ ] The vertex path fits within its budget allocation.
@@ -271,9 +271,15 @@ Where the others stand, 28 September:
   captured scenes, on x86-64 and on i386 with the target's options. The
   backend change, the texture memos, returns the same answer by construction
   and has no card-side image comparison of its own.
-- **MMX** was not evaluated. The vertex path's arithmetic is now a small part
-  of the thread: `dkr_transform_to_clip` was 4.2% of the graphics thread's
-  samples and the projection 7.7%, before the changes of 28 September.
+- **MMX: measured, and not justified.** The only block it could cover whole is
+  the transformation, `dkr_transform_to_clip`: 4.2% of the graphics thread's
+  samples on 27 September, about 0.4 ms of a 9.5 ms render. That is the
+  ceiling, and it would not be reached. The projection needs a divide, which
+  MMX does not have, so it stays on x87, and every batch of vertices would pay
+  an `EMMS` and the transition back. The game's matrices are 16.16 and the
+  transform works in float; a 16-bit fixed-point version would not be
+  byte-identical, which puts the whole corpus check at stake for a fraction of
+  a millisecond. No MMX code was written.
 - **The budget.** The render mean is 9 to 9.5 ms a frame, against 10.7 ms on
   26 September, and the graphics thread's proposed allocation was 12 ms. The
   frame's median is two retraces, 33.5 ms; its mean, about 36.2 ms, is set by
