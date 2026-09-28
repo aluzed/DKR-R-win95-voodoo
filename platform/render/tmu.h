@@ -109,6 +109,7 @@ typedef struct {
        and the slots those scans walked (E08-S03). */
     unsigned long lookup_scans;
     unsigned long lookup_scan_steps;
+    unsigned long lookup_scan_misses;   /* scans that found the key nowhere */
 } dkr_tmu_stats;
 
 /* The transfer to the card. Returns non-zero on success.

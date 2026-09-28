@@ -163,8 +163,12 @@ the scan's own, and the emptying was never needed. Without it the scans fall
 by 41%. What the ones left are, about 220 slots each, is not established: a
 multiplicative hash of the whole key, tried on 28 September, left them where
 they were (41,195 scans against 29,968, 2.26 against 2.27 us a lookup), so they
-are not simply collisions in the memo. Lookups of keys resident nowhere would
-also scan all 512 slots; counting those apart is the next measurement.
+are not a matter of the hash. Nor are they lookups of keys resident nowhere:
+a third counter, `scan-misses`, reads 747 of 29,011 scans, exactly the number
+of downloads. The other 28,000 find their key, which the memo had lost to
+another one. With a hash that cannot be improved on, that is capacity: more
+textures in use than 256 direct-mapped slots hold. A larger memo, or one with
+two ways, is the next thing to measure.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics

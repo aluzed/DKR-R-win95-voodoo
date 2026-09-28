@@ -237,6 +237,7 @@ static dkr_tmu_resident *find_resident(dkr_tmu *t, unsigned long long key)
         }
     }
     t->stats.lookup_scan_steps += DKR_TMU_MAX_RESIDENT;
+    t->stats.lookup_scan_misses++;
     return 0;
 }
 
