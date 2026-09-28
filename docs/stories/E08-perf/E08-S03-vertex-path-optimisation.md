@@ -240,15 +240,37 @@ pointer moved, not processor time, but the graphics thread rarely waits.
 
 ## Acceptance criteria
 
-- [ ] The vertex path's detailed profile is established.
+- [x] The vertex path's detailed profile is established.
 - [x] The number of vertices transformed needlessly is measured, and rejection worked on
       first.
-- [ ] Every optimisation is measured separately.
+- [x] Every optimisation is measured separately.
 - [ ] MMX is used only if the measurement justifies it, and on whole blocks.
 - [ ] No copy and no reallocation per frame in the vertex path.
 - [x] Drawing through vertex arrays is evaluated.
 - [ ] The vertex path fits within its budget allocation.
 - [ ] No visual regression after optimisation, verified by image comparison.
+
+Where the others stand, 28 September:
+
+- **No copy, no reallocation.** Nothing in the decoder, the clipper or the
+  Glide backend allocates. The projected vertex is written straight in
+  `GrVertex`'s layout. One copy remains per corner: the 32 bytes fetched from
+  the vertex cache, because s and t arrive with the triangle and not with the
+  vertex. The clipper copies only for triangles that cross a plane.
+- **Visual regression.** Every decoder change is byte-identical on the 21
+  captured scenes, on x86-64 and on i386 with the target's options. The
+  backend change, the texture memos, returns the same answer by construction
+  and has no card-side image comparison of its own.
+- **MMX** was not evaluated. The vertex path's arithmetic is now a small part
+  of the thread: `dkr_transform_to_clip` was 4.2% of the graphics thread's
+  samples and the projection 7.7%, before the changes of 28 September.
+- **The budget.** The render mean is 9 to 9.5 ms a frame, against 10.7 ms on
+  26 September, and the graphics thread's proposed allocation was 12 ms. The
+  frame's median is two retraces, 33.5 ms; its mean, about 36.2 ms, is set by
+  the slow frames, not by the renderer's mean.
+- **Resolution.** From the ninth change on, the spread between runs of the
+  render mean, about 0.6 ms and seemingly bimodal, exceeds a single change.
+  The zones still resolve them; the frame no longer does.
 
 ## Risks
 
