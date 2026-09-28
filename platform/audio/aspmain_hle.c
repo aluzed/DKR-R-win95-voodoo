@@ -548,6 +548,50 @@ static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 w
 {
     u32 i;
     if (g->valid && rate_is_zero) { return; }
+#if defined(__MMX__)
+    /* **In MMX when a side ramps, since then this runs every block (E08).**
+       mulf(v, gain) is `pmaddwd` against a zero partner, rounded and shifted in
+       32 bits, and clamped by `packssdw`; the pairs are the gains unpacked
+       against -1, and DMEM's word order is the two halves of each doubleword
+       swapped. `dry` and `wet` are only read by the C `envmix_mix`, so they are
+       not filled here. */
+    {
+        const __m64 zero = _mm_setzero_si64();
+        const __m64 round = _mm_set1_pi32(0x4000);
+        const __m64 minus1 = _mm_set1_pi16(-1);
+        const __m64 gd = _mm_set1_pi16((short)dry_gain), gw = _mm_set1_pi16((short)wet_gain);
+        u32 h;
+        for (h = 0; h < 2u; h++) {
+            __m64 v, dry, wet, dry_w, wet_w;
+            memcpy(&v, r->integer + h * 4u, sizeof(v));
+            dry = _mm_packs_pi32(
+                _mm_srai_pi32(_mm_add_pi32(_mm_madd_pi16(_mm_unpacklo_pi16(v, zero),
+                                                         _mm_unpacklo_pi16(gd, zero)), round), 15),
+                _mm_srai_pi32(_mm_add_pi32(_mm_madd_pi16(_mm_unpackhi_pi16(v, zero),
+                                                         _mm_unpackhi_pi16(gd, zero)), round), 15));
+            wet = _mm_packs_pi32(
+                _mm_srai_pi32(_mm_add_pi32(_mm_madd_pi16(_mm_unpacklo_pi16(v, zero),
+                                                         _mm_unpacklo_pi16(gw, zero)), round), 15),
+                _mm_srai_pi32(_mm_add_pi32(_mm_madd_pi16(_mm_unpackhi_pi16(v, zero),
+                                                         _mm_unpackhi_pi16(gw, zero)), round), 15));
+            dry_w = _mm_or_si64(_mm_slli_pi32(dry, 16), _mm_srli_pi32(dry, 16));
+            wet_w = _mm_or_si64(_mm_slli_pi32(wet, 16), _mm_srli_pi32(wet, 16));
+            {
+                const __m64 out[8] = {
+                    _mm_unpacklo_pi16(dry, minus1), _mm_unpackhi_pi16(dry, minus1),
+                    _mm_unpacklo_pi16(wet, minus1), _mm_unpackhi_pi16(wet, minus1),
+                    _mm_unpacklo_pi16(dry_w, minus1), _mm_unpackhi_pi16(dry_w, minus1),
+                    _mm_unpacklo_pi16(wet_w, minus1), _mm_unpackhi_pi16(wet_w, minus1) };
+                memcpy(g->dry_pairs + h * 8u, &out[0], 16u);
+                memcpy(g->wet_pairs + h * 8u, &out[2], 16u);
+                memcpy(g->dry_words + h * 8u, &out[4], 16u);
+                memcpy(g->wet_words + h * 8u, &out[6], 16u);
+            }
+        }
+        g->valid = 1;
+        return;
+    }
+#endif
     for (i = 0; i < 8u; i++) {
         g->dry[i] = mulf(r->integer[i], dry_gain);
         g->wet[i] = mulf(r->integer[i], wet_gain);

@@ -266,6 +266,13 @@ same. No difference on 5,000 cases and thirteen tasks. On the target:
 
 Since 28 September the mixer is 27% cheaper per task, 6.15 ms to 4.49 ms.
 
+ENVMIXER's gains are recomputed every block when a side ramps, half of DKR's
+calls. They are now computed in MMX too: mulf is `pmaddwd` against a zero
+partner, rounded, shifted and clamped by `packssdw`; the (gain, -1) pairs are an
+unpack against -1, and DMEM's word order is the halves of each doubleword
+swapped. ENVMIXER goes from 28.6 to **27.2 µs** a call, the mixer from 4.49 to
+**4.41 ms** a task, 28% below 28 September's 6.15 ms.
+
 ADPCM has the same shape as POLEF, with rows that depend on each frame's
 predictor. Doing it the same way, the rows cached per predictor and call, made
 it slower on the target, 10.3 to 11.5 µs a call: building the rows and the
