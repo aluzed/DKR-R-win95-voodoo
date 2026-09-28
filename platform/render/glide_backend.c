@@ -2174,7 +2174,7 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
 {
     const unsigned long prepass_before = b.prepass_drawn;
     const unsigned long pass2_before = b.pass2_drawn;
-    int i, exact, mask_yielded = 0;
+    int i, exact, mask_yielded = 0, pass2;
     (void)self;
     if (!vertices || count <= 0) { return; }
     if (g_watch_armed) {
@@ -2183,7 +2183,14 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     }
     /* The pre-pass needs to know whether anything comes after it, because the
        last pass of the logical draw is the one that writes depth. */
-    g_pass2_follows = b.has_state && (pass2_wanted(&b.current) != PASS2_NONE);
+    /* **Asked once per draw**, and used again after the first pass. It was
+       asked twice, and `pass2_wanted` counts its refusals as it goes, so its
+       `identity` count read 4,315 on a scene of 2,341 triangles. The state it
+       reads does not change in between: the restorations below put back the
+       same block. It was also 1.9% of the graphics thread's samples
+       (E08-S03). */
+    pass2 = b.has_state ? pass2_wanted(&b.current) : PASS2_NONE;
+    g_pass2_follows = (pass2 != PASS2_NONE);
     /* `dkr_render_vertex` has `GrVertex`'s layout, field for field —
        `backend_layout_check.c` checks it at compile time. The hand-off therefore
        needs no conversion and no copy, which was the whole point of this
@@ -2257,7 +2264,7 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
     }
     b.triangles += (unsigned long)count;
     if (b.has_state) {
-        const int kind = pass2_wanted(&b.current);
+        const int kind = pass2;
         if (kind == PASS2_BY_ENV_ALPHA) {
             pass2_draw(vertices, count);
         } else if (kind == PASS2_BY_SHADE) {
