@@ -86,7 +86,36 @@ build after `543e574`:
   in fifteen seconds, the new scene's code and data.
 
 That answers work item 5 on this configuration: no paging during play, by
-count. It does not yet say anything about a long session or a 32 MiB machine.
+count. It does not yet say anything about a long session.
+
+### On 32 MiB (29 September 2026)
+
+The same build, the test machine's `mem_size` set to 32768 for one run and put
+back after. Windows 95 reports 32,244 KiB. From the meter:
+
+| t | page-outs | page-ins | free physical | swap file in use |
+|---|---:|---:|---:|---:|
+| 32 s, loading | 8 | 17,827 | 40 KiB | 35.3 MiB |
+| 62 s | 133 | 29,735 | 0 | 35.3 MiB |
+| 92 s, attract mode | 141 | 29,742 | 4 KiB | 35.3 MiB |
+| 107 s, the race | 221 | 29,938 | 0 | 35.3 MiB |
+
+- **It pages, and it pages while loading.** Free memory is gone from the
+  first samples, the swap file holds 35 MiB, and the loading brings in about
+  12,000 pages in thirty seconds, some of them written out first.
+- **Then it settles.** Between 62 and 92 s, in the attract mode, seven pages
+  come in and eight go out. The working set of a scene fits; what does not
+  is swapped out once and left there.
+- **Scene changes page again**: the race's start brings in 196 pages and
+  writes out 80.
+- **The frame does not suffer where it is measured.** Normal mode, the same
+  timing export: 40 to 94 s at 34.8 ms a frame, as on 64 MiB (34.9 ms), and
+  the race at 41.2 ms. The cost is in the loading and at scene changes, not
+  in play.
+
+So 32 MiB is playable, with longer loads and the risk of a stall where a scene
+change pages. A long session there has not been measured.
+
 
 ## Acceptance criteria
 
@@ -97,7 +126,7 @@ count. It does not yet say anything about a long session or a 32 MiB machine.
       bound.
 - [x] No paging during play on the target configuration — verified by counting page
       faults, not by observation.
-- [ ] The behaviour on 32 MB is assessed and documented.
+- [x] The behaviour on 32 MB is assessed and documented.
 - [ ] E00-S06's budget is updated with the real figures.
 - [ ] No regression in the game's behaviour.
 
