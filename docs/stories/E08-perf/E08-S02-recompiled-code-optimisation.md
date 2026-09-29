@@ -186,6 +186,21 @@ frames already sit on two retraces, the game's own thirty frames a second; the
 game thread is 4.3 ms of them. A compiler option could at best shorten a
 thread that is not what holds the frame. `-O3` stays.
 
+## Lever 2, code layout: not measurable on this machine (29 September 2026)
+
+Grouping the hot functions is worth something only through the instruction
+cache, and there is reason to think 86Box does not model one. Its own issue
+tracker says so -- "86Box does not emulate CPU L1/L2 cache", issue 3785,
+opened 27 October 2023 and since closed -- and the optimisation levels above
+agree: `-Os` shrinks the code and moves nothing. The issue was read, not the
+emulator's source, so this is a strong presumption rather than a proof.
+
+If it holds, a layout change measured here would read as noise whatever it did
+on silicon, and a null result would mean nothing. The criterion stays open and
+belongs with E09-S04: it can be measured on a real Pentium II or not at all.
+The in-race profile also bounds what it could win: the hottest game function
+is 5.7% of a 4.3 ms thread.
+
 ## Acceptance criteria
 
 - [x] The hot functions are identified on a real play session -- a race
