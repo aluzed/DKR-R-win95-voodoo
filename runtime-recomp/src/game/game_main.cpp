@@ -117,6 +117,7 @@ static DWORD WINAPI IdleMeterThread(LPVOID) {
     const unsigned long long preempted = hz / 100000ull;     /* 10 us */
     unsigned long long idle = 0, last = dkr_cycles_now();
     const unsigned long long start = last;
+    unsigned long long idle_before = 0, wall_before = 0;
     unsigned long long next_report = start + hz * 5ull;
     for (;;) {
         const unsigned long long now = dkr_cycles_now();
@@ -125,9 +126,18 @@ static DWORD WINAPI IdleMeterThread(LPVOID) {
         last = now;
         if (now >= next_report) {
             const unsigned long long wall = now - start;
-            std::fprintf(stderr, "[trace][idle-meter] idle=%llu us wall=%llu us share=%llu%%\n",
+            // `interval` is the last five seconds alone, and `t` is on the timing
+            // export's clock, so that a burst of slow frames in FRAMES.BIN can be
+            // set against the spare time around it (E08-S01).
+            const unsigned long long d_idle = idle - idle_before, d_wall = wall - wall_before;
+            std::fprintf(stderr, "[trace][idle-meter] idle=%llu us wall=%llu us share=%llu%%"
+                                 " interval=%llu%% t=%llu ms\n",
                          idle / (hz / 1000000ull), wall / (hz / 1000000ull),
-                         wall ? (100ull * idle) / wall : 0ull);
+                         wall ? (100ull * idle) / wall : 0ull,
+                         d_wall ? (100ull * d_idle) / d_wall : 0ull,
+                         dkr_clock_now_us() / 1000ull);
+            idle_before = idle;
+            wall_before = wall;
             next_report = now + hz * 5ull;
         }
     }
