@@ -1193,14 +1193,27 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                                   kWidth, kHeight);
             }
         }
+        // **Every change of `gGameMode`, stamped on the timing export's clock**,
+        // so that a window of FRAMES.BIN can be cut at the moment a race starts
+        // or ends rather than guessed from the periods (E08-S02). The periodic
+        // report prints the mode too, but once in sixty lists.
+        {
+            static int last_mode = -2;
+            const int mode = read_word(rdram_snapshot, kAddrGameMode);
+            if (mode != last_mode) {
+                last_mode = mode;
+                std::fprintf(stderr, "[game] mode=%d at t=%llu ms list=%llu\n", mode,
+                             static_cast<unsigned long long>(t_entry / 1000ULL),
+                             static_cast<unsigned long long>(index));
+            }
 #if defined(DKR_TARGET_WIN95)
-        // The sampler can wait for a race rather than for a fixed delay, since
-        // a route into one is driven by hand (E08-S02, `sampler.h`).
-        if (dkr_sampler_waits_for_race() &&
-            read_word(rdram_snapshot, kAddrGameMode) == 0) {
-            dkr_sampler_race_started();
-        }
+            // The sampler can wait for a race rather than for a fixed delay,
+            // since a route into one is driven by hand (`sampler.h`).
+            if (mode == 0 && dkr_sampler_waits_for_race()) {
+                dkr_sampler_race_started();
+            }
 #endif
+        }
         if (cap_have_mode && cap_anchor == 0UL && cap_count > 0) {
             if (read_word(rdram_snapshot, kAddrGameMode) == cap_wanted_mode) {
                 cap_anchor = index;

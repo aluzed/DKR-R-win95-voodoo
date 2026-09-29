@@ -172,6 +172,10 @@ list on one processor costs more than a frame. Making `none` the default would
 give back both the 16 MiB and half the frame time; that it has not yet been
 played for long is the only reason it is still opt-in.
 
+**In a played race too** (`frame-budget.md`, "A race driven by hand"): 35.2 ms
+a frame with `none`, 88% of frames on two retraces, against 60.2 ms in the
+default mode, where two frames in three take four retraces.
+
 ### A longer session (29 September 2026)
 
 The same meter over 1,260 s of wall time, which the emulator's 57% speed makes

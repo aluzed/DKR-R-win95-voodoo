@@ -74,6 +74,38 @@ by the slow frames. In the attract mode's race, 95 to 100 s into a run, the
 frame falls to 44 to 67 ms with 19 to 22 ms of render for about 2,000
 triangles; that scene is where the renderer is on the critical path.
 
+## A race driven by hand, 29 September 2026
+
+Every figure above is the attract mode. This one is a player's race: from a
+cold boot through PLAYER SELECT, TRACKS, Ancient Lake, car, time trial off,
+each press confirmed on screen (`Drive-Win95-VM.sh pad-hold`), then the
+accelerator held with some steering. The renderer now logs every change of
+`gGameMode` on the timing export's clock (`[game] mode=0 at t=91423 ms`), so
+the race window is cut where the game says the race starts, plus ten seconds
+of countdown. Normal mode, no trace, `DKR_GFX_NO_STATS=1`, at `d848b09`:
+
+| | `DKR_RDRAM_SNAPSHOT=none` | default, a pool of two snapshots |
+|---|---:|---:|
+| race frames | 3,163 over 111 s | 2,126 over 128 s |
+| mean period | **35.2 ms** | **60.2 ms** |
+| median period | 33.5 ms | 61.9 ms |
+| 99th percentile | 66.9 ms | 75.6 ms |
+| frames on two retraces (30 fps) | **88%** | 0% |
+| on three / four retraces | 9% / 1% | 35% / 63% |
+| render, mean | 6.05 ms | 6.66 ms |
+| triangles a list, mean | 975 | 780 |
+
+**With `none`, a played race runs at the game's own thirty frames a second
+nine frames in ten.** The median is two retraces, the renderer takes 6 ms of
+it, and the attract mode's race -- 44 to 67 ms, about 2,000 triangles a list --
+is heavier than a race seen from behind the player's kart, at about 1,000.
+
+**The default mode runs the same race at 17 frames a second.** Two thirds of
+its frames take four retraces. The render is the same; the difference is the
+four-megabyte copy per display list (E08-S04). This is the measurement the
+decision on making `none` the default was waiting for: it is now a played
+race, not the attract mode, and the gap is the same.
+
 ## Correction, 24 September 2026: steady state, and what the 17% is
 
 **The budgets below were taken from cumulative counters, and those include the
