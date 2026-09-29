@@ -6,6 +6,7 @@
 #include "texture.h"
 
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -3681,7 +3682,15 @@ void dkr_f3d_init(dkr_f3d_context *ctx, const unsigned char *rdram,
     if (!ctx) {
         return;
     }
-    memset(ctx, 0, sizeof(*ctx));
+    /* **Everything but the conversion buffer (E08).** The context is reset for
+       every display list, and 128 KiB of its 145 are `texels`, which every
+       conversion writes in full -- each format's loop covers width x height,
+       and the padding is filled from the pattern -- before anything reads it.
+       Clearing it bought nothing and cost a 145 KiB memset per list, the
+       graphics thread's MSVCRT samples. */
+    memset(ctx, 0, offsetof(dkr_f3d_context, texels));
+    memset((unsigned char *)ctx + offsetof(dkr_f3d_context, texels) + sizeof(ctx->texels), 0,
+           sizeof(*ctx) - offsetof(dkr_f3d_context, texels) - sizeof(ctx->texels));
     /* A non-zero scale by default: with no texture bound the coordinates are
        not used, but zero would collapse them all onto a point, which would look
        like a transformation defect rather than an absence. */
