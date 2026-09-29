@@ -221,6 +221,10 @@
         {
           "path": "patches/n64-modern-runtime/0054-a-precise-clock-and-a-punctual-vi-thread.patch",
           "sha256": "cd85fd4c5a9b1d182f9657aace05785e255bba34bda5ad3343711d0e91025ea4"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0055-snapshot-pages-committed-by-touch.patch",
+          "sha256": "3a49ddb249315d795baeeee29e7101d957a1566f40509aac6df5ef7aaf3d2f45"
         }
       ]
     },

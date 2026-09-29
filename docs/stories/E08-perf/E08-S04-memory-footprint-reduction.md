@@ -148,6 +148,30 @@ Two ways to meet the first criterion, both measured enough to choose from:
   The comment is corrected. The change spans the runtime's patch set and the
   renderer, and is not made here.
 
+### The snapshot's pages, committed by touch (29 September 2026)
+
+Patch 0055: on the target each snapshot buffer comes from `VirtualAlloc`
+instead of `new uint8_t[8 MiB]()`. Its pages are zero by the system's
+guarantee, as the fill made them, and become resident only when touched, so
+the upper four megabytes, which DKR never writes and its lists do not read,
+are never brought in. The same default-mode run, with and without it:
+
+| | free physical, attract mode | frame over 40-94 s | race, 95-101 s |
+|---|---:|---:|---:|
+| before | 8,424 to 8,500 KiB | 64.35 ms, 839 frames | 71.8 ms |
+| patch 0055 | **15,520 to 16,028 KiB** | 64.32 ms, 839 frames | 71.1 ms |
+
+**7.5 MiB back, and the frame unchanged.** The first criterion is not met to
+the letter -- E00-S06 decided one 4 MiB snapshot, and this is two buffers of 4
+resident megabytes each -- but half of the gap is closed with no change of
+behaviour.
+
+The same table says something larger: **the default mode runs at 64 ms a
+frame, `DKR_RDRAM_SNAPSHOT=none` at 35.** Copying four megabytes per display
+list on one processor costs more than a frame. Making `none` the default would
+give back both the 16 MiB and half the frame time; that it has not yet been
+played for long is the only reason it is still opt-in.
+
 ### A longer session (29 September 2026)
 
 The same meter over 1,260 s of wall time, which the emulator's 57% speed makes
@@ -157,6 +181,11 @@ sample to the end: nothing grows it. Free physical memory drifts from 23,920
 to 22,836 KiB over eight minutes, a megabyte, and page-outs stay at zero.
 Nine minutes are not the hours the criterion asks for, so it stays open; what
 there is shows no growth.
+
+A second run, 3,000 s of wall time, is **21.4 minutes** of the game. The
+address space left reads 1,992,320 KiB from 3 minutes to the end, to the
+kilobyte; free physical memory stays between 22,820 and 22,964 KiB; no page is
+written out. Still short of hours, and still flat.
 
 ### Every host-side cache has a fixed ceiling (29 September 2026)
 

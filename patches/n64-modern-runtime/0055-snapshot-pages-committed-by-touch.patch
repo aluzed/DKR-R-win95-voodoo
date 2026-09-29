@@ -1,0 +1,92 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Snapshot pages committed by touch, not by a zero fill
+
+Each RDRAM snapshot buffer was new uint8_t[8 MiB](), which zero-fills all
+eight megabytes and so makes every page of both pool buffers resident, though
+only the four copied are ever written: 15 MiB of a 64 MiB machine, by the
+paging meter (E08-S04). On the Windows 95 target the buffer now comes from
+VirtualAlloc, whose pages are zero by the system's guarantee and resident
+only once touched; the upper half, which DKR never writes, costs nothing.
+Other targets keep new[]().
+
+---
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -10,6 +10,10 @@
+ #include <cstring>
+ #include <cstdio>
+ #include <cstdlib>
++#include <new>
++#ifdef DKR_TARGET_WIN95
++#include <windows.h>
++#endif
+ 
+ #include "blockingconcurrentqueue.h"
+ 
+@@ -277,6 +281,33 @@
+ std::atomic<unsigned long long> g_snapshot_pool_hits{0};
+ std::atomic<unsigned long long> g_snapshot_pool_misses{0};
+ 
++/* **A snapshot buffer's pages are committed by touching them (E08-S04).**
++ *
++ * `new uint8_t[kSnapshotBytes]()` zero-fills all eight megabytes, so every page
++ * of both pool buffers is made resident at once, though only the four copied
++ * are ever written -- 15 MiB of a 64 MiB machine, measured by the paging meter.
++ * On the target the buffer comes from VirtualAlloc instead: its pages are zero
++ * by the system's guarantee and become resident only when first touched, so
++ * the upper half, which DKR never writes and its lists do not read, costs
++ * nothing. The contents are the same: zero where nothing was copied. */
++static uint8_t* allocate_snapshot_bytes() {
++#ifdef DKR_TARGET_WIN95
++    void* pages = VirtualAlloc(nullptr, kSnapshotBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
++    if (pages == nullptr) { throw std::bad_alloc(); }
++    return static_cast<uint8_t*>(pages);
++#else
++    return new uint8_t[kSnapshotBytes]();
++#endif
++}
++
++static void release_snapshot_bytes(uint8_t* buffer) {
++#ifdef DKR_TARGET_WIN95
++    VirtualFree(buffer, 0, MEM_RELEASE);
++#else
++    delete[] buffer;
++#endif
++}
++
+ /* Zeroed once, here, and never again: the copy overwrites the low half every
+    time and nothing ever writes the high half, so it stays as it was made. */
+ bool snapshot_pool_enabled() {
+@@ -297,20 +328,20 @@
+ uint8_t* acquire_snapshot_buffer() {
+     if (!snapshot_pool_enabled()) {
+         g_snapshot_pool_misses.fetch_add(1);
+-        return new uint8_t[kSnapshotBytes]();
++        return allocate_snapshot_bytes();
+     }
+     for (size_t slot = 0; slot < kSnapshotPoolSlots; slot++) {
+         bool expected = false;
+         if (g_snapshot_pool_busy[slot].compare_exchange_strong(expected, true)) {
+             if (g_snapshot_pool[slot] == nullptr) {
+-                g_snapshot_pool[slot] = new uint8_t[kSnapshotBytes]();
++                g_snapshot_pool[slot] = allocate_snapshot_bytes();
+             }
+             g_snapshot_pool_hits.fetch_add(1);
+             return g_snapshot_pool[slot];
+         }
+     }
+     g_snapshot_pool_misses.fetch_add(1);
+-    return new uint8_t[kSnapshotBytes]();
++    return allocate_snapshot_bytes();
+ }
+ 
+ } // namespace
+@@ -323,7 +354,7 @@
+             return;
+         }
+     }
+-    delete[] buffer;
++    release_snapshot_bytes(buffer);
+ }
+ 
+ static size_t snapshot_copy_size(void) {
