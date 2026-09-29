@@ -98,6 +98,33 @@ replacement.
 8. Check the game for regressions after each change: a complete play session, not just
    the startup.
 
+## The game thread's hot functions, sampled (29 September 2026)
+
+Work item 1, from the sampler (`DKR_TRACE_SAMPLER=90`, `DKR_TRACE_SAMPLER_DELAY=50`,
+normal mode, both opt-in options, at `8e7d062`): 90 s of the **attract mode**,
+7,629 samples of the game thread in which its instruction pointer moved. The
+attract mode runs the game's own races and menus; it is not a player's
+session, which is why the first criterion stays open.
+
+| Share | Function |
+|---:|---|
+| 11.2% | `func_8002E904` |
+| 5.0% | `func_800B92F4` |
+| 4.4% | `waves_update` |
+| 4.4% | `func_8002FF6C` |
+| 3.9% | `obj_animate` |
+| 3.8% | `sort_objects_by_dist` |
+| 2.9% + 1.9% | `gzip_inflate_codes`, `gzip_huft_build` -- the demo reloads its levels |
+| 2.5% + 1.4% | `calc_dynamic_lighting_for_object_2`, `_1` |
+| 2.3% | `model_init_normals` |
+| 2.2% | `calc_env_mapping_for_object` |
+| 1.2% + 1.0% | `lrintf`, `do_cvt_w_s` -- float to integer for `cvt.w.s` |
+| 19.9% | KERNEL32, the thread waiting |
+
+One function carries a ninth of the thread, which makes it the first candidate
+for item 5, once it is named from the decompilation (not checked out here) and
+confirmed hot in a played race.
+
 ## Acceptance criteria
 
 - [ ] The hot functions are identified on a real play session.
