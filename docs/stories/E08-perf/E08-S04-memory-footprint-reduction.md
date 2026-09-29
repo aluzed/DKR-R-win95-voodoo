@@ -187,6 +187,15 @@ address space left reads 1,992,320 KiB from 3 minutes to the end, to the
 kilobyte; free physical memory stays between 22,820 and 22,964 KiB; no page is
 written out. Still short of hours, and still flat.
 
+A third, 6,600 s of wall time, is **46 minutes** of the game. The address
+space left is 1,992,320 KiB from 3 minutes to the end, and no page is written
+out. Free physical memory holds at 22,884 to 22,904 KiB for forty minutes, then
+drops once, by 2.8 MiB, around the 42nd minute, and stays at 20,084 KiB to the
+end. With the process's address space unchanged, that megabyte-scale step is
+not the game's heap growing; what took it -- the disk cache or another part of
+the system -- is not established. The criterion stays open until a session of
+hours has been run.
+
 ### Every host-side cache has a fixed ceiling (29 September 2026)
 
 Work item 3, by reading the Windows 95 path's code. Nothing in the renderer,
