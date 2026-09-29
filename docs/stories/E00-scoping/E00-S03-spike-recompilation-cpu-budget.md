@@ -136,6 +136,27 @@ realistic E08-S02 at 1.3× to 1.5× lands the frame at 130 ms — **7.7 fps**.
 >
 > See `docs/research/cpu-budget.md`, "The frame budget, closed".
 
+> **Thirty frames per second, measured in a race -- 29 September 2026.**
+>
+> The sentence above -- "thirty frames per second remains unreachable" -- no
+> longer holds on this machine's model. After E03-S03 (the audio mixer), E08-S03
+> (the renderer) and with the snapshot removed (`DKR_RDRAM_SNAPSHOT=none`, still
+> opt-in), a race driven by hand on Ancient Lake runs at a **mean period of
+> 35.2 ms, with 88% of frames on two retraces** -- the game's own thirty frames
+> a second -- and the audio at full rate, 22,050 Hz, with no underrun
+> (`frame-budget.md`, "A race driven by hand"). The recompiled game is 4.3 ms
+> of that frame, not 125 or 50.9: both earlier figures carried work that was not
+> the game's.
+>
+> In the default mode, with the snapshot, the same race is 60.2 ms, 17 frames a
+> second.
+>
+> What this does and does not change. It is still 86Box's timing model, and
+> E09-S04 is still the only thing that can replace it with silicon. And the
+> verdict is a decision, not a measurement: whether it is re-pronounced, and on
+> which mode, is for whoever owns it. What is recorded here is that its premise
+> is measured false in the mode that has no snapshot.
+
 ~~The audio is in none of these numbers~~ — **wrong, and corrected 18 September
 2026.** `GetRspMicrocode` wires `dkrAspMain` and it is reached: the microcode does
 run inside the measured frame, exactly as this ticket's own table says three lines
