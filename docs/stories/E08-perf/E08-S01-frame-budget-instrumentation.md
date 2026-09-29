@@ -121,9 +121,33 @@ items, readable on the target machine.
 8. Identify the three most expensive items and direct them to E08-S02, E08-S03 or
    E08-S04 according to their nature.
 
+## Which instrument covers which item (29 September 2026)
+
+| Item | Instrument |
+|---|---|
+| Recompiled game's CPU | `[trace][ran]` under `DKR_TRACE_EXCLUSIVE`; the sampler by function |
+| Audio microcode | `[audio][zones]` per command, `AUDIO.BIN` per task |
+| Display-list decoding | render zones: `dkr_f3d_run` less the backend, per opcode |
+| Vertex transformation, clipping | render zones: `cmd_triangle`'s twelve phases |
+| Texture decoding | render zones: conversion, timed inside `f3ddkr.c` |
+| Glide backend, CPU side | render zones: state, scissor, draw, fill, lookup |
+| Texture download | render zones: upload, release |
+| Presentation wait | render zones: present, begin |
+| Audio output | the sampler |
+| Message loop | the sampler, and the 1 ms / 16 ms experiment in `frame-budget.md` |
+
+The last two have no zone of their own, and the sampler says they do not need
+one. In a race driven by hand (E08-S02), 90 s of samples every millisecond:
+`dkr_audio_out_write` and the rest of `audio_out.c` never appear among the
+43,335 samples that fell in the executable, and the main thread, which runs
+the message loop, moved in **one** of its 88,767 samples -- it is asleep in the
+same place every time it is looked at. Neither is a measurable share of the
+processor; a zone around them would cost more than they do.
+
 ## Acceptance criteria
 
-- [ ] The counters cover every item in the table.
+- [x] The counters cover every item in the table: a zone for each, except audio
+      output and the message loop, which the sampler shows to be negligible (above).
 - [x] The instrumentation's cost is measured and it is disableable. The coarse trace
       (`DKR_TRACE_CPU`) costs less than the run-to-run spread. The render zones
       (`DKR_TRACE_RENDER_ZONES`) cost 5.8 µs per clock read, about 8 ms a display
