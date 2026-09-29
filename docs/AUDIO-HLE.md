@@ -305,6 +305,14 @@ resample included, keeps reading DMEM as it goes. No difference on 10,000 cases
 and twenty-five tasks, twelve of them captured on the target. RESAMPLE goes
 from 18.3 to **16.1 µs**, the mixer from 4.15 to **4.04 ms** a task.
 
+The sampler then put `envmix_gains_for` at 9% of the audio thread, two thirds
+of ENVMIXER's own share: when a side ramps, it laid the gains out every block
+in both orders, sample order for the C-order mix and word order for the loop
+on the buffers, and that loop reads only the second. It now lays out the
+sample-order pairs only for the paths that read them, with their own validity
+flag. ENVMIXER goes from 22.6 to **18.9 µs**, the mixer from 4.04 to
+**3.81 ms** a task. No difference on 10,000 cases and twenty-five tasks.
+
 **On the target, too.** Six tasks captured on the test machine with every MMX
 path above in the mixer (`DKR_AUDIO_CAPTURE=300,97,6`, at `24c06e8`) replay
 through the host's microcode oracle (`replay_aspmain`) with 0 bytes mismatched

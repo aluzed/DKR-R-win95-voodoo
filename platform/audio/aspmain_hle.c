@@ -592,13 +592,16 @@ typedef struct {
        are: an aligned eight-byte chunk holds samples 1, 0, 3, 2 in its lanes. */
     s16 dry_words[16], wet_words[16];
     int valid;
+    /* Whether `dry_pairs` and `wet_pairs` hold these gains too: the loop on the
+       buffers reads only the word-order ones and skips laying out the others. */
+    int pairs_valid;
 } envmix_gains;
 
 static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 wet_gain,
-                             int rate_is_zero)
+                             int rate_is_zero, int words_only)
 {
     u32 i;
-    if (g->valid && rate_is_zero) { return; }
+    if (g->valid && rate_is_zero && (words_only || g->pairs_valid)) { return; }
 #if defined(__MMX__)
     /* **In MMX when a side ramps, since then this runs every block (E08).**
        mulf(v, gain) is `pmaddwd` against a zero partner, rounded and shifted in
@@ -628,18 +631,22 @@ static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 w
             dry_w = _mm_or_si64(_mm_slli_pi32(dry, 16), _mm_srli_pi32(dry, 16));
             wet_w = _mm_or_si64(_mm_slli_pi32(wet, 16), _mm_srli_pi32(wet, 16));
             {
-                const __m64 out[8] = {
-                    _mm_unpacklo_pi16(dry, minus1), _mm_unpackhi_pi16(dry, minus1),
-                    _mm_unpacklo_pi16(wet, minus1), _mm_unpackhi_pi16(wet, minus1),
+                const __m64 words[4] = {
                     _mm_unpacklo_pi16(dry_w, minus1), _mm_unpackhi_pi16(dry_w, minus1),
                     _mm_unpacklo_pi16(wet_w, minus1), _mm_unpackhi_pi16(wet_w, minus1) };
-                memcpy(g->dry_pairs + h * 8u, &out[0], 16u);
-                memcpy(g->wet_pairs + h * 8u, &out[2], 16u);
-                memcpy(g->dry_words + h * 8u, &out[4], 16u);
-                memcpy(g->wet_words + h * 8u, &out[6], 16u);
+                memcpy(g->dry_words + h * 8u, &words[0], 16u);
+                memcpy(g->wet_words + h * 8u, &words[2], 16u);
+            }
+            if (!words_only) {
+                const __m64 pairs[4] = {
+                    _mm_unpacklo_pi16(dry, minus1), _mm_unpackhi_pi16(dry, minus1),
+                    _mm_unpacklo_pi16(wet, minus1), _mm_unpackhi_pi16(wet, minus1) };
+                memcpy(g->dry_pairs + h * 8u, &pairs[0], 16u);
+                memcpy(g->wet_pairs + h * 8u, &pairs[2], 16u);
             }
         }
         g->valid = 1;
+        g->pairs_valid = !words_only;
         return;
     }
 #endif
@@ -654,7 +661,9 @@ static void envmix_gains_for(envmix_gains *g, const ramp *r, s32 dry_gain, s32 w
         g->dry_words[i * 2u] = (s16)g->dry[sample];  g->dry_words[i * 2u + 1u] = -1;
         g->wet_words[i * 2u] = (s16)g->wet[sample];  g->wet_words[i * 2u + 1u] = -1;
     }
+    (void)words_only;
     g->valid = 1;
+    g->pairs_valid = 1;
 }
 
 #if defined(__MMX__)
@@ -763,13 +772,13 @@ static void cmd_envmixer(u32 w0, u32 w1)
         ramp_start(&left, dmem_s16(DMEM_STATE + ST_VOL_L), param[1], param[2]);
         ramp_clamp(&left, param[1], param[0]);
         envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
-        envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], 0);
+        envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], 0, 0);
         envmix_mix(b_dl, b_wl, b_in, &gains_l);
         envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
         ramp_start(&right, dmem_s16(DMEM_STATE + ST_VOL_R), param[4], param[5]);
         ramp_clamp(&right, param[4], param[3]);
         envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
-        envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], 0);
+        envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], 0, 0);
         envmix_mix(b_dr, b_wr, b_in, &gains_r);
         envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
         gains_l.valid = gains_r.valid = 0;   /* the loop's first clamp may still move them */
@@ -816,7 +825,7 @@ static void cmd_envmixer(u32 w0, u32 w1)
                 vdr[h] = dmem_load8(dry_r + h * 8u);
                 vwr[h] = dmem_load8(wet_r + h * 8u);
             }
-            envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero);
+            envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero, 1);
             for (h = 0; h < 2u; h++) {
                 vdl[h] = mix4_mmx(vdl[h], vin[h], load4(gains_l.dry_words + h * 8u),
                                   load4(gains_l.dry_words + h * 8u + 4u));
@@ -836,7 +845,7 @@ static void cmd_envmixer(u32 w0, u32 w1)
             if (first || !rate_r_zero) { ramp_clamp(&right, param[4], param[3]); }
             if (!rate_l_zero) { ramp_step(&left, param[1], param[2]); }
             first = 0;
-            envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero);
+            envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero, 1);
             for (h = 0; h < 2u; h++) {
                 vdr[h] = mix4_mmx(vdr[h], vin[h], load4(gains_r.dry_words + h * 8u),
                                   load4(gains_r.dry_words + h * 8u + 4u));
@@ -856,7 +865,7 @@ static void cmd_envmixer(u32 w0, u32 w1)
         if (first || !rate_r_zero) { ramp_step(&right, param[4], param[5]); }
         envmix_load(b_in, in); envmix_load(b_dl, dry_l); envmix_load(b_wl, wet_l);
         envmix_load(b_dr, dry_r); envmix_load(b_wr, wet_r);
-        envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero);
+        envmix_gains_for(&gains_l, &left, (s16)param[6], (s16)param[7], rate_l_zero, 0);
         envmix_mix(b_dl, b_wl, b_in, &gains_l);
         for (i = 0; i < 8u; i++) {
             dmem_set_s16(st + i * 2u, left.integer[i]);
@@ -865,7 +874,7 @@ static void cmd_envmixer(u32 w0, u32 w1)
         if (first || !rate_r_zero) { ramp_clamp(&right, param[4], param[3]); }
         if (!rate_l_zero) { ramp_step(&left, param[1], param[2]); }
         first = 0;
-        envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero);
+        envmix_gains_for(&gains_r, &right, (s16)param[6], (s16)param[7], rate_r_zero, 0);
         envmix_mix(b_dr, b_wr, b_in, &gains_r);
         envmix_store(b_dl, dry_l); envmix_store(b_wl, wet_l);
         envmix_store(b_dr, dry_r); envmix_store(b_wr, wet_r);
