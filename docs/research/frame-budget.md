@@ -51,6 +51,9 @@ The same run at `1f7fb83`, with ENVMIXER's gains, ramp and state stores in
 MMX as well: the audio mixer is **5.05 ms a frame**, 14.1%. At `643e743`, with
 RESAMPLE reading its input in sample order: **4.88 ms**, 13.6%, against 7.54 ms
 the evening before. The graphics thread reads 8.67 ms and the game thread 4.30.
+At `b457228`, with the Glide state writes deduplicated and the decoder's
+conversion buffer no longer cleared per list: graphics thread **8.23 ms**,
+audio mixer 4.89 ms, game thread 4.34 ms.
 
 Where it shows is the attract mode's race, the one scene where the processor
 ran out. Normal mode, interleaved runs of the build before the audio work
