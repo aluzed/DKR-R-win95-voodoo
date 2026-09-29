@@ -130,6 +130,7 @@ back in. `1/w` per vertex stays out. `tools/win95/timing_report.py` now takes
 | Second-unit coordinates only for chained recipes (28 September) | decoder 5.05 to 4.99 ms, on 2,460 and 2,400 lists | not run: below the spread |
 | Glide state written part by part, only what changed (28 September) | state 4.73 to 3.40 us a call; draw 4.61 to 4.23 us; `dkr_f3d_run` 8.66 to 8.28 ms, on 2,400 lists each | 36.3, 36.2 to 36.0, 36.0 ms; render mean 9.19, 9.26 to 8.78, 8.77 ms; render p99 22.2, 22.5 to 20.6, 20.5 ms |
 | Combine units and constant written only when they change (28 September) | state 3.39 to 1.98 us a call; draw 4.23 to 3.95 us; `dkr_f3d_run` 8.29 to 7.94 ms, on 2,400 and 2,340 lists | render mean over 40-94 s 7.57, 7.57 to 7.38, 7.36 ms; over 95-101 s 17.19, 17.19 to 16.53, 16.56 ms |
+| Every blend, depth, combine and constant write skips a repeat, extra passes included (29 September) | draw 4.18 to 3.91 us a call, on 2,460 and 2,520 lists | not run: below the spread |
 | Catalogue entry taken without calls into `combiner.c`, rejected then **reinstated** (28 September) | draw 4.53 to 4.65 us a call | unbounded: 8.71, 8.74 against 9.40, 9.43 ms; over 40-94 s: 8.16, 8.17 to 8.07, 8.07 ms |
 | Trivial accept inlined into the decoder, **not kept** (28 September) | clip 0.41 to 0.39 ms; decoder 4.98 to 4.96 ms, on 2,400 lists each | not run: 0.02 ms a list |
 | Texture source bound only when it changes, **not kept** (28 September) | state 1.97 to 2.02 us, draw 3.90 to 4.05 us; `dkr_f3d_run` 7.81 to 8.02 ms, on 2,340 and 2,400 lists | not run: the zones say no |
@@ -238,6 +239,19 @@ write them through `sh_*`, which skip a repeat of the last call; the thirty
 writes of the extra passes and of the unit chaining go through `raw_*`, which
 forget. The 12 card images are byte-identical, and a state change now costs
 less than half of what it did this morning.
+
+**The extra passes are the renderer's largest item.** With `DKR_NO_MULTIPASS=1`
+a draw costs 1.41 us against 4.18: the second passes and the two-blend first
+cycles, on 15 to 20% of the triangles, cost about 1.8 ms a display list.
+Batching them -- every first pass, then every second -- would be wrong: the
+first pass does not write depth when a second follows, so a triangle behind
+another in the same batch would leave its first pass on screen. So the order
+stays per triangle, and what was taken out is repetition. The extra passes'
+writes used to make the state caches forget; now every write of blend, depth,
+combine and constant goes through one function per register that keeps the
+last arguments and skips an identical call. The 12 card images are
+unchanged; a draw is 6.5% cheaper, 4.18 to 3.91 us. Most of the cost is real
+alternation, not repetition.
 
 The backend's per-draw predicates each asked `combiner.c` for the table's
 size and an entry, and `dkr_cc_table_count` was 0.5% of the sampler's graphics

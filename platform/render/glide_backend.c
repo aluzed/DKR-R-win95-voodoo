@@ -442,25 +442,26 @@ static const dkr_cc_entry *recipe_entry(const dkr_render_state *st)
  * at 4.7 us a state. Most changes touch one part. Each `apply_*` below now
  * remembers the value it last wrote and skips the call when asked for it again.
  *
- * The one way this goes wrong is a register written behind its back, and blend
- * and depth are: the extra passes program them directly. Every such write goes
- * through `raw_blend_function` or `raw_depth_*`, which forget the remembered
- * value, so the next `apply_*` writes it again. Nothing else writes texture
- * modes, cull, alpha test or fog. All of it is forgotten when the context
- * opens. */
+ * The one way this goes wrong is a register written behind its back. So every
+ * write of blend, depth, combine and constant goes through one function per
+ * register that keeps the last arguments and skips an identical call -- the
+ * extra passes' writes included, which set these registers per triangle and
+ * were most of a multipass draw's cost (E08-S03). Nothing else writes texture
+ * modes, cull, alpha test or fog, so those are remembered per `apply_*`. All of
+ * it is forgotten when the context opens and on `invalidate`. */
 static struct {
-    unsigned char tex_valid, blend_valid, depth_valid, cull_valid,
+    unsigned char tex_valid, blend_valid, cull_valid,
                   alpha_valid, fog_valid;
     FxU32 tex_filter, tex_clamp_s, tex_clamp_t;
-    int blend, depth, depth_w;
+    unsigned char depth_mode_valid, depth_fn_valid, depth_mask_valid;
+    FxU32 blend_args[4], depth_mode, depth_fn, depth_mask;
     unsigned char alpha_enabled, alpha_reference, fog_enabled;
     unsigned int fog_color;
 } g_shadow;
 
-/* The combine units and the constant register, the same way. `apply_combine`
-   and `dkr_glide_backend_set_recipe` write through `sh_*`, which skip a call
-   that repeats the last one; the extra passes and the unit chaining write
-   through `raw_*`, which forget. */
+/* The combine units and the constant register, the same way. Every write goes
+   through `sh_*`, which skips a call that repeats the last one; the `raw_*`
+   names the extra passes use lead to the same functions. */
 static struct {
     unsigned char color_valid, alpha_valid, constant_valid, tex_valid[2];
     FxU32 color[5], alpha[5], constant, tex[2][6];
@@ -522,48 +523,51 @@ static void sh_constant_color(FxU32 argb)
 static void raw_color_combine(FxU32 fn, FxU32 factor, FxU32 local, FxU32 other,
                               FxBool invert)
 {
-    g_cc_shadow.color_valid = 0;
-    gs.color_combine(fn, factor, local, other, invert);
+    sh_color_combine(fn, factor, local, other, invert);
 }
 
 static void raw_alpha_combine(FxU32 fn, FxU32 factor, FxU32 local, FxU32 other,
                               FxBool invert)
 {
-    g_cc_shadow.alpha_valid = 0;
-    gs.alpha_combine(fn, factor, local, other, invert);
+    sh_alpha_combine(fn, factor, local, other, invert);
 }
 
 static void raw_tex_combine(int tmu, FxU32 rgb_fn, FxU32 rgb_factor,
                             FxU32 a_fn, FxU32 a_factor, FxBool rgb_invert,
                             FxBool a_invert)
 {
-    g_cc_shadow.tex_valid[(tmu == GR_TMU1) ? 1 : 0] = 0;
-    gs.tex_combine(tmu, rgb_fn, rgb_factor, a_fn, a_factor, rgb_invert, a_invert);
+    sh_tex_combine(tmu, rgb_fn, rgb_factor, a_fn, a_factor, rgb_invert, a_invert);
 }
 
 static void raw_constant_color(FxU32 argb)
 {
-    g_cc_shadow.constant_valid = 0;
-    gs.constant_color(argb);
+    sh_constant_color(argb);
 }
 
 static void raw_blend_function(FxU32 rgb_src, FxU32 rgb_dst,
                                FxU32 alpha_src, FxU32 alpha_dst)
 {
-    g_shadow.blend_valid = 0;
+    const FxU32 now[4] = { rgb_src, rgb_dst, alpha_src, alpha_dst };
+    if (same_args(&g_shadow.blend_valid, g_shadow.blend_args, now, 4)) { return; }
     gs.blend_function(rgb_src, rgb_dst, alpha_src, alpha_dst);
 }
 
 static void raw_depth_mask(FxU32 on)
 {
-    g_shadow.depth_valid = 0;
+    if (same_args(&g_shadow.depth_mask_valid, &g_shadow.depth_mask, &on, 1)) { return; }
     gs.depth_mask(on);
 }
 
 static void raw_depth_mode(FxU32 mode)
 {
-    g_shadow.depth_valid = 0;
+    if (same_args(&g_shadow.depth_mode_valid, &g_shadow.depth_mode, &mode, 1)) { return; }
     gs.depth_mode(mode);
+}
+
+static void raw_depth_function(FxU32 fn)
+{
+    if (same_args(&g_shadow.depth_fn_valid, &g_shadow.depth_fn, &fn, 1)) { return; }
+    gs.depth_function(fn);
 }
 
 static void apply_combine(dkr_combine_mode m, dkr_texture_handle handle,
@@ -691,19 +695,16 @@ static void apply_texture_modes(const dkr_render_state *st)
 static void apply_blend(dkr_blend_mode m)
 {
     if (!gs.blend_function) { return; }
-    if (g_shadow.blend_valid && g_shadow.blend == (int)m) { return; }
-    g_shadow.blend_valid = 1;
-    g_shadow.blend = (int)m;
     switch (m) {
     case DKR_BLEND_ALPHA:
-        gs.blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
-                          GR_BLEND_ONE, GR_BLEND_ZERO);
+        raw_blend_function(GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+                           GR_BLEND_ONE, GR_BLEND_ZERO);
         break;
     case DKR_BLEND_ADDITIVE:
-        gs.blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
+        raw_blend_function(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO);
         break;
     default:
-        gs.blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
+        raw_blend_function(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
         break;
     }
 }
@@ -723,16 +724,9 @@ void dkr_glide_backend_depth_mode(int use_w)
 static void apply_depth(dkr_depth_mode m)
 {
     if (!gs.depth_mode || !gs.depth_function || !gs.depth_mask) { return; }
-    if (g_shadow.depth_valid && g_shadow.depth == (int)m &&
-        g_shadow.depth_w == g_depth_use_w) {
-        return;
-    }
-    g_shadow.depth_valid = 1;
-    g_shadow.depth = (int)m;
-    g_shadow.depth_w = g_depth_use_w;
     if (m == DKR_DEPTH_DISABLED) {
-        gs.depth_mode(GR_DEPTHBUFFER_DISABLE);
-        gs.depth_mask(0);
+        raw_depth_mode(GR_DEPTHBUFFER_DISABLE);
+        raw_depth_mask(0);
         return;
     }
     /* **W buffer, not Z.**
@@ -760,9 +754,9 @@ static void apply_depth(dkr_depth_mode m)
      * geometry or window defect, and one searches a long while before suspecting
      * a depth buffer that works perfectly.
      * Confirmed by read-back on 14 August 2026; see `win95-glide-states.md`. */
-    gs.depth_mode(g_depth_use_w ? GR_DEPTHBUFFER_WBUFFER : GR_DEPTHBUFFER_ZBUFFER);
-    gs.depth_function(GR_CMP_LESS);
-    gs.depth_mask(m == DKR_DEPTH_TEST_AND_WRITE ? 1 : 0);
+    raw_depth_mode(g_depth_use_w ? GR_DEPTHBUFFER_WBUFFER : GR_DEPTHBUFFER_ZBUFFER);
+    raw_depth_function(GR_CMP_LESS);
+    raw_depth_mask(m == DKR_DEPTH_TEST_AND_WRITE ? 1 : 0);
 }
 
 static void apply_cull(dkr_cull_mode m)
