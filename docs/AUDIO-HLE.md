@@ -306,4 +306,6 @@ ADPCM has the same shape as POLEF, with rows that depend on each frame's
 predictor. Doing it the same way, the rows cached per predictor and call, made
 it slower on the target, 10.3 to 11.5 µs a call: building the rows and the
 residual vector costs more than the products it replaces. It is not in the
-tree.
+tree. A second version on 29 September decoded the residuals in MMX registers,
+with no store-to-load round trip: 10.2 to 9.95 µs a call, and the whole task
+unchanged at 4.15 ms. Not worth eighty lines either; not in the tree.
