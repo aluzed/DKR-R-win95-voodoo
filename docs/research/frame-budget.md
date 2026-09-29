@@ -106,6 +106,15 @@ four-megabyte copy per display list (E08-S04). This is the measurement the
 decision on making `none` the default was waiting for: it is now a played
 race, not the attract mode, and the gap is the same.
 
+**The slow frames are not the renderer's.** Of the 3,163 race frames with
+`none`, the 331 longer than 42 ms average 5.5 ms of render and 874 triangles,
+against 6.1 ms and 987 for the others: they draw less, not more. They come in
+bursts -- 20 to 42 in some five-second windows, two or three in others -- so
+something periodic outside the renderer takes the time: the audio mixer, whose
+task cost varies with the voices playing, or the game's own logic. The audio
+export (`AUDIO.BIN`) of that run was not kept, so which one is not established.
+
+
 ## Correction, 24 September 2026: steady state, and what the 17% is
 
 **The budgets below were taken from cumulative counters, and those include the
