@@ -297,8 +297,10 @@ zero exactly where the lane is at or above it, and its signed maximum is
 **On the target, too.** Six tasks captured on the test machine with every MMX
 path above in the mixer (`DKR_AUDIO_CAPTURE=300,97,6`, at `24c06e8`) replay
 through the host's microcode oracle (`replay_aspmain`) with 0 bytes mismatched
-out of 10,205 to 11,671 written each. The host proves the arithmetic; this
-proves the i686 build does what the host build does.
+out of 10,205 to 11,671 written each. Six more, captured at `1f7fb83` with the
+ramp and the state stores in MMX too (`DKR_AUDIO_CAPTURE=400,89,6`), match with
+0 bytes out of 10,520 to 14,707. The host proves the arithmetic; this proves
+the i686 build does what the host build does.
 
 ADPCM has the same shape as POLEF, with rows that depend on each frame's
 predictor. Doing it the same way, the rows cached per predictor and call, made
