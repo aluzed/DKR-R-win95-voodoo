@@ -1069,9 +1069,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
      * is the only way an image difference becomes attributable to the renderer
      * rather than to the moment of an animation.
      *
-     * Written **before** the decode, not after: the decoder writes into the
-     * snapshot -- the vertex scratch window at 0x7FE000 among others -- so a
-     * capture taken afterwards would replay a memory the game never had.
+     * Written **before** the decode, not after. The RT64 bridge writes into
+     * the snapshot -- its vertex scratch window at 0x7FE000,
+     * `kScratchVertexAddress` in f3ddkr_rt64.cpp -- so a capture taken after
+     * it would replay a memory the game never had. The decoder this renderer
+     * uses takes the snapshot `const` and only reads it; the order is kept so
+     * that a capture means the same thing on both paths.
      *
      * At or after, once each, like the frame dump and for the same reason: a
      * trigger on an exact count one cannot predict fails silently when the run

@@ -140,14 +140,13 @@ Two ways to meet the first criterion, both measured enough to choose from:
 - **Keep the snapshot, at the size E00-S06 decided.** Allocating each buffer
   at the 4 MiB copied rather than 8 would save 8 MiB, and one buffer instead of
   two another 4; the decoder's RDRAM bound would then have to be the copied
-  size, not eight megabytes, or it would read past the buffer. One thing to
-  settle first: a comment in `glide_renderer.cpp` (the capture block) says the
-  decoder writes into the snapshot, "the vertex scratch window at 0x7FE000",
-  above the four megabytes copied. `dkr_f3d_init` takes the RDRAM as `const`
-  and `f3ddkr.c` only reads it, so the comment looks stale; it has to be
-  checked before the buffers shrink, since a write there would land past a
-  4 MiB buffer. That change spans the runtime's patch set and the decoder, and
-  is not made here.
+  size, not eight megabytes, or it would read past the buffer. The scratch
+  window at 0x7FE000 that a comment in `glide_renderer.cpp` placed in the
+  snapshot belongs to the RT64 bridge (`kScratchVertexAddress` in
+  `f3ddkr_rt64.cpp`); on this path `dkr_f3d_init` takes the RDRAM `const` and
+  `f3ddkr.c` only reads it, so nothing writes above the four megabytes copied.
+  The comment is corrected. The change spans the runtime's patch set and the
+  renderer, and is not made here.
 
 ### A longer session (29 September 2026)
 
