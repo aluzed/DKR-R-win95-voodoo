@@ -212,6 +212,13 @@ for the game itself, against the 32.8 MiB budgeted above. **No page is written
 out**: `cPageOuts` is zero from start to end, and the address space left to the
 process does not move after loading over nine minutes of play.
 
+**The snapshot, in the default mode.** The figures above are with
+`DKR_RDRAM_SNAPSHOT=none`. The default mode's pool of two snapshots took about
+15 MiB more, 8.4 MiB left free, because each 8 MiB buffer was zero-filled;
+patch 0055 lets their pages come in only when touched, and 16.0 MiB stay free.
+The same measurement shows the default mode at 64 ms a frame against 35 ms
+without a snapshot.
+
 **The 32 MB floor, revisited by measurement.** This ADR ruled 32 MB out on
 paper. With the machine set to 32 MiB for one run, the game runs: it pages
 through the loading and at scene changes, the swap file holding 35 MiB, and
