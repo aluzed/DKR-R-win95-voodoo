@@ -23,6 +23,9 @@
 extern "C" {
 #include "clock.h"
 #include "audio_out.h"   // underruns, for the on-screen display
+#if defined(DKR_TARGET_WIN95)
+#include "sampler.h"
+#endif
 }
 #endif
 
@@ -1190,6 +1193,14 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                                   kWidth, kHeight);
             }
         }
+#if defined(DKR_TARGET_WIN95)
+        // The sampler can wait for a race rather than for a fixed delay, since
+        // a route into one is driven by hand (E08-S02, `sampler.h`).
+        if (dkr_sampler_waits_for_race() &&
+            read_word(rdram_snapshot, kAddrGameMode) == 0) {
+            dkr_sampler_race_started();
+        }
+#endif
         if (cap_have_mode && cap_anchor == 0UL && cap_count > 0) {
             if (read_word(rdram_snapshot, kAddrGameMode) == cap_wanted_mode) {
                 cap_anchor = index;

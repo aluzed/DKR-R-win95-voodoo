@@ -125,17 +125,58 @@ One function carries a ninth of the thread, which makes it the first candidate
 for item 5, once it is named from the decompilation (not checked out here) and
 confirmed hot in a played race.
 
+## The game thread's hot functions in a race, driven by hand (29 September 2026)
+
+The same sampler, in a race a player started: from a cold boot, PLAYER SELECT,
+TRACKS, Ancient Lake, car, time trial off, one confirmed press at a time with
+`Drive-Win95-VM.sh pad-hold`, then the accelerator held with some steering.
+The sampler now waits for the race itself: `DKR_TRACE_SAMPLER_DELAY=race+15`
+starts the countdown when the renderer first reads `gGameMode` as INGAME, since a
+route driven by hand cannot be given a fixed delay in advance. Normal mode,
+`DKR_RDRAM_SNAPSHOT=none`, 90 s from 15 s after the start, 12,887 samples of the
+game thread in which its instruction pointer moved:
+
+| Share | Function |
+|---:|---|
+| 5.7% | `sort_objects_by_dist` -- a bubble sort of the object list by distance |
+| 3.7% | `calc_env_mapping_for_object` |
+| 2.8% | `calc_dynamic_lighting_for_object_2` |
+| 2.0% | `func_8005B818` |
+| 1.9% each | `mtxf_mul`, `obj_update`, `obj_animate` |
+| 1.6-1.7% each | `render_level_segment`, `block_visible`, `func_8002DE30`, `render_level_geometry_and_objects` |
+| 1.3-1.5% each | `material_set`, `shadow_update`, `func_8002FF6C`, `render_mesh`, `mtxs_transform_dir` |
+| 0.8% | `func_8002E904` -- 11.2% in the attract mode |
+| 20.2% | KERNEL32, the thread waiting |
+
+**In a race the profile is flat.** The attract mode's first function, the
+shadow projection `func_8002E904` (named from `tracks.c`), falls from 11.2% to
+0.8%; the demo's level reloads (`gzip_*`) and `waves_update` are gone. Nothing
+carries more than a twentieth of the thread, and the thread is 4.3 ms of a
+frame (`frame-budget.md`): the hottest function is worth about a quarter of a
+millisecond, and a native replacement of it would win less than that.
+
+So item 5 has no candidate. `sort_objects_by_dist` is the only one that looks
+replaceable -- a stable sort, which an insertion sort reproduces order for
+order -- but its keys come from `get_distance_to_camera`, which would have to
+stay recompiled for the floats to match, and what is left to win is the
+swapping. Not worth the fidelity risk the ticket warns about.
+
+Limits: one track, one player, eight karts, and a driver who spent part of
+the race against a wall. It is still the game's race code running with a
+player in it, which the attract mode was not.
+
 ## Acceptance criteria
 
-- [ ] The hot functions are identified on a real play session.
+- [x] The hot functions are identified on a real play session -- a race
+      driven by hand, above. The profile is flat: 5.7% at most.
 - [ ] Every compilation option is measured, not assumed.
 - [ ] The effect of code layout is measured separately.
 - [ ] Any native replacement is proved equivalent by comparing output over a large
       sample.
 - [ ] The cumulative gain is measured and reported to the budget.
 - [ ] The game behaves identically, verified by a complete session.
-- [ ] No native replacement is made without a prior measurement proving the function is
-      hot.
+- [x] No native replacement is made without a prior measurement proving the function is
+      hot. None is made: the race's profile has no function hot enough to justify one.
 - [x] The three functions that need a 64-bit general register are identified by a
       census of the emitted opcodes, and each is proved equivalent at both widths —
       `tools/cpu-budget/wide_register_paths.h`, `tools/cpu-budget/narrow_gpr_test.c`.

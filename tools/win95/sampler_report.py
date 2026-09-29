@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """E08-S01 - turns a DKR_TRACE_SAMPLER capture (D:\\SAMPLES.BIN) into a profile.
 
-    sampler_report.py SAMPLES.BIN build/win95/bin/DKRR.EXE [--top N] [--thread]
+    sampler_report.py SAMPLES.BIN build/win95/bin/DKRR.EXE [--top N] [--thread [--thread-top N]]
                       [--module DKRR.EXE]
 
 --module names the executable as the target loaded it, when the file given
@@ -146,10 +146,12 @@ def main():
         for eip, c in hot.most_common(12):
             print(f"  {eip:08X}  {100 * c / max(n, 1):5.1f}%")
     if "--thread" in sys.argv:
+        per_thread = (int(sys.argv[sys.argv.index("--thread-top") + 1])
+                      if "--thread-top" in sys.argv else 6)
         for t, counter in sorted(by_thread.items()):
             n = sum(counter.values())
             print(f"\nthread {t}: {n} samples")
-            for (m, f), c in counter.most_common(6):
+            for (m, f), c in counter.most_common(per_thread):
                 print(f"  {100 * c / n:5.1f}%  {m}: {f[:80]}")
 
 

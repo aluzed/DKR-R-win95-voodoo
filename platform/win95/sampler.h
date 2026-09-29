@@ -13,7 +13,10 @@
  *
  * DKR_TRACE_SAMPLER=1 samples for 60 s, DKR_TRACE_SAMPLER=<n> for n seconds,
  * then closes its file and stops, well before the harness quits the game.
- * DKR_TRACE_SAMPLER_DELAY=<n> starts sampling n seconds late, past the loading. It
+ * DKR_TRACE_SAMPLER_DELAY=<n> starts sampling n seconds late, past the loading.
+ * DKR_TRACE_SAMPLER_DELAY=race+<n> starts n seconds after the renderer first sees
+ * `gGameMode` read INGAME: a route into a race is driven by hand, one confirmed
+ * press at a time, and no fixed delay can be set for it in advance. It
  * writes `D:\SAMPLES.BIN`: a header listing the loaded
  * modules (Toolhelp32: base, size, name), then records of thread index and EIP.
  * `tools/win95/sampler_report.py` turns it into a profile by module and by
@@ -35,6 +38,13 @@ void dkr_sampler_register_current_thread(void);
 
 /* Starts the sampler if DKR_TRACE_SAMPLER is set. Returns 1 if it runs. */
 int dkr_sampler_start(void);
+
+/* Whether the sampler is waiting for a race (DKR_TRACE_SAMPLER_DELAY=race+<n>).
+   Cheap enough to call once per display list. */
+int dkr_sampler_waits_for_race(void);
+
+/* Called when the game is seen in a race; starts the countdown once. */
+void dkr_sampler_race_started(void);
 
 #ifdef __cplusplus
 }

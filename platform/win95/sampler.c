@@ -22,6 +22,8 @@ static sampler_record   g_chunk[SAMPLER_CHUNK];
 static FILE            *g_file;
 static unsigned int     g_seconds = 60;   /* DKR_TRACE_SAMPLER's value */
 static unsigned int     g_delay = 0;      /* DKR_TRACE_SAMPLER_DELAY: skip the loading */
+static HANDLE           g_race_event;     /* set when waiting for a race, else NULL */
+static volatile LONG    g_race_seen = 0;
 
 static int sampler_enabled(void)
 {
@@ -93,6 +95,10 @@ static DWORD WINAPI sampler_thread(LPVOID unused)
        disk until a repair. A capture that is closed long before shutdown cannot
        do that. */
     DWORD stop_at;
+    if (g_race_event != NULL) {
+        WaitForSingleObject(g_race_event, INFINITE);
+        fprintf(stderr, "[sampler] race seen, sampling in %u s\n", g_delay);
+    }
     if (g_delay) { Sleep(g_delay * 1000u); }
     stop_at = GetTickCount() + g_seconds * 1000u;
     unsigned int used = 0, ticks = 0;
@@ -151,6 +157,10 @@ int dkr_sampler_start(void)
         const unsigned long n = v ? strtoul(v, NULL, 10) : 0;
         if (n > 1) { g_seconds = (unsigned int)n; }   /* "1" keeps the default */
         v = getenv("DKR_TRACE_SAMPLER_DELAY");
+        if (v && strncmp(v, "race", 4) == 0) {
+            g_race_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+            v = (v[4] == '+') ? v + 5 : NULL;
+        }
         if (v) { g_delay = (unsigned int)strtoul(v, NULL, 10); }
     }
     g_file = fopen("D:\\SAMPLES.BIN", "wb");
@@ -163,4 +173,16 @@ int dkr_sampler_start(void)
     SetThreadPriority(t, THREAD_PRIORITY_TIME_CRITICAL);
     CloseHandle(t);
     return 1;
+}
+
+int dkr_sampler_waits_for_race(void)
+{
+    return g_race_event != NULL && g_race_seen == 0;
+}
+
+void dkr_sampler_race_started(void)
+{
+    if (g_race_event != NULL && InterlockedExchange((LONG *)&g_race_seen, 1) == 0) {
+        SetEvent(g_race_event);
+    }
 }
