@@ -25,7 +25,8 @@
 #
 # Tested once, 29 September 2026: it reached PLAYER SELECT in four presses and
 # the track choice on its own, then stopped on the fingerprint check this
-# version no longer makes (below). The version without it has not been run.
+# version no longer makes (below). This version, run from a cold boot the same
+# evening: PLAYER SELECT in four presses, then the race's GET READY, unaided.
 #
 # Run it while the game is up, typically beside `Measure-Guest-Time-VM.sh` in
 # the background. The track and the driving are not a benchmark of anything:
