@@ -47,6 +47,9 @@ CLEARBUFF and DMEMMOVE, MMX for ENVMIXER, MIXER, RESAMPLE and POLEF, all bit for
 bit), in the same run at `70ba8c4`: **5.45 ms a frame**, 15.1%, against 7.54 ms.
 The graphics thread reads 8.59 ms and the game thread 4.39 ms.
 
+The same run at `1f7fb83`, with ENVMIXER's gains, ramp and state stores in
+MMX as well: the audio mixer is **5.05 ms a frame**, 14.1%.
+
 Where it shows is the attract mode's race, the one scene where the processor
 ran out. Normal mode, interleaved runs of the build before the audio work
 (`aaedd23`) and after (`70ba8c4`), over 95 to 101 s:
