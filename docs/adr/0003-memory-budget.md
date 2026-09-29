@@ -194,6 +194,32 @@ peak must be measured and set against this table. The two reserves — 4 MiB of
 runtime and 8 MiB of textures — are the items to check first, since they are the
 only ones resting on no measurement at all.
 
+## Measured in play, 29 September 2026
+
+The peak this ADR asked for, taken in the running game rather than item by
+item: `DKR_TRACE_PAGING=1` (E08-S04) reads `GlobalMemoryStatus` and the VMM's
+counters every five seconds. On the 64 MiB machine, both opt-in options on:
+
+| | Physical free | Disk cache |
+|---|---:|---:|
+| Desktop, Glide context open (above) | 48,156 KiB | -- |
+| Loading, 22 s | 29,484 KiB | 9.0 MiB |
+| Attract mode, 1 to 9 minutes | 23,920 to 22,836 KiB | 12.5 MiB |
+
+The game takes about **25 MiB** of physical memory in play, of which about 3.5
+MiB is Windows' disk cache growing around its file reads, so about **22 MiB**
+for the game itself, against the 32.8 MiB budgeted above. **No page is written
+out**: `cPageOuts` is zero from start to end, and the address space left to the
+process does not move after loading over nine minutes of play.
+
+**The 32 MB floor, revisited by measurement.** This ADR ruled 32 MB out on
+paper. With the machine set to 32 MiB for one run, the game runs: it pages
+through the loading and at scene changes, the swap file holding 35 MiB, and
+then settles, seven pages in thirty seconds of attract mode, the frame as fast
+as on 64 MiB. So 32 MB is a degraded configuration with longer loads, not an
+impossible one. 64 MB remains the target the project supports. Details in
+E08-S04.
+
 ## Consequences
 
 - **E02-S04** inherits two decisions: the ROM read on demand, and the arbitration

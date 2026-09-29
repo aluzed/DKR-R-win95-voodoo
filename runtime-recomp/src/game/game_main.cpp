@@ -189,10 +189,13 @@ static DWORD WINAPI PagingMeterThread(LPVOID) {
         for (const char* c : kPagingCounters) {
             std::fprintf(stderr, " %s=%ld", c + 4, ReadPerfStat("PerfStats\\StatData", c));
         }
-        std::fprintf(stderr, " avail-phys=%luK load=%lu%% avail-page=%luK\n",
+        /* The address space left to the process: a heap that fragments over a
+           long session keeps taking more of it for the same live data. */
+        std::fprintf(stderr, " avail-phys=%luK load=%lu%% avail-page=%luK avail-virtual=%luK\n",
                      static_cast<unsigned long>(ms.dwAvailPhys / 1024u),
                      static_cast<unsigned long>(ms.dwMemoryLoad),
-                     static_cast<unsigned long>(ms.dwAvailPageFile / 1024u));
+                     static_cast<unsigned long>(ms.dwAvailPageFile / 1024u),
+                     static_cast<unsigned long>(ms.dwAvailVirtual / 1024u));
     }
     return 0;
 }

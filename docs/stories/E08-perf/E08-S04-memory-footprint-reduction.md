@@ -117,17 +117,48 @@ So 32 MiB is playable, with longer loads and the risk of a stall where a scene
 change pages. A long session there has not been measured.
 
 
+### A longer session (29 September 2026)
+
+The same meter over 1,260 s of wall time, which the emulator's 57% speed makes
+9.4 minutes of the game: attract mode, its races and menus, looping. After
+loading, the address space left to the process reads 1,992,320 KiB at every
+sample to the end: nothing grows it. Free physical memory drifts from 23,920
+to 22,836 KiB over eight minutes, a megabyte, and page-outs stay at zero.
+Nine minutes are not the hours the criterion asks for, so it stays open; what
+there is shows no growth.
+
+### Every host-side cache has a fixed ceiling (29 September 2026)
+
+Work item 3, by reading the Windows 95 path's code. Nothing in the renderer,
+the Glide backend, the audio mixer or the platform layer grows a container:
+there is no `malloc`, `new` or `push_back` in any of them. Each cache is a
+fixed array:
+
+| Cache | Ceiling | Where |
+|---|---|---|
+| Texture descriptors | 512 (`GLIDE_MAX_TEXTURES`), least recently used reclaimed | `glide_backend.c` |
+| Textures resident on the card | the card's memory, through a buddy allocator that evicts; 512 slots per unit (`DKR_TMU_MAX_RESIDENT`) | `tmu.c` |
+| Residency memos | 1,024 slots each | `tmu.c`, `glide_backend.c` |
+| Distinct texture keys counted per list | 1,024 (`DKR_DISTINCT_KEY_MAX`), overflow counted | `f3ddkr.h` |
+| Transformed vertices | 32 slots, as the microcode | `f3ddkr.c` |
+| Audio output | a ring of 16 buffers of 4,096 frames; a full ring drops, and says so | `audio_out.c` |
+| RDRAM snapshot, when used | a pool of two buffers (`kSnapshotPoolSlots`) | ultramodern `events.cpp` |
+
+Display lists are not cached: each is decoded from RDRAM as it arrives. The
+runtime's lock-free queues (moodycamel) allocate blocks as producers need
+them; they carry messages, not data that accumulates.
+
 ## Acceptance criteria
 
 - [ ] The RDRAM snapshot and the number of tasks in flight are reduced according to
       E00-S06.
-- [ ] Every host-side cache has an explicit ceiling.
+- [x] Every host-side cache has an explicit ceiling.
 - [ ] Heap fragmentation is measured over a long session and does not grow without
       bound.
 - [x] No paging during play on the target configuration — verified by counting page
       faults, not by observation.
 - [x] The behaviour on 32 MB is assessed and documented.
-- [ ] E00-S06's budget is updated with the real figures.
+- [x] E00-S06's budget is updated with the real figures.
 - [ ] No regression in the game's behaviour.
 
 ## Risks
