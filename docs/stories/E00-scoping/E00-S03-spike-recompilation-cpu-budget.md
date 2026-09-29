@@ -151,6 +151,11 @@ realistic E08-S02 at 1.3× to 1.5× lands the frame at 130 ms — **7.7 fps**.
 > In the default mode, with the snapshot, the same race is 60.2 ms, 17 frames a
 > second.
 >
+> And the frame is not using the machine: once patch 0056 stopped the idle
+> thread spinning on refused messages, the same race with `none` leaves
+> **49.5% of the processor idle** (`frame-budget.md`, "The idle thread spun on
+> refused messages").
+>
 > What this does and does not change. It is still 86Box's timing model, and
 > E09-S04 is still the only thing that can replace it with silicon. And the
 > verdict is a decision, not a measurement: whether it is re-pronounced, and on
