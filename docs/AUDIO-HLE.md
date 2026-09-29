@@ -283,6 +283,17 @@ takes ENVMIXER from 27.2 to **25.3 µs**, the mixer from 4.41 to **4.31 ms** a
 task. No difference on 5,000 cases and nineteen tasks, the six below
 included.
 
+The ramp itself, stepped and clamped on eight lanes per side and block when
+a rate is not zero, is in MMX as well. The step zero-extends the fraction and
+the rate's low half to 32 bits, which gives the sum and its carry exactly, and
+adds the sign-extended integer, the rate's high half and the carry as one
+32-bit sum that `packssdw` saturates once, as clamp16 does; the fraction wraps
+in 16 bits. The clamp's unsigned minimum is `psubusw` against the target,
+zero exactly where the lane is at or above it, and its signed maximum is
+`pcmpgtw`. ENVMIXER goes from 25.3 to **22.3 µs**, the mixer from 4.31 to
+**4.15 ms** a task, a third below 28 September's 6.15 ms. No difference on
+10,000 cases and nineteen tasks.
+
 **On the target, too.** Six tasks captured on the test machine with every MMX
 path above in the mixer (`DKR_AUDIO_CAPTURE=300,97,6`, at `24c06e8`) replay
 through the host's microcode oracle (`replay_aspmain`) with 0 bytes mismatched

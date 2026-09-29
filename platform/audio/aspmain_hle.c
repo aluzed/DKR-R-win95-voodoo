@@ -494,6 +494,35 @@ static void ramp_start(ramp *r, s32 volume, u32 rate_hi, u32 rate_lo)
 static void ramp_step(ramp *r, u32 rate_hi, u32 rate_lo)
 {
     u32 i;
+#if defined(__MMX__)
+    /* In MMX (E08): the fraction and the rate zero-extended to 32 bits give
+       the sum and its carry exactly; the integer, sign-extended, plus the
+       rate's high half and the carry is one 32-bit sum that `packssdw`
+       saturates once, as clamp16 does. The caller ends the MMX block. */
+    {
+        const __m64 zero = _mm_setzero_si64();
+        const __m64 lo32 = _mm_set1_pi32((int)(rate_lo & 0xFFFFu));
+        const __m64 hi32 = _mm_set1_pi32((int)(s16)rate_hi);
+        u32 h;
+        for (h = 0; h < 2u; h++) {
+            __m64 f, n, f_lo, f_hi, n_lo, n_hi;
+            memcpy(&f, r->fraction + h * 4u, sizeof(f));
+            memcpy(&n, r->integer + h * 4u, sizeof(n));
+            f_lo = _mm_add_pi32(_mm_unpacklo_pi16(f, zero), lo32);
+            f_hi = _mm_add_pi32(_mm_unpackhi_pi16(f, zero), lo32);
+            n_lo = _mm_srai_pi32(_mm_unpacklo_pi16(n, n), 16);
+            n_hi = _mm_srai_pi32(_mm_unpackhi_pi16(n, n), 16);
+            n_lo = _mm_add_pi32(_mm_add_pi32(n_lo, hi32), _mm_srli_pi32(f_lo, 16));
+            n_hi = _mm_add_pi32(_mm_add_pi32(n_hi, hi32), _mm_srli_pi32(f_hi, 16));
+            n = _mm_packs_pi32(n_lo, n_hi);
+            /* The fraction wraps: the low halves of the 32-bit sums. */
+            f = _mm_add_pi16(f, _mm_set1_pi16((short)rate_lo));
+            memcpy(r->fraction + h * 4u, &f, sizeof(f));
+            memcpy(r->integer + h * 4u, &n, sizeof(n));
+        }
+        return;
+    }
+#endif
     for (i = 0; i < 8u; i++) {
         const u32 sum = (u32)r->fraction[i] + rate_lo;
         r->fraction[i] = (u16)sum;
@@ -504,6 +533,28 @@ static void ramp_step(ramp *r, u32 rate_hi, u32 rate_lo)
 static void ramp_clamp(ramp *r, u32 rate_hi, u32 target)
 {
     u32 i;
+#if defined(__MMX__)
+    /* In MMX (E08): the unsigned minimum as `psubusw` against the target, zero
+       exactly where the lane is at or above it; the signed maximum as
+       `pcmpgtw`. Each selects the target where the C does. */
+    {
+        const __m64 t = _mm_set1_pi16((short)target);
+        const __m64 zero = _mm_setzero_si64();
+        u32 h;
+        for (h = 0; h < 2u; h++) {
+            __m64 n, take;
+            memcpy(&n, r->integer + h * 4u, sizeof(n));
+            if ((s16)rate_hi > 0) {
+                take = _mm_cmpeq_pi16(_mm_subs_pu16(t, n), zero);   /* n >= t, unsigned */
+            } else {
+                take = _mm_cmpgt_pi16(t, n);                       /* n < t, signed */
+            }
+            n = _mm_or_si64(_mm_and_si64(take, t), _mm_andnot_si64(take, n));
+            memcpy(r->integer + h * 4u, &n, sizeof(n));
+        }
+        return;
+    }
+#endif
     for (i = 0; i < 8u; i++) {
         if ((s16)rate_hi > 0) {                              /* VCL: unsigned min */
             if ((u16)r->integer[i] >= (u16)target) { r->integer[i] = (s16)target; }
