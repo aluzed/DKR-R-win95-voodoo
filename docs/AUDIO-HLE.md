@@ -273,6 +273,16 @@ unpack against -1, and DMEM's word order is the halves of each doubleword
 swapped. ENVMIXER goes from 28.6 to **27.2 µs** a call, the mixer from 4.49 to
 **4.41 ms** a task, 28% below 28 September's 6.15 ms.
 
+With the mix that much cheaper, the left side's state, stored every block as
+the microcode does, became a visible share: sixteen halfword writes. The loop
+on the buffers now stores the same bytes at the same moment as four
+quadwords, the halves of each doubleword swapped into DMEM's word order.
+Moving the store out of the loop had measured nothing a night earlier, when
+the mix still cost three times as much; this keeps the microcode's order and
+takes ENVMIXER from 27.2 to **25.3 µs**, the mixer from 4.41 to **4.31 ms** a
+task. No difference on 5,000 cases and nineteen tasks, the six below
+included.
+
 **On the target, too.** Six tasks captured on the test machine with every MMX
 path above in the mixer (`DKR_AUDIO_CAPTURE=300,97,6`, at `24c06e8`) replay
 through the host's microcode oracle (`replay_aspmain`) with 0 bytes mismatched

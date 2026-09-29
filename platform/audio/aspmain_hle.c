@@ -772,9 +772,15 @@ static void cmd_envmixer(u32 w0, u32 w1)
                 vwl[h] = mix4_mmx(vwl[h], vin[h], load4(gains_l.wet_words + h * 8u),
                                   load4(gains_l.wet_words + h * 8u + 4u));
             }
-            for (i = 0; i < 8u; i++) {
-                dmem_set_s16(st + i * 2u, left.integer[i]);
-                dmem_set_s16(st + 0x10u + i * 2u, left.fraction[i]);
+            /* The left lanes as four quadwords rather than sixteen halfwords:
+               the same bytes at the same moment, the halves of each doubleword
+               swapped into DMEM's word order. */
+            for (h = 0; h < 4u; h++) {
+                __m64 v;
+                memcpy(&v, (h < 2u ? (const s16 *)left.integer : (const s16 *)left.fraction)
+                               + (h & 1u) * 4u, sizeof(v));
+                dmem_store8(st + h * 8u,
+                            _mm_or_si64(_mm_slli_pi32(v, 16), _mm_srli_pi32(v, 16)));
             }
             if (first || !rate_r_zero) { ramp_clamp(&right, param[4], param[3]); }
             if (!rate_l_zero) { ramp_step(&left, param[1], param[2]); }
