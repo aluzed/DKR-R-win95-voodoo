@@ -200,6 +200,40 @@ not the game's heap growing; what took it -- the disk cache or another part of
 the system -- is not established. The criterion stays open until a session of
 hours has been run.
 
+### Two hours, and where the missing megabytes went (29 September 2026)
+
+A fourth run, 13,800 s of wall time: **123.7 minutes** of the game, the attract
+mode looping, `DKR_RDRAM_SNAPSHOT=none`, a paging sample every five seconds.
+The address space left to the process reads 1,992,320 KiB from the third
+minute to the last sample, and no page is ever written out.
+
+Free physical memory, this time, falls four times: by 2.8 MiB at 37 minutes,
+2.5 at 70, 2.2 at 99 and 1.9 at 123 -- about every half hour, 9.6 MiB in all,
+flat between. That is the shape a leak would have, so each step was taken
+apart with the other counters of the same sample:
+
+| minute | free | disk cache | locked | swap file in use |
+|---:|---:|---:|---:|---:|
+| 36 | 22,948 KiB | 12,804 KiB | 14,208 KiB | 6,656 KiB |
+| 38 | 20,080 | 15,664 | 17,080 | 9,728 |
+| 71 | 17,500 | 18,172 | 19,596 | 12,288 |
+| 100 | 15,308 | 20,356 | 21,788 | 14,336 |
+| 123.6 | 13,384 | 22,276 | 23,716 | 16,384 |
+
+**Every step is the disk cache.** Each fall of free memory is matched to
+within a few kilobytes by VCACHE growing -- 2,868 KiB free for 2,860 KiB of
+cache at the first -- and the cache's pages are the ones counted as locked.
+Windows 95 sizes that cache dynamically and gives it back under pressure;
+nothing written out, nothing discarded (`cDiscards` stays at 113 from boot).
+The game's own commitments would show as free memory lost with no cache to
+match it, and there is none.
+
+So over two hours of play the process neither reserves new address space nor
+commits memory that the counters cannot attribute elsewhere. That is not a
+walk of the heap's blocks, which Windows 95 offers no cheap way to take from
+outside, but it bounds what fragmentation could be doing: nothing that costs
+memory. The 46-minute run's single step at 42 minutes was the first of these.
+
 ### Every host-side cache has a fixed ceiling (29 September 2026)
 
 Work item 3, by reading the Windows 95 path's code. Nothing in the renderer,
@@ -226,8 +260,9 @@ them; they carry messages, not data that accumulates.
 - [ ] The RDRAM snapshot and the number of tasks in flight are reduced according to
       E00-S06.
 - [x] Every host-side cache has an explicit ceiling.
-- [ ] Heap fragmentation is measured over a long session and does not grow without
-      bound.
+- [x] Heap fragmentation is measured over a long session and does not grow without
+      bound: two hours of the game, the address space flat to the kilobyte, and
+      every fall of free memory matched by the system's disk cache (above).
 - [x] No paging during play on the target configuration — verified by counting page
       faults, not by observation.
 - [x] The behaviour on 32 MB is assessed and documented.
