@@ -117,6 +117,32 @@ So 32 MiB is playable, with longer loads and the risk of a stall where a scene
 change pages. A long session there has not been measured.
 
 
+### What the RDRAM snapshot costs, measured (29 September 2026)
+
+Every run above used `DKR_RDRAM_SNAPSHOT=none`, the opt-in mode that draws
+from live RDRAM and has no snapshot. The default mode, the same meter:
+
+| | free physical, attract mode | swap file in use | page-outs |
+|---|---:|---:|---:|
+| `DKR_RDRAM_SNAPSHOT=none` | 23,920 KiB | 6.5 MiB | 0 |
+| default: a pool of two snapshots | **8,832 KiB** | 28.5 MiB | 0 |
+
+The snapshot costs **about 15 MiB** of physical memory. The copy is 4 MiB
+(`[snap][size] 4096 KB copied of 8192`), but each of the pool's two buffers is
+allocated at 8 MiB and zero-filled on creation, so all sixteen megabytes are
+touched. On 64 MiB it still does not page; it leaves a third of the margin.
+
+Two ways to meet the first criterion, both measured enough to choose from:
+
+- **Make `none` the default.** Nothing to allocate, and the frame is faster
+  too (`frame-budget.md`). It was left opt-in until it has been played, which
+  is a decision for whoever plays it.
+- **Keep the snapshot, at the size E00-S06 decided.** Allocating each buffer
+  at the 4 MiB copied rather than 8 would save 8 MiB, and one buffer instead of
+  two another 4; the decoder's RDRAM bound would then have to be the copied
+  size, not eight megabytes, or it would read past the buffer. That change is
+  in the runtime's patch set and the decoder together, and is not made here.
+
 ### A longer session (29 September 2026)
 
 The same meter over 1,260 s of wall time, which the emulator's 57% speed makes
