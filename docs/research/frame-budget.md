@@ -161,8 +161,15 @@ the one-retrace-late frames it caused when it held a quantum the renderer
 needed. The driving differs from run to run -- 640 to 870 triangles a list --
 which is the size of the differences between the last two columns in `none`.
 
-Held messages at any moment: four. Which messages they are, and why their
-queue stays full, is not established.
+Held messages at any moment: four or five, and all of them are the same one --
+the serial interface's completion, source SI, to `sSIMesgQueue` at 0x801210E0
+(named from the decomp's symbols). DKR creates that queue with room for one
+message and polls it without blocking once a frame (`joypad.c`), starting the
+next controller read after; the runtime posts completions faster than that,
+and retries the extras rather than dropping them as the hardware's
+`osSendMesg` would. The backlog is steady, not growing, and costs nothing on
+input: the game only tests that a message is there and reads the pad state
+through `osContGetReadData`.
 
 ## Correction, 24 September 2026: steady state, and what the 17% is
 
