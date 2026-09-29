@@ -225,6 +225,10 @@
         {
           "path": "patches/n64-modern-runtime/0055-snapshot-pages-committed-by-touch.patch",
           "sha256": "3a49ddb249315d795baeeee29e7101d957a1566f40509aac6df5ef7aaf3d2f45"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0056-hold-refused-messages-instead-of-spinning.patch",
+          "sha256": "5b0cc861f6342c00e7af000b582865db36dbe15bd6e0033b1ba13bc2847c7fee"
         }
       ]
     },

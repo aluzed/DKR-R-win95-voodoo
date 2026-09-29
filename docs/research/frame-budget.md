@@ -121,6 +121,49 @@ task cost varies with the voices playing, or the game's own logic. The audio
 export (`AUDIO.BIN`) of that run was not kept, so which one is not established.
 
 
+## The idle thread spun on refused messages, 29 September 2026
+
+**The processor was never idle, and it should have been.** With the idle meter
+now reporting each five-second interval on the export's clock, a race with
+`none` read 2 to 3% spare in every window, frames on two retraces or not --
+while the game, the renderer and the audio mixer add up to about 14 ms of a
+33 ms frame. The race's slow frames draw less than the others and carry no
+more audio per task than the fast ones (`AUDIO.BIN` of the same run: 4.27
+against 4.34 ms a task), so neither accounts for them.
+
+The sampler, trace off, with KERNEL32's exports read from the test machine's
+own DLL, named the thread that took the rest: the guest's idle thread, busier
+than the renderer, inside `ultramodern::wait_for_external_message` with its
+samples spread evenly over the function -- a loop. A message whose queue is
+full and whose source allows retrying went back on the external queue, and
+the next wait returned it at once. Counted: **75,000 refusals a second**.
+
+While the idle thread runs no guest thread does, so the full queue cannot be
+drained until another message has landed; retrying before that is pointless.
+Patch 0056 holds a refused message instead, retries the held ones each time
+the thread is entered again, and blocks for a new message when all of them are
+refused. A first version slept a millisecond after each refusal instead; it
+delayed the completion edges the graphics thread waits for. A race of 200 s
+each, driven by `scripts/Drive-To-Race.sh`:
+
+| | spinning | sleep 1 ms | held (kept) |
+|---|---:|---:|---:|
+| `none`: mean period | 37.4 ms | 34.4 ms | 35.8 ms |
+| `none`: on two retraces | 78% | 94% | 87% |
+| `none`: processor idle | 2.4% | 47.2% | **49.5%** |
+| default mode: mean period | 59.4 ms | 66.2 ms | **57.6 ms** |
+| default mode: processor idle | 1.6% | 20.2% | 12.1% |
+
+**Half of the processor is free in a race with `none`.** The frame rate
+changes less than the idle share, because the frame was already mostly at the
+game's own thirty frames a second; what the spin cost was the headroom, and
+the one-retrace-late frames it caused when it held a quantum the renderer
+needed. The driving differs from run to run -- 640 to 870 triangles a list --
+which is the size of the differences between the last two columns in `none`.
+
+Held messages at any moment: four. Which messages they are, and why their
+queue stays full, is not established.
+
 ## Correction, 24 September 2026: steady state, and what the 17% is
 
 **The budgets below were taken from cumulative counters, and those include the

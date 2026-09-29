@@ -1,0 +1,155 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Hold refused messages instead of spinning on them
+
+A message whose queue is full and whose source allows retrying was put back
+on the external queue, and wait_dequeue returned it at once: the idle thread
+took it, was refused and requeued it 75,000 times a second in a race on the
+test machine, leaving 2.4% of the processor idle. While that thread runs no
+guest thread does, so nothing can drain the full queue until another message
+lands. On the Windows 95 target a refused message is now held and retried
+each time the function is entered again, and the thread blocks for a new
+message when every held one is refused (DKR_MQ_HOLD_REFUSED overrides). In a
+race: 49.5% idle in the snapshot-free mode, and 57.6 ms a frame against 59.4
+in the default mode. Counted every five seconds as [mq][idle].
+---
+--- a/ultramodern/src/mesgqueue.cpp	2026-09-29 22:41:18.542184597 +0200
++++ b/ultramodern/src/mesgqueue.cpp	2026-09-29 23:37:10.416805615 +0200
+@@ -90,6 +90,8 @@
+ };
+ 
+ static ExternalMessageQueue external_messages{};
++/* Refused messages the idle thread holds; see `wait_for_external_message`. */
++static std::deque<QueuedMessage> g_held;
+ static ultramodern::mutex pending_delivery_mutex;
+ static std::array<std::deque<std::shared_ptr<MessageDeliveryState>>, 32>
+     pending_deliveries;
+@@ -115,6 +117,14 @@
+             deliveries.push_back(std::move(queued.delivery));
+         }
+     }
++    // The messages the idle thread holds (see `wait_for_external_message`) are
++    // queued messages too.
++    for (QueuedMessage& held : g_held) {
++        if (held.delivery != nullptr) {
++            deliveries.push_back(std::move(held.delivery));
++        }
++    }
++    g_held.clear();
+ 
+     {
+         ultramodern::lock_guard lock{ pending_delivery_mutex };
+@@ -415,19 +425,108 @@
+     }
+ }
+ 
++/* --- A message that cannot land is not a reason to spin (E08) ---------------- *
++ *
++ * A message whose queue is full and whose source allows retrying used to go
++ * back on the external queue. `wait_dequeue` then returned it at once, since
++ * the queue was not empty, and the idle thread -- the one that runs this when
++ * no guest thread can -- took it, failed and put it back, for as long as the
++ * receiver had not drained its queue: 75,000 times a second in a race on the
++ * test machine, 2.4% of the processor left idle, taken from every quantum of
++ * the graphics and audio threads.
++ *
++ * Retrying it at once is pointless. While this thread runs no guest thread
++ * does, so nothing can drain the full queue until another message has landed
++ * and woken one. So a refused message is **held** here instead, and retried
++ * each time this is entered again -- that is, after a guest thread has had the
++ * chance to run -- before anything new is taken; and when every held message
++ * is refused again, this blocks until a new message arrives, as it would with
++ * none held. Held messages go first because they were queued first.
++ *
++ * Sleeping a millisecond after each refusal was tried first. It freed the
++ * processor (47% idle) and helped the snapshot-free mode, but it delayed the
++ * graphics thread's completion edges, which it waits for, and the default mode
++ * lost 7 ms a frame (59.4 to 66.2 ms). Holding frees the processor without
++ * delaying anything that can land.
++ *
++ * Only this function holds: every caller of it owns the guest token, so the
++ * list is touched by one thread at a time. On by default on the Windows 95
++ * target, where it was measured; DKR_MQ_HOLD_REFUSED=0 or =1 overrides. The
++ * counts are printed every five seconds as `[mq][idle]`. */
++extern "C" unsigned long long dkr_clock_now_us(void) __attribute__((weak));
++static const bool g_hold_refused = [] {
++#ifdef DKR_TARGET_WIN95
++    bool on = true;
++#else
++    bool on = false;
++#endif
++    const char* v = std::getenv("DKR_MQ_HOLD_REFUSED");
++    if (v != nullptr) { on = (v[0] == '1'); }
++    return on;
++}();
++
++static void count_idle_dequeue(bool refused) {
++    static unsigned long taken = 0, refusals = 0;
++    static unsigned long long last = 0;
++    taken++;
++    if (refused) { refusals++; }
++    if (dkr_clock_now_us == nullptr) { return; }
++    const unsigned long long now = dkr_clock_now_us();
++    if (last == 0) { last = now; }
++    if (now - last >= 5000000ull) {
++        std::fprintf(stderr, "[mq][idle] taken=%lu refused=%lu held=%lu in %llu ms t=%llu ms%s\n",
++                     taken, refusals, (unsigned long)g_held.size(), (now - last) / 1000ull,
++                     now / 1000ull, g_hold_refused ? " (hold on)" : "");
++        taken = refusals = 0;
++        last = now;
++    }
++}
++
++/* Offers one message to its queue. Returns true if it landed or was dropped,
++   false if it was refused and must be retried. */
++static bool offer_external_message(RDRAM_ARG QueuedMessage& to_send) {
++    const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
++    const bool refused = !sent && to_send.requeue_if_blocked;
++    count_idle_dequeue(refused);
++    if (refused) {
++        return false;
++    }
++    if (sent) {
++        defer_delivery_completion(to_send.delivery);
++    } else {
++        complete_delivery(to_send.delivery);
++    }
++    return true;
++}
++
+ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
++    if (g_hold_refused) {
++        // The held messages first, in order, each once.
++        for (std::size_t n = g_held.size(); n > 0; n--) {
++            QueuedMessage held = std::move(g_held.front());
++            g_held.pop_front();
++            if (offer_external_message(PASS_RDRAM held)) {
++                return;
++            }
++            g_held.push_back(std::move(held));
++        }
++        QueuedMessage to_send;
++        external_messages.wait_dequeue(to_send);
++        if (exited.load()) {
++            throw ultramodern::thread_terminated{};
++        }
++        if (!offer_external_message(PASS_RDRAM to_send)) {
++            g_held.push_back(std::move(to_send));
++        }
++        return;
++    }
+     QueuedMessage to_send;
+     external_messages.wait_dequeue(to_send);
+     if (exited.load()) {
+         throw ultramodern::thread_terminated{};
+     }
+-    const bool sent = do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false);
+-    if (!sent && to_send.requeue_if_blocked) {
++    if (!offer_external_message(PASS_RDRAM to_send)) {
+         external_messages.enqueue(to_send);
+-    } else if (sent) {
+-        defer_delivery_completion(to_send.delivery);
+-    } else {
+-        complete_delivery(to_send.delivery);
+     }
+ }
+ 
