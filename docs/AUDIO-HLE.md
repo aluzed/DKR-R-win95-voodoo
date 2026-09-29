@@ -294,6 +294,17 @@ zero exactly where the lane is at or above it, and its signed maximum is
 **4.15 ms** a task, a third below 28 September's 6.15 ms. No difference on
 10,000 cases and nineteen tasks.
 
+RESAMPLE's per-output choice of layout was a branch the pitch made
+unpredictable, aligned one output and not the next. Every output's position
+follows from the fraction and the pitch, so the span a call reads is known
+before it starts. When that span lies in DMEM, the output overlaps neither it
+nor the table, and the positions are even, the span and the table are copied
+out once in sample order, each doubleword's halves swapped, and every output
+reads four consecutive samples with no branch. Anything else, an in-place
+resample included, keeps reading DMEM as it goes. No difference on 10,000 cases
+and twenty-five tasks, twelve of them captured on the target. RESAMPLE goes
+from 18.3 to **16.1 µs**, the mixer from 4.15 to **4.04 ms** a task.
+
 **On the target, too.** Six tasks captured on the test machine with every MMX
 path above in the mixer (`DKR_AUDIO_CAPTURE=300,97,6`, at `24c06e8`) replay
 through the host's microcode oracle (`replay_aspmain`) with 0 bytes mismatched

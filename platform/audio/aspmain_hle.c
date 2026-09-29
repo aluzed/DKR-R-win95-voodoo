@@ -945,6 +945,42 @@ static s16 resample_one_mmx(u32 in, u32 lut)
 }
 #endif
 
+#if defined(__MMX__)
+/* One output from four samples and four taps already in sample order: the same
+   products, clamps and saturating sums as `resample_one_mmx`, without the
+   choice of layout. */
+static s16 resample_natural_one(const s16 *samples, const s16 *taps)
+{
+    const __m64 zero = _mm_setzero_si64();
+    const __m64 round = _mm_set1_pi32(0x4000);
+    __m64 s, t, lo, hi, p, sum;
+    memcpy(&s, samples, sizeof(s));
+    memcpy(&t, taps, sizeof(t));
+    lo = _mm_madd_pi16(_mm_unpacklo_pi16(s, zero), _mm_unpacklo_pi16(t, zero));
+    hi = _mm_madd_pi16(_mm_unpackhi_pi16(s, zero), _mm_unpackhi_pi16(t, zero));
+    lo = _mm_srai_pi32(_mm_add_pi32(lo, round), 15);
+    hi = _mm_srai_pi32(_mm_add_pi32(hi, round), 15);
+    p = _mm_packs_pi32(lo, hi);                                   /* p0 p1 p2 p3 */
+    sum = _mm_adds_pi16(p, _mm_srli_si64(p, 16));                 /* p0+p1 . p2+p3 . */
+    sum = _mm_adds_pi16(sum, _mm_srli_si64(sum, 32));
+    return (s16)_mm_cvtsi64_si32(sum);
+}
+
+/* A DMEM range of whole words in sample order: each word holds the sample at
+   its address in its high half, so the halves of every doubleword are swapped
+   on the way out. `bytes` is a multiple of 8. */
+static void dmem_to_samples(s16 *to, u32 from, u32 bytes)
+{
+    u32 k;
+    for (k = 0; k < bytes; k += 8u) {
+        __m64 v;
+        memcpy(&v, g_dmem + ((from + k) & 0xFFFu), sizeof(v));
+        v = _mm_or_si64(_mm_slli_pi32(v, 16), _mm_srli_pi32(v, 16));
+        memcpy(to + k / 2u, &v, sizeof(v));
+    }
+}
+#endif
+
 static void cmd_resample(u32 w0, u32 w1)
 {
     const u32 flags = (w0 >> 16) & 0xFFu;
@@ -972,10 +1008,60 @@ static void cmd_resample(u32 w0, u32 w1)
     for (i = 0; i < 8u; i++) { dmem_set_u8(in + i, dmem_u8(DMEM_RESAMPLE_STATE + i)); }
 
     fraction = dmem_u16(DMEM_RESAMPLE_STATE + 8u);
+#if defined(__MMX__)
+    /* **The input and the table in sample order, once per call (E08).** Every
+       output's position is known in advance -- the fraction and the pitch
+       decide it -- so the span the call reads is known too. When it lies in
+       DMEM, the output does not overlap it or the table, and the positions are
+       even, the span and the table are copied out in sample order, and each
+       output is four consecutive samples: no choice of layout per output, whose
+       branch the pitch made unpredictable. Otherwise the loop below reads DMEM
+       as it goes, as before. */
+    static s16 natural[0x1000 / 2 + 8];
+    static s16 natural_lut[64 * 4];
+    u32 natural_start = 0;
+    int natural_ok = 0;
+    if ((in & 1u) == 0 && count > 0) {
+        const u32 outputs = (((u32)count + 15u) / 16u) * 8u;
+        u32 f = fraction, pos = in, last = in, k;
+        for (k = 0; k < outputs; k++) {
+            last = pos;
+            f += pitch * 2u;
+            pos += (f >> 16) * 2u;
+            f &= 0xFFFFu;
+        }
+        {
+            const u32 lo = in & 0xFFFu;
+            const u32 hi = lo + (last - in) + 8u;
+            const u32 start = lo & ~7u;
+            const u32 end = (hi + 7u) & ~7u;
+            const u32 out_lo = out & 0xFFFu, out_hi = out_lo + outputs * 2u;
+            const u32 lut_lo = DMEM_RESAMPLE_LUT, lut_hi = DMEM_RESAMPLE_LUT + 64u * 8u;
+            if (end <= 0x1000u && out_hi <= 0x1000u &&
+                !(out_lo < hi && lo < out_hi) && !(out_lo < lut_hi && lut_lo < out_hi)) {
+                dmem_to_samples(natural, start, end - start);
+                dmem_to_samples(natural_lut, DMEM_RESAMPLE_LUT, 64u * 8u);
+                natural_start = start;
+                natural_ok = 1;
+            }
+        }
+    }
+#endif
     while (count > 0) {
         s16 result[8];
         u32 lane;
         for (lane = 0; lane < 8u; lane++) {
+#if defined(__MMX__)
+            if (natural_ok) {
+                result[lane] = resample_natural_one(
+                    natural + ((in & 0xFFFu) - natural_start) / 2u,
+                    natural_lut + ((fraction >> 10) & 0x3Fu) * 4u);
+                fraction += pitch * 2u;
+                in += (fraction >> 16) * 2u;
+                fraction &= 0xFFFFu;
+                continue;
+            }
+#endif
             /* The table entry is eight-byte aligned: two words, four taps. The
                four input samples are two words when the position is word-
                aligned, and three otherwise. */
