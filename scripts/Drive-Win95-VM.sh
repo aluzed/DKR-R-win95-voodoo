@@ -640,7 +640,9 @@ case "${1:-}" in
         # killed the script instead of retrying. The previous fix corrected the
         # same mistake one line below and left this one, because it was found by
         # reading rather than by running.
-        mode_line="$(grep '\[game\] gGameMode=' "$mode_log" | tail -1 || true)"
+        # The periodic report's line, or the line printed at each change of
+        # mode, whichever came last: the second is immediate.
+        mode_line="$(grep -a '\[game\] \(gGameMode\|mode\)=' "$mode_log" | tail -1 || true)"
         # `[[ ... ]] && break` would be wrong here and was: when the test fails it
         # returns 1, that becomes the `if` block's status, and `set -e` ends the
         # script with no message at all. Caught by running the command against a

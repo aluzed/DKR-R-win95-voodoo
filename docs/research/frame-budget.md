@@ -106,6 +106,12 @@ four-megabyte copy per display list (E08-S04). This is the measurement the
 decision on making `none` the default was waiting for: it is now a played
 race, not the attract mode, and the gap is the same.
 
+**A third race, the same build and mode, reads worse:** 2,686 frames over 99 s,
+37.0 ms mean, 75% on two retraces and 23% on three, render 5.4 ms. Same track,
+same kart, a different line through it. Two races are not a distribution; what
+the pair says is that a played race sits between three and nine frames in ten
+at thirty frames a second, with the rest mostly one retrace late.
+
 **The slow frames are not the renderer's.** Of the 3,163 race frames with
 `none`, the 331 longer than 42 ms average 5.5 ms of render and 874 triangles,
 against 6.1 ms and 987 for the others: they draw less, not more. They come in
