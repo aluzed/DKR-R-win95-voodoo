@@ -146,6 +146,70 @@ static void StartIdleMeter() {
         std::fprintf(stderr, "[boot][idle-meter] started at %llu Hz\n", dkr_cycles_hz());
     }
 }
+
+/* **The paging meter (E08-S04): is the game paged, counted rather than seen.**
+ *
+ * Windows 95 has no per-process memory counters; GetProcessMemoryInfo is NT's.
+ * What it has is the VMM's own statistics, the ones System Monitor plots, under
+ * HKEY_DYN_DATA: a value queried under PerfStats\StartStat starts collecting
+ * it, and PerfStats\StatData then reads it as a DWORD. The page-ins are pages
+ * read back from the swap file or from an executable's image -- a machine
+ * that is paging during play shows them climbing while the game runs.
+ *
+ * DKR_TRACE_PAGING=1. Every five seconds `[trace][paging]` prints each counter
+ * the system answered for, and GlobalMemoryStatus's free physical memory and
+ * load. The names are the ones System Monitor uses; one the system does not
+ * know is printed as -1 rather than guessed. */
+static const char* const kPagingCounters[] = {
+    "VMM\\cPageFaults", "VMM\\cPageIns", "VMM\\cPageOuts", "VMM\\cDiscards",
+    "VMM\\cpgFree", "VMM\\cpgSwapFile", "VMM\\cpgDiskcache", "VMM\\cpgLocked",
+};
+
+static long ReadPerfStat(const char* key_name, const char* counter) {
+    HKEY key = nullptr;
+    if (RegOpenKeyExA(HKEY_DYN_DATA, key_name, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+        return -1;
+    }
+    DWORD type = 0, value = 0, size = sizeof(value);
+    const LONG r = RegQueryValueExA(key, counter, nullptr, &type,
+                                    reinterpret_cast<LPBYTE>(&value), &size);
+    RegCloseKey(key);
+    return r == ERROR_SUCCESS ? static_cast<long>(value) : -1;
+}
+
+static DWORD WINAPI PagingMeterThread(LPVOID) {
+    for (const char* c : kPagingCounters) { (void)ReadPerfStat("PerfStats\\StartStat", c); }
+    const DWORD start = GetTickCount();
+    for (;;) {
+        Sleep(5000);
+        MEMORYSTATUS ms{};
+        ms.dwLength = sizeof(ms);
+        GlobalMemoryStatus(&ms);
+        std::fprintf(stderr, "[trace][paging] t=%lu ms", static_cast<unsigned long>(GetTickCount() - start));
+        for (const char* c : kPagingCounters) {
+            std::fprintf(stderr, " %s=%ld", c + 4, ReadPerfStat("PerfStats\\StatData", c));
+        }
+        std::fprintf(stderr, " avail-phys=%luK load=%lu%% avail-page=%luK\n",
+                     static_cast<unsigned long>(ms.dwAvailPhys / 1024u),
+                     static_cast<unsigned long>(ms.dwMemoryLoad),
+                     static_cast<unsigned long>(ms.dwAvailPageFile / 1024u));
+    }
+    return 0;
+}
+
+static void StartPagingMeter() {
+    if (std::getenv("DKR_TRACE_PAGING") == nullptr) { return; }
+    DWORD id = 0;
+    HANDLE thread = CreateThread(nullptr, 0, PagingMeterThread, nullptr, 0, &id);
+    if (thread != nullptr) {
+        CloseHandle(thread);
+        MEMORYSTATUS ms{};
+        ms.dwLength = sizeof(ms);
+        GlobalMemoryStatus(&ms);
+        std::fprintf(stderr, "[boot][paging] meter started, physical %luK\n",
+                     static_cast<unsigned long>(ms.dwTotalPhys / 1024u));
+    }
+}
 #endif
 
 static std::atomic<int> g_audio_busy{0};
@@ -1300,6 +1364,7 @@ int DkrMain(int argc, char** argv) {
         std::fprintf(stderr, "[boot][audio] cycle counter not calibrated; no audio zones\n");
     }
     StartIdleMeter();
+    StartPagingMeter();
     if (dkr_sampler_start()) {
         dkr_sampler_register_current_thread();
         std::fprintf(stderr, "[boot][sampler] sampling every 1 ms into D:\\SAMPLES.BIN\n");

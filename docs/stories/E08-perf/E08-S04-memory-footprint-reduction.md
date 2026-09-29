@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E08 — Performance |
-| **Status** | TODO |
+| **Status** | IN PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E00-S06, E08-S01, E07-S01 |
@@ -52,6 +52,42 @@ during play.
    E00-S06: what degrades, and whether the game stays playable.
 7. Update E00-S06's budget with the real figures after reduction.
 
+## Measurements
+
+### Paging, counted (29 September 2026)
+
+`DKR_TRACE_PAGING=1` starts a meter that reads, every five seconds, the VMM's
+own statistics -- the ones System Monitor plots, under `HKEY_DYN_DATA`,
+`PerfStats\StartStat` to start each and `PerfStats\StatData` to read it --
+and `GlobalMemoryStatus`. Windows 95 has no per-process counters, so these are
+the machine's, which is what paging is about anyway. Every name asked for is
+known to the system: `cPageFaults`, `cPageIns`, `cPageOuts`, `cDiscards` are
+counts since the counter started, `cpgFree`, `cpgSwapFile`, `cpgDiskcache`,
+`cpgLocked` are bytes.
+
+One 200 s run in normal mode with both opt-in options, 64 MiB machine, at the
+build after `543e574`:
+
+| t (from the meter's start) | page-outs | page-ins | free physical | load |
+|---|---:|---:|---:|---:|
+| 5 s | 0 | 9,886 | 34,976 KiB | 31% |
+| 22 s, loading | 0 | 17,462 | 29,484 KiB | 52% |
+| 42 s | 0 | 17,863 | 24,296 KiB | 54% |
+| 92 s, attract mode | 0 | 17,961 | 23,920 KiB | 54% |
+| 112 s, the race | 0 | 19,718 | 23,176 KiB | 54% |
+
+- **Nothing is ever written to the swap file**: `cPageOuts` stays at zero for
+  the whole run. The machine is not short of memory; a quarter of it is free
+  at every sample after loading.
+- **The page-ins are not swap-ins.** With no page ever written out, none can
+  be read back. They are file pages brought in on demand -- the 9.5 MB
+  executable's code the first time it runs, and the ROM's file reads. In the
+  attract mode they come at about two a second; the race's start brings 1,800
+  in fifteen seconds, the new scene's code and data.
+
+That answers work item 5 on this configuration: no paging during play, by
+count. It does not yet say anything about a long session or a 32 MiB machine.
+
 ## Acceptance criteria
 
 - [ ] The RDRAM snapshot and the number of tasks in flight are reduced according to
@@ -59,7 +95,7 @@ during play.
 - [ ] Every host-side cache has an explicit ceiling.
 - [ ] Heap fragmentation is measured over a long session and does not grow without
       bound.
-- [ ] No paging during play on the target configuration — verified by counting page
+- [x] No paging during play on the target configuration — verified by counting page
       faults, not by observation.
 - [ ] The behaviour on 32 MB is assessed and documented.
 - [ ] E00-S06's budget is updated with the real figures.
