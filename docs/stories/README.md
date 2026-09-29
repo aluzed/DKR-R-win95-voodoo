@@ -87,7 +87,7 @@ that accused them of lagging had come to lag itself — checked on 18 September 
 | [E02-S06](E02-system/E02-S06-game-bring-up.md) | `REVIEW` | The game starts, submits 1,500 display lists and draws its intro on the Voodoo |
 | [E04-S07](E04-hle-f3ddkr/E04-S07-n64-texture-decoding.md) | `REVIEW` | 12 formats decoded; the cache measured at 98.9 % and now consulted before converting |
 | [E04-S04](E04-hle-f3ddkr/E04-S04-billboarding.md) | `REVIEW` | Implemented in `f3ddkr.c` and exercised by the menu |
-| [E08-S01](E08-perf/E08-S01-frame-budget-instrumentation.md) | `IN_PROGRESS` | 21 counter groups per display list; they produced every measurement in `win95-game-render.md` |
+| [E08-S01](E08-perf/E08-S01-frame-budget-instrumentation.md) | `REVIEW` (29 September) | Every criterion ticked: zones, sampler, export, on-screen display, percentiles; audio output and the message loop shown negligible by the sampler |
 
 A list of things that are out of date is itself a thing that goes out of date. It
 is kept here rather than deleted because the evidence column is still the reason
