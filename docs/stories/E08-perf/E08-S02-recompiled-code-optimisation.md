@@ -165,6 +165,27 @@ Limits: one track, one player, eight karts, and a driver who spent part of
 the race against a wall. It is still the game's race code running with a
 player in it, which the attract mode was not.
 
+## Lever 1, re-argued (29 September 2026)
+
+The narrowed register showed that instruction count is not the currency on this
+machine: the core idles most of its issue slots, and what it waits for is
+memory. An optimisation level argued from "fewer instructions" answers the
+wrong question. The argument that survives is the other one the ticket makes:
+`-Os` shrinks the code, and a Pentium II's instruction cache is 16 KB.
+
+That was measured rather than assumed (`frame-budget.md`, "E08-S02, first
+measurement"): the game thread's processor time at `-O3`, `-O2` and `-Os` is
+4.49, 4.24 and 4.71 ms a frame, a spread the size of the run-to-run spread.
+Neither argument moves it on this machine; whether 86Box models instruction
+cache misses at all is not established, so the `-Os` case stays open for real
+silicon (E09-S04) rather than being settled here.
+
+And the ceiling on the lever is now known from the other side. In a race
+driven by hand (`frame-budget.md`), with `DKR_RDRAM_SNAPSHOT=none`, 88% of
+frames already sit on two retraces, the game's own thirty frames a second; the
+game thread is 4.3 ms of them. A compiler option could at best shorten a
+thread that is not what holds the frame. `-O3` stays.
+
 ## Acceptance criteria
 
 - [x] The hot functions are identified on a real play session -- a race
@@ -192,8 +213,9 @@ player in it, which the attract mode was not.
       times the whole budget, and it does not vary with what is on screen. Not a
       race, and the narrow build was not driven through the same route: see
       `docs/research/cpu-budget.md`.
-- [ ] Lever 1 is re-argued before it is measured: "fewer instructions" is now known
-      not to be the currency on this machine.
+- [x] Lever 1 is re-argued before it is measured: "fewer instructions" is now known
+      not to be the currency on this machine. Re-argued above: the cache argument
+      is the one left, and the measured levels do not separate.
 
 ## Risks
 
