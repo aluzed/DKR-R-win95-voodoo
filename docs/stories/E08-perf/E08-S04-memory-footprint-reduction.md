@@ -203,6 +203,24 @@ nothing below 0x1D0000 but other scenes might, are still copied.
 No rejected read. The skid marks and the black ground in the race screenshots
 appear the same with the whole copy, so they are not this change's.
 
+### No regression, the shipped configuration (30 September 2026)
+
+Patches 0055 to 0057 change how the snapshot is allocated, how much of it is
+copied, and how the runtime delivers messages. The build at `78e7357`, with no
+option set -- the default snapshot mode, as a player would get it -- ran 4,500 s
+of host time, 33.6 minutes of the game, the attract sequence looping through
+its menus, demo races and level loads, with the timing export on:
+
+- 33,920 display lists, 953 to 1,082 in every minute; the longest wait between
+  two is 965 ms, at a level load;
+- 51,456 audio tasks with no gap over 421 ms and no underrun;
+- no rejected read, no `LOCKUP` mode, the held messages steady at four or five.
+
+Beside it, the races of 29 and 30 September -- eleven, both snapshot modes,
+driven by hand and by `Drive-To-Race.sh` -- reached their race and ran it.
+That is one track and the attract sequence, not the game; it is what this
+ticket's changes can be expected to disturb, and they do not.
+
 ### A longer session (29 September 2026)
 
 The same meter over 1,260 s of wall time, which the emulator's 57% speed makes
@@ -294,7 +312,8 @@ them; they carry messages, not data that accumulates.
       faults, not by observation.
 - [x] The behaviour on 32 MB is assessed and documented.
 - [x] E00-S06's budget is updated with the real figures.
-- [ ] No regression in the game's behaviour.
+- [x] No regression in the game's behaviour: 33.6 minutes of the shipped
+      configuration without a stall, a gap or an underrun, and eleven races (above).
 
 ## Risks
 
