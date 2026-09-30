@@ -151,6 +151,13 @@ byte-identical to before; `CKEY1746` over three frames stays right; and a
 capture taken at random in a race (`CKEY1819`) shows the game's frame and the
 oracle's agreeing, the wall smooth.
 
+What the three fixes cost, the attract mode over its steady window (normal
+mode, `none`, idle meter on), `09c5022` against `81d72ae`: render per list
+5.64 to 5.72 ms at the median and 6.89 to 7.01 ms on average; the frame is
+34.65 against 34.57 ms. A tenth of a millisecond, for textures that are now
+the ones the list names -- some of it transfers that should always have
+happened.
+
 ## How the investigation went, for next time
 
 Before the probe named the fill rectangle, this was the reasoning:
