@@ -155,8 +155,28 @@ to do it halts, and 86Box evidently keeps emulated time with the host less
 tightly across a halt than across a busy loop. The item costs are measured on
 the guest's own clock, so the working hypothesis is that halting is where
 86Box's timing departs from a Pentium II's; on silicon a thread's cost does not
-depend on whether the processor idled before it. It is a hypothesis, and
-E09-S04 is where it would be settled.
+depend on whether the processor idled before it. **Tested the same day, and it holds.** `DKR_TRACE_IDLE_METER=1` runs a thread
+at idle priority that spins whenever nothing else is ready, so the guest's
+processor never halts. The same 0056 build with it on:
+
+| Item | spinning | 0056 | 0056, never halted |
+|---|---:|---:|---:|
+| Graphics thread, awake | 8.29 ms | 9.06 ms | 8.39 ms |
+| Audio mixer | 4.63 ms | 5.14 ms | 4.73 ms |
+| Recompiled game (thread 3) | 4.29 ms | 5.24 ms | 4.33 ms |
+| Idle thread, less parked | 7.45 ms | 0.03 ms | 0.04 ms |
+| guest seconds in 200 s of host time | 138.7 | 88.4 | 108.6 |
+| frames on two retraces | 90% | 94% | 94.5% |
+
+With the processor kept busy by a thread that takes nothing from anyone, the
+items cost what they cost before, and the spin is still gone. **The dearer
+items are 86Box's halt, not the patch.** On this emulator a guest that halts
+between bursts of work pays for it in the work that follows; on a Pentium II
+it would not, and there the patch's gain is the whole 7.45 ms.
+
+It is also a rule for measuring from now on: on this machine a budget run
+wants the idle meter on, or its item costs carry an emulation artefact that
+grows with the spare time the port leaves.
 
 What does not depend on it: more frames reach the game's thirty a second, in
 the attract mode (90 to 94%) and in a race (78 to 87%, below).
