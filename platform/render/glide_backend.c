@@ -392,6 +392,7 @@ static struct {
     unsigned long    pass2_blend;       /* drawn over a blended first pass */
     unsigned long    pass2_by_shade;    /* the per-channel form, two passes */
     unsigned long    recipe_multipass;  /* first cycles taken from the table */
+    unsigned long    shade_prim_states; /* shade x primitive in one stage */
     unsigned long    prepass_drawn;     /* first cycles done in two blends */
     unsigned long    prepass_alpha_test;/* refused: a cutout is in force */
     unsigned long    prepass_in_vertex; /* the constant carried in the vertex */
@@ -1199,6 +1200,42 @@ static void gl_present(void *self)
     dkr_glide_swap();
 }
 
+/* --- The shade times the primitive, in one stage ---------------------------- *
+ *
+ * `G_CC_BLENDI_ENV_ALPHA` + `G_CC_MODULATEIA_PRIM2`, which DKR draws its skid
+ * marks with:
+ *
+ *     cycle 1   rgb (ENV - SHADE) x ENV_ALPHA + SHADE     a  SHADE
+ *     cycle 2   rgb COMBINED x PRIMITIVE                  a  COMBINED x PRIM
+ *
+ * The catalogue calls it `MULTIPASS` and the second pass only knows lerps toward
+ * the environment colour, so the card drew the first cycle -- the raw vertex
+ * colour at the raw vertex alpha -- and dropped the modulation: red tracks where
+ * the RDP draws them dark and an eighth opaque (30 September 2026,
+ * `docs/research/win95-frame-carried-defect.md`).
+ *
+ * With the environment's alpha at zero the first cycle is the shade exactly, and
+ * the whole configuration is `ITERATED x CONSTANT` in colour and in alpha, with
+ * the primitive in the constant register: one Glide stage. Recognised by the
+ * mux fields, as `pass2_kind` recognises its own, and only this shape. */
+static int shade_times_prim(const dkr_cc_entry *e, const dkr_render_state *st)
+{
+    if (e == 0 || e->cycle != DKR_CYCLE_2) { return 0; }
+    if (((st->env_color >> 24) & 0xFFu) != 0u) { return 0; }
+    return e->rgb[0].a == (unsigned char)DKR_CC_ENVIRONMENT &&
+           e->rgb[0].b == (unsigned char)DKR_CC_SHADE &&
+           e->rgb[0].c == (unsigned char)DKR_CC_ENV_ALPHA &&
+           e->rgb[0].d == (unsigned char)DKR_CC_SHADE &&
+           e->alpha[0].a == e->alpha[0].b &&
+           e->alpha[0].d == (unsigned char)DKR_CC_SHADE &&
+           e->rgb[1].a == (unsigned char)DKR_CC_COMBINED &&
+           e->rgb[1].c == (unsigned char)DKR_CC_PRIMITIVE &&
+           e->rgb[1].b == 8u && e->rgb[1].d == 7u &&         /* the zeros of B and D */
+           e->alpha[1].a == (unsigned char)DKR_CC_COMBINED &&
+           e->alpha[1].c == (unsigned char)DKR_CC_PRIMITIVE &&
+           e->alpha[1].b == 7u && e->alpha[1].d == 7u;
+}
+
 static void gl_set_state(void *self, const dkr_render_state *state)
 {
     (void)self;
@@ -1297,6 +1334,21 @@ static void gl_set_state(void *self, const dkr_render_state *state)
              * **alpha**, and the vertex colour is near zero there. Two days were
              * spent on the second cycle of that configuration; the first was
              * what was wrong. */
+            if (e->category == DKR_CC_MULTIPASS && shade_times_prim(e, state)) {
+                sh_color_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                                 GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_CONSTANT, 0);
+                sh_alpha_combine(GR_COMBINE_FUNCTION_SCALE_OTHER, GR_COMBINE_FACTOR_LOCAL,
+                                 GR_COMBINE_LOCAL_ITERATED, GR_COMBINE_OTHER_CONSTANT, 0);
+                sh_constant_color(state->prim_color);
+                b.shade_prim_states++;
+                apply_texture_modes(state);
+                apply_blend(state->blend);
+                apply_depth(state->depth);
+                apply_cull(state->cull);
+                apply_alpha_test(state->alpha_test, state->alpha_reference);
+                apply_fog(state->fog_enabled, state->fog_color);
+                return;
+            }
             if (e->setup.uses_texture) { bind_texture(state->texture); }
             /* --- The first half of an exact pair ------------------------------ *
              *

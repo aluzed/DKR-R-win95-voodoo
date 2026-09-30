@@ -95,12 +95,12 @@ fix. In the game, the black-surface hunt that found a case in one to six cycles
 ran 21 cycles for one screen past its threshold -- a kart's dark underside --
 and there the card and the oracle agree, except for one thing below.
 
-## Still different: the skid marks
+## Then: the skid marks
 
 In that frame the tyre tracks are red on the card and a dark translucent green
 in the oracle. They were red before the fix too, so this is another defect.
 
-**Diagnosed, not fixed.** The oracle's probe at (62,470) of `CKEY2370` names the
+**Diagnosed and fixed the same evening.** The oracle's probe at (62,470) of `CKEY2370` names the
 track's draw: recipe 14, `G_CC_BLENDI_ENV_ALPHA` + `G_CC_MODULATEIA_PRIM2`,
 two-cycle, catalogued `MULTIPASS`, primitive `0x203F3F3F`, alpha-blended.
 
@@ -116,9 +116,13 @@ darkens it to a quarter and makes it an eighth opaque.
 
 The shape is one Glide stage can hold when the first cycle reduces to the shade
 (environment alpha zero): colour `CONSTANT x ITERATED`, alpha `CONSTANT_ALPHA x
-ITERATED_ALPHA`, with the primitive in the constant register. That is the fix to
-write, and like every change in the combiner it has to be scored against the
-corpus (`tools/render/texscore`, E05-S03) before it is kept.
+ITERATED_ALPHA`, with the primitive in the constant register. `gl_set_state`
+now programs exactly that when a `MULTIPASS` entry has this shape and the
+environment's alpha is zero (`shade_times_prim`). On the card, `CKEY2370`'s
+tracks come out dark and translucent like the oracle's -- (24,150,16) against
+(29,159,33) at the probed pixel, where they were (206,8,57) -- and the twelve
+captures of the card corpus are byte-identical to the build before: none of
+them draws with this recipe.
 
 ## How the investigation went, for next time
 
