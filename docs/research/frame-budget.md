@@ -207,9 +207,9 @@ hub's 213 ms frame of 21 September. `none`, normal mode, idle meter on, at
 2,600 triangles a list, and falls to 24 to 27 when it draws 2,900 to 3,000 and
 the render passes 16 ms. That is where the renderer is on the critical path
 now: the heaviest views of the hub, not the races. Note also that the hub's
-`gGameMode` reads MENU until the player drives off, and INGAME after -- the
-switch came at 141 s here -- so a race-window cut by the mode does not find
-the hub's first minutes.
+`gGameMode` read MENU for its first minute here and INGAME from 141 s; what
+switched it is not established, so a window cut by the mode does not find the
+hub's first minute.
 
 ## The attract mode's race after 0056 and 0057, 30 September 2026
 
