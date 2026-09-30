@@ -186,6 +186,31 @@ length now covers less of the game, so windows are to be read on the guest's
 clock, as `budget.py`-style readings and `timing_report.py --skip-s/--until-s`
 already do, and a 150 s run no longer reaches 89 s of the game.
 
+## The adventure hub, 30 September 2026
+
+The richest scene the port draws -- Timber's Island, entered from a new save
+game and driven around by hand -- measured for the first time since the
+hub's 213 ms frame of 21 September. `none`, normal mode, idle meter on, at
+`39c0679`; ten-second windows of the timing export once the hub is loaded:
+
+| window | frames | mean period | render | triangles a list |
+|---|---:|---:|---:|---:|
+| 80-90 s | 298 | 33.6 ms | 7.7 ms | 2,227 |
+| 90-100 s | 295 | 33.9 ms | 9.8 ms | 2,564 |
+| 100-110 s | 294 | 34.0 ms | 10.0 ms | 2,574 |
+| 110-120 s | 294 | 34.0 ms | 12.1 ms | 2,565 |
+| 120-130 s | 241 | 41.5 ms | 16.6 ms | 2,971 |
+| 130-140 s | 275 | 36.4 ms | 15.9 ms | 2,916 |
+| 140-150 s | 256 | 39.0 ms | 11.4 ms | 2,157 |
+
+**The hub runs at the game's thirty frames a second** while it draws up to
+2,600 triangles a list, and falls to 24 to 27 when it draws 2,900 to 3,000 and
+the render passes 16 ms. That is where the renderer is on the critical path
+now: the heaviest views of the hub, not the races. Note also that the hub's
+`gGameMode` reads MENU until the player drives off, and INGAME after -- the
+switch came at 141 s here -- so a race-window cut by the mode does not find
+the hub's first minutes.
+
 ## The attract mode's race after 0056 and 0057, 30 September 2026
 
 The scene that ran out of processor on 28 September -- the attract mode's
