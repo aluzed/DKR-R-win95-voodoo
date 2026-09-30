@@ -186,6 +186,23 @@ length now covers less of the game, so windows are to be read on the guest's
 clock, as `budget.py`-style readings and `timing_report.py --skip-s/--until-s`
 already do, and a 150 s run no longer reaches 89 s of the game.
 
+## The attract mode's race after 0056 and 0057, 30 September 2026
+
+The scene that ran out of processor on 28 September -- the attract mode's
+race, 95 to 101 s after boot, about 2,000 triangles a list -- with the current
+build, `none`, normal mode, idle meter on (the halt artefact above):
+
+| | `aaedd23` | `70ba8c4` | `09c5022` |
+|---|---:|---:|---:|
+| frames, 95-101 s | 126, 114 | 136, 141 | **162** |
+| median period | | | **33.5 ms** |
+| mean period | 47.5, 52.6 ms | 44.1, 43.2 ms | 37.5 ms |
+| render per list, median | 19-22 ms | | 15.3 ms |
+
+The heaviest scene measured now runs at the game's thirty frames a second at
+the median, with a 15 ms render; the mean carries one transition of 344 ms.
+Over the steady window, 40 to 94 s, the mean period is 34.65 ms.
+
 ## The idle thread spun on refused messages, 29 September 2026
 
 **The processor was never idle, and it should have been.** With the idle meter
