@@ -346,6 +346,10 @@ static void say_counts(const char *who, const replay_counts *c)
    instance costs nothing. */
 /* See `fog_disabled` in `f3ddkr.h`. */
 static int g_no_fog = 0;
+/* `--no-stats`: the decoder as the game runs it with DKR_GFX_NO_STATS=1. */
+static int g_no_stats = 0;
+/* `--no-texcache`: every texture converted and uploaded, as DKR_NO_TEXCACHE=1. */
+static int g_no_texcache = 0;
 
 static dkr_f3d_context g_ctx;
 
@@ -361,6 +365,8 @@ static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
     g_ctx.no_cull       = (unsigned char)(no_cull ? 1 : 0);
     g_ctx.no_alpha_test = (unsigned char)(no_alpha ? 1 : 0);
     g_ctx.fog_disabled  = (unsigned char)(g_no_fog ? 1 : 0);
+    g_ctx.no_statistics = (unsigned char)(g_no_stats ? 1 : 0);
+    g_ctx.no_texture_cache = (unsigned char)(g_no_texcache ? 1 : 0);
     g_ctx.no_odd_row_swap = (unsigned char)(g_no_odd_row_swap ? 1 : 0);
     g_ctx.no_tile_texel_size =
         (unsigned char)(g_no_tile_texel_size ? 1 : 0);
@@ -751,7 +757,7 @@ static void usage(const char *me)
             "usage: %s [--card|--both] [--single-tmu] [--log file] [--trace]\n"
             "          [--no-odd-row-swap] [--no-tile-texel-size]\n"
             "          [--probe X,Y] [--dump-textures dir] [--no-cull]\n"
-            "          [--frames N] [--probe-depth X,Y] [--no-fog]\n"
+            "          [--frames N] [--probe-depth X,Y] [--no-fog] [--no-stats] [--no-texcache]\n"
             "          [--recipe-map file] [--texel-factor-one] [--no-multipass]\n"
             "          capture.bin [out.bmp]\n"
             "       %s --recipe N          print one catalogue entry and stop\n",
@@ -778,6 +784,8 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--single-tmu") == 0) { single_tmu = 1; }
         else if (strcmp(argv[i], "--no-cull") == 0)    { no_cull = 1; }
         else if (strcmp(argv[i], "--no-fog") == 0)     { g_no_fog = 1; }
+        else if (strcmp(argv[i], "--no-stats") == 0)   { g_no_stats = 1; }
+        else if (strcmp(argv[i], "--no-texcache") == 0) { g_no_texcache = 1; }
         else if (strcmp(argv[i], "--no-alpha-test") == 0) { no_alpha = 1; }
         else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
         else if (strcmp(argv[i], "--no-multipass") == 0) { no_multipass = 1; }

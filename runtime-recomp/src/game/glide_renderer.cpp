@@ -192,6 +192,13 @@ static void install_render_zones(dkr_render_backend* b) {
 
 namespace {
 
+// **The card's own picture of the list F9 captured.** The capture replays in a
+// fresh renderer; this is the same list as the running renderer drew it, with
+// every cache and every piece of state it carried from the lists before. A
+// defect seen in play and absent from the replay is one of those, and the pair
+// of images is what shows it (a black wall on Ancient Lake, 30 September 2026).
+bool key_frame_pending = false;
+
 #if defined(DKR_TARGET_WIN95)
 // The size of the snapshot the graphics thread receives. It is fixed in
 // `submit_rsp_task` (events.cpp) at 8 MiB, the N64's expanded RDRAM -- **not the
@@ -1174,6 +1181,7 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             }
             if (!key_shot && dkr_window_take_capture_request()) {
                 key_shot = true;
+                key_frame_pending = true;
                 std::fprintf(stderr, "[gfx] capture: F9 at list %llu\n",
                              static_cast<unsigned long long>(index));
                 /* Committed here too. The line above was added this morning so a
@@ -1449,6 +1457,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         }
     }
 
+    if (key_frame_pending) {
+        key_frame_pending = false;
+        std::fprintf(stderr, "[gfx] capture: the card's frame of that list -> D:\\KEYFRAME.BMP\n");
+        dump_frame("D:\\KEYFRAME.BMP");
+    }
     backend_.present(backend_.self);
 
     if (clock_ready) {

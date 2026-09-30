@@ -35,6 +35,7 @@
 #include "tmu.h"
 #include "combiner.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define WINAPI __stdcall
@@ -473,10 +474,15 @@ static void shadow_forget_all(void)
     memset(&g_cc_shadow, 0, sizeof(g_cc_shadow));
 }
 
+/* `DKR_NO_STATE_SHADOW=1` writes every state as if nothing were remembered:
+   the switch that tells a stale shadow from anything else in one run. */
+static int g_shadow_off = -1;
+
 static int same_args(unsigned char *valid, FxU32 *kept, const FxU32 *now, int n)
 {
     int i;
-    if (*valid) {
+    if (g_shadow_off < 0) { g_shadow_off = getenv("DKR_NO_STATE_SHADOW") != 0; }
+    if (*valid && !g_shadow_off) {
         for (i = 0; i < n && kept[i] == now[i]; i++) { }
         if (i == n) { return 1; }
     }
@@ -1112,6 +1118,14 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
        frame reads as a change against the last pixel of the previous one. */
     if (g_watch_armed) { g_watch_last = clear_argb & 0x00FFFFFFu; }
     (void)self;
+    {
+        /* Diagnostic: `DKR_FORGET_AT_FRAME=1` drops every remembered state at
+           each frame, so that a defect carried from one frame to the next can
+           be told from one inside a frame. */
+        static int forget = -1;
+        if (forget < 0) { forget = getenv("DKR_FORGET_AT_FRAME") != 0; }
+        if (forget) { shadow_forget_all(); b.has_state = 0; }
+    }
     b.triangles = 0;
     {
         /* The allocator has to know a frame is starting: that is what lifts the
