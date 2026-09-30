@@ -198,6 +198,7 @@ namespace {
 // defect seen in play and absent from the replay is one of those, and the pair
 // of images is what shows it (a black wall on Ancient Lake, 30 September 2026).
 bool key_frame_pending = false;
+unsigned long long key_frame_index = 0;
 
 #if defined(DKR_TARGET_WIN95)
 // The size of the snapshot the graphics thread receives. It is fixed in
@@ -1179,9 +1180,25 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
                 std::fprintf(stderr, "[gfx] capture: F9 armed\n");
                 dkr_diag_commit();
             }
-            if (!key_shot && dkr_window_take_capture_request()) {
-                key_shot = true;
+            // `DKR_CAPTURE_KEY=<n>` allows n presses in one run (1 if not a
+            // number): each writes its capture and the card's frame of it, so a
+            // run can sample several moments of play for comparison.
+            static const unsigned long key_limit = [] {
+                const char* v = std::getenv("DKR_CAPTURE_KEY");
+                const unsigned long n = v ? std::strtoul(v, nullptr, 10) : 0UL;
+                return n > 1UL ? (n > 32UL ? 32UL : n) : 1UL;
+            }();
+            static unsigned long key_count = 0;
+            // One press, one capture: a held or repeated key reached here on
+            // consecutive lists and wrote a burst of them, which filled the
+            // transfer disk's root directory in one run.
+            static unsigned long long key_last = 0;
+            if (!key_shot && dkr_window_take_capture_request() &&
+                (key_last == 0 || index >= key_last + 30u)) {
+                key_last = index;
+                if (++key_count >= key_limit) { key_shot = true; }
                 key_frame_pending = true;
+                key_frame_index = index;
                 std::fprintf(stderr, "[gfx] capture: F9 at list %llu\n",
                              static_cast<unsigned long long>(index));
                 /* Committed here too. The line above was added this morning so a
@@ -1459,8 +1476,12 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
 
     if (key_frame_pending) {
         key_frame_pending = false;
-        std::fprintf(stderr, "[gfx] capture: the card's frame of that list -> D:\\KEYFRAME.BMP\n");
-        dump_frame("D:\\KEYFRAME.BMP");
+        // `KFnnnn.BMP` beside `CKEYnnnn.BIN`, the same list number.
+        char kf_path[24];
+        std::sprintf(kf_path, "D:\\KF%04lu.BMP",
+                     static_cast<unsigned long>(key_frame_index % 10000u));
+        std::fprintf(stderr, "[gfx] capture: the card's frame of that list -> %s\n", kf_path);
+        dump_frame(kf_path);
     }
     backend_.present(backend_.self);
 

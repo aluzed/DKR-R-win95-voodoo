@@ -14,7 +14,8 @@ the E08 work.
 
 ## How to catch it
 
-`DKR_CAPTURE_KEY=1` arms F9. A capture now also writes `D:\KEYFRAME.BMP`: the
+`DKR_CAPTURE_KEY=1` arms F9 (`=<n>` for n presses). A capture now also writes
+`D:\KFnnnn.BMP` beside `D:\CKEYnnnn.BIN` (first named `KEYFRAME.BMP`): the
 card's own frame of the captured list, as the running renderer drew it. The pair
 -- the capture replayed cold, and the frame the game showed -- is what separates
 a defect in the list from a defect in what the renderer carried into it.
@@ -158,6 +159,29 @@ mode, `none`, idle meter on), `09c5022` against `81d72ae`: render per list
 the ones the list names -- some of it transfers that should always have
 happened.
 
+## Sampling play for more of the same (30 September 2026, evening)
+
+`DKR_CAPTURE_KEY=<n>` now allows n presses in a run, one capture and one card
+frame (`KFnnnn.BMP`) each, at least thirty lists apart -- a single press used
+to arrive as a burst on consecutive lists and filled the transfer disk's root
+directory in one run. A pass presses F9 at the attract sequence, PLAYER
+SELECT, GAME SELECT, the track choice, the race start and nine moments of the
+race, then replays every capture in the oracle and compares it with the card's
+frame (`tools/render/compare`, the project's metric).
+
+With `DKR_RDRAM_SNAPSHOT=none`, fourteen samples, frankly different pixels per
+million: 42, 826, 338, 296, 524, 540, 120, 22, 58, 61, 4016, 3225, 1927, 1227.
+The worst, list 2102 in front of the dinosaur head, differs at the edge of a
+translucent mist and in texture detail: the ordinary distance between the card
+and the oracle, not a defect of the kind above.
+
+**Captures stall the default mode.** Writing eight megabytes to the transfer
+disk holds the graphics thread for seconds. In the snapshot mode a graphics
+task is outstanding meanwhile, DKR's scheduler watchdog counts the retraces,
+and the game stopped drawing after the second capture of a pass. In `none` the
+SP and DP edges are published before the drawing, nothing is outstanding, and
+all fourteen captures went through. Sample in `none`.
+
 ## How the investigation went, for next time
 
 Before the probe named the fill rectangle, this was the reasoning:
@@ -174,4 +198,4 @@ about the state.
 
 Tools added for this: `REPLAY.EXE --no-stats`, `--no-texcache`;
 `DKR_NO_STATE_SHADOW`, `DKR_FORGET_AT_FRAME` (backend diagnostics, off by
-default); `KEYFRAME.BMP` beside every F9 capture.
+default); `KFnnnn.BMP` beside every F9 capture.
