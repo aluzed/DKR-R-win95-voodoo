@@ -159,6 +159,16 @@ mode, `none`, idle meter on), `09c5022` against `81d72ae`: render per list
 the ones the list names -- some of it transfers that should always have
 happened.
 
+## No regression from the three fixes
+
+The shipped configuration at `fa7a79a`, no option set, 1,500 s of host time --
+11.2 minutes of the attract sequence, menus, demo races and loads -- with the
+timing export: 11,136 display lists, 988 to 1,039 a minute, no wait over a
+second, 16,896 audio tasks with no underrun, no rejected read, no lockup. The
+texture allocator did what it did before the fixes, per display list: 9.4
+table scans against 9.1, 0.59 downloads against 0.59. The sampled key and the
+downloads on upload changed which texels are drawn, not how many are sent.
+
 ## Sampling play for more of the same (30 September 2026, evening)
 
 `DKR_CAPTURE_KEY=<n>` now allows n presses in a run, one capture and one card
