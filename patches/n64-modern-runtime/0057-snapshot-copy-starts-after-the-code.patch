@@ -1,0 +1,64 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] The snapshot copy starts after the game's code
+
+The first 0xDC630 bytes of RDRAM are DKR's code (main_TEXT_END in the
+decomp's map) and no display list reads them: over the 21 scenes of the
+render corpus the decoder's lowest read is in the page at 0x0D0000. On the
+Windows 95 target the copy now starts at 0xDC000, skipping 880 KiB of the
+four megabytes: 31.7 to 24.9 ms a display list. DKR_RDRAM_SNAPSHOT_FROM
+moves the start; 0 restores the whole copy.
+---
+--- a/ultramodern/src/events.cpp	2026-09-30 12:17:58.743893003 +0200
++++ b/ultramodern/src/events.cpp	2026-09-30 12:49:47.406372414 +0200
+@@ -378,6 +378,36 @@
+     return decided;
+ }
+ 
++/* **Copy from where the game's data starts, not from address zero (E08-S04).**
++ *
++ * The first 0xDC630 bytes of RDRAM are DKR's code (`main_TEXT_END` in the
++ * decomp's linker map), and no display list reads code: across the 21 scenes
++ * of the render corpus the decoder's lowest read is in the 64 KiB page at
++ * 0x0D0000, the page holding the end of the code and the start of `.data`.
++ * The copy begins at the page below `.data`, 0xDC000, and skips 880 KiB of
++ * the four megabytes -- about a fifth of a copy measured at 31.7 ms a display
++ * list. The bytes below it are left as the buffer holds them, zero from the
++ * system (patch 0055) on this target. DKR_RDRAM_SNAPSHOT_FROM moves the start;
++ * 0 restores the whole copy. */
++static size_t snapshot_copy_from(void) {
++    static size_t decided = (size_t)-1;
++    if (decided == (size_t)-1) {
++#ifdef DKR_TARGET_WIN95
++        decided = 0xDC000;
++#else
++        decided = 0;
++#endif
++        const char* choice = std::getenv("DKR_RDRAM_SNAPSHOT_FROM");
++        if (choice != nullptr) {
++            const unsigned long asked = std::strtoul(choice, nullptr, 0);
++            if (asked < 0x400000UL) { decided = static_cast<size_t>(asked) & ~static_cast<size_t>(0xFFF); }
++        }
++        std::fprintf(stderr, "[snap][from] copy starts at 0x%06llX\n",
++                     (unsigned long long)decided);
++    }
++    return decided;
++}
++
+ static std::atomic<unsigned long long> g_snapshot_high_water{0};
+ 
+ static std::atomic<unsigned long long> g_snapshot_alloc_us{0};
+@@ -1260,7 +1290,13 @@
+          * up there gets whatever the allocator left instead of zero, and
+          * nothing is supposed to make one -- the texture images observed span
+          * 0x20CCE0 to 0x3712C0, all of them inside the half that is copied. */
+-        std::memcpy(rdram_snapshot.get(), rdram, snapshot_copy_size());
++        {
++            const size_t from = snapshot_copy_from();
++            const size_t size = snapshot_copy_size();
++            if (from < size) {
++                std::memcpy(rdram_snapshot.get() + from, rdram + from, size - from);
++            }
++        }
+         dkr_exclusive_leave(snapshot_exclusive_previous, snapshot_exclusive_at);
+         if (g_snapshot_trace_on) {
+             const unsigned long long t2 = dkr_clock_now_us();

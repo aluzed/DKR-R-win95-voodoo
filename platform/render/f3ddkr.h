@@ -902,6 +902,12 @@ unsigned long dkr_f3d_run(dkr_f3d_context *ctx, unsigned int address);
  * the first one's opcode, inclusive of any backend call it makes, and texture
  * conversion is timed on its own. Null -- the default, and what every witness and
  * test leaves it -- costs one branch per command. */
+/* The 64 KiB pages of RDRAM the decoder has read, when built with
+   DKR_F3D_READ_EXTENT (host tools only; see `in_range` in f3ddkr.c). */
+#define DKR_F3D_READ_PAGES 128
+#ifdef DKR_F3D_READ_EXTENT
+extern unsigned char dkr_f3d_read_pages[DKR_F3D_READ_PAGES];
+#endif
 extern unsigned long long (*dkr_f3d_zone_clock)(void);
 extern unsigned long long dkr_f3d_opcode_ticks[256];
 /* `cmd_triangle`, which is most of the decoder, split into its phases:

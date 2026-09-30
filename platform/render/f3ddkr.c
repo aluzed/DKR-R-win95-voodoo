@@ -145,12 +145,34 @@ const char *dkr_f3d_reject_text(dkr_f3d_reject r)
  * checkable: there is only one place to re-read to be sure that nothing leaves
  * RDRAM.
  */
+/* **Which RDRAM the decoder reads, for the host tools only (E08-S04).** The
+ * snapshot copies four megabytes per display list because nothing said which
+ * part of them a list reads. Built with DKR_F3D_READ_EXTENT, every read below
+ * marks the 64 KiB pages it touches; `tools/render/replay` prints them. The
+ * game's build does not define it and pays nothing. */
+#ifdef DKR_F3D_READ_EXTENT
+unsigned char dkr_f3d_read_pages[DKR_F3D_READ_PAGES];
+static void note_read(unsigned int addr, unsigned int len)
+{
+    unsigned int page = addr >> 16;
+    const unsigned int last = (len ? addr + len - 1u : addr) >> 16;
+    for (; page <= last && page < DKR_F3D_READ_PAGES; page++) {
+        dkr_f3d_read_pages[page] = 1;
+    }
+}
+#define NOTE_READ(a, len) note_read((a), (len))
+#else
+#define NOTE_READ(a, len) ((void)0)
+#endif
+
 static int in_range(const dkr_f3d_context *c, unsigned int addr, unsigned int len)
 {
     /* In 64 bits so that the sum does not wrap: `addr + len` in 32 bits can
        become small again and let an obviously out-of-bounds range through. */
     const unsigned long long end = (unsigned long long)addr + (unsigned long long)len;
-    return c->rdram && end <= (unsigned long long)c->rdram_size;
+    const int ok = c->rdram && end <= (unsigned long long)c->rdram_size;
+    if (ok) { NOTE_READ(addr, len); }
+    return ok;
 }
 
 /* --- Two memory layouts for the same RDRAM ---------------------------------- *
@@ -174,11 +196,13 @@ static int in_range(const dkr_f3d_context *c, unsigned int addr, unsigned int le
  * game that declares the layout it supplies. */
 static unsigned char read_u8(const dkr_f3d_context *c, unsigned int a)
 {
+    NOTE_READ(a, 1u);
     return c->rdram[c->rdram_native ? (a ^ 3u) : a];
 }
 
 static short read_s16(const dkr_f3d_context *c, unsigned int a)
 {
+    NOTE_READ(a, 2u);
     /* The same fast path as `read_u32`, from `MEM_HU` above: an even address
        is one native 16-bit read at `a ^ 2`. A vertex's x, y, z and a corner's
        s, t come through here, and two byte reads and a shift for each were a
@@ -191,6 +215,7 @@ static short read_s16(const dkr_f3d_context *c, unsigned int a)
 
 static unsigned int read_u32(const dkr_f3d_context *c, unsigned int a)
 {
+    NOTE_READ(a, 4u);
     /* The fast path is not a luxury: it is the decoder's most frequent read —
        two per command — and the target is a Pentium II. It only holds on an
        aligned address, which display lists are; the general path stays correct
@@ -2291,6 +2316,9 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
         if (swap != 0) { c->state.odd_row_swapped++; }
         const unsigned long long convert_t0 =
             dkr_f3d_zone_clock ? dkr_f3d_zone_clock() : 0ULL;
+        NOTE_READ(c->timg_address,
+                  (unsigned)(src_row * height) *
+                      (tex_size == DKR_N64_SIZ_32 ? 4u : tex_size == DKR_N64_SIZ_16 ? 2u : 1u));
         const int converted =
             dkr_texture_convert_swapped(c->rdram, c->rdram_size,
                                         c->rdram_native, c->timg_address,

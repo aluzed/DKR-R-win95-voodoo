@@ -229,6 +229,10 @@
         {
           "path": "patches/n64-modern-runtime/0056-hold-refused-messages-instead-of-spinning.patch",
           "sha256": "5b0cc861f6342c00e7af000b582865db36dbe15bd6e0033b1ba13bc2847c7fee"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0057-snapshot-copy-starts-after-the-code.patch",
+          "sha256": "f6f28a932dbead787c6627cd898ef0ae803c71619c3a157095fa3444467a3057"
         }
       ]
     },

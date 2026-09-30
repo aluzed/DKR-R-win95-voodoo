@@ -218,6 +218,22 @@ static void say_counts(const char *who, const replay_counts *c)
         " drawn=%lu\n",
         c->vertices, c->vertices_unreferenced, c->vertices_undrawn,
         c->vertices - c->vertices_unreferenced - c->vertices_undrawn);
+#ifdef DKR_F3D_READ_EXTENT
+    /* The 64 KiB pages read so far, as ranges of RDRAM (E08-S04). */
+    {
+        int page = 0;
+        say("           rdram read:");
+        while (page < DKR_F3D_READ_PAGES) {
+            int end;
+            if (!dkr_f3d_read_pages[page]) { page++; continue; }
+            end = page;
+            while (end + 1 < DKR_F3D_READ_PAGES && dkr_f3d_read_pages[end + 1]) { end++; }
+            say(" %06X-%06X", page << 16, ((end + 1) << 16) - 1);
+            page = end + 1;
+        }
+        say("\n");
+    }
+#endif
     /* Two sources for one fact. Silent when they agree, because a line of zeroes
        on every run is a line nobody reads. */
     /* Draws aimed at a colour image other than the first one named. The port

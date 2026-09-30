@@ -176,6 +176,33 @@ played for long is the only reason it is still opt-in.
 a frame with `none`, 88% of frames on two retraces, against 60.2 ms in the
 default mode, where two frames in three take four retraces.
 
+### The copy starts after the code (30 September 2026)
+
+Which part of the four megabytes does a display list read? Built with
+`DKR_F3D_READ_EXTENT` (host tools only; the game's build pays nothing), the
+decoder marks every 64 KiB page it reads, and `tools/render/replay` prints
+them. Over the 21 scenes of the corpus:
+
+- nothing below 0x0D0000 and nothing above 0x3CFFFF;
+- 0x0D0000-0x0EFFFF in every scene, then pieces of 0x1D0000 upward.
+
+The decomp's linker map puts DKR's code at 0x000400-0x0DC630 (`main_TEXT_END`),
+then `.data`, `.rodata`, `.bss` to 0x12D3F0 and the memory pool above. No
+display list reads code, and none of the corpus does. Patch 0057 starts the
+copy at 0xDC000 on this target (`DKR_RDRAM_SNAPSHOT_FROM`, 0 for the whole
+copy). Only the code is skipped; `.bss` and the pool, where the corpus reads
+nothing below 0x1D0000 but other scenes might, are still copied.
+
+| Default mode, idle meter on | whole copy | from 0xDC000 |
+|---|---:|---:|
+| copy per display list | 31.7 ms | **24.9 ms** |
+| attract frame, exclusive trace on | 70.0 ms | 58.3 ms |
+| race frame, normal mode | 57.6 ms | **50.9 ms** |
+| race frames on two / three retraces | 2% / 57% | 23% / 69% |
+
+No rejected read. The skid marks and the black ground in the race screenshots
+appear the same with the whole copy, so they are not this change's.
+
 ### A longer session (29 September 2026)
 
 The same meter over 1,260 s of wall time, which the emulator's 57% speed makes
