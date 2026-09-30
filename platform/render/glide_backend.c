@@ -253,6 +253,7 @@ enum {
 static unsigned long g_tex_failures[GL_TEX_FAIL_COUNT];
 /* Slots taken back rather than refused. Reported so that "the table never fills"
    is a figure and not a hope. */
+static unsigned long g_tex_redownloads;   /* resident keys uploaded again */
 static unsigned long g_tex_reclaimed;
 /* See the scan in the upload path: how often a key comes back to a slot that is
    still live, against how many uploads were attempted at all. */
@@ -2793,7 +2794,21 @@ static dkr_texture_handle gl_texture_upload(void *self,
         int target = desc->tmu;
         if (target < 0 || target >= g_tmu_count) { target = 0; }
         g_tex[slot].tmu = (unsigned char)target;
-        address = dkr_tmu_acquire(&g_tmu[target], desc->key, &info, bytes);
+        {
+            /* **An upload brings texels, and they go to the card.** The
+               allocator is a cache and answers a resident key with its old
+               address and no transfer, which is right for a lookup and wrong
+               here: this is only called after a conversion, when the decoder
+               could not find the key or was told not to look
+               (`DKR_NO_TEXCACHE`). Without the transfer the switch meant to rule
+               the cache out left it in (30 September 2026). */
+            const unsigned long hits_before = g_tmu[target].stats.hits;
+            address = dkr_tmu_acquire(&g_tmu[target], desc->key, &info, bytes);
+            if (address != DKR_TMU_NONE && g_tmu[target].stats.hits != hits_before) {
+                (void)glide_download(0, target, address, &info, bytes);
+                g_tex_redownloads++;
+            }
+        }
     }
     if (address == DKR_TMU_NONE) {
         g_tex_failures[GL_TEX_FAIL_MEMORY]++;

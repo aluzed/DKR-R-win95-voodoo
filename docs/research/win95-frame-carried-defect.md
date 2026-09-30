@@ -124,6 +124,33 @@ tracks come out dark and translucent like the oracle's -- (24,150,16) against
 captures of the card corpus are byte-identical to the build before: none of
 them draws with this recipe.
 
+## Then: a wall striped in play and smooth in every replay
+
+With both fixes in, one more pair disagreed: `CKEY1835`, the canyon wall
+striped vertically in the game's own frame and smooth in the oracle and in the
+card's replay -- once or three times, 0 pixels apart. Not the statistics switch
+either (`--no-stats`, 0 pixels).
+
+Two defects, one behind the other:
+
+- **The texture key named a place, not a picture.** Address, format, size and
+  dimensions: when the game loads another texture of the same shape at the
+  same address -- a menu's, then a track's -- the card went on drawing the
+  first. A replay converts every texture of its one list afresh and cannot see
+  it. The key now carries eight words sampled across the image in RDRAM:
+  eight reads per texture change.
+- **`DKR_NO_TEXCACHE` did not rule the cache out**, which is why the in-game
+  hunt with it came back black too. The decoder converts and uploads, and the
+  allocator answers a resident key with its old address and no transfer --
+  right for a cache, wrong for an upload. The backend now downloads the texels
+  whenever an upload finds its key resident. The allocator's contract, which
+  `test_tmu.c` checks, is unchanged.
+
+Checked: the 21 corpus scenes in the oracle and the 12 on the card are
+byte-identical to before; `CKEY1746` over three frames stays right; and a
+capture taken at random in a race (`CKEY1819`) shows the game's frame and the
+oracle's agreeing, the wall smooth.
+
 ## How the investigation went, for next time
 
 Before the probe named the fill rectangle, this was the reasoning:

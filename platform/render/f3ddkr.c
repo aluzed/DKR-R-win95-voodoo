@@ -1950,6 +1950,27 @@ static void cmd_set_tile_size(dkr_f3d_context *c, unsigned int w0, unsigned int 
             ^ ((unsigned long long)key_siz << 18)
             ^ ((unsigned long long)width << 9)
             ^ (unsigned long long)height;
+        /* **And a sample of what is there.** Address, format and dimensions
+           name a place, not a picture: when the game loads another texture of
+           the same shape at the same address -- a menu's, then a track's -- the
+           card went on drawing the first one, and a replay, which converts
+           everything afresh, could never show it (a canyon wall striped in
+           play and smooth in `REPLAY.EXE`, 30 September 2026). Eight words
+           spread across the image go into the key: a few reads per texture
+           change, against a conversion per draw. */
+        {
+            const unsigned int bpt = (key_siz == DKR_N64_SIZ_32) ? 4u
+                                   : (key_siz == DKR_N64_SIZ_16) ? 2u : 1u;
+            const unsigned int span = (unsigned int)(width * height) * bpt;
+            unsigned long long h = 0xCBF29CE484222325ull;
+            unsigned int i;
+            for (i = 0; i < 8u; i++) {
+                const unsigned int at = (c->timg_address + (span / 8u) * i) & ~3u;
+                if (!in_range(c, at, 4u)) { break; }
+                h = (h ^ read_u32(c, at)) * 0x100000001B3ull;
+            }
+            key ^= h << 1;
+        }
         if (c->state.timg_first_key == 0ull) { c->state.timg_first_key = key; }
     }
 
