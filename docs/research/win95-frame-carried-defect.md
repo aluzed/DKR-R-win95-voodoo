@@ -60,9 +60,10 @@ of the samples differ, in two bands -- the top 200 rows (sky) and the bottom 120
 | water, (50,440) | 0, 154, 214 | 0, 0, 0 |
 | sand, (600,450) | 255, 251, 74 | unchanged |
 
-The sky of frame 1 is saturated where frame 3's is a gradient, so "frame 1 is
-right" is not settled either: both frames may be wrong in opposite ways, and
-the oracle agreeing with frame 1 says only that they take the same path.
+The sky of frame 1 is saturated where frame 3's is a gradient, which for a
+while made "frame 1 is right" look unsettled. It is settled below: both colours
+are the fill rectangle's, frame 1's drawn as the fill colour, frame 3's through
+the previous frame's last combiner.
 
 ## The cause
 
@@ -109,9 +110,10 @@ sets (21 entry points are programmed; everything else is whatever
 `grSstWinOpen` left and whatever a call made since has changed). Both surfaces
 are drawn with blends; a blend that reads the destination -- or its alpha, which
 on a Voodoo 2 with a depth buffer is the auxiliary buffer -- would give exactly a
-result that depends on the previous frame. The next test is to find which
-recipes the sky and the water draw with, and whether either names a
-destination factor.
+result that depends on the previous frame. The next test was to find which
+recipes the sky and the water draw with -- and the probe answered that neither
+is drawn by a triangle at all. The lesson: probe the pixel before theorising
+about the state.
 
 Tools added for this: `REPLAY.EXE --no-stats`, `--no-texcache`;
 `DKR_NO_STATE_SHADOW`, `DKR_FORGET_AT_FRAME` (backend diagnostics, off by
