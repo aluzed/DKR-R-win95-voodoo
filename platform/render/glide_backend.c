@@ -2494,9 +2494,10 @@ static void gl_draw_triangles(void *self, const dkr_render_vertex *vertices,
 static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
                          unsigned argb)
 {
-    /* Two triangles rather than `grBufferClear` on a scissor window: the clear
-       ignores blending and the alpha test, whereas DKR uses these rectangles for
-       fades to black, which are translucent. */
+    /* Two triangles rather than `grBufferClear` on a scissor window, which
+       would leave the card's clip window to be put back. Only fill-cycle
+       rectangles arrive here; the translucent fades are drawn by the decoder
+       (`blend_rect_emit`), so the state below is opaque. */
     dkr_render_vertex v[6];
     const float r = (float)((argb >> 16) & 0xFF);
     const float g = (float)((argb >> 8) & 0xFF);
@@ -2552,11 +2553,40 @@ static void gl_fill_rect(void *self, int x0, int y0, int x1, int y1,
      * So the rectangle takes the current block, turns depth off in it, and goes
      * through the same door as everything else; `b.current` stays truthful, and
      * the block is put back afterwards. */
+    /* --- And nothing else of the block may be inherited either -------------- *
+     *
+     * The rectangle took the *last drawn triangle's* block and changed only its
+     * depth, so it was drawn with that triangle's combiner, textures, blend,
+     * alpha test and fog. The first frame after the card opens has a zeroed
+     * block -- shade only, no texture, opaque -- and draws the rectangle right;
+     * every frame after it inherits the end of the frame before. Found on 30
+     * September 2026 as water and sky that turned black and dark blue from the
+     * second frame on, in the game and in `REPLAY.EXE --frames 3`, never in the
+     * first frame and never in the oracle, whose rectangle writes its colour
+     * and nothing else (`sw_fill_rect`). See
+     * `docs/research/win95-frame-carried-defect.md`.
+     *
+     * So the rectangle is its colour: vertex colour alone, no texture, no
+     * alpha test, no fog, no depth, **opaque**. The decoder calls this only in
+     * the RDP's fill cycle (`f3ddkr.c`), which writes the fill colour whatever
+     * its alpha; a rectangle in any other cycle -- DKR's translucent fades --
+     * goes through `blend_rect_emit` with its own state and never reaches here.
+     * A first version blended when the alpha was below 255: the fill colour's
+     * alpha is often zero, and the background vanished instead. */
     {
         const dkr_render_state saved = b.current;
         const int had = b.has_state;
         dkr_render_state st = saved;
         st.depth = DKR_DEPTH_DISABLED;
+        st.combine = DKR_COMBINE_SHADE;
+        st.recipe = 0;
+        st.texture = 0;
+        st.texture1 = 0;
+        st.alpha_test = 0;
+        st.alpha_reference = 0;
+        st.alpha_scale = 255;   /* 255 is "none" */
+        st.fog_enabled = 0;
+        st.blend = DKR_BLEND_OPAQUE;
         gl_set_state(self, &st);
         gl_draw_triangles(self, v, 2);
         if (had) { gl_set_state(self, &saved); }

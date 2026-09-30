@@ -1,8 +1,7 @@
 # A defect the card carries from one frame to the next
 
-Opened 30 September 2026. **Not solved.** This page is the state of the
-investigation, so that the next session starts from the facts rather than from
-the screenshots.
+Opened and closed 30 September 2026. **Found and fixed**: the fill rectangle
+drew with the last triangle's state (below, "The cause").
 
 ## What is seen
 
@@ -65,9 +64,46 @@ The sky of frame 1 is saturated where frame 3's is a gradient, so "frame 1 is
 right" is not settled either: both frames may be wrong in opposite ways, and
 the oracle agreeing with frame 1 says only that they take the same path.
 
-## Where to look next
+## The cause
 
-What survives a frame on the card and is not the backend's remembered state:
+The probe settled it. At the water pixel (50,440) the oracle reports that no
+triangle drew it: the blue is the **fill rectangle** the list lays down first,
+in the RDP's fill cycle. `gl_fill_rect` drew that rectangle as two triangles
+under `b.current` -- the block of the last triangle drawn -- with only its depth
+turned off. The first frame after the card opens starts from a zeroed block:
+shade only, no texture, opaque, so the rectangle comes out as its colour. Every
+later frame starts from the end of the one before, and the background was drawn
+with that triangle's combiner, textures and blend -- through an alpha of zero,
+in this case, which is nothing at all.
+
+None of the switches above touched it: they drop what the backend *remembers*,
+and this was what the backend *programmed*, correctly, from the wrong block.
+
+The rectangle now has its own state: vertex colour, no texture, no alpha test,
+no fog, no depth, opaque -- what the RDP's fill cycle writes, and what the
+oracle's `sw_fill_rect` does. (A first version blended when the fill colour's
+alpha was below 255; the fill colour's alpha is often zero, and the background
+disappeared on every frame.) Fades are not affected: a rectangle outside the
+fill cycle never reaches `fill_rect`, the decoder draws it with its own state
+(`blend_rect_emit`).
+
+Verified on the card: `CKEY1746` and `CAP0400` replayed three times give frame 3
+identical to frame 1 (`CAP0400`: 0 pixels differ), and the twelve captures of
+the card corpus, drawn once, are **byte-identical** to the same run before the
+fix. In the game, the black-surface hunt that found a case in one to six cycles
+ran 21 cycles for one screen past its threshold -- a kart's dark underside --
+and there the card and the oracle agree, except for one thing below.
+
+## Still different: the skid marks
+
+In that frame the tyre tracks are red on the card and a dark translucent green
+in the oracle. They were red before the fix too, so this is another defect, in
+whatever recipe draws the tracks. Not investigated.
+
+## How the investigation went, for next time
+
+Before the probe named the fill rectangle, this was the reasoning:
+what survives a frame on the card and is not the backend's remembered state:
 the colour and auxiliary buffers' contents, and Glide state the backend never
 sets (21 entry points are programmed; everything else is whatever
 `grSstWinOpen` left and whatever a call made since has changed). Both surfaces
