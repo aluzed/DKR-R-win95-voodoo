@@ -361,8 +361,11 @@ mode, `none`, over the last 1,560 lists of a run driven around Timber's Island:
 | `G_VTX` (0x04), 238 commands | 1.37 ms |
 
 and inside `cmd_triangle`, per list: corner fetch 2.19 ms, projection 1.23,
-clipping 0.65, `apply_state` 0.54, the tail 0.41, the conversions for the
-trace's arguments 0.40, batch checks 0.16, corners 0.11.
+clipping 0.65, `apply_state` 0.54, the tail 0.41, batch checks 0.16, corners
+0.11. (The trace-arguments zone reads 0.40 ms, but what lies between its two
+marks is now a single `if (c->trace)`: about 50 ns a corner, which is the price
+of the marks themselves, and a reminder that each of these figures carries a
+little of it.)
 
 So the next work here is the triangle path, not the transform: the corner fetch
 and the projection are 3.4 ms of the 9.0, and they were measured as the same
