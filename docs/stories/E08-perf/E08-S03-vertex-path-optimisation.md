@@ -395,6 +395,15 @@ First use, the same evening: the corner fetch copying its eight floats as a
 bits -- read **10,643 and 10,769 us**, 3% slower than the float copy. Rejected
 and reverted; on this machine the x87 copy is the cheaper one.
 
+Second use: the projection without its nine clearing stores a corner (the
+fields only a chained second unit reads), the output cleared once per triangle
+command instead. Interleaved in one session, base / change / base / change:
+**10,290 / 10,308 / 10,317 / 10,324 us**. Nothing; rejected. The same session
+showed the base at 10,290 us where twenty minutes earlier it read 10,368:
+the benchmark drifts by about 1% between sessions, so a candidate is only ever
+compared with a base run beside it (`REPLAY.EXE` under another name in the
+same batch file).
+
 ## Acceptance criteria
 
 - [x] The vertex path's detailed profile is established.
