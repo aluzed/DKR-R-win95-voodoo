@@ -175,6 +175,10 @@ The worst, list 2102 in front of the dinosaur head, differs at the edge of a
 translucent mist and in texture detail: the ordinary distance between the card
 and the oracle, not a defect of the kind above.
 
+The adventure hub the same way, eight samples from the fly-in over the
+dinosaur head to Timber's Island's village gate: 29, 1826, 1546, 520, 364, 244,
+113 and 19 per million. The hub is drawn as the oracle draws it.
+
 **Captures stall the default mode.** Writing eight megabytes to the transfer
 disk holds the graphics thread for seconds. In the snapshot mode a graphics
 task is outstanding meanwhile, DKR's scheduler watchdog counts the retraces,
