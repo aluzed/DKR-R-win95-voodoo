@@ -373,6 +373,23 @@ two on the attract mode's race (see "Corners projected from the vertex cache
 without a copy, not kept" above) -- the case to reopen with the hub as its
 benchmark, where they are worth three times as much.
 
+### A benchmark with no driving in it (30 September 2026)
+
+A change to the triangle path cannot be measured in the hub by driving: no two
+runs draw the same frames. `REPLAY.EXE --card --frames N` now times
+`dkr_f3d_run` on the card for frames 2 to N of one capture and prints the mean,
+minimum and maximum. On the heaviest hub capture of 30 September (`CKEY2281`,
+2,623 triangles, 1,220 emitted), nineteen frames each:
+
+| | run 1 | run 2 |
+|---|---:|---:|
+| as the game runs it, `--no-stats` | 10,368 us | 10,381 us |
+| with the statistics | 14,727 us | 14,726 us |
+
+Two runs agree to 0.1% or better: a difference of a few tens of microseconds is
+a measurement here, where a race needed tenths of a millisecond to show. The
+capture lives outside the repository with the corpus.
+
 ## Acceptance criteria
 
 - [x] The vertex path's detailed profile is established.

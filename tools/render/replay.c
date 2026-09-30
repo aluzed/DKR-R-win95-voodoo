@@ -37,6 +37,7 @@
 #include "render/software.h"
 
 #ifdef DKR_HAVE_GLIDE
+#include "clock.h"
 #include "render/glide.h"
 #endif
 
@@ -352,6 +353,13 @@ static int g_no_stats = 0;
 static int g_no_texcache = 0;
 
 static dkr_f3d_context g_ctx;
+/* The decode of the last `run_capture`, in microseconds, on the target's clock.
+   With `--frames N` on the card the mean of frames 2..N is printed: a
+   benchmark of the renderer on one fixed list, with no driving in it, which
+   is what a change to the triangle path needs (E08-S03). */
+#ifdef DKR_HAVE_GLIDE
+static unsigned long long g_decode_us = 0;
+#endif
 
 static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
                         unsigned char *rdram, int tmus, int no_cull,
@@ -387,7 +395,15 @@ static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
     say("  ... clearing\n");
     bk->begin_frame(bk->self, 0x000000u);
     say("  ... decoding from 0x%06X\n", h->data_ptr);
+#ifdef DKR_HAVE_GLIDE
+    {
+        const unsigned long long t0 = dkr_clock_now_us();
+        (void)dkr_f3d_run(&g_ctx, h->data_ptr);
+        g_decode_us = dkr_clock_now_us() - t0;
+    }
+#else
     (void)dkr_f3d_run(&g_ctx, h->data_ptr);
+#endif
     say("  ... presenting\n");
     bk->present(bk->self);
 
@@ -1076,10 +1092,23 @@ int main(int argc, char **argv)
                             "       figures below it say nothing **\n");
                     }
                 }
-                for (f = 0; f < frames; f++) {
-                    if (frames > 1) { say("  --- frame %d of %d\n", f + 1, frames); }
-                    run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha,
-                                &cc);
+                {
+                    unsigned long long sum = 0, lo = ~0ull, hi = 0;
+                    if (frames > 1) { (void)dkr_clock_init(); }
+                    for (f = 0; f < frames; f++) {
+                        if (frames > 1) { say("  --- frame %d of %d\n", f + 1, frames); }
+                        run_capture(&card, &h, rdram, card_tmus, no_cull, no_alpha,
+                                    &cc);
+                        if (f > 0) {
+                            sum += g_decode_us;
+                            if (g_decode_us < lo) { lo = g_decode_us; }
+                            if (g_decode_us > hi) { hi = g_decode_us; }
+                        }
+                    }
+                    if (frames > 1) {
+                        say("  card decode, frames 2-%d: mean %llu us, min %llu, max %llu\n",
+                            frames, sum / (unsigned long long)(frames - 1), lo, hi);
+                    }
                 }
                 if (want_depth) {
                     unsigned a1 = 0, d1 = 0;
