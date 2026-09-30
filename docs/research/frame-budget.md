@@ -121,6 +121,51 @@ task cost varies with the voices playing, or the game's own logic. The audio
 export (`AUDIO.BIN`) of that run was not kept, so which one is not established.
 
 
+## The budget after patch 0056, 30 September 2026
+
+Interleaved runs in exclusive mode, both opt-in options on, attract mode, the
+steady window from 38 s, the build before 0056 against `76ed29b`. The idle
+thread's row is now read **less the time it spends parked** -- blocked in the
+wait for the next message, which the trace counts apart (`[trace][parked]`) --
+since that is the only part of it that uses the processor:
+
+| Item | spinning | 0056 |
+|---|---:|---:|
+| Graphics thread, awake | 8.29 ms | 9.06 ms |
+| Audio mixer | 4.63 ms | 5.14 ms |
+| Recompiled game (thread 3) | 4.29 ms | 5.24 ms |
+| Audio manager (thread 4) | 1.14 ms | 1.18 ms |
+| libultra scheduler (thread 5) | 0.60 ms | 0.26 ms |
+| **Idle thread, less parked** | **7.45 ms** | **0.03 ms** |
+| frames on two retraces (from boot) | 90% | 94% |
+
+The spin was **7.45 ms of every 36 ms frame**, a fifth of the wall; it is gone.
+Its predecessor on this page, "idle thread executing: delivering interrupts,
+3.9 to 4.6 ms", was the same thing measured before the trace could tell
+running from parked.
+
+**Two things moved that were not expected to, and are recorded as found.**
+Every timed item costs more with 0056 -- the renderer 0.8 ms, the mixer 0.5,
+the game thread 0.9 -- in both pairs of runs, which is repeatable rather than
+noise. The guest switches threads at the same rate either way (291 against
+288 a second), so extra handoffs are not the reason. And the emulator itself
+slows down: in the same 200 s of host time, the spinning build reached 138.7 s
+of guest time and 0056 reached 88.4 s. When the guest's processor has nothing
+to do it halts, and 86Box evidently keeps emulated time with the host less
+tightly across a halt than across a busy loop. The item costs are measured on
+the guest's own clock, so the working hypothesis is that halting is where
+86Box's timing departs from a Pentium II's; on silicon a thread's cost does not
+depend on whether the processor idled before it. It is a hypothesis, and
+E09-S04 is where it would be settled.
+
+What does not depend on it: more frames reach the game's thirty a second, in
+the attract mode (90 to 94%) and in a race (78 to 87%, below).
+
+For measurement, the second observation is practical. A run of fixed host
+length now covers less of the game, so windows are to be read on the guest's
+clock, as `budget.py`-style readings and `timing_report.py --skip-s/--until-s`
+already do, and a 150 s run no longer reaches 89 s of the game.
+
 ## The idle thread spun on refused messages, 29 September 2026
 
 **The processor was never idle, and it should have been.** With the idle meter
