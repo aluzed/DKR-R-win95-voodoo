@@ -343,6 +343,33 @@ triangle path is more than three times as large, and that is where this
 ticket's remaining work goes. These are samples of a thread whose instruction
 pointer moved, not processor time, but the graphics thread rarely waits.
 
+## The adventure hub, where the renderer holds the frame (30 September 2026)
+
+In races the frame now sits at the game's thirty frames a second with the
+renderer at 5 to 6 ms (`frame-budget.md`). The adventure hub is where it does
+not: its heaviest views draw about 3,000 triangles a list, the render passes
+16 ms and the frame falls to 24-27 fps. Render zones in the hub, exclusive
+mode, `none`, over the last 1,560 lists of a run driven around Timber's Island:
+
+| Zone | a list |
+|---|---:|
+| `dkr_f3d_run` | 11.40 ms |
+| of which the decoder's own | 8.55 ms |
+| backend `draw`, 953 calls | 2.48 ms |
+| backend `state`, 154 calls | 0.24 ms |
+| `G_TRI` (0x05) inclusive, 233 commands | 9.00 ms |
+| `G_VTX` (0x04), 238 commands | 1.37 ms |
+
+and inside `cmd_triangle`, per list: corner fetch 2.19 ms, projection 1.23,
+clipping 0.65, `apply_state` 0.54, the tail 0.41, the conversions for the
+trace's arguments 0.40, batch checks 0.16, corners 0.11.
+
+So the next work here is the triangle path, not the transform: the corner fetch
+and the projection are 3.4 ms of the 9.0, and they were measured as the same
+two on the attract mode's race (see "Corners projected from the vertex cache
+without a copy, not kept" above) -- the case to reopen with the hub as its
+benchmark, where they are worth three times as much.
+
 ## Acceptance criteria
 
 - [x] The vertex path's detailed profile is established.
