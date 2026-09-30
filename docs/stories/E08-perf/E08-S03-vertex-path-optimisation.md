@@ -390,6 +390,11 @@ Two runs agree to 0.1% or better: a difference of a few tens of microseconds is
 a measurement here, where a race needed tenths of a millisecond to show. The
 capture lives outside the repository with the corpus.
 
+First use, the same evening: the corner fetch copying its eight floats as a
+`memcpy` of 32 bytes -- integer moves instead of x87 loads and stores, the same
+bits -- read **10,643 and 10,769 us**, 3% slower than the float copy. Rejected
+and reverted; on this machine the x87 copy is the cheaper one.
+
 ## Acceptance criteria
 
 - [x] The vertex path's detailed profile is established.
