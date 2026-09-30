@@ -98,8 +98,27 @@ and there the card and the oracle agree, except for one thing below.
 ## Still different: the skid marks
 
 In that frame the tyre tracks are red on the card and a dark translucent green
-in the oracle. They were red before the fix too, so this is another defect, in
-whatever recipe draws the tracks. Not investigated.
+in the oracle. They were red before the fix too, so this is another defect.
+
+**Diagnosed, not fixed.** The oracle's probe at (62,470) of `CKEY2370` names the
+track's draw: recipe 14, `G_CC_BLENDI_ENV_ALPHA` + `G_CC_MODULATEIA_PRIM2`,
+two-cycle, catalogued `MULTIPASS`, primitive `0x203F3F3F`, alpha-blended.
+
+    cycle 1   rgb (ENV - SHADE) x ENV_ALPHA + SHADE   env alpha 0 -> SHADE
+    cycle 2   rgb COMBINED x PRIMITIVE                -> shade x 0x3F/255
+              a   COMBINED x PRIMITIVE_ALPHA          -> shade alpha x 0x20/255
+
+The card draws the first cycle -- the vertex colour, red here -- and drops the
+second: `pass2_kind` recognises only the lerp toward the environment colour as
+a second pass, and a modulation by the primitive is neither of its two forms. So
+the track comes out as its raw vertex colour at its raw alpha, where the RDP
+darkens it to a quarter and makes it an eighth opaque.
+
+The shape is one Glide stage can hold when the first cycle reduces to the shade
+(environment alpha zero): colour `CONSTANT x ITERATED`, alpha `CONSTANT_ALPHA x
+ITERATED_ALPHA`, with the primitive in the constant register. That is the fix to
+write, and like every change in the combiner it has to be scored against the
+corpus (`tools/render/texscore`, E05-S03) before it is kept.
 
 ## How the investigation went, for next time
 
