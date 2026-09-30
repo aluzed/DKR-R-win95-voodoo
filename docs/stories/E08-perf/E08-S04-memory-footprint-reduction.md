@@ -203,6 +203,10 @@ nothing below 0x1D0000 but other scenes might, are still copied.
 No rejected read. The skid marks and the black ground in the race screenshots
 appear the same with the whole copy, so they are not this change's.
 
+The attract mode in the default mode, from the no-regression session below
+(normal mode, no idle meter), over the usual 40-94 s: **54.96 ms a frame**,
+median 50.8 ms, against 64.35 ms with patch 0055 alone.
+
 ### No regression, the shipped configuration (30 September 2026)
 
 Patches 0055 to 0057 change how the snapshot is allocated, how much of it is
