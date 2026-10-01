@@ -94,7 +94,13 @@ transfers' semantics as the game sees them.
       runtime use the narrow `...A` APIs and `path.string()` throughout -- the wide forms
       are stubs here, the cause of two defects fixed on 1 October -- with ROMs found at
       `D:\\DKR.Z64`, `D:\\NOROM\\DKR.N64` and `D:\\DKRTEST\\DKR.Z64`.
-- [ ] The DMA completion semantics are unchanged.
+- [x] The DMA completion semantics are unchanged -- *by reading the code*, 1 October
+      2026: `do_dma` (`librecomp/src/pi.cpp`) is untouched by every patch; it copies
+      the whole transfer, then posts the same message to the same queue, as on the
+      modern host. Reading on demand (0061) changes only where the bytes come from,
+      inside `do_rom_read`, before that post. Patch 0056 changes how a message refused
+      by a full queue waits for its retry, not whether it is retried: upstream
+      requeued it too.
 
 ## Risks
 
