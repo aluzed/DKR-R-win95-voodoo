@@ -68,9 +68,10 @@ transfers' semantics as the game sees them.
       cache instead of held whole. Measured in a race on the test machine: 33.6 MB of
       free physical memory instead of 23.0 MB, the frame period unchanged. The cache's
       size was measured, not guessed: 64 KiB took 2438 misses in 6144 reads, 256 KiB 746,
-      1 MiB 408, with no difference in the frame period; 1 MiB was kept. A `.v64` or
-      `.n64` ROM is still held whole, byte-swapped in memory: converting it once to a
-      `.z64` beside the game would extend the gain to them, and is not done.
+      1 MiB 408, with no difference in the frame period; 1 MiB was kept. The three
+      formats benefit alike: a `.v64` or `.n64` is first normalised into a big-endian
+      copy under `dkr-runtime-data\rom-cache`, and that copy is what is read -- a race
+      from a `.v64` measured 33.3 MB free, from a `.n64` 33.7 MB.
 - [x] The game loads and starts from a valid ROM under emulated Windows 95 -- every run
       since September; from a ROM found beside the game since 1 October (E06-S06).
 - [ ] A level's load time is measured and compared against the modern host's.
@@ -79,8 +80,8 @@ transfers' semantics as the game sees them.
       2.3 s, on the first start only -- the identity cache now works on this target, and
       later starts take 15 ms. That first start has no feedback beyond the window.
 - [x] The three ROM formats are accepted -- `.z64`, `.v64`, `.n64`, each started on the
-      test machine (E06-S06). A `.z64` is read on demand (patch 0061); the two
-      byte-swapped formats are loaded whole.
+      test machine (E06-S06). All three are read on demand (patch 0061), the
+      byte-swapped two from their normalised copy.
 - [x] Windows 9x paths are handled, including with short names: the ROM search and the
       runtime use the narrow `...A` APIs and `path.string()` throughout -- the wide forms
       are stubs here, the cause of two defects fixed on 1 October -- with ROMs found at

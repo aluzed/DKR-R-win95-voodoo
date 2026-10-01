@@ -162,7 +162,8 @@ reads and a 1 MiB one 408 times, with the same frame period; the larger one was
 kept since it costs a tenth of what reading on demand saves. The feared stutter
 was not seen: the frame period stayed within the drift between sessions. Free
 physical memory in a race went from 23.0 MB to 33.6 MB. The byte-swapped `.v64`
-and `.n64` formats are still held whole.
+and `.n64` formats gain the same: the runtime reads its normalised big-endian copy
+of them.
 
 ### 4. A 32 MB fallback configuration
 

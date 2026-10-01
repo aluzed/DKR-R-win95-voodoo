@@ -50,7 +50,8 @@ say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
     # Extra variables for the game, space-separated NAME=VALUE pairs:
     #   DKR_MEASURE_SET="DKR_TRACE_EXCLUSIVE=1" scripts/Measure-Guest-Time-VM.sh ...
     for pair in ${DKR_MEASURE_SET:-}; do printf 'SET %s\r\n' "$pair"; done
-    printf 'D:\\DKRR.EXE D:\\DKR.Z64\r\n'
+    # DKR_MEASURE_ROM='D:\V64\DKR.V64' starts from another ROM already on D:.
+    printf 'D:\\DKRR.EXE %s\r\n' "${DKR_MEASURE_ROM:-D:\\DKR.Z64}"
 } > "$work/MEASURE.BAT"
 
 cp "$executable" "$work/DKRR.EXE"
