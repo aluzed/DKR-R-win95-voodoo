@@ -57,6 +57,7 @@ extern "C" {
 #include <cstdlib>
 #if defined(DKR_TARGET_WIN95)
 #include "win95/startup.h"
+#include "win95/ini_settings.h"
 // `_commit` and `_fileno`: force Windows 95's write-behind cache and the update
 // of the directory entry, without which a frozen program's log stays at zero
 // bytes. See dkr_diag_commit below.
@@ -1300,6 +1301,11 @@ int DkrMain(int argc, char** argv) {
     dkr::runtime::rom::Identity rom_identity{};
     bool rom_identified = false;
 #if defined(DKR_TARGET_WIN95)
+    if (dkr_ini_write_template_if_absent()) {
+        std::fprintf(stderr, "[boot][ini] wrote the commented template %s\n", dkr_ini_path());
+    }
+    std::fprintf(stderr, "[boot][ini] %s: %d setting(s) applied, %d overridden by the environment\n",
+                 dkr_ini_path(), dkr_ini_settings_applied(), dkr_ini_settings_overridden());
     if (rom_path.empty()) {
         std::string message;
         if (!Win95DiscoverRom(rom_path, message)) {

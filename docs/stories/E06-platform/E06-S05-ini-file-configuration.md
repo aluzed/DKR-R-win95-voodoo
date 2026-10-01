@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | S |
 | **Depends on** | E06-S01 |
@@ -55,16 +55,38 @@ default values suited to the target.
    (E04-S02), the choice of render backend (E04-S08), forcing the multipass path
    (E05-S04), displaying the counters (E08-S01).
 
+## What was built (1 October 2026)
+
+`DKRR.INI` beside the executable, two sections. `[Paths] Rom=` belongs to the
+ROM search (E06-S06). `[Settings]` holds `NAME=VALUE` lines, each setting the
+option `DKR_NAME` exactly as an environment variable would: a constructor of
+priority 101 reads the section with `GetPrivateProfileSectionA` and `_putenv`s
+it, before any C++ static initialiser -- several options are read once, there.
+A variable already in the environment wins. Rather than one reader per
+setting, every existing switch is configurable at once.
+
+Two traps of Windows 95's profile functions, found on the test machine: reading
+a missing file left it existing for `GetFileAttributesA`, so the template was
+never written; and the system's cache of the file was then flushed over the
+template. Existence is now taken before any profile call, and the cache is
+flushed around the template's write.
+
+Also decided with this ticket, as a default suited to the target: the
+renderer's statistics are off unless `GFX_STATS` is set -- they draw nothing
+and cost 4.3 ms a display list in the adventure hub.
+
 ## Acceptance criteria
 
-- [ ] The `.ini` file covers all the settings kept.
-- [ ] An absent file produces a valid default configuration.
-- [ ] An aberrant value is rejected, replaced by the default, and logged.
-- [ ] The file written at first launch is commented.
+- [x] The `.ini` file covers all the settings kept: `[Settings]` sets any `DKR_*` option, copied into the C runtime's environment before the static initialisers that read them (`platform/win95/ini_settings.c`, 1 October 2026).
+- [x] An absent file produces a valid default configuration -- and the game then writes the commented template. Checked on the test machine.
+- [ ] An aberrant value is rejected, replaced by the default, and logged. *Partly*: the file's values reach each option's own reader, and only some of them check what they read (`RDRAM_SNAPSHOT_SIZE`, `CAPTURE_KEY`, `MQ_HOLD_REFUSED`); a switch takes any value as on.
+- [x] The file written at first launch is commented.
 - [ ] `docs/CONFIGURATION.md` documents every setting, with its impact on performance
-      where applicable.
-- [ ] The diagnostic settings the other tickets ask for are present.
-- [ ] The file's location is consistent with the saves' (E02-S05).
+      where applicable. *Partly*: the settings for playing and for reporting are
+      described with their cost; the other investigation switches are listed with
+      the file that reads them.
+- [x] The diagnostic settings the other tickets ask for are present: every one of them, by the same mechanism.
+- [x] The file's location is consistent with the saves' (E02-S05): beside `DKRR.EXE`, whose folder also holds `dkr-runtime-data\`.
 
 ## Risks
 

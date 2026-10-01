@@ -94,7 +94,8 @@ add_custom_target(dkr_win95_cpp_subset ALL
 add_library(win95compat STATIC
     "${DKR_WIN95_PLATFORM}/compat.c"
     "${DKR_WIN95_PLATFORM}/tick64.c"
-    "${DKR_WIN95_PLATFORM}/startup.c")
+    "${DKR_WIN95_PLATFORM}/startup.c"
+    "${DKR_WIN95_PLATFORM}/ini_settings.c")
 target_include_directories(win95compat PUBLIC "${DKR_WIN95_PLATFORM}")
 # `IsDebuggerPresent` and its kind are declared `dllimport` by windows.h;
 # redefining them is precisely this file's purpose.

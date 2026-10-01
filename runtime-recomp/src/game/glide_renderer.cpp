@@ -914,7 +914,17 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
     // `DKR_GFX_NO_STATS=1` skips the decoder's per-triangle statistics. The
     // counter lines they feed then read zero. Off by default.
     {
+        // Off by default on the Windows 95 target since 1 October 2026: they
+        // draw nothing (the replay's images are byte-identical either way) and
+        // cost 4.3 ms a display list in the adventure hub, 14.7 against 10.4
+        // (E08-S03's benchmark). `DKR_GFX_STATS=1` turns them back on for a
+        // report; `DKR_GFX_NO_STATS` still turns them off anywhere.
+#if defined(DKR_TARGET_WIN95)
+        static const bool no_stats = std::getenv("DKR_GFX_STATS") == nullptr ||
+                                     std::getenv("DKR_GFX_NO_STATS") != nullptr;
+#else
         static const bool no_stats = std::getenv("DKR_GFX_NO_STATS") != nullptr;
+#endif
         context_.no_statistics = no_stats ? 1 : 0;
     }
     // `DKR_NO_DEPTH=1` turns depth sorting off. A diagnostic switch: it answers
