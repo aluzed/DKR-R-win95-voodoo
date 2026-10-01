@@ -1249,6 +1249,28 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             }
 #endif
         }
+        // **A level's load time** (E02-S04). The game loads on its own thread
+        // and sends no display list meanwhile, so a load shows as a gap between
+        // two lists; every gap over 200 ms is printed, and every change of the
+        // level header, on the same clock. Steady play never comes near 200 ms.
+        {
+            static unsigned last_level = 0;
+            static unsigned long long last_list_t = 0;
+            const unsigned level = static_cast<unsigned>(read_word(rdram_snapshot, kAddrLevelHeader));
+            if (last_list_t != 0 && t_entry > last_list_t + 200000ULL) {
+                std::fprintf(stderr, "[game] no list for %llu ms, until t=%llu ms list=%llu\n",
+                             static_cast<unsigned long long>((t_entry - last_list_t) / 1000ULL),
+                             static_cast<unsigned long long>(t_entry / 1000ULL),
+                             static_cast<unsigned long long>(index));
+            }
+            if (level != last_level) {
+                last_level = level;
+                std::fprintf(stderr, "[game] level header=0x%08X at t=%llu ms list=%llu\n", level,
+                             static_cast<unsigned long long>(t_entry / 1000ULL),
+                             static_cast<unsigned long long>(index));
+            }
+            last_list_t = t_entry;
+        }
         if (cap_have_mode && cap_anchor == 0UL && cap_count > 0) {
             if (read_word(rdram_snapshot, kAddrGameMode) == cap_wanted_mode) {
                 cap_anchor = index;

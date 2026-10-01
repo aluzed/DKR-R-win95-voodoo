@@ -75,6 +75,14 @@ transfers' semantics as the game sees them.
 - [x] The game loads and starts from a valid ROM under emulated Windows 95 -- every run
       since September; from a ROM found beside the game since 1 October (E06-S06).
 - [ ] A level's load time is measured and compared against the modern host's.
+      *Measured on the target* (1 October 2026, ROM read on demand): the game sends
+      no display list while it loads, and the renderer now prints every gap over
+      200 ms and every change of the level header (`[game] no list for ...`,
+      `[game] level header=...`). Entering a race at Ancient Lake froze the screen
+      for 0.98 s; an attract-mode level, 1.07 s; steady play never reaches 200 ms.
+      These are under 86Box, whose disk is the host's file: a 1998 disk would add
+      its seek time to the misses, about 400 for a race. *Not compared*: this
+      checkout has no build of the modern host to compare with.
 - [ ] The SHA-1 validation's duration is measured; if it is perceptible, it is
       accompanied by user feedback. *Measured* (1 October 2026): hashing the ROM takes
       2.3 s, on the first start only -- the identity cache now works on this target, and
