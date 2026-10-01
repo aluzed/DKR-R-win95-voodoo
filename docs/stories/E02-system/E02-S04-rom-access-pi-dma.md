@@ -63,9 +63,10 @@ transfers' semantics as the game sees them.
 
 ## Acceptance criteria
 
-- [x] The ROM's memory footprint respects E00-S06's budget: the whole image is held,
-      once (patch 0060 removed a second read), and the game measured ~22 MiB in play
-      against the 32.8 MiB the ADR allows (E08-S04, ADR 0003).
+- [ ] The ROM's memory footprint respects E00-S06's budget. **Not to the letter**: ADR
+      0003 decided the ROM is read on demand, 0.06 MiB, and the whole 12 MiB image is
+      held. The game as a whole measured ~22 MiB in play, under the ADR's 32.8 MiB total
+      (E08-S04), so the budget holds overall without that decision applied.
 - [x] The game loads and starts from a valid ROM under emulated Windows 95 -- every run
       since September; from a ROM found beside the game since 1 October (E06-S06).
 - [ ] A level's load time is measured and compared against the modern host's.
