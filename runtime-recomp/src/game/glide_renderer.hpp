@@ -50,6 +50,10 @@ private:
     // a passthrough Voodoo appears in no emulator capture, so this is the only
     // way to look at what the port actually draws.
     void dump_frame(const char* path);
+    // Opens the card. Called by `update_screen` once the game is started, so
+    // that the driver's few seconds and the game's own boot overlap.
+    void open_card();
+    bool open_deferred_ = false;
 #endif
 
 #if defined(DKR_TARGET_WIN95)

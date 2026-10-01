@@ -299,11 +299,34 @@ dkr::runtime::GlideRenderer::GlideRenderer() {
         install_render_zones(&backend_);
         std::fprintf(stderr, "[boot][gfx] render zones on\n");
     }
+    // **The card is opened after the game is started, not before.**
+    // `grSstWinOpen` takes 2.9 s on the test machine, and ultramodern starts
+    // the VI thread -- whose first refresh starts the game -- only once this
+    // constructor returns: the game's boot, 2.8 s more, waited for the driver.
+    // Deferred to `update_screen`, on this same graphics thread, the two run
+    // side by side; display lists the game submits meanwhile wait in the
+    // action queue, as they would behind a slow frame. DKR_GLIDE_OPEN_EARLY=1
+    // keeps the old order (docs/research/win95-startup.md).
+    if (std::getenv("DKR_GLIDE_OPEN_EARLY") == nullptr) {
+        open_deferred_ = true;
+        return;
+    }
+    open_card();
+#endif
+}
+
+#if defined(DKR_TARGET_WIN95)
+void dkr::runtime::GlideRenderer::open_card() {
+    // How long the driver takes to bring the card up, on the timing export's
+    // clock.
+    const unsigned long long open_started = dkr_clock_init() != 0 ? dkr_clock_now_us() : 0ULL;
     if (backend_.open != nullptr && backend_.open(backend_.self, kWidth, kHeight) != 0) {
         opened_ = true;
         width_ = kWidth;
         height_ = kHeight;
-        std::fprintf(stderr, "[boot][gfx] Glide opened at %dx%d\n", width_, height_);
+        std::fprintf(stderr, "[boot][gfx] Glide opened at %dx%d in %llu ms, at t=%llu ms\n",
+                     width_, height_, (dkr_clock_now_us() - open_started) / 1000ULL,
+                     dkr_clock_now_us() / 1000ULL);
         if (std::getenv("DKR_OSD") != nullptr) {
             osd_.reset(new FrameOsd());
             std::fprintf(stderr, "[boot][gfx] on-screen display on\n");
@@ -318,8 +341,8 @@ dkr::runtime::GlideRenderer::GlideRenderer() {
         // degradation, not a breakdown.
         std::fprintf(stderr, "[boot][gfx] Glide unavailable: rendering disabled\n");
     }
-#endif
 }
+#endif
 
 #if defined(DKR_TARGET_WIN95)
 void dkr::runtime::GlideRenderer::dump_frame(const char* path) {
@@ -2088,6 +2111,12 @@ void dkr::runtime::GlideRenderer::update_screen() {
         // racing that setup.
         std::fprintf(stderr, "[boot] VI initialized; starting recompiled DKR entrypoint\n");
         recomp::start_game(kGameId);
+#if defined(DKR_TARGET_WIN95)
+        if (open_deferred_) {
+            open_deferred_ = false;
+            open_card();
+        }
+#endif
     }
     if (index <= 10 || index % 300 == 0) {
         std::fprintf(stderr, "[boot][vi] present=%llu\n",
