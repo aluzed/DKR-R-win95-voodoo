@@ -54,8 +54,9 @@ inline constexpr std::uint64_t kUsV80Xxh3 = 0xB55D4348B9AB07F5ULL;
 // already computed. A cache hit is advisory only: librecomp remains the final
 // authoritative ROM validator immediately before runtime start -- except on
 // Windows 95, where librecomp takes this hash rather than reading the twelve
-// megabytes again (patch 0062), so a file replaced by another of the same size
-// and date would be taken for the one it replaced.
+// megabytes again (patch 0062). A hit is therefore checked against the file's
+// header checksums too; what still passes is a file of the same size, date
+// and header whose contents differ -- an altered dump, not another ROM.
 void configure_identity_cache(const std::filesystem::path& config_directory);
 // Called around an inspection that has to read and hash the whole file -- a
 // cache miss, 2.3 s on the Windows 95 test machine -- so that the caller can
