@@ -253,6 +253,10 @@
         {
           "path": "patches/n64-modern-runtime/0062-select-a-rom-already-hashed-on-windows-95.patch",
           "sha256": "5bae0720ac5c72f5fd9d8126cbc985ac54970794bd9343af3e62f5eebd673c8c"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0063-rsp-inverse-square-root-table-without-counting.patch",
+          "sha256": "b82afeda896f68ac3c71f29bbf9fbdf03fcba4b689e1dcb9ad6d2593b9ce16f3"
         }
       ]
     },

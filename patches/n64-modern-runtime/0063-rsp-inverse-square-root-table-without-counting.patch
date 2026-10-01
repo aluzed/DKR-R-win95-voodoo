@@ -1,0 +1,38 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] The RSP inverse square root table without counting
+
+constants_init found each of the 512 inverse square roots by counting b up
+from 1 << 17 until a * (b + 1)^2 reached 1 << 44: some 25 million steps of
+64-bit arithmetic, which a 32-bit processor does in several instructions
+each. The sampler put it at 41% of the executable's time during start-up
+on the test machine. The count now starts two below a floating-point
+estimate; the same loop still decides every entry, so the table is
+unchanged -- compared entry by entry, all 512, against the counting
+version, which took 57.7 ms against 0.07 ms in a 32-bit build on the host.
+Measured on the test machine, interleaved: the first image at 6.5 s after
+start instead of 7.6 s.
+---
+--- a/librecomp/src/rsp.cpp
++++ b/librecomp/src/rsp.cpp
+@@ -1,6 +1,7 @@
+ #include <cassert>
+ #include <cstring>
+ #include <cinttypes>
++#include <cmath>
+ 
+ #include "rsp.hpp"
+ 
+@@ -27,6 +28,13 @@
+         u64 a = (index + 512) >> ((index % 2 == 1) ? 1 : 0);
+         u64 b = 1 << 17;
+         //find the largest b where b < 1.0 / sqrt(a)
++        // Started two below a floating-point estimate rather than at 1 << 17:
++        // counting up from there took some 25 million 64-bit steps, most of a
++        // second on a 32-bit Pentium II at every start. The loop below still
++        // decides every entry, so the table is unchanged -- checked for all
++        // 512 entries against the counting version.
++        const double root = std::sqrt(double(u64(1) << 44) / double(a));
++        if (root > double(b) + 2.0) b = u64(root) - 2;
+         while (a * (b + 1) * (b + 1) < (u64(1) << 44)) b++;
+         rspInverseSquareRoots[index] = u16(b >> 1);
+     }
