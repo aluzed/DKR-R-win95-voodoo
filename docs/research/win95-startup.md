@@ -27,7 +27,6 @@ less, all of it waiting that the player sees as a black screen.
   steps of 64-bit arithmetic. Starting from a floating-point estimate gives the
   same 512 entries — compared one by one on the host in a 32-bit build, where
   the counting took 57.7 ms and the estimate 0.07 ms.
-
 - **The card's opening.** The same sampler run put 57% of the moving samples
   in `GLIDE2X.DLL`, on the graphics thread. Timed, `grSstWinOpen` takes 2.9 s
   -- the driver's own, not this port's to shorten. But ultramodern starts the
@@ -41,9 +40,11 @@ less, all of it waiting that the player sees as a black screen.
 
 ## What remains
 
-The card's opening, 2.9 s, now bounds the first image: the game's boot ends
-before it. Below that, only a faster driver or a card opened earlier still
--- in another thread, which Glide 2 is not documented to allow.
+The card is now open at 3.8 s on the timing export's clock and the first list
+arrives at 5.2 s: the game's boot, sharing one processor with the driver, is
+what bounds the first image now, not the card. Its profile -- inflating
+assets (`gzip_inflate_codes`), the audio's initialisation, reading the ROM --
+is the next thing to look at.
 
 The first start, with an empty identity cache, adds 2.3 s of hashing to the
 runtime's own inspection (E02-S04); it has no feedback beyond the window.
