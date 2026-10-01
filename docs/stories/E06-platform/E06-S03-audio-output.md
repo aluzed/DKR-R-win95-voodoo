@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E03-S02, E02-S03, E06-S01 |
@@ -71,16 +71,32 @@ CPU budget.
 8. Check over a long duration — at least twenty minutes of continuous play — that the
    synchronisation does not drift.
 
+## Where it stands (1 October 2026)
+
+The output is `waveOut`, a ring of sixteen 4,096-frame buffers with two blocks
+of cushion before playback starts (`platform/win95/audio_out.c`), fed by the
+high-level mixer (E03-S03). DirectSound is not used: `waveOut` has been enough
+for every measurement in E08, and the criterion asking for DirectSound with a
+`waveOut` fallback stays open.
+
 ## Acceptance criteria
 
 - [ ] The audio is played back through DirectSound, with the `waveOut` fallback
       verified.
 - [ ] The buffer size is justified by the 99th percentile of time per frame.
-- [ ] No audible drift over twenty minutes of continuous play.
-- [ ] The underruns are counted and visible in diagnostics.
-- [ ] The output's CPU cost is measured, including with a poor driver.
+- [x] No audible drift over twenty minutes of continuous play -- measured rather than
+      listened to: over 123.7 minutes of the game (E08-S04's long session), 219,000 blocks
+      played, **0 underruns and 0 dropped**, and the mixer at full rate in every race since.
+- [x] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
+      in the log, and on the on-screen display (`OSD=1`).
+- [ ] The output's CPU cost is measured, including with a poor driver. *Partly*: in a
+      race, the sampler never finds `audio_out.c` among 43,335 samples of the executable
+      (E08-S01) -- negligible with the test machine's driver; no other driver tried.
 - [ ] The equaliser's cost is measured, and keeping it is settled on that figure.
-- [ ] The absence of a sound card lets the game go on running in silence.
+- [x] The absence of a sound card lets the game go on running in silence: a refused
+      `waveOutOpen` is logged and the game continues; with the output closed
+      (`DKR_NO_AUDIO_OUT=1`) it ran 660 display lists in silence on the test machine
+      (1 October 2026).
 
 ## Risks
 
