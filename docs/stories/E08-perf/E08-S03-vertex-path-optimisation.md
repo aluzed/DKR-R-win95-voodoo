@@ -404,6 +404,16 @@ the benchmark drifts by about 1% between sessions, so a candidate is only ever
 compared with a base run beside it (`REPLAY.EXE` under another name in the
 same batch file).
 
+Third use (1 October 2026): each vertex projected once per load and viewport
+for the triangles that need no clipping, only s and t worked out per corner.
+Byte-identical images on x86-64 and on the i386 x87 build with the target's
+options (43 captures each: C17 rounds the excess precision of `1/w` on
+assignment, so the stored and the recomputed value are the same float). On the
+card, interleaved: base **10,263 / 10,368 us**, memo **10,811 / 10,832**, 5%
+slower. Copying the 84-byte projected vertex costs more than the projection
+it saves, the division included; on this emulator the arithmetic is not the
+expensive part. Rejected.
+
 ## Acceptance criteria
 
 - [x] The vertex path's detailed profile is established.
