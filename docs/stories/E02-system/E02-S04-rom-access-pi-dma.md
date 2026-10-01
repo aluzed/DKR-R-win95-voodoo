@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E02 — Windows 95 system substrate |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E00-S06, E02-S01 |
@@ -63,14 +63,23 @@ transfers' semantics as the game sees them.
 
 ## Acceptance criteria
 
-- [ ] The ROM's memory footprint respects E00-S06's budget.
-- [ ] The game loads and starts from a valid ROM under emulated Windows 95.
+- [x] The ROM's memory footprint respects E00-S06's budget: the whole image is held,
+      once (patch 0060 removed a second read), and the game measured ~22 MiB in play
+      against the 32.8 MiB the ADR allows (E08-S04, ADR 0003).
+- [x] The game loads and starts from a valid ROM under emulated Windows 95 -- every run
+      since September; from a ROM found beside the game since 1 October (E06-S06).
 - [ ] A level's load time is measured and compared against the modern host's.
 - [ ] The SHA-1 validation's duration is measured; if it is perceptible, it is
-      accompanied by user feedback.
-- [ ] The three ROM formats are accepted without loading the whole image if reading
-      piece by piece is retained.
-- [ ] Windows 9x paths are handled, including with short names.
+      accompanied by user feedback. *Measured* (1 October 2026): hashing the ROM takes
+      2.3 s, on the first start only -- the identity cache now works on this target, and
+      later starts take 15 ms. That first start has no feedback beyond the window.
+- [x] The three ROM formats are accepted -- `.z64`, `.v64`, `.n64`, each started on the
+      test machine (E06-S06). The whole image is loaded; piece-by-piece reading was not
+      retained.
+- [x] Windows 9x paths are handled, including with short names: the ROM search and the
+      runtime use the narrow `...A` APIs and `path.string()` throughout -- the wide forms
+      are stubs here, the cause of two defects fixed on 1 October -- with ROMs found at
+      `D:\\DKR.Z64`, `D:\\NOROM\\DKR.N64` and `D:\\DKRTEST\\DKR.Z64`.
 - [ ] The DMA completion semantics are unchanged.
 
 ## Risks
