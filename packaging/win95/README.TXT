@@ -1,0 +1,128 @@
+DIDDY KONG RACING FOR WINDOWS 95 AND 3DFX VOODOO
+================================================
+
+An unofficial port. It runs the game's own code, recompiled for the PC, and
+draws it with a 3dfx Voodoo card. It contains no part of the game: you need
+your own copy of the cartridge's ROM.
+
+
+WHAT YOU NEED
+-------------
+
+  - Windows 95 (or 98).
+  - A 3dfx Voodoo graphics card - a Voodoo 2 is what the port was built for -
+    with its Windows 95 driver installed. The driver provides GLIDE2X.DLL in
+    the WINDOWS\SYSTEM folder; the game tells you if it cannot find it.
+  - A sound card with a Windows 95 driver.
+  - 64 MB of memory. The game also runs with 32 MB, but pauses to load more
+    often.
+  - A Pentium II at 400 MHz is the target. The figures below were measured on
+    an emulation of that machine, not yet on a real one.
+  - Your own Diddy Kong Racing ROM: the USA cartridge, version 1.0, as a .z64,
+    .v64 or .n64 file. The later "Rev A" (v1.1) and other regions are not
+    supported by this build.
+
+
+INSTALLING
+----------
+
+  1. Unpack this archive into a folder of its own, for example C:\GAMES\DKR.
+  2. Copy your ROM into that same folder.
+  3. Start DKRR.EXE.
+
+The first time, the game finds the ROM beside it, checks it, and writes its
+path into DKRR.INI. If it cannot find a ROM, or does not accept the one it
+finds, a message says why and what to do.
+
+The ROM may also be anywhere else: start the game as DKRR.EXE C:\PATH\DKR.Z64,
+or write the path in DKRR.INI:
+
+    [Paths]
+    Rom=C:\PATH\DKR.Z64
+
+
+CONTROLS
+--------
+
+The keyboard, by position (shown here for a US layout):
+
+    W A S D        the control stick
+    Arrow keys     the D-pad
+    Space          A          (accelerate)
+    Shift          B          (brake)
+    Z              Z          (fire an item)
+    Enter          Start
+    Q / E          L / R
+    I J K L        the C buttons
+
+Gamepads are not supported yet.
+
+
+SETTINGS
+--------
+
+DKRR.INI, beside the game, is written the first time it starts, with every
+useful setting commented out and explained. Remove the ';' in front of a line
+to use it. CONFIG.TXT describes them all.
+
+The ones a player may want:
+
+    RDRAM_SNAPSHOT=copy     the original port's slower way of drawing
+    GLIDE_SWAP=immediate    no wait for the monitor's retrace (may tear)
+    OSD=1                   frame rate and timings drawn over the game
+
+
+YOUR SAVES
+----------
+
+The game's saves, the cartridge's and the Controller Pak's, are kept in the
+DKR-RUNTIME-DATA folder beside the game, in SAVES and CONTROLLER-PAK-1.MPK.
+Copy that folder to keep them. Each save is written with a backup copy, so a
+power cut while saving does not lose the previous one.
+
+
+WHAT TO EXPECT
+--------------
+
+On the emulated Pentium II 400 and Voodoo 2:
+
+  - races run at the game's own 30 frames a second nine frames in ten;
+  - the adventure's hub world runs at 30 up to its busiest views, where it
+    falls to about 25;
+  - the sound plays at its full rate.
+
+
+KNOWN DIFFERENCES FROM THE CONSOLE
+----------------------------------
+
+The Voodoo is not the Nintendo 64's graphics chip, and some differences cannot
+be removed:
+
+  - textures are filtered slightly differently (the console blends three
+    texels, the Voodoo four);
+  - the console's edge anti-aliasing is not reproduced;
+  - a few of the console's colour combinations are approximated;
+  - distant textures may shimmer more;
+  - colours are stored with 16 bits and rounded down, which can show as
+    banding on long, smooth gradients;
+  - surfaces almost touching each other may sort differently; the tracks
+    were not seen to have any.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+
+The game writes what it does in DKR-RUNTIME-DATA\LOGS\RUNTIME.LOG. That file
+is what to send with a report.
+
+
+LICENCES
+--------
+
+LICENSE.TXT   this port's own code (MIT)
+COPYING.TXT   the GNU General Public License v3, which covers the runtime the
+              game is built on (N64ModernRuntime), and therefore DKRR.EXE
+THIRDPTY.TXT  the other components and their notices
+
+Diddy Kong Racing is a trademark of its owners. This port is not affiliated
+with, nor endorsed by, them, and distributes no part of the game.

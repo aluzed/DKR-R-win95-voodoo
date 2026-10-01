@@ -6,9 +6,21 @@ import pathlib
 import sys
 import zipfile
 
+# `scan_for_game_assets.py [root] [--allow RELATIVE_PATH ...]`: `--allow` names
+# a file allowed past the 5 MiB bound -- the Windows 95 package's executable,
+# which is the game's recompiled code and nothing of its data. The ROM headers
+# and the denied extensions are still checked on it.
+_ARGS = sys.argv[1:]
+_ALLOWED_BY_ARGUMENT = {
+    _ARGS[i + 1] for i, a in enumerate(_ARGS[:-1]) if a == "--allow"
+}
+_POSITIONAL = [
+    a for i, a in enumerate(_ARGS)
+    if a != "--allow" and (i == 0 or _ARGS[i - 1] != "--allow")
+]
 ROOT = (
-    pathlib.Path(sys.argv[1]).resolve()
-    if len(sys.argv) > 1
+    pathlib.Path(_POSITIONAL[0]).resolve()
+    if _POSITIONAL
     else pathlib.Path(__file__).resolve().parents[1]
 )
 SKIP_PARTS = {
@@ -22,7 +34,7 @@ N64_HEADERS = {
     b"\x40\x12\x37\x80": ".n64 little-endian ROM",
 }
 MAX_SOURCE_SIZE = 5 * 1024 * 1024
-ALLOW_LARGE: set[str] = set()
+ALLOW_LARGE: set[str] = set(_ALLOWED_BY_ARGUMENT)
 
 
 def should_skip(path: pathlib.Path) -> bool:

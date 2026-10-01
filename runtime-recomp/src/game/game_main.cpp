@@ -885,8 +885,8 @@ std::string Win95ExecutableDirectory() {
 
 std::string Win95IniPath() { return Win95ExecutableDirectory() + "\\DKRR.INI"; }
 
-void Win95RomMessage(const std::string& text) {
-    std::fprintf(stderr, "[boot][rom] %s\n", text.c_str());
+void Win95StartupMessage(const std::string& text) {
+    std::fprintf(stderr, "[boot][message] %s\n", text.c_str());
     ::MessageBoxA(nullptr, text.c_str(), "Diddy Kong Racing", MB_OK | MB_ICONEXCLAMATION);
 }
 
@@ -1306,16 +1306,37 @@ int DkrMain(int argc, char** argv) {
     }
     std::fprintf(stderr, "[boot][ini] %s: %d setting(s) applied, %d overridden by the environment\n",
                  dkr_ini_path(), dkr_ini_settings_applied(), dkr_ini_settings_overridden());
+    // **The card first, and said plainly when it is missing (E09-S05).** Without
+    // the 3dfx driver the renderer opens nothing and the game runs on, drawing
+    // nothing -- the right thing for reading a boot log, and a black screen
+    // for a player. `DKR_RENDERER=null`, the diagnostic renderer, is left alone.
+    {
+        const char* renderer = std::getenv("DKR_RENDERER");
+        if (renderer == nullptr || std::strcmp(renderer, "null") != 0) {
+            dkr_glide_hardware hardware{};
+            const dkr_glide_result glide = dkr_glide_detect(&hardware);
+            if (glide != DKR_GLIDE_OK) {
+                Win95StartupMessage(
+                    std::string("Diddy Kong Racing needs a 3dfx Voodoo graphics card "
+                                "and its Glide driver, and could not use them:\n\n    ") +
+                    dkr_glide_result_text(glide) +
+                    "\n\nInstall the Windows 95 driver that came with the card -- it "
+                    "puts GLIDE2X.DLL in the WINDOWS\\SYSTEM folder -- and start the "
+                    "game again.");
+                return 5;
+            }
+        }
+    }
     if (rom_path.empty()) {
         std::string message;
         if (!Win95DiscoverRom(rom_path, message)) {
-            Win95RomMessage(message);
+            Win95StartupMessage(message);
             return 2;
         }
     } else {
         std::string reason;
         if (!Win95RomAccepted(rom_path, reason)) {
-            Win95RomMessage("The ROM given to the game was not accepted:\n\n    " +
+            Win95StartupMessage("The ROM given to the game was not accepted:\n\n    " +
                             rom_path.string() + "\n    " + reason + "\n\n" +
                             Win95RomAdvice());
             return 3;
