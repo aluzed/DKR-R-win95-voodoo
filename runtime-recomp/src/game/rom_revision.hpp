@@ -52,8 +52,15 @@ inline constexpr std::uint64_t kUsV80Xxh3 = 0xB55D4348B9AB07F5ULL;
 [[nodiscard]] Identity inspect(const std::filesystem::path& path);
 // Loads and maintains a metadata-keyed cache of identities that DKR-R has
 // already computed. A cache hit is advisory only: librecomp remains the final
-// authoritative ROM validator immediately before runtime start.
+// authoritative ROM validator immediately before runtime start -- except on
+// Windows 95, where librecomp takes this hash rather than reading the twelve
+// megabytes again (patch 0062), so a file replaced by another of the same size
+// and date would be taken for the one it replaced.
 void configure_identity_cache(const std::filesystem::path& config_directory);
+// Called around an inspection that has to read and hash the whole file -- a
+// cache miss, 2.3 s on the Windows 95 test machine -- so that the caller can
+// say what the wait is. Either may be null.
+void set_long_inspection_notice(void (*begin)(), void (*end)());
 [[nodiscard]] std::optional<Identity> cached_identity(
     const std::filesystem::path& path);
 // N64ModernRuntime accepts every standard ROM byte order, but revision

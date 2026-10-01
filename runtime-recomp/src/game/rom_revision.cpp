@@ -39,6 +39,8 @@ struct CachedIdentity {
 dkr::sync::mutex g_identity_cache_mutex;
 std::map<std::string, CachedIdentity> g_identity_cache;
 std::filesystem::path g_identity_cache_path;
+void (*g_long_inspection_begin)() = nullptr;
+void (*g_long_inspection_end)() = nullptr;
 
 std::string PathUtf8(const std::filesystem::path& path) {
     const std::u8string value = path.u8string();
@@ -219,6 +221,12 @@ Identity inspect(const std::filesystem::path& path) {
     const std::size_t bytes_to_read = stamp.size == kRetailRomSize
         ? kRetailRomSize : 0x40U;
     std::vector<std::uint8_t> bytes(bytes_to_read);
+    const bool long_inspection = bytes_to_read == kRetailRomSize;
+    if (long_inspection && g_long_inspection_begin != nullptr) { g_long_inspection_begin(); }
+    struct EndNotice {
+        bool on;
+        ~EndNotice() { if (on && g_long_inspection_end != nullptr) { g_long_inspection_end(); } }
+    } end_notice{long_inspection};
     if (!ReadExact(input, bytes)) {
         identity.error = InspectionError::FailedToOpen;
         dkr::runtime::startup_performance::report(
@@ -261,6 +269,11 @@ Identity inspect(const std::filesystem::path& path) {
                              : "rom-inspect-unsupported",
         inspection_started_at);
     return identity;
+}
+
+void set_long_inspection_notice(void (*begin)(), void (*end)()) {
+    g_long_inspection_begin = begin;
+    g_long_inspection_end = end;
 }
 
 void configure_identity_cache(const std::filesystem::path& config_directory) {

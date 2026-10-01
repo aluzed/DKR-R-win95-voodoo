@@ -952,6 +952,33 @@ bool Win95DiscoverRom(std::filesystem::path& rom_path, std::string& message) {
     return false;
 }
 
+// The first start reads and hashes the whole ROM before anything is on the
+// screen: 2.3 s on the test machine, which a player can take for a hang. A
+// one-line window says what it is; later starts find the identity cached and
+// never show it (E02-S04).
+HWND g_rom_check_window = nullptr;
+
+void Win95RomCheckBegin() {
+    const int width = 360;
+    const int height = 64;
+    g_rom_check_window = CreateWindowExA(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "STATIC", "Checking the ROM -- first start only...",
+        WS_POPUP | WS_BORDER | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+        (GetSystemMetrics(SM_CXSCREEN) - width) / 2,
+        (GetSystemMetrics(SM_CYSCREEN) - height) / 2, width, height,
+        nullptr, nullptr, GetModuleHandleA(nullptr), nullptr);
+    if (g_rom_check_window != nullptr) { UpdateWindow(g_rom_check_window); }
+    std::fprintf(stderr, "[boot][rom] the whole ROM is checked: a notice is %s\n",
+                 g_rom_check_window != nullptr ? "shown" : "not shown, no window");
+}
+
+void Win95RomCheckEnd() {
+    if (g_rom_check_window != nullptr) {
+        DestroyWindow(g_rom_check_window);
+        g_rom_check_window = nullptr;
+    }
+}
+
 } // namespace
 #endif
 
@@ -1283,6 +1310,9 @@ int DkrMain(int argc, char** argv) {
             "rom-identity-cache-configure");
         dkr::runtime::rom::configure_identity_cache(config_directory);
     }
+#if defined(DKR_TARGET_WIN95)
+    dkr::runtime::rom::set_long_inspection_notice(Win95RomCheckBegin, Win95RomCheckEnd);
+#endif
 #if defined(_WIN32)
     g_crash_directory = dkr::runtime::support::crash_dump_directory();
     if (dkr::runtime::support::crash_dumps_enabled()) {

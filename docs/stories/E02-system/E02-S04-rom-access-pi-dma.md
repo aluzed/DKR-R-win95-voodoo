@@ -83,10 +83,13 @@ transfers' semantics as the game sees them.
       These are under 86Box, whose disk is the host's file: a 1998 disk would add
       its seek time to the misses, about 400 for a race. *Not compared*: this
       checkout has no build of the modern host to compare with.
-- [ ] The SHA-1 validation's duration is measured; if it is perceptible, it is
+- [x] The SHA-1 validation's duration is measured; if it is perceptible, it is
       accompanied by user feedback. *Measured* (1 October 2026): hashing the ROM takes
       2.3 s, on the first start only -- the identity cache now works on this target, and
-      later starts take 15 ms. That first start has no feedback beyond the window.
+      later starts take 15 ms. Since 1 October that first start shows a one-line
+      window, "Checking the ROM -- first start only...", for the 2.4 s the check
+      lasts; seen on the test machine's screen, and absent from a start that finds
+      the identity cached.
       librecomp's own read and hash of the same bytes, 2.3 s of *every* start, is gone
       since patch 0062: it takes the runtime's hash. The ROM is selected 1.87 s after
       start instead of 4.17 s, the first image shown at 7.6 s instead of 9.9 s (6.5 s
