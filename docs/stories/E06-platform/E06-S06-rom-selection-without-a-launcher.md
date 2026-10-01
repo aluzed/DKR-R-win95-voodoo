@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P2 |
 | **Estimate** | S |
 | **Depends on** | E02-S04, E06-S05 |
@@ -56,12 +56,12 @@ message when it is absent or invalid.
 
 ## Acceptance criteria
 
-- [ ] The three discovery routes work, in order of priority.
-- [ ] A ROM dropped next to the executable is found automatically.
-- [ ] The validated path is remembered and revalidation avoided.
-- [ ] Every error case produces a message that says what to do.
-- [ ] The messages are visible without a console, and traced in the log.
-- [ ] The three byte orders are accepted.
+- [x] The three discovery routes work, in order of priority: command line, `DKRR.INI`, the executable's folder (1 October 2026, on the test machine).
+- [x] A ROM dropped next to the executable is found automatically.
+- [x] The validated path is remembered (`[Paths] Rom=`) and revalidation avoided: the identity cache was written and never read on this target (`_wfopen`), and the ROM was hashed on every start, 2.3 s; it is now read, and inspection takes 15 ms.
+- [x] Every error case produces a message that says what to do: no ROM, an unreadable or unrecognised file, the Rev A revision, a refused command-line path.
+- [x] The messages are visible without a console (a message box, checked on the test machine), and traced in the log.
+- [x] The three byte orders are accepted -- `.z64`, `.v64`, `.n64`, each started on the test machine. The two that need normalising ended the game before this ticket: `std::random_device` is `rand_s`, absent on Windows 95.
 - [ ] The procedure is documented in the distribution package.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.

@@ -860,6 +860,100 @@ bool PrepareCanonicalRomPath(std::filesystem::path& rom_path,
 
 } // namespace
 
+#if defined(DKR_TARGET_WIN95)
+/* --- Finding the ROM without a launcher (E06-S06) -----------------------------
+ *
+ * The SDL launcher is gone on this target, and a game installed in a folder is
+ * expected to find what was dropped beside it. In order: the command line, then
+ * `Rom=` under `[Paths]` in DKRR.INI beside the executable, then any `.z64`,
+ * `.n64` or `.v64` in the executable's folder. The first that is accepted is
+ * written back to DKRR.INI, so the next start goes to it directly.
+ *
+ * There is no console here, so a refusal is a message box -- and it says what to
+ * do, not only what is wrong: the first thing a player sees of this port must
+ * not be a dead end. Everything it says is in the log as well. */
+namespace {
+
+std::string Win95ExecutableDirectory() {
+    char path[MAX_PATH] = {};
+    const DWORD n = GetModuleFileNameA(nullptr, path, sizeof(path));
+    std::string directory(path, n);
+    const std::string::size_type slash = directory.find_last_of("\\/");
+    return (slash == std::string::npos) ? std::string(".") : directory.substr(0, slash);
+}
+
+std::string Win95IniPath() { return Win95ExecutableDirectory() + "\\DKRR.INI"; }
+
+void Win95RomMessage(const std::string& text) {
+    std::fprintf(stderr, "[boot][rom] %s\n", text.c_str());
+    ::MessageBoxA(nullptr, text.c_str(), "Diddy Kong Racing", MB_OK | MB_ICONEXCLAMATION);
+}
+
+std::string Win95RomAdvice() {
+    return "Copy your own Diddy Kong Racing ROM -- USA, version 1.0, as a .z64, "
+           ".n64 or .v64 file -- into\n\n    " + Win95ExecutableDirectory() +
+           "\n\nand start the game again. Or write its full path in DKRR.INI, "
+           "beside the game:\n\n    [Paths]\n    Rom=C:\\GAMES\\DKR.Z64";
+}
+
+/* Whether this build can run the ROM: the generic check accepts both US
+   revisions, and this target is built for v1.0 alone. */
+bool Win95RomAccepted(const std::filesystem::path& path, std::string& reason) {
+    dkr::runtime::rom::Identity identity{};
+    if (!dkr::runtime::ValidateRomForLauncher(path, identity, reason)) { return false; }
+#if !DKR_RUNTIME_HAS_PAYLOAD_V80
+    if (identity.revision == dkr::runtime::rom::Revision::UsV80) {
+        reason = "This is the USA Rev A (v1.1) ROM; this build of the game runs the "
+                 "USA v1.0 ROM only.";
+        return false;
+    }
+#endif
+    return true;
+}
+
+bool Win95DiscoverRom(std::filesystem::path& rom_path, std::string& message) {
+    const std::string ini = Win95IniPath();
+    const std::string directory = Win95ExecutableDirectory();
+    std::vector<std::string> candidates;
+    char remembered[MAX_PATH] = {};
+    GetPrivateProfileStringA("Paths", "Rom", "", remembered, sizeof(remembered), ini.c_str());
+    if (remembered[0] != '\0') { candidates.emplace_back(remembered); }
+    for (const char* pattern : {"*.z64", "*.n64", "*.v64"}) {
+        WIN32_FIND_DATAA found{};
+        const HANDLE search = FindFirstFileA((directory + "\\" + pattern).c_str(), &found);
+        if (search == INVALID_HANDLE_VALUE) { continue; }
+        do {
+            if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+                candidates.push_back(directory + "\\" + found.cFileName);
+            }
+        } while (FindNextFileA(search, &found));
+        FindClose(search);
+    }
+    std::string refused;
+    for (std::size_t i = 0; i < candidates.size(); i++) {
+        std::string reason;
+        const bool from_ini = (i == 0 && remembered[0] != '\0');
+        const std::filesystem::path path = std::filesystem::u8path(candidates[i]);
+        if (Win95RomAccepted(path, reason)) {
+            rom_path = path;
+            std::fprintf(stderr, "[boot][rom] found %s (%s)\n", candidates[i].c_str(),
+                         from_ini ? "DKRR.INI" : "beside the game");
+            if (!from_ini) {
+                WritePrivateProfileStringA("Paths", "Rom", candidates[i].c_str(), ini.c_str());
+            }
+            return true;
+        }
+        std::fprintf(stderr, "[boot][rom] refused %s: %s\n", candidates[i].c_str(), reason.c_str());
+        refused += "\n    " + candidates[i] + "\n        " + reason;
+    }
+    message = "Diddy Kong Racing could not find its ROM.\n\n" + Win95RomAdvice();
+    if (!refused.empty()) { message += "\n\nFiles looked at and not used:" + refused; }
+    return false;
+}
+
+} // namespace
+#endif
+
 bool RelaunchApplication(int argc, char** argv) {
 #ifdef _WIN32
     (void)argc;
@@ -1205,6 +1299,23 @@ int DkrMain(int argc, char** argv) {
 
     dkr::runtime::rom::Identity rom_identity{};
     bool rom_identified = false;
+#if defined(DKR_TARGET_WIN95)
+    if (rom_path.empty()) {
+        std::string message;
+        if (!Win95DiscoverRom(rom_path, message)) {
+            Win95RomMessage(message);
+            return 2;
+        }
+    } else {
+        std::string reason;
+        if (!Win95RomAccepted(rom_path, reason)) {
+            Win95RomMessage("The ROM given to the game was not accepted:\n\n    " +
+                            rom_path.string() + "\n    " + reason + "\n\n" +
+                            Win95RomAdvice());
+            return 3;
+        }
+    }
+#endif
     if (!rom_path.empty()) {
         if (!dkr::runtime::ValidateRomForLauncher(
                 rom_path, rom_identity, rom_error)) {

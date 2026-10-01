@@ -5,6 +5,8 @@
 #include "xxHash/xxhash.h"
 
 #include <array>
+#include <cstdio>
+#include <chrono>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -265,7 +267,11 @@ void configure_identity_cache(const std::filesystem::path& config_directory) {
     dkr::sync::scoped_lock lock(g_identity_cache_mutex);
     g_identity_cache.clear();
     g_identity_cache_path = config_directory / "rom-identities-v1.txt";
-    std::ifstream input(g_identity_cache_path);
+    /* `.string()`: a stream opened from a `path` goes through `_wfopen`, which
+       Windows 95 has as a stub that fails. The cache was written (through a
+       narrow name) and never read back, so the 12 MB ROM was hashed again on
+       every start, 2.3 s on the test machine (E06-S06, 1 October 2026). */
+    std::ifstream input(g_identity_cache_path.string());
     if (!input) return;
     std::string line;
     while (std::getline(input, line)) {
@@ -359,10 +365,22 @@ bool materialize_canonical(const std::filesystem::path& source,
         return false;
     }
 
-    std::random_device random;
     std::ostringstream temporary_name;
+#if defined(DKR_TARGET_WIN95)
+    /* `std::random_device` is `rand_s` here, which Windows 95 does not have:
+       it threw, and every ROM that needed normalising -- a .v64 or a .n64 --
+       ended the game with "abnormal program termination" before its first
+       frame (E06-S06, 1 October 2026). The name only has to be unlikely to
+       collide with another start of the game, which the clock gives. */
+    static unsigned counter = 0;
+    temporary_name << destination.filename().string() << ".tmp." << std::hex
+                   << std::chrono::steady_clock::now().time_since_epoch().count()
+                   << '.' << ++counter;
+#else
+    std::random_device random;
     temporary_name << destination.filename().string() << ".tmp."
                    << std::hex << random() << random();
+#endif
     const std::filesystem::path temporary =
         destination.parent_path() / temporary_name.str();
     {

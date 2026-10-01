@@ -25,3 +25,23 @@ never be committed or distributed.
 
 If validation fails, redump your own cartridge and verify the revision. ROM
 patches, modified regional releases and bad dumps are intentionally rejected.
+
+## Windows 95
+
+The Windows 95 build has no launcher and runs **US v1.0 (v77) only**; the Rev A
+ROM is recognised and refused with a message saying so. It looks for the ROM in
+this order:
+
+1. a path given on the command line (`DKRR.EXE C:\GAMES\DKR.Z64`);
+2. `Rom=` under `[Paths]` in `DKRR.INI`, beside `DKRR.EXE`;
+3. any `.z64`, `.n64` or `.v64` file in the folder of `DKRR.EXE`.
+
+So the simplest installation is to copy your ROM into the game's folder and
+start `DKRR.EXE`. The first ROM accepted is written to `DKRR.INI`, and its
+identity is kept in `dkr-runtime-data\rom-identities-v1.txt`, so later starts
+neither search nor hash it again (2.3 s saved on the test machine). A `.v64`
+or `.n64` dump is normalised once into `dkr-runtime-data\rom-cache`.
+
+When no ROM is accepted, a message box says where to copy it, how to name it in
+`DKRR.INI`, and lists every file it looked at with the reason it was not used.
+The same text is in `dkr-runtime-data\logs\runtime.log`.
