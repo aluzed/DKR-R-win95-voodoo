@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E08 — Performance |
-| **Status** | IN PROGRESS |
+| **Status** | REVIEW |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E00-S06, E08-S01, E07-S01 |
