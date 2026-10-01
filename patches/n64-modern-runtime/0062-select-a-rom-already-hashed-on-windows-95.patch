@@ -1,0 +1,90 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Select a ROM already hashed on Windows 95
+
+The runtime hashes the ROM to choose its CPU payload before librecomp sees
+it, and keeps the hash keyed by the file's size and date; select_rom then
+read the twelve megabytes and hashed them again, 2.3 s of every start on
+the test machine, to reach the same answer. select_validated_rom takes the
+caller's XXH3 -- the same function over the same big-endian bytes -- checks
+it against the game's, and records the file for patch 0061 to read on
+demand. Measured: the ROM selected at 1.87 s after start instead of 4.17 s,
+the first image at 7.6 s instead of 9.9 s.
+---
+--- a/librecomp/include/librecomp/game.hpp
++++ b/librecomp/include/librecomp/game.hpp
+@@ -75,6 +75,11 @@
+     void check_all_stored_roms();
+     bool load_stored_rom(std::u8string& game_id);
+     RomValidationError select_rom(const std::filesystem::path& rom_path, std::u8string& game_id);
++    // Windows 95 (patch 0062): select a big-endian ROM file the caller has
++    // already hashed, without reading it again. `xxh3` is its XXH3-64 over the
++    // whole file, checked against the game's.
++    RomValidationError select_validated_rom(const std::filesystem::path& rom_path, std::u8string& game_id,
++                                            size_t size, uint64_t xxh3);
+     bool is_rom_valid(std::u8string& game_id);
+     bool is_rom_loaded();
+     void set_rom_contents(std::vector<uint8_t>&& new_rom);
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -218,6 +218,8 @@
+ /* Patch 0061: the file the selected ROM came from, when it is already
+    big-endian -- then it is served from the file, on demand, and not held. */
+ static std::filesystem::path selected_rom_file;
++/* Patch 0062: its size, for a ROM selected without being read. */
++static size_t selected_rom_size = 0;
+ #endif
+ 
+ void recomp::check_all_stored_roms() {
+@@ -239,9 +241,9 @@
+     }
+     
+ #if defined(DKR_TARGET_WIN95)
+-    if (!selected_rom_data.empty() && selected_rom_game == game_id &&
+-        !selected_rom_file.empty() &&
+-        recomp::set_rom_file(selected_rom_file, selected_rom_data.size())) {
++    if (selected_rom_game == game_id && !selected_rom_file.empty() &&
++        recomp::set_rom_file(selected_rom_file, selected_rom_data.empty()
++                                 ? selected_rom_size : selected_rom_data.size())) {
+         /* Freed here, the twelve megabytes go back to the system: a block
+            that size is the heap's own allocation, released whole. Measured
+            on the test machine, 10.6 MB more free physical memory in a race. */
+@@ -384,6 +386,31 @@
+     }
+ }
+ 
++#if defined(DKR_TARGET_WIN95)
++/* Patch 0062. The runtime hashes the ROM before librecomp sees it, to choose
++ * the CPU payload, and keeps that hash keyed by the file's size and date; the
++ * read and hash in select_rom then cost 2.3 s on every start of the test
++ * machine, to reach the same answer. The hash is the same function over the
++ * same big-endian bytes, so it is taken instead, and the file is read on
++ * demand from then on (patch 0061). */
++recomp::RomValidationError recomp::select_validated_rom(const std::filesystem::path& rom_path,
++                                                        std::u8string& game_id,
++                                                        size_t size, uint64_t xxh3) {
++    auto find_it = game_roms.find(game_id);
++    if (find_it == game_roms.end()) {
++        return recomp::RomValidationError::OtherError;
++    }
++    if (xxh3 != find_it->second.rom_hash) {
++        return recomp::RomValidationError::IncorrectVersion;
++    }
++    selected_rom_data = std::vector<uint8_t>{};
++    selected_rom_file = rom_path;
++    selected_rom_size = size;
++    selected_rom_game = game_id;
++    return recomp::RomValidationError::Good;
++}
++#endif
++
+ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_path, std::u8string& game_id) {
+     auto find_it = game_roms.find(game_id);
+ 
+@@ -433,6 +460,7 @@
+     }
+ 
+ #if defined(DKR_TARGET_WIN95)
++    selected_rom_size = 0;
+     selected_rom_file = (byteswap_type == ByteswapType::NotByteswapped)
+         ? rom_path : std::filesystem::path{};
+     selected_rom_data = std::move(rom_data);

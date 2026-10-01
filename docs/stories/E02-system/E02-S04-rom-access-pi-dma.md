@@ -87,6 +87,9 @@ transfers' semantics as the game sees them.
       accompanied by user feedback. *Measured* (1 October 2026): hashing the ROM takes
       2.3 s, on the first start only -- the identity cache now works on this target, and
       later starts take 15 ms. That first start has no feedback beyond the window.
+      librecomp's own read and hash of the same bytes, 2.3 s of *every* start, is gone
+      since patch 0062: it takes the runtime's hash. The ROM is selected 1.87 s after
+      start instead of 4.17 s, the first image shown at 7.6 s instead of 9.9 s.
 - [x] The three ROM formats are accepted -- `.z64`, `.v64`, `.n64`, each started on the
       test machine (E06-S06). All three are read on demand (patch 0061), the
       byte-swapped two from their normalised copy.

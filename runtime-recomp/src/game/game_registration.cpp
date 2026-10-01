@@ -149,7 +149,18 @@ bool dkr::runtime::SelectRom(const std::filesystem::path& rom_path, std::string&
     }
 
     std::u8string game_id{kGameId};
+#if defined(DKR_TARGET_WIN95)
+    // The identity was just hashed, or taken from the cache keyed by the
+    // file's size and date: librecomp takes that hash rather than reading and
+    // hashing the twelve megabytes again, 2.3 s of every start (patch 0062).
+    const recomp::RomValidationError result =
+        identity.byte_order == rom::ByteOrder::BigEndian
+            ? recomp::select_validated_rom(rom_path, game_id, identity.file_size,
+                                           identity.canonical_xxh3)
+            : recomp::select_rom(rom_path, game_id);
+#else
     const recomp::RomValidationError result = recomp::select_rom(rom_path, game_id);
+#endif
     if (result == recomp::RomValidationError::Good) {
         return true;
     }

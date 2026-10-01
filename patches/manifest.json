@@ -249,6 +249,10 @@
         {
           "path": "patches/n64-modern-runtime/0061-rom-read-on-demand-on-windows-95.patch",
           "sha256": "be1d4ab4e408ce84dda026ba18e71fcbf6dfb5e28a2c28e789654b8e0d923d14"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0062-select-a-rom-already-hashed-on-windows-95.patch",
+          "sha256": "5bae0720ac5c72f5fd9d8126cbc985ac54970794bd9343af3e62f5eebd673c8c"
         }
       ]
     },
