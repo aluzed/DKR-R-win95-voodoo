@@ -186,6 +186,14 @@ length now covers less of the game, so windows are to be read on the guest's
 clock, as `budget.py`-style readings and `timing_report.py --skip-s/--until-s`
 already do, and a 150 s run no longer reaches 89 s of the game.
 
+## The default since 1 October 2026: no snapshot
+
+Patch 0058 makes the snapshot-free mode the Windows 95 default. Every
+`DKR_RDRAM_SNAPSHOT=none` figure on this page is now what a player gets with no
+option set; the "default mode" figures before this date are the copy, which
+`DKR_RDRAM_SNAPSHOT=copy` restores. Checked with no option: a race at 34.9 ms
+a frame, 93% of frames on two retraces (E08-S04).
+
 ## The adventure hub, 30 September 2026
 
 The richest scene the port draws -- Timber's Island, entered from a new save

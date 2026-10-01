@@ -225,6 +225,23 @@ driven by hand and by `Drive-To-Race.sh` -- reached their race and ran it.
 That is one track and the attract sequence, not the game; it is what this
 ticket's changes can be expected to disturb, and they do not.
 
+### No snapshot by default (1 October 2026)
+
+Decided by the project's owner on the measurements above and in
+`frame-budget.md`: patch 0058 makes `DKR_RDRAM_SNAPSHOT=none` the Windows 95
+default; `DKR_RDRAM_SNAPSHOT=copy` restores the copy, and other targets keep
+it. Checked the same morning with no option set at all -- the log reads
+`[snap][mode] none` -- through the attract sequence and a race driven by
+`Drive-To-Race.sh`:
+
+| | frames on two retraces | mean period |
+|---|---:|---:|
+| attract and menus, 40 s to the race | 95% | 35.5 ms |
+| the race, from ten seconds in | 93% | 34.9 ms |
+
+No audio underrun, no rejected read, no lockup. Against the default of the day
+before, 50.9 ms in a race.
+
 ### A longer session (29 September 2026)
 
 The same meter over 1,260 s of wall time, which the emulator's 57% speed makes
@@ -306,8 +323,10 @@ them; they carry messages, not data that accumulates.
 
 ## Acceptance criteria
 
-- [ ] The RDRAM snapshot and the number of tasks in flight are reduced according to
-      E00-S06.
+- [x] The RDRAM snapshot and the number of tasks in flight are reduced according to
+      E00-S06 -- beyond it: since patch 0058 (1 October 2026) the default has no
+      snapshot at all, and one task in flight, the scheduler waiting for it to be
+      drawn. See "No snapshot by default" above.
 - [x] Every host-side cache has an explicit ceiling.
 - [x] Heap fragmentation is measured over a long session and does not grow without
       bound: two hours of the game, the address space flat to the kilobyte, and

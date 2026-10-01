@@ -233,6 +233,10 @@
         {
           "path": "patches/n64-modern-runtime/0057-snapshot-copy-starts-after-the-code.patch",
           "sha256": "f6f28a932dbead787c6627cd898ef0ae803c71619c3a157095fa3444467a3057"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0058-no-snapshot-by-default-on-windows-95.patch",
+          "sha256": "31c76cb914ea69fc6042387c2722a3acc82a2fd856245aa5e4abef02d907b022"
         }
       ]
     },

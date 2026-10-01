@@ -1,0 +1,49 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] No RDRAM snapshot by default on Windows 95
+
+The snapshot-free mode of patch 0052 becomes the default on the Windows 95
+target: in a race driven by hand it runs at 35 ms a frame, 88% of frames at
+the game's thirty a second, against 51 ms with the copy even after 0057, and
+it has been played through races, menus, the adventure hub and sessions of
+46 minutes and two hours without a stall. DKR_RDRAM_SNAPSHOT=copy restores
+the copy; other targets keep it by default.
+---
+--- a/ultramodern/src/events.cpp	2026-10-01 08:21:57.935878044 +0200
++++ b/ultramodern/src/events.cpp	2026-10-01 08:22:23.458755478 +0200
+@@ -223,10 +223,25 @@
+  *    cannot outrun the emulated scheduler, and here the scheduler cannot submit
+  *    anything until it has the token back.
+  *
+- * Off by default. */
++ * **The default on the Windows 95 target since 1 October 2026**, off elsewhere.
++ * Measured in a race driven by hand: 35 ms a frame with 88% of frames at the
++ * game's thirty a second, against 51 ms with the copy even after patch 0057;
++ * and played without a stall through races, menus, the adventure hub and
++ * sessions of 46 minutes and two hours (E08-S04). The copy bought an overlap
++ * that one processor cannot have. DKR_RDRAM_SNAPSHOT=copy restores it,
++ * DKR_RDRAM_SNAPSHOT=none forces this mode anywhere. */
+ static const bool g_snapshot_none = [] {
++#ifdef DKR_TARGET_WIN95
++    bool none = true;
++#else
++    bool none = false;
++#endif
+     const char* choice = std::getenv("DKR_RDRAM_SNAPSHOT");
+-    return (choice != nullptr) && (std::strcmp(choice, "none") == 0);
++    if (choice != nullptr) {
++        if (std::strcmp(choice, "none") == 0) { none = true; }
++        else if (std::strcmp(choice, "copy") == 0) { none = false; }
++    }
++    return none;
+ }();
+ static moodycamel::LightweightSemaphore g_sync_drawn;
+ /* Announced at the first task rather than at static initialisation, which runs
+@@ -1234,7 +1249,7 @@
+             if (!g_snapshot_none_announced.exchange(true)) {
+                 std::fprintf(stderr, "[snap][mode] none: display lists drawn from "
+                                      "live RDRAM, the scheduler waits "
+-                                     "(DKR_RDRAM_SNAPSHOT=none)\n");
++                                     "(DKR_RDRAM_SNAPSHOT=copy for the copy)\n");
+             }
+             events_context.action_queue.enqueue(SpTaskAction{
+                 *task, SnapshotPtr{}, true, &g_sync_drawn });

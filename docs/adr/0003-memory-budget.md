@@ -219,6 +219,11 @@ patch 0055 lets their pages come in only when touched, and 16.0 MiB stay free.
 The same measurement shows the default mode at 64 ms a frame against 35 ms
 without a snapshot.
 
+**Since 1 October 2026 there is no snapshot by default** (patch 0058): the
+snapshot-free mode is the Windows 95 default, so the row "RDRAM snapshot per
+task" above is zero in what a player runs, below the 4 MiB this ADR allowed.
+`DKR_RDRAM_SNAPSHOT=copy` brings the pool of two back.
+
 **The 32 MB floor, revisited by measurement.** This ADR ruled 32 MB out on
 paper. With the machine set to 32 MiB for one run, the game runs: it pages
 through the loading and at scene changes, the swap file holding 35 MiB, and

@@ -53,7 +53,11 @@ mode() {
 }
 
 say "to PLAYER SELECT"
-"$drive" pad-until-screen start 90621 4000 || die "PLAYER SELECT not reached"
+# Colours and brightness: the attract sequence's own character carousel holds
+# about as many colours as PLAYER SELECT (89,842 against 90,621, 1 October
+# 2026), and a route started late in the attract stopped there and went on
+# into the adventure's initials. Brightness tells them apart.
+"$drive" pad-until-screen start 90621:486 4000 || die "PLAYER SELECT not reached"
 
 say "character, confirmation, caution"
 press a 1200 6
