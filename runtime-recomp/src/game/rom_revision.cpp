@@ -198,9 +198,25 @@ Identity inspect(const std::filesystem::path& path) {
     Identity identity{};
     const FileStamp stamp = ReadStamp(path);
     if (const auto cached = FindCachedIdentity(path, stamp)) {
-        dkr::runtime::startup_performance::report(
-            "rom-inspect-cache-hit", inspection_started_at);
-        return *cached;
+        // The size and date alone would take a different ROM of the same size,
+        // copied over this one with its date kept, for the one it replaced --
+        // and on Windows 95 nothing hashes the file after this (patch 0062).
+        // The header's two checksums differ between revisions and games, and
+        // cost a 64-byte read.
+        std::ifstream header_input(path.string(), std::ios::binary);
+        std::vector<std::uint8_t> header(0x40U);
+        if (header_input && ReadExact(header_input, header) &&
+            detect_byte_order(header) == cached->byte_order) {
+            canonicalize(header, cached->byte_order);
+            if (read_be32(header, 0x10U) == cached->header_crc1 &&
+                read_be32(header, 0x14U) == cached->header_crc2) {
+                dkr::runtime::startup_performance::report(
+                    "rom-inspect-cache-hit", inspection_started_at);
+                return *cached;
+            }
+        }
+        std::fprintf(stderr, "[boot][rom] the cached identity's header does not match: "
+                             "checking the whole file\n");
     }
     std::ifstream input(path.string(), std::ios::binary);
     if (!input) {

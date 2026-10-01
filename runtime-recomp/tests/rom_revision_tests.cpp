@@ -93,6 +93,23 @@ int main(int argc, char** argv) {
     assert(cache_hit.has_value());
     assert(cache_hit->canonical_xxh3 == first_cached_identity.canonical_xxh3);
 
+    // Another header over the same file, its size and date kept: the cache
+    // must not answer for it. On Windows 95 nothing hashes the file after the
+    // cache (patch 0062), so this is the check that stands in for that.
+    {
+        const auto kept_time = std::filesystem::last_write_time(cached_rom);
+        auto other_header = read_file(cached_rom);
+        other_header[0x10U] ^= 0xFFU;
+        write_file(cached_rom, other_header);
+        std::filesystem::last_write_time(cached_rom, kept_time);
+        dkr::runtime::rom::configure_identity_cache(identity_cache);
+        assert(!dkr::runtime::rom::inspect(cached_rom).supported());
+        write_file(cached_rom, read_file(v80_z64));
+        std::filesystem::last_write_time(cached_rom, kept_time);
+        dkr::runtime::rom::configure_identity_cache(identity_cache);
+        assert(dkr::runtime::rom::inspect(cached_rom).supported());
+    }
+
     auto changed_bytes = read_file(cached_rom);
     changed_bytes.front() ^= 0xFFU;
     write_file(cached_rom, changed_bytes);
