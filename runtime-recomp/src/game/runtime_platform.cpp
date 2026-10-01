@@ -32,6 +32,7 @@
 #if defined(DKR_TARGET_WIN95)
 extern "C" {
 #include "audio_out.h"
+#include "joystick.h"
 }
 #endif
 #include <algorithm>
@@ -2420,13 +2421,31 @@ void dkr::runtime::platform::poll_input() {
             }
             last = buttons;
         }
-        g_physical_buttons[0].store(buttons, std::memory_order_release);
-        g_physical_stick_x[0].store(stick_x, std::memory_order_release);
-        g_physical_stick_y[0].store(stick_y, std::memory_order_release);
-        g_buttons[0].store(buttons, std::memory_order_release);
-        g_stick_x[0].store(stick_x, std::memory_order_release);
-        g_stick_y[0].store(stick_y, std::memory_order_release);
-        for (std::size_t player = 1; player < kControllerCount; ++player) {
+        /* **And the pads (E06-S02).** Joystick 1 joins the keyboard on player
+           one -- buttons combined, the keyboard's stick when a direction key is
+           held and the pad's otherwise -- and joystick 2 is player two. */
+        std::uint16_t player_buttons[2] = {buttons, 0U};
+        float player_x[2] = {stick_x, 0.0F};
+        float player_y[2] = {stick_y, 0.0F};
+        for (int pad = 0; pad < DKR_JOY_DEVICES; ++pad) {
+            dkr_joy_n64 joy{};
+            if (dkr_joy_read(pad, &joy) != 0) {
+                player_buttons[pad] = static_cast<std::uint16_t>(player_buttons[pad] | joy.buttons);
+                if (player_x[pad] == 0.0F && player_y[pad] == 0.0F) {
+                    player_x[pad] = joy.stick_x;
+                    player_y[pad] = joy.stick_y;
+                }
+            }
+        }
+        for (std::size_t player = 0; player < 2; ++player) {
+            g_physical_buttons[player].store(player_buttons[player], std::memory_order_release);
+            g_physical_stick_x[player].store(player_x[player], std::memory_order_release);
+            g_physical_stick_y[player].store(player_y[player], std::memory_order_release);
+            g_buttons[player].store(player_buttons[player], std::memory_order_release);
+            g_stick_x[player].store(player_x[player], std::memory_order_release);
+            g_stick_y[player].store(player_y[player], std::memory_order_release);
+        }
+        for (std::size_t player = 2; player < kControllerCount; ++player) {
             g_buttons[player].store(0, std::memory_order_release);
             g_stick_x[player].store(0.0F, std::memory_order_release);
             g_stick_y[player].store(0.0F, std::memory_order_release);

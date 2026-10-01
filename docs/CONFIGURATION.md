@@ -39,6 +39,9 @@ this is the one a player is told to open.
 |---|---|---|---|---|
 | `RDRAM_SNAPSHOT` | `none`, `copy` | `none` | `copy` copies the game's four megabytes of memory for every frame drawn, so that the game runs while the card draws. On one processor that overlap does not exist. | `copy`: about 51 ms a frame in a race against 35 ms |
 | `GLIDE_SWAP` | `immediate` | synchronised | Presents each frame at once instead of at the monitor's retrace. | none; may tear |
+| `JOY_DEADZONE` | 0..90 | 15 | The share of a joystick axis's half-range that reads as centred. Pads of the period drift at rest. An out-of-range value is refused and logged. | none |
+| `JOY_BUTTONS` | up to eight of `A B Z START L R CU CD CL CR DU DD DL DR -`, comma-separated | `A,B,Z,START,L,R,CD,CL` | The N64 button for each of the pad's buttons, in order; `-` for none. A list naming no N64 button is refused and logged. | none |
+| `JOY` | `off` | on | Ignore joysticks and pads. | none |
 | `OSD` | switch | off | Draws frame rate, render and audio times, triangles, texture memory and audio underruns over the game. | about 0.5 ms a frame |
 
 ## Settings for reporting a problem

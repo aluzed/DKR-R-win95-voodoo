@@ -152,6 +152,18 @@ target_link_libraries(win95window PUBLIC win95compat user32)
 target_include_directories(win95window INTERFACE "${DKRPORT_ROOT}/platform")
 add_dependencies(win95window dkr_win95_cpp_subset)
 
+# --- Joysticks and gamepads (E06-S02) -----------------------------------------
+#
+# winmm's `joyGetPosEx`, on every Windows 95, and the mapping to the N64
+# controller, which is plain arithmetic and tested on the host
+# (`platform/win95/tests/test_joystick_map.c`).
+add_library(win95joystick STATIC
+    "${DKR_WIN95_PLATFORM}/joystick.c"
+    "${DKR_WIN95_PLATFORM}/joystick_map.c")
+target_include_directories(win95joystick PUBLIC "${DKR_WIN95_PLATFORM}")
+target_link_libraries(win95joystick PUBLIC win95compat winmm)
+add_dependencies(win95joystick dkr_win95_cpp_subset)
+
 # --- File writing (E02-S05) --------------------------------------------------
 #
 # Depends only on `win95compat`, like the threading layer: the durable-write
@@ -1308,7 +1320,7 @@ target_compile_definitions(DKRWin95Game PRIVATE
 target_link_libraries(DKRWin95Game PRIVATE
     -Wl,--start-group
     win95recompiled win95librecomp win95ultramodern win95liverecomp
-    win95fileio win95clock win95threading win95window
+    win95fileio win95clock win95threading win95window win95joystick
     -Wl,--end-group
     # The render chain. `win95f3ddkr` pulls in clipping and the transformation;
     # `win95glide` pulls in the TMU and the combiner. The game is the first binary

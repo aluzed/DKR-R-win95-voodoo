@@ -64,6 +64,24 @@ E07-S02.
 8. Measure the input latency and compare it against the modern target's. In a racing
    game, latency is a characteristic of playability, not a detail.
 
+## Joysticks through winmm (1 October 2026)
+
+`platform/win95/joystick.c` reads up to two devices with `joyGetPosEx`, the
+interface every Windows 95 has: the first joins the keyboard on player one,
+the second is player two. The system's calibration is already in what it
+returns. `joystick_map.c` turns a reading into the N64 controller's --
+axes scaled around the middle of the device's range with a dead zone (15% by
+default, `JOY_DEADZONE`), Y inverted, buttons through a table
+(`JOY_BUTTONS`), the hat as the D-pad -- and is tested on the host
+(`platform/win95/tests/test_joystick_map.c`, sixteen checks). An absent device
+is probed again every three seconds, so a pad plugged in late is found.
+
+**Verified only without a device.** The test machine's game port is emulated
+with no host joystick behind it, and Windows 95 has no joystick configured, so
+what was checked is that the game finds none, polls nothing it should not, and
+drives as before from the keyboard. No pad has moved a kart. DirectInput, which
+the ticket names first, is not done.
+
 ## Acceptance criteria
 
 - [ ] The keyboard works in full screen, with no message-queue latency.

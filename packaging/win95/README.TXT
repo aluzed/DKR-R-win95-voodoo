@@ -55,7 +55,12 @@ The keyboard, by position (shown here for a US layout):
     Q / E          L / R
     I J K L        the C buttons
 
-Gamepads are not supported yet.
+Gamepads and joysticks: through Windows 95's own joystick support (Control
+Panel > Joystick, where they are also calibrated). The first is player one,
+alongside the keyboard; a second is player two. A four-button pad maps its
+buttons 1 to 4 to A, B, Z and Start; DKRR.INI can change that, and the dead
+zone (CONFIG.TXT, JOY_BUTTONS and JOY_DEADZONE). This has been tested only
+without a pad connected: please report how yours behaves.
 
 
 SETTINGS
