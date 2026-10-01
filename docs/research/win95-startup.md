@@ -48,3 +48,25 @@ is the next thing to look at.
 
 The first start, with an empty identity cache, adds 2.3 s of hashing to the
 runtime's own inspection (E02-S04); it has no feedback beyond the window.
+
+## Where the ROM reads go, and two attempts rejected
+
+Read on demand (patch 0061), the ROM costs disk time rather than memory.
+Counted with the processor's cycle counter in `do_rom_read`, the first minute
+of attract mode copied 2.3 MB to the guest in about 640 million cycles, 1.6 s,
+of which **99% was reading the file**: some 2.4 million cycles, 6 ms, for each
+16 KiB block the cache did not hold, on 86Box's emulated disk. The copy itself
+is noise. Two changes were measured, interleaved, and not kept:
+
+- **Copying whole words** instead of `MEM_B` byte by byte: 678 and 643
+  million cycles against 651 for the bytes -- no difference.
+- **64 KiB blocks** instead of 16 KiB, the same megabyte of cache: 170 misses
+  instead of 267, but 627 and 649 million cycles reading against 632, and the
+  same pauses between lists. The cost is per access to the disk, not per byte.
+
+The reads fall in the loading pauses, where a held ROM read nothing; before
+patches 0061 and 0062 the same start read and hashed the whole 12 MB instead,
+2.3 s. Whether a level's load is slower than with the ROM held is not
+measured: the build no longer has a way to hold it, and a period disk is not
+86Box's (`docs/TEST-ENVIRONMENT.md`).
+
