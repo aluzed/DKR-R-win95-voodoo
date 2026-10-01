@@ -241,6 +241,10 @@
         {
           "path": "patches/n64-modern-runtime/0059-durable-eeprom-saves-on-windows-95.patch",
           "sha256": "655fd27c6bfb0f830a468d0487961224d8494c8d5c21bf13459dea21c7f1d55f"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0060-one-rom-read-per-start-on-windows-95.patch",
+          "sha256": "01bcb81fa865d90f62585d4fb56b55bec5487f7d6373add34cc98555453e4285"
         }
       ]
     },

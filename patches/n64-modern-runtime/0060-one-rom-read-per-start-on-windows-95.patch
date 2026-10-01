@@ -1,0 +1,67 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] One read of the ROM per start on Windows 95
+
+select_rom read and hashed the 12 MB ROM and wrote it out as the stored copy;
+check_all_stored_roms and load_stored_rom then read and hashed that copy
+twice more. On the Windows 95 target select_rom keeps the ROM it has just
+verified, load_stored_rom takes it, nothing is written and the stored copies
+are not checked: they serve a launcher this target does not have. Measured
+on the test machine: the ROM selected at 3.9 s after start instead of 8.5 s.
+---
+--- a/librecomp/src/recomp.cpp	2026-10-01 18:12:45.149043439 +0200
++++ b/librecomp/src/recomp.cpp	2026-10-01 18:20:25.700517445 +0200
+@@ -202,7 +202,25 @@
+     return valid_game_roms.contains(game_id);
+ }
+ 
++#if defined(DKR_TARGET_WIN95)
++/* --- One read of the ROM per start, on Windows 95 ---------------------------- *
++ *
++ * Every start read the twelve-megabyte ROM and hashed it in `select_rom`, wrote
++ * it out again as the stored copy, then read and hashed that copy twice more --
++ * in `check_all_stored_roms` and in `load_stored_rom`. Measured on the test
++ * machine: 6.8 s between the ROM being found and the game being started
++ * (1 October 2026). The stored copy serves a launcher that lists the games it
++ * holds, which this target does not have. So `select_rom` keeps the ROM it has
++ * just read and verified, `load_stored_rom` takes it, nothing is written, and
++ * the stored copies are not checked. */
++static std::vector<uint8_t> selected_rom_data;
++static std::u8string selected_rom_game;
++#endif
++
+ void recomp::check_all_stored_roms() {
++#if defined(DKR_TARGET_WIN95)
++    return;
++#endif
+     for (const auto& cur_rom_entry: game_roms) {
+         if (check_stored_rom(cur_rom_entry.second)) {
+             valid_game_roms.insert(cur_rom_entry.first);
+@@ -217,6 +235,13 @@
+         return false;
+     }
+     
++#if defined(DKR_TARGET_WIN95)
++    if (!selected_rom_data.empty() && selected_rom_game == game_id) {
++        recomp::set_rom_contents(std::move(selected_rom_data));
++        selected_rom_data = std::vector<uint8_t>{};
++        return true;
++    }
++#endif
+     std::vector<uint8_t> stored_rom_data = read_file(config_path / find_it->second.stored_filename());
+ 
+     if (!check_hash(stored_rom_data, find_it->second.rom_hash)) {
+@@ -395,8 +420,13 @@
+         }
+     }
+ 
++#if defined(DKR_TARGET_WIN95)
++    selected_rom_data = std::move(rom_data);
++    selected_rom_game = game_id;
++#else
+     write_file(config_path / game_entry.stored_filename(), rom_data);
+-    
++#endif
++
+     return recomp::RomValidationError::Good;
+ }
+ 
