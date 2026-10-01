@@ -1,0 +1,100 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Durable EEPROM saves on Windows 95
+
+The save file was written through a stream, copied to .bak and copied into
+place, all left in Windows 95's write-behind cache. A power cut before the
+cache was written left the file at its size and pointing at stale clusters:
+a save holding lines of the runtime log was found on the test machine, and
+read back and written out again on every start after. On the Windows 95
+target the save is now written with dkr_file_write_durable (a flushed .TMP,
+the previous file kept as .BAK, then moved into place) and read with
+dkr_file_read_durable, which falls back to the .BAK.
+---
+--- a/librecomp/src/pi.cpp	2026-10-01 17:58:17.600132458 +0200
++++ b/librecomp/src/pi.cpp	2026-10-01 18:04:43.774189373 +0200
+@@ -2,6 +2,7 @@
+ #include <fstream>
+ #include <array>
+ #include <cstring>
++#include <cstdio>
+ #include <string>
+ #include "librecomp/sync.hpp"
+ #include "recomp.h"
+@@ -11,6 +12,9 @@
+ #include <ultramodern/ultra64.h>
+ #include <ultramodern/ultramodern.hpp>
+ #include "librecomp/fileio.hpp"
++#if defined(DKR_TARGET_WIN95)
++#include "win95/fileio.h"
++#endif
+ 
+ static std::vector<uint8_t> rom;
+ 
+@@ -115,6 +119,26 @@
+ 
+ void update_save_file() {
+     bool saving_failed = false;
++#if defined(DKR_TARGET_WIN95)
++    /* **Durably, on Windows 95.** The stream, the copy to `.bak` and the copy
++       into place below all stay in the system's write-behind cache, and a power
++       cut before it is written leaves the file at its size and pointing at
++       whatever its clusters held before: a save holding lines of the runtime
++       log was found on the test machine (1 October 2026), and the next start
++       read it back and wrote it out again. `dkr_file_write_durable` writes a
++       `.TMP`, flushes it, keeps the previous file as `.BAK` and moves the new
++       one into place (E02-S05). */
++    {
++        std::vector<char> copy;
++        {
++            recomp::sync::lock_guard lock{ save_context.save_buffer_mutex };
++            copy = save_context.save_buffer;
++        }
++        saving_failed = dkr_file_write_durable(
++            ultramodern::get_save_file_path().string().c_str(),
++            copy.data(), copy.size()) != DKR_FILE_OK;
++    }
++#else
+     {
+         std::ofstream save_file = recomp::open_output_file_with_backup(ultramodern::get_save_file_path(), std::ios_base::binary);
+ 
+@@ -129,6 +153,7 @@
+     if (!saving_failed) {
+         saving_failed = !recomp::finalize_output_file_with_backup(ultramodern::get_save_file_path());
+     }
++#endif
+     if (saving_failed) {
+         ultramodern::error_handling::message_box("Failed to write to the save file. Check your file permissions and whether the save folder has been moved to Dropbox or similar, as this can cause issues.");
+     }
+@@ -233,6 +258,24 @@
+     // Ensure the save file directory exists.
+     recomp::fs::create_directories(save_file_path.parent_path());
+ 
++#if defined(DKR_TARGET_WIN95)
++    /* The durable write's counterpart: the file, or its `.BAK` when the file
++       is missing or short -- a power cut between the write's last two steps
++       leaves exactly that. */
++    {
++        size_t read = 0;
++        int from_backup = 0;
++        const dkr_file_result r = dkr_file_read_durable(
++            save_file_path.string().c_str(), save_context.save_buffer.data(),
++            save_context.save_buffer.size(), &read, &from_backup);
++        if (r != DKR_FILE_OK || read != save_context.save_buffer.size()) {
++            std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
++        }
++        if (r == DKR_FILE_OK && from_backup) {
++            std::fprintf(stderr, "[save] read from the backup copy\n");
++        }
++    }
++#else
+     // Read the save file if it exists.
+     std::ifstream save_file = recomp::open_input_file_with_backup(save_file_path, std::ios_base::binary);
+     if (save_file.good()) {
+@@ -242,6 +285,7 @@
+         // Otherwise clear the save file to all zeroes.
+         std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
+     }
++#endif
+ }
+ 
+ void ultramodern::init_saving(RDRAM_ARG1) {

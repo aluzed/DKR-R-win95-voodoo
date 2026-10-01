@@ -237,6 +237,10 @@
         {
           "path": "patches/n64-modern-runtime/0058-no-snapshot-by-default-on-windows-95.patch",
           "sha256": "31c76cb914ea69fc6042387c2722a3acc82a2fd856245aa5e4abef02d907b022"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0059-durable-eeprom-saves-on-windows-95.patch",
+          "sha256": "655fd27c6bfb0f830a468d0487961224d8494c8d5c21bf13459dea21c7f1d55f"
         }
       ]
     },

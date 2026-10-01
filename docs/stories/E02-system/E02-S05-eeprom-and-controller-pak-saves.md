@@ -233,6 +233,27 @@ operations among them `directory_iterator` — which
 [E00-S01](../../research/win95-blockers.md) already names as the part this port does
 not need. And two `<mutex>` in `recomp.cpp` and `pi.cpp`, which belong to E02-S02.
 
+## 1 October 2026 -- the EEPROM file was not using the durable layer
+
+The durable write delivered here (`dkr_file_write_durable`) served the
+Controller Pak, and librecomp's own EEPROM save -- `saves\dkr.us.v77.bin`, the
+cartridge's 512 bytes -- went through a stream and two `CopyFileA`s, all left in
+Windows 95's write-behind cache. On the test machine, whose runs end by cutting
+the power, the file was found holding **lines of the runtime log** after its
+first 0x78 bytes: written at its size, never flushed, pointing at clusters a
+deleted log had used. `read_save_file` then read it back on every start and
+the game wrote it out again, so the corruption kept itself.
+
+Patch 0059: on this target the EEPROM is written with `dkr_file_write_durable`
+and read with `dkr_file_read_durable`. Checked: with the saves cleared, the game
+writes `dkr.us.v77.bin` and `dkr.us.v77.BAK` at its start; a power cut four
+minutes later, in the adventure hub, leaves both intact and free of anything
+foreign.
+
+Not checked: that an adventure's **progress** survives. Entering the hub writes
+nothing new -- DKR saves its progress at events (a race won, a balloon) that a
+route driven blind does not reach. That is the test this ticket still owes.
+
 ## Risks
 
 Losing a player's progress is a port's least forgivable defect. Atomicity and the
