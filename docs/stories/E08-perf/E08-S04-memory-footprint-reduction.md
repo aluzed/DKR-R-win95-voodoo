@@ -116,6 +116,26 @@ back after. Windows 95 reports 32,244 KiB. From the meter:
 So 32 MiB is playable, with longer loads and the risk of a stall where a scene
 change pages. A long session there has not been measured.
 
+### On 32 MiB again, with the ROM read on demand (1 October 2026)
+
+Patch 0061 gives back the ROM's twelve megabytes. The same machine at 32 MiB,
+the same minute of attract mode, a build from before it against the current
+one, one after the other:
+
+| | before 0061 | after |
+|---|---:|---:|
+| free physical, 30 s | 0 KiB | 5,316 KiB |
+| free physical, 60 s | 0 KiB | 4,960 KiB |
+| page-outs by 60 s | 139 | **0** |
+| swap file in use | 31.0 MiB | 25.0 MiB |
+| first image | 9.3 s | 5.3 s |
+| frame period, attract mode | 36.1 ms | 35.7 ms |
+
+At 32 MiB the game no longer runs out of memory: nothing is written to the
+swap file, and what the system reads back in is its own and the executable's
+pages, as on 64 MiB. The first image's gain is mostly the start-up work of the
+same day (`docs/research/win95-startup.md`), not paging.
+
 
 ### What the RDRAM snapshot costs, measured (29 September 2026)
 

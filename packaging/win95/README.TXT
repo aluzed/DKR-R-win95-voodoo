@@ -14,8 +14,8 @@ WHAT YOU NEED
     with its Windows 95 driver installed. The driver provides GLIDE2X.DLL in
     the WINDOWS\SYSTEM folder; the game tells you if it cannot find it.
   - A sound card with a Windows 95 driver.
-  - 64 MB of memory. The game also runs with 32 MB, but pauses to load more
-    often.
+  - 64 MB of memory. The game also runs with 32 MB, with about 5 MB to
+    spare.
   - A Pentium II at 400 MHz is the target. The figures below were measured on
     an emulation of that machine, not yet on a real one.
   - Your own Diddy Kong Racing ROM: the USA cartridge, version 1.0, as a .z64,
