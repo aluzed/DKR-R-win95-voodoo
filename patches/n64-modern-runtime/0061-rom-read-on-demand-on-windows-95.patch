@@ -1,0 +1,257 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] The ROM read on demand on Windows 95
+
+ADR 0003 decided the ROM is read on demand rather than held: twelve megabytes
+of a machine that may have thirty-two. When the validated ROM file is already
+big-endian, load_stored_rom hands its path to set_rom_file; PI DMA and PIO
+then read through a one-megabyte cache of 16 KiB blocks, and the image held
+by select_rom is freed. get_rom() still works, by reading the image in full
+and saying so in the log. load_mods asked for it on every start, for no mod
+at all; on this target it now asks only when a mod is active.
+
+Measured on the test machine in a race: 33.6 MB of free physical memory
+instead of 23.0 MB, the frame period unchanged (35.3 ms against 36.3 ms in
+the run before, inside the drift between sessions).
+
+The cache's size, measured in the same race: 64 KiB took 2438 block misses
+in 6144 reads, 256 KiB 746, 1 MiB 408 -- about the distinct blocks the race
+touches -- and the frame period stayed within 0.2 ms across the three.
+1 MiB is kept: a sixth of the misses, for a tenth of what was saved.
+DKR_ROM_CACHE_BLOCKS=<1..64> uses fewer blocks, for measuring; the log
+counts the reads and misses every 1024 reads.
+---
+--- a/librecomp/include/librecomp/game.hpp
++++ b/librecomp/include/librecomp/game.hpp
+@@ -78,6 +78,9 @@
+     bool is_rom_valid(std::u8string& game_id);
+     bool is_rom_loaded();
+     void set_rom_contents(std::vector<uint8_t>&& new_rom);
++    // Windows 95 (patch 0061): serve the ROM from this big-endian file, read on
++    // demand, instead of holding it. Returns false if the file cannot be opened.
++    bool set_rom_file(const std::filesystem::path& path, size_t size);
+     std::span<const uint8_t> get_rom();
+     void do_rom_read(uint8_t* rdram, gpr ram_address, uint32_t physical_addr, size_t num_bytes);
+     void do_rom_pio(uint8_t* rdram, gpr ram_address, uint32_t physical_addr);
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -1589,6 +1589,12 @@
+ 
+     // Decompress the rom if needed.
+     std::vector<uint8_t> decompressed_rom_data{};
++#if defined(DKR_TARGET_WIN95)
++    // Patch 0061: only once a mod is known to be active, below. Taking the
++    // ROM here read all twelve megabytes on every start, for no mod at all,
++    // and undid reading it on demand.
++    auto take_decompressed_rom = [&]() {
++#endif
+     if (game_entry.has_compressed_code) {
+         if (game_entry.decompression_routine != nullptr) {
+             decompressed_rom_data = game_entry.decompression_routine(recomp::get_rom());
+@@ -1599,6 +1605,9 @@
+     else {
+         decompressed_rom = recomp::get_rom();
+     }
++#if defined(DKR_TARGET_WIN95)
++    };
++#endif
+ 
+     // Collect the set of functions patched by the base recomp.
+     std::unordered_map<recomp_func_t*, recomp::overlays::BasePatchedFunction> base_patched_funcs = recomp::overlays::get_base_patched_funcs();
+@@ -1643,6 +1652,12 @@
+         return ret;
+     }
+ 
++#if defined(DKR_TARGET_WIN95)
++    if (!active_mods.empty()) {
++        take_decompressed_rom();
++    }
++#endif
++
+     // Check for ROM patches.
+     size_t rom_patch_mod_index = (size_t)-1;
+     for (size_t mod_index : active_mods) {
+--- a/librecomp/src/pi.cpp
++++ b/librecomp/src/pi.cpp
+@@ -3,6 +3,7 @@
+ #include <array>
+ #include <cstring>
+ #include <cstdio>
++#include <cstdlib>
+ #include <string>
+ #include "librecomp/sync.hpp"
+ #include "recomp.h"
+@@ -18,7 +19,70 @@
+ 
+ static std::vector<uint8_t> rom;
+ 
++#if defined(DKR_TARGET_WIN95)
++/* --- The ROM read on demand, on Windows 95 (patch 0061) ----------------------- *
++ *
++ * ADR 0003 decided the ROM is read on demand, not held: twelve megabytes of a
++ * machine that may have thirty-two. The validated big-endian file is opened
++ * once; every PI DMA reads what it needs through a cache of 64 blocks of 16 KiB,
++ * one megabyte, direct-mapped by block number -- the audio streams its samples
++ * in many small reads, and those must not each go to the file system. Guest
++ * threads take turns, so the cache needs no more than the mutex below.
++ *
++ * `get_rom()` wants the whole image; nothing in this game asks for it, and if
++ * something does, the image is read in full at that moment and the log says
++ * so. */
++static FILE* rom_file = nullptr;
++static size_t rom_file_size = 0;
++constexpr size_t kRomBlock = 16 * 1024;
++constexpr size_t kRomBlocks = 64;
++static uint8_t rom_blocks[kRomBlocks][kRomBlock];
++static uint32_t rom_block_tag[kRomBlocks];     /* block number + 1, 0 = empty */
++static recomp::sync::mutex rom_file_mutex;
++static unsigned long rom_block_misses = 0;
++static unsigned long rom_reads = 0;
++/* Blocks in use, kRomBlocks unless DKR_ROM_CACHE_BLOCKS says fewer: a
++   diagnostic, for measuring the cache's size against the misses it costs. */
++static size_t rom_blocks_used = kRomBlocks;
++
++static const uint8_t* rom_block(uint32_t number) {
++    const size_t slot = number % rom_blocks_used;
++    if (rom_block_tag[slot] != number + 1) {
++        const size_t offset = static_cast<size_t>(number) * kRomBlock;
++        size_t got = 0;
++        if (offset < rom_file_size && std::fseek(rom_file, static_cast<long>(offset), SEEK_SET) == 0) {
++            got = std::fread(rom_blocks[slot], 1, kRomBlock, rom_file);
++        }
++        if (got < kRomBlock) { std::memset(rom_blocks[slot] + got, 0, kRomBlock - got); }
++        rom_block_tag[slot] = number + 1;
++        rom_block_misses++;
++    }
++    return rom_blocks[slot];
++}
++
++bool recomp::set_rom_file(const std::filesystem::path& path, size_t size) {
++    FILE* f = std::fopen(path.string().c_str(), "rb");
++    if (f == nullptr) { return false; }
++    recomp::sync::lock_guard lock{ rom_file_mutex };
++    if (rom_file != nullptr) { std::fclose(rom_file); }
++    rom_file = f;
++    rom_file_size = size;
++    std::memset(rom_block_tag, 0, sizeof(rom_block_tag));
++    rom = std::vector<uint8_t>{};
++    if (const char* blocks = std::getenv("DKR_ROM_CACHE_BLOCKS")) {
++        const long n = std::strtol(blocks, nullptr, 10);
++        if (n >= 1 && n <= static_cast<long>(kRomBlocks)) { rom_blocks_used = static_cast<size_t>(n); }
++    }
++    std::fprintf(stderr, "[rom] read on demand from %s, %u KB of cache\n",
++                 path.string().c_str(), static_cast<unsigned>(kRomBlock * rom_blocks_used / 1024));
++    return true;
++}
++#endif
++
+ bool recomp::is_rom_loaded() {
++#if defined(DKR_TARGET_WIN95)
++    if (rom_file != nullptr) { return true; }
++#endif
+     return !rom.empty();
+ }
+ 
+@@ -27,6 +91,17 @@
+ }
+ 
+ std::span<const uint8_t> recomp::get_rom() {
++#if defined(DKR_TARGET_WIN95)
++    if (rom.empty() && rom_file != nullptr) {
++        recomp::sync::lock_guard lock{ rom_file_mutex };
++        std::fprintf(stderr, "[rom] the whole image was asked for: read in full\n");
++        rom.resize(rom_file_size);
++        std::fseek(rom_file, 0, SEEK_SET);
++        if (std::fread(rom.data(), 1, rom.size(), rom_file) != rom.size()) {
++            std::fprintf(stderr, "[rom] the full read came back short\n");
++        }
++    }
++#endif
+     return rom;
+ }
+ 
+@@ -72,6 +147,28 @@
+     // TODO handle misaligned DMA
+     assert((physical_addr & 0x1) == 0 && "Only PI DMA from aligned ROM addresses is currently supported");
+     assert((ram_address & 0x7) == 0 && "Only PI DMA to aligned RDRAM addresses is currently supported");
++#if defined(DKR_TARGET_WIN95)
++    if (rom.empty() && rom_file != nullptr) {
++        recomp::sync::lock_guard lock{ rom_file_mutex };
++        size_t offset = physical_addr - recomp::rom_base;
++        size_t done = 0;
++        if ((++rom_reads & 1023) == 0) {
++            std::fprintf(stderr, "[rom] %lu reads, %lu block misses\n", rom_reads, rom_block_misses);
++        }
++        while (done < num_bytes) {
++            const uint8_t* block = rom_block(static_cast<uint32_t>(offset / kRomBlock));
++            const size_t within = offset % kRomBlock;
++            size_t chunk = kRomBlock - within;
++            if (chunk > num_bytes - done) { chunk = num_bytes - done; }
++            for (size_t i = 0; i < chunk; i++) {
++                MEM_B(done + i, ram_address) = block[within + i];
++            }
++            done += chunk;
++            offset += chunk;
++        }
++        return;
++    }
++#endif
+     uint8_t* rom_addr = rom.data() + physical_addr - recomp::rom_base;
+     for (size_t i = 0; i < num_bytes; i++) {
+         MEM_B(i, ram_address) = *rom_addr;
+@@ -82,6 +179,19 @@
+ void recomp::do_rom_pio(uint8_t* rdram, gpr ram_address, uint32_t physical_addr) {
+     assert((physical_addr & 0x3) == 0 && "PIO not 4-byte aligned in device, currently unsupported");
+     assert((ram_address & 0x3) == 0 && "PIO not 4-byte aligned in RDRAM, currently unsupported");
++#if defined(DKR_TARGET_WIN95)
++    if (rom.empty() && rom_file != nullptr) {
++        recomp::sync::lock_guard lock{ rom_file_mutex };
++        const size_t offset = physical_addr - recomp::rom_base;
++        const uint8_t* block = rom_block(static_cast<uint32_t>(offset / kRomBlock));
++        const size_t within = offset % kRomBlock;   /* 4-aligned: never crosses a block */
++        MEM_B(0, ram_address) = block[within + 0];
++        MEM_B(1, ram_address) = block[within + 1];
++        MEM_B(2, ram_address) = block[within + 2];
++        MEM_B(3, ram_address) = block[within + 3];
++        return;
++    }
++#endif
+     uint8_t* rom_addr = rom.data() + physical_addr - recomp::rom_base;
+     MEM_B(0, ram_address) = *rom_addr++;
+     MEM_B(1, ram_address) = *rom_addr++;
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -215,6 +215,9 @@
+  * the stored copies are not checked. */
+ static std::vector<uint8_t> selected_rom_data;
+ static std::u8string selected_rom_game;
++/* Patch 0061: the file the selected ROM came from, when it is already
++   big-endian -- then it is served from the file, on demand, and not held. */
++static std::filesystem::path selected_rom_file;
+ #endif
+ 
+ void recomp::check_all_stored_roms() {
+@@ -236,6 +239,15 @@
+     }
+     
+ #if defined(DKR_TARGET_WIN95)
++    if (!selected_rom_data.empty() && selected_rom_game == game_id &&
++        !selected_rom_file.empty() &&
++        recomp::set_rom_file(selected_rom_file, selected_rom_data.size())) {
++        /* Freed here, the twelve megabytes go back to the system: a block
++           that size is the heap's own allocation, released whole. Measured
++           on the test machine, 10.6 MB more free physical memory in a race. */
++        selected_rom_data = std::vector<uint8_t>{};
++        return true;
++    }
+     if (!selected_rom_data.empty() && selected_rom_game == game_id) {
+         recomp::set_rom_contents(std::move(selected_rom_data));
+         selected_rom_data = std::vector<uint8_t>{};
+@@ -421,6 +433,8 @@
+     }
+ 
+ #if defined(DKR_TARGET_WIN95)
++    selected_rom_file = (byteswap_type == ByteswapType::NotByteswapped)
++        ? rom_path : std::filesystem::path{};
+     selected_rom_data = std::move(rom_data);
+     selected_rom_game = game_id;
+ #else

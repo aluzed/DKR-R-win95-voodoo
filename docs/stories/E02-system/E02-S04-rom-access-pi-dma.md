@@ -63,10 +63,14 @@ transfers' semantics as the game sees them.
 
 ## Acceptance criteria
 
-- [ ] The ROM's memory footprint respects E00-S06's budget. **Not to the letter**: ADR
-      0003 decided the ROM is read on demand, 0.06 MiB, and the whole 12 MiB image is
-      held. The game as a whole measured ~22 MiB in play, under the ADR's 32.8 MiB total
-      (E08-S04), so the budget holds overall without that decision applied.
+- [x] The ROM's memory footprint respects E00-S06's budget -- since 1 October 2026,
+      patch 0061: a big-endian ROM (`.z64`) is read on demand through a 1 MiB block
+      cache instead of held whole. Measured in a race on the test machine: 33.6 MB of
+      free physical memory instead of 23.0 MB, the frame period unchanged. The cache's
+      size was measured, not guessed: 64 KiB took 2438 misses in 6144 reads, 256 KiB 746,
+      1 MiB 408, with no difference in the frame period; 1 MiB was kept. A `.v64` or
+      `.n64` ROM is still held whole, byte-swapped in memory: converting it once to a
+      `.z64` beside the game would extend the gain to them, and is not done.
 - [x] The game loads and starts from a valid ROM under emulated Windows 95 -- every run
       since September; from a ROM found beside the game since 1 October (E06-S06).
 - [ ] A level's load time is measured and compared against the modern host's.
@@ -75,8 +79,8 @@ transfers' semantics as the game sees them.
       2.3 s, on the first start only -- the identity cache now works on this target, and
       later starts take 15 ms. That first start has no feedback beyond the window.
 - [x] The three ROM formats are accepted -- `.z64`, `.v64`, `.n64`, each started on the
-      test machine (E06-S06). The whole image is loaded; piece-by-piece reading was not
-      retained.
+      test machine (E06-S06). A `.z64` is read on demand (patch 0061); the two
+      byte-swapped formats are loaded whole.
 - [x] Windows 9x paths are handled, including with short names: the ROM search and the
       runtime use the narrow `...A` APIs and `path.string()` throughout -- the wide forms
       are stubs here, the cause of two defects fixed on 1 October -- with ROMs found at

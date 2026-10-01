@@ -245,6 +245,10 @@
         {
           "path": "patches/n64-modern-runtime/0060-one-rom-read-per-start-on-windows-95.patch",
           "sha256": "01bcb81fa865d90f62585d4fb56b55bec5487f7d6373add34cc98555453e4285"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0061-rom-read-on-demand-on-windows-95.patch",
+          "sha256": "be1d4ab4e408ce84dda026ba18e71fcbf6dfb5e28a2c28e789654b8e0d923d14"
         }
       ]
     },

@@ -156,6 +156,14 @@ The target machine's disk is slow, and that is this decision's risk: if DMA on
 demand causes stutter mid-race, the fallback is to load only the hot regions into
 memory. To be measured in E02-S04, not assumed here.
 
+**Implemented, 1 October 2026** (patch 0061), with one departure: the cache is
+1 MiB, not 64 KiB. Measured in a race, a 64 KiB cache missed 2438 times in 6144
+reads and a 1 MiB one 408 times, with the same frame period; the larger one was
+kept since it costs a tenth of what reading on demand saves. The feared stutter
+was not seen: the frame period stayed within the drift between sessions. Free
+physical memory in a race went from 23.0 MB to 33.6 MB. The byte-swapped `.v64`
+and `.n64` formats are still held whole.
+
 ### 4. A 32 MB fallback configuration
 
 Windows 95 consumes 15.6 MiB at rest, measured. On a 32 MB machine there would
