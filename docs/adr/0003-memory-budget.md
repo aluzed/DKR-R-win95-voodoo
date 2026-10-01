@@ -241,6 +241,13 @@ as on 64 MiB. So 32 MB is a degraded configuration with longer loads, not an
 impossible one. 64 MB remains the target the project supports. Details in
 E08-S04.
 
+**And again, with the ROM read on demand** (1 October 2026, patch 0061). The
+same minute of attract mode at 32 MiB: about 5 MiB of physical memory stays
+free, and nothing is written to the swap file, where the build before it had
+none free and wrote 139 pages. 32 MB is no longer short of memory in what was
+measured; a long session and the adventure there are not measured, and 64 MB
+remains the supported target.
+
 ## Consequences
 
 - **E02-S04** inherits two decisions: the ROM read on demand, and the arbitration
