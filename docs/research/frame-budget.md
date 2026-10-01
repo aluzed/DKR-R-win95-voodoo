@@ -194,6 +194,10 @@ option set; the "default mode" figures before this date are the copy, which
 `DKR_RDRAM_SNAPSHOT=copy` restores. Checked with no option: a race at 34.9 ms
 a frame, 93% of frames on two retraces (E08-S04).
 
+The same day the renderer's statistics went off by default too (E06-S05): with
+no option at all, a race at **34.4 ms a frame, 94% of frames on two retraces,
+5.6 ms of render** against 8.6 ms with the statistics that morning.
+
 ## The adventure hub, 30 September 2026
 
 The richest scene the port draws -- Timber's Island, entered from a new save
