@@ -92,13 +92,15 @@ for every measurement in E08, and the criterion asking for DirectSound with a
       `[audio][out] ... frames=0`. Windows 95 there has no wave device -- the
       configured Sound Blaster 16 has no driver installed (no SB16 file in
       `WINDOWS\SYSTEM`, only `wavemapper` under `[drivers]`; checked 2 October) --
-      so nothing was ever played and nothing could underrun. What the runs do show
-      is the mixer producing samples at full rate. The output path itself is
-      untested on the target until a driver is installed (E09-S01) or a real
-      machine is used (E09-S04).
-- [~] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
-      in the log, and on the on-screen display (`OSD=1`) -- the counter exists and is
-      printed; it has only ever read 0 without a device, so it is not shown to work.
+      so nothing was ever played and nothing could underrun. The driver was
+      installed on 2 October (E09-S01) and sound now plays (next criterion); the
+      twenty-minute drift run is still to be made.
+- [x] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
+      in the log, and on the on-screen display (`OSD=1`). **Shown to work on 2 October
+      2026**, once the test machine had a sound driver (E09-S01): a race at Ancient
+      Lake, 2.23 million frames played (101 s), **9 underruns while the game loads**
+      at 3 to 5 fps, **2 more at the race's level load** (a 1 s freeze), and **none in
+      the 50 s of racing** that followed; nothing dropped.
 - [ ] The output's CPU cost is measured, including with a poor driver. *Partly*: in a
       race, the sampler never finds `audio_out.c` among 43,335 samples of the executable
       (E08-S01) -- negligible with the test machine's driver; no other driver tried.
