@@ -93,8 +93,15 @@ for every measurement in E08, and the criterion asking for DirectSound with a
       configured Sound Blaster 16 has no driver installed (no SB16 file in
       `WINDOWS\SYSTEM`, only `wavemapper` under `[drivers]`; checked 2 October) --
       so nothing was ever played and nothing could underrun. The driver was
-      installed on 2 October (E09-S01) and sound now plays (next criterion); the
-      twenty-minute drift run is still to be made.
+      installed on 2 October (E09-S01) and sound now plays (next criterion).
+      *Partly measured since*: a run of 22 minutes of host time gave only **6.7
+      minutes of guest time** -- 86Box runs this machine at about a third of real
+      speed -- in the attract mode: 404 s of audio played, underruns 9 at the end of
+      the start-up and 13 at the end, the four new ones at the attract sequence's
+      level loads, **nothing dropped**; past the start-up the mixer produced 22,016
+      frames a second against 22,050, the 0.15% short being the loads' pauses.
+      No drift shows; twenty minutes of guest time need an hour of host time and
+      are still to be run.
 - [x] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
       in the log, and on the on-screen display (`OSD=1`). **Shown to work on 2 October
       2026**, once the test machine had a sound driver (E09-S01): a race at Ancient
