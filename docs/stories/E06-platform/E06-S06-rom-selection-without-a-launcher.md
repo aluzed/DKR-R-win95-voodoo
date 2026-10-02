@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | IN_PROGRESS |
+| **Status** | REVIEW |
 | **Priority** | P2 |
 | **Estimate** | S |
 | **Depends on** | E02-S04, E06-S05 |
@@ -62,7 +62,11 @@ message when it is absent or invalid.
 - [x] Every error case produces a message that says what to do: no ROM, an unreadable or unrecognised file, the Rev A revision, a refused command-line path.
 - [x] The messages are visible without a console (a message box, checked on the test machine), and traced in the log.
 - [x] The three byte orders are accepted -- `.z64`, `.v64`, `.n64`, each started on the test machine. The two that need normalising ended the game before this ticket: `std::random_device` is `rand_s`, absent on Windows 95.
-- [ ] The procedure is documented in the distribution package.
+- [x] The procedure is documented in the distribution package: `README.TXT`'s
+      requirements and INSTALLING sections, shipped in `DKRR-W95.ZIP` -- which ROM
+      (the USA cartridge 1.0, as `.z64`, `.v64` or `.n64`), the folder beside the
+      game, the first start that checks it and writes `DKRR.INI`, the two other
+      routes (the command line, `[Paths] Rom=`), and that a refusal says what to do.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
