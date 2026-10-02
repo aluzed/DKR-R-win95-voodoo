@@ -1,0 +1,37 @@
+# E09-S03 - the runtime suites whose code under test is in the Windows 95 game
+# and which need nothing else. One line each: a short name (at most six
+# characters: the target executable is PT<name>.EXE, an 8.3 name), the suite
+# name, the test source in runtime-recomp/tests, then the sources under test in
+# runtime-recomp/src/game beyond headers. Read by
+# tools/tests/run-portable-tests.sh (the host) and cmake/win95-target.cmake
+# (the target). How the thirty were chosen: docs/TESTING.md.
+OWAIT  OnlineWaitState                online_wait_state_tests.cpp
+OINPUT OnlineInputPolicy              online_input_policy_tests.cpp
+REVADR RevisionAddresses              revision_addresses_tests.cpp
+VEHCTX VehicleContextPolicy           vehicle_context_policy_tests.cpp
+WHEEL  SteeringWheelPolicy            steering_wheel_policy_tests.cpp
+PRES   PresentationPolicy             presentation_policy_tests.cpp
+FINISH FinishPresentation             finish_presentation_tests.cpp
+PRCNT  PresentationCounterPolicy      presentation_counter_policy_tests.cpp
+CAMERA ModernCameraPolicy             modern_camera_policy_tests.cpp
+WIDE   WidescreenPolicy               widescreen_policy_tests.cpp
+HUD    HudLayoutPolicy                hud_layout_policy_tests.cpp
+VIPRES ViPresentationPolicy           vi_presentation_policy_tests.cpp
+MAGIC  MagicCodePolicy                magic_code_policy_tests.cpp
+MAGRT  MagicCodeRuntime               magic_code_runtime_tests.cpp                  runtime_magic_codes.cpp
+QREST  QuickRestartPolicy             quick_restart_policy_tests.cpp
+CSANIM CharacterSelectAnimationPolicy character_select_animation_policy_tests.cpp
+CSMUS  CharacterSelectMusicPolicy     character_select_music_policy_tests.cpp
+MOTION MotionSteeringPolicy           motion_steering_policy_tests.cpp
+SAVMGR SaveManager                    save_manager_tests.cpp                        dkr_save_codec.cpp save_manager.cpp
+SAVCDC SaveCodec                      dkr_save_codec_tests.cpp                      dkr_save_codec.cpp
+EQ     AudioEqualizer                 audio_equalizer_tests.cpp                     audio_equalizer.cpp
+AMIX   AudioMixPolicy                 audio_mix_policy_tests.cpp
+SNAP   RendererSnapshot               renderer_snapshot_tests.cpp                   renderer_snapshot.cpp
+PRESID PresentationIdentity           presentation_identity_tests.cpp
+INTRO  IntroTailPolicy                intro_tail_policy_tests.cpp
+SCHED  SchedulerEventPolicy           scheduler_event_policy_tests.cpp
+PADASN ControllerAssignmentPolicy     controller_assignment_policy_tests.cpp
+INBACK InputBackendPolicy             input_backend_policy_tests.cpp
+PADMAP ControllerMappingPolicy        controller_mapping_policy_tests.cpp
+INPROF InputProfile                   input_profile_tests.cpp                       runtime_input.cpp

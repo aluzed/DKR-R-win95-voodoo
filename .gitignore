@@ -136,6 +136,7 @@ runtime-recomp/build/
 !/tools/audio/
 !/tools/cpu-budget/
 !/tools/render/
+!/tools/tests/
 !/tools/win95/
 
 # Blender addon build output, rebuilt by tools/blender/package_addon.py
