@@ -83,7 +83,16 @@ for every measurement in E08, and the criterion asking for DirectSound with a
 
 - [ ] The audio is played back through DirectSound, with the `waveOut` fallback
       verified.
-- [ ] The buffer size is justified by the 99th percentile of time per frame.
+- [x] The buffer size is justified by the 99th percentile of time per frame --
+      checked on 3 October 2026 against the timing export. `audio_out.c` primes with
+      two of DKR's blocks (720 to 848 frames each), about 1,520 frames or **69 ms** at
+      22,050 Hz, and adds a third (104 ms) after an underrun. A one-player race at
+      Ancient Lake: frame period **p99 50.7 to 51.5 ms**, p99.9 67.0 ms, both inside
+      the cushion; the maximum, 117 ms, is the race's level-load freeze, where the
+      underruns measured on 2 October fall and nowhere else. A two-player race: p99
+      69.0 ms, at the cushion's edge, and p99.9 100.4 ms, which the third block
+      covers. The ring's sixteen buffers of 4,096 frames hold far more than either;
+      it is the cushion that decides, and the figures say two blocks is enough.
 - [ ] No audible drift over twenty minutes of continuous play. **Not measured -- this
       box was ticked on 1 October 2026 on evidence that does not hold.** The "219,000
       blocks played, 0 underruns, 0 dropped" of E08-S04's long session were blocks
