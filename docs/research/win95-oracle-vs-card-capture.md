@@ -170,6 +170,26 @@ The computation now goes through `dkr_image_per_million`, in `double` and back,
 shared by both programs. Checked by building the host tool `-m32` and confirming
 it agrees with the 64-bit build, rather than by reasoning about it.
 
+## Two race frames, 2 October 2026
+
+Two F9 captures in a one-player race at Ancient Lake, taken with the build that
+honours `G_SETSCISSOR` (`CKEY1666`, `CKEY2151`), each list replayed through the
+host's oracle and set against the card's own frame of the same list
+(`KF1666.BMP`, `KF2151.BMP`), every pixel:
+
+| | exact | within 8 levels of 255 |
+|---|---:|---:|
+| `1666`, the top band with the HUD | 9.1% | 99.8% |
+| `1666`, the whole frame | 5.6% | 99.8% |
+| `2151`, the top band with the HUD | 11.0% | 99.2% |
+| `2151`, the whole frame | 3.7% | 99.3% |
+
+Exact agreement cannot be expected: the card renders in 16 bits with Glide's
+dither, the oracle in 24. Within eight levels, the card and the oracle agree on
+more than 99% of both frames, the HUD included. `compare`'s worst gaps, 207
+and 231 levels, are single pixels at triangle edges, where the two rasterisers
+own a different side.
+
 ## What this does not establish
 
 That the rendering is *right*. Both sides are this port's own code, and they
