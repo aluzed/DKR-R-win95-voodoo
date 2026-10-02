@@ -84,8 +84,13 @@ managing nested display lists.
       decoder emits none, for want of E04-S03 to project the vertices. Emitting
       vertices in object space would give a wrong image rather than an absent one,
       which is worse — one would believe the path complete.
-- [ ] The tests replay at least four captured display lists — **blocked**, the
-      capture requiring a game on the modern target, hence the ROM.
+- [x] The tests replay at least four captured display lists -- sixty-six, since
+      3 October 2026: captured on the test machine rather than on the modern target,
+      kept in a corpus outside the repository (`~/.local/dkr-win95/corpus`, 529 MB)
+      and replayed by `tools/render/check-corpus.sh`, which checks the decoder's
+      counts and the oracle's image of each against the corpus's own references:
+      66 images compared, 0 pixels different, 0 failures after the references were
+      set.
 - [ ] The sequence is identical to the RT64 decoder's — **blocked** for the same
       reason, and because RT64 is absent from this repository.
 

@@ -8,7 +8,7 @@ How this port is tested, on the development machine and on the test machine
 | Family | What it tests | Where it runs | How |
 |---|---|---|---|
 | **Platform** | the Windows 95 layer: clock, threads, files, saves, the render chain | host, and the same sources on the target | `platform/win95/tests/run-tests.sh` |
-| **Portable logic** | the runtime's policies and codecs that the game compiles | host, and the same sources on the target | `tools/tests/run-portable-tests.sh`, `tools/tests/Run-Portable-Tests-VM.sh` |
+| **Portable logic** | the runtime's policies and codecs that the game compiles | host, and the same sources on the target | `tools/tests/run-portable-tests.sh`, `tools/tests/Run-Target-Tests-VM.sh` |
 | **Cross-target** | the same input giving the same output on both | both, compared | the render oracle (`tools/render/check-corpus.sh`), the audio oracle (`tools/audio/abi_difftest`, `replay_aspmain`), and the portable suites' compile-time assertions (below) |
 
 `scripts/Package-Win95.sh` runs the platform tests and the portable-logic suites
@@ -57,7 +57,7 @@ with the sources `cmake/win95-target.cmake` compiles into `DKRR.EXE`:
 `build/win95/bin/portable/PT<short>.EXE`, with the game's include paths,
 definitions and compiler flags. Then:
 
-    tools/tests/Run-Portable-Tests-VM.sh
+    tools/tests/Run-Target-Tests-VM.sh
 
 copies them to `D:\PT`, runs them one after the other on the test machine
 through a batch file, and reports each one's exit code.
@@ -102,10 +102,15 @@ decision for the whole game, to be measured, not taken in a test file.
 ## The render oracle
 
     tools/render/build-host-tools.sh
-    tools/render/check-corpus.sh <corpus-dir>
+    tools/render/check-corpus.sh ~/.local/dkr-win95/corpus
 
 replays every capture of a corpus through the software oracle and reports what
 changed in the decoder's counts and in the image. `docs/VISUAL-TESTING.md`.
+The corpus is kept outside the repository, eight megabytes a capture: on the
+development machine, since 3 October 2026, 66 captures from the test machine
+in `~/.local/dkr-win95/corpus`, with their counts and images as references.
+Run it after any change to the decoder or the oracle; `--accept` adopts new
+counts when a change is meant to move them.
 
 ## Not yet
 
