@@ -1538,7 +1538,11 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
         char kf_path[24];
         std::sprintf(kf_path, "D:\\KF%04lu.BMP",
                      static_cast<unsigned long>(key_frame_index % 10000u));
-        std::fprintf(stderr, "[gfx] capture: the card's frame of that list -> %s\n", kf_path);
+        // With the list's time, on the timing export's clock: two captures
+        // then measure the game's own clock -- a race timer read off the
+        // screen -- against the machine's (E06-S04).
+        std::fprintf(stderr, "[gfx] capture: the card's frame of that list -> %s at t=%llu ms\n",
+                     kf_path, static_cast<unsigned long long>(t_entry / 1000ULL));
         dump_frame(kf_path);
     }
     backend_.present(backend_.self);
