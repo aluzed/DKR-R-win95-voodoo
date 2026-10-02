@@ -69,11 +69,13 @@ exhaustively and verifiably.
 
 ## Acceptance criteria
 
-- [ ] The inventory of 33 configurations is rechecked on this port, with the
-      differences recorded — **impossible by the same method**, and that is the
-      conclusion. The neighbour derived it from the decompilation's C sources; this
-      port does not have them, it works from recompiled MIPS. Its equivalent is
-      instrumentation at run time, which requires the ROM.
+- [x] The inventory of 33 configurations is rechecked on this port, with the
+      differences recorded -- **at run time**, 3 October 2026: 66 captures from the
+      test machine replayed with `replay --fill-all`. Eleven combiner configurations
+      paint every pixel of those scenes, one of them 65%; every key met is
+      catalogued; the other twenty-two of the thirty-three are not met in the scenes
+      captured, which do not reach other worlds, bosses or the water effects.
+      `docs/research/rdp-state-inventory.md`.
 - [x] Single cycle and two-cycle are both decoded and distinguished — and the cycle
       mode **is part of the canonical key**, the same word not producing the same
       image depending on the cycle.
@@ -105,10 +107,10 @@ exhaustively and verifiably.
       See [`docs/research/win95-game-render.md`](../../research/win95-game-render.md).
 - [ ] A complete playthrough is replayed under instrumentation — **blocked** by
       E02-S06, which requires the ROM.
-- [~] `docs/research/rdp-state-inventory.md` exists and records what is established.
-      **Frequency and screen area are missing**: both are measured at run time, and
-      the neighbour's count of table entries is a coarse substitute for them — it
-      counts declarations, not pixels.
+- [x] `docs/research/rdp-state-inventory.md` exists and records what is established,
+      **frequency and screen area included** since 3 October 2026: per configuration,
+      the share of 40.8 million pixels painted and the number of scenes, of 66, in
+      which it appears.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 

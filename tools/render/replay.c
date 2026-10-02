@@ -361,6 +361,10 @@ static dkr_f3d_context g_ctx;
 /* `G_SETSCISSOR` reaches the backend, as in the game; `--no-scissor` keeps it
    from it, as `DKR_SCISSOR=0` does there. */
 static int g_scissor = 1;
+/* `--fill-all`: every configuration in the fill table, not the first six --
+   for the inventory of what the game uses (E04-S06). Recipe 0, "no catalogue
+   entry", is the fill rectangles' own state, not an unknown combiner. */
+static int g_fill_all;
 /* The decode of the last `run_capture`, in microseconds, on the target's clock.
    With `--frames N` on the card the mean of frames 2..N is printed: a
    benchmark of the renderer on one fixed list, with no driving in it, which
@@ -715,7 +719,7 @@ static void say_recipes(void)
         }
     }
     say("  fill by configuration, worst first:\n");
-    for (shown = 0; shown < 6; shown++) {
+    for (shown = 0; shown < (g_fill_all ? 65 : 6); shown++) {
         unsigned long best = 0;
         int best_i = -1;
         for (i = 0; i <= count; i++) {
@@ -812,6 +816,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--no-stats") == 0)   { g_no_stats = 1; }
         else if (strcmp(argv[i], "--no-texcache") == 0) { g_no_texcache = 1; }
         else if (strcmp(argv[i], "--no-scissor") == 0) { g_scissor = 0; }
+        else if (strcmp(argv[i], "--fill-all") == 0)   { g_fill_all = 1; }
         else if (strcmp(argv[i], "--no-alpha-test") == 0) { no_alpha = 1; }
         else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
         else if (strcmp(argv[i], "--no-multipass") == 0) { no_multipass = 1; }

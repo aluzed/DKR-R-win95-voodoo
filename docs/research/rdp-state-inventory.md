@@ -62,17 +62,17 @@ image.
 
 ## What is not established
 
-### The inventory of the 33 configurations is not rechecked here
+### The inventory of the 33 configurations, rechecked at run time
 
 The ticket asks for it to be rechecked on this port — "the inventory is a solid
 starting point, not an imported truth". **That is not possible by the same
 method.**
 
 The neighbouring port derived it from the decomp's **C sources**, by resolving the
-macros in the settings tables. This port does not have those sources: it works
-from recompiled MIPS, and `extern/dkr-decomp` is absent. Its equivalent is
-run-time instrumentation — the ticket's step 6 — which requires a complete game,
-hence the ROM.
+macros in the settings tables. This port works from recompiled MIPS. Its
+equivalent is run-time instrumentation -- the ticket's step 6 -- done on
+3 October 2026 over the scenes captured so far: see *Frequency and screen
+area* below.
 
 The neighbour's figures, for the record:
 
@@ -98,12 +98,37 @@ flashing lights), `BLENDT_ENV_ALPHA_A_T1xP`/`PASS2` (the font) and
 `dkr_rdp_combiner_name` returns `NULL` for everything else, and **it is that
 signal that counts** while awaiting the instrumentation.
 
-### Frequency and screen area: absent
+### Frequency and screen area, measured at run time (3 October 2026)
 
-The criterion asks, per configuration, for the frequency and the screen area
-covered — which decides the order of work in E05-S03. Both are measured at run
-time. The neighbour's count of table entries is a crude substitute for them: it
-counts declarations, not pixels.
+The run-time equivalent now exists: 66 captures taken on the test machine --
+the attract sequence, the title and the menus, races at Ancient Lake with one
+and two players, the adventure hub -- replayed through the oracle with
+`replay --fill-all`, which reports every configuration's painted pixels. Over
+40.8 million pixels painted:
+
+| Share of the pixels | Scenes (of 66) | Configuration |
+|---:|---:|---|
+| **65.22%** | 66 | `G_CC_MODULATEIDECALA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` |
+| 16.83% | 23 | `G_CC_PRIMITIVE` |
+| 4.32% | 29 | `G_CC_BLENDT_ENV_ALPHA_A_TxP` |
+| 3.72% | 47 | `G_CC_MODULATEIA_PRIM` + `G_CC_BLEND_ENV_ALPHA2` |
+| 3.01% | 4 | `G_CC_MODULATEIDECALA` |
+| 2.51% | 11 | the fill rectangles' own state (recipe 0, no combiner) |
+| 1.57% | 18 | `G_CC_MODULATEIA_PRIM` |
+| 1.49% | 9 | `G_CC_MODULATEIA` |
+| 0.85% | 6 | `G_CC_MODULATERGBA` + `G_CC_BLENDI_ENV_ALPHA_PRIM2` |
+| 0.26% | 7 | `G_CC_BLEND_SHADEALPHA` + `G_CC_BLENDI_SHADE` |
+| 0.17% | 4 | `G_CC_ENVIRONMENT` |
+| 0.05% | 4 | `G_CC_BLENDI_ENV_ALPHA` + `G_CC_MODULATEIA_PRIM2` |
+
+**Eleven combiner configurations paint the whole of these scenes**, against
+the thirty-three the neighbour counted in the decompilation's tables -- and one
+of them, the textured surface faded by the environment alpha, paints two pixels
+in three. Every combiner key met is catalogued (`combiners: unknown=0` on every
+capture). The other twenty-two are declared and not seen here: the scenes do
+not reach other worlds, boss races, the trophy screens or the water and wave
+effects the three two-texel configurations serve. That is the limit of this
+inventory, and why it is a measurement of these scenes, not of the game.
 
 ## Modes decoded outside the combiner
 
