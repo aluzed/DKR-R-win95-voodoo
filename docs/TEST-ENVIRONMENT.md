@@ -524,7 +524,7 @@ keep the one-bit alpha `texture.c` gives them and its halos stay hard-edged.
 | Host ↔ guest transfer | ✅ in both directions |
 | Driving without a screen (capture + key injection) | ✅ |
 | **Windows 95 OSR2.5 installed and booting** | ✅ |
-| Sound Blaster 16 detected by Windows | ⚠️ configured in 86Box, **no driver installed in Windows**: no wave device, `waveOutOpen` refused (found 2 October 2026) |
+| Sound Blaster 16 detected by Windows | ✅ since 2 October 2026. Before that it was configured in 86Box with **no driver installed in Windows** -- no wave device, `waveOutOpen` refused -- and every audio figure before that date was of samples submitted, not played. Installed then with **Control Panel → Ajout de périphérique → Oui (detect)**: Windows finds "Creative Labs Sound Blaster 16 ou AWE-32" and installs `SB16.VXD`, `SB16SND.DRV`, `SBFM.DRV` from its own cabinets without asking for a disk; then a clean shutdown. The game logs `waveOut at 22050 Hz: open (devices=1)` |
 | Reference snapshot | ✅ `Run-Win95-VM.sh --snapshot` |
 | **3dfx driver 3.01.00 installed and bound to the card** | ✅ "Voodoo2 3D Accelerator", with no warning |
 | **Glide runtime in place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` in `C:\WINDOWS\SYSTEM` |
