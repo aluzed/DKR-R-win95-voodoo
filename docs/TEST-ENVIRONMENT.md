@@ -524,7 +524,7 @@ keep the one-bit alpha `texture.c` gives them and its halos stay hard-edged.
 | Host ↔ guest transfer | ✅ in both directions |
 | Driving without a screen (capture + key injection) | ✅ |
 | **Windows 95 OSR2.5 installed and booting** | ✅ |
-| Sound Blaster 16 detected by Windows | ✅ |
+| Sound Blaster 16 detected by Windows | ⚠️ configured in 86Box, **no driver installed in Windows**: no wave device, `waveOutOpen` refused (found 2 October 2026) |
 | Reference snapshot | ✅ `Run-Win95-VM.sh --snapshot` |
 | **3dfx driver 3.01.00 installed and bound to the card** | ✅ "Voodoo2 3D Accelerator", with no warning |
 | **Glide runtime in place** | ✅ `glide2x.dll`, `glide3x.dll`, `fxmemmap.vxd` in `C:\WINDOWS\SYSTEM` |
