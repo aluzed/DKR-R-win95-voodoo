@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E02-S03, E05-S01 |
@@ -70,9 +70,27 @@ the target.
       does not make the caller wait for a scan; on real hardware it would, so this
       is a fact about the bench and E09-S04 still owns the question.
       See `docs/research/cpu-budget.md`.
-- [ ] The simulation rate stays at 30 Hz independently of the presentation.
-- [ ] The behaviour on a budget overrun is decided and documented.
-- [ ] The regularity is measured as a distribution, not as a mean.
+- [x] The simulation rate stays at 30 Hz independently of the presentation --
+      **measured against the game's own race timer**, 2 October 2026. Two F9
+      captures in a race, their lists stamped on the guest's clock: 70.801 s
+      showing `00:01:74`, 92.638 s showing `00:20:29`. 21.84 s of guest time, of
+      which 3.42 s the first capture's frame dump held the renderer; the game
+      caps its catch-up at six retraces (`LOGIC_10FPS`), 0.10 s, over such a
+      stall. Expected 18.52 s on the timer, read **18.55 s** -- the HUD's
+      hundredths -- with frames at 30 and 20 fps throughout.
+- [x] The behaviour on a budget overrun is decided and documented -- **the
+      console's, because it is the game's own code**. `thread3_main.c` asks
+      `fb_update` how many VI retraces the last frame took and advances the
+      logic by that many sixtieths, capped at six: a frame that misses 33.3 ms
+      is shown late, and the simulation does not fall behind, down to 10 fps.
+      Below that the game slows, as on the N64. The port adds nothing on top:
+      the VI thread counts retraces on E02-S03's clock, which is what
+      `fb_update` reads.
+- [x] The regularity is measured as a distribution, not as a mean -- the timing
+      export's periods binned in retraces (`racewin.py`), a one-player race at
+      Ancient Lake, 2 October 2026: 2% at 60 fps, **74% at 30**, 24% at 20, under
+      1% slower; mean 37.2 ms, median 33.5, 99th percentile 51.5. A two-player
+      race: 77%, 14% and 9% at 15 fps (`docs/research/win95-two-players.md`).
 - [ ] The recommended display mode is documented.
 - [ ] No drift between the audio clock and the video clock over twenty minutes.
 
