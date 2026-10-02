@@ -120,7 +120,14 @@ for every measurement in E08, and the criterion asking for DirectSound with a
 - [ ] The output's CPU cost is measured, including with a poor driver. *Partly*: in a
       race, the sampler never finds `audio_out.c` among 43,335 samples of the executable
       (E08-S01) -- negligible with the test machine's driver; no other driver tried.
-- [ ] The equaliser's cost is measured, and keeping it is settled on that figure.
+- [x] The equaliser's cost is measured, and keeping it is settled on that figure --
+      **nothing, on this target**, read from the code on 3 October 2026: the
+      equaliser, the master volume and the interface tones are applied in
+      `runtime_platform.cpp`'s RT64 branch only; the Windows 95 branch hands DKR's
+      samples to `waveOut` as they are, swapped into left-right order. The
+      equaliser's source is compiled into `DKRR.EXE` and never called. Kept as it
+      is: it costs no time here, and the modern build uses it. The master volume
+      being absent here is a missing feature, not a cost.
 - [x] The absence of a sound card lets the game go on running in silence: a refused
       `waveOutOpen` is logged and the game continues; with the output closed
       (`DKR_NO_AUDIO_OUT=1`) it ran 660 display lists in silence on the test machine
