@@ -81,10 +81,13 @@ and cost 4.3 ms a display list in the adventure hub.
 - [x] An absent file produces a valid default configuration -- and the game then writes the commented template. Checked on the test machine.
 - [ ] An aberrant value is rejected, replaced by the default, and logged. *Partly*: the file's values reach each option's own reader, and only some of them check what they read (`RDRAM_SNAPSHOT_SIZE`, `CAPTURE_KEY`, `MQ_HOLD_REFUSED`); a switch takes any value as on.
 - [x] The file written at first launch is commented.
-- [ ] `docs/CONFIGURATION.md` documents every setting, with its impact on performance
-      where applicable. *Partly*: the settings for playing and for reporting are
-      described with their cost; the other investigation switches are listed with
-      the file that reads them.
+- [x] `docs/CONFIGURATION.md` documents every setting, with its impact on performance
+      where applicable -- since 3 October 2026 every one of the 63 variables the code
+      reads, checked against a search of the sources: the settings for playing and
+      for reporting with their cost, and every investigation switch with what it
+      does, its cost where it has one (`GFX_STATS`, `RDRAM_SNAPSHOT=copy`,
+      `AUDIO_MICROCODE`, `GLIDE_OPEN_EARLY`, `MQ_HOLD_REFUSED=0`) and the file that
+      reads it.
 - [x] The diagnostic settings the other tickets ask for are present: every one of them, by the same mechanism.
 - [x] The file's location is consistent with the saves' (E02-S05): beside `DKRR.EXE`, whose folder also holds `dkr-runtime-data\`.
 

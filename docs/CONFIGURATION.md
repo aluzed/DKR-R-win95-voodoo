@@ -56,67 +56,71 @@ this is the one a player is told to open.
 
 ## Every option
 
-What reads each `DKR_*` variable, for anyone who needs more than the tables
-above. Most are investigation switches, described where they are read; a
-setting not listed in the tables is not meant for playing.
+Every `DKR_*` variable the code reads, what it does and where. Most are
+investigation switches, each answering one question in one run; the comment
+where it is read says more. Where one costs time, the cost is given. A setting
+not listed in the tables above is not meant for playing; the joystick settings
+are there under their file names, `JOY`, `JOY_BUTTONS` and `JOY_DEADZONE`.
 
-| Variable | Read in |
-|---|---|
-| `DKR_AUDIO_CAPTURE` | `game_main.cpp` |
-| `DKR_AUDIO_MICROCODE` | `game_main.cpp` |
-| `DKR_CANARY` | `glide_renderer.cpp` |
-| `DKR_CAPTURE_KEY` | `glide_renderer.cpp` |
-| `DKR_CAPTURE_LIST` | `glide_renderer.cpp` |
-| `DKR_CAPTURE_MODE` | `glide_renderer.cpp` |
-| `DKR_CLEAR_NEAREST` | `glide.c` |
-| `DKR_DUMP_EVERY` | `glide_renderer.cpp` |
-| `DKR_DUMP_FRAME` | `glide_renderer.cpp` |
-| `DKR_DUMP_MODE` | `glide_renderer.cpp` |
-| `DKR_FLATTEN_W` | `glide_renderer.cpp` |
-| `DKR_FOG` | `glide_renderer.cpp` |
-| `DKR_FORCE_COMBINE` | `glide_renderer.cpp` |
-| `DKR_FORCE_STATE` | `glide_renderer.cpp` |
-| `DKR_FORGET_AT_FRAME` | `glide_backend.c` |
-| `DKR_GFX_NO_STATS` | `glide_renderer.cpp` |
-| `DKR_GFX_STATS` | `glide_renderer.cpp` |
-| `DKR_GLIDE_SWAP` | `glide.c` |
-| `DKR_INPUT_BACKEND` | `runtime_platform.cpp` |
-| `DKR_INTERPOLATION_TRACE` | `presentation_identity.cpp` |
-| `DKR_LAUNCHER_PROFILE` | `launcher_performance.hpp` |
-| `DKR_LEGACY_QUALIFICATION_RECIPE` | `game_main.cpp` |
-| `DKR_LOG` | `game_main.cpp` |
-| `DKR_MQ_HOLD_REFUSED` | `mesgqueue.cpp` |
-| `DKR_NEUTRAL` | `glide_renderer.cpp` |
-| `DKR_NO_ALPHA_TEST` | `glide_renderer.cpp` |
-| `DKR_NO_AUDIO_OUT` | `runtime_platform.cpp` |
-| `DKR_NO_DEPTH` | `glide_renderer.cpp` |
-| `DKR_NO_MULTIPASS` | `glide_renderer.cpp` |
-| `DKR_NO_STATE_SHADOW` | `glide_backend.c` |
-| `DKR_NO_TEXCACHE` | `glide_renderer.cpp` |
-| `DKR_OSD` | `glide_renderer.cpp` |
-| `DKR_PAINT_WHITE` | `glide_renderer.cpp` |
-| `DKR_PROBE` | `glide_renderer.cpp` |
-| `DKR_PROBE_SWITCH` | `game_main.cpp` |
-| `DKR_RDRAM_SNAPSHOT` | `events.cpp` |
-| `DKR_RDRAM_SNAPSHOT_FROM` | `events.cpp` |
-| `DKR_RDRAM_SNAPSHOT_POOL` | `events.cpp` |
-| `DKR_RDRAM_SNAPSHOT_SIZE` | `events.cpp` |
-| `DKR_RENDERER` | `game_main.cpp` |
-| `DKR_SCISSOR` | `glide_renderer.cpp` |
-| `DKR_SDL3_INPUT_HOST` | `runtime_platform.cpp` |
-| `DKR_SHADOW_TRACE` | `f3ddkr_rt64.cpp` |
-| `DKR_SPLIT_TRACE` | `f3ddkr_rt64.cpp` |
-| `DKR_THREADS_LOG` | `test_threading.cpp` |
-| `DKR_TIMING_EXPORT` | `timing_export.hpp` |
-| `DKR_TRACE_AUDIO_ZONES` | `game_main.cpp` |
-| `DKR_TRACE_CPU` | `events.cpp`, `threads.cpp` |
-| `DKR_TRACE_EXCLUSIVE` | `threads.cpp` |
-| `DKR_TRACE_IDLE_METER` | `game_main.cpp` |
-| `DKR_TRACE_LIST` | `glide_renderer.cpp` |
-| `DKR_TRACE_PAGING` | `game_main.cpp` |
-| `DKR_TRACE_RENDER_ZONES` | `glide_renderer.cpp` |
-| `DKR_TRACE_SAMPLER_DELAY` | `sampler.c` |
-| `DKR_TRACE_SAMPLER` | `sampler.c` |
-| `DKR_TRACE_SP` | `events.cpp`, `mesgqueue.cpp` |
-| `DKR_TRACK_PROFILE` | `track_performance.hpp` |
-| `DKR_VI_PRESENT` | `events.cpp` |
+| Variable | What it does | Read in |
+|---|---|---|
+| `DKR_AUDIO_CAPTURE` | captures audio tasks to D: for the host's microcode oracle (`docs/AUDIO-HLE.md`) | `game_main.cpp` |
+| `DKR_AUDIO_MICROCODE` | `1` runs the recompiled audio microcode instead of the high-level mixer: 4.6 times its cost | `game_main.cpp` |
+| `DKR_CANARY` | draws two test squares each list, to tell a broken render state from broken vertices | `glide_renderer.cpp` |
+| `DKR_CAPTURE_KEY` | `<n>`: F9 writes a capture and the card's frame, up to n times | `glide_renderer.cpp` |
+| `DKR_CAPTURE_LIST` | display-list numbers to capture, without a key | `glide_renderer.cpp` |
+| `DKR_CAPTURE_MODE` | counts `DKR_CAPTURE_LIST` from the moment a game mode is reached | `glide_renderer.cpp` |
+| `DKR_CLEAR_NEAREST` | a clear diagnostic; answers one question in one run | `glide.c` |
+| `DKR_DUMP_EVERY` | with `DKR_DUMP_FRAME`, dumps a frame every n lists | `glide_renderer.cpp` |
+| `DKR_DUMP_FRAME` | dumps the card's frame at a list number, as a BMP | `glide_renderer.cpp` |
+| `DKR_DUMP_MODE` | counts `DKR_DUMP_FRAME` from a game mode (-1 intro, 0 race, 1 menu) | `glide_renderer.cpp` |
+| `DKR_FLATTEN_W` | gives every triangle a rectangle's depth values; a rasterisation diagnostic | `glide_renderer.cpp` |
+| `DKR_FOG` | `1` turns fog on; off by default, see the file | `glide_renderer.cpp` |
+| `DKR_FORCE_COMBINE` | `shade`, `texel`, `texel_shade`, `texel_shade_a`: one combine mode for every draw | `glide_renderer.cpp` |
+| `DKR_FORCE_STATE` | `1`: every triangle under the canary's render state | `glide_renderer.cpp` |
+| `DKR_FORGET_AT_FRAME` | `1` forgets every remembered card state at each frame | `glide_backend.c` |
+| `DKR_GFX_NO_STATS` | turns the per-list statistics off anywhere | `glide_renderer.cpp` |
+| `DKR_GFX_STATS` | `1` turns the per-list statistics on: 4.3 ms a list in the hub | `glide_renderer.cpp` |
+| `DKR_GLIDE_OPEN_EARLY` | `1` opens the card before the game starts, as before 2 October 2026: the first image 1.25 s later (`docs/research/win95-startup.md`) | `glide_renderer.cpp` |
+| `DKR_GLIDE_SWAP` | `immediate` swaps without waiting for the scan; measured no different here | `glide.c` |
+| `DKR_INPUT_BACKEND` | the modern build's input backend choice | `runtime_platform.cpp` |
+| `DKR_INTERPOLATION_TRACE` | the modern build's frame-interpolation trace | `presentation_identity.cpp` |
+| `DKR_LAUNCHER_PROFILE` | the modern launcher's profiling | `launcher_performance.hpp` |
+| `DKR_LEGACY_QUALIFICATION_RECIPE` | the modern build's scene qualification | `game_main.cpp` |
+| `DKR_LOG` | where the runtime log is written | `game_main.cpp` |
+| `DKR_MQ_HOLD_REFUSED` | `0` puts a refused message back on the queue instead of holding it: the idle thread spins (patch 0056) | `mesgqueue.cpp` |
+| `DKR_NEUTRAL` | `<mask>` neutralises render-state fields: 1 texture, 2 filter, 4 blend, 8 fog, 16 constant colour | `glide_renderer.cpp` |
+| `DKR_NO_ALPHA_TEST` | `1` draws every texel whatever its alpha | `glide_renderer.cpp` |
+| `DKR_NO_AUDIO_OUT` | `1` mixes the sound and plays nothing | `runtime_platform.cpp` |
+| `DKR_NO_DEPTH` | `1` turns the depth test off | `glide_renderer.cpp` |
+| `DKR_NO_MULTIPASS` | `1` draws one pass where the combiner needs two | `glide_renderer.cpp` |
+| `DKR_NO_STATE_SHADOW` | `1` writes every card state, remembering nothing | `glide_backend.c` |
+| `DKR_NO_TEXCACHE` | `1` converts every texture even when the card holds it | `glide_renderer.cpp` |
+| `DKR_OSD` | an on-screen display of the frame's timings and the audio underruns | `glide_renderer.cpp` |
+| `DKR_PAINT_WHITE` | `1` paints every vertex opaque white | `glide_renderer.cpp` |
+| `DKR_PROBE` | `x,y`: the pixel the paint-stack probe watches | `glide_renderer.cpp` |
+| `DKR_PROBE_SWITCH` | a thread-switch cost probe at start-up | `game_main.cpp` |
+| `DKR_RDRAM_SNAPSHOT` | `copy` copies the game's memory for each frame instead of drawing from it live: a race at 50 ms a frame against 34 (patch 0058) | `events.cpp` |
+| `DKR_RDRAM_SNAPSHOT_FROM` | the address the snapshot copy starts from | `events.cpp` |
+| `DKR_RDRAM_SNAPSHOT_POOL` | how the snapshot buffers are allocated | `events.cpp` |
+| `DKR_RDRAM_SNAPSHOT_SIZE` | the snapshot's size; four megabytes by default | `events.cpp` |
+| `DKR_RENDERER` | `null` draws nothing and counts the lists; runs without a 3dfx card | `game_main.cpp` |
+| `DKR_ROM_CACHE_BLOCKS` | `1` to `64`: fewer 16 KiB blocks in the ROM cache, for measuring its size (patch 0061) | `pi.cpp` |
+| `DKR_SCISSOR` | `0` keeps `G_SETSCISSOR` from the card; on by default since 2 October 2026 -- without it the two-player views overlap | `glide_renderer.cpp` |
+| `DKR_SDL3_INPUT_HOST` | the modern build's SDL3 input host | `runtime_platform.cpp` |
+| `DKR_SHADOW_TRACE` | the modern RT64 decoder's shadow trace | `f3ddkr_rt64.cpp` |
+| `DKR_SPLIT_TRACE` | the modern RT64 decoder's split-screen trace | `f3ddkr_rt64.cpp` |
+| `DKR_THREADS_LOG` | `THREADS.EXE`'s log file | `test_threading.cpp` |
+| `DKR_TIMING_EXPORT` | `<prefix>` writes FRAMES.BIN and AUDIO.BIN: every frame's period and render time | `timing_export.hpp` |
+| `DKR_TRACE_AUDIO_ZONES` | the mixer's cost per command | `game_main.cpp` |
+| `DKR_TRACE_CPU` | stamps every context switch; guest time against wall time every 5 s | `events.cpp`, `threads.cpp` |
+| `DKR_TRACE_EXCLUSIVE` | runs the display list at time-critical priority, so that `render=` is processor time | `threads.cpp` |
+| `DKR_TRACE_IDLE_METER` | reports the time each thread spends parked | `game_main.cpp` |
+| `DKR_TRACE_LIST` | a full trace of one display list | `glide_renderer.cpp` |
+| `DKR_TRACE_PAGING` | the system's paging counters every 5 s | `game_main.cpp` |
+| `DKR_TRACE_RENDER_ZONES` | the renderer's cost by zone | `glide_renderer.cpp` |
+| `DKR_TRACE_SAMPLER` | samples every thread's EIP for n seconds into D:\SAMPLES.BIN | `sampler.c` |
+| `DKR_TRACE_SAMPLER_DELAY` | starts the sampler late; `race+<n>` waits for a race | `sampler.c` |
+| `DKR_TRACE_SP` | traces the RSP task messages | `events.cpp`, `mesgqueue.cpp` |
+| `DKR_TRACK_PROFILE` | the modern build's per-track profiling | `track_performance.hpp` |
+| `DKR_VI_PRESENT` | how video interrupts present a frame | `events.cpp` |
