@@ -186,9 +186,11 @@ host's oracle and set against the card's own frame of the same list
 
 Exact agreement cannot be expected: the card renders in 16 bits with Glide's
 dither, the oracle in 24. Within eight levels, the card and the oracle agree on
-more than 99% of both frames, the HUD included. `compare`'s worst gaps, 207
-and 231 levels, are single pixels at triangle edges, where the two rasterisers
-own a different side.
+more than 99% of both frames, the HUD included. The large gaps are few --
+146 and 133 pixels over 64 levels, 0.05% -- and `compare` places its worst,
+207 and 231 levels, off any triangle edge: looked at, they are isolated pixels
+inside the palms' alpha-tested foliage, where a texel just above or below the
+cutout is kept by one side and dropped by the other. Not attributed further.
 
 ## What this does not establish
 
