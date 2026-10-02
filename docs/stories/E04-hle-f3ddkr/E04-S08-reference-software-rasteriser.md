@@ -76,8 +76,13 @@ measuring instrument, not a way of playing.
 - [x] Depth, blending and the alpha test work — depth including its **independence
       from the order of emission**, which a depth buffer promises and which one easily
       forgets to check.
-- [ ] The game displays a recognisable image: title screen, menu, and a race —
-      **blocked** by E02-S06, which requires the ROM.
+- [x] The game displays a recognisable image: title screen, menu, and a race —
+      checked on 3 October 2026 by replaying captures from the test machine through
+      the oracle (`build/render-tools/replay`): the copyright screen with its
+      letterbox, PLAYER SELECT with all eight characters, the track choice
+      (DINO DOMAIN / ANCIENT LAKE, its sand background and the course's flyover in
+      the frame), and a two-player race at Ancient Lake with both views and the
+      HUD. Sixty-six captures replay without a rejected command.
 - [x] The images produced are savable to a file — 24-bit BMP, header and dimensions
       read back by the suite.
 - [x] It works on the modern host and on the target, and both produce **byte-for-byte
