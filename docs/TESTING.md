@@ -99,6 +99,17 @@ constant expression in the game's C++ behaves this way on the target. Whether
 the target's C++ should be built with `-fexcess-precision=fast` instead is a
 decision for the whole game, to be measured, not taken in a test file.
 
+**How far it reaches, surveyed on 3 October 2026.** The 122 files of
+`src/game` that `DKRR.EXE` compiles or includes hold 29 comparisons of a
+`float` against a constant that `float` cannot represent exactly. 27 are
+thresholds with a margin built in -- `<= 1.0001F` for a cover scale, `< 0.001F`
+for a neutral equaliser band, `>= 0.9999F` for a full volume -- or ImGui code the
+target does not run; the excess precision moves where such a test falls by
+less than a float's last bit, at a value the margin exists to avoid. The other
+two are `split_gutter_authored` and `fullscreen_gutter_authored`, which test
+their boundary exactly, the case above. Nothing found changes what the game
+does.
+
 ## The render oracle
 
     tools/render/build-host-tools.sh
