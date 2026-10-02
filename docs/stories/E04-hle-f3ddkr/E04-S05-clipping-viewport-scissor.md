@@ -98,9 +98,14 @@ primitives the card can rasterise.
       surviving between lists) -- and a pass-through blend is no longer added.
       Three and four players are not played: the test machine has two inputs.
       `docs/research/win95-two-players.md`.
-- [ ] The share of the budget and the number of clipped triangles are measured —
-      **blocked**: the number clipped depends on a real scene, and without it the
-      share of the budget has no meaning.
+- [x] The share of the budget and the number of clipped triangles are measured —
+      on real scenes since there are some. Over the 66 captures at hand (2 October
+      2026; the attract mode, menus, races, the hub, two players), 91,929
+      triangles: **1,821 (2.0%) crossed the near plane and were split**, 24,497
+      (26.6%) were discarded whole -- behind the near plane or off the screen --
+      and 48,303 emitted. `replay` prints the split count beside the others. The
+      cost: clipping takes 0.41 ms a display list on the target after E08-S03's
+      changes, about 1.2% of a 34 ms frame.
 - [~] No primitive reaches the backend out of domain — the off-screen rejection exists
       and discards a triangle only if **all three** vertices are on the same side.
       **No assertion in a development build**: there is not yet a complete path from

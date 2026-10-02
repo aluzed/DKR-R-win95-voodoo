@@ -96,6 +96,7 @@ typedef struct {
     unsigned long rejects;
     unsigned long culled;
     unsigned long clipped;
+    unsigned long split;      /* crossing the near plane, made two (E04-S05) */
     unsigned long textures;
     unsigned long resident, reused;
     /* The stride check: see `stride_mismatch` in `f3ddkr.h`. */
@@ -146,6 +147,7 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
                    ctx->state.rejects[4];
     c->culled    = ctx->state.culled;
     c->clipped   = ctx->state.clipped_away;
+    c->split     = ctx->state.clip_split;
     c->textures  = ctx->state.textures_loaded;
     c->fogged    = ctx->state.emitted_fogged;
     c->vertices              = ctx->state.vertices;
@@ -214,7 +216,10 @@ static void say_counts(const char *who, const replay_counts *c)
         who, c->commands, c->triangles, c->emitted, c->culled, c->clipped,
         c->rejects, lost, c->textures, c->resident, c->reused, c->fogged);
     /* On its own line, so that the `cmd=` line `check-corpus.sh` compares
-       keeps its shape. */
+       keeps its shape: `clipped` above is what was discarded -- wholly behind
+       the near plane or off the screen -- and this, what the near plane cut. */
+    say("           near plane: split=%lu\n", c->split);
+    /* On its own line too, for the same reason. */
     say("           vertices: transformed=%lu unreferenced=%lu undrawn=%lu"
         " drawn=%lu\n",
         c->vertices, c->vertices_unreferenced, c->vertices_undrawn,
