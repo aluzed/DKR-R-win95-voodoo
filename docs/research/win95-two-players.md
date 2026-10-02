@@ -75,6 +75,10 @@ the window.
 
 A two-player race at Ancient Lake, six racers, both accelerating, 77 seconds
 of the timing export: **38.9 ms a frame on average, median 33.7 ms**, 77% of
-frames at the full 30 fps, 14% at 20 and 9% at 15; the renderer 6.9 ms. A
-one-player race is 34.4 ms. Two views of the same track cost the game's logic
-and the renderer a frame in four.
+frames at the full 30 fps, 14% at 20 and 9% at 15; the renderer 6.9 ms.
+
+**A one-player race is not slowed by the scissor**: driven by the same script,
+the timing export's first 40 seconds of race gave 37.1 ms a frame before the
+change and 37.4 ms after, on a busier stretch (1011 triangles a list against
+732). So two players cost about 1.5 ms a frame over one, 4% -- most frames
+still at 30 fps.
