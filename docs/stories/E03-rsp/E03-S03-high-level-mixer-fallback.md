@@ -73,15 +73,21 @@ them back.
       (`docs/AUDIO-HLE.md`).
 - [x] The mixer produces correct output for the music and for the effects: it is
       **bit-exact** against the microcode on every command and on 13 tasks
-      captured from the game. It is not yet *audible* on Windows 95, because
-      there is no audio output (E06-S03).
+      captured from the game. **Audible on Windows 95 since 2 October 2026**, once
+      the test machine had a sound driver: a race played 101 s of it with no
+      underrun while racing (E06-S03).
 - [x] The deviation from the reference is measured objectively and recorded:
       zero bytes (`tools/audio/abi_difftest`, `tools/audio/replay_hle`).
 - [ ] The CPU gain is measured and brings the audio back within its budget.
       Measured: 695 ms of processor per second of sound with the microcode,
       about 165 ms with the mixer. At 30 fps that is about 5.5 ms of a 33.3 ms
       frame, against a proposed allocation of 4 ms (`frame-budget.md`). Close,
-      not yet within.
+      not yet within. **Remeasured 2 October 2026** from the runtime's own
+      `[audio][rate]` totals, the mixer's time over the run's: **12.2% of the
+      processor in a race at Ancient Lake, 4.08 ms per 33.3 ms of game, 29.8
+      tasks a second**; 12.6% (4.21 ms) over six minutes of the attract mode. Two
+      per cent over the allocation, from 4.6 times over before the mixer; the
+      races meanwhile run at 30 fps on three frames in four.
 - [x] The microcode path stays selectable, with `DKR_AUDIO_MICROCODE=1`. It is
       an environment variable, not yet the E06-S05 configuration.
 - [x] The known differences are documented (`docs/AUDIO-HLE.md`). None occurs in
