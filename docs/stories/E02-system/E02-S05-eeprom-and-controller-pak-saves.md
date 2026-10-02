@@ -250,9 +250,31 @@ writes `dkr.us.v77.bin` and `dkr.us.v77.BAK` at its start; a power cut four
 minutes later, in the adventure hub, leaves both intact and free of anything
 foreign.
 
-Not checked: that an adventure's **progress** survives. Entering the hub writes
-nothing new -- DKR saves its progress at events (a race won, a balloon) that a
-route driven blind does not reach. That is the test this ticket still owes.
+**An adventure saved and reloaded, 2 October 2026.** On the test machine, the
+current build:
+
+1. ADVENTURE, NEW GAME A, initials "A", the opening cutscene and Taj's
+   dialogue, then the hub. The EEPROM's first 0x78 bytes -- the three adventure
+   files -- were still `FF`: DKR does not write a new file when it is created
+   (`menu.c`'s `force_mark_write_save_file` there belongs to COPY), only at
+   the events that call `safe_mark_write_save_file` -- a level change, a
+   challenge, leaving the game.
+2. Pause, QUIT GAME, OK. File A's 40 bytes were written (`00a4 ...  0003 9c00`)
+   to `dkr.us.v77.bin`, the previous version kept in `.BAK`.
+3. **The machine powered off** from the outside (`Drive-Win95-VM.sh stop`),
+   the game still running: the file read back from the disk image byte for
+   byte as written.
+4. Booted again: GAME SELECT shows file A, initials A, 0 balloons, where the
+   other two read NEW. Loaded, it puts the player in the hub without the
+   opening cutscene, which the save records as seen.
+
+So the progress a file holds survives a quit and a power cut, and is read back.
+What was not reached is a file with balloons in it -- a race won -- which goes
+through the same `write_save_data`, the same 40 bytes and the same file.
+
+For a route driven by script: the QUIT GAME confirmation opens on **CANCEL**
+(`gMenuSubOption = 2` in `menu_pause_loop`); the highlighted-looking OK is the
+blink. One stick move toggles it.
 
 ## Risks
 
