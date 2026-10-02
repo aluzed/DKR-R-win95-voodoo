@@ -87,10 +87,14 @@ but are dealt with separately.
       requiring captured scenes, hence the ROM.
 - [x] The cost per vertex and per frame is measured on the target: **0.682 µs per
       vertex**, that is **24,322 vertices** in a 16.6 ms frame.
-- [ ] Per-vertex lighting — **not done**. DKR carries vertex colours, and the decoder
-      passes them on as they are; knowing whether the microcode applies anything else
-      to them requires surveying the behaviour in the decomp, which is not in this
-      repository.
+- [x] Per-vertex lighting — **there is none to do in the decoder**, surveyed on
+      3 October 2026. The decompilation (`../Diddy-Kong-Racing`) names `G_LIGHTING`
+      once, to *clear* it in `dRspInit` (`src/rcp_dkr.c`), and sets it nowhere; the
+      game lights its objects on the CPU (`src/lights.c`, `light_update_shading`) and
+      hands the result to the microcode as vertex colours, which the decoder passes
+      on as they are. On the lists themselves: the 66 captures at hand make 1,803
+      geometry-mode changes between six modes -- `0`, `0x1`, `0x204`, `0x205`,
+      `0x10204`, `0x10205` -- and not one carries `G_LIGHTING` (`0x20000`).
 
 ## Risks
 
