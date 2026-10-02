@@ -78,7 +78,7 @@ of the timing export: **38.9 ms a frame on average, median 33.7 ms**, 77% of
 frames at the full 30 fps, 14% at 20 and 9% at 15; the renderer 6.9 ms.
 
 **A one-player race is not slowed by the scissor**: driven by the same script,
-the timing export's first 40 seconds of race gave 37.1 and 37.2 ms a frame before the
-change, in runs on either side, and 37.4 ms after, on a busier stretch (1011 triangles a list against
-732). So two players cost about 1.5 ms a frame over one, 4% -- most frames
-still at 30 fps.
+the timing export's first 40 seconds of race gave 37.1 and 37.2 ms a frame
+before the change, in runs on either side, and 37.4 ms after, on a busier
+stretch (1011 triangles a list against 732). So two players cost about 1.5 ms
+a frame over one, 4% -- most frames still at 30 fps.
