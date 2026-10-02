@@ -110,7 +110,11 @@ On the emulated Pentium II 400 and Voodoo 2:
   - the screen stays black for about five seconds after the game starts,
     while the 3dfx card is brought up; the very first start takes two or
     three seconds more, to check the ROM;
-  - entering a race takes about a second.
+  - entering a race takes about a second;
+  - the 3dfx card shows the game at 640 x 480 and 60 Hz, which every monitor
+    of the time can display: two screen refreshes for each of the game's 30
+    frames a second, so motion stays even. If a 3dfx control panel forces
+    another refresh rate, set it back to 60 Hz.
 
 
 KNOWN DIFFERENCES FROM THE CONSOLE

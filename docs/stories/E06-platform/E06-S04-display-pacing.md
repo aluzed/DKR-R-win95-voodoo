@@ -91,7 +91,13 @@ the target.
       Ancient Lake, 2 October 2026: 2% at 60 fps, **74% at 30**, 24% at 20, under
       1% slower; mean 37.2 ms, median 33.5, 99th percentile 51.5. A two-player
       race: 77%, 14% and 9% at 15 fps (`docs/research/win95-two-players.md`).
-- [ ] The recommended display mode is documented.
+- [x] The recommended display mode is documented -- **it is not left to the player**:
+      `glide.c` opens the card at 640 x 480 and asks `grSstWinOpen` for
+      `GR_REFRESH_60Hz`, the ticket's ideal case, two scans per game frame at 30 fps.
+      Every monitor of the period shows 640 x 480 at 60 Hz. The package README says
+      so (3 October 2026). Glide's own `SST_SCREENREFRESH` variable, set by some 3dfx
+      control panels, can override it; that and other monitors' rates belong to the
+      survey above, which needs the hardware (E09-S04).
 - [ ] No drift between the audio clock and the video clock over twenty minutes.
 
 ## Risks
