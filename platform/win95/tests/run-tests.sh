@@ -8,6 +8,9 @@
 #
 # Several suites, for different reasons:
 #
+#   joystick   (E06-S02) the mapping from a winmm reading to the N64 stick
+#              and buttons: dead zone, range, the hat. Plain arithmetic.
+#
 #   tick64     (E01-S03) GetTickCount's wraparound happens after 49.7 days.
 #              Waiting is not a protocol: the logic is a pure function, driven
 #              here with chosen values.
@@ -27,8 +30,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
-  *) echo "usage: $0 [all|tick64|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
+  all|tick64|joystick|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
+  *) echo "usage: $0 [all|tick64|joystick|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,6 +48,14 @@ if [[ "$suite" == "all" || "$suite" == "tick64" ]]; then
   "$CC" -O2 -Wall -Wextra -o "$tmp/test_tick64" \
         "$HERE/test_tick64.c" "$HERE/../tick64.c"
   "$tmp/test_tick64"
+fi
+
+# --- E06-S02: from a joystick's reading to an N64 controller's ---------------
+
+if [[ "$suite" == "all" || "$suite" == "joystick" ]]; then
+  "$CC" -O2 -Wall -Wextra -I "$HERE/.." -o "$tmp/test_joystick_map" \
+        "$HERE/test_joystick_map.c" "$HERE/../joystick_map.c" -lm
+  "$tmp/test_joystick_map"
 fi
 
 # --- E02-S01: threads and synchronisation ------------------------------------

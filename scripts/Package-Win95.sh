@@ -13,7 +13,8 @@
 #     GLIDE2X.DLL reported as the driver's and not shipped;
 #   - no game asset in the package (`scan_for_game_assets.py`, ASSET_POLICY.md);
 #   - every name 8.3, since the package may be unpacked onto FAT16;
-#   - the Windows 95 platform tests, unless --no-tests.
+#   - the Windows 95 platform tests and the runtime's portable-logic suites,
+#     unless --no-tests.
 #
 # Text files are written with CRLF line ends: NOTEPAD on Windows 95 shows a
 # file with bare LFs as one line.
@@ -70,6 +71,9 @@ if (( run_tests )); then
   say "running the Windows 95 platform tests"
   bash "$ROOT/platform/win95/tests/run-tests.sh" >/dev/null 2>&1 \
     || fail "the platform tests fail"
+  say "running the runtime's portable-logic suites"
+  bash "$ROOT/tools/tests/run-portable-tests.sh" >/dev/null 2>&1 \
+    || fail "the portable-logic suites fail (tools/tests/run-portable-tests.sh)"
 fi
 
 crlf() { sed 's/\r$//; s/$/\r/' "$1" > "$2"; }

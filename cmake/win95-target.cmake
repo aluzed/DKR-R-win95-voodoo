@@ -1340,4 +1340,76 @@ set_target_properties(DKRWin95Game PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Game)
 
+# --- The runtime's portable-logic suites, on the target (E09-S03) ------------
+#
+# The same thirty suites `tools/tests/run-portable-tests.sh` runs on the host,
+# from the same list, each built as `PT<short>.EXE`. `tools/tests/PTALL.BAT`
+# runs them all on the test machine and writes `D:\PTALL.TXT`. What passing on
+# both shows is the point of the exercise: the same assertions over the same
+# code, under the target's 387 arithmetic, its CRT and its 32-bit `size_t`.
+#
+# **Five of them do not compile for the target, and that is a finding.** Their
+# `static_assert`s compare a function's `float` result with a `float` constant
+# expression -- `advance_mix_volume(1.0F, 0.0F) == 0.92F`. With `-mfpmath=387`
+# this compiler gives C++ the standard excess-precision rules: the constant is
+# evaluated as a `long double`, the result was rounded to `float`, and
+# 0.920000017 is not 0.92. One goes further than a test's comparison:
+# `split_gutter_authored(4.0F / 3.0F)` compares its `float` parameter against
+# `4.0F / 3.0F` held in `long double`, takes the other branch and returns
+# 2.4e-6 where the host returns 0 -- a real divergence in code the game
+# compiles, harmless in size (a millionth of a HUD unit). Recorded in
+# `docs/TESTING.md`; the suites run on the host, not here, until the
+# floating-point semantics of the target's C++ are decided.
+#
+# A sixth, `MAGRT`, is held back for its harness rather than its code: it makes
+# and removes directories through `std::filesystem` directly, whose operations
+# are Windows 95's empty wide functions here (`docs/research/win95-filesystem.md`).
+# `SAVMGR` is not built here because `SAVEMGR.EXE` above already runs the same
+# suite on the target, with the file layer it is written against.
+set(DKR_PORTABLE_HOST_ONLY AMIX CAMERA HUD MOTION WIDE MAGRT SAVMGR)
+file(STRINGS "${DKRPORT_ROOT}/tools/tests/portable-suites.txt" DKR_PORTABLE_SUITES
+     REGEX "^[A-Z]")
+foreach(line IN LISTS DKR_PORTABLE_SUITES)
+    string(REGEX REPLACE "[ \t]+" ";" fields "${line}")
+    list(GET fields 0 short)
+    if(short IN_LIST DKR_PORTABLE_HOST_ONLY)
+        continue()
+    endif()
+    list(GET fields 2 test_source)
+    list(LENGTH fields field_count)
+    set(sources "${DKRPORT_ROOT}/runtime-recomp/tests/${test_source}")
+    if(field_count GREATER 3)
+        list(SUBLIST fields 3 -1 under_test)
+        foreach(source IN LISTS under_test)
+            list(APPEND sources "${DKRPORT_ROOT}/runtime-recomp/src/game/${source}")
+        endforeach()
+    endif()
+    set(target "DKRWin95Portable${short}")
+    add_executable(${target} ${sources})
+    # The game's include paths and definitions, so that the code under test
+    # is compiled as it is in DKRR.EXE.
+    target_include_directories(${target} PRIVATE
+        "${DKRPORT_ROOT}/runtime-recomp/src/game"
+        "${DKRPORT_ROOT}/runtime-recomp/src"
+        "${DKRPORT_ROOT}/platform"
+        "${DKR_WIN95_PLATFORM}"
+        "${DKR_WIN95_PLATFORM}/include-shim"
+        "${DKRPORT_ROOT}/include")
+    target_compile_definitions(${target} PRIVATE
+        NOMINMAX DKR_RUNTIME_HAS_RT64=0 DKR_RUNTIME_HAS_NETPLAY=0
+        DKR_RUNTIME_HAS_LEGACY_MODS=0 DKR_RUNTIME_HAS_PAYLOAD_V80=0
+        DKR_TARGET_WIN95=1)
+    # The suites are built on `assert`.
+    target_compile_options(${target} PRIVATE -UNDEBUG -w)
+    # What `SAVEMGR.EXE` links: the file and threading layers. The runtime's
+    # libraries would bring `GetProcessTimes` and its kind, which Windows 95
+    # exports empty, and the import check refuses them.
+    target_link_libraries(${target} PRIVATE win95fileio win95threading)
+    set_target_properties(${target} PROPERTIES
+        OUTPUT_NAME "PT${short}"
+        SUFFIX ".EXE"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/portable")
+    dkr_win95_verify(${target})
+endforeach()
+
 message(STATUS "Windows 95 target configured: win95compat, DKRWin95Witness, DKRWin95Game")

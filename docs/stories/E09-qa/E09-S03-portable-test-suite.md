@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E09 — Integration, QA and distribution |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E00-S07, E01-S01, E07-S03 |
@@ -59,14 +59,30 @@ scripts.
 
 ## Acceptance criteria
 
-- [ ] The 18 existing suites are sorted, each decision being justified.
-- [ ] The portable-logic tests pass on both targets.
+- [x] The 18 existing suites are sorted, each decision being justified -- they are
+      seventy now. Sorted on 2 October 2026 by following each suite's includes into
+      `src/game` and comparing with what `DKRR.EXE` compiles: 30 test code the game
+      contains and need nothing else (`tools/tests/portable-suites.txt`), 2 share
+      code but need more (three ROM revisions; the netplay library), 38 test the
+      modern build only. `docs/TESTING.md`.
+- [~] The portable-logic tests pass on both targets -- **all 30 on the host**
+      (`tools/tests/run-portable-tests.sh`, 25 s). 23 are built for the target from
+      the same list (`PT*.EXE`) and run by `tools/tests/Run-Portable-Tests-VM.sh`;
+      seven are not, each for a reason written beside the list in
+      `cmake/win95-target.cmake` -- five of them because of the divergence below.
 - [ ] The platform tests E02 asks for are written and pass on the target.
 - [ ] Running them on the emulated machine is automated.
-- [ ] The cross-target comparison tests detect a rounding divergence introduced
-      deliberately.
-- [ ] The tests are blocking in the build scripts.
-- [ ] `docs/TESTING.md` documents running them on both targets.
+- [x] The cross-target comparison tests detect a rounding divergence -- **a real
+      one, not introduced**: built for the target, five suites' compile-time
+      assertions fail, thirteen of them, because with `-mfpmath=387` GCC 13 gives
+      C++ standard excess precision and a `float` constant expression is
+      evaluated in `long double` (`0.920000017 == 0.92` is false). One is in the
+      code under test: `split_gutter_authored(4.0F / 3.0F)` returns 2.4e-6 on the
+      target and 0 on the host. `docs/TESTING.md`.
+- [~] The tests are blocking in the build scripts -- the platform tests and the
+      thirty portable suites block `scripts/Package-Win95.sh`; the target run
+      needs the test machine and is not in it.
+- [x] `docs/TESTING.md` documents running them on both targets.
 
 ## Risks
 
