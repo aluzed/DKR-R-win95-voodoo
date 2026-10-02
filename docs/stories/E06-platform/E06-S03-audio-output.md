@@ -84,11 +84,21 @@ for every measurement in E08, and the criterion asking for DirectSound with a
 - [ ] The audio is played back through DirectSound, with the `waveOut` fallback
       verified.
 - [ ] The buffer size is justified by the 99th percentile of time per frame.
-- [x] No audible drift over twenty minutes of continuous play -- measured rather than
-      listened to: over 123.7 minutes of the game (E08-S04's long session), 219,000 blocks
-      played, **0 underruns and 0 dropped**, and the mixer at full rate in every race since.
-- [x] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
-      in the log, and on the on-screen display (`OSD=1`).
+- [ ] No audible drift over twenty minutes of continuous play. **Not measured -- this
+      box was ticked on 1 October 2026 on evidence that does not hold.** The "219,000
+      blocks played, 0 underruns, 0 dropped" of E08-S04's long session were blocks
+      *submitted*: every run on the test machine since at least 27 September logs
+      `waveOut at 48000 Hz: refused (devices=0)` then the same at 22050 Hz, and
+      `[audio][out] ... frames=0`. Windows 95 there has no wave device -- the
+      configured Sound Blaster 16 has no driver installed (no SB16 file in
+      `WINDOWS\SYSTEM`, only `wavemapper` under `[drivers]`; checked 2 October) --
+      so nothing was ever played and nothing could underrun. What the runs do show
+      is the mixer producing samples at full rate. The output path itself is
+      untested on the target until a driver is installed (E09-S01) or a real
+      machine is used (E09-S04).
+- [~] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
+      in the log, and on the on-screen display (`OSD=1`) -- the counter exists and is
+      printed; it has only ever read 0 without a device, so it is not shown to work.
 - [ ] The output's CPU cost is measured, including with a poor driver. *Partly*: in a
       race, the sampler never finds `audio_out.c` among 43,335 samples of the executable
       (E08-S01) -- negligible with the test machine's driver; no other driver tried.

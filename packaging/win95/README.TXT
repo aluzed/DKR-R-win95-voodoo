@@ -105,7 +105,8 @@ On the emulated Pentium II 400 and Voodoo 2:
   - races run at the game's own 30 frames a second nine frames in ten;
   - the adventure's hub world runs at 30 up to its busiest views, where it
     falls to about 25;
-  - the sound plays at its full rate;
+  - the sound is mixed at its full rate (the emulated machine had no sound
+    driver installed, so what a sound card does with it is not yet tested);
   - the screen stays black for about five seconds after the game starts,
     while the 3dfx card is brought up; the very first start takes two or
     three seconds more, to check the ROM;
