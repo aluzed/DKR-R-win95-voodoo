@@ -55,6 +55,17 @@ The keyboard, by position (shown here for a US layout):
     Q / E          L / R
     I J K L        the C buttons
 
+Player two, on the numeric keypad (NumLock on or off):
+
+    8 4 2 6        the control stick (5 is down as well)
+    0              A          (accelerate)
+    .              B          (brake)
+    -              Z          (fire an item)
+    +              Start
+    7 / 9          L / R
+
+Player two joins by pressing 0 at PLAYER SELECT.
+
 Gamepads and joysticks: through Windows 95's own joystick support (Control
 Panel > Joystick, where they are also calibrated). The first is player one,
 alongside the keyboard; a second is player two. A four-button pad maps its

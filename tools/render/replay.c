@@ -353,6 +353,9 @@ static int g_no_stats = 0;
 static int g_no_texcache = 0;
 
 static dkr_f3d_context g_ctx;
+/* `G_SETSCISSOR` reaches the backend, as in the game; `--no-scissor` keeps it
+   from it, as `DKR_SCISSOR=0` does there. */
+static int g_scissor = 1;
 /* The decode of the last `run_capture`, in microseconds, on the target's clock.
    With `--frames N` on the card the mean of frames 2..N is printed: a
    benchmark of the renderer on one fixed list, with no driving in it, which
@@ -375,6 +378,7 @@ static void run_capture(dkr_render_backend *bk, const dkr_capture_header *h,
     g_ctx.fog_disabled  = (unsigned char)(g_no_fog ? 1 : 0);
     g_ctx.no_statistics = (unsigned char)(g_no_stats ? 1 : 0);
     g_ctx.no_texture_cache = (unsigned char)(g_no_texcache ? 1 : 0);
+    g_ctx.scissor_enabled = (unsigned char)(g_scissor ? 1 : 0);
     g_ctx.no_odd_row_swap = (unsigned char)(g_no_odd_row_swap ? 1 : 0);
     g_ctx.no_tile_texel_size =
         (unsigned char)(g_no_tile_texel_size ? 1 : 0);
@@ -802,6 +806,7 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "--no-fog") == 0)     { g_no_fog = 1; }
         else if (strcmp(argv[i], "--no-stats") == 0)   { g_no_stats = 1; }
         else if (strcmp(argv[i], "--no-texcache") == 0) { g_no_texcache = 1; }
+        else if (strcmp(argv[i], "--no-scissor") == 0) { g_scissor = 0; }
         else if (strcmp(argv[i], "--no-alpha-test") == 0) { no_alpha = 1; }
         else if (strcmp(argv[i], "--texel-factor-one") == 0) { factor_one = 1; }
         else if (strcmp(argv[i], "--no-multipass") == 0) { no_multipass = 1; }

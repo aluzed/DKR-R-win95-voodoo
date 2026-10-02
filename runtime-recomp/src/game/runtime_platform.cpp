@@ -33,6 +33,7 @@
 extern "C" {
 #include "audio_out.h"
 #include "joystick.h"
+#include "window.h"
 }
 #endif
 #include <algorithm>
@@ -1437,6 +1438,11 @@ bool dkr::runtime::platform::initialise() {
     std::fprintf(stderr,
                  "[boot][input] keyboard: WASD=stick arrows=d-pad Space=A Shift=B "
                  "Z=Z Enter=Start IJKL=C Q=L E=R\n");
+#if defined(DKR_TARGET_WIN95)
+    std::fprintf(stderr,
+                 "[boot][input] player 2, keypad, NumLock on or off: 8426=stick 0=A .=B "
+                 "+=Start -=Z 7=L 9=R\n");
+#endif
     return true;
 }
 
@@ -2403,6 +2409,13 @@ void dkr::runtime::platform::poll_input() {
                 buttons |= kKeys[k].mask;
             }
         }
+        /* With NumLock off the keypad's 8 4 2 6 arrive as the arrows' virtual
+           keys: an arrow whose keypad twin is down is player two's, not this
+           D-pad's. */
+        if (dkr_window_keypad_down(0x48)) { buttons &= static_cast<std::uint16_t>(~0x0800U); }
+        if (dkr_window_keypad_down(0x50)) { buttons &= static_cast<std::uint16_t>(~0x0400U); }
+        if (dkr_window_keypad_down(0x4B)) { buttons &= static_cast<std::uint16_t>(~0x0200U); }
+        if (dkr_window_keypad_down(0x4D)) { buttons &= static_cast<std::uint16_t>(~0x0100U); }
         const float stick_x =
             ((GetAsyncKeyState('D') & 0x8000) != 0 ? 1.0F : 0.0F) -
             ((GetAsyncKeyState('A') & 0x8000) != 0 ? 1.0F : 0.0F);
@@ -2421,12 +2434,51 @@ void dkr::runtime::platform::poll_input() {
             }
             last = buttons;
         }
+        /* **Player two on the numeric keypad**: a second player on one
+           keyboard, as PC games of the period offered, and the only way to
+           play -- or test -- two players on a machine with one joystick or
+           none. 8 4 2 6 are the stick (5 down as well), 0 is A, the decimal
+           point B, + Start, - Z, 7 and 9 L and R. Read by scan code from the
+           window's messages (`dkr_window_keypad_down`), because with NumLock
+           off -- as the test machine boots -- the keypad sends the arrows' and
+           Insert's virtual keys and `GetAsyncKeyState` cannot tell them from
+           the dedicated keys. */
+        const struct { int scancode; std::uint16_t mask; } kKeypad[] = {
+            { 0x52, 0x8000U },   /* 0: A     */
+            { 0x53, 0x4000U },   /* .: B     */
+            { 0x4A, 0x2000U },   /* -: Z     */
+            { 0x4E, 0x1000U },   /* +: Start */
+            { 0x47, 0x0020U },   /* 7: L     */
+            { 0x49, 0x0010U },   /* 9: R     */
+        };
+        std::uint16_t keypad_buttons = 0U;
+        for (std::size_t k = 0; k < sizeof(kKeypad) / sizeof(kKeypad[0]); ++k) {
+            if (dkr_window_keypad_down(kKeypad[k].scancode)) {
+                keypad_buttons |= kKeypad[k].mask;
+            }
+        }
+        const float keypad_x = (dkr_window_keypad_down(0x4D) ? 1.0F : 0.0F) -
+                               (dkr_window_keypad_down(0x4B) ? 1.0F : 0.0F);
+        const float keypad_y = (dkr_window_keypad_down(0x48) ? 1.0F : 0.0F) -
+                               ((dkr_window_keypad_down(0x50) || dkr_window_keypad_down(0x4C))
+                                    ? 1.0F : 0.0F);
+        {
+            static std::uint16_t last_keypad = 0U;
+            static int logged_keypad = 0;
+            if (keypad_buttons != 0U && last_keypad == 0U && logged_keypad < 20) {
+                ++logged_keypad;
+                std::fprintf(stderr, "[input] win95 player 2 keypad buttons=0x%04X\n",
+                             static_cast<unsigned>(keypad_buttons));
+            }
+            last_keypad = keypad_buttons;
+        }
         /* **And the pads (E06-S02).** Joystick 1 joins the keyboard on player
            one -- buttons combined, the keyboard's stick when a direction key is
-           held and the pad's otherwise -- and joystick 2 is player two. */
-        std::uint16_t player_buttons[2] = {buttons, 0U};
-        float player_x[2] = {stick_x, 0.0F};
-        float player_y[2] = {stick_y, 0.0F};
+           held and the pad's otherwise -- and joystick 2 joins the keypad on
+           player two, the same way. */
+        std::uint16_t player_buttons[2] = {buttons, keypad_buttons};
+        float player_x[2] = {stick_x, keypad_x};
+        float player_y[2] = {stick_y, keypad_y};
         for (int pad = 0; pad < DKR_JOY_DEVICES; ++pad) {
             dkr_joy_n64 joy{};
             if (dkr_joy_read(pad, &joy) != 0) {

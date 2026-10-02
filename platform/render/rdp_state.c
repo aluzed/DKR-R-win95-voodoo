@@ -586,13 +586,27 @@ void dkr_rdp_to_render_state(const dkr_rdp_state *rdp, dkr_render_state *out,
      * full word's positions would have read neighbouring fields: the result
      * would have been plausible — a chosen blend, differing between surfaces —
      * and wrong, hence invisible to inspection. */
+    /* **A blend that only passes the colour through is opaque.** With A set
+     * to `G_BL_0` and B to `G_BL_1`, the blender computes `P * 0 + M * 1`, and
+     * when M is `G_BL_CLR_IN` that is the incoming colour, written as it is.
+     * DKR uses it with `FORCE_BL` set -- `0xCB024000`, the sky's mode, and
+     * `0x0F0A4000` -- and reading every `B` other than `1-A` as additive
+     * added those surfaces onto what was below. In a two-player race that
+     * turned player two's whole view white: found on 2 October 2026 with the
+     * oracle's probe, a road pixel painted then saturated by an "additive"
+     * shade-only triangle. In the second cycle's fields of `render_mode` (the
+     * low word shifted by three): A at bits 21-22, M at 17-18. */
     {
         const unsigned int force_bl = rdp->render_mode & 0x800u;
         const unsigned int b2 = (rdp->render_mode >> 13) & 3u;
+        const unsigned int m2 = (rdp->render_mode >> 17) & 3u;
+        const unsigned int a2 = (rdp->render_mode >> 21) & 3u;
         if (force_bl == 0u) {
             out->blend = DKR_BLEND_OPAQUE;
         } else if (b2 == 0u) {
             out->blend = DKR_BLEND_ALPHA;
+        } else if (a2 == 3u && b2 == 2u && m2 == 0u) {
+            out->blend = DKR_BLEND_OPAQUE;
         } else {
             out->blend = DKR_BLEND_ADDITIVE;
             faithful = 0;

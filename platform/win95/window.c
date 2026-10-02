@@ -16,6 +16,10 @@ static unsigned char g_keys[256];
 /* Pressed since the last `dkr_window_latch_clear`, whether or not still held.
    See `window.h` for why a 170 ms frame makes this necessary rather than nice. */
 static unsigned char g_latch[256];
+/* The numeric keypad's keys by scan code, NumLock or not: the second player's
+   (`dkr_window_keypad_down`). Written by the window procedure, read by the
+   input poll; one byte per key. */
+static volatile unsigned char g_keypad[0x60];
 /* Set when F9 arrives, cleared when the renderer takes it. See `window.h`. */
 static volatile unsigned char g_capture_request;
 
@@ -76,6 +80,13 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         if (wp < 256u) { g_keys[wp] = 1; g_latch[wp] = 1; }
+        /* The keypad by scan code: bit 24 is clear for its keys and set for
+           the dedicated arrows and Insert/Home/... block, which share the scan
+           codes. The virtual key cannot tell them apart with NumLock off. */
+        if ((((unsigned long)lp >> 24) & 1u) == 0u &&
+            (((unsigned long)lp >> 16) & 0xFFu) < sizeof(g_keypad)) {
+            g_keypad[((unsigned long)lp >> 16) & 0xFFu] = 1;
+        }
         /* The capture request is its own flag, set here where the message
            arrives. The renderer runs on another thread and asks for it once a
            display list; making it read the key arrays instead would put the
@@ -91,6 +102,10 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYUP:
     case WM_SYSKEYUP:
         if (wp < 256u) { g_keys[wp] = 0; }
+        if ((((unsigned long)lp >> 24) & 1u) == 0u &&
+            (((unsigned long)lp >> 16) & 0xFFu) < sizeof(g_keypad)) {
+            g_keypad[((unsigned long)lp >> 16) & 0xFFu] = 0;
+        }
         return 0;
 
     /* --- The cursor --------------------------------------------------------- *
@@ -207,6 +222,12 @@ int dkr_window_focused(void) { return g_focused; }
 
 unsigned long dkr_window_handle(void) { return (unsigned long)(UINT_PTR)g_hwnd; }
 
+int dkr_window_keypad_down(int scancode)
+{
+    if (scancode < 0 || scancode >= (int)sizeof(g_keypad)) { return 0; }
+    return g_keypad[scancode] != 0;
+}
+
 int dkr_window_key_down(int vk)
 {
     if (vk < 0 || vk > 255) { return 0; }
@@ -227,6 +248,7 @@ int dkr_window_take_capture_request(void)
 
 void dkr_window_keys_clear(void)
 {
+    memset((void *)g_keypad, 0, sizeof(g_keypad));
     memset(g_keys, 0, sizeof(g_keys));
     memset(g_latch, 0, sizeof(g_latch));
 }
@@ -251,6 +273,7 @@ int  dkr_window_pump(void)   { return 1; }
 int  dkr_window_focused(void) { return 1; }
 unsigned long dkr_window_handle(void) { return 0; }
 int  dkr_window_key_down(int vk) { (void)vk; return 0; }
+int  dkr_window_keypad_down(int scancode) { (void)scancode; return 0; }
 int  dkr_window_take_capture_request(void) { return 0; }
 void dkr_window_keys_clear(void) { }
 void dkr_window_latch_clear(void) { }

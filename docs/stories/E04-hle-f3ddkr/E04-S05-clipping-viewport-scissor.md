@@ -91,8 +91,13 @@ primitives the card can rasterise.
       requiring captured scenes.
 - [~] The split screen is correct with two, three and four players — the four layouts
       are computed and checked, including **the absence of overlap** between
-      neighbouring quadrants. But that is rectangle geometry: the game has not
-      exercised it yet.
+      neighbouring quadrants. **Two players played on 2 October 2026**, player two
+      on the keypad: both views draw on the card once `G_SETSCISSOR` is honoured
+      -- on by default since then, its two black-frame causes found (a window set
+      before the list's colour image, at the wrong scale; the card's clip window
+      surviving between lists) -- and a pass-through blend is no longer added.
+      Three and four players are not played: the test machine has two inputs.
+      `docs/research/win95-two-players.md`.
 - [ ] The share of the budget and the number of clipped triangles are measured —
       **blocked**: the number clipped depends on a real scene, and without it the
       share of the budget has no meaning.

@@ -275,6 +275,20 @@ static float screen_scale(const dkr_f3d_context *c)
     return (float)c->screen_width / (float)c->state.color_image_width;
 }
 
+/* `G_SETSCISSOR`'s window, in the buffer's coordinates, handed to the backend
+   at the buffer-to-screen scale the rectangles use. See `OP_SETSCISSOR`. */
+static void apply_scissor(dkr_f3d_context *c, int ulx, int uly, int lrx, int lry)
+{
+    const float scale = screen_scale(c);
+    if (!c->scissor_enabled || !c->backend || !c->backend->set_scissor ||
+        lrx <= ulx || lry <= uly) {
+        return;
+    }
+    c->backend->set_scissor(c->backend->self,
+                            (int)((float)ulx * scale), (int)((float)uly * scale),
+                            (int)((float)lrx * scale), (int)((float)lry * scale));
+}
+
 /* Declared here because triangle drawing precedes it in this file: the state
    translation lives with the rest of the 2D path, further down. */
 static void apply_state(dkr_f3d_context *c);
@@ -3376,6 +3390,11 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             c->state.color_image_address = w1;
             TRACE(c, "SetColorImage width=%u address=0x%08X",
                   c->state.color_image_width, c->state.color_image_address);
+            if (c->state.scissor_pending) {
+                c->state.scissor_pending = 0;
+                apply_scissor(c, c->state.scissor_raw[0], c->state.scissor_raw[1],
+                              c->state.scissor_raw[2], c->state.scissor_raw[3]);
+            }
             break;
 
         case OP_SETFOGCOLOR:
@@ -3480,26 +3499,28 @@ unsigned long dkr_f3d_run(dkr_f3d_context *c, unsigned int address)
             const int uly = (int)((w0 >>  2) & 0x3FFu);
             const int lrx = (int)((w1 >> 14) & 0x3FFu);
             const int lry = (int)((w1 >>  2) & 0x3FFu);
-            const float scale = screen_scale(c);
             c->state.scissors++;
-            /* **Decoded always, applied only on request.** Honouring it turned
-               the six measured frames from 230 distinct colours to one, pure
-               black -- a clear regression, and the cause is not yet named:
-               `screen_scale` returns 1 until `SETCOLORIMAGE` has been seen, so
-               the first window of a list can be laid down at half size, and
-               nothing resets the card's clip window between lists. Both are real
-               and neither is measured.
+            /* **Honoured since 2 October 2026**, after a month behind
+               `DKR_SCISSOR=1`. Switched on then, it turned measured frames
+               black, for the two reasons the comment here named without
+               measuring: DKR sets the window *before* the list's
+               `G_SETCOLORIMAGE` (CKEY1213: `SetScissor 0,0..319,239` then
+               `SetColorImage width=320`), so `screen_scale` was still 1 and
+               the window went down at a quarter of the screen; and nothing
+               reset the card's window between lists, so it stayed there --
+               the clear included, `grBufferClear` respecting it. The first is
+               deferred below, the second is the backends' `begin_frame`.
              *
-               So the decode stands and the effect is behind `DKR_SCISSOR=1`,
-               rather than leaving a change in the build that is known to make
-               the image worse. */
-            if (c->scissor_enabled &&
-                c->backend && c->backend->set_scissor && lrx > ulx && lry > uly) {
-                c->backend->set_scissor(c->backend->self,
-                                        (int)((float)ulx * scale),
-                                        (int)((float)uly * scale),
-                                        (int)((float)lrx * scale),
-                                        (int)((float)lry * scale));
+               Without it, a two-player race drew each view over the other and
+               player two's was lost entirely, the letterbox of the opening
+               screens was missing and the track choice's flyover covered its
+               menu. `DKR_SCISSOR=0` turns it off, as a diagnostic. */
+            if (c->state.color_image_width == 0u) {
+                c->state.scissor_pending = 1;
+                c->state.scissor_raw[0] = ulx; c->state.scissor_raw[1] = uly;
+                c->state.scissor_raw[2] = lrx; c->state.scissor_raw[3] = lry;
+            } else {
+                apply_scissor(c, ulx, uly, lrx, lry);
             }
             TRACE(c, "SetScissor %d,%d..%d,%d", ulx, uly, lrx, lry);
             break;

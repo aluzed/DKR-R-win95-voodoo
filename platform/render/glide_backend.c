@@ -1129,6 +1129,14 @@ static void gl_begin_frame(void *self, unsigned clear_argb)
         if (forget) { shadow_forget_all(); b.has_state = 0; }
     }
     b.triangles = 0;
+    /* **The whole buffer again**, before the clear: `grClipWindow` persists
+       from one list to the next and `grBufferClear` respects it, so a window
+       the previous list left -- a split screen's lower half -- would clip
+       this frame's clear and its first draws. */
+    if (gs.clip_window && b.width > 0 && b.height > 0) {
+        gs.clip_window(0u, 0u, (FxU32)b.width, (FxU32)b.height);
+        g_clip[0] = 0; g_clip[1] = 0; g_clip[2] = b.width; g_clip[3] = b.height;
+    }
     {
         /* The allocator has to know a frame is starting: that is what lifts the
            previous frame's pins and resets the per-frame counters. Without it,

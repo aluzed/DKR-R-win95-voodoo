@@ -82,6 +82,16 @@ what was checked is that the game finds none, polls nothing it should not, and
 drives as before from the keyboard. No pad has moved a kart. DirectInput, which
 the ticket names first, is not done.
 
+## Player two on the keypad (2 October 2026)
+
+The numeric keypad is player two -- 8 4 2 6 the stick, 0 A, the decimal point
+B, + Start, - Z, 7 and 9 L and R -- and a second joystick joins it. Read by scan
+code from the window's messages, so that NumLock does not matter: with it off,
+as the test machine boots, the keypad sends the arrows' and Insert's virtual
+keys. Played on the test machine: player two joins at PLAYER SELECT, picks a
+character and a vehicle and drives a race beside player one
+(`scripts/Drive-To-Two-Player-Race.sh`, `docs/research/win95-two-players.md`).
+
 ## Acceptance criteria
 
 - [ ] The keyboard works in full screen, with no message-queue latency.

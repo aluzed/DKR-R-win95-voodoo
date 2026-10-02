@@ -93,6 +93,14 @@ surfaces.
       renderer drawing only the last would pass.
 - [ ] Shadows, water, particles and reflections — **blocked by the absent ROM**.
 
+> **2 October 2026: a pass-through blend is opaque.** With `FORCE_BL` set, a
+> second blender cycle of `P*0 + M*1` with M the incoming colour writes the colour
+> as it is; DKR draws its sky so (`0xCB024000`) and uses `0x0F0A4000` too.
+> `rdp_state.c` read every `B` other than `1-A` as additive, which saturated
+> player two's whole view to white in a two-player race, the sky added over the
+> track. Found with the oracle's probe on a capture;
+> `docs/research/win95-two-players.md`.
+
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
 ## Risks

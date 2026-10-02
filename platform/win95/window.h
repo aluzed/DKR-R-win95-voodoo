@@ -91,6 +91,14 @@ void dkr_window_close(void);
  * reading past the array. */
 int  dkr_window_key_down(int vk);
 
+/* Whether a key of the **numeric keypad** is down, by its scan code (set 1:
+ * 0x47 7, 0x48 8, 0x49 9, 0x4A -, 0x4B 4, 0x4C 5, 0x4D 6, 0x4E +, 0x4F 1,
+ * 0x50 2, 0x51 3, 0x52 0, 0x53 .). Whatever NumLock says: with it off the
+ * keypad sends the arrows' and Insert's virtual keys, and only the message's
+ * extended bit tells the keypad from the dedicated keys. The second player's
+ * keys. */
+int  dkr_window_keypad_down(int scancode);
+
 /* Non-zero once for each press of **F9**, and zero thereafter until the next.
  *
  * A capture of whatever is on the screen is the only way to attribute a defect on

@@ -191,6 +191,10 @@ typedef struct {
        a different path and a single total would hide which one is at work. */
     unsigned long blend_rects;
     unsigned long scissors;              /* G_SETSCISSOR, now honoured */
+    /* A `G_SETSCISSOR` that came before the list's `G_SETCOLORIMAGE`, whose
+       scale is not known yet: applied once the width is. Raw 10.2 corners. */
+    int           scissor_pending;
+    int           scissor_raw[4];
     unsigned long rects;              /* rectangles actually handed to the backend */
 
     /* --- The RDP state, and what it costs in fidelity ----------------------- */

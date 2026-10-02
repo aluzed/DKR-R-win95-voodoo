@@ -1001,11 +1001,14 @@ void dkr::runtime::GlideRenderer::send_dl(const OSTask* task,
             return 0;
         } ();
         context_.force_combine = forced;
-        // `DKR_SCISSOR=1` lets `G_SETSCISSOR` reach the card. Off by default:
-        // the command is decoded and counted regardless, and switching it on
-        // costs 230 distinct colours in the measured frames for a reason not yet
-        // named. See `cmd` for `OP_SETSCISSOR` in `f3ddkr.c`.
-        static const bool scissor = (std::getenv("DKR_SCISSOR") != nullptr);
+        // `G_SETSCISSOR` reaches the card; `DKR_SCISSOR=0` keeps it from it,
+        // as a diagnostic. On by default since 2 October 2026, once the two
+        // causes of the black frames it first gave were found -- see
+        // `OP_SETSCISSOR` in `f3ddkr.c`.
+        static const bool scissor = [] {
+            const char* v = std::getenv("DKR_SCISSOR");
+            return v == nullptr || std::strcmp(v, "0") != 0;
+        }();
         context_.scissor_enabled = scissor ? 1 : 0;
         // `DKR_FLATTEN_W=1` makes every triangle carry what a textured rectangle
         // carries in oow/z/ooz. See the note at the emission in `f3ddkr.c`.

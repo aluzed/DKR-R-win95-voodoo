@@ -853,6 +853,10 @@ static void sw_begin_frame(void *self, unsigned clear_argb)
     size_t i, n;
     (void)self;
     if (!g_sw.open) { return; }
+    /* The whole buffer again, as the card's backend does: a window is the
+       list's, not the session's. */
+    g_sw.scissor_x0 = 0; g_sw.scissor_y0 = 0;
+    g_sw.scissor_x1 = g_sw.width; g_sw.scissor_y1 = g_sw.height;
     n = (size_t)g_sw.width * (size_t)g_sw.height;
     for (i = 0; i < n; i++) {
         g_sw.color[i] = 0xFF000000u | (clear_argb & 0x00FFFFFFu);
