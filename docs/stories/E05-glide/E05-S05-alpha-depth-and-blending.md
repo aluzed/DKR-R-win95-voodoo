@@ -91,7 +91,15 @@ surfaces.
       known order, depth disabled so that nothing sorts in our stead. The last emitted
       wins. A negative control checks that all three were indeed drawn, without which a
       renderer drawing only the last would pass.
-- [ ] Shadows, water, particles and reflections — **blocked by the absent ROM**.
+- [~] Shadows, water, particles and reflections -- three of the four seen on the
+      card's own frames, 3 October 2026, none the subject of a dedicated test yet.
+      **Shadows**: the kart shadows are a constant-alpha blend at 18% (`0x2D`),
+      faint by design; drawn at full strength until 14 September, fixed then
+      (`docs/research/win95-hud-digits.md`), and the card and the oracle agree on
+      them in the race frames `KF1666` and `KF2151`. **Water**: the hub's lagoon,
+      blended over the sand, in the captures of the adventure. **Particles**: the
+      dust cloud behind a kart leaving the track, translucent, in `KF2151`.
+      **Reflections**: not looked for; the scenes captured may not contain any.
 
 > **2 October 2026: a pass-through blend is opaque.** With `FORCE_BL` set, a
 > second blender cycle of `P*0 + M*1` with M the incoming colour writes the colour
