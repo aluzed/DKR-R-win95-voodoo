@@ -88,10 +88,15 @@ conversion's format (a probe in a copy outside the tree):
 | anything else | 0 | |
 
 8,761 conversions, and `replay` now prints the decoder's counters ("texture
-decoder: ... unsupported="): **0 refused** in the 66 captures. The decomp
-does have CI4 and CI8 load paths (`textures_sprites.c`), so whether some asset
-the corpus has not reached is indexed is open. The fonts' I8 and IA16, seen in
-`docs/research/win95-hud-digits.md`, are not in the corpus's captures.
+decoder: ... unsupported="): **0 refused** in the 66 captures.
+
+**And in the whole ROM, no indexed texture.** The decomp has CI4 and CI8
+load paths (`material_init` in `textures_sprites.c`, with `LOADTLUT`), so the
+corpus alone could not settle it. The decomp's extraction of the US 1.0 ROM
+(`assets/.vanilla/us.v77`, one JSON per asset with its `format`) does: of
+2,307 texture assets, 1,539 RGBA16, 486 RGBA32, 272 IA8, 5 I4, 3 IA16, 2 I8,
+1 IA4 -- **no CI4, no CI8, no YUV**. Every format the game's textures use is
+one this decoder converts; the indexed paths are code the data never takes.
 
 **The odd-row swap, at several widths.** `test_texture.c` checks it on an
 8-wide RGBA16 image, a 12-wide I8 image read from 16-texel rows, and a 6-wide
@@ -113,18 +118,21 @@ says so. No offset has been measured on such a texture.
 display list (`docs/research/frame-budget.md`).
 
 **Not done:** a decode cost per texture and at level load (only the per-list
-total, 0.1 ms, is measured); the CI decision, which has no measurement behind
-it because no CI texture has been met; the comparison with the modern
+total, 0.1 ms, is measured); the comparison with the modern
 target's textures (no modern build here); and the host-side footprint of
 decoded textures against ADR 0003's 8 MiB reserve.
 
 ## Acceptance criteria
 
-- [ ] Every texture format DKR uses is decoded.
+- [x] Every texture format DKR uses is decoded -- seven, from the ROM's 2,307
+      texture assets (above).
 - [x] The interleaving is correctly undone, tested at several widths -- three
       widths and three texel sizes (above).
-- [ ] The handling of indexed textures is settled on a measurement of memory
-      occupancy, confronted with the per-TMU budget.
+- [x] The handling of indexed textures is settled on a measurement of memory
+      occupancy, confronted with the per-TMU budget. *Settled without one*: the
+      ROM holds no indexed texture, so there is nothing to expand or to give a
+      palette; they stay refused and counted, which would show at once if a
+      mod brought one.
 - [ ] Non-conforming dimensions are handled with no visible texel offset.
 - [ ] The cache avoids re-decoding in steady state, and its occupancy respects the
       budget.
