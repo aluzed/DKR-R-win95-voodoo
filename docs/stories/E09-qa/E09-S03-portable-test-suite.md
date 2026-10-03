@@ -65,12 +65,13 @@ scripts.
       contains and need nothing else (`tools/tests/portable-suites.txt`), 2 share
       code but need more (three ROM revisions; the netplay library), 38 test the
       modern build only. `docs/TESTING.md`.
-- [~] The portable-logic tests pass on both targets -- **all 30 on the host**
-      (`tools/tests/run-portable-tests.sh`, 25 s), and **all 23 built for the target
-      pass on the test machine** (3 October 2026, `Run-Target-Tests-VM.sh`). Five
-      more are built for the target since the divergence below was fixed (their
-      run on the machine is still to be made); two are not built there, each for a
-      reason written beside the list in `cmake/win95-target.cmake`.
+- [x] The portable-logic tests pass on both targets -- **all 30 on the host**
+      (`tools/tests/run-portable-tests.sh`, 25 s), and **all 28 built for the target
+      pass on the test machine**, with the five platform tests: 33 of 33,
+      3 October 2026 (`Run-Target-Tests-VM.sh`). The two not built for the target
+      are `SAVMGR`, which `SAVEMGR.EXE` covers there, and `MAGRT`, whose harness
+      calls `std::filesystem` operations directly; their code is exercised on the
+      host.
 - [x] The platform tests E02 asks for are written and pass on the target -- all five,
       `THREADS`, `CLOCKT`, `FILEIOT`, `SAVECDC` and `SAVEMGR`, run by the runner on
       3 October 2026. `SAVEMGR` first looked like a hang: it was a page fault, the

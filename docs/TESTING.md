@@ -137,8 +137,8 @@ counts when a change is meant to move them.
 
 ## Not yet
 
-- On 3 October 2026 the target run is green: the five platform tests and the 23
-  portable suites. Its first run had stopped at `SAVEMGR.EXE` -- a page fault
+- On 3 October 2026 the target run is green: the five platform tests and the 28
+  portable suites, 33 of 33. Its first run had stopped at `SAVEMGR.EXE` -- a page fault
   behind Windows' error dialog, from a test helper opening a stream on a `path`
   (`_wfopen`, empty on Windows 95). Opening streams with
   `dkr::fs::stream_name(path)` avoids that everywhere.
