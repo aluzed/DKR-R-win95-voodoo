@@ -4,6 +4,10 @@
 #
 #   scripts/Measure-Guest-Time-VM.sh build/win95/bin/DKRR.EXE           glide
 #   scripts/Measure-Guest-Time-VM.sh build/win95-narrow/bin/DKRR.EXE    null 150
+#   scripts/Measure-Guest-Time-VM.sh --build                             glide
+#
+# `--build` runs `Build-Win95.sh` first and takes the DKRR.EXE it writes: build,
+# transfer and launch in one command (E09-S01).
 #
 # The instrument is patch 0041's `DKR_TRACE_CPU`, which stamps every context
 # switch and reports every five seconds: guest-run against wall, both read from
@@ -30,7 +34,11 @@ image="$prefix/vm/$vm/transfer.img@@32256"
 drive="$root/scripts/Drive-Win95-VM.sh"
 push="$root/scripts/Push-To-Win95-VM.sh"
 
-executable="${1:?usage: Measure-Guest-Time-VM.sh <DKRR.EXE> [glide|null] [seconds]}"
+executable="${1:?usage: Measure-Guest-Time-VM.sh <DKRR.EXE>|--build [glide|null] [seconds]}"
+if [[ "$executable" == "--build" ]]; then
+    "$root/Build-Win95.sh"
+    executable="$root/build/win95/bin/DKRR.EXE"
+fi
 renderer="${2:-glide}"
 seconds="${3:-150}"
 work="$(mktemp -d)"

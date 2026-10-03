@@ -476,6 +476,17 @@ Two points to watch:
   same constraint that bears on the save files
   ([E02-S05](stories/E02-system/E02-S05-eeprom-and-controller-pak-saves.md)).
 
+**Build, transfer and run in one command:**
+
+```bash
+scripts/Measure-Guest-Time-VM.sh --build glide 90
+```
+
+builds the target, stops the machine, pushes `DKRR.EXE` to `D:`, boots,
+starts the game through a batch file, lets it run 90 seconds and brings
+`RUNTIME.LOG` back with the guest-time report. About four minutes.
+`tools/tests/Run-Target-Tests-VM.sh` does the same for the test executables.
+
 ## Known limits
 
 The following **cannot** be validated here, and must go through E09-S04:

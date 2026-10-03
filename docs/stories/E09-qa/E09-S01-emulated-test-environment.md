@@ -199,9 +199,10 @@ installable and quick to reset.
 - [x] A Windows 95 machine with an emulated 3dfx starts and runs a Glide demonstration.
 - [x] The reference state restores in a few seconds.
 - [x] File transfer is automated.
-- [ ] One command builds, transfers and launches. *Two*: `Build-Win95.sh`, then
-      `scripts/Measure-Guest-Time-VM.sh` or `tools/tests/Run-Target-Tests-VM.sh`,
-      which transfer, launch and bring the logs back.
+- [x] One command builds, transfers and launches:
+      `scripts/Measure-Guest-Time-VM.sh --build glide 90` runs `Build-Win95.sh`,
+      pushes `DKRR.EXE`, boots the machine, runs the game and brings its log
+      back -- four minutes, tried on 3 October 2026.
 - [x] At least three distinct configurations are available.
 - [ ] `docs/TEST-ENVIRONMENT.md` allows a third party to rebuild the environment.
       *Written and scripted* (`Setup-Win95-TestVM.sh`), but no third party has
