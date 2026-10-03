@@ -80,7 +80,12 @@ for byte.
       Linux-generated `aspMain.cpp`; built into the host's audio oracle, it still
       matches the high-level mixer to the byte on every command (`abi_difftest`,
       200 cases each) and on six whole captured tasks (`replay_hle`).
-- [ ] ROM validation and the error messages are preserved identically.
+- [~] ROM validation and the error messages are preserved identically -- the
+      SHA-1 check is: the Linux script refuses a ROM whose digest is not
+      `0cb115d8...`, with `Prepare-DKR-Runtime.ps1`'s own sentence, checked with a
+      zeroed image. The rest of the Windows validation -- choosing a ROM, normalising
+      its byte order -- has no counterpart, since the Linux path takes the ROM the
+      decomp builds, big-endian by construction.
 - [x] `docs/BUILDING.md` documents the Linux path.
 - [ ] The existing Windows scripts go on working.
 
