@@ -94,5 +94,26 @@ not return. Tested so far:
   no longer shows, and the first one, in the window, does.
 
 It has not been seen in the build that carries the window fix: 6 stops in 6
-and one more checked in the task list. That proves nothing about it, for the
-reason above, and it stays open until it is located.
+launched from a batch file, 4 in 4 launched from Explorer's Run box as a
+player would, and one more checked in the task list. That proves nothing
+about it, for the reason above, and it stays open until it is located.
+
+## The safety net
+
+So that no stop, this one or the next, can leave a process behind, the main
+thread starts a watchdog thread at the quit (`StopWatchdog`, `game_main.cpp`).
+A process that ends takes it along; one still alive fifteen seconds after the
+quit gets a log line with the runtime's marks, a committed log, and
+`TerminateProcess`. The saves are safe at any instant -- every write is a
+durable replacement that survives a power cut (E02-S05) -- and Glide closes
+before any of the hangs seen.
+
+Tried with a deliberate hang (a build that sleeps for ever after
+`recomp::start` when `DKR_TEST_STOP_HANG` is set, not kept in the tree): the
+log reads `not finished 15 s after the quit (marks=0xF3F); ending the
+process`, and the game launched again in the same Windows session opened the
+sound card and the Voodoo as usual -- `TerminateProcess` leaves no device
+held. That relaunch, from the Run box, hit the watchdog as well; the same
+binary launched from the Run box in fresh sessions stopped cleanly twice in
+two, so the test variable most likely reached the relaunch, but that is not
+established.

@@ -72,7 +72,9 @@ handling focus and shutdown.
 - [ ] Every shutdown route leads to a clean stop with the display restored.
       *The display is restored on `Alt+F4`, and the stop now finishes*: the
       hang that kept half the processes alive was `DestroyWindow` racing the
-      guest threads' exit, fixed on 3 October 2026 (6 stops in 6). Left open
+      guest threads' exit, fixed on 3 October 2026 (6 stops in 6, 4 in 4
+      from Explorer), and a watchdog ends the process if a stop is still
+      running fifteen seconds after the quit. Left open
       for a second hang seen only in an older build, and for the close button
       and the session's end, not tried on their own
       (`docs/research/win95-shutdown-hang.md`).

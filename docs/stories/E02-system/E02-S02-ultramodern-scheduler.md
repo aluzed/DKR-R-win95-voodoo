@@ -92,8 +92,11 @@ defect, not an improvement.
       `dkr_window_close`, racing the guest threads' exit -- 0 clean stops in 3
       with the call, 3 in 3 without, one binary, interleaved; the window is
       now left to the process's exit, and the build with the fix stopped 6
-      times in 6. A second hang, inside `recomp::start`, shows in an older
-      build and is not located yet. `docs/research/win95-shutdown-hang.md`.
+      times in 6, and 4 in 4 launched from Explorer. A second hang, inside
+      `recomp::start`, shows in an older build and is not located yet; a
+      watchdog started at the quit now ends any process still alive fifteen
+      seconds later, after logging the runtime's shutdown marks.
+      `docs/research/win95-shutdown-hang.md`.
 
 ## State as of 2026-08-13 — the substitution is done, execution stays blocked
 

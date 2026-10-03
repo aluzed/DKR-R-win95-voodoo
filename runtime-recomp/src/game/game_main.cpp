@@ -96,6 +96,34 @@ extern "C" {
 #include <DbgHelp.h>
 #endif
 #endif
+#if defined(DKR_TARGET_WIN95)
+namespace {
+// **A stop always ends the process** (E02-S02). A stop that hung kept the
+// process alive with the display already given back, and only the task list
+// could end it; the one found, in `DestroyWindow`, is fixed, and one more was
+// seen in an older build that instrumenting it made disappear. This thread,
+// started at the quit, gives the stop fifteen seconds -- a process that ends
+// takes it along -- and past that logs how far the runtime got
+// (`dkr_stop_marks`, set without I/O by patch 0064), commits the log and ends
+// the process. The saves are safe at any instant -- every write is a durable
+// replacement that survives a power cut (E02-S05) -- and the display is the
+// desktop's once Glide has closed.
+DWORD WINAPI StopWatchdog(LPVOID) {
+    Sleep(15000);
+    std::fprintf(stderr, "[boot][stop] not finished 15 s after the quit "
+                         "(marks=0x%X); ending the process\n",
+                 dkr_stop_marks());
+    dkr_diag_commit();
+    TerminateProcess(GetCurrentProcess(), 7);
+    return 0;
+}
+void StartStopWatchdog() {
+    DWORD id = 0;
+    HANDLE thread = CreateThread(nullptr, 0, StopWatchdog, nullptr, 0, &id);
+    if (thread != nullptr) { CloseHandle(thread); }
+}
+} // namespace
+#endif
 
 extern RspUcodeFunc dkrAspMain;
 
@@ -1803,24 +1831,9 @@ int DkrMain(int argc, char** argv) {
         bool timeout_requested = false;
 #if defined(DKR_TARGET_WIN95)
         bool window_quit = false;
-        // E02-S02: a stop that has not finished ten seconds after it was
-        // asked for reports how far it got, from marks the runtime sets
-        // without any I/O -- logging at each step changed the timing enough
-        // to hide the hang.
-        bool stop_reported = false;
-        auto quit_requested_at = std::chrono::steady_clock::now();
 #endif
         while (!runtime_finished.load(std::memory_order_acquire)) {
 #if defined(DKR_TARGET_WIN95)
-            if (window_quit && !stop_reported &&
-                std::chrono::steady_clock::now() - quit_requested_at >=
-                    std::chrono::seconds(10)) {
-                stop_reported = true;
-                std::fprintf(stderr,
-                             "[boot][stop] not finished after 10 s: marks=0x%X\n",
-                             dkr_stop_marks());
-                dkr_diag_commit();
-            }
             if (have_window && !window_quit && !dkr_window_pump()) {
                 // Every shutdown route -- the close button, Alt+F4, the session
                 // ending -- arrives here as a single answer, and it asks the
@@ -1829,7 +1842,7 @@ int DkrMain(int argc, char** argv) {
                 // gives it back.
                 std::fprintf(stderr, "[boot][window] shutdown requested\n");
                 window_quit = true;
-                quit_requested_at = std::chrono::steady_clock::now();
+                StartStopWatchdog();
                 ultramodern::quit();
             }
 #endif
