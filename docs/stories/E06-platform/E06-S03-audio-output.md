@@ -111,7 +111,12 @@ for every measurement in E08, and the criterion asking for DirectSound with a
       level loads, **nothing dropped**; past the start-up the mixer produced 22,016
       frames a second against 22,050, the 0.15% short being the loads' pauses.
       No drift shows; twenty minutes of guest time need an hour of host time and
-      are still to be run.
+      are still to be run. **Run on 3 October with the silent-start fix**: 3,700 s
+      of host time gave **18.6 minutes** of guest time in the attract mode, 1,112 s
+      of audio played, underruns 9 at the end of the start-up and 11 at the end --
+      two in eighteen minutes, at level loads -- nothing dropped, production 22,038
+      frames a second against 22,050. No drift; the criterion stays open for the
+      1.4 minutes short of twenty.
 - [x] The underruns are counted and visible in diagnostics: `[audio][out] underruns=`
       in the log, and on the on-screen display (`OSD=1`). **Shown to work on 2 October
       2026**, once the test machine had a sound driver (E09-S01): a race at Ancient

@@ -100,7 +100,11 @@ the target.
       so (3 October 2026). Glide's own `SST_SCREENREFRESH` variable, set by some 3dfx
       control panels, can override it; that and other monitors' rates belong to the
       survey above, which needs the hardware (E09-S04).
-- [ ] No drift between the audio clock and the video clock over twenty minutes.
+- [~] No drift between the audio clock and the video clock over twenty minutes --
+      18.6 minutes measured, 3 October 2026: over 1,117 s of guest time the mixer
+      produced 22,038 frames a second for 22,050 played, the queue never ran dry
+      outside two level loads and never overflowed (E06-S03). No drift; 1.4
+      minutes short of the criterion's twenty.
 
 ## Risks
 
