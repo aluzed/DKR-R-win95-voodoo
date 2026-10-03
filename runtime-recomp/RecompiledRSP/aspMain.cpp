@@ -2386,36 +2386,36 @@ L_1F34:
     return RspExitReason::ImemOverrun;
 do_indirect_jump:
     switch ((jump_target | 0x1000) & 0X1FFF) { 
-        case 0x10C0: goto L_10C0;
         case 0x1920: goto L_1920;
-        case 0x1188: goto L_1188;
-        case 0x1130: goto L_1130;
-        case 0x1268: goto L_1268;
-        case 0x12CC: goto L_12CC;
-        case 0x129C: goto L_129C;
-        case 0x1530: goto L_1530;
-        case 0x1744: goto L_1744;
-        case 0x17DC: goto L_17DC;
         case 0x18CC: goto L_18CC;
-        case 0x1B98: goto L_1B98;
-        case 0x1BF4: goto L_1BF4;
-        case 0x12F0: goto L_12F0;
+        case 0x1480: goto L_1480;
+        case 0x1744: goto L_1744;
+        case 0x1428: goto L_1428;
+        case 0x1530: goto L_1530;
+        case 0x1188: goto L_1188;
         case 0x1270: goto L_1270;
+        case 0x129C: goto L_129C;
+        case 0x1130: goto L_1130;
+        case 0x17DC: goto L_17DC;
         case 0x1E34: goto L_1E34;
-        case 0x1118: goto L_1118;
+        case 0x10C0: goto L_10C0;
+        case 0x1268: goto L_1268;
+        case 0x1BA0: goto L_1BA0;
+        case 0x12CC: goto L_12CC;
         case 0x14A4: goto L_14A4;
         case 0x11EC: goto L_11EC;
-        case 0x1BA0: goto L_1BA0;
-        case 0x123C: goto L_123C;
-        case 0x18D4: goto L_18D4;
         case 0x12D4: goto L_12D4;
-        case 0x132C: goto L_132C;
-        case 0x1428: goto L_1428;
-        case 0x12A4: goto L_12A4;
+        case 0x123C: goto L_123C;
+        case 0x1B98: goto L_1B98;
+        case 0x18D4: goto L_18D4;
+        case 0x1118: goto L_1118;
+        case 0x12F0: goto L_12F0;
         case 0x1E3C: goto L_1E3C;
+        case 0x132C: goto L_132C;
+        case 0x12A4: goto L_12A4;
         case 0x1390: goto L_1390;
+        case 0x1BF4: goto L_1BF4;
         case 0x1758: goto L_1758;
-        case 0x1480: goto L_1480;
     }
     printf("Unhandled jump target 0x%04X in microcode dkrAspMain, coming from [%s:%d]\n", jump_target, debug_file, debug_line);
     printf("Register dump: r0  = %08X r1  = %08X r2  = %08X r3  = %08X r4  = %08X r5  = %08X r6  = %08X r7  = %08X\n"

@@ -76,7 +76,10 @@ for byte.
       nothing since the hook always returns 1. `aspMain.cpp` differs only in the
       order of one switch's cases, the same set: RSPRecomp walks an unordered set,
       and the copy in the tree was made with another standard library. Both
-      generators give the same bytes on three runs here.
+      generators give the same bytes on three runs here. The tree now holds the
+      Linux-generated `aspMain.cpp`; built into the host's audio oracle, it still
+      matches the high-level mixer to the byte on every command (`abi_difftest`,
+      200 cases each) and on six whole captured tasks (`replay_hle`).
 - [ ] ROM validation and the error messages are preserved identically.
 - [x] `docs/BUILDING.md` documents the Linux path.
 - [ ] The existing Windows scripts go on working.

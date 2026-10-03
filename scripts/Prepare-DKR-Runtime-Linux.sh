@@ -54,8 +54,11 @@ cmake -S "$ROOT/extern/n64-modern-runtime/N64Recomp" -B "$TOOLS" -G Ninja \
       -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build "$TOOLS" --parallel --target N64Recomp RSPRecomp >/dev/null
 
+# The rewritten RSP configurations and the logs go to a scratch directory, never
+# into the tree.
+WORK="$(mktemp -d)"; trap 'rm -rf -- "$WORK"' EXIT
 if (( CHECK )); then
-  OUT="$(mktemp -d)"; trap 'rm -rf -- "$OUT"' EXIT
+  OUT="$WORK/out"
 else
   OUT="$ROOT/runtime-recomp"
 fi
@@ -70,17 +73,17 @@ python3 "$ROOT/scripts/generate_recomp_toml.py" --elf "$ELF" --rom "$ROM" \
   --output-funcs "$FUNCS" --output "$TOML" >/dev/null
 
 say "recompiling the game's functions"
-"$TOOLS/N64Recomp" "$TOML" >"$OUT/n64recomp.log" 2>&1 \
-  || { tail -20 "$OUT/n64recomp.log" >&2; fail "N64Recomp failed"; }
+"$TOOLS/N64Recomp" "$TOML" >"$WORK/n64recomp.log" 2>&1 \
+  || { tail -20 "$WORK/n64recomp.log" >&2; fail "N64Recomp failed"; }
 
 say "recompiling the RSP microcode"
 for config in "$ROOT"/runtime-recomp/rsp/*.toml; do
   name="$(sed -n 's/^output_file_path = ".*\/\([^/]*\)"$/\1/p' "$config")"
   sed -e "s#^rom_file_path = .*#rom_file_path = \"$ROM\"#" \
       -e "s#^output_file_path = .*#output_file_path = \"$RSP/$name\"#" \
-      "$config" > "$OUT/$(basename "$config")"
-  "$TOOLS/RSPRecomp" "$OUT/$(basename "$config")" >"$OUT/rsp.log" 2>&1 \
-    || { tail -20 "$OUT/rsp.log" >&2; fail "RSPRecomp failed for $config"; }
+      "$config" > "$WORK/$(basename "$config")"
+  "$TOOLS/RSPRecomp" "$WORK/$(basename "$config")" >"$WORK/rsp.log" 2>&1 \
+    || { tail -20 "$WORK/rsp.log" >&2; fail "RSPRecomp failed for $config"; }
 done
 echo "  $(ls "$FUNCS" | wc -l) function files, $(ls "$RSP" | wc -l) RSP file(s)"
 
