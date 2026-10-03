@@ -19,9 +19,11 @@ on the host and refuses to write a package if either fails.
     platform/win95/tests/run-tests.sh             every suite
     platform/win95/tests/run-tests.sh threading   one
 
-Fifteen suites on the host: `tick64`, `joystick` (added to the runner on
-3 October 2026 -- its sixteen checks had only been run by hand), `clock`,
-`threading`, `fileio`, `saves`,
+Seventeen suites on the host: `tick64`, `joystick` (added to the runner on
+3 October 2026 -- its sixteen checks had only been run by hand), `settings`
+(the lists `ini_settings.c` keeps against the sources' `getenv` calls),
+`streams` (no stream opened on a `std::filesystem::path` in the Windows 95
+build, `check_path_streams.py`), `clock`, `threading`, `fileio`, `saves`,
 and the render chain -- `clip`, `transform`, `f3ddkr`, `rdp`, `texture`,
 `combiner`, `tmu`, `pipeline`, `render`. Several are also built for the target
 by `Build-Win95.sh` and run there by hand: `THREADS.EXE`, `THRCPP.EXE`,
