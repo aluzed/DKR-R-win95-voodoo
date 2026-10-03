@@ -79,7 +79,10 @@ for byte.
       generators give the same bytes on three runs here. The tree now holds the
       Linux-generated `aspMain.cpp`; built into the host's audio oracle, it still
       matches the high-level mixer to the byte on every command (`abi_difftest`,
-      200 cases each) and on six whole captured tasks (`replay_hle`).
+      200 cases each) and on six whole captured tasks (`replay_hle`). And the game
+      built from the regenerated `RecompiledFuncs` runs a race on the test machine as
+      before: 35.4 ms a frame, 87% at 30 fps, its audio running, no display-list
+      command rejected; its 33 target tests pass.
 - [~] ROM validation and the error messages are preserved identically -- the
       SHA-1 check is: the Linux script refuses a ROM whose digest is not
       `0cb115d8...`, with `Prepare-DKR-Runtime.ps1`'s own sentence, checked with a
