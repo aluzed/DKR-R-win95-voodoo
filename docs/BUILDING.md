@@ -51,6 +51,25 @@ After a recomp policy change use:
 Diagnose-DKR-Recompile.cmd
 ```
 
+### Preparing the generated code from Linux
+
+The steps above need Windows. From Linux, with the decomp checked out beside
+this repository (`../Diddy-Kong-Racing`) and built (`make setup`,
+`make extract`, `make`, with the MIPS toolchain `scripts/Setup-Win95-Toolchain.sh`
+installs):
+
+```bash
+scripts/Prepare-DKR-Runtime-Linux.sh           # regenerate RecompiledFuncs and RecompiledRSP
+scripts/Prepare-DKR-Runtime-Linux.sh --check   # generate elsewhere, compare, change nothing
+```
+
+It builds N64Recomp and RSPRecomp from the patched submodule, writes the
+N64Recomp configuration with `scripts/generate_recomp_toml.py` from the recomp
+policy, and runs both. It covers the v77 revision, the one the Windows 95
+target recompiles; the v80 payload and the Patch Pipeline remain on the
+Windows path. Both generators are deterministic on Linux: three runs give the
+same bytes.
+
 ## Windows release
 
 ```powershell

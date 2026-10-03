@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E01 — 32-bit Windows 95 build chain |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P2 |
 | **Estimate** | M |
 | **Depends on** | — |
@@ -61,13 +61,24 @@ for byte.
 
 ## Acceptance criteria
 
-- [ ] `Prepare-DKR-Runtime.sh` produces `RecompiledFuncs` and `RecompiledPatches`
-      from a Linux machine, without Windows.
-- [ ] `Generate-DKR-RSP.sh` produces `RecompiledRSP/aspMain.cpp`.
-- [ ] The Linux and Windows outputs are identical by digest, or any difference is
-      explained and fixed.
+- [~] `Prepare-DKR-Runtime.sh` produces `RecompiledFuncs` and `RecompiledPatches`
+      from a Linux machine, without Windows -- `scripts/Prepare-DKR-Runtime-Linux.sh`
+      (3 October 2026) produces `RecompiledFuncs` for v77, the revision the Windows 95
+      target recompiles, from a decomp already built. `RecompiledPatches`, the v80
+      payload and the decomp's own build are not in it.
+- [x] `Generate-DKR-RSP.sh` produces `RecompiledRSP/aspMain.cpp` -- the same script,
+      with each `runtime-recomp/rsp/*.toml`'s paths rewritten.
+- [x] The Linux and Windows outputs are identical by digest, or any difference is
+      explained and fixed -- compared with the tree's copies (`--check`): 38 of 40
+      function files identical; the other two differ in form, two hooks at one
+      address joined on one line by today's `generate_recomp_toml.py`, and one hook
+      placed after its function's loop label instead of before, which changes
+      nothing since the hook always returns 1. `aspMain.cpp` differs only in the
+      order of one switch's cases, the same set: RSPRecomp walks an unordered set,
+      and the copy in the tree was made with another standard library. Both
+      generators give the same bytes on three runs here.
 - [ ] ROM validation and the error messages are preserved identically.
-- [ ] `docs/BUILDING.md` documents the Linux path.
+- [x] `docs/BUILDING.md` documents the Linux path.
 - [ ] The existing Windows scripts go on working.
 
 ## Risks

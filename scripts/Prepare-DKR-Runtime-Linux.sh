@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# E01-S06 - generates the recompiled sources from Linux, without Windows.
+#
+#   scripts/Prepare-DKR-Runtime-Linux.sh                 regenerate in place
+#   scripts/Prepare-DKR-Runtime-Linux.sh --check         generate elsewhere and
+#                                                        compare with what is there
+#   scripts/Prepare-DKR-Runtime-Linux.sh --decomp DIR    the decomp checkout
+#                                                        (default ../Diddy-Kong-Racing)
+#
+# What `Prepare-DKR-Runtime.ps1` and `Generate-DKR-RSP.ps1` do on Windows, from
+# a decomp already built: it does not build the decomp itself -- `make setup`,
+# `make extract` and `make` in its checkout, with the MIPS toolchain
+# `scripts/Setup-Win95-Toolchain.sh` installs, produce `build/dkr.us.v77.elf`
+# and `.z64`. Then:
+#
+#   1. N64Recomp and RSPRecomp are built from the patched submodule
+#      (`extern/n64-modern-runtime/N64Recomp`), into build/runtime-tools/;
+#   2. `scripts/generate_recomp_toml.py` writes the N64Recomp configuration from
+#      `runtime-recomp/dkr.us.v77.recomp-policy.json`;
+#   3. N64Recomp writes `runtime-recomp/RecompiledFuncs`;
+#   4. RSPRecomp writes `runtime-recomp/RecompiledRSP` from each
+#      `runtime-recomp/rsp/*.toml`, its ROM and output paths rewritten.
+#
+# `--check` writes all of it under a temporary directory instead and reports,
+# file by file, what differs from the tree's copies, leaving them untouched.
+# Checked on 3 October 2026 against the copies generated on 21 September: 38
+# of 40 function files identical; the two others and `aspMain.cpp` differ in
+# form only -- two hooks at one address joined on one line, one hook placed
+# after a loop label rather than before it (the hook returns 1, so the body
+# below it never runs either way), and a switch's cases in another order.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DECOMP="$(cd "$ROOT/.." && pwd)/Diddy-Kong-Racing"
+CHECK=0
+while (( $# )); do
+  case "$1" in
+    --check)  CHECK=1 ;;
+    --decomp) DECOMP="$(cd "$2" && pwd)"; shift ;;
+    *) echo "unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+ELF="$DECOMP/build/dkr.us.v77.elf"
+ROM="$DECOMP/build/dkr.us.v77.z64"
+[[ -f "$ELF" && -f "$ROM" ]] || fail "$ELF and $ROM are needed: build the decomp first (make setup, make extract, make)"
+for cmd in cmake ninja python3; do command -v "$cmd" >/dev/null || fail "$cmd is required"; done
+
+TOOLS="$ROOT/build/runtime-tools/n64recomp-linux"
+say "building N64Recomp and RSPRecomp in $TOOLS"
+cmake -S "$ROOT/extern/n64-modern-runtime/N64Recomp" -B "$TOOLS" -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build "$TOOLS" --parallel --target N64Recomp RSPRecomp >/dev/null
+
+if (( CHECK )); then
+  OUT="$(mktemp -d)"; trap 'rm -rf -- "$OUT"' EXIT
+else
+  OUT="$ROOT/runtime-recomp"
+fi
+FUNCS="$OUT/RecompiledFuncs"
+RSP="$OUT/RecompiledRSP"
+mkdir -p "$FUNCS" "$RSP"
+
+say "writing the N64Recomp configuration"
+TOML="$OUT/dkr.us.v77.generated.toml"
+python3 "$ROOT/scripts/generate_recomp_toml.py" --elf "$ELF" --rom "$ROM" \
+  --policy "$ROOT/runtime-recomp/dkr.us.v77.recomp-policy.json" \
+  --output-funcs "$FUNCS" --output "$TOML" >/dev/null
+
+say "recompiling the game's functions"
+"$TOOLS/N64Recomp" "$TOML" >"$OUT/n64recomp.log" 2>&1 \
+  || { tail -20 "$OUT/n64recomp.log" >&2; fail "N64Recomp failed"; }
+
+say "recompiling the RSP microcode"
+for config in "$ROOT"/runtime-recomp/rsp/*.toml; do
+  name="$(sed -n 's/^output_file_path = ".*\/\([^/]*\)"$/\1/p' "$config")"
+  sed -e "s#^rom_file_path = .*#rom_file_path = \"$ROM\"#" \
+      -e "s#^output_file_path = .*#output_file_path = \"$RSP/$name\"#" \
+      "$config" > "$OUT/$(basename "$config")"
+  "$TOOLS/RSPRecomp" "$OUT/$(basename "$config")" >"$OUT/rsp.log" 2>&1 \
+    || { tail -20 "$OUT/rsp.log" >&2; fail "RSPRecomp failed for $config"; }
+done
+echo "  $(ls "$FUNCS" | wc -l) function files, $(ls "$RSP" | wc -l) RSP file(s)"
+
+if (( CHECK )); then
+  say "comparing with the tree's copies"
+  differ=0
+  for dir in RecompiledFuncs RecompiledRSP; do
+    for f in "$OUT/$dir"/*; do
+      base="$(basename "$f")"
+      if ! cmp -s "$f" "$ROOT/runtime-recomp/$dir/$base"; then
+        echo "  differs: $dir/$base"; differ=$((differ + 1))
+      fi
+    done
+  done
+  echo "  $differ file(s) differ; see this script's header for the known differences of form"
+fi
+say "done"
