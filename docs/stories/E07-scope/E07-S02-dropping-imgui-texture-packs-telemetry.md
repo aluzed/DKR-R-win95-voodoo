@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E07 — Scope reduction |
-| **Status** | TODO |
+| **Status** | IN_PROGRESS |
 | **Priority** | P1 |
 | **Estimate** | ~~M~~ **S** |
 | **Depends on** | E06-S05 |
@@ -95,13 +95,23 @@ To remove the subsystems that are moot on this target, preserving what keeps a u
 
 ## Acceptance criteria
 
-- [ ] No dependency on ImGui remains in the Win95 target.
-- [ ] Texture packs, Rice import and CRT overlay are removed, associated patches
-      included.
-- [ ] The save codec and the Controller Pak logic are kept and working.
+- [x] No dependency on ImGui remains in the Win95 target -- not one ImGui symbol in
+      `DKRR.EXE`'s symbol table (3 October 2026): `cmake/win95-target.cmake` compiles
+      none of its sources and the game is built with `DKR_RUNTIME_HAS_RT64=0`.
+- [x] Texture packs, Rice import and CRT overlay are removed, associated patches
+      included -- from the Windows 95 target, by the same means: none of
+      `runtime_texture_packs.cpp`, the Rice import or the CRT overlay is in
+      `DKR_WIN95_GAME_SOURCES`, no symbol of theirs is in `DKRR.EXE`, and the RT64
+      patches that serve them are not built. The modern build keeps them.
+- [x] The save codec and the Controller Pak logic are kept and working --
+      `SAVECDC.EXE` and `SAVEMGR.EXE` pass on the test machine (3 October 2026), and
+      an adventure saved, cut by a power-off and reloaded (E02-S05).
 - [ ] Telemetry collection is kept, its display replaced.
 - [ ] The decision on the magic codes is taken and applied.
-- [ ] The test suites are sorted out accordingly.
+- [x] The test suites are sorted out accordingly -- E09-S03 sorted the seventy: the
+      thirty that test code the Windows 95 game contains run on both targets, the
+      texture-pack, launcher and ImGui-side ones stay with the modern build
+      (`docs/TESTING.md`).
 - [ ] The gain in binary and in memory is measured.
 - [ ] No game feature is lost along the way — only port features.
 
