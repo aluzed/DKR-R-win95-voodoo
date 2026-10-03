@@ -75,8 +75,10 @@ mid-race.
       served resident and 92,418 reused, 99.7%, a peak of 1,087 K of 2,048 K, no
       failure, and 10,920 evictions, the turnover between scenes; a two-player race
       peaks at 1,241 K, the adventure hub at 1,168 K. (The TMU line's own `hits`
-      counter reads 0 throughout: it counts the allocator's lookups, not residency,
-      and is not the figure to read.)
+      counter reads 0 throughout, and correctly: it counts `dkr_tmu_acquire` calls
+      that find their texture already placed, and the backend calls `acquire` only
+      for textures its own residency map does not hold. Residency is the
+      `textures:` line's `resident` and `reused`.)
 - [x] The allocator respects the TMU's alignment and granularity — 8 bytes, surveyed
       and not assumed: fourteen sizes out of fifteen cost exactly the computation, and
       the fifteenth (a 1×1 texture, 8 bytes for 2 useful) gives the granularity. The
