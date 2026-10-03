@@ -94,7 +94,13 @@ for every measurement in E08, and the criterion asking for DirectSound with a
       100.4 ms, which the third block covers. *Corrected 3 October*: the first
       figures written here came from runs whose audio had stopped at the start. The ring's sixteen buffers of 4,096 frames hold far more than either;
       it is the cushion that decides, and the figures say two blocks is enough.
-- [ ] No audible drift over twenty minutes of continuous play. **Not measured -- this
+- [x] No audible drift over twenty minutes of continuous play. **Measured on 3 October 2026**:
+      4,100 s of host time gave **20.6 minutes** of guest time in the attract mode with
+      the silent-start fix and the sound driver: 1,231 s of audio played, three underruns
+      in twenty minutes, all at level loads, nothing dropped, and the mixer producing
+      22,037 frames a second for 22,050 played -- the 0.06% short being the loads'
+      pauses, which the underruns account for, not a drift. The history of this
+      criterion: **Not measured -- this
       box was ticked on 1 October 2026 on evidence that does not hold.** The "219,000
       blocks played, 0 underruns, 0 dropped" of E08-S04's long session were blocks
       *submitted*: every run on the test machine since at least 27 September logs
