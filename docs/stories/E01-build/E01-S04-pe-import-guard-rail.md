@@ -64,9 +64,9 @@ baselines that diverge would be worse than one imperfect one.
   ([E06-S02](../E06-platform/E06-S02-keyboard-and-gamepad-input.md)) must go through
   `WINMM`'s `joyGetPosEx`, or the package must ship a DirectX update.
 
-**Still to do:** the ticket's point 7 — the same check at the packaging stage —
-awaits [E09-S05](../E09-qa/E09-S05-packaging-distribution.md), which does not exist
-yet. The tool is ready to be called there as it stands.
+**Point 7, done since:** `scripts/Package-Win95.sh` runs `check_imports.py` on
+the staged `DKRR.EXE` and refuses to write the package if it fails
+([E09-S05](../E09-qa/E09-S05-packaging-distribution.md)).
 
 ## Earlier state — E00-S01's tool
 
@@ -133,15 +133,18 @@ To refuse at build time any binary that could not load under Windows 95.
 
 ## Acceptance criteria
 
-- [ ] The export baseline is extracted from a real Windows 95 and its provenance is
+- [x] The export baseline is extracted from a real Windows 95 and its provenance is
       documented.
-- [ ] `check_imports.py` detects a forbidden import introduced deliberately —
+- [x] `check_imports.py` detects a forbidden import introduced deliberately —
       tested, not assumed.
-- [ ] The check is blocking at post-build and at packaging.
-- [ ] DLLs supplied by a driver are treated separately, not ignored.
-- [ ] Every exception carries a written justification.
-- [ ] The failure report names the symbol, its DLL, and the object that imports it —
+- [x] The check is blocking at post-build and at packaging.
+- [x] DLLs supplied by a driver are treated separately, not ignored.
+- [x] Every exception carries a written justification.
+- [x] The failure report names the symbol, its DLL, and the object that imports it —
       without the last, the diagnosis is left to be done by hand.
+
+Ticked on 3 October 2026 against the delivery above; the eight exceptions in
+`exceptions.json` each carry a `justification`, checked the same day.
 
 ## Risks
 

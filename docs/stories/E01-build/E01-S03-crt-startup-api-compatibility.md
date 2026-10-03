@@ -121,14 +121,20 @@ them.
 
 ## Acceptance criteria
 
-- [ ] `platform/win95/compat.{h,c}` covers every missing API from E00-S01.
-- [ ] Every workaround documents the lost semantics in `docs/WIN95-COMPAT.md`.
-- [ ] `GetTickCount`'s overflow is handled and covered by a test that simulates the
+- [x] `platform/win95/compat.{h,c}` covers every missing API from E00-S01.
+- [x] Every workaround documents the lost semantics in `docs/WIN95-COMPAT.md`.
+- [x] `GetTickCount`'s overflow is handled and covered by a test that simulates the
       return to zero.
-- [ ] The CRT strategy is settled, and its consequence for distribution written.
-- [ ] The entry point writes a startup log to a file.
-- [ ] Too old a system is refused with a clear message.
-- [ ] A witness executable using the whole layer starts under emulated Windows 95.
+- [x] The CRT strategy is settled, and its consequence for distribution written.
+- [x] The entry point writes a startup log to a file.
+- [ ] Too old a system is refused with a clear message. *Written, not exercised*:
+      `startup.c` refuses Win32s and any version below 4.0 with a message box and
+      a log line, but no older system has run it.
+- [x] A witness executable using the whole layer starts under emulated Windows 95.
+
+Ticked on 3 October 2026 against the delivery above (12 August), which
+recorded each one; the version refusal stays open because nothing older than
+Windows 95 has been tried.
 
 ## Risks
 
