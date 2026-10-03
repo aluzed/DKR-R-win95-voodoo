@@ -57,7 +57,8 @@ int  dkr_window_focused(void);
  * included by the renderer, which has no business seeing the Win32 API. */
 unsigned long dkr_window_handle(void);
 
-/* Restores the cursor and destroys the window. Safe to call without a window. */
+/* Restores the cursor and lets go of the window, which the process's exit then
+   destroys (see window.c). Safe to call without a window. */
 void dkr_window_close(void);
 
 /* --- The keyboard, captured where the messages arrive ----------------------- *

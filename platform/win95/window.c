@@ -256,11 +256,21 @@ void dkr_window_keys_clear(void)
 void dkr_window_close(void)
 {
     if (g_hwnd == NULL) { return; }
-    /* The cursor is restored before the window goes: after `DestroyWindow` there
-       is no client area left to own it, and a pointer left hidden is a reboot on
-       this machine. */
+    /* The cursor is restored here, while the window still owns the client area
+       it was hidden over: a pointer left hidden is a reboot on this machine. */
     SetCursor(g_cursor_saved);
-    DestroyWindow(g_hwnd);
+    /* **The window is not destroyed here; the process's exit destroys it.**
+     *
+     * This runs after the runtime has stopped, while the game's guest threads
+     * -- never joined, woken by the quit -- are still unwinding and exiting.
+     * `DestroyWindow` at that moment hung the stop: on the test machine the
+     * same binary stopped cleanly 0 times in 3 with the call and 3 times in 3
+     * without it, interleaved, and half the Alt+F4s left the process running
+     * (E02-S02, 3 October 2026). Which lock USER waits for is not established;
+     * what is, is that `ExitProcess` ends every other thread before Windows
+     * tears the window down, so the race is gone rather than made rarer. The
+     * display is already the desktop's -- Glide is closed before this point --
+     * and the process ends right after. */
     g_hwnd = NULL;
     g_focused = 0;
     dkr_window_keys_clear();

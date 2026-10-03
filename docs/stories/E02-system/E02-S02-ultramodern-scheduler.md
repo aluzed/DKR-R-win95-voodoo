@@ -86,27 +86,14 @@ defect, not an improvement.
       comparison with the modern host waits for a modern build on this machine.
 - [ ] The two targets' scheduling traces are compared and agree.
 - [ ] The shutdown paths are rechecked in the light of the new wake-up semantics.
-      **Rechecked on 3 October 2026, and they do not always finish.** Of the
-      saved logs of 173 runs on the test machine that asked to stop
-      (`Alt+F4`), 141 end on `[boot] runtime stopped cleanly` and 32 end on
-      `[gfx] Glide closed`. The measuring script stops the machine 10 s after
-      `Alt+F4`, about 3 s of guest time, so the short ones proved nothing by
-      themselves: run again with 45 to 60 s left (`DKR_MEASURE_QUIT_WAIT`)
-      and the log committed at each step of the shutdown, **4 runs of 8 still
-      stop after `Glide closed`**, the step that follows -- the runtime
-      thread returning -- never logged. The hang is therefore in
-      `recomp::start` after the graphics thread has shut its renderer down:
-      `game_thread.join()`, then `join_event_threads()` (VI, RSP task),
-      `join_timer_thread()`, `join_thread_cleaner_thread()` or
-      `join_saving_thread()`. Patch 0064 logs and commits each of those joins:
-      in three runs with it, all clean, the game thread is joined **before**
-      the renderer closes, which leaves `join_event_threads()` (the VI and RSP
-      task threads) and the joins after it. Which one is the next step,
-      with 0064 in place to name it on the next hang; patches 0004 and
-      0005, which wake the game thread and stop the scheduler cascade at
-      quit, are where to look first. Meanwhile the display is given back --
-      Glide is closed before the hang -- and the save is written as it goes
-      (E02-S05), so a player loses nothing but has to end the process.
+      **Rechecked on 3 October 2026, and they did not always finish**: about
+      half the `Alt+F4`s left the process running. Found and fixed in the
+      port, not in the wake-up semantics: `DestroyWindow` in
+      `dkr_window_close`, racing the guest threads' exit -- 0 clean stops in 3
+      with the call, 3 in 3 without, one binary, interleaved; the window is
+      now left to the process's exit, and the build with the fix stopped 6
+      times in 6. A second hang, inside `recomp::start`, shows in an older
+      build and is not located yet. `docs/research/win95-shutdown-hang.md`.
 
 ## State as of 2026-08-13 — the substitution is done, execution stays blocked
 

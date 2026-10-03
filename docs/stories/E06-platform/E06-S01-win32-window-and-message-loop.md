@@ -70,9 +70,12 @@ handling focus and shutdown.
       88,767 samples of a race (E08-S01).
 - [ ] Losing focus pauses the game, regaining it resumes.
 - [ ] Every shutdown route leads to a clean stop with the display restored.
-      *The display is restored on `Alt+F4`; the stop is not always clean*:
-      4 shutdowns of 8 given time to finish did not return after Glide closed
-      (E02-S02, 3 October 2026).
+      *The display is restored on `Alt+F4`, and the stop now finishes*: the
+      hang that kept half the processes alive was `DestroyWindow` racing the
+      guest threads' exit, fixed on 3 October 2026 (6 stops in 6). Left open
+      for a second hang seen only in an older build, and for the close button
+      and the session's end, not tried on their own
+      (`docs/research/win95-shutdown-hang.md`).
 - [ ] The cursor is hidden in full screen and restored on exit.
 - [ ] The behaviour on task switching is decided and held to.
 - [ ] A crash restores the display and writes a log.

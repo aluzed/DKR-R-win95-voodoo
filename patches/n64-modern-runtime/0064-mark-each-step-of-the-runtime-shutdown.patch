@@ -1,0 +1,88 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Mark each step of the runtime shutdown
+
+On the test machine about half the stops asked with Alt+F4 never finished
+(E02-S02, 3 October 2026). Each step of recomp::start's shutdown, and the
+exits of the graphics, VI and RSP task threads, now set a bit the port can
+read: dkr_stop_marks(). The port's watchdog reports them when a stop has
+not finished after ten seconds, and the log's last line before the join
+carries them. Marks rather than log lines: writing and committing the log
+at each step shifted the timing enough to hide the hang it was meant to
+find. The hang turned out to be in the port's window teardown, after this
+code; the marks stay so the next one is located without that trial.
+---
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -26,6 +26,15 @@
+ #include "recompiler/live_recompiler.h"
+ #include "librecomp/fileio.hpp"
+ 
++// Each step of the runtime's shutdown, marked without any I/O: writing and
++// committing the log here shifted the timing enough to hide the hang it was
++// meant to find (E02-S02). The marks are read by the port's watchdog, which
++// reports them if the stop has not finished after a few seconds.
++#include <atomic>
++static std::atomic<unsigned> g_dkr_stop_marks{0};
++extern "C" void dkr_stop_mark(unsigned bit) { g_dkr_stop_marks.fetch_or(1u << bit); }
++extern "C" unsigned dkr_stop_marks(void) { return g_dkr_stop_marks.load(); }
++
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+ #    include <Windows.h>
+@@ -907,12 +916,18 @@
+     }
+ 
+     graphics_shutdown_ready.signal();
++    dkr_stop_mark(0);  // the graphics thread released
+ 
+     game_thread.join();
++    dkr_stop_mark(1);  // game thread joined
+     ultramodern::join_event_threads();
++    dkr_stop_mark(2);  // event threads joined
+     ultramodern::join_timer_thread();
++    dkr_stop_mark(3);  // timer thread joined
+     ultramodern::join_thread_cleaner_thread();
++    dkr_stop_mark(4);  // thread cleaner joined
+     ultramodern::join_saving_thread();
++    dkr_stop_mark(5);  // saving thread joined
+ 
+     game_status.store(GameStatus::None);
+     game_status.notify_all();
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -496,6 +496,8 @@
+ 
+ 
+ extern std::atomic_bool exited;
++// The steps of the shutdown, marked without I/O (librecomp/src/recomp.cpp).
++extern "C" void dkr_stop_mark(unsigned bit);
+ extern moodycamel::LightweightSemaphore graphics_shutdown_ready;
+ 
+ void set_dummy_vi(bool odd);
+@@ -642,6 +644,7 @@
+             events_callbacks.vi_callback();
+         }
+     }
++    dkr_stop_mark(10);  // the VI thread left its loop
+ }
+ 
+ // --- Trace of the SP and DP edges, enabled by DKR_TRACE_SP ---------------------
+@@ -763,6 +766,7 @@
+         events_context.sp_task_queue.wait_dequeue(task);
+ 
+         if (task == nullptr) {
++            dkr_stop_mark(11);  // the RSP task thread told to stop
+             return;
+         }
+ 
+@@ -1066,8 +1070,10 @@
+         }
+     }
+ 
++    dkr_stop_mark(8);  // the graphics thread left its loop
+     graphics_shutdown_ready.wait();
+     renderer_context->shutdown();
++    dkr_stop_mark(9);  // the renderer shut down
+ }
+ 
+ #define VI_CTRL_TYPE_16             0x00002

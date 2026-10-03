@@ -1,4 +1,8 @@
 #include "diagnostic_log.hpp"
+#if defined(DKR_TARGET_WIN95)
+// Set by the patched runtime at each step of its shutdown (E02-S02).
+extern "C" unsigned dkr_stop_marks(void);
+#endif
 #include "exclusive_section.hpp"
 #include "percentile_histogram.hpp"
 #include "timing_export.hpp"
@@ -1799,9 +1803,24 @@ int DkrMain(int argc, char** argv) {
         bool timeout_requested = false;
 #if defined(DKR_TARGET_WIN95)
         bool window_quit = false;
+        // E02-S02: a stop that has not finished ten seconds after it was
+        // asked for reports how far it got, from marks the runtime sets
+        // without any I/O -- logging at each step changed the timing enough
+        // to hide the hang.
+        bool stop_reported = false;
+        auto quit_requested_at = std::chrono::steady_clock::now();
 #endif
         while (!runtime_finished.load(std::memory_order_acquire)) {
 #if defined(DKR_TARGET_WIN95)
+            if (window_quit && !stop_reported &&
+                std::chrono::steady_clock::now() - quit_requested_at >=
+                    std::chrono::seconds(10)) {
+                stop_reported = true;
+                std::fprintf(stderr,
+                             "[boot][stop] not finished after 10 s: marks=0x%X\n",
+                             dkr_stop_marks());
+                dkr_diag_commit();
+            }
             if (have_window && !window_quit && !dkr_window_pump()) {
                 // Every shutdown route -- the close button, Alt+F4, the session
                 // ending -- arrives here as a single answer, and it asks the
@@ -1810,6 +1829,7 @@ int DkrMain(int argc, char** argv) {
                 // gives it back.
                 std::fprintf(stderr, "[boot][window] shutdown requested\n");
                 window_quit = true;
+                quit_requested_at = std::chrono::steady_clock::now();
                 ultramodern::quit();
             }
 #endif
@@ -1846,7 +1866,8 @@ int DkrMain(int argc, char** argv) {
         // says which step did not return (E02-S02). Each is committed: a
         // process that hangs is killed with the machine, and an uncommitted
         // tail is lost (see diagnostic_log.hpp).
-        std::fprintf(stderr, "[boot] runtime finished; joining its thread\n");
+        std::fprintf(stderr, "[boot] runtime finished; joining its thread "
+                             "(marks=0x%X)\n", dkr_stop_marks());
         dkr_diag_commit();
 #endif
         runtime_thread.join();
