@@ -80,7 +80,11 @@ copy; the script proves the shipped `.text` identical to it.
 - [ ] The licences are complete and accurate, Glide sources included. *Shipped*: the
       port's MIT licence, the GPL-3.0 that N64ModernRuntime brings to the executable, and
       `THIRD_PARTY.md`. Not reviewed by anyone qualified, and nothing on the Glide headers'
-      own terms is in the package yet.
+      own terms is in the package yet. *Prepared for the review*, 3 October 2026:
+      `docs/research/win95-package-licences.md` lists what `DKRR.EXE` actually links,
+      from its symbols -- six permissive libraries `THIRDPTY.TXT` does not all name,
+      GCC's runtime, the copied Glide constants -- what it does not, and four
+      questions for the reviewer.
 - [x] The Glide DLLs are not redistributed, and their absence is reported clearly at
       launch: a message box naming the card, the driver and `GLIDE2X.DLL`, checked on the
       test machine with the DLL removed and put back.
