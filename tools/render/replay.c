@@ -98,6 +98,7 @@ typedef struct {
     unsigned long clipped;
     unsigned long split;      /* crossing the near plane, made two (E04-S05) */
     unsigned long domain;     /* DKR_CHECK_DOMAIN builds: emitted out of domain */
+    dkr_texture_stats decoded; /* E04-S07: what the texture decoder refused */
     unsigned long textures;
     unsigned long resident, reused;
     /* The stride check: see `stride_mismatch` in `f3ddkr.h`. */
@@ -150,6 +151,7 @@ static void take_counts(const dkr_f3d_context *ctx, replay_counts *c)
     c->clipped   = ctx->state.clipped_away;
     c->split     = ctx->state.clip_split;
     c->domain    = ctx->state.domain_violations;
+    c->decoded   = ctx->state.textures;
     c->textures  = ctx->state.textures_loaded;
     c->fogged    = ctx->state.emitted_fogged;
     c->vertices              = ctx->state.vertices;
@@ -221,6 +223,9 @@ static void say_counts(const char *who, const replay_counts *c)
        keeps its shape: `clipped` above is what was discarded -- wholly behind
        the near plane or off the screen -- and this, what the near plane cut. */
     say("           near plane: split=%lu\n", c->split);
+    say("           texture decoder: converted=%lu unsupported=%lu"
+        " too-large=%lu outside-rdram=%lu\n", c->decoded.converted,
+        c->decoded.unsupported, c->decoded.too_large, c->decoded.out_of_rdram);
 #if defined(DKR_CHECK_DOMAIN)
     say("           out of domain: %lu\n", c->domain);
 #endif

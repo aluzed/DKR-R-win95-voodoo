@@ -252,6 +252,56 @@ int main(void)
             check("the odd-row swap exchanges texels in pairs, and only on odd"
                   " rows", ok_swap);
         }
+
+        /* The same swap at the widths and texel sizes the game sends. A corpus
+           of 66 captures converts RGBA16 (61%), RGBA32 (29%) and IA8 (9%), at
+           35 widths from 4 to 248, 40% of them not a power of two; the swap is
+           a quarter of the row for 8-bit texels and a half for 32-bit ones.
+           Expected values worked out by hand from the rule -- odd rows only,
+           texel `c` read from `c ^ swap` when that stays inside the row. */
+        {
+            /* I8, 12 wide, read from rows 16 texels apart, swapped by four:
+               the last four columns' partners (12..15) are outside the row, so
+               they stay where they are. */
+            static const unsigned expect_i8[12] = {20, 21, 22, 23, 16, 17,
+                                                   18, 19, 24, 25, 26, 27};
+            int ok_i8 = 1;
+            memset(g_ram, 0, sizeof(g_ram));
+            for (i = 0; i < 32u; i++) { g_ram[0x700u + i] = (unsigned char)(i << 3); }
+            (void)dkr_texture_convert_swapped(g_ram, RAM, 0, 0x700u,
+                                              DKR_N64_FMT_I, DKR_N64_SIZ_8,
+                                              12, 2, 16, 4, g_out, &st);
+            for (i = 0; i < 12u; i++) {
+                if (((unsigned)(g_out[i] >> 10) & 0x1Fu) != i) { ok_i8 = 0; }
+                if (((unsigned)(g_out[12u + i] >> 10) & 0x1Fu) != expect_i8[i]) {
+                    ok_i8 = 0;
+                }
+            }
+            check("8-bit texels, 12 wide in a 16-texel row: swapped by four,"
+                  " never across the row's end", ok_i8);
+        }
+        {
+            /* RGBA32, 6 wide, swapped by two: columns 4 and 5 would read 6
+               and 7, past the row, and keep their own texels. */
+            static const unsigned expect_32[6] = {8, 9, 6, 7, 10, 11};
+            int ok_32 = 1;
+            memset(g_ram, 0, sizeof(g_ram));
+            for (i = 0; i < 12u; i++) {
+                g_ram[0x800u + i * 4u] = (unsigned char)(i << 3);
+                g_ram[0x800u + i * 4u + 3u] = 0xFFu;
+            }
+            (void)dkr_texture_convert_swapped(g_ram, RAM, 0, 0x800u,
+                                              DKR_N64_FMT_RGBA, DKR_N64_SIZ_32,
+                                              6, 2, 6, 2, g_out, &st);
+            for (i = 0; i < 6u; i++) {
+                if (((unsigned)(g_out[i] >> 10) & 0x1Fu) != i) { ok_32 = 0; }
+                if (((unsigned)(g_out[6u + i] >> 10) & 0x1Fu) != expect_32[i]) {
+                    ok_32 = 0;
+                }
+            }
+            check("32-bit texels, 6 wide: swapped by two, the last pair"
+                  " left in place", ok_32);
+        }
     }
 
     printf("\n  converted=%lu refused=%lu out-of-rdram=%lu too-large=%lu\n",

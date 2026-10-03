@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E04 — RT64-independent F3DDKR HLE |
-| **Status** | REVIEW |
+| **Status** | IN_PROGRESS |
 | **Priority** | P0 |
 | **Estimate** | L |
 | **Depends on** | E04-S02, E04-S06 |
@@ -67,10 +67,62 @@ cost and memory occupancy.
 8. Compare the decoded textures against the modern target's, taking the reduction in
    colour depth into account.
 
+## Where it stands (3 October 2026)
+
+Nothing here had been written down since August; this section was established
+from the code, the tests and the 66-capture corpus.
+
+**Seven format/size pairs decoded, not twelve.** `platform/render/texture.c`
+converts RGBA16, RGBA32, I8, I4, IA16, IA8 and IA4 to ARGB1555. CI4, CI8 and
+YUV are refused and counted: the indexed formats need the palette that
+`LOADTLUT` places in the other half of texture memory, and the decoder does
+not model it. The stories table had said "12 formats" since 28 August; it
+was wrong. What the game sends, measured on the corpus by printing each
+conversion's format (a probe in a copy outside the tree):
+
+| Format | Conversions | Share |
+|---|---|---|
+| RGBA16 | 5,364 | 61% |
+| RGBA32 | 2,565 | 29% |
+| IA8 | 832 | 9.5% |
+| anything else | 0 | |
+
+8,761 conversions, and `replay` now prints the decoder's counters ("texture
+decoder: ... unsupported="): **0 refused** in the 66 captures. The decomp
+does have CI4 and CI8 load paths (`textures_sprites.c`), so whether some asset
+the corpus has not reached is indexed is open. The fonts' I8 and IA16, seen in
+`docs/research/win95-hud-digits.md`, are not in the corpus's captures.
+
+**The odd-row swap, at several widths.** `test_texture.c` checks it on an
+8-wide RGBA16 image, a 12-wide I8 image read from 16-texel rows, and a 6-wide
+RGBA32 image -- a quarter row for 8-bit texels, half for 32-bit, and at the
+end of a row whose width is not a multiple of the swap, the texels whose
+partner would lie outside the row stay where they are. That last rule is what
+the code does and the test pins; the test does not prove the RDP does the
+same. The corpus's textures come in 35 widths from 4 to 248, and 40% of the
+conversions are not a power of two.
+
+**Non-power-of-two sizes** are padded by repeating the pattern
+(`f3ddkr.c`, "The padding"), and the coordinates are normalised over the
+padded size. A texture that wraps shows its padding at the seam; the code
+says so. No offset has been measured on such a texture.
+
+**The cache.** The 98.9% the table quoted was the TMU allocator's counter on
+26 August, withdrawn on 18 September (E05-S02): measured again, 98.5% then
+99.7%, with a peak of 1,087 K of a 2,048 K TMU. In play, 0.6 conversions a
+display list (`docs/research/frame-budget.md`).
+
+**Not done:** a decode cost per texture and at level load (only the per-list
+total, 0.1 ms, is measured); the CI decision, which has no measurement behind
+it because no CI texture has been met; the comparison with the modern
+target's textures (no modern build here); and the host-side footprint of
+decoded textures against ADR 0003's 8 MiB reserve.
+
 ## Acceptance criteria
 
 - [ ] Every texture format DKR uses is decoded.
-- [ ] The interleaving is correctly undone, tested at several widths.
+- [x] The interleaving is correctly undone, tested at several widths -- three
+      widths and three texel sizes (above).
 - [ ] The handling of indexed textures is settled on a measurement of memory
       occupancy, confronted with the per-TMU budget.
 - [ ] Non-conforming dimensions are handled with no visible texel offset.
