@@ -320,7 +320,20 @@ void dkr::runtime::GlideRenderer::open_card() {
     // How long the driver takes to bring the card up, on the timing export's
     // clock.
     const unsigned long long open_started = dkr_clock_init() != 0 ? dkr_clock_now_us() : 0ULL;
-    if (backend_.open != nullptr && backend_.open(backend_.self, kWidth, kHeight) != 0) {
+    // **Below the game's threads while the driver works.** Opened beside the
+    // game's boot, `grSstWinOpen`'s 2.9 s of processor took the one processor
+    // from DKR's first audio task: measured 44 to 329 ms where it had taken 13
+    // to 26, and past ten retraces the game's scheduler gives the task up
+    // (`__scHandleRetrace`'s watchdog), drops its completion and its audio
+    // never runs again -- five silent starts in twenty-five, 1 to 3 October
+    // 2026. The open runs at the lowest priority instead, and the boot's
+    // threads go first.
+    const int previous_priority = GetThreadPriority(GetCurrentThread());
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+    const bool card_open = backend_.open != nullptr &&
+                           backend_.open(backend_.self, kWidth, kHeight) != 0;
+    SetThreadPriority(GetCurrentThread(), previous_priority);
+    if (card_open) {
         opened_ = true;
         width_ = kWidth;
         height_ = kHeight;

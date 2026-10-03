@@ -38,6 +38,24 @@ less, all of it waiting that the player sees as a black screen.
   `DKR_GLIDE_OPEN_EARLY=1` restoring the old order: the first image at 5.16 s
   and 5.18 s against 6.41 s, the same lists and triangles after a minute.
 
+## The cost of opening the card beside the boot: silent starts (3 October)
+
+Opening the card beside the game's boot had a cost the first measurements did
+not see. `grSstWinOpen` keeps the one processor busy for 2.9 s, and DKR's
+first audio task, which used to take 13 to 26 ms, took 44 to 329 ms once it
+ran in that window. Past ten retraces, 167 ms, DKR's scheduler gives an RSP
+task up -- `__scHandleRetrace` in the decompilation's `sched.c` sets
+`curRSPTask` to NULL -- and the task's completion, arriving later, finds no
+task and is dropped (`[boot][scheduler] dropped late SP completion`). The
+audio manager then waits for that completion for ever: **the game runs on in
+silence**. Five starts in twenty-five between 1 and 3 October, the three
+one-player races of 2 October among them.
+
+The card is now opened at the lowest thread priority, the boot's threads going
+first. Six starts in a row: the first audio task 18 ms each time, no dropped
+completion, the audio running, and the first image at 5.07 s -- no later than
+before; the open itself takes 4.2 s instead of 2.9, beside the boot.
+
 ## What remains
 
 The card is now open at 3.8 s on the timing export's clock and the first list
