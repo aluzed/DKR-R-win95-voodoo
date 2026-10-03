@@ -67,11 +67,21 @@ scripts.
       modern build only. `docs/TESTING.md`.
 - [~] The portable-logic tests pass on both targets -- **all 30 on the host**
       (`tools/tests/run-portable-tests.sh`, 25 s). 23 are built for the target from
-      the same list (`PT*.EXE`) and run by `tools/tests/Run-Portable-Tests-VM.sh`;
+      the same list (`PT*.EXE`) and run by `tools/tests/Run-Target-Tests-VM.sh`;
       seven are not, each for a reason written beside the list in
       `cmake/win95-target.cmake` -- five of them because of the divergence below.
-- [ ] The platform tests E02 asks for are written and pass on the target.
-- [ ] Running them on the emulated machine is automated.
+- [~] The platform tests E02 asks for are written and pass on the target -- written,
+      and passed by hand in August and September (E02-S01, E02-S03, E02-S05). Run by
+      the new runner on 3 October 2026: **`THREADS`, `CLOCKT` and `FILEIOT` pass;
+      `SAVEMGR` did not finish** -- it wrote nothing and was still running when the
+      runner's fifteen minutes ran out, so `SAVECDC` and the portable suites after it
+      were not reached. It passed on 13 August launched the same way; what changed is
+      not yet known. Open.
+- [x] Running them on the emulated machine is automated:
+      `tools/tests/Run-Target-Tests-VM.sh` copies the platform tests and the portable
+      suites to `D:\PT`, runs them through a batch file, and reports each exit code;
+      a suite that hangs shows as the run not finishing -- which is how `SAVEMGR`'s
+      hang was found.
 - [x] The cross-target comparison tests detect a rounding divergence -- **a real
       one, not introduced**: built for the target, five suites' compile-time
       assertions fail, thirteen of them, because with `-mfpmath=387` GCC 13 gives

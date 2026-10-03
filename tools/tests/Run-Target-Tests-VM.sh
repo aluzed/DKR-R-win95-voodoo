@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# E09-S03 - runs the portable-logic suites built for the target
-# (`build/win95/bin/portable/PT*.EXE`, from tools/tests/portable-suites.txt) on
-# the test machine and reports each one's result on the host.
+# E09-S03 - runs the target's test executables on the test machine and reports
+# each one's result on the host:
 #
-#   tools/tests/Run-Portable-Tests-VM.sh
+#   - the platform tests E02 asks for: THREADS.EXE (E02-S01), CLOCKT.EXE
+#     (E02-S03), FILEIOT.EXE, SAVEMGR.EXE and SAVECDC.EXE (E02-S05);
+#   - the runtime's portable-logic suites, `build/win95/bin/portable/PT*.EXE`,
+#     built from tools/tests/portable-suites.txt.
+#
+#   tools/tests/Run-Target-Tests-VM.sh
 #
 # The executables go to D:\PT with a batch file that runs them one after the
 # other, each one's output to D:\PT\<name>.OUT and its verdict -- the exit code,
@@ -22,22 +26,34 @@ say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 shopt -s nullglob
-exes=("$bin"/PT*.EXE)
-(( ${#exes[@]} > 0 )) || fail "no PT*.EXE in $bin: run Build-Win95.sh"
+exes=()
+for name in THREADS CLOCKT FILEIOT SAVEMGR SAVECDC; do
+  [[ -f "$ROOT/build/win95/bin/$name.EXE" ]] || fail "$name.EXE is absent: run Build-Win95.sh"
+  exes+=("$ROOT/build/win95/bin/$name.EXE")
+done
+portable=("$bin"/PT*.EXE)
+(( ${#portable[@]} > 0 )) || fail "no PT*.EXE in $bin: run Build-Win95.sh"
+exes+=("${portable[@]}")
 
 work="$(mktemp -d)"; trap 'rm -rf -- "$work"' EXIT
 {
   printf '@ECHO OFF\r\n'
+  # Run from D:\PT, so that the suites that write files write them there.
+  printf 'D:\r\n'
+  printf 'CD \\PT\r\n'
   printf 'ECHO PTALL> D:\\PTALL.TXT\r\n'
+  # Labels by number: COMMAND.COM reads only a label's first eight
+  # characters, and F_PTPRES and F_PTPRESID would be the same label.
+  i=0
   for exe in "${exes[@]}"; do
-    name="$(basename "$exe" .EXE)"; short="${name#PT}"
-    printf 'D:\\PT\\%s.EXE > D:\\PT\\%s.OUT\r\n' "$name" "$short"
-    printf 'IF ERRORLEVEL 1 GOTO F_%s\r\n' "$short"
-    printf 'ECHO ok %s>> D:\\PTALL.TXT\r\n' "$short"
-    printf 'GOTO N_%s\r\n' "$short"
-    printf ':F_%s\r\n' "$short"
-    printf 'ECHO FAIL %s>> D:\\PTALL.TXT\r\n' "$short"
-    printf ':N_%s\r\n' "$short"
+    i=$((i + 1)); name="$(basename "$exe" .EXE)"
+    printf 'D:\\PT\\%s.EXE > D:\\PT\\%s.OUT\r\n' "$name" "$name"
+    printf 'IF ERRORLEVEL 1 GOTO F%02d\r\n' "$i"
+    printf 'ECHO ok %s>> D:\\PTALL.TXT\r\n' "$name"
+    printf 'GOTO N%02d\r\n' "$i"
+    printf ':F%02d\r\n' "$i"
+    printf 'ECHO FAIL %s>> D:\\PTALL.TXT\r\n' "$name"
+    printf ':N%02d\r\n' "$i"
   done
   printf 'ECHO END>> D:\\PTALL.TXT\r\n'
 } > "$work/PTALL.BAT"

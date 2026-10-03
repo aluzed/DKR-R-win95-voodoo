@@ -125,6 +125,10 @@ counts when a change is meant to move them.
 
 ## Not yet
 
+- **`SAVEMGR.EXE` hangs on the target**, found by the runner's first run on
+  3 October 2026: no output, still running after fifteen minutes, where it
+  passed on 13 August. The suites after it in the batch were not reached.
+
 - The portable suites are not run on the target by the package script: that
   needs the test machine, about five minutes.
 - `DKRRomRevision` needs the v80 ROM, which this checkout's machine does not
