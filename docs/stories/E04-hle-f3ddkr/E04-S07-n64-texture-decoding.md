@@ -117,8 +117,17 @@ says so. No offset has been measured on such a texture.
 99.7%, with a peak of 1,087 K of a 2,048 K TMU. In play, 0.6 conversions a
 display list (`docs/research/frame-budget.md`).
 
-**Not done:** a decode cost per texture and at level load (only the per-list
-total, 0.1 ms, is measured); the comparison with the modern
+**The decoding cost, on the target** (3 October 2026, `DKR_TRACE_RENDER_ZONES=1`
+at `6bcf163`, from boot through the menus to a race driven for two minutes,
+`scripts/Drive-To-Race.sh`; guest time). 2,670 display lists, **952
+conversions, 70.8 ms in all: 74 µs a texture** on average, between 14 and 280
+µs by size. They come in bursts where a scene loads -- the heaviest, 163
+conversions in 60 lists, 11.1 ms, 0.19 ms a list -- and almost never in play:
+**4 conversions in the last 810 lists**, all of them in the race, where the
+other 303,705 bindings were served resident or reused. Against a 33.3 ms frame
+that is nothing in play and a fraction of a frame at a load.
+
+**Not done:** the comparison with the modern
 target's textures (no modern build here); and the host-side footprint of
 decoded textures against ADR 0003's 8 MiB reserve.
 
@@ -136,7 +145,9 @@ decoded textures against ADR 0003's 8 MiB reserve.
 - [ ] Non-conforming dimensions are handled with no visible texel offset.
 - [ ] The cache avoids re-decoding in steady state, and its occupancy respects the
       budget.
-- [ ] The decoding cost is measured, at load time and during play.
+- [x] The decoding cost is measured, at load time and during play -- 74 µs a
+      texture, 11.1 ms over the heaviest load's 60 lists, 4 conversions in
+      810 lists of racing (above).
 - [ ] The decoded textures are compared against the modern reference, the difference
       being attributable to the reduction in colour depth alone.
 
