@@ -1272,10 +1272,11 @@ set(DKR_WIN95_GAME_SOURCES
     audio_equalizer dkr_save_codec game_main game_payload game_payload_v77
     game_registration
     glide_renderer null_renderer
-    presentation_identity renderer_snapshot rev_a_asset_mutex rom_revision
+    renderer_snapshot rev_a_asset_mutex rom_revision
     runtime_audio_controls runtime_enhancements runtime_hud_layout
     runtime_input runtime_magic_codes runtime_platform
-    runtime_absent_hooks runtime_quick_restart runtime_save_routing
+    runtime_absent_hooks runtime_absent_presentation runtime_quick_restart
+    runtime_save_routing
     runtime_support
     save_manager runtime_stubs runtime_telemetry startup_performance
     virtual_pak)
