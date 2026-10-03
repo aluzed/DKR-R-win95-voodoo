@@ -53,7 +53,11 @@ void write_bytes(const std::filesystem::path& path,
 }
 
 std::vector<std::uint8_t> read_bytes(const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary);
+    // From `path.string()`, as `write_bytes` above does: a stream opened on the
+    // path itself goes through `_wfopen`, empty on Windows 95, and came back
+    // with nothing -- which `corrupt_live[0]` below then dereferenced, a page
+    // fault on the test machine (3 October 2026).
+    std::ifstream input(path.string(), std::ios::binary);
     return {std::istreambuf_iterator<char>(input),
             std::istreambuf_iterator<char>()};
 }
@@ -103,6 +107,7 @@ int main() {
     std::fputs("[test][save-manager] checksum-only recovery\n", stderr);
     const auto live_save = dkr::runtime::saves::adventure_info().path;
     auto corrupt_live = read_bytes(live_save);
+    assert(corrupt_live.size() > 0x78U);
     corrupt_live[0] ^= 0x5AU;
     corrupt_live[0x78U] ^= 0x40U;
     write_bytes(live_save, corrupt_live);

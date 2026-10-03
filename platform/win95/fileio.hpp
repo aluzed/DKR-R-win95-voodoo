@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <system_error>
 #include <vector>
 
@@ -576,6 +577,20 @@ inline bool copy_file_overwrite(const std::filesystem::path &from,
         from, to, std::filesystem::copy_options::overwrite_existing, ec);
 }
 
+#endif
+
+/* **The name to open a stream with.** A `std::ifstream` or `std::ofstream`
+   constructed from a `path` opens it through `_wfopen` on this toolchain, and
+   Windows 95 exports the wide CRT as empty functions: the stream simply fails,
+   and a reader takes that for an absent file (`docs/research/win95-wide-streams.md`).
+   On Windows 95 the stream is given the narrow name; everywhere else the path
+   itself, so that a modern Windows keeps its Unicode paths.
+
+       std::ifstream input(dkr::fs::stream_name(path), std::ios::binary); */
+#if defined(DKR_TARGET_WIN95)
+inline std::string stream_name(const std::filesystem::path &p) { return p.string(); }
+#else
+inline const std::filesystem::path &stream_name(const std::filesystem::path &p) { return p; }
 #endif
 
 } // namespace dkr::fs

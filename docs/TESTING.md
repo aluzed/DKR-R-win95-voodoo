@@ -125,9 +125,11 @@ counts when a change is meant to move them.
 
 ## Not yet
 
-- **`SAVEMGR.EXE` hangs on the target**, found by the runner's first run on
-  3 October 2026: no output, still running after fifteen minutes, where it
-  passed on 13 August. The suites after it in the batch were not reached.
+- On 3 October 2026 the target run is green: the five platform tests and the 23
+  portable suites. Its first run had stopped at `SAVEMGR.EXE` -- a page fault
+  behind Windows' error dialog, from a test helper opening a stream on a `path`
+  (`_wfopen`, empty on Windows 95). Opening streams with
+  `dkr::fs::stream_name(path)` avoids that everywhere.
 
 - The portable suites are not run on the target by the package script: that
   needs the test machine, about five minutes.

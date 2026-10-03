@@ -34,7 +34,21 @@ for name in THREADS CLOCKT FILEIOT SAVECDC; do
   [[ -f "$ROOT/build/win95/bin/$name.EXE" ]] || fail "$name.EXE is absent: run Build-Win95.sh"
   exes+=("$ROOT/build/win95/bin/$name.EXE")
 done
-portable=("$bin"/PT*.EXE)
+# Only the suites the list names: a suite later held back from the target
+# (DKR_PORTABLE_HOST_ONLY) leaves its old PT*.EXE in the build directory, and
+# running that stale binary reports a failure that is not one.
+portable=()
+while read -r short _; do
+  [[ -z "$short" || "$short" == \#* ]] && continue
+  [[ -f "$bin/PT$short.EXE" ]] && portable+=("$bin/PT$short.EXE")
+done < "$ROOT/tools/tests/portable-suites.txt"
+held_back="$(sed -n 's/^set(DKR_PORTABLE_HOST_ONLY \(.*\))$/\1/p' "$ROOT/cmake/win95-target.cmake")"
+kept=()
+for exe in "${portable[@]}"; do
+  short="$(basename "$exe" .EXE)"; short="${short#PT}"
+  [[ " $held_back " == *" $short "* ]] || kept+=("$exe")
+done
+portable=("${kept[@]}")
 (( ${#portable[@]} > 0 )) || fail "no PT*.EXE in $bin: run Build-Win95.sh"
 exes+=("${portable[@]}")
 [[ -f "$ROOT/build/win95/bin/SAVEMGR.EXE" ]] || fail "SAVEMGR.EXE is absent: run Build-Win95.sh"

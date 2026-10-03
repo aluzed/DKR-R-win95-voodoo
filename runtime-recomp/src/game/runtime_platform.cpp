@@ -1,5 +1,6 @@
 #include "runtime_platform.hpp"
 #include "diagnostic_log.hpp"
+#include "win95/fileio.hpp"
 #include "audio_equalizer.hpp"
 #include "controller_snapshot.hpp"
 #include "controller_mapping_policy.hpp"
@@ -418,7 +419,7 @@ std::string ControllerPersistentKey(int device_index, SDL_Joystick* joystick) {
 
 void CollectMappingGuids(const std::filesystem::path& path,
                          std::unordered_set<std::string>& output) {
-    std::ifstream input(path);
+    std::ifstream input(dkr::fs::stream_name(path));
     std::string line;
     while (std::getline(input, line)) {
         if (line.empty() || line.front() == '#') {
@@ -797,7 +798,7 @@ void PushSdl3Events() {
 
 std::vector<std::string> ReadMappingLines(const std::filesystem::path& path) {
     std::vector<std::string> lines;
-    std::ifstream input(path);
+    std::ifstream input(dkr::fs::stream_name(path));
     std::string line;
     while (std::getline(input, line)) {
         if (!line.empty() && line.back() == '\r') {

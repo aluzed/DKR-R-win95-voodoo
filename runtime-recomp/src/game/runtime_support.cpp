@@ -58,7 +58,7 @@ void SavePreferences() {
     std::error_code error;
     dkr::fs::create_directories(g_config_directory, error);
     if (error) return;
-    std::ofstream output(PreferencesPath(), std::ios::trunc);
+    std::ofstream output(dkr::fs::stream_name(PreferencesPath()), std::ios::trunc);
     if (!output) return;
     output << "diagnostic_logging="
            << (g_diagnostic_logging.load(std::memory_order_acquire) ? 1 : 0)
@@ -265,7 +265,7 @@ void configure(const std::filesystem::path& config_directory) {
     g_log_directory = config_directory / "logs";
     g_crash_dump_directory = config_directory / "crash-dumps";
     g_support_report_directory = config_directory / "support-reports";
-    std::ifstream input(PreferencesPath());
+    std::ifstream input(dkr::fs::stream_name(PreferencesPath()));
     std::string line;
     while (std::getline(input, line)) {
         const auto separator = line.find('=');

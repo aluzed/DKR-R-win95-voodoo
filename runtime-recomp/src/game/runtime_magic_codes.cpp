@@ -148,7 +148,7 @@ void dkr::runtime::magic_codes::configure(
     const std::filesystem::path& config_directory) {
     dkr::sync::lock_guard lock(g_queue_file_guard);
     g_one_shot_path = config_directory / "magic-codes-next-launch.txt";
-    std::ifstream input(g_one_shot_path);
+    std::ifstream input(dkr::fs::stream_name(g_one_shot_path));
     std::uint32_t mask = 0U;
     if (input) {
         unsigned long long parsed = 0U;

@@ -131,7 +131,7 @@ void PublishLocked() {
 }
 
 bool LoadFile(const std::filesystem::path& path) {
-    std::ifstream input(path);
+    std::ifstream input(dkr::fs::stream_name(path));
     if (!input) return false;
 
     int mode = static_cast<int>(LayoutMode::Original);
@@ -204,7 +204,7 @@ void LoadLocked() {
         std::error_code error;
         if (dkr::fs::file_size(path, error) > 2*1024*1024 || error) continue;
         try {
-            std::ifstream stream(path);
+            std::ifstream stream(dkr::fs::stream_name(path));
             const auto document = nlohmann::json::parse(stream);
             const auto loaded = hg::decode(document);
             if (!loaded) continue;
