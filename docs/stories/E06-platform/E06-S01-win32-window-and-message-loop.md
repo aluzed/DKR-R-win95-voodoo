@@ -62,15 +62,18 @@ handling focus and shutdown.
 
 ## Acceptance criteria
 
-- [ ] The window is created and receives the system's messages under Windows 95.
-- [ ] The message loop does not interfere with the game's threads and does not consume
-      CPU when idle.
+- [x] The window is created and receives the system's messages under Windows 95.
+      Since 28 August (`docs/research/win95-game-render.md`, "A window, a
+      keyboard"); every run on the test machine ends through its `Alt+F4`.
+- [x] The message loop does not interfere with the game's threads and does not consume
+      CPU when idle. The sampler found the main thread moving in one of
+      88,767 samples of a race (E08-S01).
 - [ ] Losing focus pauses the game, regaining it resumes.
 - [ ] Every shutdown route leads to a clean stop with the display restored.
 - [ ] The cursor is hidden in full screen and restored on exit.
 - [ ] The behaviour on task switching is decided and held to.
 - [ ] A crash restores the display and writes a log.
-- [ ] No API later than Windows 95 is imported.
+- [x] No API later than Windows 95 is imported. `check_imports.py` at every build and package (E01-S04).
 
 ## Risks
 
