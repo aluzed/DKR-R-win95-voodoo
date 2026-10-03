@@ -46,7 +46,7 @@ and the ROM (`scripts/scan_for_game_assets.py`).
 3. **The Glide constants.** A dozen numeric constants and two structure
    layouts, copied for interoperability with the user's own driver. Their
    terms are those of 3dfx's Glide SDK headers, which the package does not
-   reproduce and does not cite yet.
+   reproduce; since 3 October 2026 `THIRDPTY.TXT` says where they come from.
 4. **The bundled permissive libraries.** fmt, ConcurrentQueue, nlohmann/json,
    miniz, xxHash and o1heap each ask for their notice to accompany binary
    distributions; `THIRDPTY.TXT` in the package is the modern build's list and

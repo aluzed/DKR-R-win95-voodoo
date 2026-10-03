@@ -14,6 +14,9 @@ DKRR.EXE contains, besides this port's own code (LICENSE.TXT):
   GCC's libstdc++ and libgcc  -- GPL-3.0 with the GCC Runtime Library
                                  Exception, linked statically
   mingw-w64's runtime and winpthread, linked statically
+  Glide 2.x interface: about a dozen constants and two structure layouts
+      from 3dfx's Glide SDK header glide.h, reproduced to call your card's
+      driver. The SDK itself is not included.
 
 Not included: the game's ROM and assets, which you supply, and GLIDE2X.DLL,
 your 3dfx card's driver. Nothing from RT64, SDL, Dear ImGui or the online
