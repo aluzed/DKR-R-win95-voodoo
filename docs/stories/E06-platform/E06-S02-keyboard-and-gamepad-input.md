@@ -94,13 +94,26 @@ character and a vehicle and drives a race beside player one
 
 ## Acceptance criteria
 
-- [ ] The keyboard works in full screen, with no message-queue latency.
+- [x] The keyboard works in full screen, with no message-queue latency -- the poll
+      reads `GetAsyncKeyState`, the key's state at that instant, not a queue; the
+      window's own messages only latch a press shorter than a frame. Played full
+      screen on the test machine's Voodoo: menus, races, the adventure, and since
+      2 October a second player on the keypad.
 - [ ] A DirectInput gamepad works, with the `winmm` fallback verified.
-- [ ] The dead zone and the calibration are configurable.
-- [ ] The mapping to the N64 stick respects range and response shape, verified by
-      comparison against the modern target.
-- [ ] The number of gamepads really supported is determined and documented.
-- [ ] The remapping is kept and persistent.
+- [x] The dead zone and the calibration are configurable -- `JOY_DEADZONE` (0 to 90%,
+      DKRR.INI or the environment) and Windows 95's own calibration in Control Panel >
+      Joystick, which `joyGetPosEx` applies before the game reads anything.
+- [~] The mapping to the N64 stick respects range and response shape, verified by
+      comparison against the modern target -- verified against its own definition,
+      not yet against the modern target: `test_joystick_map.c`'s sixteen checks
+      (full deflection reads 1 past the dead zone, Y inverted, the hat's diagonals)
+      run in `run-tests.sh joystick` before every package.
+- [x] The number of gamepads really supported is determined and documented -- two,
+      `JOYSTICKID1` and `JOYSTICKID2`, the two a period game port carries: the first
+      joins the keyboard on player one, the second the keypad on player two
+      (`README.TXT`, `docs/CONFIGURATION.md`). Not yet with a real device.
+- [~] The remapping is kept and persistent -- for joysticks: `JOY_BUTTONS` in DKRR.INI
+      maps a pad's eight buttons and persists. The keyboard's layout is fixed.
 - [ ] The input latency is measured and compared against the reference.
 - [ ] The existing mapping logic is reused, not rewritten.
 
