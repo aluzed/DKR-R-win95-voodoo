@@ -149,19 +149,26 @@ and to make `ultramodern` and `librecomp` compilable within that subset.
 
 ## Acceptance criteria
 
-- [ ] `docs/CPP-SUBSET.md` exists: standards, permitted headers, forbidden headers
+- [x] `docs/CPP-SUBSET.md` exists: standards, permitted headers, forbidden headers
       with their replacement.
-- [ ] The decision on exceptions and RTTI is taken and justified.
-- [ ] The subset checker runs as a pre-build step and fails on a forbidden header
+- [x] The decision on exceptions and RTTI is taken and justified.
+- [x] The subset checker runs as a pre-build step and fails on a forbidden header
       introduced deliberately.
-- [ ] `ultramodern` compiles for the Win95 target, or its remaining errors are
+- [x] `ultramodern` compiles for the Win95 target, or its remaining errors are
       counted and assigned to a named ticket.
-- [ ] `librecomp` compiles for the Win95 target, excluding the RSP vector emulation
-      explicitly referred to E03-S01.
-- [ ] Every dependency change is a patch under `patches/`, referenced from
+- [x] `librecomp` compiles for the Win95 target, excluding the RSP vector emulation
+      explicitly referred to E03-S01. Its six errors of 12 August were resolved
+      in E01-S05; `DKRR.EXE` links `win95librecomp`.
+- [x] Every dependency change is a patch under `patches/`, referenced from
       `patches/manifest.json`.
 - [ ] The modern targets still compile with the same patches applied — a patch that
-      breaks upstream breaks the oracle.
+      breaks upstream breaks the oracle. *Verified for `ultramodern` on 12 August*;
+      84 patches since, and no modern build on this machine to try them against
+      (the same block as E04-S03).
+
+Ticked on 3 October 2026: the checker's `--self-test` refuses its planted
+header and it runs before the target's builds (`cmake/win95-target.cmake`); all
+84 patches under `patches/` are in `manifest.json`.
 
 ## Risks
 
