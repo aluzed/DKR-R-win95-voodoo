@@ -115,16 +115,20 @@ E01-S03, E01-S05).
 
 ## Acceptance criteria
 
-- [ ] `cmake -S runtime-recomp --toolchain cmake/toolchain-win95.cmake` configures
+- [x] `cmake -S runtime-recomp --toolchain cmake/toolchain-win95.cmake` configures
       without an error.
-- [ ] A minimal witness file compiles and links as a 32-bit PE.
-- [ ] The instruction-set verifier runs automatically after the link and fails on an
+- [x] A minimal witness file compiles and links as a 32-bit PE.
+- [x] The instruction-set verifier runs automatically after the link and fails on an
       object deliberately containing SSE — tested by injection, not assumed.
-- [ ] The verifier covers the CRT's and the standard library's code.
-- [ ] The use of an API later than Windows 95 fails at compile time.
-- [ ] The existing Windows, Linux and macOS targets are unchanged, proved by
+- [x] The verifier covers the CRT's and the standard library's code.
+- [x] The use of an API later than Windows 95 fails at compile time.
+- [x] The existing Windows, Linux and macOS targets are unchanged, proved by
       comparing the CMake configuration.
-- [ ] `Build-Win95.sh` exists and clearly reports its missing prerequisites.
+- [x] `Build-Win95.sh` exists and clearly reports its missing prerequisites.
+
+Ticked on 3 October 2026 against the delivery above (12 August), which
+recorded each of them; the checks still run at every build, and the
+verifier's self-test and the scan of `DKRR.EXE` pass today.
 
 ## Risks
 
