@@ -131,7 +131,12 @@ for every measurement in E08, and the criterion asking for DirectSound with a
       the 50 s of racing** that followed; nothing dropped.
 - [ ] The output's CPU cost is measured, including with a poor driver. *Partly*: in a
       race, the sampler never finds `audio_out.c` among 43,335 samples of the executable
-      (E08-S01) -- negligible with the test machine's driver; no other driver tried.
+      (E08-S01) -- but that race ran before the test machine had a sound
+      driver, so it measured a `waveOut` with nothing behind it, not "the test
+      machine's driver" as this line said. **Measured with the Sound Blaster 16
+      driver on 3 October 2026**: in a race, `dkr_audio_out_write` rounds to
+      0.0% of the 16,909 samples in the executable (E08-S01). Negligible with
+      that driver; no poor driver tried.
 - [x] The equaliser's cost is measured, and keeping it is settled on that figure --
       **nothing, on this target**, read from the code on 3 October 2026: the
       equaliser, the master volume and the interface tones are applied in
