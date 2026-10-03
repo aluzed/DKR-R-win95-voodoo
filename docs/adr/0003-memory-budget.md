@@ -81,7 +81,7 @@ demand; it is a ROM segment address, not occupied RAM.
 | RT64 load queue | 4 slots | disappears with RT64 | 0 |
 | 3dfx stack | — | measured | 0.85 MiB |
 | Runtime, CRT, C++ heap | — | **reserve** | 4 MiB |
-| Host-side decoded textures | — | **reserve**, to be measured in E04-S07 | 8 MiB |
+| Host-side decoded textures | — | **reserve**; measured in E04-S07 on 3 October 2026: one 128 KiB conversion buffer, nothing kept | 8 MiB |
 | **Total** | | | **32.8 MiB** |
 | **Measured available** | | | **47.0 MiB** |
 | **Headroom** | | | **14.2 MiB (30 %)** |

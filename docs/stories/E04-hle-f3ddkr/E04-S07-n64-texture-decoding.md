@@ -127,9 +127,16 @@ conversions in 60 lists, 11.1 ms, 0.19 ms a list -- and almost never in play:
 other 303,705 bindings were served resident or reused. Against a 33.3 ms frame
 that is nothing in play and a fraction of a frame at a load.
 
-**Not done:** the comparison with the modern
-target's textures (no modern build here); and the host-side footprint of
-decoded textures against ADR 0003's 8 MiB reserve.
+**The host keeps no decoded texture.** A conversion writes into one
+256 x 256 buffer in the decoder's context (`texels` in `f3ddkr.h`, 128 KiB),
+and the backend downloads it to the TMU at once; neither `glide_backend.c` nor
+`tmu.c` allocates. An evicted texture is converted again when it returns --
+the run above has 952 downloads for 952 conversions and 440 evictions. ADR
+0003's 8 MiB reserve for host-side decoded textures is therefore 128 KiB in
+use; the TMU held at most 1,272 K of its 2,048 K, with no failure.
+
+**Not done:** the comparison with the modern target's textures (no modern
+build here), and a measured texel offset on a padded texture.
 
 ## Acceptance criteria
 
@@ -143,8 +150,9 @@ decoded textures against ADR 0003's 8 MiB reserve.
       palette; they stay refused and counted, which would show at once if a
       mod brought one.
 - [ ] Non-conforming dimensions are handled with no visible texel offset.
-- [ ] The cache avoids re-decoding in steady state, and its occupancy respects the
-      budget.
+- [x] The cache avoids re-decoding in steady state, and its occupancy respects the
+      budget -- 4 conversions in 810 lists of racing; on the host, 128 KiB
+      against 8 MiB reserved; on the TMU, a peak of 1,272 K of 2,048 K (above).
 - [x] The decoding cost is measured, at load time and during play -- 74 µs a
       texture, 11.1 ms over the heaviest load's 60 lists, 4 conversions in
       810 lists of racing (above).
