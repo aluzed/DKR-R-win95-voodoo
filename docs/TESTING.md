@@ -64,16 +64,18 @@ definitions and compiler flags. Then:
 copies them to `D:\PT`, runs them one after the other on the test machine
 through a batch file, and reports each one's exit code.
 
-Seven of the thirty are not built for the target, each for a stated reason
+Two of the thirty are not built for the target, each for a stated reason
 (`cmake/win95-target.cmake`, `DKR_PORTABLE_HOST_ONLY`):
 
 - **`SAVMGR`**: `SAVEMGR.EXE` already runs that suite on the target.
 - **`MAGRT`**: its harness creates and removes directories through
   `std::filesystem`, whose operations are Windows 95's empty wide functions
   (`docs/research/win95-filesystem.md`).
-- **`AMIX`, `CAMERA`, `HUD`, `MOTION`, `WIDE`: they do not compile for the
-  target, and that is the cross-target divergence this ticket asked to be able
-  to catch** -- found, not planted.
+
+Five more were held back at first -- **`AMIX`, `CAMERA`, `HUD`, `MOTION`,
+`WIDE` did not compile for the target, and that was the cross-target
+divergence this ticket asked to be able to catch**, found rather than planted.
+Fixed on 3 October 2026, below; they are built for the target since.
 
 ### The divergence: float constants in `long double`
 
@@ -97,9 +99,17 @@ Called with `4.0F / 3.0F`, the parameter holds the `float` 1.33333337 and the
 comparison's right side the `long double` 1.33333333..., so the target takes
 the second branch and returns 2.4e-6 where the host returns 0. A millionth of a
 HUD unit, invisible -- but every threshold comparison of a `float` against a
-constant expression in the game's C++ behaves this way on the target. Whether
-the target's C++ should be built with `-fexcess-precision=fast` instead is a
-decision for the whole game, to be measured, not taken in a test file.
+constant expression in the game's C++ behaves this way on the target.
+
+**Fixed where it mattered, without changing the game's arithmetic.** Under the
+standard rules a conversion rounds, so a constant cast to `float` compares the
+same on both targets: the thirteen assertions now compare with
+`static_cast<float>(...)`, and `hud_layout_policy.hpp` names its boundary
+`kAuthoredAspect`, a `float` constant, so a 4:3 viewport's gutter is 0 on the
+target too. The `static_assert`s being evaluated by each target's own
+compiler, the target build compiling is itself the check. Switching the
+target's C++ to `-fexcess-precision=fast` was not done: it trades a rule the
+code can follow for one the optimiser decides.
 
 **How far it reaches, surveyed on 3 October 2026.** The 122 files of
 `src/game` that `DKRR.EXE` compiles or includes hold 29 comparisons of a

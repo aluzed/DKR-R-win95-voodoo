@@ -213,18 +213,24 @@ constexpr bool right_anchor(Anchor anchor) {
 // Returns authored 320-wide coordinate units. A quadrant is authored as a
 // 160-wide 4:3 viewport. Expanding it to the host aspect creates equal side
 // gutters; HUD anchored to an outside edge must move by precisely that gutter.
+// The 4:3 boundary is rounded to float before the comparison: compiled with
+// x87 excess precision (the Windows 95 target), `4.0F / 3.0F` is evaluated as
+// a long double, a 4:3 viewport's float aspect compares above it, and the
+// gutter came out 2.4e-6 where it is 0 (docs/TESTING.md, 3 October 2026).
+inline constexpr float kAuthoredAspect = 4.0F / 3.0F;
+
 constexpr float split_gutter_authored(float viewport_aspect) {
-    return viewport_aspect <= (4.0F / 3.0F)
+    return viewport_aspect <= kAuthoredAspect
         ? 0.0F
-        : 80.0F * (viewport_aspect / (4.0F / 3.0F) - 1.0F);
+        : 80.0F * (viewport_aspect / kAuthoredAspect - 1.0F);
 }
 
 // Full-screen authored space is 320 units wide, so each outside gutter is
 // half of the additional width introduced by the host aspect ratio.
 constexpr float fullscreen_gutter_authored(float viewport_aspect) {
-    return viewport_aspect <= (4.0F / 3.0F)
+    return viewport_aspect <= kAuthoredAspect
         ? 0.0F
-        : 160.0F * (viewport_aspect / (4.0F / 3.0F) - 1.0F);
+        : 160.0F * (viewport_aspect / kAuthoredAspect - 1.0F);
 }
 
 // Fit-to-viewport HUD coordinates extend DKR's authored 320-wide space by the

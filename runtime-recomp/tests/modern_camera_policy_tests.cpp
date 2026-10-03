@@ -76,9 +76,9 @@ static_assert(object_view_distance_multiplier(3, 2, 1, 4, 1) == 4);
 static_assert(object_view_distance_multiplier(59, 2, 1, 1, 5) == 5);
 static_assert(object_view_distance_multiplier(4, 2, 4, 4, 5) == 2);
 
-static_assert(active_viewport_aspect(16.0F / 9.0F, 0) == 16.0F / 9.0F);
-static_assert(active_viewport_aspect(16.0F / 9.0F, 1) == 32.0F / 9.0F);
-static_assert(active_viewport_aspect(16.0F / 9.0F, 3) == 16.0F / 9.0F);
+static_assert(active_viewport_aspect(16.0F / 9.0F, 0) == static_cast<float>(16.0F / 9.0F));
+static_assert(active_viewport_aspect(16.0F / 9.0F, 1) == static_cast<float>(32.0F / 9.0F));
+static_assert(active_viewport_aspect(16.0F / 9.0F, 3) == static_cast<float>(16.0F / 9.0F));
 static_assert(frustum_horizontal_scale(PresentationProfile::Accurate, true, true,
                                        32.0F / 9.0F, 0, 5) == 1.0F);
 static_assert(frustum_horizontal_scale(PresentationProfile::Modern, false, true,

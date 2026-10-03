@@ -17,11 +17,11 @@ int main() {
     static_assert(blend_gyro_steering(0.75F, 0.75F) == 1.0F);
     static_assert(blend_gyro_steering(-0.75F, -0.75F) == -1.0F);
     static_assert(gyro_sample_delta_seconds(20000ULL, 10000ULL,
-                                            0.5F, true) == 0.01F);
+                                            0.5F, true) == static_cast<float>(0.01F));
     static_assert(gyro_sample_delta_seconds(10000ULL, 10000ULL,
                                             0.02F, true) == 0.0F);
     static_assert(gyro_sample_delta_seconds(0ULL, 0ULL,
-                                            0.02F, true) == 0.02F);
+                                            0.02F, true) == static_cast<float>(0.02F));
     static_assert(gyro_sample_delta_seconds(20000ULL, 10000ULL,
                                             0.02F, false) == 0.0F);
 

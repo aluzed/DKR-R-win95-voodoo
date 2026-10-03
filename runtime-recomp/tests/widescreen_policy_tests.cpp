@@ -8,7 +8,7 @@ using namespace dkr::runtime::enhancements;
 
 int main() {
     static_assert(sky_vertical_cover_scale(1.0F) == 1.0F);
-    static_assert(sky_vertical_cover_scale(4.0F / 3.0F) == 4.0F / 3.0F);
+    static_assert(sky_vertical_cover_scale(4.0F / 3.0F) == static_cast<float>(4.0F / 3.0F));
     static_assert(!is_split_screen_sky_layout(0));
     static_assert(is_split_screen_sky_layout(1));
     static_assert(is_split_screen_sky_layout(2));
@@ -76,11 +76,11 @@ int main() {
     static_assert(split_sky_vertical_cover_scale(4.0F / 3.0F, 0) ==
                   1.0F);
     static_assert(split_sky_horizontal_cover_scale(4.0F / 3.0F, 1) ==
-                  8.0F / 3.0F);
+                  static_cast<float>(8.0F / 3.0F));
     static_assert(split_sky_horizontal_cover_scale(4.0F / 3.0F, 2) ==
-                  4.0F / 3.0F);
+                  static_cast<float>(4.0F / 3.0F));
     static_assert(split_sky_horizontal_cover_scale(4.0F / 3.0F, 3) ==
-                  4.0F / 3.0F);
+                  static_cast<float>(4.0F / 3.0F));
 
     assert(std::fabs(sky_vertical_cover_scale(7.0F / 4.0F) -
                      7.0F / 4.0F) < 0.0001F);

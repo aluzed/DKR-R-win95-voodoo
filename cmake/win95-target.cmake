@@ -1348,25 +1348,23 @@ dkr_win95_verify(DKRWin95Game)
 # both shows is the point of the exercise: the same assertions over the same
 # code, under the target's 387 arithmetic, its CRT and its 32-bit `size_t`.
 #
-# **Five of them do not compile for the target, and that is a finding.** Their
-# `static_assert`s compare a function's `float` result with a `float` constant
-# expression -- `advance_mix_volume(1.0F, 0.0F) == 0.92F`. With `-mfpmath=387`
-# this compiler gives C++ the standard excess-precision rules: the constant is
-# evaluated as a `long double`, the result was rounded to `float`, and
-# 0.920000017 is not 0.92. One goes further than a test's comparison:
-# `split_gutter_authored(4.0F / 3.0F)` compares its `float` parameter against
-# `4.0F / 3.0F` held in `long double`, takes the other branch and returns
-# 2.4e-6 where the host returns 0 -- a real divergence in code the game
-# compiles, harmless in size (a millionth of a HUD unit). Recorded in
-# `docs/TESTING.md`; the suites run on the host, not here, until the
-# floating-point semantics of the target's C++ are decided.
+# **Five of them did not compile for the target at first, and that was a
+# finding.** Their `static_assert`s compared a function's `float` result with a
+# `float` constant expression -- `advance_mix_volume(1.0F, 0.0F) == 0.92F`.
+# With `-mfpmath=387` this compiler gives C++ the standard excess-precision
+# rules: the constant is evaluated as a `long double`, the result was rounded
+# to `float`, and 0.920000017 is not 0.92. One reached the code under test:
+# `split_gutter_authored(4.0F / 3.0F)` returned 2.4e-6 where the host returns
+# 0. Since 3 October 2026 the tests compare with `static_cast<float>(...)`, and
+# the HUD policy names its 4:3 boundary as a `float` constant, so both targets
+# agree. `docs/TESTING.md`.
 #
-# A sixth, `MAGRT`, is held back for its harness rather than its code: it makes
+# `MAGRT` is held back for its harness rather than its code: it makes
 # and removes directories through `std::filesystem` directly, whose operations
 # are Windows 95's empty wide functions here (`docs/research/win95-filesystem.md`).
 # `SAVMGR` is not built here because `SAVEMGR.EXE` above already runs the same
 # suite on the target, with the file layer it is written against.
-set(DKR_PORTABLE_HOST_ONLY AMIX CAMERA HUD MOTION WIDE MAGRT SAVMGR)
+set(DKR_PORTABLE_HOST_ONLY MAGRT SAVMGR)
 file(STRINGS "${DKRPORT_ROOT}/tools/tests/portable-suites.txt" DKR_PORTABLE_SUITES
      REGEX "^[A-Z]")
 foreach(line IN LISTS DKR_PORTABLE_SUITES)

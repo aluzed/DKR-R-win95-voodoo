@@ -67,9 +67,10 @@ scripts.
       modern build only. `docs/TESTING.md`.
 - [~] The portable-logic tests pass on both targets -- **all 30 on the host**
       (`tools/tests/run-portable-tests.sh`, 25 s), and **all 23 built for the target
-      pass on the test machine** (3 October 2026, `Run-Target-Tests-VM.sh`). Seven
-      are not built for the target, each for a reason written beside the list in
-      `cmake/win95-target.cmake` -- five of them because of the divergence below.
+      pass on the test machine** (3 October 2026, `Run-Target-Tests-VM.sh`). Five
+      more are built for the target since the divergence below was fixed (their
+      run on the machine is still to be made); two are not built there, each for a
+      reason written beside the list in `cmake/win95-target.cmake`.
 - [x] The platform tests E02 asks for are written and pass on the target -- all five,
       `THREADS`, `CLOCKT`, `FILEIOT`, `SAVECDC` and `SAVEMGR`, run by the runner on
       3 October 2026. `SAVEMGR` first looked like a hang: it was a page fault, the
@@ -89,7 +90,10 @@ scripts.
       C++ standard excess precision and a `float` constant expression is
       evaluated in `long double` (`0.920000017 == 0.92` is false). One is in the
       code under test: `split_gutter_authored(4.0F / 3.0F)` returns 2.4e-6 on the
-      target and 0 on the host. `docs/TESTING.md`.
+      target and 0 on the host. `docs/TESTING.md`. Fixed the same day: the tests
+      compare with `static_cast<float>`, the HUD policy's boundary is a `float`
+      constant, and the five compile -- and their compile-time assertions hold --
+      under the target's compiler.
 - [~] The tests are blocking in the build scripts -- the platform tests and the
       thirty portable suites block `scripts/Package-Win95.sh`; the target run
       needs the test machine and is not in it.
