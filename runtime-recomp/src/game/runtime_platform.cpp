@@ -335,7 +335,7 @@ bool IsSteamDeckHost() {
     for (const std::filesystem::path path : {
              std::filesystem::path("/sys/class/dmi/id/board_vendor"),
              std::filesystem::path("/sys/class/dmi/id/product_name")}) {
-        std::ifstream input(path);
+        std::ifstream input(path);  // DKR-WIN95-STREAM-OK: Linux /sys branch
         std::string text;
         std::getline(input, text);
         text = LowerText(text);
@@ -1327,7 +1327,7 @@ void dkr::runtime::platform::configure_input(
     g_user_mapping_path = config_directory / "controllers" /
                           "gamecontrollerdb.txt";
     InputBackend requested = InputBackend::Automatic;
-    std::ifstream settings(config_directory / "dkr-port-settings.ini");
+    std::ifstream settings(config_directory / "dkr-port-settings.ini");  // DKR-WIN95-STREAM-OK: RT64 branch
     std::string line;
     while (std::getline(settings, line)) {
         constexpr const char* kPrefix = "input_backend=";

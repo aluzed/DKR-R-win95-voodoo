@@ -213,7 +213,7 @@ std::string WindowsDriveKind(const std::filesystem::path& path) {
 #else
 std::string ReadFirstMatchingLine(const std::filesystem::path& path,
                                   const std::string& prefix) {
-    std::ifstream input(path);
+    std::ifstream input(path);  // DKR-WIN95-STREAM-OK: non-Windows branch
     std::string line;
     while (std::getline(input, line)) {
         if (line.rfind(prefix, 0) == 0) {
@@ -235,11 +235,11 @@ std::string LinuxGpuName() {
         if (name.rfind("card", 0) != 0 || name.find('-') != std::string::npos)
             continue;
         const auto device = entry.path() / "device";
-        std::ifstream product(device / "product_name");
+        std::ifstream product(device / "product_name");  // DKR-WIN95-STREAM-OK: Linux /sys branch
         std::string product_name;
         std::getline(product, product_name);
         if (!Trim(product_name).empty()) return Trim(product_name);
-        std::ifstream uevent(device / "uevent");
+        std::ifstream uevent(device / "uevent");  // DKR-WIN95-STREAM-OK: Linux /sys branch
         std::string line;
         std::string driver;
         while (std::getline(uevent, line)) {

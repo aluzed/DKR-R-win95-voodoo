@@ -30,8 +30,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|joystick|settings|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
-  *) echo "usage: $0 [all|tick64|joystick|settings|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
+  all|tick64|joystick|settings|streams|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
+  *) echo "usage: $0 [all|tick64|joystick|settings|streams|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -81,6 +81,12 @@ if [[ "$suite" == "all" || "$suite" == "settings" ]]; then
   fi
   (( bad == 0 )) || exit 1
   echo "  ok    the settings lists match the code ($(echo "$code_all" | wc -l) variables)"
+fi
+
+# --- E09-S03: no stream opened on a path in the Windows 95 build -------------
+
+if [[ "$suite" == "all" || "$suite" == "streams" ]]; then
+  python3 "$HERE/check_path_streams.py"
 fi
 
 # --- E06-S02: from a joystick's reading to an N64 controller's ---------------
