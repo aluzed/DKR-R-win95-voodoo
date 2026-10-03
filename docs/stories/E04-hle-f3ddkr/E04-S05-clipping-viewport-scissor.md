@@ -106,10 +106,15 @@ primitives the card can rasterise.
       and 48,303 emitted. `replay` prints the split count beside the others. The
       cost: clipping takes 0.41 ms a display list on the target after E08-S03's
       changes, about 1.2% of a 34 ms frame.
-- [~] No primitive reaches the backend out of domain — the off-screen rejection exists
-      and discards a triangle only if **all three** vertices are on the same side.
-      **No assertion in a development build**: there is not yet a complete path from
-      the decoder to the backend on which to place it.
+- [x] No primitive reaches the backend out of domain -- the off-screen rejection exists
+      and discards a triangle only if **all three** vertices are on the same side, and
+      since 3 October 2026 a development build checks every emitted triangle:
+      `DKR_CHECK_DOMAIN` (`build/render-tools/replay-domain`) counts a corner with a
+      non-finite coordinate, one outside the Voodoo's 12.4 fixed-point range (-2048 to
+      2047) or a non-positive `1/w`. **None in the 66 captures**. A first version held
+      the corners to the guard band itself and found 219: interpolation at the band's
+      edge overshoots it by one to three pixels, and in a split screen the band is the
+      viewport's, not the screen's -- neither out of the card's domain.
 
 ## Risks
 

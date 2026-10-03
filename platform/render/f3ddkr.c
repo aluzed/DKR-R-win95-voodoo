@@ -777,6 +777,31 @@ static void cmd_triangle(dkr_f3d_context *c, unsigned int w0, unsigned int w1)
                 c->state.clipped_away++;
                 continue;
             }
+#if defined(DKR_CHECK_DOMAIN)
+            /* E04-S05: nothing reaches the backend out of its domain -- every
+               coordinate finite, inside what the Voodoo can represent (its
+               vertex coordinates are 12.4 fixed point: -2048 to 2047), and
+               `1/w` positive. Development builds only (the replay built with
+               -DDKR_CHECK_DOMAIN); counted, so a corpus run reports every one.
+               Not the guard band: that is relative to each viewport, and
+               interpolation at its edge overshoots it by a pixel or three. */
+            {
+                int corner;
+                for (corner = 0; corner < 3; corner++) {
+                    const dkr_render_vertex *p = &v[corner];
+                    if (!(p->x == p->x) || !(p->y == p->y) || !(p->oow == p->oow) ||
+                        p->x < -2048.0f || p->x > 2047.0f ||
+                        p->y < -2048.0f || p->y > 2047.0f || !(p->oow > 0.0f)) {
+                        if (c->state.domain_violations < 6u) {
+                            fprintf(stderr, "[domain] x=%.1f y=%.1f oow=%g (corner %d)\n",
+                                    (double)p->x, (double)p->y, (double)p->oow, corner);
+                        }
+                        c->state.domain_violations++;
+                        break;
+                    }
+                }
+            }
+#endif
             TRI_MARK(7);
             apply_state(c);
             TRI_MARK(4);

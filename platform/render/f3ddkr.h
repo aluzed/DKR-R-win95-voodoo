@@ -97,6 +97,7 @@ typedef struct {
     unsigned long culled;
     unsigned long clipped_away;
     unsigned long clip_split;      /* triangles that became two */
+    unsigned long domain_violations; /* DKR_CHECK_DOMAIN builds: emitted out of domain */
 
     /* **What the transformation was spent on** (E08-S03). A vertex is
        transformed when it is loaded, before anything knows whether a triangle

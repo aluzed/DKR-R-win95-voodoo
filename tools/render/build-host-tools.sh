@@ -49,6 +49,12 @@ FLAGS=(-O2 -Wall -Wextra -Werror -I"$ROOT/platform")
 say "replay"
 "$CC" "${FLAGS[@]}" -o "$OUT/replay" "$HERE/replay.c" "${CHAIN[@]}" -lm
 
+# The same replay with E04-S05's domain check compiled into the decoder: it
+# reports every triangle that reaches the backend with a coordinate the Voodoo
+# cannot represent or a non-positive 1/w ("out of domain: N").
+say "replay-domain"
+"$CC" "${FLAGS[@]}" -DDKR_CHECK_DOMAIN -o "$OUT/replay-domain" "$HERE/replay.c" "${CHAIN[@]}" -lm
+
 say "compare"
 "$CC" "${FLAGS[@]}" -o "$OUT/compare" "$HERE/compare.c" \
       "$ROOT/platform/render/imagecmp.c" -lm
