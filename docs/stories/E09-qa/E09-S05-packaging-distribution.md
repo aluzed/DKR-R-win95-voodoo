@@ -75,7 +75,12 @@ copy; the script proves the shipped `.text` identical to it.
 - [ ] The package installs and launches on a pristine Windows 95 machine. *On the test
       machine*: unpacked into a new folder with a ROM beside it, it wrote its `DKRR.INI`,
       found the ROM and ran (1 October 2026). That machine is the development VM, not a
-      pristine one.
+      pristine one. *Again on 3 October*, today's package unpacked into a new
+      `C:\GAMES\DKR` on the system disk with only the ROM added, launched with no
+      argument: it wrote its commented `DKRR.INI` with `Rom=C:\GAMES\DKR\DKR.Z64`,
+      found the ROM beside it, showed the first-start ROM-check notice, opened the
+      sound card and the Voodoo, and ran the attract sequence; its log and its
+      runtime data stayed in its own folder.
 - [x] No game asset is included, verified by `scan_for_game_assets.py` (with `--allow DKRR.EXE`, the one file past its 5 MiB bound, still checked for ROM headers) and by name for ROMs and `GLIDE2X.DLL`.
 - [ ] The licences are complete and accurate, Glide sources included. *Shipped*: the
       port's MIT licence, the GPL-3.0 that N64ModernRuntime brings to the executable, and
