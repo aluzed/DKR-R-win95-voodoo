@@ -134,6 +134,19 @@ for every measurement in E08, and the criterion asking for DirectSound with a
       (`DKR_NO_AUDIO_OUT=1`) it ran 660 display lists in silence on the test machine
       (1 October 2026).
 
+## Silent starts, found and fixed (3 October 2026)
+
+Five starts in twenty-five between 1 and 3 October ran **with no sound at all**:
+the game mixed its first audio task and never another. DKR's scheduler gives an
+RSP task up after ten retraces (`__scHandleRetrace` in the decompilation's
+`sched.c`) and drops its completion when it arrives; the audio manager then
+waits for that completion for ever. The first audio task had grown from 13-26
+ms to 44-329 ms because the card was being opened beside the game's boot since
+1 October (`docs/research/win95-startup.md`), its driver taking the one
+processor. The card is now opened at the lowest thread priority: six starts in
+a row, the first task 18 ms each time and the audio running. The log line that
+says it happened is `[boot][scheduler] dropped late SP completion`.
+
 ## Risks
 
 On this class of machine, the audio dropout will be the first visible symptom of an
