@@ -1,0 +1,45 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Log each step of the runtime shutdown
+
+On the test machine, about half the stops asked with Alt+F4 never return
+from recomp::start once the renderer has closed (E02-S02, 3 October 2026).
+Each join after the graphics shutdown now logs a line and commits the log,
+so a stop that hangs says which thread it is waiting for; the commit goes
+through the port's weak dkr_diag_commit, as in events.cpp. First runs: the
+game thread is joined before the renderer closes, so the hang lies in
+join_event_threads or one of the joins after it.
+---
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -26,6 +26,14 @@
+ #include "recompiler/live_recompiler.h"
+ #include "librecomp/fileio.hpp"
+ 
++// Each step of the runtime's shutdown, logged and committed, so that a stop
++// that never returns says which join it is in (E02-S02).
++extern "C" void dkr_diag_commit(void) __attribute__((weak));
++static void shutdown_step(const char* what) {
++    std::fprintf(stderr, "[boot][stop] %s\n", what);
++    if (dkr_diag_commit) { dkr_diag_commit(); }
++}
++
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+ #    include <Windows.h>
+@@ -909,10 +917,15 @@
+     graphics_shutdown_ready.signal();
+ 
+     game_thread.join();
++    shutdown_step("game thread joined");
+     ultramodern::join_event_threads();
++    shutdown_step("event threads joined");
+     ultramodern::join_timer_thread();
++    shutdown_step("timer thread joined");
+     ultramodern::join_thread_cleaner_thread();
++    shutdown_step("thread cleaner joined");
+     ultramodern::join_saving_thread();
++    shutdown_step("saving thread joined");
+ 
+     game_status.store(GameStatus::None);
+     game_status.notify_all();

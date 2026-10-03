@@ -257,6 +257,10 @@
         {
           "path": "patches/n64-modern-runtime/0063-rsp-inverse-square-root-table-without-counting.patch",
           "sha256": "b82afeda896f68ac3c71f29bbf9fbdf03fcba4b689e1dcb9ad6d2593b9ce16f3"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0064-log-each-step-of-the-runtime-shutdown.patch",
+          "sha256": "fb2fa204e583c6a62de3eafd2cfaa3b198779c6ec170c267028babdab6ed30ce"
         }
       ]
     },
