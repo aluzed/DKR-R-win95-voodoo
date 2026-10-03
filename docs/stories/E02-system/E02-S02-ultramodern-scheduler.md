@@ -86,6 +86,23 @@ defect, not an improvement.
       comparison with the modern host waits for a modern build on this machine.
 - [ ] The two targets' scheduling traces are compared and agree.
 - [ ] The shutdown paths are rechecked in the light of the new wake-up semantics.
+      **Rechecked on 3 October 2026, and they do not always finish.** Of the
+      saved logs of 173 runs on the test machine that asked to stop
+      (`Alt+F4`), 141 end on `[boot] runtime stopped cleanly` and 32 end on
+      `[gfx] Glide closed`. The measuring script stops the machine 10 s after
+      `Alt+F4`, about 3 s of guest time, so the short ones proved nothing by
+      themselves: run again with 45 to 60 s left (`DKR_MEASURE_QUIT_WAIT`)
+      and the log committed at each step of the shutdown, **4 runs of 8 still
+      stop after `Glide closed`**, the step that follows -- the runtime
+      thread returning -- never logged. The hang is therefore in
+      `recomp::start` after the graphics thread has shut its renderer down:
+      `game_thread.join()`, then `join_event_threads()` (VI, RSP task),
+      `join_timer_thread()`, `join_thread_cleaner_thread()` or
+      `join_saving_thread()`. Which one is the next step; patches 0004 and
+      0005, which wake the game thread and stop the scheduler cascade at
+      quit, are where to look first. Meanwhile the display is given back --
+      Glide is closed before the hang -- and the save is written as it goes
+      (E02-S05), so a player loses nothing but has to end the process.
 
 ## State as of 2026-08-13 — the substitution is done, execution stays blocked
 

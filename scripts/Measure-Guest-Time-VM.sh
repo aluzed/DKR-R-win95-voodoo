@@ -129,7 +129,10 @@ for _ in $(seq 1 $(( (seconds + 9) / 10 ))); do sleep 10; done
 
 say "quitting"
 "$drive" key alt+F4 >/dev/null 2>&1 || true
-sleep 10
+# DKR_MEASURE_QUIT_WAIT: host seconds left to the shutdown before the machine is
+# stopped (default 10). Guest time runs at about a third of host time under
+# load, so 10 s is about 3 s for the game to close.
+sleep "${DKR_MEASURE_QUIT_WAIT:-10}"
 "$drive" stop >/dev/null 2>&1 || true
 "$push" --clear-dirty >/dev/null 2>&1 || true
 

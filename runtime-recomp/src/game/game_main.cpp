@@ -1841,7 +1841,19 @@ int DkrMain(int argc, char** argv) {
             // frame-budget.md): no difference in the frame or in spare time.
             dkr::sync::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+#if defined(DKR_TARGET_WIN95)
+        // Milestones of the shutdown, so that a log ending after "Glide closed"
+        // says which step did not return (E02-S02). Each is committed: a
+        // process that hangs is killed with the machine, and an uncommitted
+        // tail is lost (see diagnostic_log.hpp).
+        std::fprintf(stderr, "[boot] runtime finished; joining its thread\n");
+        dkr_diag_commit();
+#endif
         runtime_thread.join();
+#if defined(DKR_TARGET_WIN95)
+        std::fprintf(stderr, "[boot] runtime thread joined\n");
+        dkr_diag_commit();
+#endif
 #if defined(DKR_TARGET_WIN95)
         // After the join and before any return: every exit from here -- clean
         // stop, watchdog, a runtime exception -- passes through this point, and

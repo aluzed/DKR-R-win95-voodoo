@@ -2164,6 +2164,7 @@ void dkr::runtime::GlideRenderer::shutdown() {
         // context leaves the monitor on the 3dfx output, black screen, with no
         // error message visible at all.
         std::fprintf(stderr, "[gfx] Glide closed\n");
+        dkr_diag_commit();
     }
 #endif
 }
