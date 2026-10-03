@@ -144,6 +144,17 @@ the message loop, moved in **one** of its 88,767 samples -- it is asleep in the
 same place every time it is looked at. Neither is a measurable share of the
 processor; a zone around them would cost more than they do.
 
+**With a sound card playing, 3 October 2026.** That race ran before the test
+machine had a sound driver, so `waveOut` had no device behind it. The same
+check with the Sound Blaster 16 driver installed (E06-S03), a race driven to
+the start line (`scripts/Drive-To-Race.sh`) and sampled from eight seconds
+in: of the 22,266 samples where a thread had moved, `dkr_audio_out_write`
+rounds to 0.0% of the 16,909 in the executable, and the main thread is not
+among the three that hold nearly all of them -- the graphics thread (7,090),
+the game thread (7,291) and the audio thread (6,107, the microcode's commands
+at the top: RESAMPLE 17%, ENVMIXER 13%). A real device changes nothing in
+the conclusion.
+
 ## Acceptance criteria
 
 - [x] The counters cover every item in the table: a zone for each, except audio
