@@ -196,14 +196,22 @@ installable and quick to reset.
 
 ## Acceptance criteria
 
-- [ ] A Windows 95 machine with an emulated 3dfx starts and runs a Glide demonstration.
-- [ ] The reference state restores in a few seconds.
-- [ ] File transfer is automated.
-- [ ] One command builds, transfers and launches.
-- [ ] At least three distinct configurations are available.
+- [x] A Windows 95 machine with an emulated 3dfx starts and runs a Glide demonstration.
+- [x] The reference state restores in a few seconds.
+- [x] File transfer is automated.
+- [ ] One command builds, transfers and launches. *Two*: `Build-Win95.sh`, then
+      `scripts/Measure-Guest-Time-VM.sh` or `tools/tests/Run-Target-Tests-VM.sh`,
+      which transfer, launch and bring the logs back.
+- [x] At least three distinct configurations are available.
 - [ ] `docs/TEST-ENVIRONMENT.md` allows a third party to rebuild the environment.
-- [ ] The limits of the Voodoo emulation are documented, in particular what cannot be
+      *Written and scripted* (`Setup-Win95-TestVM.sh`), but no third party has
+      followed it.
+- [x] The limits of the Voodoo emulation are documented, in particular what cannot be
       validated there.
+
+Ticked on 3 October 2026 against the state above and `docs/TEST-ENVIRONMENT.md`
+("Known limits"); the three configurations are the Voodoo 2 machine and its
+Voodoo 1 and slow-machine variants.
 
 ## Risks
 
