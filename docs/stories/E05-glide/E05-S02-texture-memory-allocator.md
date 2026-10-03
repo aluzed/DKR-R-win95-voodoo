@@ -69,7 +69,14 @@ mid-race.
 - [~] The number of textures, the volume and the reuse pattern are measured **for a
       race**, 17 September 2026 — the stated blocker, an absent ROM, has not been
       true since 15 August, and a race is now reachable by a reproducible route. Not
-      yet on every level. See the residency measurement below.
+      yet on every level. See the residency measurement below. **Wider, 3 October
+      2026**, from the logs of longer runs: 18.6 minutes of the attract sequence,
+      which cycles through its tracks -- 11,462 uploads against 4.14 million textures
+      served resident and 92,418 reused, 99.7%, a peak of 1,087 K of 2,048 K, no
+      failure, and 10,920 evictions, the turnover between scenes; a two-player race
+      peaks at 1,241 K, the adventure hub at 1,168 K. (The TMU line's own `hits`
+      counter reads 0 throughout: it counts the allocator's lookups, not residency,
+      and is not the figure to read.)
 - [x] The allocator respects the TMU's alignment and granularity — 8 bytes, surveyed
       and not assumed: fourteen sizes out of fifteen cost exactly the computation, and
       the fifteenth (a 1×1 texture, 8 bytes for 2 useful) gives the granularity. The
@@ -102,7 +109,9 @@ mid-race.
       the levels that *do not* still needs each of them driven, which is a corpus
       question rather than an allocator one. The allocator returns `DKR_TMU_NONE`
       and counts the failure rather than degrading silently, so the day one does not
-      fit, the report will say so rather than show the wrong texture.
+      fit, the report will say so rather than show the wrong texture. Since 3 October
+      four more contexts measured -- the attract sequence's tracks, two players, the
+      hub -- the highest peak 1,270 K, with `fail=0` in every one.
 
 > **Correction of 15 August 2026**: this criterion had been marked blocked by the absence of the ROM. The ROM was present — see `docs/research/win95-rom-available.md`. The blockage no longer exists; what remains to be done remains so for other reasons, or simply has not been done yet.
 
