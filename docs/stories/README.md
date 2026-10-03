@@ -25,7 +25,7 @@ rest of the stack is specific to modern systems.
 | Layer | Fate |
 |---|---|
 | N64Recomp output (`RecompiledFuncs`) | **kept** — portable C manipulating integers |
-| Recompiled audio microcode (`aspMain`) | **kept**, vector emulation rewritten without SSE (E03) |
+| Recompiled audio microcode (`aspMain`) | **kept as a fallback and an oracle** — too slow on the target's scalar path (E00-S04); a high-level mixer replaces it by default (E03-S03) |
 | F3DDKR decoder (`f3ddkr_rt64.cpp`) | **extracted** from RT64, rested on a clean interface (E04) |
 | Save codec, Controller Pak, audio policy | **kept** — the project's portable code |
 | `ultramodern` / `librecomp` | **patched** — system primitives substituted (E02) |

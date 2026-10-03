@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E03 — RSP on x86 without SSE |
-| **Status** | TODO |
+| **Status** | NOT PURSUED — superseded by E03-S03 |
 | **Priority** | P0 |
 | **Estimate** | L |
 | **Depends on** | E00-S04, E01-S05 |
@@ -23,6 +23,12 @@ ticket was to make possible, and the result takes away most of its reason to exi
 What survives: the scalar path is
 [E03-S03](E03-S03-high-level-mixer-fallback.md)'s **oracle**, and it already works.
 This ticket ought to be closed, or reduced to validating that oracle.
+
+**Closed as not pursued, 3 October 2026.** E03-S03's high-level mixer is the
+default on Windows 95; the scalar path ships as its selectable fallback
+(`DKR_AUDIO_MICROCODE=1`) and as the oracle it is checked against
+(`docs/AUDIO-HLE.md`). The criteria below are left unchecked: none of them
+was carried out as written, and none needs to be.
 
 ## Context
 

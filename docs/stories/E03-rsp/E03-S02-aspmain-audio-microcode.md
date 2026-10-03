@@ -3,11 +3,24 @@
 | | |
 |---|---|
 | **Epic** | E03 — RSP on x86 without SSE |
-| **Status** | TODO |
+| **Status** | NOT PURSUED — measured, then superseded by E03-S03 |
 | **Priority** | P1 |
 | **Estimate** | M |
 | **Depends on** | E03-S01, E02-S02 |
 | **Blocks** | E06-S03, E03-S03 |
+
+## Where it ended (3 October 2026)
+
+The measurement this ticket asked for was made, and it decided against the
+path: on the target, after the strict-aliasing fix, **26.7 ms per task**,
+695 ms of processor per second of sound -- 70% of the processor for real-time
+sound (`docs/research/rsp-scalar-aliasing.md`, 1,090 tasks in exclusive mode;
+a mean, not the median and 99th percentile asked below). That figure triggered
+E03-S03, whose high-level mixer is bit-exact against this microcode and is the
+default on Windows 95. The microcode stays in `DKRR.EXE`, selectable with
+`DKR_AUDIO_MICROCODE=1`, and runs on the host as the mixer's oracle
+(`tools/audio/replay_hle`, `replay_aspmain`). The criteria below are left as
+they were: the work stopped at the figure that made it unnecessary.
 
 ## Context
 
