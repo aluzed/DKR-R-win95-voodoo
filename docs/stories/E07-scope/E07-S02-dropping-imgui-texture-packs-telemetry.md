@@ -106,8 +106,15 @@ To remove the subsystems that are moot on this target, preserving what keeps a u
 - [x] The save codec and the Controller Pak logic are kept and working --
       `SAVECDC.EXE` and `SAVEMGR.EXE` pass on the test machine (3 October 2026), and
       an adventure saved, cut by a power-off and reloaded (E02-S05).
-- [ ] Telemetry collection is kept, its display replaced.
-- [ ] The decision on the magic codes is taken and applied.
+- [x] Telemetry collection is kept, its display replaced -- `runtime_telemetry.cpp`
+      is in the Windows 95 game; its ImGui display is not, and what replaces it is
+      the on-screen display (`OSD=1`: frame period, render time, audio underruns)
+      and the periodic `[gfx]`, `[audio]` and `[mq]` reports in the log.
+- [x] The decision on the magic codes is taken and applied -- **kept**, step 6's
+      condition being met: `runtime_magic_codes.cpp` depends on no ImGui symbol, its
+      only state is a file under `dkr-runtime-data`, read through
+      `dkr::fs::stream_name` since 3 October, and its policy suite (`PTMAGIC.EXE`)
+      passes on the test machine.
 - [x] The test suites are sorted out accordingly -- E09-S03 sorted the seventy: the
       thirty that test code the Windows 95 game contains run on both targets, the
       texture-pack, launcher and ImGui-side ones stay with the modern build
