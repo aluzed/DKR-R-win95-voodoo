@@ -88,9 +88,11 @@ the target.
       `fb_update` reads.
 - [x] The regularity is measured as a distribution, not as a mean -- the timing
       export's periods binned in retraces (`racewin.py`), a one-player race at
-      Ancient Lake, 2 October 2026: 2% at 60 fps, **74% at 30**, 24% at 20, under
-      1% slower; mean 37.2 ms, median 33.5, 99th percentile 51.5. A two-player
-      race: 77%, 14% and 9% at 15 fps (`docs/research/win95-two-players.md`).
+      Ancient Lake with its audio, 2 October 2026: 1% at 60 fps, **78% at 30**,
+      19% at 20, 1% at 15; mean 36.7 ms, median 33.5, 99th percentile 57.4. A
+      two-player race: 75%, 14% and 9% at 15 fps
+      (`docs/research/win95-two-players.md`). *Corrected 3 October*: the figures
+      first written here came from runs whose audio had stopped at the start.
 - [x] The recommended display mode is documented -- **it is not left to the player**:
       `glide.c` opens the card at 640 x 480 and asks `grSstWinOpen` for
       `GR_REFRESH_60Hz`, the ticket's ideal case, two scans per game frame at 30 fps.
