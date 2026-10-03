@@ -74,9 +74,17 @@ what that costs, and to make the result loadable within E00-S06's budget.
 - [x] Compilation time, peak memory and section sizes are measured and recorded.
 - [x] The link produces a 32-bit PE that passes both guard rails — 4.23 MB, no
       instruction outside the Pentium II set, loadable under Windows 95.
-- [ ] The RDRAM reservation is verified under Windows 95, with its failure behaviour.
-- [ ] The size obtained is set against E00-S06's budget, and the discrepancy is
-      reported.
+- [x] The RDRAM reservation is verified under Windows 95, with its failure behaviour.
+      *Ticked 3 October 2026*: the failure was seen first -- a zero-size
+      `VirtualAlloc` stopping the game on "Failed to allocate memory" before
+      its first frame (patch 0017, above); the corrected reservation, 4 MiB
+      committed in 8 MiB reserved (ADR 0003), has succeeded at every start
+      since, the 32 MiB machine included (E08-S04).
+- [x] The size obtained is set against E00-S06's budget, and the discrepancy is
+      reported. *Ticked 3 October 2026*: the code, 3.81 MiB of `.text` against
+      the 3.85 MiB estimate (above); the whole game, about 22 MiB of physical
+      memory in play against the 32.8 MiB budget, measured in ADR 0003
+      ("No page is written out").
 
 ## State as of 2026-08-13 — everything compiles and links; the comparison is partial
 
