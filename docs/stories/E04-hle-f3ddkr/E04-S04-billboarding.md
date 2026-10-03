@@ -57,17 +57,59 @@ modern target.
 6. Measure the cost on a dense scene, and check that it stays proportionate to the
    number of billboards displayed.
 
+## Where it stands (3 October 2026)
+
+`platform/render/f3ddkr.c` implements it (`cmd_vertex`, "Billboarding"), and
+the menus and races have exercised it since August. What the ticket asked to be
+established had not been written down; it is below.
+
+**The trigger.** `G_MW_BILLBOARD`, MoveWord index `0x02`, bit 0 of `w1`
+(`gDkrEnableBillboard` / `gDkrDisableBillboard` in the decomp's
+`include/f3ddkr.h`; `docs/research/f3ddkr-commands.md`). While it is set, a
+loaded vertex's clip coordinates have vertex 0's added to them, after the
+transformation and before the division by w.
+
+**Three sources, one disagreement.**
+
+| | decomp header | RT64 decoder (`f3ddkr_rt64.cpp`) | this port (`f3ddkr.c`) |
+|---|---|---|---|
+| which loads get the anchor | every load while it is set | appended loads only | every vertex but index 0 |
+| where an appended load goes | after the last flag-0 load | index 1 when billboarding | after the last flag-0 load |
+| how | clip coordinates added | anchor added to the matrix's translation row | clip coordinates added |
+
+Adding the anchor to the translation row is the same sum for a vertex with
+w = 1, which every DKR vertex is. The rows differ only for a flag-0 load made
+while billboarding is on, or an anchor load of more than one vertex. **Neither
+happens in what the game sends**: replayed with a one-line probe in
+`cmd_vertex` (a copy outside the tree, printing each load made with the flag
+set), the 66 captures of the corpus hold 1,021 such loads, in 47 of them, and
+every one is an appended load at index 1 with vertex 0 loaded -- the decomp's
+recipe, one anchor then the sprite. Where the three sources disagree, the game
+never goes.
+
+**No other geometry moves.** The addition is guarded by the flag; the 19
+captures with no billboard load replay to their reference counts and images
+like the rest (`tools/render/check-corpus.sh`), and the card's frames agree
+with this decoder's oracle (E05).
+
+Not done: the 360° rotation and the comparison with the modern target (no
+modern build on this machine, as for E04-S03 and E04-S05), a billboard on a
+moving object tested as such, and the cost measured on its own -- four
+additions per vertex, too small for the sampler to separate from
+`dkr_transform_to_clip`.
+
 ## Acceptance criteria
 
-- [ ] The billboard mode's trigger is identified and documented.
-- [ ] The behaviour is cross-checked between the current decoder and the decomp, any
-      disagreement being recorded.
+- [x] The billboard mode's trigger is identified and documented -- above.
+- [x] The behaviour is cross-checked between the current decoder and the decomp, any
+      disagreement being recorded -- above, with the RT64 decoder as the third
+      source; the disagreement is outside anything the corpus contains.
 - [ ] The billboards stay oriented towards the camera through a complete 360°
       rotation, compared against the modern target.
 - [ ] The case of a billboard attached to a moving object is handled and tested.
 - [ ] The cost is measured on a dense scene and entered in E08-S01's budget.
-- [ ] No unconcerned geometry is oriented by mistake — verified on a scene with no
-      billboard.
+- [x] No unconcerned geometry is oriented by mistake — verified on a scene with no
+      billboard: 19 captures without one, replayed against their references.
 
 ## Risks
 
