@@ -26,14 +26,19 @@ say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 shopt -s nullglob
+# COMMAND.COM cannot stop a program that hangs, and on 3 October 2026
+# SAVEMGR.EXE did, keeping every suite after it from running. It goes last, so
+# that a hang there costs only its own verdict.
 exes=()
-for name in THREADS CLOCKT FILEIOT SAVEMGR SAVECDC; do
+for name in THREADS CLOCKT FILEIOT SAVECDC; do
   [[ -f "$ROOT/build/win95/bin/$name.EXE" ]] || fail "$name.EXE is absent: run Build-Win95.sh"
   exes+=("$ROOT/build/win95/bin/$name.EXE")
 done
 portable=("$bin"/PT*.EXE)
 (( ${#portable[@]} > 0 )) || fail "no PT*.EXE in $bin: run Build-Win95.sh"
 exes+=("${portable[@]}")
+[[ -f "$ROOT/build/win95/bin/SAVEMGR.EXE" ]] || fail "SAVEMGR.EXE is absent: run Build-Win95.sh"
+exes+=("$ROOT/build/win95/bin/SAVEMGR.EXE")
 
 work="$(mktemp -d)"; trap 'rm -rf -- "$work"' EXIT
 {
