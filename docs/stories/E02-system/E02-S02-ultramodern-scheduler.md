@@ -74,9 +74,16 @@ defect, not an improvement.
 - [x] The modern targets compile and behave identically with that patch applied — 15
       translation units compiled on the 64-bit Linux host before and after; without
       the two macros, the patch reduces to `using std::...`.
-- [ ] The time granularity actually reached under Windows 95 is measured.
-- [ ] The game starts under emulated Windows 95 with the diagnostic renderer and
-      reaches the same point as on the modern host.
+- [x] The time granularity actually reached under Windows 95 is measured -- 3 October
+      2026, `SLEEPT.EXE` on the test machine: ultramodern waits with `Sleep`, which
+      Windows 95 rounds to a 13.7 ms tick by default and honours to the millisecond
+      after `timeBeginPeriod(1)` (`Sleep(1)` 1,001 us mean, `Sleep(5)` 4,994 us), which
+      `dkr_clock_init` sets at start. The clock itself steps by under 100 us
+      (`ultramodern::precise_now`, logged at every start). `docs/research/win95-clock.md`.
+- [~] The game starts under emulated Windows 95 with the diagnostic renderer and
+      reaches the same point as on the modern host -- it starts and runs with
+      `RENDERER=null` (E02-S06: 9,822 display lists before a pixel was drawn); the
+      comparison with the modern host waits for a modern build on this machine.
 - [ ] The two targets' scheduling traces are compared and agree.
 - [ ] The shutdown paths are rechecked in the light of the new wake-up semantics.
 

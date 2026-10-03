@@ -70,6 +70,25 @@ same holds on another machine, and under Windows 9x a setting left in place
 degrades the whole system until the next reboot — including after the end of the
 process that set it.
 
+**It changes everything for `Sleep`, though** -- measured on 3 October 2026 by
+`tools/win95/witnesses/sleep_probe.c` (`SLEEPT.EXE`), 200 calls each, timed on
+the 8254:
+
+| Request | default timer period | after `timeBeginPeriod(1)` |
+|---:|---:|---:|
+| `Sleep(0)` | 7 us | 7 us |
+| `Sleep(1)` | **13,667 us** | 1,001 us |
+| `Sleep(2)` | 13,726 us | 1,994 us |
+| `Sleep(5)` | 13,726 us | 4,994 us |
+| `Sleep(10)` | 13,726 us | 9,993 us |
+| `Sleep(16)` | 27,457 us | 15,992 us |
+
+Left at its default, Windows 95 rounds every sleep up to a 13.7 ms tick, so a
+1 ms wait costs most of half a game frame. `dkr_clock_init` sets the period
+before anything waits, which is what makes ultramodern's `Sleep`-based waits
+(`timer.cpp`'s `_WIN32` branch) good to the millisecond. "Changes nothing"
+above is true of `timeGetTime` only.
+
 ### `GetTickCount` is far finer than 55 ms — and far cheaper
 
 The ticket announced it at "~55 ms", the DOS tick period at 18.2 Hz. The
