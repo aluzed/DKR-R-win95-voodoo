@@ -61,16 +61,44 @@ the startup log.
    project's first real performance measurement on the target, and it confronts
    E00-S03's extrapolation directly with the facts.
 
+## Where it stands (3 October 2026)
+
+The milestone was passed in August and the boxes below were never ticked; the
+evidence, gathered from what has been recorded since:
+
+- The game starts on the test machine, from a fresh install too: on
+  3 October the package unpacked into `C:\GAMES\DKR` started with no argument
+  and showed its first image 5.2 s in (E09-S05).
+- `DKR_RENDERER=null` selects `CreateDiagnosticRenderer`
+  (`game_main.cpp`), which counts display lists instead of drawing; run on the
+  target in `docs/research/cpu-budget.md` (guest execution 82% of wall time).
+- The rate, against E00-S03's forecast: **170 ms a frame, 5.88 fps, over
+  1,016 frames** (`cpu-budget.md`, "a frame"), 5.1 times the N64's 33.3 ms --
+  the figure E00-S03 could only extrapolate. It led to E08 and to E03-S03.
+- The startup log: `DKR-RUNTIME-DATA\LOGS\RUNTIME.LOG` on the target, with a
+  `[boot]` line per step (INI, ROM, audio device, Glide, first image), read
+  after every run on the test machine by `scripts/Measure-Guest-Time-VM.sh`.
+- No SDL2, ImGui or RT64: `DKRR.EXE` imports ADVAPI32, KERNEL32, msvcrt,
+  SHELL32, USER32 and WINMM only (`objdump -p`; `GLIDE2X.DLL` is loaded at
+  run time), checked by `check_imports.py` at every build and package; its
+  symbol table holds none of their code
+  (`docs/research/win95-package-licences.md`).
+- The registration stays shared: `game_registration.cpp` and `game_main.cpp`
+  are compiled into `DKRR.EXE` from `runtime-recomp/src/game`, the modern
+  build's own files (`DKR_WIN95_GAME_SOURCES` in `cmake/win95-target.cmake`).
+- The title screen and beyond: the intro, the menus, races and the adventure
+  hub draw on the Voodoo (E05, E06).
+
 ## Acceptance criteria
 
-- [ ] The recompiled game starts under emulated Windows 95.
-- [ ] `DiagnosticRenderer`'s display-list counter advances steadily.
-- [ ] The submission rate is measured and compared against E00-S03's forecast.
-- [ ] The startup log traces every step and is readable from the target machine.
-- [ ] No dependency on SDL2, ImGui or RT64 in the binary produced — verified by the
+- [x] The recompiled game starts under emulated Windows 95.
+- [x] `DiagnosticRenderer`'s display-list counter advances steadily.
+- [x] The submission rate is measured and compared against E00-S03's forecast.
+- [x] The startup log traces every step and is readable from the target machine.
+- [x] No dependency on SDL2, ImGui or RT64 in the binary produced — verified by the
       import table (E01-S04).
-- [ ] The game's registration logic stays shared with the modern target.
-- [ ] The game reaches at least the title screen from the CPU's point of view, that
+- [x] The game's registration logic stays shared with the modern target.
+- [x] The game reaches at least the title screen from the CPU's point of view, that
       is, submits the corresponding graphics tasks.
 
 ## Risks
