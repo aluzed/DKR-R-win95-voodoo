@@ -84,12 +84,15 @@ copy; the script proves the shipped `.text` identical to it.
 - [x] No game asset is included, verified by `scan_for_game_assets.py` (with `--allow DKRR.EXE`, the one file past its 5 MiB bound, still checked for ROM headers) and by name for ROMs and `GLIDE2X.DLL`.
 - [ ] The licences are complete and accurate, Glide sources included. *Shipped*: the
       port's MIT licence, the GPL-3.0 that N64ModernRuntime brings to the executable, and
-      `THIRD_PARTY.md`. Not reviewed by anyone qualified, and nothing on the Glide headers'
+      a notice file for the Windows 95 build (until 3 October, `THIRD_PARTY.md`). Not reviewed by anyone qualified, and nothing on the Glide headers'
       own terms is in the package yet. *Prepared for the review*, 3 October 2026:
       `docs/research/win95-package-licences.md` lists what `DKRR.EXE` actually links,
       from its symbols -- six permissive libraries `THIRDPTY.TXT` does not all name,
       GCC's runtime, the copied Glide constants -- what it does not, and four
-      questions for the reviewer.
+      questions for the reviewer. **The fourth answered the same day**: the
+      package's `THIRDPTY.TXT` is now its own (`packaging/win95/THIRDPTY.TXT`),
+      naming what `DKRR.EXE` contains, followed by the six libraries' notices,
+      which `Package-Win95.sh` copies from the source tree the build used.
 - [x] The Glide DLLs are not redistributed, and their absence is reported clearly at
       launch: a message box naming the card, the driver and `GLIDE2X.DLL`, checked on the
       test machine with the DLL removed and put back.

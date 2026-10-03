@@ -51,4 +51,9 @@ and the ROM (`scripts/scan_for_game_assets.py`).
    miniz, xxHash and o1heap each ask for their notice to accompany binary
    distributions; `THIRDPTY.TXT` in the package is the modern build's list and
    does not name all of them. A Windows 95-specific notice file is the likely
-   remedy.
+   remedy. *Done on 3 October 2026*: `packaging/win95/THIRDPTY.TXT` lists the
+   build's components, and `Package-Win95.sh` appends each library's notice
+   from the source tree. What remains for the reviewer is whether that is
+   enough, and the statically linked mingw-w64 runtime, whose objects come
+   under several licences (`/usr/share/doc/mingw-w64-i686-dev/copyright` in
+   the toolchain) and are not itemised.

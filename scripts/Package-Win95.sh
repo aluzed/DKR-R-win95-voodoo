@@ -81,7 +81,22 @@ crlf "$ROOT/packaging/win95/README.TXT"           "$STAGE/README.TXT"
 crlf "$ROOT/docs/CONFIGURATION.md"                "$STAGE/CONFIG.TXT"
 crlf "$ROOT/LICENSE.md"                           "$STAGE/LICENSE.TXT"
 crlf "$ROOT/extern/n64-modern-runtime/COPYING"    "$STAGE/COPYING.TXT"
-crlf "$ROOT/THIRD_PARTY.md"                       "$STAGE/THIRDPTY.TXT"
+# The notices of the libraries DKRR.EXE contains, each copied from the source
+# tree the build used; THIRD_PARTY.md lists the modern build's, a different set
+# (docs/research/win95-package-licences.md).
+TP="$ROOT/extern/n64-modern-runtime"
+{
+  cat "$ROOT/packaging/win95/THIRDPTY.TXT"
+  notice() { printf '\n\n%s\n%s\n\n' "$1" "$(printf '%s' "$1" | tr -c '\n' -)"; cat; }
+  notice "fmt"                        < "$TP/N64Recomp/lib/fmt/LICENSE"
+  sed -n '7,28s#^// \{0,1\}##p' "$TP/thirdparty/concurrentqueue/concurrentqueue.h" \
+    | notice "moodycamel ConcurrentQueue"
+  notice "miniz"                      < "$TP/thirdparty/miniz/LICENSE"
+  notice "xxHash"                     < "$TP/thirdparty/xxHash/LICENSE"
+  notice "o1heap"                     < "$TP/thirdparty/o1heap/LICENSE"
+} > "$OUT/THIRDPTY.TXT"
+crlf "$OUT/THIRDPTY.TXT"                          "$STAGE/THIRDPTY.TXT"
+rm -f "$OUT/THIRDPTY.TXT"
 
 say "checking that no game asset is in the package"
 python3 "$ROOT/scripts/scan_for_game_assets.py" "$STAGE" --allow DKRR.EXE >/dev/null \
