@@ -31,6 +31,73 @@ const char *dkr_ini_path(void)
     return g_ini_path;
 }
 
+/* --- Checking what the file says ------------------------------------------- *
+ *
+ * Two mistakes a player can make in DKRR.INI that the code below the file
+ * would take silently (3 October 2026):
+ *
+ * - **A switch set to 0.** These settings are read by asking whether the
+ *   variable exists, so `NO_DEPTH=0` turned depth *off*. For them, 0, off, no
+ *   and false now leave the switch unset, which is what the line meant.
+ * - **A name the code does not read.** A typo, `NODEPTH=1`, did nothing and said
+ *   nothing. It is still passed on -- a newer build may read it -- and logged.
+ *
+ * Both lists come from a search of the sources for `getenv("DKR_...")`;
+ * `platform/win95/tests/run-tests.sh settings` fails when they fall behind. */
+static const char *const kKnown[] = {
+    "AUDIO_CAPTURE", "AUDIO_MICROCODE", "CANARY", "CAPTURE_KEY",
+    "CAPTURE_LIST", "CAPTURE_MODE", "CLEAR_NEAREST", "DUMP_EVERY",
+    "DUMP_FRAME", "DUMP_MODE", "FLATTEN_W", "FOG", "FORCE_COMBINE",
+    "FORCE_STATE", "FORGET_AT_FRAME", "GFX_NO_STATS", "GFX_STATS",
+    "GLIDE_OPEN_EARLY", "GLIDE_SWAP", "INPUT_BACKEND", "INTERPOLATION_TRACE",
+    "JOY", "JOY_BUTTONS", "JOY_DEADZONE", "LAUNCHER_PROFILE",
+    "LEGACY_QUALIFICATION_RECIPE", "LOG", "MQ_HOLD_REFUSED", "NEUTRAL",
+    "NO_ALPHA_TEST", "NO_AUDIO_OUT", "NO_DEPTH", "NO_MULTIPASS",
+    "NO_STATE_SHADOW", "NO_TEXCACHE", "OSD", "PAINT_WHITE", "PROBE",
+    "PROBE_SWITCH", "RDRAM_SNAPSHOT", "RDRAM_SNAPSHOT_FROM",
+    "RDRAM_SNAPSHOT_POOL", "RDRAM_SNAPSHOT_SIZE", "RENDERER",
+    "ROM_CACHE_BLOCKS", "SCISSOR", "SDL3_INPUT_HOST", "SHADOW_TRACE",
+    "SPLIT_TRACE", "THREADS_LOG", "TIMING_EXPORT", "TRACE_AUDIO_ZONES",
+    "TRACE_CPU", "TRACE_EXCLUSIVE", "TRACE_IDLE_METER", "TRACE_LIST",
+    "TRACE_PAGING", "TRACE_RENDER_ZONES", "TRACE_SAMPLER",
+    "TRACE_SAMPLER_DELAY", "TRACE_SP", "TRACK_PROFILE", "VI_PRESENT"
+};
+static const char *const kPresenceOnly[] = {
+    "AUDIO_MICROCODE", "CAPTURE_KEY", "FLATTEN_W", "FOG", "FORGET_AT_FRAME",
+    "GFX_NO_STATS", "GFX_STATS", "GLIDE_OPEN_EARLY", "NO_ALPHA_TEST",
+    "NO_AUDIO_OUT", "NO_DEPTH", "NO_MULTIPASS", "NO_STATE_SHADOW",
+    "NO_TEXCACHE", "OSD", "PAINT_WHITE", "PROBE_SWITCH", "TRACE_AUDIO_ZONES",
+    "TRACE_CPU", "TRACE_EXCLUSIVE", "TRACE_IDLE_METER", "TRACE_PAGING",
+    "TRACE_RENDER_ZONES", "TRACE_SAMPLER", "TRACE_SP"
+};
+static char g_notes[1024];
+
+static int in_list(const char *name, const char *const *list, size_t count)
+{
+    size_t i;
+    for (i = 0; i < count; i++) {
+        if (strcmp(name, list[i]) == 0) { return 1; }
+    }
+    return 0;
+}
+
+static int means_off(const char *value)
+{
+    return strcmp(value, "0") == 0 || _stricmp(value, "off") == 0 ||
+           _stricmp(value, "no") == 0 || _stricmp(value, "false") == 0;
+}
+
+static void note(const char *text)
+{
+    const size_t used = strlen(g_notes);
+    if (used + strlen(text) + 2 < sizeof(g_notes)) {
+        strcat(g_notes, text);
+        strcat(g_notes, "\n");
+    }
+}
+
+const char *dkr_ini_settings_notes(void) { return g_notes; }
+
 int dkr_ini_settings_applied(void)    { return g_applied; }
 int dkr_ini_settings_overridden(void) { return g_overridden; }
 
@@ -64,7 +131,20 @@ static void dkr_ini_settings_load(void)
         if (getenv(name) != NULL) { g_overridden++; continue; }
         {
             const char *value = equals + 1;
+            char text[200];
             while (*value == ' ' || *value == '\t') { value++; }
+            if (!in_list(name + 4, kKnown, sizeof(kKnown) / sizeof(kKnown[0]))) {
+                _snprintf(text, sizeof(text) - 1, "%s is not a setting this build reads", name + 4);
+                text[sizeof(text) - 1] = '\0';
+                note(text);
+            }
+            if (in_list(name + 4, kPresenceOnly, sizeof(kPresenceOnly) / sizeof(kPresenceOnly[0])) &&
+                means_off(value)) {
+                _snprintf(text, sizeof(text) - 1, "%s=%s: left off", name + 4, value);
+                text[sizeof(text) - 1] = '\0';
+                note(text);
+                continue;
+            }
             _snprintf(line, sizeof(line) - 1, "%s=%s", name, value);
             line[sizeof(line) - 1] = '\0';
             if (_putenv(line) == 0) { g_applied++; }

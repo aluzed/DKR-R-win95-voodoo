@@ -25,6 +25,9 @@ const char *dkr_ini_path(void);
    For the log: the constructor runs before it exists. */
 int dkr_ini_settings_applied(void);
 int dkr_ini_settings_overridden(void);
+/* What the file got wrong, one line each: a switch set to 0 (left off), a name
+   no code reads. Empty when nothing. For the log, like the counts above. */
+const char *dkr_ini_settings_notes(void);
 
 /* Writes the commented template if DKRR.INI does not exist yet. Returns 1 if it
    wrote one. Called by the game, not by the constructor: the tools linked with

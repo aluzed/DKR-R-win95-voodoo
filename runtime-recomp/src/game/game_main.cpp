@@ -55,6 +55,7 @@ extern "C" {
 #include <chrono>
 #include <cinttypes>
 #include <cstdlib>
+#include <cstring>
 #if defined(DKR_TARGET_WIN95)
 #include "win95/startup.h"
 #include "win95/ini_settings.h"
@@ -1336,6 +1337,16 @@ int DkrMain(int argc, char** argv) {
     }
     std::fprintf(stderr, "[boot][ini] %s: %d setting(s) applied, %d overridden by the environment\n",
                  dkr_ini_path(), dkr_ini_settings_applied(), dkr_ini_settings_overridden());
+    {
+        // One line each for what the file got wrong (`ini_settings.c`).
+        const char* notes = dkr_ini_settings_notes();
+        while (*notes != '\0') {
+            const char* end = std::strchr(notes, '\n');
+            const int length = end ? static_cast<int>(end - notes) : static_cast<int>(std::strlen(notes));
+            std::fprintf(stderr, "[boot][ini] %.*s\n", length, notes);
+            notes += length + (end ? 1 : 0);
+        }
+    }
     // **The card first, and said plainly when it is missing (E09-S05).** Without
     // the 3dfx driver the renderer opens nothing and the game runs on, drawing
     // nothing -- the right thing for reading a boot log, and a black screen

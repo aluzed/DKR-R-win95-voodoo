@@ -79,7 +79,7 @@ and cost 4.3 ms a display list in the adventure hub.
 
 - [x] The `.ini` file covers all the settings kept: `[Settings]` sets any `DKR_*` option, copied into the C runtime's environment before the static initialisers that read them (`platform/win95/ini_settings.c`, 1 October 2026).
 - [x] An absent file produces a valid default configuration -- and the game then writes the commented template. Checked on the test machine.
-- [ ] An aberrant value is rejected, replaced by the default, and logged. *Partly*: the file's values reach each option's own reader, and only some of them check what they read (`RDRAM_SNAPSHOT_SIZE`, `CAPTURE_KEY`, `MQ_HOLD_REFUSED`); a switch takes any value as on.
+- [~] An aberrant value is rejected, replaced by the default, and logged. *Partly*: the file's values reach each option's own reader, and only some of them check what they read (`RDRAM_SNAPSHOT_SIZE`, `CAPTURE_KEY`, `MQ_HOLD_REFUSED`). **Two mistakes are caught at the file since 3 October 2026**: a switch read only for its presence set to `0`, `off`, `no` or `false` -- which turned it *on* -- is left off, and a name no code reads is logged; checked on the test machine (`NO_DEPTH=0: left off`, `OSD=off: left off`, `NODEPTH is not a setting this build reads`). The lists come from the sources, and `run-tests.sh settings` fails when they fall behind. A value-taking setting given nonsense still depends on its own reader.
 - [x] The file written at first launch is commented.
 - [x] `docs/CONFIGURATION.md` documents every setting, with its impact on performance
       where applicable -- since 3 October 2026 every one of the 63 variables the code

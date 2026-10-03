@@ -30,8 +30,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|joystick|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
-  *) echo "usage: $0 [all|tick64|joystick|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
+  all|tick64|joystick|settings|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
+  *) echo "usage: $0 [all|tick64|joystick|settings|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,6 +48,39 @@ if [[ "$suite" == "all" || "$suite" == "tick64" ]]; then
   "$CC" -O2 -Wall -Wextra -o "$tmp/test_tick64" \
         "$HERE/test_tick64.c" "$HERE/../tick64.c"
   "$tmp/test_tick64"
+fi
+
+# --- E06-S05: the settings DKRR.INI may name ----------------------------------
+#
+# `ini_settings.c` keeps two lists taken from the sources: every `DKR_*`
+# variable some code reads, and those read only for their presence. A setting
+# added without its line there would be called unknown in the log, and a new
+# presence switch would turn on at `=0`. This compares the lists with the code.
+
+if [[ "$suite" == "all" || "$suite" == "settings" ]]; then
+  ROOT="$(cd "$HERE/../../.." && pwd)"
+  dirs=("$ROOT/runtime-recomp/src/game" "$ROOT/platform"
+        "$ROOT/extern/n64-modern-runtime/ultramodern/src"
+        "$ROOT/extern/n64-modern-runtime/librecomp/src")
+  code_all="$(grep -rhoE 'getenv\("DKR_[A-Z0-9_]+"\)' "${dirs[@]}" \
+              | sed 's/getenv("DKR_\(.*\)")/\1/' | sort -u)"
+  code_presence="$(grep -rhoE 'getenv\("DKR_[A-Z0-9_]+"\) (!=|==) (nullptr|NULL|0)\b' "${dirs[@]}" \
+              | sed 's/getenv("DKR_\([A-Z0-9_]*\)").*/\1/' | sort -u)"
+  list() {
+    sed -n "/^static const char \*const $1\[\] = {/,/^};/p" "$HERE/../ini_settings.c" \
+      | grep -oE '"[A-Z0-9_]+"' | tr -d '"' | sort -u
+  }
+  bad=0
+  if ! diff <(echo "$code_all") <(list kKnown) >"$tmp/known.diff"; then
+    echo "FAIL: ini_settings.c's kKnown differs from the getenv calls (< code, > list):"
+    cat "$tmp/known.diff"; bad=1
+  fi
+  if ! diff <(echo "$code_presence") <(list kPresenceOnly) >"$tmp/presence.diff"; then
+    echo "FAIL: ini_settings.c's kPresenceOnly differs from the presence tests:"
+    cat "$tmp/presence.diff"; bad=1
+  fi
+  (( bad == 0 )) || exit 1
+  echo "  ok    the settings lists match the code ($(echo "$code_all" | wc -l) variables)"
 fi
 
 # --- E06-S02: from a joystick's reading to an N64 controller's ---------------
