@@ -61,6 +61,10 @@ unsigned long dkr_window_handle(void);
    destroys (see window.c). Safe to call without a window. */
 void dkr_window_close(void);
 
+/* Non-zero while the window has lost the foreground: the game is paused, and the
+   runtime's VI thread asks this before every retrace (patch 0065). */
+int dkr_game_paused(void);
+
 /* --- The keyboard, captured where the messages arrive ----------------------- *
  *
  * The key state belongs to this file because `WM_KEYDOWN` is a window message and

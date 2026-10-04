@@ -27,6 +27,13 @@ static volatile unsigned char g_capture_request;
    to be unlikely to collide with anything else registered in the session. */
 static const char *const kClassName = "DkrWin95Window";
 
+/* The game's log commit (game_main.cpp), weak so that a witness linking this
+   file without the game still links: a session that ends kills the process, and
+   an uncommitted log tail is lost with it. */
+extern void dkr_diag_commit(void) __attribute__((weak));
+/* game_main.cpp: waits for the game's stop to finish (WM_ENDSESSION). */
+extern void dkr_session_ending(void) __attribute__((weak));
+
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
@@ -45,9 +52,17 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_QUERYENDSESSION:
         g_quit = 1;
+        fprintf(stderr, "[boot][window] Windows asks to end the session: yes\n");
+        if (dkr_diag_commit) { dkr_diag_commit(); }
         return TRUE;
     case WM_ENDSESSION:
         g_quit = 1;
+        fprintf(stderr, "[boot][window] the session %s\n",
+                wp ? "ends: Windows will end the process" : "goes on");
+        if (dkr_diag_commit) { dkr_diag_commit(); }
+        /* Windows may end the process as soon as this returns: the game is
+           given the time to finish its stop first. */
+        if (wp && dkr_session_ending) { dkr_session_ending(); }
         return 0;
     case WM_DESTROY:
         g_quit = 1;
@@ -65,6 +80,11 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
      * never receives its `WM_KEYUP`, and would stay pressed for ever: the
      * accelerator stuck on after an `Alt+Tab`, which reads as a game defect. */
     case WM_ACTIVATEAPP:
+        if ((wp != 0) != (g_focused != 0)) {
+            fprintf(stderr, "[boot][window] %s\n", wp != 0
+                    ? "foreground again: the game resumes"
+                    : "lost the foreground: the game pauses");
+        }
         g_focused = (wp != 0);
         if (!g_focused) { dkr_window_keys_clear(); }
         return 0;
@@ -191,11 +211,13 @@ int dkr_window_open(const char *title)
        card holds the screen, asking Windows to raise a window is asking it to
        take the display back -- which is exactly what happened when this call sat
        after `grSstWinOpen`. */
+    /* Focused from the start, so that the activation these calls cause is not
+       logged as a return from a pause that never happened. */
+    g_focused = 1;
     ShowWindow(g_hwnd, SW_SHOW);
     UpdateWindow(g_hwnd);
     SetForegroundWindow(g_hwnd);
     SetFocus(g_hwnd);
-    g_focused = 1;
 
     fprintf(stderr, "[boot][window] created, foreground, keyboard live\n");
     return 1;
@@ -219,6 +241,14 @@ int dkr_window_pump(void)
 }
 
 int dkr_window_focused(void) { return g_focused; }
+
+/* **Losing the foreground pauses the game** (E06-S01). The pause is the
+   runtime's VI thread holding back the game's retraces (patch 0065): DKR runs
+   on them, so its logic, its race clock and its audio all stop where they are,
+   and nothing is owed when they resume. The renderer hands the screen back to
+   the desktop at the same moment (`dkr_glide_control`). Only with a window:
+   before it exists, or after it is let go, nothing is paused. */
+int dkr_game_paused(void) { return g_hwnd != NULL && !g_focused; }
 
 unsigned long dkr_window_handle(void) { return (unsigned long)(UINT_PTR)g_hwnd; }
 
@@ -281,6 +311,7 @@ void dkr_window_close(void)
 int  dkr_window_open(const char *title) { (void)title; return 1; }
 int  dkr_window_pump(void)   { return 1; }
 int  dkr_window_focused(void) { return 1; }
+int  dkr_game_paused(void)    { return 0; }
 unsigned long dkr_window_handle(void) { return 0; }
 int  dkr_window_key_down(int vk) { (void)vk; return 0; }
 int  dkr_window_keypad_down(int scancode) { (void)scancode; return 0; }

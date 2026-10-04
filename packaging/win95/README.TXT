@@ -74,6 +74,15 @@ zone (CONFIG.TXT, JOY_BUTTONS and JOY_DEADZONE). This has been tested only
 without a pad connected: please report how yours behaves.
 
 
+LEAVING THE GAME
+----------------
+
+Alt+F4 quits. Alt+Tab pauses the game and hands the screen back to Windows;
+Alt+Tab back to it and it carries on where it was. Shutting Windows down
+while the game is paused quits it first. If a quit ever takes longer than
+fifteen seconds, the game ends itself and notes it in its log.
+
+
 SETTINGS
 --------
 

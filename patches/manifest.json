@@ -261,6 +261,14 @@
         {
           "path": "patches/n64-modern-runtime/0064-mark-each-step-of-the-runtime-shutdown.patch",
           "sha256": "710cb5d2ff0ebcdc6e5b1f3d7bfc630e10b8aec6b66549c44593f0c0adeb0ca6"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0065-pause-the-game-by-holding-back-its-retraces.patch",
+          "sha256": "a6a8aeba3d55f6e430059743172b09b72d47ecd966af6127eabdae8fff82ddf2"
+        },
+        {
+          "path": "patches/n64-modern-runtime/0066-free-rdram-after-the-guest-threads-end.patch",
+          "sha256": "0935e291778b9ac0b3c2b89b84c6fdacf74c895ee557312b10441cb127197f9b"
         }
       ]
     },

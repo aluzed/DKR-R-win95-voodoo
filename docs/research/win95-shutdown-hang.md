@@ -80,31 +80,63 @@ prints it with `[boot] runtime finished` and, if a stop is still running ten
 seconds after the quit, reports it. `DKR_MEASURE_QUIT_WAIT` sets how long
 `Measure-Guest-Time-VM.sh` leaves a stop before it stops the machine.
 
-## The second hang
+## The second hang -- found on 4 October 2026
 
-The build of 13:18 (`53ab788`, patches up to 0063) rebuilt as it was hangs 3
-runs in 4 **before** `[boot] runtime finished`: there, `recomp::start` does
-not return. Tested so far:
+**A guest thread read freed RDRAM.** The E06-S01 changes moved the timing,
+and the second hang became frequent: 5 stops in 6 left the process
+behind, the log ending on `runtime finished`, the watchdog silent. The
+crash filter's log (`DKR-BOOT.LOG`, which nothing had been reading) ended
+on `*** unhandled exception ***` and no more: the filter itself stalled on
+the C runtime right after its heading. Given a first record built without
+the C runtime, it named the fault, the same in every run:
 
-- the synchronous-draw wait bounded (an environment switch in one binary):
-  the bounded wait never fired, in the runs that stopped as in the runs that
-  did not, so it is not the cause; the two clean runs out of three with the
-  switch on came from the switch's own effect on the timing;
-- the same build with marks at every step of `recomp::start`: the second hang
-  no longer shows, and the first one, in the window, does.
+    *** fault code=C0000005 at=0083933A touching=0213F92C esp=0515FE88
 
-It has not been seen in the build that carries the window fix: 6 stops in 6
-launched from a batch file, 4 in 4 launched from Explorer's Run box as a
-player would, and one more checked in the task list. That proves nothing
-about it, for the reason above, and it stays open until it is located.
+`0x0083933A` is `_thread_func`, the body of every guest thread, right after
+`run_thread_function` returns: `cmp %ebx,0x1c(%edi)`, the test
+`self->context == thread_context`. `self` is the guest's `OSThread`, which
+lives in RDRAM. At a quit the guest threads are never joined; woken, they
+unwind on `thread_terminated` and read their `OSThread` on the way out --
+and `recomp::start`, once its own threads were joined, freed RDRAM. A guest
+thread still unwinding at that moment faulted.
+
+**Fixed by patch 0066**: the guest threads alive are counted from their
+creation to the last line of `_thread_func`, and RDRAM is freed only when
+none is left. Five of DKR's never are -- blocked in waits the quit does not
+reach -- so the wait ends when the count has held still for 250 ms, and
+RDRAM is kept for the process's exit to return (`[boot][stop] 5 guest
+thread(s) still running: RDRAM kept`). Before: 5 stops in 6 hung. After: 15
+in 15 clean, launched from Explorer and from a batch file, no fault record.
+
+This is also the likeliest identity of the hang seen in the build of 13:18
+on 3 October, inside `recomp::start`: the same race, met earlier. Not
+proven for that build; it has not been seen since the fix.
+
+**And perhaps of the first one too.** The hang in `DestroyWindow` (above)
+came after RDRAM was freed, with the guest threads still unwinding; a guest
+thread faulting then would run the crash filter, which calls USER
+(`MessageBoxA`) and the display cleanup, while the main thread was in
+`DestroyWindow`, also USER. The A/B proved that the call decided whether the
+process stopped, not that it was the cause; which it was is not established.
+Leaving the window to the process's exit stays right either way.
+
+**The crash filter writes its essentials first.** `on_unhandled` in
+`platform/win95/startup.c` now begins with one line formatted by hand and
+written with `WriteFile` -- code, address, the address touched, the stack
+pointer, the thread -- before any call into the C runtime, which a fault
+during a thread's end may find locked.
 
 ## The safety net
 
 So that no stop, this one or the next, can leave a process behind, the main
 thread starts a watchdog thread at the quit (`StopWatchdog`, `game_main.cpp`).
 A process that ends takes it along; one still alive fifteen seconds after the
-quit gets a log line with the runtime's marks, a committed log, and
-`TerminateProcess`. The saves are safe at any instant -- every write is a
+quit gets a log line with the runtime's marks and `TerminateProcess`. It runs
+above every thread of the game, and after its sleep it calls the kernel only
+-- the line built by hand, written with `WriteFile` to a handle on the log it
+opened at the quit -- because the C runtime may be the thing that is stuck:
+tried with a build that holds `stderr`'s lock for ever after the quit, the
+line is written and the process ended. The saves are safe at any instant -- every write is a
 durable replacement that survives a power cut (E02-S05) -- and Glide closes
 before any of the hangs seen.
 

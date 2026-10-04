@@ -60,6 +60,8 @@ private:
     dkr_render_backend backend_{};
     dkr_f3d_context context_{};
     bool opened_ = false;
+    // The screen handed to the desktop while the game is paused (E06-S01).
+    bool screen_given_back_ = false;
     int width_ = 0;
     int height_ = 0;
 

@@ -1,0 +1,50 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Pause the game by holding back its retraces
+
+The Windows 95 port pauses the game while its window has lost the
+foreground (E06-S01). The VI thread asks the port before each retrace,
+through a weak dkr_game_paused(): while it answers non-zero, no retrace
+is sent. DKR advances on retraces, so its logic, race clock and audio
+stop where they are; the retrace count follows the clock, so nothing is
+owed when the pause ends. A screen update is queued at each change of
+state, which wakes the graphics thread so that the port's renderer can
+hand the screen to the desktop and take it back. A build without the
+symbol never pauses.
+---
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -498,6 +498,9 @@
+ extern std::atomic_bool exited;
+ // The steps of the shutdown, marked without I/O (librecomp/src/recomp.cpp).
+ extern "C" void dkr_stop_mark(unsigned bit);
++// Non-zero while the port wants the game paused (patch 0065); weak, so a build
++// without it never pauses.
++extern "C" int dkr_game_paused(void) __attribute__((weak));
+ extern moodycamel::LightweightSemaphore graphics_shutdown_ready;
+ 
+ void set_dummy_vi(bool odd);
+@@ -568,6 +571,24 @@
+         }
+         total_vis = new_total_vis;
+ 
++        /* Patch 0065: the port pauses the game by holding back its retraces.
++           DKR advances on them, so its logic, race clock and audio stop where
++           they are, and since the count above follows the clock, nothing is
++           owed when the pause ends: one retrace, as after any late wake. The
++           screen update sent at each change of state wakes the graphics
++           thread, which hands the screen to the desktop and takes it back. */
++        {
++            static bool was_paused = false;
++            const bool paused = dkr_game_paused != nullptr && dkr_game_paused() != 0;
++            if (paused != was_paused) {
++                was_paused = paused;
++                events_context.action_queue.enqueue(ScreenUpdateAction{ events_context.vi.regs });
++            }
++            if (paused) {
++                continue;
++            }
++        }
++
+         // If the game hasn't started yet, set a dummy VI mode and origin.
+         if (!ultramodern::is_game_started()) {
+             static bool odd = false;

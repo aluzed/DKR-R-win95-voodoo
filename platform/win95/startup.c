@@ -100,10 +100,46 @@ static const char *exception_name(DWORD code)
     }
 }
 
+/* Eight hex digits, by hand: see the first record of `on_unhandled`. */
+static void put_hex8(char *at, DWORD value)
+{
+    int i;
+    for (i = 7; i >= 0; i--) {
+        at[i] = "0123456789ABCDEF"[value & 0xFu];
+        value >>= 4;
+    }
+}
+
 static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
 {
     char buf[256];
     DWORD code = info->ExceptionRecord->ExceptionCode;
+
+    /* **A first record that needs nothing from the C runtime.** On the test
+     * machine a fault while a thread was ending left this filter silent after
+     * its heading: the C runtime's own calls below (`fclose`, `sprintf`) never
+     * returned (E06-S01, 4 October 2026). So the essentials come first, built
+     * by hand and written straight to the handle: the code, where, what was
+     * touched, the stack pointer and the thread. */
+    {
+        char first[] = "*** fault code=XXXXXXXX at=XXXXXXXX touching=XXXXXXXX "
+                       "esp=XXXXXXXX thread=XXXXXXXX\r\n";
+        DWORD touched = 0;
+        if (info->ExceptionRecord->NumberParameters >= 2) {
+            touched = (DWORD)info->ExceptionRecord->ExceptionInformation[1];
+        }
+        put_hex8(first + sizeof("*** fault code=") - 1, code);
+        put_hex8(first + sizeof("*** fault code=XXXXXXXX at=") - 1,
+                 (DWORD)(ULONG_PTR)info->ExceptionRecord->ExceptionAddress);
+        put_hex8(first + sizeof("*** fault code=XXXXXXXX at=XXXXXXXX touching=") - 1,
+                 touched);
+        put_hex8(first + sizeof("*** fault code=XXXXXXXX at=XXXXXXXX touching=XXXXXXXX esp=") - 1,
+                 (DWORD)info->ContextRecord->Esp);
+        put_hex8(first + sizeof("*** fault code=XXXXXXXX at=XXXXXXXX touching=XXXXXXXX "
+                                "esp=XXXXXXXX thread=") - 1,
+                 GetCurrentThreadId());
+        write_raw(first, (DWORD)(sizeof(first) - 1));
+    }
 
     /* **Close the diagnostic log before anything else.**
      *
@@ -247,9 +283,23 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
             size = 0x00A00000u;           /* the image fits comfortably inside */
         }
         if (base != 0) {
-            unsigned i, found = 0;
+            unsigned i, found = 0, words = 256u;
+            /* Never past the stack's committed region: a fault near the top of
+               a thread's stack sent this scan into the guard beyond it, and the
+               filter faulted inside itself (E06-S01, 4 October 2026). */
+            /* The top of the stack from the thread's own information block:
+               the filter runs on the faulting thread. `VirtualQuery` on the
+               stack pointer was tried first and, on Windows 95, bounded the
+               scan to nothing. */
+            {
+                const NT_TIB *tib = (const NT_TIB *)NtCurrentTeb();
+                const DWORD end = (DWORD)(ULONG_PTR)tib->StackBase;
+                const DWORD at  = (DWORD)(ULONG_PTR)sp;
+                const DWORD room = (end > at) ? (end - at) / 4u : 0u;
+                if (room < words) { words = room; }
+            }
             dkr_win95_log("  stack (plausible code addresses):");
-            for (i = 0; i < 256u && found < 16u; i++) {
+            for (i = 0; i < words && found < 16u; i++) {
                 const DWORD v = sp[i];
                 if (v > base && v < base + size) {
                     sprintf(buf, "    esp+%03X  0x%08lX",
@@ -274,9 +324,12 @@ static LONG WINAPI on_unhandled(EXCEPTION_POINTERS *info)
     dkr_win95_run_cleanups();
     dkr_win95_log("  abnormal-exit cleanups run");
 
-    sprintf(buf, "%s stopped on a %s.\n\nDetails in " DKR_LOG_NAME ".",
+    sprintf(buf, "%s stopped: %s.\n\nDetails in " DKR_LOG_NAME ".",
             g_app, exception_name(code));
-    MessageBoxA(NULL, buf, g_app, MB_ICONERROR | MB_OK);
+    /* In front of everything: the game's own window, empty once the card has
+       let go of the screen, would otherwise hide the message. */
+    MessageBoxA(NULL, buf, g_app,
+                MB_ICONERROR | MB_OK | MB_SETFOREGROUND | MB_TOPMOST);
 
     return EXCEPTION_EXECUTE_HANDLER;
 }

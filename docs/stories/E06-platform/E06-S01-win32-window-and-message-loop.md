@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E06 — Windows 95 platform |
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Priority** | P0 |
 | **Estimate** | M |
 | **Depends on** | E01-S03, E02-S06 |
@@ -60,6 +60,67 @@ handling focus and shutdown.
 8. Check that no API later than Windows 95 is used — E01-S04's guard rail does it
    automatically.
 
+## Where it stands (4 October 2026)
+
+**Focus and task switching.** Losing the foreground -- `Alt+Tab`, the Start
+menu -- pauses the game, and the screen goes back to the desktop; getting it
+back resumes the game and takes the screen again. The pause holds back the
+game's retraces in the runtime's VI thread (patch 0065, asking
+`dkr_game_paused()` in `window.c`): DKR advances on them, so its logic stops
+where it is and nothing is owed afterwards. The screen is handed over with
+`grSstControl(GR_CONTROL_DEACTIVATE)` and taken back with `ACTIVATE`, on the
+graphics thread, keeping the context. On the test machine: the log reads
+`lost the foreground: the game pauses`, `screen handed to the desktop
+(grSstControl done)`, then the reverse; across a 20 s pause the game logged
+nothing at all, and its idle thread's next report covered 20,559 ms instead
+of its usual five seconds; the screenshots show the desktop during the pause
+and the game moving again after it. **Decided and held to: switching away
+pauses; switching back resumes.**
+
+**A Windows program.** `DKRR.EXE` is linked as a GUI program (`-mwindows`).
+As a console program it got a console window, which Windows 95 treats as a
+DOS session: shutting Windows down stopped on "you must quit this program". For the test bench it means `MEASURE.BAT` returns as soon as the game
+has started, and its window closes: `Alt+Tab` then has nothing to switch to,
+and a pause is tried through the Start menu instead.
+
+**Every shutdown route.**
+
+- `Alt+F4`, the window's close button and the taskbar's Close all arrive as
+  `WM_CLOSE` (the first two by way of `SC_CLOSE`), one handler; `Alt+F4` was
+  run dozens of times.
+- Windows shutting down, tried with the game paused behind the Start menu:
+  `WM_QUERYENDSESSION` is answered yes and starts the stop; the window keeps
+  being pumped meanwhile, and `WM_ENDSESSION` waits up to ten seconds for the
+  runtime to have stopped before letting Windows end the process. Log:
+  `the runtime has stopped: the session may end`; the machine then turned
+  itself off.
+- **The stop's hang, found** (`docs/research/win95-shutdown-hang.md`): a
+  guest thread still unwinding read its `OSThread` in RDRAM after
+  `recomp::start` had freed it. Patch 0066 frees RDRAM only once the guest
+  threads have ended, and keeps it when five of them, blocked for good, never
+  do. Before: 5 stops in 6 left the process behind. After: 15 in 15 clean,
+  from Explorer and from a batch file, with no fault recorded.
+- A watchdog started at the quit ends a process still alive fifteen seconds
+  later, with kernel calls only; tried against a deliberately held lock of the
+  C runtime.
+
+**The cursor.** Hidden over the window by answering `WM_SETCURSOR` with no
+cursor -- not `ShowCursor`, whose global count a crash would leave hidden.
+On a passthrough card the desktop's pointer is not on the screen while the
+game is; it is there during a pause, after a quit and after a crash (the
+screenshots show it).
+
+**A crash.** Tried with a deliberate access violation on the graphics
+thread, the card open: the screen came back to the desktop, a message box
+in front of everything says `DKR-R stopped: invalid memory access. Details
+in DKR-BOOT.LOG.`, and that log holds the fault, the registers, the
+plausible return addresses on the stack and `abnormal-exit cleanups run`.
+Three defects of the filter were found and fixed on the way: it called the
+C runtime before writing anything, and a fault during a thread's end found
+it locked, so it now writes a first record by hand; its stack scan ran past
+the top of the stack and faulted inside the filter; and its message box
+was hidden behind the game's window.
+
 ## Acceptance criteria
 
 - [x] The window is created and receives the system's messages under Windows 95.
@@ -68,19 +129,14 @@ handling focus and shutdown.
 - [x] The message loop does not interfere with the game's threads and does not consume
       CPU when idle. The sampler found the main thread moving in one of
       88,767 samples of a race (E08-S01).
-- [ ] Losing focus pauses the game, regaining it resumes.
-- [ ] Every shutdown route leads to a clean stop with the display restored.
-      *The display is restored on `Alt+F4`, and the stop now finishes*: the
-      hang that kept half the processes alive was `DestroyWindow` racing the
-      guest threads' exit, fixed on 3 October 2026 (6 stops in 6, 4 in 4
-      from Explorer), and a watchdog ends the process if a stop is still
-      running fifteen seconds after the quit. Left open
-      for a second hang seen only in an older build, and for the close button
-      and the session's end, not tried on their own
-      (`docs/research/win95-shutdown-hang.md`).
-- [ ] The cursor is hidden in full screen and restored on exit.
-- [ ] The behaviour on task switching is decided and held to.
-- [ ] A crash restores the display and writes a log.
+- [x] Losing focus pauses the game, regaining it resumes -- above.
+- [x] Every shutdown route leads to a clean stop with the display restored --
+      `Alt+F4` and Windows' shutdown run on the test machine; the close button
+      and the taskbar's Close share `Alt+F4`'s handler and were not clicked.
+- [x] The cursor is hidden in full screen and restored on exit -- above.
+- [x] The behaviour on task switching is decided and held to: switching away
+      pauses and hands the screen back; switching back resumes.
+- [x] A crash restores the display and writes a log -- tried, above.
 - [x] No API later than Windows 95 is imported. `check_imports.py` at every build and package (E01-S04).
 
 ## Risks

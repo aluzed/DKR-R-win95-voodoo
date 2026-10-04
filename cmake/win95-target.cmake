@@ -1339,6 +1339,13 @@ set_target_properties(DKRWin95Game PROPERTIES
     OUTPUT_NAME "DKRR"
     SUFFIX ".EXE"                      # 8.3, so it can be launched from DOS
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+# **A Windows program, not a console one** (E06-S01). Linked as a console
+# program, DKRR.EXE got a console window from Windows 95, which treats it as a
+# DOS session: shutting Windows down stopped on "you must quit this program"
+# for as long as the game's process lived. The log never went to the console
+# anyway -- stderr is redirected to a file at start (game_main.cpp) -- and
+# `WinMain` is the entry point either way.
+target_link_options(DKRWin95Game PRIVATE -mwindows)
 dkr_win95_verify(DKRWin95Game)
 
 # --- The runtime's portable-logic suites, on the target (E09-S03) ------------

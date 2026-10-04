@@ -2124,6 +2124,29 @@ void dkr::runtime::GlideRenderer::update_screen() {
     } busy_while_here;
     const ExclusiveSection exclusive;
 
+#if defined(DKR_TARGET_WIN95)
+    /* E06-S01: the game pauses when the window loses the foreground (the VI
+       thread holds back its retraces, patch 0065) and sends one screen update
+       at each change, which lands here, on the thread that owns the Glide
+       context. The screen goes back to the desktop for the pause and returns
+       with the game; the context stays open, so nothing is reloaded. */
+    if (opened_) {
+        const bool paused = dkr_game_paused() != 0;
+        if (paused != screen_given_back_) {
+            const int done = dkr_glide_control(paused ? 0 : 1);
+            screen_given_back_ = paused;
+            std::fprintf(stderr, "[gfx] screen %s the desktop (grSstControl %s)\n",
+                         paused ? "handed to" : "taken back from",
+                         done ? "done" : "refused");
+            // Nothing else commits the log while the game is paused, and a
+            // player may shut the machine down from the desktop.
+            dkr_diag_commit();
+        }
+        if (paused) {
+            return;
+        }
+    }
+#endif
     const auto index = ++present_count_;
     if (index == 1) {
         // The first refresh is only queued once ultramodern's VI thread has

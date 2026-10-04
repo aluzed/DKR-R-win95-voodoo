@@ -191,6 +191,11 @@ int dkr_glide_read_backbuffer(unsigned *out, int max_pixels,
  * a state that cannot be programmed must degrade, not crash. */
 void *dkr_glide_symbol(const char *decorated_name);
 
+/* Hands the screen back to the 2D card (`active` 0) or takes it again (1),
+   keeping the context: `grSstControl`. 1 if Glide did it, 0 if it refused, has no
+   such entry point or no context is open. */
+int dkr_glide_control(int active);
+
 /* Three vertices already in `GrVertex` layout, handed to `grDrawTriangle` as
    they are. The type stays opaque here: `backend.h` is not included by this
    layer, and the layout assertion lives in `backend_layout_check.c`. */

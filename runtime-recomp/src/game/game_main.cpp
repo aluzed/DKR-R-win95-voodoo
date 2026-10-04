@@ -108,21 +108,70 @@ namespace {
 // the process. The saves are safe at any instant -- every write is a durable
 // replacement that survives a power cut (E02-S05) -- and the display is the
 // desktop's once Glide has closed.
-DWORD WINAPI StopWatchdog(LPVOID) {
+DWORD WINAPI StopWatchdog(LPVOID log_handle) {
     Sleep(15000);
-    std::fprintf(stderr, "[boot][stop] not finished 15 s after the quit "
-                         "(marks=0x%X); ending the process\n",
-                 dkr_stop_marks());
-    dkr_diag_commit();
+    // **Kernel calls only from here.** On the test machine stops hung with the
+    // main thread before its last `fprintf`, the sampler's last records never
+    // written and this thread, then using `fprintf`, silent: what a lock of
+    // the C runtime held for ever would do, though which thread held it is not
+    // established. So the line is built by hand and written with `WriteFile`
+    // to a handle on the log opened at the quit, and nothing here can wait on
+    // a lock the game's threads might hold.
+    char line[] = "[boot][stop] not finished 15 s after the quit "
+                  "(marks=0x00000000); ending the process\r\n";
+    unsigned marks = dkr_stop_marks();
+    char* digits = line + sizeof("[boot][stop] not finished 15 s after the quit (marks=0x") - 1;
+    for (int i = 7; i >= 0; --i) {
+        digits[i] = "0123456789ABCDEF"[marks & 0xFu];
+        marks >>= 4;
+    }
+    const HANDLE log = static_cast<HANDLE>(log_handle);
+    if (log != nullptr && log != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        SetFilePointer(log, 0, nullptr, FILE_END);
+        WriteFile(log, line, sizeof(line) - 1, &written, nullptr);
+        FlushFileBuffers(log);
+    }
     TerminateProcess(GetCurrentProcess(), 7);
     return 0;
 }
 void StartStopWatchdog() {
     DWORD id = 0;
-    HANDLE thread = CreateThread(nullptr, 0, StopWatchdog, nullptr, 0, &id);
-    if (thread != nullptr) { CloseHandle(thread); }
+    // Its own handle on the log, opened now while nothing is stuck: the C
+    // runtime's own one, taken from `stderr`, was refused as invalid when the
+    // watchdog came to write with it.
+    std::fflush(stderr);
+    const std::string log_path =
+        (dkr::runtime::support::log_directory() / "runtime.log").string();
+    HANDLE log = CreateFileA(log_path.c_str(), GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE thread = CreateThread(nullptr, 0, StopWatchdog, log, 0, &id);
+    if (thread != nullptr) {
+        // Above every thread of the game: a stop that hangs may leave one
+        // spinning, and a watchdog it starves never fires.
+        SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL);
+        CloseHandle(thread);
+    }
 }
+std::atomic<bool>* g_runtime_finished = nullptr;
 } // namespace
+
+// Called by the window on `WM_ENDSESSION` (window.c), when Windows has agreed
+// to end the session and may end the process as soon as the message returns:
+// the stop the quit started is given up to ten seconds to finish first, so that
+// the game's threads end on their own rather than with the process.
+extern "C" void dkr_session_ending(void) {
+    for (int waited = 0; waited < 1000; ++waited) {
+        if (g_runtime_finished == nullptr || g_runtime_finished->load()) { break; }
+        Sleep(10);
+    }
+    std::fprintf(stderr, "[boot][window] the runtime has %s\n",
+                 g_runtime_finished != nullptr && g_runtime_finished->load()
+                     ? "stopped: the session may end"
+                     : "not stopped after 10 s: the session ends anyway");
+    dkr_diag_commit();
+}
 #endif
 
 extern RspUcodeFunc dkrAspMain;
@@ -1816,6 +1865,9 @@ int DkrMain(int argc, char** argv) {
         std::fprintf(stderr,
                      "[boot] runtime initialized; waiting for first safe VI state\n");
         std::atomic<bool> runtime_finished{false};
+#if defined(DKR_TARGET_WIN95)
+        g_runtime_finished = &runtime_finished;
+#endif
         std::exception_ptr runtime_failure;
         dkr::sync::thread runtime_thread([&] {
             try {
@@ -1834,7 +1886,12 @@ int DkrMain(int argc, char** argv) {
 #endif
         while (!runtime_finished.load(std::memory_order_acquire)) {
 #if defined(DKR_TARGET_WIN95)
-            if (have_window && !window_quit && !dkr_window_pump()) {
+            // The window keeps being pumped after the quit, until the runtime
+            // has stopped: Windows sends `WM_ENDSESSION` after the session's
+            // end has been agreed and waits for the answer, and a loop that
+            // had stopped reading messages held the whole shutdown of Windows
+            // (E06-S01, 4 October 2026).
+            if (have_window && !dkr_window_pump() && !window_quit) {
                 // Every shutdown route -- the close button, Alt+F4, the session
                 // ending -- arrives here as a single answer, and it asks the
                 // runtime to stop rather than tearing it down: the game's

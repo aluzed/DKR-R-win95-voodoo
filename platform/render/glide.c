@@ -642,6 +642,31 @@ int dkr_glide_depth_buffer_ids(int *aux, int *depth)
     return 1;
 }
 
+/* --- The passthrough ----------------------------------------------------------
+ *
+ * A Voodoo 1 or 2 shows the 3D picture by switching a relay between the 2D
+ * card's signal and its own. `grSstControl(GR_CONTROL_DEACTIVATE)` hands the
+ * screen back to the 2D card without closing the context, and
+ * `GR_CONTROL_ACTIVATE` takes it again: what a game does when the player
+ * switches away from it and back (E06-S01). Constants from Glide 2.x's
+ * `glide.h`. Optional, like the read-back: looked up when first needed. */
+#define GR_CONTROL_ACTIVATE   0x1
+#define GR_CONTROL_DEACTIVATE 0x2
+
+int dkr_glide_control(int active)
+{
+    typedef FxBool (WINAPI *pfn_grSstControl)(FxU32);
+    pfn_grSstControl control;
+    if (!g.dll || !g.context_open) {
+        return 0;
+    }
+    control = (pfn_grSstControl)GetProcAddress(g.dll, "_grSstControl@4");
+    if (!control) {
+        return 0;
+    }
+    return control(active ? GR_CONTROL_ACTIVATE : GR_CONTROL_DEACTIVATE) ? 1 : 0;
+}
+
 /* --- Hooks for the backend layer --------------------------------------------- */
 
 void *dkr_glide_symbol(const char *decorated_name)

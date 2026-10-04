@@ -1,0 +1,110 @@
+From: DKR-R Windows 95 port
+Subject: [PATCH] Free RDRAM after the guest threads end
+
+recomp::start freed RDRAM as soon as its own threads were joined, but the
+guest threads are never joined: woken by the quit, they unwind on
+thread_terminated and read their OSThread, which lives in RDRAM, until
+the last line of _thread_func. One still unwinding when RDRAM was freed
+faulted there -- an access violation at `self->context` -- and on the
+Windows 95 test machine that took down about half the stops, the crash
+filter then stalling on the C runtime (E06-S01, 4 October 2026).
+
+The guest threads alive are now counted, from their creation to the end
+of _thread_func, and recomp::start waits before freeing RDRAM: until none
+is left, or the count has not moved for 250 ms, or two seconds. Threads
+still blocked in a wait the quit does not reach -- five, in DKR -- keep the
+memory, which the process's exit returns anyway; the log says so. Marks 6 and 7
+(patch 0064) record the end of the wait and the free.
+---
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -86,6 +86,8 @@
+ void resume_thread_and_wait(RDRAM_ARG OSThread* t);
+ void schedule_running_thread(RDRAM_ARG PTR(OSThread) t);
+ void cleanup_thread(UltraThreadContext* thread_context);
++// Guest threads whose host thread has not finished yet (patch 0066).
++int live_guest_threads();
+ struct thread_terminated : std::exception {};
+ 
+ enum class ThreadPriority {
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -616,6 +616,16 @@
+     wait_for_resumed(PASS_RDRAM cur_context);
+ }
+ 
++/* Patch 0066: guest threads alive, counted from their creation to the last
++   line of `_thread_func`. Their `OSThread` lives in RDRAM, and they read it
++   until that last line -- including after a quit, while they unwind on
++   `thread_terminated`. `recomp::start` frees RDRAM when it stops and waits on
++   this count first: freeing it under a guest thread still unwinding was an
++   access violation in `_thread_func` that took down about half the stops on
++   the Windows 95 test machine (E06-S01, 4 October 2026). */
++static std::atomic<int> g_live_guest_threads{0};
++int ultramodern::live_guest_threads() { return g_live_guest_threads.load(); }
++
+ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entrypoint, PTR(void) arg, UltraThreadContext* thread_context) {
+     OSThread *self = TO_PTR(OSThread, self_);
+     debug_printf("[Thread] Thread created: %d\n", self->id);
+@@ -661,6 +671,8 @@
+ 
+     // Dispose of this thread now that it's completed or terminated.
+     ultramodern::cleanup_thread(thread_context);
++    // Nothing below this reads RDRAM (patch 0066).
++    g_live_guest_threads.fetch_sub(1);
+ }
+ 
+ extern "C" void osStartThread(RDRAM_ARG PTR(OSThread) t_) {
+@@ -695,6 +707,7 @@
+     // Pass the context as an argument to the thread function to ensure that it can't get cleared before the thread captures its value.
+     UltraThreadContext* context = new UltraThreadContext{};
+     t->context = context;
++    g_live_guest_threads.fetch_add(1);  // patch 0066
+     context->host_thread = ultramodern::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
+ 
+     // Wait until the thread is initialized to indicate that it's ready to be started.
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -936,8 +936,31 @@
+         current_game.reset();
+     }
+     
+-    // Free rdram.
+-    bool free_failed;
++    // Free rdram -- once no guest thread can read it (patch 0066). The guest
++    // threads are never joined: woken by the quit, they unwind and end on
++    // their own, reading their OSThread in RDRAM until their last line. A
++    // thread that never wakes keeps the memory, which the process's exit
++    // returns anyway. The wait ends when none is left, or when the count has
++    // not moved for 250 ms -- an unwinding thread ends in milliseconds, and the
++    // ones still blocked in a wait the quit does not reach (five, in DKR) never
++    // will -- or after two seconds whatever happens.
++    {
++        int last = ultramodern::live_guest_threads();
++        int steady = 0;
++        for (int waited = 0; waited < 200 && last > 0 && steady < 25; ++waited) {
++            ultramodern::sleep_milliseconds(10);
++            const int now = ultramodern::live_guest_threads();
++            steady = (now == last) ? steady + 1 : 0;
++            last = now;
++        }
++    }
++    const int still_running = ultramodern::live_guest_threads();
++    dkr_stop_mark(6);  // the wait for the guest threads is over
++    bool free_failed = false;
++    if (still_running > 0) {
++        std::fprintf(stderr, "[boot][stop] %d guest thread(s) still running: RDRAM kept\n",
++                     still_running);
++    } else {
+ #ifdef _WIN32
+     // VirtualFree returns zero on failure.
+     free_failed = (VirtualFree(rdram, 0, MEM_RELEASE) == 0);
+@@ -945,6 +968,8 @@
+     // munmap returns -1 on failure.
+     free_failed = (munmap(rdram, allocation_size) == -1);
+ #endif
++    dkr_stop_mark(7);  // RDRAM freed
++    }
+ 
+     if (free_failed) {
+         printf("Failed to free rdram\n");
