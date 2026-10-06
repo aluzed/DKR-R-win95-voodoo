@@ -129,15 +129,20 @@ it.
 
 - [ ] The current build's memory peak is measured and broken down per item, with the
       unattributed remainder under 10 %.
-- [ ] The memory really available under Win95 / 64 MB, with the 3dfx driver loaded,
+- [x] The memory really available under Win95 / 64 MB, with the 3dfx driver loaded,
       is measured and not estimated.
-- [ ] `docs/adr/0003-memory-budget.md` fixes a ceiling per item and an overall
+- [x] `docs/adr/0003-memory-budget.md` fixes a ceiling per item and an overall
       ceiling, with the remaining margin.
-- [ ] The RDRAM snapshot's size and the number of tasks in flight are settled and
+- [x] The RDRAM snapshot's size and the number of tasks in flight are settled and
       justified.
-- [ ] The ROM's access mode is settled.
-- [ ] A 32 MB fallback configuration is assessed: what falls, and whether the game
+- [x] The ROM's access mode is settled.
+- [x] A 32 MB fallback configuration is assessed: what falls, and whether the game
       stays playable.
+
+Ticked on 6 October 2026 against `docs/adr/0003-memory-budget.md` and E08-S04.
+Left open: the peak in play is measured (about 22 MiB for the game against the
+32.8 MiB budget) but not broken down per item, so there is no figure for the
+unattributed remainder.
 
 ## Risks
 

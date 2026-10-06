@@ -196,6 +196,6 @@ oracle is worth nothing.
 
 - [`docs/research/win95-blockers.md`](../research/win95-blockers.md) — the survey of the guards
 - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — protected boundaries
-- `runtime-recomp/CMakeLists.txt:37` — `DKR_RUNTIME_BUILD_RT64`
+- `runtime-recomp/CMakeLists.txt:46` — `DKR_RUNTIME_BUILD_RT64`
 - `runtime-recomp/CMakeLists.txt:178,291` — propagation as `DKR_RUNTIME_HAS_RT64`
 - `../../Diddy-Kong-Racing/docs/adr/0003-strategie-fork.md` — the same arbitration on the native port's side

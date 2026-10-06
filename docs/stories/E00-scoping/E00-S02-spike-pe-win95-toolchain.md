@@ -100,17 +100,22 @@ deduce from it which toolchain the project adopts.
 
 ## Acceptance criteria
 
-- [ ] The three witnesses are built by at least two candidates.
+- [x] The three witnesses are built by at least two candidates.
 - [ ] At least one candidate runs T3 under emulated Windows 95, with a screenshot in
       support.
 - [ ] The results table gives, per candidate: C++ available, T3's size, DLLs and
       symbols imported, execution status.
-- [ ] The failures name the offending symbol or instruction.
-- [ ] A toolchain-choice ADR is written (`docs/adr/0001-toolchain.md`), which also
+- [x] The failures name the offending symbol or instruction.
+- [x] A toolchain-choice ADR is written (`docs/adr/0001-toolchain.md`), which also
       settles the CRT's distribution mode.
-- [ ] The ADR states the choice's direct consequence for `ultramodern` and
+- [x] The ADR states the choice's direct consequence for `ultramodern` and
       `librecomp`: patchable as they stand, or to be rewritten — relying on
       E00-S01's count of C++20 constructs.
+
+Ticked on 6 October 2026 against `docs/adr/0001-toolchain.md`. Left open: the
+T3 run on the test machine is recorded (1000/1000) but no screenshot was kept,
+and the results table lists the missing imports rather than every imported
+symbol, and no T3a size.
 
 ## Risks
 

@@ -97,12 +97,16 @@ stays buildable, and how the oracle is used.
 
 ## Acceptance criteria
 
-- [ ] `docs/adr/0004-repository-strategy.md` settles the five points.
-- [ ] The decision on the oracle is justified by its concrete use in E09-S02.
-- [ ] The build switch and its default are named, and the check that it suffices to
+- [x] `docs/adr/0004-repository-strategy.md` settles the five points.
+- [x] The decision on the oracle is justified by its concrete use in E09-S02.
+- [x] The build switch and its default are named, and the check that it suffices to
       exclude RT64 is done.
-- [ ] The patch / fork boundary for the dependencies is written.
-- [ ] The sorting of the existing test suites is done, suite by suite.
+- [x] The patch / fork boundary for the dependencies is written.
+- [x] The sorting of the existing test suites is done, suite by suite.
+
+Ticked on 6 October 2026 against `docs/adr/0004-repository-strategy.md`. The
+switch's exclusion holds for RT64 and ImGui; four SDL2 references outside the
+guard remain, assigned to E07-S03.
 
 ## Risks
 

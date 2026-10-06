@@ -102,14 +102,20 @@ emulation strategies.
 
 ## Acceptance criteria
 
-- [ ] The instruction set `rsp_vu_impl.hpp` requires is established by reading the
+- [x] The instruction set `rsp_vu_impl.hpp` requires is established by reading the
       code, and the existence or absence of a scalar fallback is settled.
-- [ ] The distribution of `aspMain`'s vector operations is counted.
+- [x] The distribution of `aspMain`'s vector operations is counted.
 - [ ] The bench measures the three configurations on a real audio task.
-- [ ] The cost is expressed as a percentage of one frame's budget on the target.
-- [ ] The document concludes: recompiled microcode kept, or high-level mixer — with
+- [x] The cost is expressed as a percentage of one frame's budget on the target.
+- [x] The document concludes: recompiled microcode kept, or high-level mixer — with
       the figure that motivates the conclusion.
-- [ ] The result is carried into E00-S03's overall budget.
+- [x] The result is carried into E00-S03's overall budget.
+
+Ticked on 6 October 2026 against `docs/research/rsp-audio-budget.md` and
+`cpu-budget.md`. Left open: two of the three configurations were measured --
+SIMD on the host, the scalar path on the target -- and MMX was estimated; and
+the bench ran isolated operations. A real audio task was measured later on the
+target, scalar path only (`docs/research/rsp-audio-cost-measured.md`).
 
 ## Risks
 
