@@ -493,6 +493,6 @@ coroutines, `std::ranges`/`std::views`, `std::format`, `<bit>`, `using enum`.
 | `librecomp/src/recomp.cpp` |  | 1 |  | 9 | 1 |
 | **total** | **7** | **52** | **7** | **34** | **19** |
 
-Every one of these files compiles for the Windows 95 target, the whole of both
-libraries being linked into `DKRR.EXE`: the count confirms the conclusion above
-rather than adding a constraint.
+Every one of these files compiles for the Windows 95 target, where both
+libraries are built whole (`cmake/win95-target.cmake` globs their sources): the
+count confirms the conclusion above rather than adding a constraint.
