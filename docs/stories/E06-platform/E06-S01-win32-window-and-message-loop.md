@@ -77,6 +77,13 @@ of its usual five seconds; the screenshots show the desktop during the pause
 and the game moving again after it. **Decided and held to: switching away
 pauses; switching back resumes.**
 
+**In a race, on the race clock** (6 October 2026): Ancient Lake, reached with
+`scripts/Drive-To-Race.sh`, paused through the Start menu for 20 s. The HUD
+read `00:03:89` just before the pause and `00:04:76` just after it, about 30 s
+of wall time later, the difference being the seconds on either side of the
+pause; six seconds later it read `00:06:30`, still eighth, first lap. The race
+stops where it is and carries on from there.
+
 **A Windows program.** `DKRR.EXE` is linked as a GUI program (`-mwindows`).
 As a console program it got a console window, which Windows 95 treats as a
 DOS session: shutting Windows down stopped on "you must quit this program". For the test bench it means `MEASURE.BAT` returns as soon as the game
