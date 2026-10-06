@@ -152,14 +152,16 @@ target_link_libraries(win95window PUBLIC win95compat user32)
 target_include_directories(win95window INTERFACE "${DKRPORT_ROOT}/platform")
 add_dependencies(win95window dkr_win95_cpp_subset)
 
-# --- Joysticks and gamepads (E06-S02) -----------------------------------------
+# --- Joysticks, gamepads and the keyboard map (E06-S02) -----------------------
 #
-# winmm's `joyGetPosEx`, on every Windows 95, and the mapping to the N64
-# controller, which is plain arithmetic and tested on the host
-# (`platform/win95/tests/test_joystick_map.c`).
+# winmm's `joyGetPosEx`, on every Windows 95, and the mappings to the N64
+# controller -- the joystick's and the keyboard's -- which are plain table work
+# and tested on the host (`platform/win95/tests/test_joystick_map.c`,
+# `test_keymap.c`).
 add_library(win95joystick STATIC
     "${DKR_WIN95_PLATFORM}/joystick.c"
-    "${DKR_WIN95_PLATFORM}/joystick_map.c")
+    "${DKR_WIN95_PLATFORM}/joystick_map.c"
+    "${DKR_WIN95_PLATFORM}/keymap.c")
 target_include_directories(win95joystick PUBLIC "${DKR_WIN95_PLATFORM}")
 target_link_libraries(win95joystick PUBLIC win95compat winmm)
 add_dependencies(win95joystick dkr_win95_cpp_subset)

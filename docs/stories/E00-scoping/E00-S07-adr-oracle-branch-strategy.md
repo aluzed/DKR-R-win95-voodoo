@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Epic** | E00 — Scoping, measurements and decisions |
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Priority** | P1 |
 | **Estimate** | S |
 | **Depends on** | — |

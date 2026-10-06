@@ -104,6 +104,16 @@ int  dkr_window_key_down(int vk);
  * keys. */
 int  dkr_window_keypad_down(int scancode);
 
+/* Non-zero while the key at `position` is down, or was pressed since the last
+   `dkr_window_position_latch_clear`: its scan code, plus 0x80 for an extended
+   key (`keymap.h`). By position, so independent of the layout: player
+   one's controls are read through this. */
+int  dkr_window_position_down(int position);
+/* A key pressed and released between two polls still reads as down to the next
+   one: the game reads its controller once a frame, and at a frame of 33 ms or
+   more a tap is shorter. The poll clears this after reading. */
+void dkr_window_position_latch_clear(void);
+
 /* Non-zero once for each press of **F9**, and zero thereafter until the next.
  *
  * A capture of whatever is on the screen is the only way to attribute a defect on

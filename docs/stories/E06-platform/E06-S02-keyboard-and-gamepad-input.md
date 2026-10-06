@@ -92,11 +92,41 @@ keys. Played on the test machine: player two joins at PLAYER SELECT, picks a
 character and a vehicle and drives a race beside player one
 (`scripts/Drive-To-Two-Player-Race.sh`, `docs/research/win95-two-players.md`).
 
+## Player one by position, and `KEYS=` (6 October 2026)
+
+**Read by letter, player one's keys were scattered on a French keyboard.** The
+poll read `GetAsyncKeyState('W')` and the like: virtual keys, which follow the
+layout. On the test machine's AZERTY keyboard the stick was the keys labelled
+W, A, S and D, wherever they sit -- and the test bench had been translating
+its keystrokes through the layout since 12 September instead.
+They are now read **by position**: the window keeps one flag per scan code,
+extended keys apart (`dkr_window_position_down`), and `platform/win95/keymap.c`
+says which position is which control. The stick is the same block on every
+layout -- Z Q S D on a French keyboard -- and the README's "by position",
+false until then, is true.
+
+**A tap shorter than a frame counts.** The flags carry a latch, cleared after
+each poll: a key pressed and released between two polls reads as down to the
+next one. Without it a keystroke sent by the bench, a few milliseconds long,
+was never seen; with it, Return, Tab, X, Tab tapped on the test machine read
+exactly as their mapping says.
+
+**Remappable.** `KEYS=` in DKRR.INI names controls and their keys --
+`control:key` or `control:key/key`, comma-separated, the controls those of
+`JOY_BUTTONS` plus the stick's `SU SD SL SR` -- and leaves the others at their
+default (`docs/CONFIGURATION.md`, and a commented example in the INI's
+template). Tried on the test machine with `KEYS=START:TAB,A:X,BOGUS:Q`: the log
+reads `KEYS: 2 entries applied, 1 refused`, Return no longer starts, Tab is
+Start (`0x1000`) and X is A (`0x8000`). Fourteen host checks in
+`run-tests.sh keymap`; and `scripts/Drive-To-Race.sh`, its keys now sent by
+position, still reaches a race.
+
 ## Acceptance criteria
 
-- [x] The keyboard works in full screen, with no message-queue latency -- the poll
-      reads `GetAsyncKeyState`, the key's state at that instant, not a queue; the
-      window's own messages only latch a press shorter than a frame. Played full
+- [x] The keyboard works in full screen, with no message-queue latency -- the main
+      thread drains the window's messages every millisecond and the poll reads the
+      flags they set (by position since 6 October 2026, above), with a latch for a
+      press shorter than a frame. Played full
       screen on the test machine's Voodoo: menus, races, the adventure, and since
       2 October a second player on the keypad.
 - [ ] A DirectInput gamepad works, with the `winmm` fallback verified.
@@ -112,8 +142,9 @@ character and a vehicle and drives a race beside player one
       `JOYSTICKID1` and `JOYSTICKID2`, the two a period game port carries: the first
       joins the keyboard on player one, the second the keypad on player two
       (`README.TXT`, `docs/CONFIGURATION.md`). Not yet with a real device.
-- [~] The remapping is kept and persistent -- for joysticks: `JOY_BUTTONS` in DKRR.INI
-      maps a pad's eight buttons and persists. The keyboard's layout is fixed.
+- [x] The remapping is kept and persistent -- `JOY_BUTTONS` for a pad's eight
+      buttons, and since 6 October 2026 `KEYS=` for player one's keyboard, both in
+      DKRR.INI. Player two's keypad keeps its layout.
 - [ ] The input latency is measured and compared against the reference.
 - [ ] The existing mapping logic is reused, not rewritten.
 

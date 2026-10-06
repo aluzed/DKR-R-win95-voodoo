@@ -50,7 +50,7 @@ static const char *const kKnown[] = {
     "DUMP_FRAME", "DUMP_MODE", "FLATTEN_W", "FOG", "FORCE_COMBINE",
     "FORCE_STATE", "FORGET_AT_FRAME", "GFX_NO_STATS", "GFX_STATS",
     "GLIDE_OPEN_EARLY", "GLIDE_SWAP", "INPUT_BACKEND", "INTERPOLATION_TRACE",
-    "JOY", "JOY_BUTTONS", "JOY_DEADZONE", "LAUNCHER_PROFILE",
+    "JOY", "JOY_BUTTONS", "JOY_DEADZONE", "KEYS", "LAUNCHER_PROFILE",
     "LEGACY_QUALIFICATION_RECIPE", "LOG", "MQ_HOLD_REFUSED", "NEUTRAL",
     "NO_ALPHA_TEST", "NO_AUDIO_OUT", "NO_DEPTH", "NO_MULTIPASS",
     "NO_STATE_SHADOW", "NO_TEXCACHE", "OSD", "PAINT_WHITE", "PROBE",
@@ -186,6 +186,11 @@ int dkr_ini_write_template_if_absent(void)
 "\n"
 "; Frame rate, render time and audio counters drawn over the game.\n"
 "; OSD=1\n"
+"\n"
+"; Player one's keys, by their place on a US keyboard (a French keyboard's\n"
+"; Z Q S D block is the default stick). Name only the controls to change;\n"
+"; CONFIG.TXT lists them all. This one puts the stick on the arrows:\n"
+"; KEYS=SU:UP,SD:DOWN,SL:LEFT,SR:RIGHT\n"
 "\n"
 "; --- Diagnostics: for reporting a problem, not for playing ----------------\n"
 "\n"

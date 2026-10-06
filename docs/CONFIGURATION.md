@@ -42,6 +42,7 @@ this is the one a player is told to open.
 | `JOY_DEADZONE` | 0..90 | 15 | The share of a joystick axis's half-range that reads as centred. Pads of the period drift at rest. An out-of-range value is refused and logged. | none |
 | `JOY_BUTTONS` | up to eight of `A B Z START L R CU CD CL CR DU DD DL DR -`, comma-separated | `A,B,Z,START,L,R,CD,CL` | The N64 button for each of the pad's buttons, in order; `-` for none. A list naming no N64 button is refused and logged. | none |
 | `JOY` | `off` | on | Ignore joysticks and pads. | none |
+| `KEYS` | comma-separated `control:key` or `control:key/key`; controls `A B Z START L R CU CD CL CR DU DD DL DR` and the stick's `SU SD SL SR`; keys named by their place on a US keyboard (`A`..`Z`, `0`..`9`, `SPACE`, `ENTER`, `TAB`, `LSHIFT`, `RSHIFT`, `LCTRL`, `RCTRL`, the arrows `UP DOWN LEFT RIGHT`, `INSERT DELETE HOME END PGUP PGDN`, `COMMA PERIOD SLASH SEMICOLON QUOTE MINUS EQUALS LBRACKET RBRACKET BACKSLASH`, `BACKSPACE`) | stick `W A S D`, A `SPACE`, B `LSHIFT/RSHIFT`, Z `Z`, Start `ENTER`, D-pad the arrows, L `Q`, R `E`, C `I K J L` | Player one's keys, **by position**: on a French keyboard the default stick is the Z Q S D block. Controls not named keep their default; a key may serve two controls; an entry not understood is skipped, and the log counts both (`[input] KEYS:`). | none |
 | `OSD` | switch | off | Draws frame rate, render and audio times, triangles, texture memory and audio underruns over the game. | about 0.5 ms a frame |
 
 ## Settings for reporting a problem

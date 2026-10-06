@@ -20,6 +20,14 @@ static unsigned char g_latch[256];
    (`dkr_window_keypad_down`). Written by the window procedure, read by the
    input poll; one byte per key. */
 static volatile unsigned char g_keypad[0x60];
+/* Every key by position: its scan code, plus 0x80 for the extended keys
+   (`keymap.h`). Player one's controls are read from here, so that a key is the
+   same key whatever the keyboard's layout (`dkr_window_position_down`). */
+static volatile unsigned char g_position[256];
+/* Pressed since the last `dkr_window_position_latch_clear`, held or not: a tap
+   shorter than the game's poll, down and up between two reads, still counts
+   once (`window.h`). */
+static volatile unsigned char g_position_latch[256];
 /* Set when F9 arrives, cleared when the renderer takes it. See `window.h`. */
 static volatile unsigned char g_capture_request;
 
@@ -33,6 +41,14 @@ static const char *const kClassName = "DkrWin95Window";
 extern void dkr_diag_commit(void) __attribute__((weak));
 /* game_main.cpp: waits for the game's stop to finish (WM_ENDSESSION). */
 extern void dkr_session_ending(void) __attribute__((weak));
+
+/* A key message's position: bits 16-22 of `lParam` are the scan code, bit 24
+   says the key is an extended one. */
+static unsigned position_of(LPARAM lp)
+{
+    return (unsigned)(((unsigned long)lp >> 16) & 0x7Fu) |
+           ((((unsigned long)lp >> 24) & 1u) ? 0x80u : 0u);
+}
 
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -114,6 +130,8 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
            main thread for its own reasons. One byte written by the thread that
            owns the window and read by one other is the narrowest thing that
            does the job. */
+        g_position[position_of(lp)] = 1;
+        g_position_latch[position_of(lp)] = 1;
         if (wp == VK_F9) { g_capture_request = 1; }
         /* `Alt+F4` still has to close the window, and a handled `WM_SYSKEYDOWN`
            never reaches `DefWindowProc` to do it. */
@@ -126,6 +144,7 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             (((unsigned long)lp >> 16) & 0xFFu) < sizeof(g_keypad)) {
             g_keypad[((unsigned long)lp >> 16) & 0xFFu] = 0;
         }
+        g_position[position_of(lp)] = 0;
         return 0;
 
     /* --- The cursor --------------------------------------------------------- *
@@ -276,8 +295,21 @@ int dkr_window_take_capture_request(void)
     return 1;
 }
 
+int dkr_window_position_down(int position)
+{
+    if (position <= 0 || position > 255) { return 0; }
+    return g_position[position] != 0 || g_position_latch[position] != 0;
+}
+
+void dkr_window_position_latch_clear(void)
+{
+    memset((void *)g_position_latch, 0, sizeof(g_position_latch));
+}
+
 void dkr_window_keys_clear(void)
 {
+    memset((void *)g_position, 0, sizeof(g_position));
+    memset((void *)g_position_latch, 0, sizeof(g_position_latch));
     memset((void *)g_keypad, 0, sizeof(g_keypad));
     memset(g_keys, 0, sizeof(g_keys));
     memset(g_latch, 0, sizeof(g_latch));
@@ -315,6 +347,8 @@ int  dkr_game_paused(void)    { return 0; }
 unsigned long dkr_window_handle(void) { return 0; }
 int  dkr_window_key_down(int vk) { (void)vk; return 0; }
 int  dkr_window_keypad_down(int scancode) { (void)scancode; return 0; }
+int  dkr_window_position_down(int position) { (void)position; return 0; }
+void dkr_window_position_latch_clear(void) { }
 int  dkr_window_take_capture_request(void) { return 0; }
 void dkr_window_keys_clear(void) { }
 void dkr_window_latch_clear(void) { }

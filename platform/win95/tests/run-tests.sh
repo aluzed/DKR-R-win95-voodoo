@@ -9,6 +9,7 @@
 # Several suites, for different reasons:
 #
 #   joystick   (E06-S02) the mapping from a winmm reading to the N64 stick
+#   keymap     (E06-S02) player one's keys by position, and KEYS= remapping
 #              and buttons: dead zone, range, the hat. Plain arithmetic.
 #
 #   tick64     (E01-S03) GetTickCount's wraparound happens after 49.7 days.
@@ -30,8 +31,8 @@ set -euo pipefail
 
 suite="${1:-all}"
 case "$suite" in
-  all|tick64|joystick|settings|streams|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
-  *) echo "usage: $0 [all|tick64|joystick|settings|streams|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
+  all|tick64|joystick|keymap|settings|streams|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture) ;;
+  *) echo "usage: $0 [all|tick64|joystick|keymap|settings|streams|threading|clock|fileio|saves|render|rdp|f3ddkr|transform|clip|pipeline|tmu|combiner|texture]" >&2; exit 2 ;;
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,6 +88,13 @@ fi
 
 if [[ "$suite" == "all" || "$suite" == "streams" ]]; then
   python3 "$HERE/check_path_streams.py"
+fi
+
+# --- E06-S02: player one's keyboard, by position, and its remapping ----------
+if [[ "$suite" == "all" || "$suite" == "keymap" ]]; then
+  "$CC" -O2 -Wall -Wextra -I "$HERE/.." -o "$tmp/test_keymap" \
+        "$HERE/test_keymap.c" "$HERE/../keymap.c"
+  "$tmp/test_keymap"
 fi
 
 # --- E06-S02: from a joystick's reading to an N64 controller's ---------------

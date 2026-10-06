@@ -44,7 +44,8 @@ or write the path in DKRR.INI:
 CONTROLS
 --------
 
-The keyboard, by position (shown here for a US layout):
+The keyboard, by position (shown here for a US layout; on a French keyboard
+the stick is Z Q S D, Z is W and L is A):
 
     W A S D        the control stick
     Arrow keys     the D-pad
@@ -65,6 +66,10 @@ Player two, on the numeric keypad (NumLock on or off):
     7 / 9          L / R
 
 Player two joins by pressing 0 at PLAYER SELECT.
+
+Player one's keys can be changed in DKRR.INI with KEYS=, for example
+KEYS=SU:UP,SD:DOWN,SL:LEFT,SR:RIGHT for the stick on the arrows; CONFIG.TXT
+lists every control and key name.
 
 Gamepads and joysticks: through Windows 95's own joystick support (Control
 Panel > Joystick, where they are also calibrated). The first is player one,

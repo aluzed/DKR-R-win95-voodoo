@@ -34,6 +34,7 @@
 extern "C" {
 #include "audio_out.h"
 #include "joystick.h"
+#include "keymap.h"
 #include "window.h"
 }
 #endif
@@ -1436,9 +1437,15 @@ bool dkr::runtime::platform::initialise() {
                      g_input_backend_detail.c_str());
     }
 #endif
+#if defined(DKR_TARGET_WIN95)
+    std::fprintf(stderr,
+                 "[boot][input] keyboard, by US position unless KEYS= says otherwise: "
+                 "WASD=stick arrows=d-pad Space=A Shift=B Z=Z Enter=Start IJKL=C Q=L E=R\n");
+#else
     std::fprintf(stderr,
                  "[boot][input] keyboard: WASD=stick arrows=d-pad Space=A Shift=B "
                  "Z=Z Enter=Start IJKL=C Q=L E=R\n");
+#endif
 #if defined(DKR_TARGET_WIN95)
     std::fprintf(stderr,
                  "[boot][input] player 2, keypad, NumLock on or off: 8426=stick 0=A .=B "
@@ -2388,41 +2395,29 @@ void dkr::runtime::platform::poll_input() {
             ++ran;
             std::fprintf(stderr, "[input] win95 poll_input called\n");
         }
-        const struct { int vk; std::uint16_t mask; } kKeys[] = {
-            { VK_SPACE,  0x8000U },   /* A     */
-            { VK_SHIFT,  0x4000U },   /* B     */
-            { 'Z',       0x2000U },   /* Z     */
-            { VK_RETURN, 0x1000U },   /* Start */
-            { VK_UP,     0x0800U },   /* D-pad */
-            { VK_DOWN,   0x0400U },
-            { VK_LEFT,   0x0200U },
-            { VK_RIGHT,  0x0100U },
-            { 'Q',       0x0020U },   /* L     */
-            { 'E',       0x0010U },   /* R     */
-            { 'I',       0x0008U },   /* C     */
-            { 'K',       0x0004U },
-            { 'J',       0x0002U },
-            { 'L',       0x0001U },
-        };
-        std::uint16_t buttons = 0U;
-        for (std::size_t k = 0; k < sizeof(kKeys) / sizeof(kKeys[0]); ++k) {
-            if ((GetAsyncKeyState(kKeys[k].vk) & 0x8000) != 0) {
-                buttons |= kKeys[k].mask;
+        /* **Player one's keys by position** (E06-S02, `platform/win95/keymap.h`):
+           read from the window's messages by scan code, so that the stick is
+           the same block on every layout -- W A S D on a US keyboard, Z Q S D
+           on a French one -- and remappable with DKRR.INI's `KEYS=`. Read by
+           virtual key until 6 October 2026, it was W A S D by letter, four
+           scattered keys on the test machine's AZERTY keyboard. */
+        static const dkr_keymap keymap = [] {
+            dkr_keymap map;
+            dkr_keymap_default(&map);
+            if (const char* keys = std::getenv("DKR_KEYS"); keys != nullptr) {
+                int refused = 0;
+                const int applied = dkr_keymap_parse(&map, keys, &refused);
+                std::fprintf(stderr, "[input] KEYS: %d entr%s applied, %d refused\n",
+                             applied, applied == 1 ? "y" : "ies", refused);
             }
-        }
-        /* With NumLock off the keypad's 8 4 2 6 arrive as the arrows' virtual
-           keys: an arrow whose keypad twin is down is player two's, not this
-           D-pad's. */
-        if (dkr_window_keypad_down(0x48)) { buttons &= static_cast<std::uint16_t>(~0x0800U); }
-        if (dkr_window_keypad_down(0x50)) { buttons &= static_cast<std::uint16_t>(~0x0400U); }
-        if (dkr_window_keypad_down(0x4B)) { buttons &= static_cast<std::uint16_t>(~0x0200U); }
-        if (dkr_window_keypad_down(0x4D)) { buttons &= static_cast<std::uint16_t>(~0x0100U); }
-        const float stick_x =
-            ((GetAsyncKeyState('D') & 0x8000) != 0 ? 1.0F : 0.0F) -
-            ((GetAsyncKeyState('A') & 0x8000) != 0 ? 1.0F : 0.0F);
-        const float stick_y =
-            ((GetAsyncKeyState('W') & 0x8000) != 0 ? 1.0F : 0.0F) -
-            ((GetAsyncKeyState('S') & 0x8000) != 0 ? 1.0F : 0.0F);
+            return map;
+        }();
+        dkr_keymap_state keyboard{};
+        dkr_keymap_read(&keymap, dkr_window_position_down, &keyboard);
+        dkr_window_position_latch_clear();
+        std::uint16_t buttons = keyboard.buttons;
+        const float stick_x = keyboard.stick_x;
+        const float stick_y = keyboard.stick_y;
         {
             /* One line per transition into a press, capped: the question this
                whole branch exists to answer is whether a key ever arrives. */

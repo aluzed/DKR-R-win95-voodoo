@@ -84,21 +84,26 @@ window() { DISPLAY="$DISP" "$XDO" search --name "86Box" 2>/dev/null | tail -1; }
 # starts to drift: the layout note below applies to every caller, and a second
 # copy is a second place to forget it.
 #
-# The guest's layout is AZERTY and the host sends scancodes. `a` -- the port's
-# stick-left -- arrives at the guest as `Q`, which is bound to L. See the comment
-# on `pad` for what that cost.
+# The guest's layout is AZERTY and the host sends scancodes, so what a key means
+# depends on how the game reads it: by letter until 6 October 2026, by position
+# since. See the comment on `pad` for what the letters cost.
+# Since 6 October 2026 the game reads player one's keys **by position**
+# (`platform/win95/keymap.h`), and the host sends scancodes, which are positions:
+# each control is simply the US key at its place. Until then the game read
+# letters, and this table translated them through the guest's AZERTY layout
+# (stick-left was sent as `q` to arrive as the guest's 'A').
 pad_key() {
   case "$1" in
-    left)  printf q ;;          # guest 'A' -- stick left
-    right) printf d ;;          # 'D' on both layouts
-    up)    printf z ;;          # guest 'W' -- stick up
-    down)  printf s ;;          # 'S' on both layouts
+    left)  printf a ;;
+    right) printf d ;;
+    up)    printf w ;;
+    down)  printf s ;;
     a)     printf space ;;
     b)     printf shift ;;
-    z)     printf w ;;          # guest 'Z' -- the Z button
+    z)     printf z ;;
     start) printf Return ;;
-    l)     printf a ;;          # guest 'Q' -- the L button
-    r)     printf e ;;          # 'E' on both layouts
+    l)     printf q ;;
+    r)     printf e ;;
     *)     die "unknown control '$1'" ;;
   esac
 }
@@ -462,7 +467,10 @@ case "${1:-}" in
     #
     # Nothing was intermittent. Two keys, one of them mistranslated.
     #
-    # The mapping is `runtime_platform.cpp`'s: WASD is the analogue stick, SPACE
+    # (That was while the game read letters; it reads positions now, and
+    # `pad_key` sends each control's US key as it is.)
+    #
+    # The mapping is `keymap.c`'s: WASD is the analogue stick, SPACE
     # is A, SHIFT is B, RETURN is Start, Z is the Z button. DKR navigates its
     # menus with the **stick**, not the D-pad, which is why `left`/`right` below
     # are the stick and not the arrows.
