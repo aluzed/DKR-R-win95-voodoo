@@ -461,3 +461,38 @@ project's retained value:
   > different semantics, but from a symbol **Windows 95 itself** supplies empty. See
   > "the trap the probes could not see", §2. The import check is corrected
   > accordingly.
+
+## 7. C++20 language constructs, per file (counted 6 October 2026)
+
+E00-S01 asked for this count per file; the sections above count the blocking
+*library* facilities instead, the language costing nothing at run time. For the
+record, on the pinned upstream sources of `ultramodern` and `librecomp` (the
+submodule's commit, before this port's patches), by regular expression -- an
+order of magnitude, not a parse: `requires` also matches the English word in a
+comment. Searched and absent everywhere: `concept`, `consteval`, `constinit`,
+coroutines, `std::ranges`/`std::views`, `std::format`, `<bit>`, `using enum`.
+
+| File | `requires` | `std::span` | `<=>` | `char8_t`/`u8string` | designated init. |
+|---|---:|---:|---:|---:|---:|
+| `ultramodern/include/ultramodern/config.hpp` |  |  | 1 |  |  |
+| `ultramodern/include/ultramodern/renderer_context.hpp` |  | 1 | 2 |  |  |
+| `ultramodern/include/ultramodern/ultramodern.hpp` |  | 1 |  | 2 |  |
+| `ultramodern/src/timer.cpp` | 1 |  |  |  |  |
+| `librecomp/include/librecomp/game.hpp` |  | 2 | 4 | 7 |  |
+| `librecomp/include/librecomp/helpers.hpp` | 2 |  |  |  |  |
+| `librecomp/include/librecomp/mods.hpp` | 1 | 6 |  |  | 1 |
+| `librecomp/include/librecomp/overlays.hpp` |  | 4 |  |  |  |
+| `librecomp/include/librecomp/patcher.hpp` |  | 3 |  |  |  |
+| `librecomp/src/files.cpp` |  |  |  | 2 |  |
+| `librecomp/src/mod_config_api.cpp` |  |  |  | 9 |  |
+| `librecomp/src/mod_manifest.cpp` | 2 | 2 |  |  | 1 |
+| `librecomp/src/mods.cpp` | 1 | 10 |  |  | 15 |
+| `librecomp/src/overlays.cpp` |  | 6 |  |  | 1 |
+| `librecomp/src/patcher.cpp` |  | 15 |  |  |  |
+| `librecomp/src/pi.cpp` |  | 1 |  | 5 |  |
+| `librecomp/src/recomp.cpp` |  | 1 |  | 9 | 1 |
+| **total** | **7** | **52** | **7** | **34** | **19** |
+
+Every one of these files compiles for the Windows 95 target, the whole of both
+libraries being linked into `DKRR.EXE`: the count confirms the conclusion above
+rather than adding a constraint.

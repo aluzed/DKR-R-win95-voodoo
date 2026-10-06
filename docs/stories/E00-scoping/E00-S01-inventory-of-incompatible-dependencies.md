@@ -115,7 +115,7 @@ of replacement code.
 - [x] The missing Win32 APIs are verified against a real export source (the export
       table of a Win95 OSR2.5 `kernel32.dll`, or the Win32 documentation's "Minimum
       supported client" column), not from memory.
-- [ ] The count of C++20 constructs is given **per file** for `ultramodern` and
+- [x] The count of C++20 constructs is given **per file** for `ultramodern` and
       `librecomp`, so that E01-S02 can decide between patch and rewrite on a figure.
 - [x] The document names explicitly the components that survive unmodified — that is
       where the project's retained value lies.
@@ -124,9 +124,9 @@ Ticked on 6 October 2026 against `docs/research/win95-blockers.md`: the seven
 points (sections 1 to 6 and the verdict table), the exports read from the test
 machine's own DLLs, and section 6 for what survives unmodified. The verdicts
 keep two words of their own -- ImGui "remove", RT64 "keep, switched off" -- and
-the four "keep" rows name no ticket, having nothing to do. Left open: the count
-of C++20 *language* constructs per file; the document counts the blocking
-library facilities per file instead, and argues the language costs nothing.
+the four "keep" rows name no ticket, having nothing to do. The count of C++20
+*language* constructs per file was added the same day (`win95-blockers.md`,
+section 7), by regular expression.
 
 ## Risks
 
