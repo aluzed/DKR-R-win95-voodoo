@@ -52,6 +52,10 @@ with a bright outline:
 | `Right` ×2 — the D-pad | nothing |
 | `q` ×4 | the selection moved **E → A**, four for four |
 
+> **6 October 2026**: this was the game reading letters, not positions -- a
+> defect for every non-US player, not only for the bench. The game reads player
+> one's keys by position since (E06-S02), and the bench sends them untranslated.
+
 **The guest's layout is AZERTY and the host sends scancodes.** `a` arrives at the
 guest as `Q`, which `runtime_platform.cpp` binds to the L button, so the stick
 never went left. `d` is the same key on both layouts and worked perfectly. `q`

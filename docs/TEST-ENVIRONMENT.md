@@ -131,6 +131,10 @@ Three traps each cost a good hour if one does not know them:
   The safest course, for free text, is to use only letters identical in both
   layouts.
 
+  **The game's own controls need none of this**: since 6 October 2026 the game
+  reads player one's keys by position (E06-S02), so `Drive-Win95-VM.sh pad`
+  sends each control's US key as it is.
+
 Diagnosis by screenshot is what allowed the wait on `Press F1` to be found: from
 the outside, a machine stuck at the BIOS and a machine that does not boot are
 indistinguishable.
