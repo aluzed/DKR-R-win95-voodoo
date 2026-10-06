@@ -104,10 +104,14 @@ reference.
       which grows with distance. Getting the direction wrong would give inverted fog.
 - [x] Moot: the table is not retained. It would bring nothing but an approximation of a
       curve we already possess exactly, per vertex.
-- [~] The colour is taken from the render state and not fixed at build time;
+- [x] The colour is taken from the render state and not fixed at build time;
       `grFogColorValue` receives it at every state change. The **variation from one
       level to another** comes from `set_fog` and `rain_fog`, surveyed in the decomp,
-      but is not exercised for want of the ROM.
+      and is exercised since: on 6 October 2026 the 66 captures of the corpus,
+      replayed with a probe printing every `SETFOGCOLOR` (a copy outside the tree),
+      carry eight colours -- `DCE6FF` in the Ancient Lake race (`CAP2600`) and four
+      other scenes, `054345`, `00000A`, `2F313E`, `3F4251`, `8C93A6`, `9BA2B6`
+      across the attract sequence's levels, and `000000` where no fog is set.
 - [x] Checked, and it reveals a coupling the ticket did not announce: **the vertex's
       alpha serves fog and transparency simultaneously**. Both work, but they are not
       independent — one cannot be set without disturbing the other, and the game uses
