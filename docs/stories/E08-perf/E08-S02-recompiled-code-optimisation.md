@@ -205,12 +205,28 @@ is 5.7% of a 4.3 ms thread.
 
 - [x] The hot functions are identified on a real play session -- a race
       driven by hand, above. The profile is flat: 5.7% at most.
-- [ ] Every compilation option is measured, not assumed.
-- [ ] The effect of code layout is measured separately.
-- [ ] Any native replacement is proved equivalent by comparing output over a large
-      sample.
-- [ ] The cumulative gain is measured and reported to the budget.
-- [ ] The game behaves identically, verified by a complete session.
+- [x] Every compilation option is measured, not assumed -- the optimisation
+      levels `-O3`, `-O2`, `-Os`: 4.49, 4.24 and 4.71 ms a frame of the game
+      thread, within the run-to-run spread ("Lever 1, re-argued"); `-O3` stays,
+      and `-Os` is left to real silicon, whose instruction cache 86Box does not
+      model.
+- [ ] The effect of code layout is measured separately. *Not measurable on the
+      emulator* ("Lever 2"): it acts through the instruction cache 86Box does
+      not model; left to E09-S04.
+- [x] Any native replacement is proved equivalent by comparing output over a large
+      sample -- the three wide-register paths, the only native replacements and
+      hooked on every target: `tools/cpu-budget/wide_fidelity_test.c` runs each
+      generated function and its replacement over 386 inputs and compares the
+      whole register file and the memory touched. Run again on 6 October 2026
+      (`scripts/Measure-Narrow-Gpr.sh`): "agree on every input".
+- [x] The cumulative gain is measured and reported to the budget -- nothing
+      this ticket tried was adopted: `-O3` kept, the narrowed register off by
+      default (-0.6%), so the frame budget's figures (`frame-budget.md`) carry
+      no gain from here.
+- [x] The game behaves identically, verified by a complete session -- the
+      shipped build changed only by the wide-register paths (21 September), and
+      sessions of 46 minutes and two hours were played on it afterwards
+      (E08-S04, 29 September), on top of every run since.
 - [x] No native replacement is made without a prior measurement proving the function is
       hot. None is made: the race's profile has no function hot enough to justify one.
 - [x] The three functions that need a 64-bit general register are identified by a
