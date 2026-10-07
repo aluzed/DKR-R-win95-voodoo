@@ -81,6 +81,13 @@ copy; the script proves the shipped `.text` identical to it.
       found the ROM beside it, showed the first-start ROM-check notice, opened the
       sound card and the Voodoo, and ran the attract sequence; its log and its
       runtime data stayed in its own folder.
+      *With its installer, 7 October 2026*: the package now carries `SETUP.EXE`
+      (below); run from a folder on D: with the ROM beside it, it installed into a
+      new `C:\GAMES\DKR`, made `Diddy Kong Racing.lnk` in Start > Programs, and
+      started the game, which wrote its `DKRR.INI`, found and validated the ROM,
+      opened the Voodoo and stopped cleanly on `Alt+F4`. Run again over that
+      installation with no ROM beside it, it asked for the ROM in the system's
+      Open dialog, copied the one chosen and left `DKRR.INI` as it was.
 - [x] No game asset is included, verified by `scan_for_game_assets.py` (with `--allow DKRR.EXE`, the one file past its 5 MiB bound, still checked for ROM headers) and by name for ROMs and `GLIDE2X.DLL`.
 - [ ] The licences are complete and accurate, Glide sources included. *Shipped*: the
       port's MIT licence, the GPL-3.0 that N64ModernRuntime brings to the executable, and
@@ -100,6 +107,15 @@ copy; the script proves the shipped `.text` identical to it.
       problems and rendering differences (`packaging/win95/README.TXT`).
 - [x] The file names are 8.3-compatible, checked by the package script.
 - [x] Building the package is automated with all the blocking checks: `scripts/Package-Win95.sh` -- instruction set, imports, platform tests, assets, 8.3 names.
+- [x] An installer, since 7 October 2026 -- a fresh Windows 95 opens no ZIP.
+      `SETUP.EXE` (`packaging/win95/setup/setup.c`, built and checked like the
+      game) installs into `C:\GAMES\DKR` or a chosen folder, warns when
+      `GLIDE2X.DLL` is missing, copies the game, takes the ROM from beside it or
+      through the Open dialog, puts a shortcut in Start > Programs and offers to
+      start the game; over an existing installation it keeps `DKRR.INI` and the
+      saves. The package also writes `DKRR-W95.ISO`, a disc image whose
+      `AUTORUN.INF` starts `SETUP.EXE` -- the image's contents checked, the disc
+      not yet inserted in the test machine.
 - [ ] The installation is verified on the emulator **and** on real hardware.
 
 ## Risks

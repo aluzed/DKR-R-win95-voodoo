@@ -396,6 +396,20 @@ set_target_properties(DKRWin95Platform PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 dkr_win95_verify(DKRWin95Platform)
 
+# --- SETUP.EXE, the package's installer (E09-S05) -----------------------------
+#
+# A fresh Windows 95 cannot open a ZIP, so the package is a folder with this in
+# it: it copies the game where the player says, takes the ROM, and puts a
+# shortcut in the Start menu. Plain C on the system's own DLLs, checked like the
+# game by `dkr_win95_verify`.
+add_executable(DKRWin95Setup WIN32 "${DKRPORT_ROOT}/packaging/win95/setup/setup.c")
+target_link_libraries(DKRWin95Setup PRIVATE shell32 ole32 uuid comdlg32 user32)
+set_target_properties(DKRWin95Setup PROPERTIES
+    OUTPUT_NAME "SETUP"
+    SUFFIX ".EXE"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+dkr_win95_verify(DKRWin95Setup)
+
 # Third witness: the threading layer's trial (E02-S01). It is **exactly the same
 # source** as the suite run on the host - two separate files would end up
 # diverging, and it is precisely on the target that the differences matter.

@@ -26,7 +26,17 @@ WHAT YOU NEED
 INSTALLING
 ----------
 
-  1. Unpack this archive into a folder of its own, for example C:\GAMES\DKR.
+Run SETUP.EXE, from the CD (it starts by itself when the disc goes in) or
+from the folder you copied the package into. It installs the game into
+C:\GAMES\DKR or a folder you choose, takes your ROM -- put it beside
+SETUP.EXE beforehand, or show it where it is when asked -- and puts the game
+in Start > Programs. Running it again over an installation updates the game
+and keeps DKRR.INI and your saves.
+
+Or by hand:
+
+  1. Copy DKRR.EXE and the .TXT files into a folder of their own, for
+     example C:\GAMES\DKR.
   2. Copy your ROM into that same folder.
   3. Start DKRR.EXE.
 
@@ -39,6 +49,9 @@ or write the path in DKRR.INI:
 
     [Paths]
     Rom=C:\PATH\DKR.Z64
+
+To remove the game, delete its folder and its shortcut in the Start menu's
+Programs; nothing else was written.
 
 
 CONTROLS

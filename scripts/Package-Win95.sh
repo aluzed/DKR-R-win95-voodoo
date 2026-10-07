@@ -4,7 +4,9 @@
 #   scripts/Package-Win95.sh                 package build/win95/bin/DKRR.EXE
 #   scripts/Package-Win95.sh --build         run Build-Win95.sh first
 #
-# Writes dist/win95/DKRR-W95.ZIP and leaves its contents in dist/win95/DKRR/.
+# Writes dist/win95/DKRR-W95.ZIP and DKRR-W95.ISO, a disc image to burn, and
+# leaves their contents in dist/win95/DKRR/: the game, its documents, SETUP.EXE
+# and the CD's AUTORUN.INF.
 #
 # **Every check blocks.** A package that fails one is not written:
 #
@@ -98,6 +100,13 @@ TP="$ROOT/extern/n64-modern-runtime"
 crlf "$OUT/THIRDPTY.TXT"                          "$STAGE/THIRDPTY.TXT"
 rm -f "$OUT/THIRDPTY.TXT"
 
+# The installer, and the CD's autorun to start it: a fresh Windows 95 opens no
+# ZIP, so the package is a folder or a disc that installs itself.
+SETUP="$ROOT/build/win95/bin/SETUP.EXE"
+[[ -f "$SETUP" ]] || fail "$SETUP is absent: run Build-Win95.sh"
+cp "$SETUP" "$STAGE/SETUP.EXE"
+printf '[autorun]\r\nopen=SETUP.EXE\r\nicon=SETUP.EXE\r\n' > "$STAGE/AUTORUN.INF"
+
 say "checking that no game asset is in the package"
 python3 "$ROOT/scripts/scan_for_game_assets.py" "$STAGE" --allow DKRR.EXE >/dev/null \
   || fail "the package holds something that looks like game content"
@@ -118,5 +127,11 @@ done < <(cd "$STAGE" && find . -type f -printf '%f\n')
 say "writing $ZIP"
 (cd "$STAGE" && zip -X -q -9 "$ZIP" ./*)
 ls -l "$ZIP"
+ISO="$OUT/DKRR-W95.ISO"
+say "writing $ISO"
+genisoimage -quiet -V DKR_W95 -J -o "$ISO" "$STAGE" \
+  || fail "genisoimage could not write the disc image"
+ls -l "$ISO"
 (cd "$STAGE" && sha256sum ./* | sed 's#\./##') > "$OUT/SHA256SUMS"
+(cd "$OUT" && sha256sum "$(basename "$ZIP")" "$(basename "$ISO")") >> "$OUT/SHA256SUMS"
 say "done: $(unzip -l "$ZIP" | tail -1)"

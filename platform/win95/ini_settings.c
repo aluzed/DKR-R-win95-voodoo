@@ -167,7 +167,7 @@ int dkr_ini_write_template_if_absent(void)
     fputs(
 "; DKRR.INI - settings of Diddy Kong Racing for Windows 95 and 3dfx Voodoo.\n"
 "; Read when the game starts. A line beginning with ';' is a comment.\n"
-"; Every setting is described in docs/CONFIGURATION.md.\n"
+"; Every setting is described in CONFIG.TXT, beside the game.\n"
 "\n"
 "[Paths]\n"
 "; The ROM. Filled in by the game the first time it finds one beside DKRR.EXE.\n"
